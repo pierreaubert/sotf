@@ -1,10 +1,12 @@
-use crate::app::types::RoomEqAlgorithm;
+use crate::app::types::{RoomEqAlgorithm, UiSubwooferStrategy, UiSystemModel};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Card, HStack, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Button, ButtonSize, ButtonVariant, Card, HStack,
+    NumberInput, NumberInputSize, Select, SelectOption, StackAlign, StackSpacing, Text, TextSize,
+    TextWeight,
+    VStack,
 };
 
 use super::render::render_channel_config_row;
@@ -963,6 +965,9 @@ impl PlayerView {
                 }
             });
 
+        // Build the system configuration card
+        let system_config_card = self.render_system_config_card(cx);
+
         VStack::new()
             .spacing(StackSpacing::Lg)
             .child(
@@ -975,6 +980,8 @@ impl PlayerView {
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
             )
+            // System Configuration card (topology, sub, GD-Opt, VoG, delay)
+            .child(system_config_card)
             // Wrap in div to capture key events and prevent global shortcuts
             // from firing while typing in input fields
             .child(
@@ -997,6 +1004,335 @@ impl PlayerView {
                     .content(self.render_channel_config_list(cx)),
             )
             .child(self.render_room_eq_validation_summary(cx))
+    }
+
+    /// Render the System Configuration card with topology, sub strategy, GD-Opt, VoG, allow_delay
+    fn render_system_config_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let config = &state.app.measurement_state.room_eq_state.optimizer_config;
+        let dropdowns = &state.app.measurement_state.room_eq_state.dropdowns;
+        let channel_names: Vec<String> = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .channel_measurements
+            .iter()
+            .map(|m| m.channel_name.clone())
+            .collect();
+
+        let system_model = config.system_model;
+        let has_sub = config.has_subwoofer;
+        let sub_strategy = config.subwoofer_strategy;
+        let gd_opt_enabled = config.gd_opt.enabled;
+        let gd_opt_target_ms = config.gd_opt.target_ms;
+        let vog_enabled = config.vog.enabled;
+        let vog_ref = config.vog.reference_channel.clone();
+        let allow_delay = config.allow_delay;
+
+        let system_model_open = dropdowns.system_model_open;
+        let sub_strategy_open = dropdowns.subwoofer_strategy_open;
+        let vog_ref_open = dropdowns.vog_reference_channel_open;
+
+        let mut content = VStack::new().spacing(StackSpacing::Md);
+
+        // --- System Model dropdown ---
+        let model_options: Vec<SelectOption> = UiSystemModel::all()
+            .iter()
+            .map(|m| SelectOption::new(m.as_str(), m.as_str()))
+            .collect();
+
+        content = content.child(
+            Select::new("system-model-select")
+                .label("System Model")
+                .options(model_options)
+                .selected(system_model.as_str())
+                .is_open(system_model_open)
+                .on_toggle({
+                    let state = self.state.clone();
+                    move |open, _window, cx| {
+                        state.update(cx, |state, _| {
+                            state.app.measurement_state.room_eq_state.dropdowns.system_model_open = open;
+                        });
+                    }
+                })
+                .on_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _| {
+                            let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
+                            cfg.system_model = match value.as_ref() {
+                                "Home Cinema" => UiSystemModel::HomeCinema,
+                                "Custom" => UiSystemModel::Custom,
+                                _ => UiSystemModel::Stereo,
+                            };
+                            state.app.measurement_state.room_eq_state.dropdowns.system_model_open = false;
+                        });
+                    }
+                })
+                .theme(theme.to_select_theme()),
+        );
+
+        // --- Subwoofer toggle ---
+        content = content.child(
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .align(StackAlign::Center)
+                .child(
+                    Text::new("Has Subwoofer:")
+                        .size(TextSize::Sm)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Button::new(
+                        "has-sub-toggle",
+                        if has_sub { "Yes" } else { "No" },
+                    )
+                    .variant(if has_sub {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click({
+                        let state = self.state.clone();
+                        move |_window, cx| {
+                            state.update(cx, |state, cx| {
+                                let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
+                                cfg.has_subwoofer = !cfg.has_subwoofer;
+                                cx.notify();
+                            });
+                        }
+                    }),
+                ),
+        );
+
+        // --- Subwoofer Strategy (shown when has_sub) ---
+        if has_sub {
+            let sub_options: Vec<SelectOption> = UiSubwooferStrategy::all()
+                .iter()
+                .map(|s| SelectOption::new(s.as_str(), s.as_str()))
+                .collect();
+
+            content = content.child(
+                Select::new("sub-strategy-select")
+                    .label("Subwoofer Strategy")
+                    .options(sub_options)
+                    .selected(sub_strategy.as_str())
+                    .is_open(sub_strategy_open)
+                    .on_toggle({
+                        let state = self.state.clone();
+                        move |open, _window, cx| {
+                            state.update(cx, |state, _| {
+                                state.app.measurement_state.room_eq_state.dropdowns.subwoofer_strategy_open = open;
+                            });
+                        }
+                    })
+                    .on_change({
+                        let state = self.state.clone();
+                        move |value, _window, cx| {
+                            state.update(cx, |state, _| {
+                                let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
+                                cfg.subwoofer_strategy = match value.as_ref() {
+                                    "MSO (Multi-Sub)" => UiSubwooferStrategy::Mso,
+                                    "DBA (Double Bass Array)" => UiSubwooferStrategy::Dba,
+                                    _ => UiSubwooferStrategy::Single,
+                                };
+                                state.app.measurement_state.room_eq_state.dropdowns.subwoofer_strategy_open = false;
+                            });
+                        }
+                    })
+                    .theme(theme.to_select_theme()),
+            );
+
+            // --- Group Delay Optimization ---
+            content = content.child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(
+                                Text::new("Group Delay Optimization:")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                Button::new(
+                                    "gd-opt-toggle",
+                                    if gd_opt_enabled { "Enabled" } else { "Disabled" },
+                                )
+                                .variant(if gd_opt_enabled {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .on_click({
+                                    let state = self.state.clone();
+                                    move |_window, cx| {
+                                        state.update(cx, |state, cx| {
+                                            let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
+                                            cfg.gd_opt.enabled = !cfg.gd_opt.enabled;
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                            ),
+                    )
+                    .when(gd_opt_enabled, |el| {
+                        el.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new("Target delay (ms):")
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_secondary),
+                                )
+                                .child(
+                                    NumberInput::new("gd-opt-target-ms")
+                                        .value(gd_opt_target_ms)
+                                        .min(0.0)
+                                        .max(50.0)
+                                        .step(0.5)
+                                        .size(NumberInputSize::Sm)
+                                        .on_change({
+                                            let state = self.state.clone();
+                                            move |v, _window, cx| {
+                                                state.update(cx, |state, _| {
+                                                    state.app.measurement_state.room_eq_state.optimizer_config.gd_opt.target_ms = v;
+                                                });
+                                            }
+                                        }),
+                                ),
+                        )
+                    }),
+            );
+        }
+
+        // --- Allow Inter-Speaker Delay ---
+        content = content.child(
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .align(StackAlign::Center)
+                .child(
+                    Text::new("Allow Inter-Speaker Delay:")
+                        .size(TextSize::Sm)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Button::new(
+                        "allow-delay-toggle",
+                        if allow_delay { "Yes" } else { "No" },
+                    )
+                    .variant(if allow_delay {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Sm)
+                    .theme(theme.to_button_theme())
+                    .on_click({
+                        let state = self.state.clone();
+                        move |_window, cx| {
+                            state.update(cx, |state, cx| {
+                                let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
+                                cfg.allow_delay = !cfg.allow_delay;
+                                cx.notify();
+                            });
+                        }
+                    }),
+                ),
+        );
+
+        // --- Voice of God ---
+        content = content.child(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new("Voice of God (Timbre Matching):")
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                        )
+                        .child(
+                            Button::new(
+                                "vog-toggle",
+                                if vog_enabled { "Enabled" } else { "Disabled" },
+                            )
+                            .variant(if vog_enabled {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .on_click({
+                                let state = self.state.clone();
+                                move |_window, cx| {
+                                    state.update(cx, |state, cx| {
+                                        let cfg = &mut state.app.measurement_state.room_eq_state.optimizer_config;
+                                        cfg.vog.enabled = !cfg.vog.enabled;
+                                        cx.notify();
+                                    });
+                                }
+                            }),
+                        ),
+                )
+                .when(vog_enabled, {
+                    let theme = theme.clone();
+                    let vog_ref_options: Vec<SelectOption> = channel_names
+                        .iter()
+                        .map(|name| SelectOption::new(name.clone(), name.clone()))
+                        .collect();
+
+                    move |el| {
+                        el.child(
+                            Select::new("vog-ref-channel-select")
+                                .label("Reference Channel")
+                                .options(vog_ref_options)
+                                .selected(&vog_ref)
+                                .is_open(vog_ref_open)
+                                .on_toggle({
+                                    let state = self.state.clone();
+                                    move |open, _window, cx| {
+                                        state.update(cx, |state, _| {
+                                            state.app.measurement_state.room_eq_state.dropdowns.vog_reference_channel_open = open;
+                                        });
+                                    }
+                                })
+                                .on_change({
+                                    let state = self.state.clone();
+                                    move |value, _window, cx| {
+                                        state.update(cx, |state, _| {
+                                            state.app.measurement_state.room_eq_state.optimizer_config.vog.reference_channel = value.to_string();
+                                            state.app.measurement_state.room_eq_state.dropdowns.vog_reference_channel_open = false;
+                                        });
+                                    }
+                                })
+                                .theme(theme.to_select_theme()),
+                        )
+                    }
+                }),
+        );
+
+        Card::new()
+            .background(theme.surface)
+            .header_background(theme.background_secondary)
+            .border(theme.border)
+            .header(
+                Text::new("System Configuration")
+                    .color(theme.text_primary)
+                    .weight(TextWeight::Semibold),
+            )
+            .content(content)
     }
 
     /// Render validation summary based on current config

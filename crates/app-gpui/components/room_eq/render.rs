@@ -18,8 +18,30 @@ pub(crate) fn render_channel_config_row(
     use crate::app::types::SpeakerConfigType;
 
     let channel_name = config.channel_name.clone();
-    let is_multi = config.config_type == SpeakerConfigType::MultiDriver;
+    let is_sub_channel = channel_name.starts_with("LFE");
+    let config_type = config.config_type;
     let crossover_type = config.crossover_type;
+
+    // Build the type label for the cycling button
+    let type_label = match config_type {
+        SpeakerConfigType::Single => "Single",
+        SpeakerConfigType::MultiDriver => "Multi-Driver",
+        SpeakerConfigType::MultiSub => "Multi-Sub",
+        SpeakerConfigType::Dba => "DBA",
+        SpeakerConfigType::Cardioid => "Cardioid",
+    };
+
+    // Available types depend on whether this is a sub channel
+    let available_types: Vec<SpeakerConfigType> = if is_sub_channel {
+        vec![
+            SpeakerConfigType::Single,
+            SpeakerConfigType::MultiSub,
+            SpeakerConfigType::Dba,
+            SpeakerConfigType::Cardioid,
+        ]
+    } else {
+        vec![SpeakerConfigType::Single, SpeakerConfigType::MultiDriver]
+    };
 
     div()
         .flex()
@@ -39,7 +61,7 @@ pub(crate) fn render_channel_config_row(
                     .color(theme.text_primary),
             ),
         )
-        // Speaker type toggle
+        // Speaker type cycling button
         .child(
             div()
                 .flex()
@@ -51,16 +73,13 @@ pub(crate) fn render_channel_config_row(
                         .color(theme.text_secondary),
                 )
                 .child(
-                    Button::new(SharedString::from(format!("single-{}", idx)), "Single")
-                        .variant(if !is_multi {
-                            ButtonVariant::Primary
-                        } else {
-                            ButtonVariant::Secondary
-                        })
+                    Button::new(SharedString::from(format!("type-cycle-{}", idx)), type_label)
+                        .variant(ButtonVariant::Secondary)
                         .size(ButtonSize::Sm)
                         .theme(theme.to_button_theme())
                         .on_click({
                             let view = view.clone();
+                            let available_types = available_types.clone();
                             move |_, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
@@ -71,36 +90,12 @@ pub(crate) fn render_channel_config_row(
                                             .speaker_configs
                                             .get_mut(idx)
                                         {
-                                            cfg.config_type = SpeakerConfigType::Single;
-                                        }
-                                    });
-                                    cx.notify();
-                                });
-                            }
-                        }),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("multi-{}", idx)), "Multi-Driver")
-                        .variant(if is_multi {
-                            ButtonVariant::Primary
-                        } else {
-                            ButtonVariant::Secondary
-                        })
-                        .size(ButtonSize::Sm)
-                        .theme(theme.to_button_theme())
-                        .on_click({
-                            let view = view.clone();
-                            move |_, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.state.update(cx, |state, _| {
-                                        if let Some(cfg) = state
-                                            .app
-                                            .measurement_state
-                                            .room_eq_state
-                                            .speaker_configs
-                                            .get_mut(idx)
-                                        {
-                                            cfg.config_type = SpeakerConfigType::MultiDriver;
+                                            let current_idx = available_types
+                                                .iter()
+                                                .position(|&t| t == cfg.config_type)
+                                                .unwrap_or(0);
+                                            let next_idx = (current_idx + 1) % available_types.len();
+                                            cfg.config_type = available_types[next_idx];
                                         }
                                     });
                                     cx.notify();
@@ -110,7 +105,7 @@ pub(crate) fn render_channel_config_row(
                 ),
         )
         // Crossover type selector (only shown for multi-driver)
-        .when(is_multi, |el| {
+        .when(config_type == SpeakerConfigType::MultiDriver, |el| {
             el.child(
                 div()
                     .flex()
@@ -122,6 +117,48 @@ pub(crate) fn render_channel_config_row(
                             .color(theme.text_secondary),
                     )
                     .child(render_crossover_dropdown(idx, crossover_type, view, theme)),
+            )
+        })
+        // Cardioid separation input (only shown for cardioid type)
+        .when(config_type == SpeakerConfigType::Cardioid, |el| {
+            let sep = config.cardioid_separation_m.unwrap_or(0.3);
+            el.child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        Text::new("Separation (m):")
+                            .size(TextSize::Sm)
+                            .color(theme.text_secondary),
+                    )
+                    .child(
+                        gpui_ui_kit::NumberInput::new(SharedString::from(format!("cardioid-sep-{}", idx)))
+                            .value(sep)
+                            .min(0.05)
+                            .max(2.0)
+                            .step(0.05)
+                            .size(gpui_ui_kit::NumberInputSize::Sm)
+                            .on_change({
+                                let view = view.clone();
+                                move |v, _window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            if let Some(cfg) = state
+                                                .app
+                                                .measurement_state
+                                                .room_eq_state
+                                                .speaker_configs
+                                                .get_mut(idx)
+                                            {
+                                                cfg.cardioid_separation_m = Some(v);
+                                            }
+                                        });
+                                        cx.notify();
+                                    });
+                                }
+                            }),
+                    ),
             )
         })
 }

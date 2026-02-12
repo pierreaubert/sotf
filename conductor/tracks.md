@@ -2,6 +2,9 @@
 
 This file tracks all major tracks for the project. Each track has its own detailed plan in its respective folder.
 
+- [x] **Track: Plugin Standardization & Optimization**
+*Link: [./tracks/plugin_standardization_20260211/](./tracks/plugin_standardization_20260211/)*
+
 - [x] **Track: RoomEQ Classical Source**
 *Link: [./tracks/roomeq_classical_source_20260209/](./tracks/roomeq_classical_source_20260209/)*
 

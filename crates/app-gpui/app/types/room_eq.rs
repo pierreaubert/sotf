@@ -13,6 +13,10 @@ use autoeq::roomeq::{
     OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
     RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig,
     SpeakerGroup, TargetTiltConfig as BackendTargetTiltConfig, TiltType, ProcessingMode as BackendProcessingMode,
+    SystemConfig, SystemModel, SubwooferSystemConfig, SubwooferStrategy,
+    GroupDelayOptimizationConfig as BackendGdOptConfig,
+    VoiceOfGodConfig as BackendVoiceOfGodConfig,
+    MultiSubGroup, DBAConfig, CardioidConfig,
 };
 use std::collections::HashMap;
 
@@ -142,6 +146,115 @@ pub enum RoomEqDataSource {
 impl Default for RoomEqDataSource {
     fn default() -> Self {
         RoomEqDataSource::FromRecording
+    }
+}
+
+/// UI-side system topology model (mirrors backend SystemModel)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum UiSystemModel {
+    #[default]
+    Stereo,
+    HomeCinema,
+    Custom,
+}
+
+impl UiSystemModel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UiSystemModel::Stereo => "Stereo",
+            UiSystemModel::HomeCinema => "Home Cinema",
+            UiSystemModel::Custom => "Custom",
+        }
+    }
+
+    pub fn all() -> &'static [UiSystemModel] {
+        &[
+            UiSystemModel::Stereo,
+            UiSystemModel::HomeCinema,
+            UiSystemModel::Custom,
+        ]
+    }
+
+    pub fn to_backend(&self) -> SystemModel {
+        match self {
+            UiSystemModel::Stereo => SystemModel::Stereo,
+            UiSystemModel::HomeCinema => SystemModel::HomeCinema,
+            UiSystemModel::Custom => SystemModel::Custom,
+        }
+    }
+
+    pub fn from_backend(model: &SystemModel) -> Self {
+        match model {
+            SystemModel::Stereo => UiSystemModel::Stereo,
+            SystemModel::HomeCinema => UiSystemModel::HomeCinema,
+            SystemModel::Custom => UiSystemModel::Custom,
+        }
+    }
+}
+
+/// UI-side subwoofer strategy (mirrors backend SubwooferStrategy)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum UiSubwooferStrategy {
+    #[default]
+    Single,
+    Mso,
+    Dba,
+}
+
+impl UiSubwooferStrategy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UiSubwooferStrategy::Single => "Single",
+            UiSubwooferStrategy::Mso => "MSO (Multi-Sub)",
+            UiSubwooferStrategy::Dba => "DBA (Double Bass Array)",
+        }
+    }
+
+    pub fn all() -> &'static [UiSubwooferStrategy] {
+        &[
+            UiSubwooferStrategy::Single,
+            UiSubwooferStrategy::Mso,
+            UiSubwooferStrategy::Dba,
+        ]
+    }
+
+    pub fn to_backend(&self) -> SubwooferStrategy {
+        match self {
+            UiSubwooferStrategy::Single => SubwooferStrategy::Single,
+            UiSubwooferStrategy::Mso => SubwooferStrategy::Mso,
+            UiSubwooferStrategy::Dba => SubwooferStrategy::Dba,
+        }
+    }
+
+    pub fn from_backend(strategy: &SubwooferStrategy) -> Self {
+        match strategy {
+            SubwooferStrategy::Single => UiSubwooferStrategy::Single,
+            SubwooferStrategy::Mso => UiSubwooferStrategy::Mso,
+            SubwooferStrategy::Dba => UiSubwooferStrategy::Dba,
+        }
+    }
+}
+
+/// Group Delay Optimization config (UI-side)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GdOptConfig {
+    pub enabled: bool,
+    pub target_ms: f64,
+}
+
+/// Voice of God config (UI-side)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VogConfig {
+    pub enabled: bool,
+    pub reference_channel: String,
+}
+
+impl Default for VogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            reference_channel: "C".to_string(),
+        }
     }
 }
 
@@ -330,6 +443,12 @@ pub enum SpeakerConfigType {
     Single,
     /// Multi-driver with active crossover
     MultiDriver,
+    /// Multiple subwoofers (MSO)
+    MultiSub,
+    /// Double Bass Array
+    Dba,
+    /// Gradient cardioid subwoofer
+    Cardioid,
 }
 
 /// Crossover type for multi-driver speakers
@@ -383,6 +502,8 @@ pub struct RoomEqSpeakerConfig {
     pub driver_names: Vec<String>,
     /// Initial crossover frequency hints (for multi-driver)
     pub crossover_freq_hints: Vec<f64>,
+    /// Cardioid separation in meters (only for SpeakerConfigType::Cardioid)
+    pub cardioid_separation_m: Option<f64>,
 }
 
 impl Default for RoomEqSpeakerConfig {
@@ -393,6 +514,7 @@ impl Default for RoomEqSpeakerConfig {
             crossover_type: CrossoverType::LR24,
             driver_names: Vec::new(),
             crossover_freq_hints: Vec::new(),
+            cardioid_separation_m: None,
         }
     }
 }
@@ -472,7 +594,10 @@ impl RoomEqAlgorithm {
 impl From<SpeakerConfigType> for sotf_audio_player::room_eq::SpeakerConfigType {
     fn from(val: SpeakerConfigType) -> Self {
         match val {
-            SpeakerConfigType::Single => sotf_audio_player::room_eq::SpeakerConfigType::Single,
+            SpeakerConfigType::Single
+            | SpeakerConfigType::MultiSub
+            | SpeakerConfigType::Dba
+            | SpeakerConfigType::Cardioid => sotf_audio_player::room_eq::SpeakerConfigType::Single,
             SpeakerConfigType::MultiDriver => {
                 sotf_audio_player::room_eq::SpeakerConfigType::MultiDriver
             }
@@ -775,6 +900,29 @@ pub struct RoomEqOptimizerConfig {
     /// System type (e.g., "stereo", "multichannel")
     pub system_type: String,
 
+    // --- System Topology ---
+    /// System topology model
+    #[serde(default)]
+    pub system_model: UiSystemModel,
+    /// Whether this system has subwoofer(s)
+    #[serde(default)]
+    pub has_subwoofer: bool,
+    /// Subwoofer optimization strategy
+    #[serde(default)]
+    pub subwoofer_strategy: UiSubwooferStrategy,
+
+    // --- GD-Opt ---
+    #[serde(default)]
+    pub gd_opt: GdOptConfig,
+
+    // --- VoG ---
+    #[serde(default)]
+    pub vog: VogConfig,
+
+    // --- Allow Delay ---
+    #[serde(default)]
+    pub allow_delay: bool,
+
     // --- Advanced Room Correction (Scenario B) ---
     #[serde(default)]
     pub target_tilt: TargetTiltConfig,
@@ -824,6 +972,12 @@ impl Default for RoomEqOptimizerConfig {
             asymmetric_loss: true,
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
+            system_model: UiSystemModel::default(),
+            has_subwoofer: false,
+            subwoofer_strategy: UiSubwooferStrategy::default(),
+            gd_opt: GdOptConfig::default(),
+            vog: VogConfig::default(),
+            allow_delay: false,
             target_tilt: TargetTiltConfig::default(),
             excursion_protection: ExcursionProtectionConfig::default(),
             schroeder_split: SchroederSplitConfig::default(),
@@ -1134,6 +1288,11 @@ pub struct RoomEqDropdowns {
     /// System type dropdown
     pub system_type_open: bool,
 
+    // System topology dropdowns
+    pub system_model_open: bool,
+    pub subwoofer_strategy_open: bool,
+    pub vog_reference_channel_open: bool,
+
     // Advanced dropdowns
     pub tilt_type_open: bool,
     pub excursion_filter_type_open: bool,
@@ -1295,6 +1454,7 @@ impl RoomEqState {
                     Vec::new()
                 },
                 crossover_freq_hints: Vec::new(),
+                cardioid_separation_m: None,
             })
             .collect();
     }
@@ -1315,6 +1475,22 @@ impl RoomEqState {
             .collect();
 
         self.data_source = RoomEqDataSource::FromRecording;
+
+        // Auto-detect system topology from recording configuration
+        let spk_config = recording_state.playback_config.speaker_configuration;
+        self.optimizer_config.system_model = UiSystemModel::from_backend(&spk_config.to_system_model());
+        self.optimizer_config.has_subwoofer = spk_config.has_subwoofer();
+
+        // Detect subwoofer strategy from recording mode
+        if self.optimizer_config.has_subwoofer {
+            use super::recording::SubwooferMode;
+            self.optimizer_config.subwoofer_strategy = match recording_state.subwoofer_mode {
+                SubwooferMode::Single => UiSubwooferStrategy::Single,
+                SubwooferMode::MultiSub | SubwooferMode::Cardioid => UiSubwooferStrategy::Mso,
+                SubwooferMode::Dba => UiSubwooferStrategy::Dba,
+            };
+        }
+
         self.init_speaker_configs();
     }
 
@@ -1435,6 +1611,46 @@ impl RoomEqState {
                             }),
                         );
                     }
+                    SpeakerConfigType::MultiSub => {
+                        // Multi-sub: use primary measurement as a single sub source
+                        let curve = to_curve(meas);
+                        speakers.insert(
+                            channel_name.clone(),
+                            SpeakerConfig::MultiSub(MultiSubGroup {
+                                name: channel_name.clone(),
+                                speaker_name: None,
+                                subwoofers: vec![MeasurementSource::InMemory(curve)],
+                            }),
+                        );
+                    }
+                    SpeakerConfigType::Dba => {
+                        // DBA: use primary measurement as front source
+                        let curve = to_curve(meas);
+                        speakers.insert(
+                            channel_name.clone(),
+                            SpeakerConfig::Dba(DBAConfig {
+                                name: channel_name.clone(),
+                                speaker_name: None,
+                                front: vec![MeasurementSource::InMemory(curve)],
+                                rear: Vec::new(),
+                            }),
+                        );
+                    }
+                    SpeakerConfigType::Cardioid => {
+                        // Cardioid: use primary measurement as front, empty rear
+                        let curve = to_curve(meas);
+                        let sep = speaker_config.cardioid_separation_m.unwrap_or(0.3);
+                        speakers.insert(
+                            channel_name.clone(),
+                            SpeakerConfig::Cardioid(CardioidConfig {
+                                name: channel_name.clone(),
+                                speaker_name: None,
+                                front: MeasurementSource::InMemory(curve.clone()),
+                                rear: MeasurementSource::InMemory(curve),
+                                separation_meters: sep,
+                            }),
+                        );
+                    }
                 }
             }
         }
@@ -1474,7 +1690,6 @@ impl RoomEqState {
             local_algo: self.optimizer_config.local_algo.clone(),
             psychoacoustic: self.optimizer_config.psychoacoustic,
             asymmetric_loss: self.optimizer_config.asymmetric_loss,
-            allow_delay: None,
             target_tilt: if self.optimizer_config.target_tilt.enabled {
                 let tilt_type = match self.optimizer_config.target_tilt.tilt_type.as_str() {
                     "harman" => TiltType::Harman,
@@ -1552,13 +1767,54 @@ impl RoomEqState {
             } else {
                 None
             },
-            gd_opt: None,
-            vog: None,
+            allow_delay: if self.optimizer_config.allow_delay {
+                Some(true)
+            } else {
+                None
+            },
+            gd_opt: if self.optimizer_config.gd_opt.enabled {
+                Some(BackendGdOptConfig {
+                    enabled: true,
+                    target_ms: self.optimizer_config.gd_opt.target_ms,
+                })
+            } else {
+                None
+            },
+            vog: if self.optimizer_config.vog.enabled {
+                Some(BackendVoiceOfGodConfig {
+                    enabled: true,
+                    reference_channel: self.optimizer_config.vog.reference_channel.clone(),
+                })
+            } else {
+                None
+            },
+        };
+
+        // Build SystemConfig from UI topology settings
+        let system = {
+            let mut sys_speakers: HashMap<String, String> = HashMap::new();
+            for name in speakers.keys() {
+                sys_speakers.insert(name.clone(), name.clone());
+            }
+            let subwoofers = if self.optimizer_config.has_subwoofer {
+                Some(SubwooferSystemConfig {
+                    config: self.optimizer_config.subwoofer_strategy.to_backend(),
+                    crossover: None,
+                    mapping: HashMap::new(),
+                })
+            } else {
+                None
+            };
+            Some(SystemConfig {
+                model: self.optimizer_config.system_model.to_backend(),
+                speakers: sys_speakers,
+                subwoofers,
+            })
         };
 
         RoomConfig {
             version: autoeq::roomeq::default_config_version(),
-            system: None,
+            system,
             speakers,
             crossovers: Some(crossovers),
             target_curve: None,

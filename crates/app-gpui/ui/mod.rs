@@ -94,49 +94,48 @@ impl PlayerView {
                             && (state.app.spectrum_visible
                                 || state.app.ui_state.current_screen == Screen::Spectrum);
 
-                        let player = state.player.lock();
-                        let playback_state = player.get_playback_state();
+                        // Collect plugin indices before locking the player
+                        let chain = &state.app.plugin_state.plugin_chain;
+                        let input_monitor_idx = chain.input_monitor_engine_index();
+                        let output_monitor_idx = chain.output_monitor_engine_index();
+                        let spectrum_idx = if include_spectrum { chain.spectrum_engine_index() } else { None };
+                        let compressor_idx = chain.compressor_engine_index();
+
+                        // Lock player briefly: read all data in one burst, then drop
+                        let (playback_state, input_loudness, output_loudness, spectrum, compressor) = {
+                            let player = state.player.lock();
+                            let ps = player.get_playback_state();
+                            let il = input_monitor_idx.and_then(|idx| player.get_cached_plugin_data(idx));
+                            let ol = output_monitor_idx.and_then(|idx| player.get_cached_plugin_data(idx));
+                            let sp = spectrum_idx.and_then(|idx| player.get_cached_plugin_data(idx));
+                            let co = compressor_idx.and_then(|idx| player.get_cached_plugin_data(idx));
+                            (ps, il, ol, sp, co)
+                        };
 
                         state.app.playback.is_playing = playback_state.is_playing;
                         state.app.playback.position_secs = playback_state.position_secs;
                         state.app.playback.duration_secs = state.app.get_current_track_duration();
 
-                        // Read analyzer data from the shared cache (no audio pipeline blocking)
                         if playback_state.is_playing {
-                            let chain = &state.app.plugin_state.plugin_chain;
-
-                            if let Some(idx) = chain.input_monitor_engine_index() {
-                                if let Some(data) = player.get_cached_plugin_data(idx) {
-                                    if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
-                                        state.app.playback.input_loudness_info = Some(loudness.clone());
-                                    }
+                            if let Some(data) = input_loudness {
+                                if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
+                                    state.app.playback.input_loudness_info = Some(loudness.clone());
                                 }
                             }
-
-                            if let Some(idx) = chain.output_monitor_engine_index() {
-                                if let Some(data) = player.get_cached_plugin_data(idx) {
-                                    if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
-                                        state.app.playback.loudness_info = Some(loudness.clone());
-                                    }
+                            if let Some(data) = output_loudness {
+                                if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
+                                    state.app.playback.loudness_info = Some(loudness.clone());
                                 }
                             }
-
-                            if include_spectrum {
-                                if let Some(idx) = chain.spectrum_engine_index() {
-                                    state.app.playback.spectrum_info = player
-                                        .get_cached_plugin_data(idx)
-                                        .and_then(|d| d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned());
-                                }
+                            if let Some(data) = spectrum {
+                                state.app.playback.spectrum_info =
+                                    data.downcast_ref::<sotf_audio_player::SpectrumData>().cloned();
                             }
-
-                            if let Some(idx) = chain.compressor_engine_index() {
-                                state.app.playback.compressor_info = player
-                                    .get_cached_plugin_data(idx)
-                                    .and_then(|d| d.downcast_ref::<sotf_plugins::CompressorData>().cloned());
+                            if let Some(data) = compressor {
+                                state.app.playback.compressor_info =
+                                    data.downcast_ref::<sotf_plugins::CompressorData>().cloned();
                             }
                         }
-
-                        drop(player);
 
                         state.app.update_level_meter_groups();
                         state.app.update_level_meter_peak_hold();

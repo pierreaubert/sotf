@@ -161,8 +161,10 @@ prod-toolbar:
 	swiftc \
 		-o "$BUILD_DIR/sotf-toolbar" \
 		"$CONFIGBAR_DIR/src/ConfigBar.swift" \
+		"$CONFIGBAR_DIR/src/PluginModels.swift" \
+		"$CONFIGBAR_DIR/src/PluginRackView.swift" \
+		"$CONFIGBAR_DIR/src/PluginEditorViews.swift" \
 		-framework SwiftUI \
-		-framework WebKit \
 		-framework UserNotifications \
 		-framework CoreAudio \
 		-O

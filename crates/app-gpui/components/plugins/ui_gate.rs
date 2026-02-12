@@ -60,7 +60,7 @@ pub fn render_gate_plugin(
 
     // Normalize threshold for visual display (-80 to 0 dB range)
     let threshold_normalized = ((state.threshold_db + 80.0) / 80.0).clamp(0.0, 1.0) as f32;
-    let input_normalized = ((input_db + 80.0) / 80.0).clamp(0.0, 1.0) as f32;
+    let input_normalized = ((input_db + 80.0f64) / 80.0f64).clamp(0.0, 1.0) as f32;
 
     // Cache theme colors
     let gate_color = if is_open { theme.success } else { theme.error };

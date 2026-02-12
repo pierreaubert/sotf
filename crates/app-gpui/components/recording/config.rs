@@ -2,7 +2,7 @@
 //!
 //! Device selection, channel routing, and microphone calibration.
 
-use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, SpeakerConfiguration};
+use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, SpeakerConfiguration, SubwooferMode};
 use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -132,12 +132,16 @@ impl PlayerView {
         // Render channel mapping second (after first borrow is released)
         let channel_mapping = self.render_playback_channel_mapping(cx).into_any_element();
 
+        // Subwoofer configuration (only when speaker config has subwoofer)
+        let subwoofer_section = self.render_subwoofer_config(cx).into_any_element();
+
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(device_label.child(device_dropdown))
             .child(sample_rate_row)
             .child(speaker_config_row)
             .child(channel_mapping)
+            .child(subwoofer_section)
     }
 
     /// Render recording device content for accordion
@@ -1671,6 +1675,210 @@ impl PlayerView {
     }
 
     /// Open file dialog to browse for calibration file
+    /// Render subwoofer configuration section (shown when speaker config has subwoofer)
+    fn render_subwoofer_config(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let rec_state = &state.app.measurement_state.recording_state;
+        let has_sub = rec_state.playback_config.speaker_configuration.has_subwoofer();
+
+        if !has_sub {
+            return div().into_any_element();
+        }
+
+        let sub_mode = rec_state.subwoofer_mode;
+        let num_subs = rec_state.num_subwoofers;
+        let num_dba_front = rec_state.num_dba_front;
+        let num_dba_rear = rec_state.num_dba_rear;
+        let cardioid_sep = rec_state.cardioid_separation_m;
+        let dropdown_open = rec_state.subwoofer_mode_dropdown_open;
+
+        let mut content = VStack::new().spacing(StackSpacing::Md);
+
+        // Title
+        content = content.child(
+            Text::new("Subwoofer Configuration")
+                .size(TextSize::Sm)
+                .weight(TextWeight::Semibold)
+                .color(theme.text_primary),
+        );
+
+        // Mode selector
+        let mode_options: Vec<SelectOption> = SubwooferMode::all()
+            .iter()
+            .map(|m| SelectOption::new(m.as_str(), m.as_str()))
+            .collect();
+
+        let mode_select = Select::new("subwoofer-mode-select")
+            .label("Mode")
+            .options(mode_options)
+            .selected(sub_mode.as_str())
+            .is_open(dropdown_open)
+            .on_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _| {
+                        state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .subwoofer_mode_dropdown_open = open;
+                    });
+                }
+            })
+            .on_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _| {
+                        let rec = &mut state.app.measurement_state.recording_state;
+                        rec.subwoofer_mode = match value.as_ref() {
+                            "Multi-Sub (MSO)" => SubwooferMode::MultiSub,
+                            "Double Bass Array" => SubwooferMode::Dba,
+                            "Cardioid" => SubwooferMode::Cardioid,
+                            _ => SubwooferMode::Single,
+                        };
+                        rec.subwoofer_mode_dropdown_open = false;
+                        rec.init_channel_recordings();
+                    });
+                }
+            })
+            .theme(theme.to_select_theme());
+
+        content = content.child(mode_select);
+
+        // Conditional fields based on mode
+        match sub_mode {
+            SubwooferMode::MultiSub => {
+                content = content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new("Number of subs:")
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                        )
+                        .child(
+                            NumberInput::new("num-subs")
+                                .value(num_subs as f64)
+                                .min(2.0)
+                                .max(8.0)
+                                .step(1.0)
+                                .size(NumberInputSize::Sm)
+                                .on_change({
+                                    let state = self.state.clone();
+                                    move |v, _window, cx| {
+                                        state.update(cx, |state, _| {
+                                            let rec = &mut state.app.measurement_state.recording_state;
+                                            rec.num_subwoofers = v as usize;
+                                            rec.init_channel_recordings();
+                                        });
+                                    }
+                                }),
+                        ),
+                );
+            }
+            SubwooferMode::Dba => {
+                content = content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .align(StackAlign::Center)
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new("Front:")
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_secondary),
+                                )
+                                .child(
+                                    NumberInput::new("num-dba-front")
+                                        .value(num_dba_front as f64)
+                                        .min(1.0)
+                                        .max(8.0)
+                                        .step(1.0)
+                                        .size(NumberInputSize::Sm)
+                                        .on_change({
+                                            let state = self.state.clone();
+                                            move |v, _window, cx| {
+                                                state.update(cx, |state, _| {
+                                                    let rec = &mut state.app.measurement_state.recording_state;
+                                                    rec.num_dba_front = v as usize;
+                                                    rec.init_channel_recordings();
+                                                });
+                                            }
+                                        }),
+                                ),
+                        )
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new("Rear:")
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_secondary),
+                                )
+                                .child(
+                                    NumberInput::new("num-dba-rear")
+                                        .value(num_dba_rear as f64)
+                                        .min(1.0)
+                                        .max(8.0)
+                                        .step(1.0)
+                                        .size(NumberInputSize::Sm)
+                                        .on_change({
+                                            let state = self.state.clone();
+                                            move |v, _window, cx| {
+                                                state.update(cx, |state, _| {
+                                                    let rec = &mut state.app.measurement_state.recording_state;
+                                                    rec.num_dba_rear = v as usize;
+                                                    rec.init_channel_recordings();
+                                                });
+                                            }
+                                        }),
+                                ),
+                        ),
+                );
+            }
+            SubwooferMode::Cardioid => {
+                content = content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new("Separation (m):")
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                        )
+                        .child(
+                            NumberInput::new("cardioid-separation")
+                                .value(cardioid_sep as f64)
+                                .min(0.05)
+                                .max(2.0)
+                                .step(0.05)
+                                .size(NumberInputSize::Sm)
+                                .on_change({
+                                    let state = self.state.clone();
+                                    move |v, _window, cx| {
+                                        state.update(cx, |state, _| {
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .cardioid_separation_m = v as f32;
+                                        });
+                                    }
+                                }),
+                        ),
+                );
+            }
+            SubwooferMode::Single => {} // No extra fields
+        }
+
+        content.into_any_element()
+    }
+
     fn browse_calibration_file(&mut self, cx: &mut Context<Self>) {
         use crate::app::types::CalibrationData;
 
