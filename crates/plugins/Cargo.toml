@@ -37,6 +37,7 @@ directories = { workspace = true }
 rusqlite = { workspace = true }
 walkdir = { workspace = true }
 autoeq-env = { workspace = true }
+math-dsp = { workspace = true }
 math-iir-fir = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }

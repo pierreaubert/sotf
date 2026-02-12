@@ -4,6 +4,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::apply_per_channel_gain_simd;
 use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +16,7 @@ const FADE_SMOOTH_MS: f32 = 5.0;
 // ============================================================================
 
 /// State for a single channel
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct ChannelState {
     pub muted: bool,
     pub soloed: bool,
@@ -39,11 +40,6 @@ pub struct ChannelMuteSoloParams {
 /// Channel mute/solo plugin
 ///
 /// Allows muting or soloing individual channels in a multi-channel stream.
-/// When any channel is soloed, all non-soloed channels are muted.
-/// Otherwise, only explicitly muted channels are silenced.
-///
-/// The plugin can be bypassed by setting enabled=false, which passes audio
-/// through unchanged with zero overhead.
 pub struct ChannelMuteSoloPlugin {
     /// Number of channels
     channels: usize,
@@ -61,17 +57,16 @@ pub struct ChannelMuteSoloPlugin {
     param_channel_states: ParameterId,
     /// Parameter ID for full state (enabled + channel_states combined)
     param_full_state: ParameterId,
+
+    // Cache for SIMD optimization
+    cached_gains: Vec<f32>,
 }
 
 impl ChannelMuteSoloPlugin {
     /// Create a new channel mute/solo plugin
-    ///
-    /// # Arguments
-    /// * `channels` - Number of audio channels
-    /// * `enabled` - Whether the plugin should process audio (false = bypass)
     pub fn new(channels: usize, enabled: bool) -> Self {
         let channel_states = vec![ChannelState::default(); channels];
-        let sample_rate = 48000; // Default until initialize()
+        let sample_rate = 48000;
         let channel_smoothers = vec![Smoother::new(1.0, FADE_SMOOTH_MS, sample_rate); channels];
         Self {
             channels,
@@ -82,6 +77,7 @@ impl ChannelMuteSoloPlugin {
             param_enabled: ParameterId::from("enabled"),
             param_channel_states: ParameterId::from("channel_states"),
             param_full_state: ParameterId::from("full_state"),
+            cached_gains: vec![1.0; channels],
         }
     }
 
@@ -89,18 +85,10 @@ impl ChannelMuteSoloPlugin {
     pub fn from_params(channels: usize, params: ChannelMuteSoloParams) -> Self {
         let mut plugin = Self::new(channels, params.enabled);
 
-        // Use provided channel states if they match channel count
         if params.channel_states.len() == channels {
             plugin.channel_states = params.channel_states;
-        } else if !params.channel_states.is_empty() {
-            log::warn!(
-                "Channel state count mismatch: got {}, expected {}. Using defaults.",
-                params.channel_states.len(),
-                channels
-            );
         }
 
-        // Reset smoothers to initial state immediately (no fade-in on creation)
         plugin.reset_smoothers_to_current();
         plugin
     }
@@ -108,9 +96,7 @@ impl ChannelMuteSoloPlugin {
     /// Set whether the plugin is enabled
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
-        if enabled {
-            self.update_smoother_targets();
-        }
+        self.update_smoother_targets();
     }
 
     /// Get whether the plugin is enabled
@@ -135,12 +121,6 @@ impl ChannelMuteSoloPlugin {
         if states.len() == self.channels {
             self.channel_states = states;
             self.update_smoother_targets();
-        } else {
-            log::warn!(
-                "Cannot set channel states: count mismatch (got {}, expected {})",
-                states.len(),
-                self.channels
-            );
         }
     }
 
@@ -153,16 +133,24 @@ impl ChannelMuteSoloPlugin {
     fn update_smoother_targets(&mut self) {
         let has_solo = self.channel_states.iter().any(|s| s.soloed);
         for (ch, state) in self.channel_states.iter().enumerate() {
-            let target = Self::compute_channel_gain(state, has_solo);
+            let target = if !self.enabled {
+                1.0
+            } else {
+                Self::compute_channel_gain(state, has_solo)
+            };
             self.channel_smoothers[ch].set_target(target);
         }
     }
 
-    /// Reset smoothers to current state immediately (no fade, used for initialization)
+    /// Reset smoothers to current state immediately
     fn reset_smoothers_to_current(&mut self) {
         let has_solo = self.channel_states.iter().any(|s| s.soloed);
         for (ch, state) in self.channel_states.iter().enumerate() {
-            let target = Self::compute_channel_gain(state, has_solo);
+            let target = if !self.enabled {
+                1.0
+            } else {
+                Self::compute_channel_gain(state, has_solo)
+            };
             self.channel_smoothers[ch].reset(target);
         }
     }
@@ -183,8 +171,8 @@ impl ChannelMuteSoloPlugin {
 
 impl InPlacePlugin for ChannelMuteSoloPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Channel Mute/Solo", "1.0.0", "SotF")
-            .with_description("Mute or solo individual channels in a multi-channel stream")
+        PluginInfo::new("Channel Mute/Solo", "1.1.0", "SotF")
+            .with_description("Mute or solo individual channels (Optimized & Smoothed)")
     }
 
     fn channels(&self) -> usize {
@@ -194,10 +182,9 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_bool("enabled", "Enabled", self.enabled)
-                .with_description("Enable/disable the plugin (false = bypass)")
+                .with_description("Enable/disable the plugin")
                 .with_group("General")
                 .with_importance(ParameterImportance::Critical),
-            // Note: channel_states are set via plugin configuration, not runtime parameters
         ]
     }
 
@@ -207,34 +194,15 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
                 self.set_enabled(enabled);
                 Ok(())
             } else {
-                Err("enabled parameter must be a boolean".to_string())
+                Err("enabled must be bool".to_string())
             }
         } else if id == self.param_channel_states {
-            // Accept JSON string containing channel states
             if let Some(json_str) = value.as_string() {
-                match serde_json::from_str::<Vec<ChannelState>>(json_str) {
-                    Ok(states) => {
-                        self.set_channel_states(states);
-                        Ok(())
-                    }
-                    Err(e) => Err(format!("Failed to parse channel states JSON: {}", e)),
-                }
+                let states: Vec<ChannelState> = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+                self.set_channel_states(states);
+                Ok(())
             } else {
-                Err("channel_states parameter must be a JSON string".to_string())
-            }
-        } else if id == self.param_full_state {
-            // Accept JSON object with both enabled and channel_states
-            if let Some(json_str) = value.as_string() {
-                match serde_json::from_str::<ChannelMuteSoloParams>(json_str) {
-                    Ok(params) => {
-                        self.set_enabled(params.enabled);
-                        self.set_channel_states(params.channel_states);
-                        Ok(())
-                    }
-                    Err(e) => Err(format!("Failed to parse full_state JSON: {}", e)),
-                }
-            } else {
-                Err("full_state parameter must be a JSON string".to_string())
+                Err("channel_states must be string".to_string())
             }
         } else {
             Err(format!("Unknown parameter: {}", id))
@@ -245,11 +213,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         if id == &self.param_enabled {
             Some(ParameterValue::Bool(self.enabled))
         } else if id == &self.param_channel_states {
-            // Return channel states as JSON string
-            match serde_json::to_string(&self.channel_states) {
-                Ok(json) => Some(ParameterValue::String(json)),
-                Err(_) => None,
-            }
+            serde_json::to_string(&self.channel_states).ok().map(ParameterValue::String)
         } else {
             None
         }
@@ -269,34 +233,30 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        // Verify buffer size matches channel count
-        if !buffer.len().is_multiple_of(self.channels) {
-            return Err(format!(
-                "Buffer size {} is not a multiple of channel count {}",
-                buffer.len(),
-                self.channels
-            ));
-        }
-
-        // If not enabled, pass through unchanged (zero overhead)
-        if !self.enabled {
-            return Ok(context.num_frames);
-        }
-
         let num_frames = context.num_frames;
 
-        // Process each frame with smoothed gain transitions
-        for frame_idx in 0..num_frames {
-            for ch_idx in 0..self.channels {
-                let sample_idx = frame_idx * self.channels + ch_idx;
-                let gain = self.channel_smoothers[ch_idx].next();
-                buffer[sample_idx] *= gain;
-            }
+        // If enabled=false and ALL smoothers have reached target 1.0, bypass overhead
+        let all_at_unity = self.channel_smoothers.iter().all(|s| (s.current() - 1.0).abs() < 1e-5);
+        if !self.enabled && all_at_unity {
+            return Ok(num_frames);
         }
 
-        Ok(context.num_frames)
+        // Optimized path: block-based smoothing and SIMD
+        for frame in 0..num_frames {
+            // Tick smoothers into cache
+            for ch in 0..self.channels {
+                self.cached_gains[ch] = self.channel_smoothers[ch].next();
+            }
+
+            let offset = frame * self.channels;
+            let frame_buffer = &mut buffer[offset..offset + self.channels];
+            apply_per_channel_gain_simd(frame_buffer, self.channels, &self.cached_gains);
+        }
+
+        Ok(num_frames)
     }
 }
+
 
 #[cfg(test)]
 mod tests {

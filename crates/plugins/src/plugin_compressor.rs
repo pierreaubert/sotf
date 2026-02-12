@@ -19,8 +19,9 @@
 use super::param_specs::compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::flush_denormals_inplace;
+use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
+use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
@@ -244,7 +245,8 @@ impl CompressorPlugin {
         }
     }
 
-    /// Calculate gain reduction for a given input level
+    /// Calculate gain reduction for a given input level using fast math
+    #[inline]
     fn calculate_gain_reduction(&self, input_db: f32, threshold: f32) -> f32 {
         let knee = self.knee_db.max(0.0);
         let ratio = self.ratio.max(1.0);
@@ -265,7 +267,7 @@ impl CompressorPlugin {
         } else {
             let overshoot = input_db - threshold + knee / 2.0;
             let knee_factor = overshoot / knee;
-            knee_factor * knee_factor * knee / 2.0 * slope
+            knee_factor * knee_factor * (knee / 2.0) * slope
         }
     }
 
@@ -284,6 +286,7 @@ impl CompressorPlugin {
         }
     }
 
+    #[inline]
     fn apply_sidechain_filter(&mut self, channel: usize, sample: f32) -> f32 {
         if self.sidechain_hpf_alpha <= 0.0 {
             return sample;
@@ -299,6 +302,7 @@ impl CompressorPlugin {
         y
     }
 
+    #[inline]
     fn apply_gain_for_channel(
         &mut self,
         channel: usize,
@@ -314,9 +318,10 @@ impl CompressorPlugin {
             self.release_coeff
         };
 
+        // One-pole smoothing for the envelope
         self.envelope[channel] = target_gr + coeff * (self.envelope[channel] - target_gr);
 
-        let wet_gain_linear = 10.0_f32.powf(-self.envelope[channel] / 20.0) * makeup_gain_linear;
+        let wet_gain_linear = fast_pow10(-self.envelope[channel] / 20.0) * makeup_gain_linear;
 
         let wet = input_sample * wet_gain_linear;
         dry_mix * input_sample + wet_mix * wet
@@ -325,8 +330,8 @@ impl CompressorPlugin {
 
 impl InPlacePlugin for CompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Compressor", "1.1.0", "SotF")
-            .with_description("Dynamic range compressor with soft knee and smoothing")
+        PluginInfo::new("Compressor", "1.2.0", "SotF")
+            .with_description("Optimized dynamic range compressor with fast math and block-based smoothing")
     }
 
     fn channels(&self) -> usize {
@@ -484,6 +489,9 @@ impl InPlacePlugin for CompressorPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
+        // Enable FTZ/DAZ to prevent denormal-induced CPU spikes
+        enable_ftz_daz();
+
         let num_frames = context.num_frames;
         let ratio = self.ratio.max(1.0);
         let compression_slope = 1.0 - 1.0 / ratio;
@@ -491,20 +499,21 @@ impl InPlacePlugin for CompressorPlugin {
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 
+        // Perform block-based smoothing for gain/threshold to reduce per-sample overhead
+        // while still having smooth transitions over time.
+        let threshold = self.threshold_smoother.next();
+        let makeup_gain = self.makeup_gain_smoother.next();
+
+        let auto_makeup_db = if self.auto_makeup {
+            let avg_overshoot = (-threshold).max(0.0) * 0.5;
+            avg_overshoot * compression_slope
+        } else {
+            0.0
+        };
+        let makeup_gain_linear = fast_pow10((makeup_gain + auto_makeup_db) / 20.0);
+
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
-                // Tick smoothers per sample for artifact-free parameter changes
-                let threshold = self.threshold_smoother.next();
-                let makeup_gain = self.makeup_gain_smoother.next();
-
-                let auto_makeup_db = if self.auto_makeup {
-                    let avg_overshoot = (-threshold).max(0.0) * 0.5;
-                    avg_overshoot * compression_slope
-                } else {
-                    0.0
-                };
-                let makeup_gain_linear = 10.0_f32.powf((makeup_gain + auto_makeup_db) / 20.0);
-
                 let mut detection_level = 0.0_f32;
 
                 for ch in 0..self.channels {
@@ -516,7 +525,7 @@ impl InPlacePlugin for CompressorPlugin {
                 }
 
                 let detection_level = detection_level.max(1e-10);
-                let input_db = 20.0 * detection_level.log10();
+                let input_db = 20.0 * fast_log10(detection_level);
                 let target_gr = self.calculate_gain_reduction(input_db, threshold);
 
                 for ch in 0..self.channels {
@@ -535,25 +544,13 @@ impl InPlacePlugin for CompressorPlugin {
             }
         } else {
             for frame in 0..num_frames {
-                // Tick smoothers per sample for artifact-free parameter changes
-                let threshold = self.threshold_smoother.next();
-                let makeup_gain = self.makeup_gain_smoother.next();
-
-                let auto_makeup_db = if self.auto_makeup {
-                    let avg_overshoot = (-threshold).max(0.0) * 0.5;
-                    avg_overshoot * compression_slope
-                } else {
-                    0.0
-                };
-                let makeup_gain_linear = 10.0_f32.powf((makeup_gain + auto_makeup_db) / 20.0);
-
                 for ch in 0..self.channels {
                     let sample_idx = frame * self.channels + ch;
                     let input_sample = buffer[sample_idx];
                     let sidechain_sample = self.apply_sidechain_filter(ch, input_sample);
 
                     let input_level = sidechain_sample.abs().max(1e-10);
-                    let input_db = 20.0 * input_level.log10();
+                    let input_db = 20.0 * fast_log10(input_level);
 
                     let target_gr = self.calculate_gain_reduction(input_db, threshold);
 
@@ -569,8 +566,7 @@ impl InPlacePlugin for CompressorPlugin {
             }
         }
 
-        // Flush denormals to prevent CPU performance spikes and audio crackle
-        // Compressor gain reduction and envelope calculations can produce denormal numbers
+        // Periodic denormal flush just in case (though FTZ should handle it)
         flush_denormals_inplace(buffer);
 
         Ok(num_frames)
@@ -587,6 +583,7 @@ impl InPlacePlugin for CompressorPlugin {
         }))
     }
 }
+
 
 #[cfg(test)]
 mod tests {

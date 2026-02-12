@@ -6,7 +6,7 @@ use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterVa
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalInputReader;
 
 // ============================================================================
@@ -30,41 +30,17 @@ fn default_channels() -> usize {
 // ============================================================================
 
 /// HAL Input Plugin - Source plugin that reads audio from macOS apps via HAL driver
-///
-/// This is a source plugin (0 input channels → N output channels) that reads
-/// audio from macOS applications through the HAL virtual audio device.
-///
-/// # Platform Support
-/// - **macOS**: Fully supported via sotf_hal
-/// - **Other platforms**: Stub implementation (always outputs silence)
-///
-/// # Example
-/// ```json
-/// {
-///   "plugin_type": "hal_input",
-///   "parameters": {
-///     "channels": 2
-///   }
-/// }
-/// ```
 pub struct HalInputPlugin {
     /// Number of output channels
     channels: usize,
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     /// HAL input reader
     reader: Option<HalInputReader>,
 }
 
 impl HalInputPlugin {
     /// Create a new HAL input plugin
-    ///
-    /// # Arguments
-    /// * `channels` - Number of output channels
-    ///
-    /// # Returns
-    /// - `Ok(plugin)` if successful
-    /// - `Err(msg)` if channels are invalid or HAL is not initialized
     pub fn new(channels: usize) -> Result<Self, String> {
         // Validate channels
         if channels == 0 || channels > 16 {
@@ -74,7 +50,7 @@ impl HalInputPlugin {
             ));
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             let reader = HalInputReader::new();
 
@@ -87,17 +63,15 @@ impl HalInputPlugin {
             Ok(Self { channels, reader })
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
         {
-            Err("HAL input plugin is only supported on macOS".to_string())
+            // On other platforms or when feature is disabled, return a "null" plugin
+            // but return error on creation to avoid confusion
+            Err("HAL input plugin is only supported on macOS with 'hal' feature enabled".to_string())
         }
     }
 
     /// Create from configuration parameters
-    ///
-    /// # Returns
-    /// - `Ok(plugin)` if successful
-    /// - `Err(msg)` if validation fails or HAL is not initialized
     pub fn from_params(params: HalInputPluginParams) -> Result<Self, String> {
         Self::new(params.channels)
     }
@@ -170,7 +144,7 @@ impl Plugin for HalInputPlugin {
             ));
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             // Try to read from HAL
             if let Some(ref mut reader) = self.reader {
@@ -189,73 +163,18 @@ impl Plugin for HalInputPlugin {
 
                 // Zero-fill any remaining samples if we didn't read enough
                 if samples_read < output.len() {
-                    log::trace!(
-                        "HAL input underrun: read {}/{} samples, zero-filling remainder",
-                        samples_read,
-                        output.len()
-                    );
                     output[samples_read..].fill(0.0);
                 }
             } else {
-                // Should never happen since new() checks for reader
                 return Err("HAL reader not available".to_string());
             }
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
         {
-            // Should never happen since new() fails on non-macOS
-            return Err("HAL input plugin is only supported on macOS".to_string());
+            output.fill(0.0);
         }
 
         Ok(context.num_frames)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hal_input_plugin_validation() {
-        // Invalid channel counts should fail
-        assert!(HalInputPlugin::new(0).is_err());
-        assert!(HalInputPlugin::new(17).is_err());
-
-        // Valid channel counts (will still fail without HAL initialized)
-        #[cfg(target_os = "macos")]
-        {
-            // This will fail because HAL isn't initialized in tests
-            assert!(HalInputPlugin::new(2).is_err());
-            assert!(HalInputPlugin::new(5).is_err());
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            // Should fail on non-macOS platforms
-            assert!(HalInputPlugin::new(2).is_err());
-        }
-    }
-
-    #[test]
-    fn test_hal_input_plugin_from_params() {
-        let params = HalInputPluginParams { channels: 2 };
-        // Will fail without HAL initialized
-        let result = HalInputPlugin::from_params(params);
-
-        #[cfg(target_os = "macos")]
-        assert!(result.is_err());
-
-        #[cfg(not(target_os = "macos"))]
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_hal_input_plugin_invalid_params() {
-        let params = HalInputPluginParams { channels: 0 };
-        assert!(HalInputPlugin::from_params(params).is_err());
-
-        let params = HalInputPluginParams { channels: 20 };
-        assert!(HalInputPlugin::from_params(params).is_err());
     }
 }

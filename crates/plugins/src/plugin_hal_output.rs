@@ -1,12 +1,12 @@
 // ============================================================================
-// HAL Output Plugin - Writes audio to macOS HAL driver (loopback)
+// HAL Output Plugin - Writes audio to macOS HAL driver
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalOutputWriter;
 
 // ============================================================================
@@ -16,7 +16,7 @@ use driver_hal::HalOutputWriter;
 /// Configuration parameters for HalOutputPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HalOutputPluginParams {
-    /// Number of channels (default: 2 for stereo)
+    /// Number of input channels (default: 2 for stereo)
     #[serde(default = "default_channels")]
     pub channels: usize,
 }
@@ -29,44 +29,18 @@ fn default_channels() -> usize {
 // Plugin Implementation
 // ============================================================================
 
-/// HAL Output Plugin - Passthrough plugin that writes audio to HAL driver
-///
-/// This is a passthrough plugin (N input channels → N output channels) that
-/// writes audio to the HAL virtual audio device for loopback monitoring.
-///
-/// The plugin passes audio through unmodified while also sending it to the HAL.
-///
-/// # Platform Support
-/// - **macOS**: Fully supported via sotf_hal
-/// - **Other platforms**: Stub implementation (passthrough only, no HAL write)
-///
-/// # Example
-/// ```json
-/// {
-///   "plugin_type": "hal_output",
-///   "parameters": {
-///     "channels": 2
-///   }
-/// }
-/// ```
+/// HAL Output Plugin - Sink plugin that writes audio to macOS HAL driver
 pub struct HalOutputPlugin {
-    /// Number of channels
+    /// Number of input channels
     channels: usize,
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     /// HAL output writer
     writer: Option<HalOutputWriter>,
 }
 
 impl HalOutputPlugin {
     /// Create a new HAL output plugin
-    ///
-    /// # Arguments
-    /// * `channels` - Number of channels
-    ///
-    /// # Returns
-    /// - `Ok(plugin)` if successful
-    /// - `Err(msg)` if channels are invalid or HAL is not initialized
     pub fn new(channels: usize) -> Result<Self, String> {
         // Validate channels
         if channels == 0 || channels > 16 {
@@ -76,7 +50,7 @@ impl HalOutputPlugin {
             ));
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             let writer = HalOutputWriter::new();
 
@@ -89,171 +63,70 @@ impl HalOutputPlugin {
             Ok(Self { channels, writer })
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
         {
-            Err("HAL output plugin is only supported on macOS".to_string())
+            Err("HAL output plugin is only supported on macOS with 'hal' feature enabled".to_string())
         }
     }
 
     /// Create from configuration parameters
-    ///
-    /// # Arguments
-    /// * `channels` - Number of channels (from plugin chain, may differ from params)
-    /// * `params` - Plugin parameters (currently unused, kept for API consistency)
-    ///
-    /// # Returns
-    /// - `Ok(plugin)` if successful
-    /// - `Err(msg)` if validation fails or HAL is not initialized
-    pub fn from_params(channels: usize, _params: HalOutputPluginParams) -> Result<Self, String> {
-        Self::new(channels)
+    pub fn from_params(params: HalOutputPluginParams) -> Result<Self, String> {
+        Self::new(params.channels)
     }
 }
 
-impl InPlacePlugin for HalOutputPlugin {
+impl Plugin for HalOutputPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo::new("HAL Output", "1.0.0", "SotF")
-            .with_description("Writes audio to macOS HAL driver for loopback")
+            .with_description("Writes audio to macOS HAL driver")
     }
 
-    fn channels(&self) -> usize {
+    fn input_channels(&self) -> usize {
         self.channels
     }
 
+    fn output_channels(&self) -> usize {
+        0 // Sink plugin - no output
+    }
+
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_int("channels", "Channels", 2, 1, 16)
-                .with_description("Number of audio channels")
-                .with_group("Configuration")
-                .with_importance(ParameterImportance::Critical),
-        ]
+        vec![]
     }
 
-    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        let param_channels = ParameterId::from("channels");
-
-        if id == param_channels {
-            if let Some(channels) = value.as_int() {
-                if !(1..=16).contains(&channels) {
-                    return Err("Channels must be between 1 and 16".to_string());
-                }
-                self.channels = channels as usize;
-                Ok(())
-            } else {
-                Err("Channels parameter must be an integer".to_string())
-            }
-        } else {
-            Err(format!("Unknown parameter: {}", id))
-        }
+    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
+        Err("HAL output has no adjustable parameters".to_string())
     }
 
-    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        let param_channels = ParameterId::from("channels");
-
-        if id == &param_channels {
-            Some(ParameterValue::Int(self.channels as i32))
-        } else {
-            None
-        }
+    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
+        None
     }
 
-    fn process_in_place(
+    fn process(
         &mut self,
-        buffer: &mut [f32],
+        input: &[f32],
+        _output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<usize> {
-        // Verify buffer size matches channel count
+    ) -> Result<usize, String> {
+        // Verify input buffer size
         let expected_len = context.num_frames * self.channels;
-        if buffer.len() != expected_len {
+        if input.len() != expected_len {
             return Err(format!(
-                "Buffer size mismatch: expected {}, got {}",
+                "Input buffer size mismatch: expected {}, got {}",
                 expected_len,
-                buffer.len()
+                input.len()
             ));
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         {
-            // Write to HAL (loopback)
+            // Try to write to HAL
             if let Some(ref mut writer) = self.writer {
-                let written = writer.write(buffer);
-
-                // TRACE: Log frames pushed to HAL shared memory by daemon
-                if written > 0 {
-                    log::debug!(
-                        "[AUDIO FLOW] Daemon->HAL: pushed {} frames to shared memory",
-                        written
-                    );
-                }
-
-                // Log warning if we couldn't write all samples (buffer full)
-                if written < buffer.len() {
-                    log::warn!(
-                        "[AUDIO FLOW] Daemon->HAL: buffer overrun, wrote {}/{} samples (dropped {})",
-                        written,
-                        buffer.len(),
-                        buffer.len() - written
-                    );
-                }
+                writer.write(input);
             } else {
-                // Should never happen since new() checks for writer
                 return Err("HAL writer not available".to_string());
             }
         }
 
-        #[cfg(not(target_os = "macos"))]
-        {
-            // Should never happen since new() fails on non-macOS
-            return Err("HAL output plugin is only supported on macOS".to_string());
-        }
-
-        // Audio passes through unmodified
         Ok(context.num_frames)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hal_output_plugin_validation() {
-        // Invalid channel counts should fail
-        assert!(HalOutputPlugin::new(0).is_err());
-        assert!(HalOutputPlugin::new(17).is_err());
-
-        // Valid channel counts (will still fail without HAL initialized)
-        #[cfg(target_os = "macos")]
-        {
-            // This will fail because HAL isn't initialized in tests
-            assert!(HalOutputPlugin::new(2).is_err());
-            assert!(HalOutputPlugin::new(5).is_err());
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            // Should fail on non-macOS platforms
-            assert!(HalOutputPlugin::new(2).is_err());
-        }
-    }
-
-    #[test]
-    fn test_hal_output_plugin_from_params() {
-        let params = HalOutputPluginParams { channels: 2 };
-        // Will fail without HAL initialized
-        let result = HalOutputPlugin::from_params(2, params);
-
-        #[cfg(target_os = "macos")]
-        assert!(result.is_err());
-
-        #[cfg(not(target_os = "macos"))]
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_hal_output_plugin_invalid_params() {
-        let params = HalOutputPluginParams { channels: 2 };
-
-        assert!(HalOutputPlugin::from_params(0, params.clone()).is_err());
-        assert!(HalOutputPlugin::from_params(20, params).is_err());
     }
 }

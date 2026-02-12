@@ -3,136 +3,55 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
+use math_audio_dsp::fast_math::fast_log10;
 
 impl UpmixerPlugin {
-    /// Detect dialogue-like signals using spectral centroid and temporal envelope
-    ///
-    /// Dialogue characteristics:
-    /// - Spectral centroid in 500-3000 Hz range (fundamental voice frequencies)
-    /// - Low temporal envelope variance (relatively steady compared to music)
-    /// - High coherence (mono/center content)
-    ///
-    /// Returns dialogue probability (0.0 to 1.0)
     #[inline]
     pub(super) fn detect_dialogue(&mut self) -> f32 {
         let spectrum_size = self.fft_size / 2 + 1;
         let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
 
-        // Voice frequency range: configurable (default 500-3000 Hz, covers fundamental + formants)
-        let voice_start_hz = self.voice_freq_min_hz;
-        let voice_end_hz = self.voice_freq_max_hz;
-        let voice_start_bin = (voice_start_hz / freq_per_bin) as usize;
-        let voice_end_bin = (voice_end_hz / freq_per_bin).min(spectrum_size as f32 - 1.0) as usize;
+        let voice_start_bin = (self.voice_freq_min_hz / freq_per_bin) as usize;
+        let voice_end_bin = (self.voice_freq_max_hz / freq_per_bin).min(spectrum_size as f32 - 1.0) as usize;
 
-        // Calculate spectral centroid and RMS energy in voice range
         let mut weighted_sum = 0.0_f32;
         let mut power_sum = 0.0_f32;
 
         for i in voice_start_bin..=voice_end_bin {
-            let left_power = self.freq_domain_left[i].norm_sqr();
-            let right_power = self.freq_domain_right[i].norm_sqr();
-            let avg_power = (left_power + right_power) * 0.5;
-
-            let freq = i as f32 * freq_per_bin;
-            weighted_sum += freq * avg_power;
-            power_sum += avg_power;
+            let p = (self.freq_domain_left[i].norm_sqr() + self.freq_domain_right[i].norm_sqr()) * 0.5;
+            weighted_sum += (i as f32 * freq_per_bin) * p;
+            power_sum += p;
         }
 
-        let spectral_centroid = if power_sum > 1e-9 {
-            weighted_sum / power_sum
-        } else {
-            0.0
-        };
+        let centroid = if power_sum > 1e-9 { weighted_sum / power_sum } else { 0.0 };
+        self.dialogue_spectral_centroid += 0.3 * (centroid - self.dialogue_spectral_centroid);
 
-        // Smooth spectral centroid with exponential averaging
-        let centroid_alpha = 0.3;
-        self.dialogue_spectral_centroid = centroid_alpha * spectral_centroid
-            + (1.0 - centroid_alpha) * self.dialogue_spectral_centroid;
-
-        // Calculate RMS energy for temporal envelope variance from power_sum
-        // energy_sum = sum(left_power + right_power) = sum(avg_power * 2.0) = 2.0 * power_sum
-        let energy_sum = power_sum * 2.0;
-        let rms = (energy_sum / ((voice_end_bin - voice_start_bin + 1) as f32 * 2.0)).sqrt();
-
-        // Calculate envelope variance (difference from previous frame)
-        let envelope_diff = if self.dialogue_prev_rms > 1e-9 {
-            ((rms - self.dialogue_prev_rms) / self.dialogue_prev_rms).abs()
-        } else {
-            1.0 // High variance if previous was silence
-        };
+        let rms = (power_sum * 2.0 / ((voice_end_bin - voice_start_bin + 1) as f32 * 2.0)).sqrt();
+        let env_diff = if self.dialogue_prev_rms > 1e-9 { ((rms - self.dialogue_prev_rms) / self.dialogue_prev_rms).abs() } else { 1.0 };
         self.dialogue_prev_rms = rms;
+        self.dialogue_envelope_variance += 0.2 * (env_diff - self.dialogue_envelope_variance);
 
-        // Smooth envelope variance
-        let variance_alpha = 0.2;
-        self.dialogue_envelope_variance = variance_alpha * envelope_diff
-            + (1.0 - variance_alpha) * self.dialogue_envelope_variance;
+        let c_min = 800.0; let c_max = 2000.0;
+        let c_score = if self.dialogue_spectral_centroid >= c_min && self.dialogue_spectral_centroid <= c_max { 1.0 }
+            else if self.dialogue_spectral_centroid < c_min { ((self.dialogue_spectral_centroid - self.voice_freq_min_hz) / (c_min - self.voice_freq_min_hz)).clamp(0.0, 1.0) }
+            else { (1.0 - ((self.dialogue_spectral_centroid - c_max) / (self.voice_freq_max_hz - c_max))).clamp(0.0, 1.0) };
 
-        // Dialogue probability calculation
-        // Voice has centroid in 800-2000 Hz (sweet spot), low variance (<0.3)
-        let centroid_voice_min = 800.0;
-        let centroid_voice_max = 2000.0;
-        let centroid_score = if self.dialogue_spectral_centroid >= centroid_voice_min
-            && self.dialogue_spectral_centroid <= centroid_voice_max
-        {
-            1.0
-        } else if self.dialogue_spectral_centroid < centroid_voice_min {
-            // Below range: fade from 500 to 800 Hz
-            ((self.dialogue_spectral_centroid - voice_start_hz)
-                / (centroid_voice_min - voice_start_hz))
-                .clamp(0.0, 1.0)
-        } else {
-            // Above range: fade from 2000 to 3000 Hz
-            (1.0 - ((self.dialogue_spectral_centroid - centroid_voice_max)
-                / (voice_end_hz - centroid_voice_max)))
-                .clamp(0.0, 1.0)
-        };
+        let v_score = (1.0 - (self.dialogue_envelope_variance / 0.4).min(1.0)).max(0.0);
 
-        // Low variance indicates steady dialogue (vs. dynamic music)
-        let variance_threshold = 0.4;
-        let variance_score =
-            (1.0 - (self.dialogue_envelope_variance / variance_threshold).min(1.0)).max(0.0);
-
-        // 3D: Voice-band coherence score from ERB bands
-        // Average smoothed coherence for bands in the voice frequency range
-        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
-        let mut coherence_sum = 0.0_f32;
-        let mut coherence_count = 0usize;
+        let mut coh_sum = 0.0f32; let mut coh_count = 0;
         for band_idx in 0..self.erb_bands.len() {
-            let start_bin = self.erb_bands[band_idx];
-            let end_bin = if band_idx + 1 < self.erb_bands.len() {
-                self.erb_bands[band_idx + 1]
-            } else {
-                self.fft_size / 2 + 1
-            };
-            let center_bin = (start_bin + end_bin) / 2;
-            let center_freq = center_bin as f32 * freq_per_bin;
-
-            if center_freq >= voice_start_hz
-                && center_freq <= voice_end_hz
-                && band_idx < self.smoothed_coherence.len()
-            {
-                coherence_sum += self.smoothed_coherence[band_idx];
-                coherence_count += 1;
+            let start = self.erb_bands[band_idx];
+            let end = if band_idx + 1 < self.erb_bands.len() { self.erb_bands[band_idx + 1] } else { spectrum_size };
+            let cf = ((start + end) / 2) as f32 * freq_per_bin;
+            if cf >= self.voice_freq_min_hz && cf <= self.voice_freq_max_hz {
+                coh_sum += self.smoothed_coherence[band_idx]; coh_count += 1;
             }
         }
-        let voice_coherence = if coherence_count > 0 {
-            coherence_sum / coherence_count as f32
-        } else {
-            0.0
-        };
+        let voice_coh = if coh_count > 0 { coh_sum / coh_count as f32 } else { 0.0 };
 
-        // 3D: Updated weighting with coherence as strongest indicator
-        let dialogue_prob =
-            centroid_score * 0.3 + variance_score * 0.2 + voice_coherence * 0.5;
-
-        // Smooth dialogue probability with slow attack/release
-        let prob_alpha = if dialogue_prob > self.dialogue_probability {
-            0.1 // Slow attack: don't immediately assume dialogue
-        } else {
-            0.05 // Very slow release: maintain dialogue routing once detected
-        };
-        self.dialogue_probability =
-            prob_alpha * dialogue_prob + (1.0 - prob_alpha) * self.dialogue_probability;
+        let prob = c_score * 0.3 + v_score * 0.2 + voice_coh * 0.5;
+        let p_alpha = if prob > self.dialogue_probability { 0.1 } else { 0.05 };
+        self.dialogue_probability += p_alpha * (prob - self.dialogue_probability);
 
         self.dialogue_probability
     }

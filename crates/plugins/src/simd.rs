@@ -459,6 +459,52 @@ pub fn window_mul_simd(dst: &mut [f32], src: &[f32], window: &[f32]) {
     }
 }
 
+/// SIMD-optimized in-place window multiplication.
+#[inline]
+pub fn window_mul_simd_inplace(data: &mut [f32], window: &[f32]) {
+    let len = data.len().min(window.len());
+    
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+        let simd_len = (len / 8) * 8;
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let ptr = data.as_mut_ptr().add(i);
+                let win_ptr = window.as_ptr().add(i);
+                let d = _mm256_loadu_ps(ptr);
+                let w = _mm256_loadu_ps(win_ptr);
+                _mm256_storeu_ps(ptr, _mm256_mul_ps(d, w));
+            }
+        }
+        for i in simd_len..len { data[i] *= window[i]; }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+        let simd_len = (len / 4) * 4;
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let ptr = data.as_mut_ptr().add(i);
+                let win_ptr = window.as_ptr().add(i);
+                let d = vld1q_f32(ptr);
+                let w = vld1q_f32(win_ptr);
+                vst1q_f32(ptr, vmulq_f32(d, w));
+            }
+        }
+        for i in simd_len..len { data[i] *= window[i]; }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for i in 0..len { data[i] *= window[i]; }
+    }
+}
+
 /// SIMD-optimized buffer fill with zeros
 #[inline]
 #[allow(dead_code)]
@@ -2016,5 +2062,119 @@ pub fn compute_covariance_simd(
         }
 
         (cov_xx, cov_yy, cov_xy)
+    }
+}
+
+/// SIMD-optimized gain application for a single gain value
+#[inline]
+pub fn apply_gain_simd(buffer: &mut [f32], gain: f32) {
+    let len = buffer.len();
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+        let gain_vec = unsafe { _mm256_set1_ps(gain) };
+        let simd_len = (len / 8) * 8;
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let ptr = buffer.as_mut_ptr().add(i);
+                let v = _mm256_loadu_ps(ptr);
+                let res = _mm256_mul_ps(v, gain_vec);
+                _mm256_storeu_ps(ptr, res);
+            }
+        }
+        for i in simd_len..len {
+            buffer[i] *= gain;
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+        let gain_vec = unsafe { vdupq_n_f32(gain) };
+        let simd_len = (len / 4) * 4;
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let ptr = buffer.as_mut_ptr().add(i);
+                let v = vld1q_f32(ptr);
+                let res = vmulq_f32(v, gain_vec);
+                vst1q_f32(ptr, res);
+            }
+        }
+        for i in simd_len..len {
+            buffer[i] *= gain;
+        }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for val in buffer.iter_mut() {
+            *val *= gain;
+        }
+    }
+}
+
+/// SIMD-optimized per-channel gain application
+#[inline]
+pub fn apply_per_channel_gain_simd(buffer: &mut [f32], channels: usize, gains: &[f32]) {
+    let len = buffer.len();
+    let num_frames = len / channels;
+
+    // This is harder to SIMD generically for any channel count.
+    // We prioritize common channel counts (1, 2, 6, 8) or use scalar for now.
+    // For stereo (channels == 2), we can optimize easily.
+    if channels == 2 {
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        {
+            use std::arch::x86_64::*;
+            let gains_vec = unsafe { _mm256_set_ps(gains[1], gains[0], gains[1], gains[0], gains[1], gains[0], gains[1], gains[0]) };
+            let simd_len = (num_frames / 4) * 4;
+            for i in (0..simd_len).step_by(4) {
+                unsafe {
+                    let ptr = buffer.as_mut_ptr().add(i * 2);
+                    let v = _mm256_loadu_ps(ptr);
+                    let res = _mm256_mul_ps(v, gains_vec);
+                    _mm256_storeu_ps(ptr, res);
+                }
+            }
+            for i in simd_len..num_frames {
+                buffer[i * 2] *= gains[0];
+                buffer[i * 2 + 1] *= gains[1];
+            }
+            return;
+        }
+        
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            use std::arch::aarch64::*;
+            let gains_vec = unsafe { 
+                let g = [gains[0], gains[1], gains[0], gains[1]];
+                vld1q_f32(g.as_ptr())
+            };
+            let simd_len = (num_frames / 2) * 2;
+            for i in (0..simd_len).step_by(2) {
+                unsafe {
+                    let ptr = buffer.as_mut_ptr().add(i * 2);
+                    let v = vld1q_f32(ptr);
+                    let res = vmulq_f32(v, gains_vec);
+                    vst1q_f32(ptr, res);
+                }
+            }
+            for i in simd_len..num_frames {
+                buffer[i * 2] *= gains[0];
+                buffer[i * 2 + 1] *= gains[1];
+            }
+            return;
+        }
+    }
+
+    // Fallback scalar loop
+    for frame in 0..num_frames {
+        for ch in 0..channels {
+            buffer[frame * channels + ch] *= gains[ch];
+        }
     }
 }
