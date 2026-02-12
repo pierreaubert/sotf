@@ -7,12 +7,36 @@ use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterVa
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
+use std::any::Any;
+use std::sync::Arc;
 
 mod analysis;
 mod config;
 
 use analysis::PndAnalyzer;
 pub use config::PndPluginParams;
+
+/// Resampler chunk size — the fixed input block size expected by rubato.
+const RESAMPLER_CHUNK_SIZE: usize = 1024;
+
+// ============================================================================
+// Exposed Data Structure
+// ============================================================================
+
+/// Data exposed by the PND plugin for drift monitoring.
+#[derive(Debug, Clone)]
+pub struct PndData {
+    /// Current raw drift ratio from analysis (1.0 = no drift).
+    pub drift_ratio: f64,
+    /// Current correction ratio applied to resampler.
+    pub correction_ratio: f64,
+    /// Confidence of the drift estimate (0.0 to 1.0).
+    pub confidence: f32,
+    /// Number of matched partials in the last FFT frame.
+    pub matched_partials: usize,
+    /// Total number of detected peaks in the last FFT frame.
+    pub total_peaks: usize,
+}
 
 pub struct PndPlugin {
     // Configuration
@@ -25,10 +49,19 @@ pub struct PndPlugin {
 
     // State
     current_ratio: f64,
+    last_drift_ratio: f64,
 
     // Pre-allocated buffers for zero-allocation process()
     mono_buffer: Vec<f32>,
     planar_input: Vec<Vec<f32>>,
+    planar_output: Vec<Vec<f32>>,
+
+    // Block buffering for arbitrary host block sizes
+    input_ring: Vec<f32>,  // Interleaved input accumulator
+    input_ring_fill: usize,
+    output_ring: Vec<f32>, // Interleaved output drain buffer
+    output_ring_fill: usize,
+    output_ring_read_pos: usize,
 
     // Parameters
     param_correction_strength: ParameterId,
@@ -49,8 +82,15 @@ impl PndPlugin {
             analyzer: None,
             resampler: None,
             current_ratio: 1.0,
+            last_drift_ratio: 1.0,
             mono_buffer: Vec::new(),
             planar_input: vec![Vec::new(); channels],
+            planar_output: Vec::new(),
+            input_ring: Vec::new(),
+            input_ring_fill: 0,
+            output_ring: Vec::new(),
+            output_ring_fill: 0,
+            output_ring_read_pos: 0,
 
             param_correction_strength: ParameterId::from("correction_strength"),
             correction_strength: CORRECTION_STRENGTH_DEFAULT,
@@ -72,12 +112,11 @@ impl PndPlugin {
     }
 
     fn init_resampler(&mut self) -> PluginResult<()> {
-        let chunk_size = 1024; // Standard block size
         let resampler = Async::<f32>::new_poly(
             1.0, // Initial ratio
             1.1, // Max ratio
             PolynomialDegree::Cubic,
-            chunk_size,
+            RESAMPLER_CHUNK_SIZE,
             self.channels,
             FixedAsync::Input,
         )
@@ -95,11 +134,96 @@ impl PndPlugin {
             self.analysis_window_ms,
         ));
     }
+
+    /// Process one resampler chunk from the input ring buffer.
+    /// Appends resampled output to the output ring buffer.
+    fn process_one_chunk(&mut self) -> Result<(), String> {
+        let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
+        let chunk_frames = resampler.input_frames_next();
+
+        // 1. Analyze input for drift (mono/first channel)
+        if self.mono_buffer.len() < chunk_frames {
+            self.mono_buffer.resize(chunk_frames, 0.0);
+        }
+        for i in 0..chunk_frames {
+            self.mono_buffer[i] = self.input_ring[i * self.channels];
+        }
+
+        let drift_ratio = if let Some(analyzer) = &mut self.analyzer {
+            analyzer.analyze(&self.mono_buffer[..chunk_frames])
+        } else {
+            1.0
+        };
+        self.last_drift_ratio = drift_ratio as f64;
+
+        // 2. Calculate Correction Ratio
+        let target_correction = 1.0 / drift_ratio as f64;
+        let alpha = self.drift_smoothing as f64;
+        self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
+
+        let strength = self.correction_strength as f64;
+        let final_ratio = 1.0 + (self.current_ratio - 1.0) * strength;
+
+        resampler
+            .set_resample_ratio(final_ratio, true)
+            .map_err(|e| format!("{:?}", e))?;
+
+        // 3. De-interleave input into planar buffers
+        for c in 0..self.channels {
+            if self.planar_input[c].len() < chunk_frames {
+                self.planar_input[c].resize(chunk_frames, 0.0);
+            }
+        }
+        for i in 0..chunk_frames {
+            for c in 0..self.channels {
+                self.planar_input[c][i] = self.input_ring[i * self.channels + c];
+            }
+        }
+
+        // Shift consumed samples out of input ring
+        let consumed_samples = chunk_frames * self.channels;
+        self.input_ring.copy_within(consumed_samples.., 0);
+        self.input_ring_fill -= consumed_samples;
+
+        // 4. Resample
+        let max_output_frames = resampler.output_frames_max();
+        for c in 0..self.channels {
+            if self.planar_output[c].len() < max_output_frames {
+                self.planar_output[c].resize(max_output_frames, 0.0);
+            }
+        }
+
+        let input_adapter =
+            SequentialSliceOfVecs::new(&self.planar_input, self.channels, chunk_frames)
+                .map_err(|e| format!("{:?}", e))?;
+        let mut output_adapter =
+            SequentialSliceOfVecs::new_mut(&mut self.planar_output, self.channels, max_output_frames)
+                .map_err(|e| format!("{:?}", e))?;
+
+        let (_, out_written) = resampler
+            .process_into_buffer(&input_adapter, &mut output_adapter, None)
+            .map_err(|e| format!("{:?}", e))?;
+
+        // 5. Re-interleave into output ring
+        let needed = self.output_ring_fill + out_written * self.channels;
+        if self.output_ring.len() < needed {
+            self.output_ring.resize(needed, 0.0);
+        }
+        for i in 0..out_written {
+            for c in 0..self.channels {
+                self.output_ring[self.output_ring_fill + i * self.channels + c] =
+                    self.planar_output[c][i];
+            }
+        }
+        self.output_ring_fill += out_written * self.channels;
+
+        Ok(())
+    }
 }
 
 impl Plugin for PndPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("PND Varispeed", "0.1.0", "SotF")
+        PluginInfo::new("PND Varispeed", "0.2.0", "SotF")
             .with_description("Polyphonic note detection and varispeed correction")
     }
 
@@ -174,10 +298,29 @@ impl Plugin for PndPlugin {
         self.init_resampler()?;
         self.init_analyzer();
 
-        // Pre-allocate buffers for the expected chunk size (matches resampler chunk_size=1024)
-        let max_frames = 1024;
-        self.mono_buffer.resize(max_frames, 0.0);
-        self.planar_input = vec![vec![0.0; max_frames]; self.channels];
+        // Pre-allocate buffers
+        self.mono_buffer.resize(RESAMPLER_CHUNK_SIZE, 0.0);
+        self.planar_input = vec![vec![0.0; RESAMPLER_CHUNK_SIZE]; self.channels];
+
+        // Pre-allocate planar output (resampler may produce up to ~1.1x input frames)
+        let max_output_frames = if let Some(ref resampler) = self.resampler {
+            resampler.output_frames_max()
+        } else {
+            (RESAMPLER_CHUNK_SIZE as f64 * 1.1) as usize + 16
+        };
+        self.planar_output = vec![vec![0.0; max_output_frames]; self.channels];
+
+        // Allocate block buffering rings
+        // Input ring: hold up to 2 resampler chunks worth of interleaved samples
+        let input_ring_capacity = RESAMPLER_CHUNK_SIZE * self.channels * 2;
+        self.input_ring = vec![0.0; input_ring_capacity];
+        self.input_ring_fill = 0;
+
+        // Output ring: hold up to 2 chunks worth of resampled output
+        let output_ring_capacity = max_output_frames * self.channels * 2;
+        self.output_ring = vec![0.0; output_ring_capacity];
+        self.output_ring_fill = 0;
+        self.output_ring_read_pos = 0;
 
         Ok(())
     }
@@ -189,104 +332,49 @@ impl Plugin for PndPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let num_frames = context.num_frames;
+        let total_input_samples = num_frames * self.channels;
 
-        // 1. Analyze input for drift
-        // For simplicity in this prototype, we analyze the current block (channel 0)
-        // Ideally we would look at a window centered on the current block or lookahead
-        let drift_ratio = if let Some(analyzer) = &mut self.analyzer {
-            // Interleaved to mono/first channel for analysis (reuse pre-allocated buffer)
-            if self.mono_buffer.len() < num_frames {
-                self.mono_buffer.resize(num_frames, 0.0);
+        // 1. Accumulate input into input ring
+        let space_available = self.input_ring.len() - self.input_ring_fill;
+        let samples_to_copy = total_input_samples.min(space_available);
+        self.input_ring[self.input_ring_fill..self.input_ring_fill + samples_to_copy]
+            .copy_from_slice(&input[..samples_to_copy]);
+        self.input_ring_fill += samples_to_copy;
+
+        // 2. Process complete resampler chunks
+        if let Some(resampler) = &self.resampler {
+            let chunk_samples = resampler.input_frames_next() * self.channels;
+            while self.input_ring_fill >= chunk_samples {
+                self.process_one_chunk()?;
             }
-            for (i, chunk) in input.chunks(self.channels).enumerate().take(num_frames) {
-                self.mono_buffer[i] = chunk[0];
-            }
-            analyzer.analyze(&self.mono_buffer[..num_frames])
-        } else {
-            1.0
-        };
-
-        // 2. Calculate Correction Ratio
-        // If drift_ratio > 1.0 (speed up), we need to slow down (ratio < 1.0)
-        // correction = 1 / drift
-        let target_correction = 1.0 / drift_ratio as f64;
-
-        // Apply smoothing
-        let alpha = self.drift_smoothing as f64;
-        self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
-
-        // Apply strength
-        let strength = self.correction_strength as f64;
-        let final_ratio = 1.0 + (self.current_ratio - 1.0) * strength;
-
-        // 3. Resample
-        // We use rubato to process.
-        // Note: Rubato FastFixedIn expects fixed input size (chunk_size).
-        // We need to handle arbitrary block sizes from the host.
-        // For this MVP, we assume the host block size matches rubato's chunk size (1024) or we buffer.
-        // Buffering logic is complex.
-        // Here we just panic if block size doesn't match for the MVP,
-        // or we bypass if mismatched (safety).
-
-        if let Some(resampler) = &mut self.resampler {
-            if num_frames != resampler.input_frames_next() {
-                // Pass through if block size mismatch
-                output.copy_from_slice(input);
-                return Ok(context.num_frames);
-            }
-
-            resampler
-                .set_resample_ratio(final_ratio, true)
-                .map_err(|e| format!("{:?}", e))?;
-
-            // De-interleave (reuse pre-allocated planar buffers)
-            for c in 0..self.channels {
-                if self.planar_input[c].len() < num_frames {
-                    self.planar_input[c].resize(num_frames, 0.0);
-                }
-            }
-            for i in 0..num_frames {
-                for c in 0..self.channels {
-                    self.planar_input[c][i] = input[i * self.channels + c];
-                }
-            }
-
-            let max_output_frames = resampler.output_frames_max();
-            let mut planar_output = vec![vec![0.0f32; max_output_frames]; self.channels];
-
-            let input_adapter =
-                SequentialSliceOfVecs::new(&self.planar_input, self.channels, num_frames)
-                    .map_err(|e| format!("{:?}", e))?;
-            let mut output_adapter =
-                SequentialSliceOfVecs::new_mut(&mut planar_output, self.channels, max_output_frames)
-                    .map_err(|e| format!("{:?}", e))?;
-
-            let (_, out_written) = resampler
-                .process_into_buffer(&input_adapter, &mut output_adapter, None)
-                .map_err(|e| format!("{:?}", e))?;
-
-            // Re-interleave
-            // Note: Output size might differ from input size due to resampling!
-            // The host expects `num_frames` output.
-            // If we produce more/less, we have a problem in a synchronous plugin API.
-            // A true varispeed plugin usually requests data from a ringbuffer.
-            //
-            // For this implementation, we will write as much as fits into the output buffer,
-            // which works if we are just "effecting" the audio, but for strict timing synchronization
-            // this requires a different host architecture (pull-based with variable rate).
-
-            let out_frames = out_written.min(num_frames);
-
-            for i in 0..out_frames {
-                for c in 0..self.channels {
-                    output[i * self.channels + c] = planar_output[c][i];
-                }
-            }
-
-            // Report actual produced frames to host
-            return Ok(out_frames);
         }
 
+        // 3. Drain output ring to output buffer
+        let total_output_samples = num_frames * self.channels;
+        let available = self.output_ring_fill - self.output_ring_read_pos;
+        let drain_samples = available.min(total_output_samples);
+        let drain_frames = drain_samples / self.channels;
+
+        output[..drain_samples].copy_from_slice(
+            &self.output_ring[self.output_ring_read_pos..self.output_ring_read_pos + drain_samples],
+        );
+        self.output_ring_read_pos += drain_samples;
+
+        // Compact output ring when fully drained
+        if self.output_ring_read_pos > 0 {
+            self.output_ring
+                .copy_within(self.output_ring_read_pos..self.output_ring_fill, 0);
+            self.output_ring_fill -= self.output_ring_read_pos;
+            self.output_ring_read_pos = 0;
+        }
+
+        // Zero remaining output if not enough data (initial latency period)
+        if drain_frames < num_frames {
+            let zero_start = drain_frames * self.channels;
+            output[zero_start..total_output_samples].fill(0.0);
+        }
+
+        // Report num_frames to prevent ring buffer underruns in host
         Ok(context.num_frames)
     }
 
@@ -295,5 +383,34 @@ impl Plugin for PndPlugin {
             analyzer.reset();
         }
         self.current_ratio = 1.0;
+        self.last_drift_ratio = 1.0;
+        self.input_ring_fill = 0;
+        self.output_ring_fill = 0;
+        self.output_ring_read_pos = 0;
+    }
+
+    fn latency_samples(&self) -> usize {
+        RESAMPLER_CHUNK_SIZE
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        let (confidence, matched_partials, total_peaks) =
+            if let Some(analyzer) = &self.analyzer {
+                (
+                    analyzer.confidence(),
+                    analyzer.matched_partials(),
+                    analyzer.total_peaks(),
+                )
+            } else {
+                (0.0, 0, 0)
+            };
+
+        Some(Arc::new(PndData {
+            drift_ratio: self.last_drift_ratio,
+            correction_ratio: self.current_ratio,
+            confidence,
+            matched_partials,
+            total_peaks,
+        }))
     }
 }

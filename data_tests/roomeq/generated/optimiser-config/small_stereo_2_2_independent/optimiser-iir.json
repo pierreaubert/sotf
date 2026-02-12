@@ -1,0 +1,20 @@
+{
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "LFE": "lfe",
+      "L": "left",
+      "R": "right"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "first",
+      "lfe": "L"
+    }
+  },
+  "optimizer": {
+    "population": 300,
+    "max_q": 10.0,
+    "max_db": 12.0
+  }
+}

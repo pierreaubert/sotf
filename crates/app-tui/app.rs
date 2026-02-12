@@ -670,9 +670,29 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 TuiParamSpec { name: "Smoothing".to_string(), value: format!("{:.2}", smoothing), unit: "".to_string() },
             ],
             sotf_audio_player::PluginSettings::LoudnessMonitor => vec![],
-            sotf_audio_player::PluginSettings::ChannelMuteSolo { .. } => vec![], // Managed via level meter editor
-            sotf_audio_player::PluginSettings::Matrix { .. } => vec![], // Managed via matrix grid editor
-            sotf_audio_player::PluginSettings::FletcherMunson { .. } => vec![], // Not yet user-editable in TUI
+            sotf_audio_player::PluginSettings::ChannelMuteSolo { enabled, .. } => vec![
+                TuiParamSpec { name: "Enabled".to_string(), value: (if *enabled { "Active" } else { "Bypassed" }).to_string(), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::Matrix { input_channels, output_channels, .. } => vec![
+                TuiParamSpec { name: "Input Ch".to_string(), value: format!("{}", input_channels), unit: "".to_string() },
+                TuiParamSpec { name: "Output Ch".to_string(), value: format!("{}", output_channels), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::FletcherMunson {
+                reference_level_db,
+                enabled,
+                smoothing_ms,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+                ..
+            } => vec![
+                TuiParamSpec { name: "Reference Level".to_string(), value: format!("{:.1}", reference_level_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Enabled".to_string(), value: (if *enabled { "Yes" } else { "No" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Smoothing".to_string(), value: format!("{:.1}", smoothing_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Auto Gain".to_string(), value: (if *auto_gain_enabled { "On" } else { "Off" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Max Auto Gain".to_string(), value: format!("{:.1}", auto_gain_max_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Auto Gain Smooth".to_string(), value: format!("{:.1}", auto_gain_smoothing_ms), unit: "ms".to_string() },
+            ],
         }
     }
 
@@ -1147,9 +1167,43 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 return true;
             }
             sotf_audio_player::PluginSettings::LoudnessMonitor => return false,
-            sotf_audio_player::PluginSettings::ChannelMuteSolo { .. } => return false, // Managed via level meter editor
-            sotf_audio_player::PluginSettings::Matrix { .. } => return false, // Managed via matrix grid editor
-            sotf_audio_player::PluginSettings::FletcherMunson { .. } => return false, // Not yet user-editable in TUI
+            sotf_audio_player::PluginSettings::ChannelMuteSolo { enabled, .. } => {
+                match index {
+                    0 => *enabled = !*enabled,
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::Matrix { input_channels, output_channels, .. } => {
+                use sotf_plugins::param_specs::hal::*;
+                match index {
+                    0 => *input_channels = ((*input_channels as i64) + delta as i64).clamp(CHANNELS_MIN as i64, CHANNELS_MAX as i64) as usize,
+                    1 => *output_channels = ((*output_channels as i64) + delta as i64).clamp(CHANNELS_MIN as i64, CHANNELS_MAX as i64) as usize,
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::FletcherMunson {
+                reference_level_db,
+                enabled,
+                smoothing_ms,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+                ..
+            } => {
+                use sotf_plugins::param_specs::fletcher_munson::*;
+                match index {
+                    0 => *reference_level_db = (*reference_level_db + delta).clamp(REFERENCE_LEVEL_DB_MIN as f64, REFERENCE_LEVEL_DB_MAX as f64),
+                    1 => *enabled = !*enabled,
+                    2 => *smoothing_ms = (*smoothing_ms + delta).clamp(SMOOTHING_MS_MIN as f64, SMOOTHING_MS_MAX as f64),
+                    3 => *auto_gain_enabled = !*auto_gain_enabled,
+                    4 => *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(AUTO_GAIN_MAX_DB_MIN as f64, AUTO_GAIN_MAX_DB_MAX as f64),
+                    5 => *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0).clamp(AUTO_GAIN_SMOOTHING_MS_MIN as f64, AUTO_GAIN_SMOOTHING_MS_MAX as f64),
+                    _ => return false,
+                }
+                return true;
+            }
         }
         false
     }
@@ -3986,8 +4040,8 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::Convolution { .. } => 3,     // ir_file, mix, gain_db
         PluginSettings::LoudnessMonitor => 0,        // No parameters
         PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
-        PluginSettings::ChannelMuteSolo { .. } => 0, // Automatically managed, no user-editable parameters
-        PluginSettings::Matrix { .. } => 0,          // Not yet user-editable
+        PluginSettings::ChannelMuteSolo { .. } => 1, // enabled toggle
+        PluginSettings::Matrix { .. } => 2,          // input_channels, output_channels
         PluginSettings::Expander { .. } => 11, // threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels, sidechain_hpf
         PluginSettings::MultibandCompressor { .. } => 12, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 15, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
@@ -3995,7 +4049,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 11, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms, path_a, path_b
-        PluginSettings::FletcherMunson { .. } => 0, // Not yet user-editable in TUI
+        PluginSettings::FletcherMunson { .. } => 6, // reference_level, enabled, smoothing, auto_gain_enabled, max_auto_gain, auto_gain_smoothing
         PluginSettings::BandSplit { .. } => 2,     // frequency, crossover_type
                 PluginSettings::BandMerge { .. } => 1, // bands
                 PluginSettings::Downmix { .. } => 7,

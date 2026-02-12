@@ -122,7 +122,8 @@ pub struct DenoiserPlugin {
     // Psychoacoustic masking
     param_psychoacoustic_masking: ParameterId,
     psychoacoustic_masking: bool,
-    bark_map: Vec<f32>,             // [spectrum_size] frequency-to-Bark mapping
+    bark_map: Vec<f32>,              // [spectrum_size] frequency-to-Bark mapping
+    bark_bin_range: Vec<(usize, usize)>, // [spectrum_size] precomputed (lo, hi) bin range within MAX_SPREAD_BARK
     masking_threshold: Vec<f32>,    // [spectrum_size] scratch for masking thresholds
     masking_signal_power: Vec<f32>, // [spectrum_size] scratch for signal power
 
@@ -140,6 +141,7 @@ pub struct DenoiserPlugin {
     // Pre-computed coefficients
     attack_coeff: f32,
     release_coeff: f32,
+    reduction_linear: f32,
     floor_linear: f32,
 
     // Hann window
@@ -203,7 +205,7 @@ impl DenoiserPlugin {
         let fft_inverse = planner.plan_fft_inverse(fft_size);
 
         // Generate Hann window
-        let window = Self::generate_hann_window(fft_size);
+        let window = crate::stft_common::generate_hann_window(fft_size);
 
         // Allocate buffers
         let time_domain = vec![vec![0.0_f32; fft_size]; channels];
@@ -271,6 +273,7 @@ impl DenoiserPlugin {
             param_psychoacoustic_masking: ParameterId::from("psychoacoustic_masking"),
             psychoacoustic_masking: PSYCHOACOUSTIC_MASKING_DEFAULT,
             bark_map: vec![0.0_f32; spectrum_size],
+            bark_bin_range: vec![(0, 0); spectrum_size],
             masking_threshold: vec![0.0_f32; spectrum_size],
             masking_signal_power: vec![0.0_f32; spectrum_size],
 
@@ -286,6 +289,7 @@ impl DenoiserPlugin {
 
             attack_coeff: Self::time_to_coeff(ATTACK_MS_DEFAULT, 44100, hop_size),
             release_coeff: Self::time_to_coeff(RELEASE_MS_DEFAULT, 44100, hop_size),
+            reduction_linear: 10.0_f32.powf(REDUCTION_DB_DEFAULT / 20.0),
             floor_linear: 10.0_f32.powf(FLOOR_DB_DEFAULT / 20.0),
 
             window,
@@ -353,6 +357,7 @@ impl DenoiserPlugin {
         plugin.psychoacoustic_masking = params.psychoacoustic_masking;
         plugin.use_captured_profile = params.use_captured_profile;
 
+        plugin.reduction_linear = 10.0_f32.powf(plugin.reduction_db / 20.0);
         plugin.floor_linear = 10.0_f32.powf(plugin.floor_db / 20.0);
 
         plugin
@@ -591,6 +596,7 @@ impl InPlacePlugin for DenoiserPlugin {
                 .as_float()
                 .ok_or("Invalid reduction_db value")?
                 .clamp(REDUCTION_DB_MIN, REDUCTION_DB_MAX);
+            self.reduction_linear = 10.0_f32.powf(self.reduction_db / 20.0);
         } else if id == self.param_floor_db {
             self.floor_db = value
                 .as_float()
@@ -814,7 +820,7 @@ mod tests {
 
     #[test]
     fn test_hann_window() {
-        let window = DenoiserPlugin::generate_hann_window(8);
+        let window = crate::stft_common::generate_hann_window(8);
         assert_eq!(window.len(), 8);
         // Hann window should be symmetric and peak at center
         assert!((window[0] - 0.0).abs() < 0.01);

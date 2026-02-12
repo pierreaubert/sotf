@@ -885,6 +885,529 @@ pub fn optimize_stereo_2_1(
     })
 }
 
+/// Workflow for Home Cinema X.0 / X.1 (any channel count)
+///
+/// Handles all standard layouts: 5.0, 5.1, 7.1, 9.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6.
+/// The workflow is layout-agnostic: channels are classified as "main" (everything except LFE)
+/// and "sub" (LFE if present). The specific channel names don't affect the algorithm.
+pub fn optimize_home_cinema(
+    config: &RoomConfig,
+    sys: &SystemConfig,
+    sample_rate: f64,
+    _output_dir: &Path,
+) -> Result<RoomOptimizationResult> {
+    let sub_role = "LFE";
+    let has_sub = sys.speakers.contains_key(sub_role);
+
+    // Classify channels into main and sub
+    let main_roles: Vec<String> = sys.speakers.keys()
+        .filter(|r| *r != sub_role)
+        .cloned()
+        .collect();
+
+    info!("Running Home Cinema Optimization Workflow ({} mains{})",
+          main_roles.len(), if has_sub { " + LFE" } else { "" });
+
+    // 1. Load main channel measurements
+    let mut curves = HashMap::new();
+    for role in &main_roles {
+        let meas_key = sys.speakers.get(role).ok_or(AutoeqError::InvalidConfiguration {
+            message: format!("Missing speaker mapping for '{}'", role),
+        })?;
+        let cfg = config.speakers.get(meas_key).ok_or(AutoeqError::InvalidConfiguration {
+            message: format!("Missing speaker config for key '{}'", meas_key),
+        })?;
+        let source = match cfg {
+            SpeakerConfig::Single(s) => s,
+            _ => return Err(AutoeqError::InvalidConfiguration {
+                message: format!("'{}' must be a Single speaker config in home cinema workflow", role),
+            }),
+        };
+        let curve = load_source(source)
+            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        curves.insert(role.clone(), curve);
+    }
+
+    // Load LFE if present (handles Single, MultiSub/MSO, Cardioid, DBA)
+    let sub_preprocess = if has_sub {
+        let sub_sys = sys.subwoofers.as_ref().ok_or(
+            AutoeqError::InvalidConfiguration { message: "Missing subwoofers configuration for home cinema with LFE".to_string() }
+        )?;
+        let lfe_meas_key = sys.speakers.get(sub_role).ok_or(AutoeqError::InvalidConfiguration {
+            message: "Missing speaker mapping for 'LFE'".to_string(),
+        })?;
+        let lfe_speaker_config = config.speakers.get(lfe_meas_key).ok_or(AutoeqError::InvalidConfiguration {
+            message: format!("Missing speaker config for key '{}'", lfe_meas_key),
+        })?;
+        let sp = preprocess_sub(lfe_speaker_config, &sub_sys.config, &config.optimizer, sample_rate)?;
+        curves.insert(sub_role.to_string(), sp.combined_curve.clone());
+        Some(sp)
+    } else {
+        None
+    };
+
+    if has_sub {
+        optimize_home_cinema_with_sub(config, sys, &main_roles, &curves, sub_preprocess.unwrap(), sample_rate)
+    } else {
+        optimize_home_cinema_no_sub(config, &main_roles, &curves, sample_rate)
+    }
+}
+
+/// Home Cinema X.0 (no subwoofer): per-channel EQ optimization
+fn optimize_home_cinema_no_sub(
+    config: &RoomConfig,
+    main_roles: &[String],
+    curves: &HashMap<String, Curve>,
+    sample_rate: f64,
+) -> Result<RoomOptimizationResult> {
+    // Level alignment: mains measured from 100 Hz to 2000 Hz
+    let mut ranges = HashMap::new();
+    for role in main_roles {
+        ranges.insert(role.clone(), (100.0, 2000.0));
+    }
+    let gains = align_channels_to_lowest(curves, &ranges);
+
+    let min_freq = config.optimizer.min_freq;
+    let max_freq = config.optimizer.max_freq;
+    let mut channel_chains = HashMap::new();
+    let mut channel_results = HashMap::new();
+    let mut pre_scores = Vec::new();
+    let mut post_scores = Vec::new();
+
+    for role in main_roles {
+        let curve = &curves[role];
+        let gain = *gains.get(role).unwrap_or(&0.0);
+
+        let mut aligned_curve = curve.clone();
+        for s in aligned_curve.spl.iter_mut() {
+            *s += gain;
+        }
+
+        let pre_score = compute_flat_score(&aligned_curve, min_freq, max_freq);
+        info!("  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})", role, gain, pre_score);
+
+        let (filters, _loss) = eq::optimize_channel_eq(
+            &aligned_curve,
+            &config.optimizer,
+            config.target_curve.as_ref(),
+            sample_rate,
+        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+
+        let mut plugins = Vec::new();
+        if gain.abs() > 0.01 {
+            plugins.push(output::create_gain_plugin(gain));
+        }
+        if !filters.is_empty() {
+            plugins.push(output::create_eq_plugin(&filters));
+        }
+
+        let resp = response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
+        let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
+        let post_score = compute_flat_score(&final_curve_obj, min_freq, max_freq);
+
+        info!("  '{}' post_score={:.4}", role, post_score);
+
+        let chain = ChannelDspChain {
+            channel: role.clone(),
+            plugins,
+            drivers: None,
+            initial_curve: Some((&aligned_curve).into()),
+            final_curve: Some((&final_curve_obj).into()),
+        };
+
+        channel_chains.insert(role.clone(), chain);
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
+
+        channel_results.insert(role.clone(), ChannelOptimizationResult {
+            name: role.clone(),
+            pre_score,
+            post_score,
+            initial_curve: curve.clone(),
+            final_curve: final_curve_obj,
+            biquads: filters,
+            fir_coeffs: None,
+        });
+    }
+
+    let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
+    let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
+
+    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+
+    Ok(RoomOptimizationResult {
+        channels: channel_chains,
+        channel_results,
+        combined_pre_score: avg_pre,
+        combined_post_score: avg_post,
+        metadata: OptimizationMetadata {
+            pre_score: avg_pre,
+            post_score: avg_post,
+            algorithm: config.optimizer.algorithm.clone(),
+            iterations: config.optimizer.max_iter,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        },
+    })
+}
+
+/// Home Cinema X.1 (with subwoofer): crossover management + per-channel EQ
+fn optimize_home_cinema_with_sub(
+    config: &RoomConfig,
+    sys: &SystemConfig,
+    main_roles: &[String],
+    curves: &HashMap<String, Curve>,
+    sub_preprocess: SubPreprocessResult,
+    sample_rate: f64,
+) -> Result<RoomOptimizationResult> {
+    let sub_role = "LFE";
+
+    // Resolve crossover config
+    let sub_sys = sys.subwoofers.as_ref().unwrap();
+    let xover_key = sub_sys.crossover.as_deref().ok_or(
+        AutoeqError::InvalidConfiguration { message: "Subwoofer config requires 'crossover' reference".to_string() }
+    )?;
+    let xover_config = config.crossovers.as_ref()
+        .and_then(|m| m.get(xover_key))
+        .ok_or(AutoeqError::InvalidConfiguration {
+            message: format!("Crossover '{}' not found in crossovers section", xover_key)
+        })?;
+    let xover_type_str = &xover_config.crossover_type;
+
+    let (min_xo, max_xo, est_xo) = if let Some(f) = xover_config.frequency {
+        (f, f, f)
+    } else if let Some((min, max)) = xover_config.frequency_range {
+        (min, max, (min * max).sqrt())
+    } else {
+        return Err(AutoeqError::InvalidConfiguration {
+            message: "Subwoofer crossover requires 'frequency' or 'frequency_range'".to_string()
+        });
+    };
+
+    // 1. Level alignment
+    let mut ranges = HashMap::new();
+    for role in main_roles {
+        ranges.insert(role.clone(), (max_xo, 2000.0));
+    }
+    let sub_min_align = (max_xo * 0.5).max(20.0);
+    ranges.insert(sub_role.to_string(), (sub_min_align, max_xo));
+
+    let gains = align_channels_to_lowest(curves, &ranges);
+
+    let mut aligned_curves = HashMap::new();
+    for (role, curve) in curves {
+        let mut c = curve.clone();
+        let g = *gains.get(role).unwrap_or(&0.0);
+        for s in c.spl.iter_mut() { *s += g; }
+        aligned_curves.insert(role.clone(), c);
+    }
+
+    // 2. Pre-EQ linearization for all main channels
+    let mut pre_eq_filters = HashMap::new();
+    let mut linearized_curves = aligned_curves.clone();
+
+    for role in main_roles {
+        let mut opt_config = config.optimizer.clone();
+        opt_config.min_freq = min_xo;
+
+        info!("  Pre-EQ Linearization for '{}' (min {:.1} Hz)", role, min_xo);
+        let (filters, _) = eq::optimize_channel_eq(
+            &aligned_curves[role],
+            &opt_config,
+            config.target_curve.as_ref(),
+            sample_rate,
+        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+
+        let resp = response::compute_peq_complex_response(&filters, &aligned_curves[role].freq, sample_rate);
+        let linear = response::apply_complex_response(&aligned_curves[role], &resp);
+
+        pre_eq_filters.insert(role.clone(), filters);
+        linearized_curves.insert(role.clone(), linear);
+    }
+
+    // 3. Virtual Main = dB average of all linearized main channels
+    let ref_curve = &linearized_curves[&main_roles[0]];
+    let mut virtual_main = ref_curve.clone();
+    for i in 0..virtual_main.spl.len() {
+        let sum: f64 = main_roles.iter()
+            .map(|r| linearized_curves[r].spl[i])
+            .sum();
+        virtual_main.spl[i] = sum / main_roles.len() as f64;
+    }
+
+    // 4. Crossover optimization between Virtual Main and LFE
+    let sub_curve = &linearized_curves[sub_role];
+
+    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str)
+        .map_err(|e| AutoeqError::InvalidConfiguration { message: e.to_string() })?;
+
+    let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
+        (Some(vec![est_xo]), None)
+    } else {
+        (None, Some((min_xo, max_xo)))
+    };
+
+    let (xo_gains, _xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
+        vec![virtual_main.clone(), sub_curve.clone()],
+        crossover_type_enum,
+        sample_rate,
+        &config.optimizer,
+        fixed_freqs,
+        range_opt,
+    ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+
+    let main_gain_post = xo_gains[0];
+    let sub_gain_post = xo_gains[1];
+    let sub_inverted = inversions[1];
+    let final_xo_freq = xo_freqs[0];
+
+    info!("  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}",
+          final_xo_freq, main_gain_post, sub_gain_post);
+
+    // 5. Apply crossover filters
+    let hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
+    let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
+
+    let apply_chain = |curve: &Curve, filters: &[Biquad], gain: f64| -> Curve {
+        let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
+        let mut c = response::apply_complex_response(curve, &resp);
+        for s in c.spl.iter_mut() { *s += gain; }
+        c
+    };
+
+    // Post-crossover curves for all mains and sub
+    let mut main_post_curves = HashMap::new();
+    for role in main_roles {
+        let post = apply_chain(&aligned_curves[role], &hp_biquads, main_gain_post);
+        main_post_curves.insert(role.clone(), post);
+    }
+    let sub_post_initial = apply_chain(&aligned_curves[sub_role], &lp_biquads, sub_gain_post);
+
+    // Re-align sub level post-crossover (use first main as reference)
+    let ref_main_post = &main_post_curves[&main_roles[0]];
+    let freqs_f32: Vec<f32> = ref_main_post.freq.iter().map(|&f| f as f32).collect();
+    let main_spl_f32: Vec<f32> = ref_main_post.spl.iter().map(|&s| s as f32).collect();
+    let sub_spl_f32: Vec<f32> = sub_post_initial.spl.iter().map(|&s| s as f32).collect();
+
+    let main_mean = math_audio_dsp::analysis::compute_average_response(
+        &freqs_f32, &main_spl_f32, Some((final_xo_freq as f32, 2000.0))) as f64;
+    let sub_mean = math_audio_dsp::analysis::compute_average_response(
+        &freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32))) as f64;
+
+    let sub_correction = main_mean - sub_mean;
+    info!("  Re-aligning Subwoofer: Main={:.2} dB, Sub={:.2} dB, Correction={:+.2} dB",
+          main_mean, sub_mean, sub_correction);
+
+    let mut sub_post = sub_post_initial.clone();
+    for s in sub_post.spl.iter_mut() { *s += sub_correction; }
+    let sub_gain_post = sub_gain_post + sub_correction;
+
+    // 6. Post-EQ
+    let mut post_eq_filters = HashMap::new();
+
+    for role in main_roles {
+        let mut opt_config = config.optimizer.clone();
+        opt_config.min_freq = final_xo_freq + 20.0;
+
+        let (filters, _) = eq::optimize_channel_eq(
+            &main_post_curves[role],
+            &opt_config,
+            config.target_curve.as_ref(),
+            sample_rate,
+        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        post_eq_filters.insert(role.clone(), filters);
+    }
+
+    // Sub Post-EQ
+    {
+        let mut opt_config = config.optimizer.clone();
+        opt_config.max_freq = final_xo_freq - 20.0;
+        let (filters, _) = eq::optimize_channel_eq(
+            &sub_post,
+            &opt_config,
+            config.target_curve.as_ref(),
+            sample_rate,
+        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        post_eq_filters.insert(sub_role.to_string(), filters);
+    }
+
+    // 7. Build output chains
+    let mut channel_chains = HashMap::new();
+
+    // Main channels: AlignGain -> Crossover(HP) -> MainGain -> PostEQ
+    for role in main_roles {
+        let mut plugins = Vec::new();
+        let align_gain = *gains.get(role).unwrap_or(&0.0);
+        if align_gain.abs() > 0.01 { plugins.push(output::create_gain_plugin(align_gain)); }
+
+        plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "high"));
+
+        if main_gain_post.abs() > 0.01 { plugins.push(output::create_gain_plugin(main_gain_post)); }
+
+        let eqs = post_eq_filters.get(role);
+        if let Some(e) = eqs {
+            if !e.is_empty() {
+                plugins.push(output::create_eq_plugin(e));
+            }
+        }
+
+        let intermediate = &main_post_curves[role];
+        let final_curve_obj = if let Some(e) = eqs {
+            if !e.is_empty() {
+                let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
+                response::apply_complex_response(intermediate, &resp)
+            } else {
+                intermediate.clone()
+            }
+        } else {
+            intermediate.clone()
+        };
+
+        let chain = ChannelDspChain {
+            channel: role.clone(),
+            plugins,
+            drivers: None,
+            initial_curve: Some((&aligned_curves[role]).into()),
+            final_curve: Some((&final_curve_obj).into()),
+        };
+        channel_chains.insert(role.clone(), chain);
+    }
+
+    // Sub chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> PostEQ
+    let mut sub_plugins = Vec::new();
+    let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
+    if sub_align_gain.abs() > 0.01 { sub_plugins.push(output::create_gain_plugin(sub_align_gain)); }
+
+    sub_plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "low"));
+
+    if sub_inverted || sub_gain_post.abs() > 0.01 {
+        sub_plugins.push(output::create_gain_plugin_with_invert(sub_gain_post, sub_inverted));
+    }
+
+    let sub_eqs = post_eq_filters.get(sub_role);
+    if let Some(e) = sub_eqs {
+        if !e.is_empty() {
+            sub_plugins.push(output::create_eq_plugin(e));
+        }
+    }
+
+    let final_sub_curve = if let Some(e) = sub_eqs {
+        if !e.is_empty() {
+            let resp = response::compute_peq_complex_response(e, &sub_post.freq, sample_rate);
+            response::apply_complex_response(&sub_post, &resp)
+        } else {
+            sub_post.clone()
+        }
+    } else {
+        sub_post.clone()
+    };
+
+    // Build per-driver chains if multi-sub
+    let driver_chains = sub_preprocess.drivers.as_ref().map(|drivers| {
+        drivers.iter().enumerate().map(|(i, d)| {
+            let mut driver_plugins = Vec::new();
+            if d.inverted || d.gain.abs() > 0.01 {
+                if d.inverted {
+                    driver_plugins.push(output::create_gain_plugin_with_invert(d.gain, true));
+                } else {
+                    driver_plugins.push(output::create_gain_plugin(d.gain));
+                }
+            }
+            if d.delay.abs() > 0.001 {
+                driver_plugins.push(output::create_delay_plugin(d.delay));
+            }
+            let driver_curve = d.initial_curve.as_ref()
+                .map(|c| output::extend_curve_to_full_range(c))
+                .map(|c| (&c).into());
+            DriverDspChain {
+                name: d.name.clone(),
+                index: i,
+                plugins: driver_plugins,
+                initial_curve: driver_curve,
+            }
+        }).collect()
+    });
+
+    let sub_chain = ChannelDspChain {
+        channel: sub_role.to_string(),
+        plugins: sub_plugins,
+        drivers: driver_chains,
+        initial_curve: Some((&aligned_curves[sub_role]).into()),
+        final_curve: Some((&final_sub_curve).into()),
+    };
+    channel_chains.insert(sub_role.to_string(), sub_chain);
+
+    // 8. Compute scores
+    let max_freq = config.optimizer.max_freq;
+    let sub_min_score = config.optimizer.min_freq.max(20.0);
+    let mut channel_results = HashMap::new();
+    let mut pre_scores = Vec::new();
+    let mut post_scores = Vec::new();
+
+    for role in main_roles {
+        let intermediate = &main_post_curves[role];
+        let pre_score = compute_flat_score(intermediate, final_xo_freq, max_freq);
+        let final_curve_obj = if let Some(e) = post_eq_filters.get(role) {
+            if !e.is_empty() {
+                let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
+                response::apply_complex_response(intermediate, &resp)
+            } else {
+                intermediate.clone()
+            }
+        } else {
+            intermediate.clone()
+        };
+        let post_score = compute_flat_score(&final_curve_obj, final_xo_freq, max_freq);
+
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
+        channel_results.insert(role.clone(), ChannelOptimizationResult {
+            name: role.clone(),
+            pre_score,
+            post_score,
+            initial_curve: aligned_curves[role].clone(),
+            final_curve: final_curve_obj,
+            biquads: post_eq_filters.get(role).cloned().unwrap_or_default(),
+            fir_coeffs: None,
+        });
+    }
+
+    // Sub channel score
+    {
+        let pre_score = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
+        let post_score = compute_flat_score(&final_sub_curve, sub_min_score, final_xo_freq);
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
+        channel_results.insert(sub_role.to_string(), ChannelOptimizationResult {
+            name: sub_role.to_string(),
+            pre_score,
+            post_score,
+            initial_curve: aligned_curves[sub_role].clone(),
+            final_curve: final_sub_curve.clone(),
+            biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
+            fir_coeffs: None,
+        });
+    }
+
+    let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
+    let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
+
+    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+
+    Ok(RoomOptimizationResult {
+        channels: channel_chains,
+        channel_results,
+        combined_pre_score: avg_pre,
+        combined_post_score: avg_post,
+        metadata: OptimizationMetadata {
+            pre_score: avg_pre,
+            post_score: avg_post,
+            algorithm: config.optimizer.algorithm.clone(),
+            iterations: config.optimizer.max_iter,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        },
+    })
+}
+
 fn create_crossover_filters(type_str: &str, freq: f64, sample_rate: f64, is_lowpass: bool) -> Vec<Biquad> {
     use math_audio_iir_fir::*;
     let type_lower = type_str.to_lowercase();

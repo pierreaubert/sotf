@@ -267,7 +267,10 @@ pub fn optimize_filters_autoeq_with_callback(
 
     // Create smart initialization based on frequency response analysis
     // Skip for drivers-flat loss as it uses a different parameter layout
-    let smart_guesses = if setup.penalty_data.loss_type == crate::LossType::DriversFlat {
+    let smart_guesses = if matches!(
+        setup.penalty_data.loss_type,
+        crate::LossType::DriversFlat | crate::LossType::MultiSubFlat
+    ) {
         Vec::new()
     } else {
         let params_per_filter =

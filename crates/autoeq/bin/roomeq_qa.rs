@@ -3,9 +3,20 @@
 //! Validates that roomeq optimization modes produce converging results
 //! and that giving the optimizer more resources (more filters, wider Q/dB bounds)
 //! always improves or maintains loss.
+//!
+//! Uses COBYLA (fast, deterministic) instead of DE for speed.
+//! Test cases run in parallel for maximum throughput.
+//!
+//! Usage:
+//!   cargo run --bin roomeq-qa --release              # run all tests
+//!   cargo run --bin roomeq-qa --release -- --list     # list available cases
+//!   cargo run --bin roomeq-qa --release -- --case "Stereo 2.0"
+//!   cargo run --bin roomeq-qa --release -- --case "Home Cinema 5.1"
 
 use anyhow::{Context, Result, anyhow};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use autoeq::roomeq::{
     CallbackAction, ProcessingMode, RoomConfig, load_config, merge_json_objects, optimize_room,
@@ -15,25 +26,36 @@ use autoeq::roomeq::{
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Monotonicity tolerance: variation may be at most 15% worse than baseline.
-/// Stochastic optimization with DE can produce slightly worse results when
-/// expanding the search space (larger bounds = harder search). Even with
-/// single-threaded rayon and fixed seed, NLopt refinement (COBYLA) can
-/// introduce minor non-determinism.
-const MONOTONICITY_TOLERANCE: f64 = 1.15;
+/// Monotonicity tolerance: variation may be at most 20% worse than baseline.
+/// COBYLA is a local optimizer so sensitivity to search space changes is higher
+/// than global optimizers. Allow wider tolerance for the fast QA mode.
+const MONOTONICITY_TOLERANCE: f64 = 1.20;
 
 /// Cross-mode ratio: max score / min score must be <= 5.0.
-/// IIR (generic path, no stereo alignment) vs FIR/Mixed have fundamentally
-/// different capabilities, so we allow wider divergence.
 const CROSS_MODE_RATIO_LIMIT: f64 = 5.0;
 
 const SAMPLE_RATE: f64 = 48000.0;
 
 const SEED: u64 = 42;
 
+/// COBYLA maxeval for QA (fast mode). Enough to find bugs, not to get best results.
+const QA_MAXEVAL: usize = 1000;
+
 /// Base config directories
 const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
 const OPTIM_CONFIG_DIR: &str = "data_tests/roomeq/generated/optimiser-config";
+
+// ---------------------------------------------------------------------------
+// QA config overrides (fast mode: cobyla, low iterations)
+// ---------------------------------------------------------------------------
+
+/// Override optimizer settings for fast QA: use COBYLA with low maxeval, no refinement.
+fn apply_qa_overrides(config: &mut RoomConfig) {
+    config.optimizer.algorithm = "cobyla".to_string();
+    config.optimizer.max_iter = QA_MAXEVAL;
+    config.optimizer.refine = false;
+    config.optimizer.seed = Some(SEED);
+}
 
 // ---------------------------------------------------------------------------
 // Config loading helpers
@@ -73,7 +95,6 @@ fn load_config_for_generic_path(
 
     room_config.resolve_paths(&config_dir);
     room_config.optimizer.processing_mode = processing_mode;
-    room_config.optimizer.seed = Some(SEED);
 
     Ok((room_config, config_dir))
 }
@@ -82,8 +103,14 @@ fn load_config_for_generic_path(
 // Optimization runner
 // ---------------------------------------------------------------------------
 
+/// Global counter for unique temp dir names across threads
+static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
 fn run_optimization(config: &RoomConfig) -> Result<autoeq::roomeq::RoomOptimizationResult> {
-    let temp_dir = std::env::temp_dir().join(format!("roomeq_qa_{}", std::process::id()));
+    let id = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let temp_dir = std::env::temp_dir().join(format!(
+        "roomeq_qa_{}_{}", std::process::id(), id
+    ));
     std::fs::create_dir_all(&temp_dir)?;
     let callback = Box::new(|_: &autoeq::roomeq::RoomOptimizationProgress| {
         CallbackAction::Continue
@@ -173,22 +200,106 @@ struct TestResult {
 }
 
 // ---------------------------------------------------------------------------
-// Test runners
+// Test case registry
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+enum TestCase {
+    /// Stereo/Home Cinema workflow test (IIR mutations)
+    Workflow {
+        name: &'static str,
+        fem_subdir: &'static str,
+        optim_subdir: &'static str,
+    },
+    /// Generic path test (all 3 modes: IIR, FIR, Mixed)
+    Generic {
+        name: &'static str,
+        fem_subdir: &'static str,
+        optim_subdir: &'static str,
+    },
+}
+
+impl TestCase {
+    fn name(&self) -> &str {
+        match self {
+            TestCase::Workflow { name, .. } => name,
+            TestCase::Generic { name, .. } => name,
+        }
+    }
+}
+
+fn all_test_cases() -> Vec<TestCase> {
+    vec![
+        // Part A: Stereo workflows
+        TestCase::Workflow {
+            name: "Stereo 2.0",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+        },
+        TestCase::Workflow {
+            name: "Stereo 2.1",
+            fem_subdir: "small_stereo_2_1",
+            optim_subdir: "small_stereo_2_1",
+        },
+        TestCase::Workflow {
+            name: "Stereo 2.2 MSO",
+            fem_subdir: "small_stereo_2_2_mso",
+            optim_subdir: "small_stereo_2_2_mso",
+        },
+        TestCase::Workflow {
+            name: "Stereo 2.2 Cardioid",
+            fem_subdir: "small_stereo_2_2_cardioid",
+            optim_subdir: "small_stereo_2_2_cardioid",
+        },
+        TestCase::Workflow {
+            name: "Stereo 2.2 Group",
+            fem_subdir: "small_stereo_2_2_group",
+            optim_subdir: "small_stereo_2_2_group",
+        },
+        TestCase::Workflow {
+            name: "Stereo 2.2 Independent",
+            fem_subdir: "small_stereo_2_2_mso", // same FEM data, different optimizer config
+            optim_subdir: "small_stereo_2_2_independent",
+        },
+        // Part A.2: Home Cinema workflows
+        TestCase::Workflow {
+            name: "Home Cinema 5.1",
+            fem_subdir: "medium_surround_5_1",
+            optim_subdir: "medium_surround_5_1",
+        },
+        TestCase::Workflow {
+            name: "Home Cinema 5.1.4",
+            fem_subdir: "medium_surround_5_1_4",
+            optim_subdir: "medium_surround_5_1_4",
+        },
+        // Part B: Generic path (all 3 modes)
+        TestCase::Generic {
+            name: "Generic small_stereo_2_0",
+            fem_subdir: "small_stereo_2_0",
+            optim_subdir: "small_stereo_2_0",
+        },
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Test runners (return output buffer + results for parallel execution)
 // ---------------------------------------------------------------------------
 
 fn run_stereo_workflow_tests(
     name: &str,
     base_config_path: &Path,
     override_config_path: Option<&Path>,
-    results: &mut Vec<TestResult>,
-) -> Result<()> {
-    println!("\n--- {} (IIR workflow) ---", name);
+) -> Result<(String, Vec<TestResult>)> {
+    let mut out = String::new();
+    let mut results = Vec::new();
+
+    writeln!(out, "\n--- {} (IIR workflow) ---", name).unwrap();
 
     let mut baseline_post: Option<f64> = None;
 
     for mutation in IIR_MUTATIONS {
         let (mut config, _) = load_config(base_config_path, override_config_path)?;
-        config.optimizer.seed = Some(SEED);
+        apply_qa_overrides(&mut config);
         apply_mutation(&mut config, *mutation);
 
         let result =
@@ -200,13 +311,14 @@ fn run_stereo_workflow_tests(
         let (pass, reason) = evaluate_result(*mutation, pre, post, &mut baseline_post);
 
         let status = if pass { "PASS" } else { "FAIL" };
-        println!(
+        writeln!(
+            out,
             "  IIR {:>14}: post={:.4}  {}  ({})",
             mutation.to_string(),
             post,
             status,
             reason
-        );
+        ).unwrap();
 
         results.push(TestResult {
             label: format!("{} IIR {}", name, mutation),
@@ -217,16 +329,18 @@ fn run_stereo_workflow_tests(
         });
     }
 
-    Ok(())
+    Ok((out, results))
 }
 
 fn run_generic_path_tests(
     name: &str,
     base_config_path: &Path,
     override_config_dir: &Path,
-    results: &mut Vec<TestResult>,
-) -> Result<()> {
-    println!("\n--- Generic Path ({}, all modes) ---", name);
+) -> Result<(String, Vec<TestResult>)> {
+    let mut out = String::new();
+    let mut results = Vec::new();
+
+    writeln!(out, "\n--- Generic Path ({}, all modes) ---", name).unwrap();
 
     let modes: &[(&str, ProcessingMode, &str, &[Mutation])] = &[
         (
@@ -261,6 +375,7 @@ fn run_generic_path_tests(
                 Some(&override_path),
                 processing_mode.clone(),
             )?;
+            apply_qa_overrides(&mut config);
             apply_mutation(&mut config, *mutation);
 
             let result = run_optimization(&config)
@@ -277,14 +392,15 @@ fn run_generic_path_tests(
             }
 
             let status = if pass { "PASS" } else { "FAIL" };
-            println!(
+            writeln!(
+                out,
                 "  {} {:>14}: post={:.4}  {}  ({})",
                 mode_name,
                 mutation.to_string(),
                 post,
                 status,
                 reason
-            );
+            ).unwrap();
 
             results.push(TestResult {
                 label: format!("{} generic {} {}", name, mode_name, mutation),
@@ -315,10 +431,11 @@ fn run_generic_path_tests(
             .collect::<Vec<_>>()
             .join(" ");
 
-        println!(
+        writeln!(
+            out,
             "\n  Cross-mode: {} ratio={:.2}x  {}",
             mode_scores, ratio, status
-        );
+        ).unwrap();
 
         results.push(TestResult {
             label: format!("{} cross-mode", name),
@@ -332,7 +449,7 @@ fn run_generic_path_tests(
         });
     }
 
-    Ok(())
+    Ok((out, results))
 }
 
 /// Evaluate a single optimization result against baseline
@@ -380,71 +497,101 @@ fn evaluate_result(
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
-    // Force single-threaded rayon to ensure deterministic results with seed=42.
-    // Parallel DE evaluation is non-deterministic due to thread scheduling,
-    // which causes flaky test results even with a fixed seed.
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(1)
-        .build_global()
-        .expect("Failed to initialize rayon thread pool with 1 thread");
+    // Parse CLI args
+    let args: Vec<String> = std::env::args().collect();
+    let list_mode = args.iter().any(|a| a == "--list");
+    let case_filter: Option<String> = args.windows(2)
+        .find(|w| w[0] == "--case")
+        .map(|w| w[1].clone());
 
-    println!("=== RoomEQ QA: Convergence & Monotonicity ===");
+    let all_cases = all_test_cases();
+
+    // --list: print available cases and exit
+    if list_mode {
+        println!("Available test cases:");
+        for tc in &all_cases {
+            println!("  {}", tc.name());
+        }
+        return Ok(());
+    }
+
+    println!("=== RoomEQ QA: Convergence & Monotonicity (fast: cobyla, parallel) ===");
 
     let project_root = find_project_root()?;
     let fem_dir = project_root.join(FEM_DIR);
     let optim_dir = project_root.join(OPTIM_CONFIG_DIR);
 
-    let mut results: Vec<TestResult> = Vec::new();
+    // Filter cases if --case is provided (substring match)
+    let cases_to_run: Vec<TestCase> = if let Some(ref filter) = case_filter {
+        let filter_lower = filter.to_lowercase();
+        let matched: Vec<_> = all_cases.into_iter()
+            .filter(|tc| tc.name().to_lowercase().contains(&filter_lower))
+            .collect();
+        if matched.is_empty() {
+            return Err(anyhow!(
+                "No test case matches '{}'. Use --list to see available cases.", filter
+            ));
+        }
+        println!("Running {} case(s) matching '{}'", matched.len(), filter);
+        matched
+    } else {
+        all_cases
+    };
 
-    // Part A: Stereo workflows
-    // 2.0: use IIR override config (optimizer-only overrides, works well)
-/*
-    run_stereo_workflow_tests(
-        "Stereo 2.0",
-        &fem_dir.join("small_stereo_2_0/config.json"),
-        Some(&optim_dir.join("small_stereo_2_0/optimiser-iir.json")),
-        &mut results,
-    )?;
-*/
+    // Run all test cases in parallel using threads
+    let handles: Vec<_> = cases_to_run.into_iter().map(|tc| {
+        let fem_dir = fem_dir.clone();
+        let optim_dir = optim_dir.clone();
+        std::thread::spawn(move || -> Result<(String, Vec<TestResult>)> {
+            match tc {
+                TestCase::Workflow { name, fem_subdir, optim_subdir } => {
+                    let base_path = fem_dir.join(format!("{}/config.json", fem_subdir));
+                    let override_path = optim_dir.join(format!("{}/optimiser-iir.json", optim_subdir));
+                    run_stereo_workflow_tests(name, &base_path, Some(&override_path))
+                }
+                TestCase::Generic { name, fem_subdir, optim_subdir } => {
+                    let base_path = fem_dir.join(format!("{}/config.json", fem_subdir));
+                    let override_dir = optim_dir.join(optim_subdir);
+                    run_generic_path_tests(name, &base_path, &override_dir)
+                }
+            }
+        })
+    }).collect();
 
-    // 2.1: stereo with subwoofer and crossover optimization
-/*
-    run_stereo_workflow_tests(
-        "Stereo 2.1",
-        &fem_dir.join("small_stereo_2_1/config.json"),
-        Some(&optim_dir.join("small_stereo_2_1/optimiser-iir.json")),
-        &mut results,
-    )?;
-*/
+    // Collect results in order, printing output as each completes
+    let mut all_results: Vec<TestResult> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
 
-    // 2.2: stereo with subwoofer and crossover optimization
-    run_stereo_workflow_tests(
-        "Stereo 2.2",
-        &fem_dir.join("small_stereo_2_2/config.json"),
-        Some(&optim_dir.join("small_stereo_2_2/optimiser-iir.json")),
-        &mut results,
-    )?;
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok((output, results))) => {
+                print!("{}", output);
+                all_results.extend(results);
+            }
+            Ok(Err(e)) => {
+                errors.push(format!("{:#}", e));
+            }
+            Err(_) => {
+                errors.push("Thread panicked".to_string());
+            }
+        }
+    }
 
-    // Part B: Generic path (all 3 modes) — uses small_stereo_2_0 with system removed
-/*
-    run_generic_path_tests(
-        "small_stereo_2_0",
-        &fem_dir.join("small_stereo_2_0/config.json"),
-        &optim_dir.join("small_stereo_2_0"),
-        &mut results,
-    )?;
-*/
+    // Print any thread errors
+    for err in &errors {
+        eprintln!("ERROR: {}", err);
+    }
 
     // Summary
-    let total = results.len();
-    let passed = results.iter().filter(|r| r.pass).count();
+    let total = all_results.len();
+    let passed = all_results.iter().filter(|r| r.pass).count();
     let failed = total - passed;
 
     println!("\n=== Summary: {}/{} PASS ===", passed, total);
 
     if failed > 0 {
         println!("\nFailed tests:");
-        for r in &results {
+        for r in &all_results {
             if !r.pass {
                 println!(
                     "  - {} (pre={:.4}, post={:.4}): {}",
@@ -452,6 +599,9 @@ fn main() -> Result<()> {
                 );
             }
         }
+    }
+
+    if failed > 0 || !errors.is_empty() {
         std::process::exit(1);
     }
 

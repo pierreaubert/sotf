@@ -6,16 +6,6 @@ use super::DenoiserPlugin;
 use rustfft::num_complex::Complex;
 
 impl DenoiserPlugin {
-    /// Generate Hann window for STFT analysis
-    /// Uses N (not N-1) divisor for perfect COLA with 50% overlap
-    pub(super) fn generate_hann_window(fft_size: usize) -> Vec<f32> {
-        (0..fft_size)
-            .map(|i| {
-                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / fft_size as f32).cos())
-            })
-            .collect()
-    }
-
     /// Apply window and forward FFT for all channels
     /// Input: interleaved audio [L0, R0, L1, R1, ...]
     /// Output: freq_domain buffers are filled with complex spectrum

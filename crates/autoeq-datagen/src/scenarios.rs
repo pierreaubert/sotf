@@ -1,6 +1,6 @@
 //! Room scenario definitions for RoomEQ data generation
 //!
-//! Defines 17 scenarios covering small/medium/large rooms with
+//! Defines 19 scenarios covering small/medium/large rooms with
 //! stereo, 2.1, multi-sub, multi-seat, and surround (5.0/5.1/5.1.4) configurations.
 
 use math_audio_xem_common::{
@@ -81,13 +81,14 @@ fn make_simulation(
     sim
 }
 
-/// Generate all 17 scenarios
+/// Generate all 19 scenarios
 pub fn all_scenarios() -> Vec<Scenario> {
     vec![
         scenario_01_small_stereo_2_0(),
         scenario_02_small_stereo_2_1(),
         scenario_03_small_stereo_2_2_mso(),
         scenario_03_small_stereo_2_2_cardioid(),
+        scenario_03_small_stereo_2_2_group(),
         scenario_04_medium_stereo(),
         scenario_05_medium_2_1(),
         scenario_06_medium_multi_sub_4(),
@@ -191,6 +192,31 @@ fn scenario_03_small_stereo_2_2_cardioid() -> Scenario {
             "right".to_string(),
             "sub_bottom".to_string(),
             "sub_top".to_string(),
+        ],
+    }
+}
+
+/// Scenario 3c: Small room, 2 subs (grouped with mains) + HP mains, 1 LP
+/// Each sub is directly below its corresponding main speaker.
+/// Naming convention: `{main}_sub` signals Group config to config gen.
+fn scenario_03_small_stereo_2_2_group() -> Scenario {
+    let room = small_room();
+    let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
+    let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
+    // Subs directly below their respective mains, on the floor
+    let left_sub = make_lp_source(Point3D::new(0.8, 0.3, 0.15), "left_sub");
+    let right_sub = make_lp_source(Point3D::new(2.2, 0.3, 0.15), "right_sub");
+    let lp = Point3D::new(1.5, 2.0, 1.1);
+
+    Scenario {
+        name: "small_stereo_2_2_group".to_string(),
+        description: "Small 3x3x2.4m room, grouped subs below mains".to_string(),
+        simulation: make_simulation(room, vec![left, right, left_sub, right_sub], vec![lp]),
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "left_sub".to_string(),
+            "right_sub".to_string(),
         ],
     }
 }
@@ -586,7 +612,7 @@ mod tests {
     #[test]
     fn test_all_scenarios_count() {
         let scenarios = all_scenarios();
-        assert_eq!(scenarios.len(), 18);
+        assert_eq!(scenarios.len(), 19);
     }
 
     #[test]

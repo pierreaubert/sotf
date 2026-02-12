@@ -3,25 +3,26 @@
   "system": {
     "model": "stereo",
     "speakers": {
-      "LFE": "lfe",
       "R": "right",
+      "LFE": "lfe",
       "L": "left"
     },
     "subwoofers": {
-      "config": "single",
+      "config": "mso",
       "crossover": "first",
       "lfe": "L"
     }
   },
   "speakers": {
-    "right": "right_lp0.csv",
+    "left": "left_lp0.csv",
     "lfe": {
-      "name": "Cardioid Stack",
-      "front": "sub_bottom_lp0.csv",
-      "rear": "sub_top_lp0.csv",
-      "separation_meters": 0.5
+      "name": "subs",
+      "subwoofers": [
+        "sub1_lp0.csv",
+        "sub2_lp0.csv"
+      ]
     },
-    "left": "left_lp0.csv"
+    "right": "right_lp0.csv"
   },
   "crossovers": {
     "first": {
@@ -36,13 +37,13 @@
     "algorithm": "autoeq:de",
     "num_filters": 7,
     "min_q": 0.5,
-    "max_q": 6.0,
+    "max_q": 10.0,
     "min_db": -12.0,
-    "max_db": 4.0,
+    "max_db": 12.0,
     "min_freq": 20.0,
     "max_freq": 500.0,
     "max_iter": 5000,
-    "population": 50,
+    "population": 300,
     "peq_model": "pk",
     "seed": 42,
     "refine": true,

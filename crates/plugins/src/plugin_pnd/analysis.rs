@@ -2,23 +2,24 @@
 // PND Analysis Logic — Windowed Hop-Based Drift Estimation
 // ============================================================================
 
-use rustfft::{Fft, FftPlanner, num_complex::Complex, num_traits::Zero};
-use std::sync::Arc;
+use crate::stft_common::{RealFftProcessor, RingAccumulator, generate_hann_window};
+
+/// Minimum number of matched partials required to record a drift measurement.
+const MIN_MATCHED_PARTIALS: usize = 3;
+
+/// Weight for log-amplitude distance in the combined matching cost.
+/// Frequency remains the primary discriminator; amplitude breaks ties.
+const AMPLITUDE_COST_WEIGHT: f32 = 0.1;
 
 pub struct PndAnalyzer {
     fft_size: usize,
     sample_rate: u32,
-    hop_size: usize,
-    fft: Arc<dyn Fft<f32>>,
     window: Vec<f32>,
-    fft_buffer: Vec<Complex<f32>>,
-    fft_scratch: Vec<Complex<f32>>,
+    fft: RealFftProcessor,
+    ring: RingAccumulator,
 
-    // Ring buffer for accumulating samples across process() calls
-    ring_buffer: Vec<f32>,
-    ring_write_pos: usize,
-    ring_samples_accumulated: usize,
-    ring_filled: bool,
+    // Pre-allocated windowed time-domain buffer for FFT input
+    windowed_buffer: Vec<f32>,
 
     // Partial tracking state
     prev_peaks: Vec<(f32, f32)>, // (frequency_hz, magnitude)
@@ -35,21 +36,19 @@ pub struct PndAnalyzer {
 
     // Pre-allocated sort buffer for median computation
     median_scratch: Vec<f32>,
+
+    // Confidence tracking
+    last_confidence: f32,
+    last_matched_partials: usize,
+    last_total_peaks: usize,
 }
 
 impl PndAnalyzer {
     pub fn new(fft_size: usize, sample_rate: u32, analysis_window_ms: f32) -> Self {
-        let mut planner = FftPlanner::new();
-        let fft = planner.plan_fft_forward(fft_size);
-
         let hop_size = fft_size / 4; // 512 for fft_size=2048
-
-        // Hann window
-        let window: Vec<f32> = (0..fft_size)
-            .map(|i| {
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / fft_size as f32).cos())
-            })
-            .collect();
+        let window = generate_hann_window(fft_size);
+        let fft = RealFftProcessor::new_forward_only(fft_size);
+        let ring = RingAccumulator::new(fft_size, hop_size);
 
         let drift_history_capacity =
             compute_drift_history_capacity(analysis_window_ms, sample_rate, hop_size);
@@ -57,16 +56,10 @@ impl PndAnalyzer {
         Self {
             fft_size,
             sample_rate,
-            hop_size,
-            fft,
             window,
-            fft_buffer: vec![Complex::zero(); fft_size],
-            fft_scratch: vec![Complex::zero(); fft_size],
-
-            ring_buffer: vec![0.0; fft_size],
-            ring_write_pos: 0,
-            ring_samples_accumulated: 0,
-            ring_filled: false,
+            fft,
+            ring,
+            windowed_buffer: vec![0.0; fft_size],
 
             prev_peaks: Vec::new(),
             peak_scratch: Vec::new(),
@@ -78,6 +71,10 @@ impl PndAnalyzer {
             drift_history_capacity,
 
             median_scratch: Vec::new(),
+
+            last_confidence: 0.0,
+            last_matched_partials: 0,
+            last_total_peaks: 0,
         }
     }
 
@@ -86,19 +83,7 @@ impl PndAnalyzer {
     /// once the ring buffer has been filled at least once (fft_size samples).
     pub fn analyze(&mut self, samples: &[f32]) -> f32 {
         for &sample in samples {
-            // Write into ring buffer
-            self.ring_buffer[self.ring_write_pos] = sample;
-            self.ring_write_pos = (self.ring_write_pos + 1) % self.fft_size;
-            self.ring_samples_accumulated += 1;
-
-            // Mark filled once we've written fft_size samples total
-            if !self.ring_filled && self.ring_samples_accumulated >= self.fft_size {
-                self.ring_filled = true;
-            }
-
-            // Trigger FFT every hop_size samples, but only after ring is filled
-            if self.ring_filled && self.ring_samples_accumulated >= self.hop_size {
-                self.ring_samples_accumulated = 0;
+            if self.ring.push(sample) {
                 self.process_fft_frame();
             }
         }
@@ -107,26 +92,23 @@ impl PndAnalyzer {
     }
 
     fn process_fft_frame(&mut self) {
-        // Copy from ring buffer with Hann window.
-        // ring_write_pos points to the oldest sample (just wrapped).
-        let start = self.ring_write_pos; // oldest sample
+        // Read windowed samples from ring buffer
+        self.ring.read_window(&mut self.windowed_buffer);
         for i in 0..self.fft_size {
-            let idx = (start + i) % self.fft_size;
-            self.fft_buffer[i] = Complex::new(self.ring_buffer[idx] * self.window[i], 0.0);
+            self.fft.time_buffer[i] = self.windowed_buffer[i] * self.window[i];
         }
 
-        self.fft
-            .process_with_scratch(&mut self.fft_buffer, &mut self.fft_scratch);
+        self.fft.forward();
 
-        // Peak picking
+        // Peak picking on the real-FFT spectrum (spectrum_size bins)
         let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
         self.peak_scratch.clear();
 
         let threshold = 0.001; // ~-60dB
-        for i in 1..self.fft_size / 2 - 1 {
-            let mag_prev = self.fft_buffer[i - 1].norm();
-            let mag_curr = self.fft_buffer[i].norm();
-            let mag_next = self.fft_buffer[i + 1].norm();
+        for i in 1..self.fft.spectrum_size - 1 {
+            let mag_prev = self.fft.freq_buffer[i - 1].norm();
+            let mag_curr = self.fft.freq_buffer[i].norm();
+            let mag_next = self.fft.freq_buffer[i + 1].norm();
 
             if mag_curr > threshold && mag_curr > mag_prev && mag_curr > mag_next {
                 // Parabolic interpolation for more accurate frequency
@@ -145,35 +127,57 @@ impl PndAnalyzer {
         }
 
         // Partial tracking: match current peaks against previous frame
+        // using combined frequency + amplitude cost
         self.ratio_scratch.clear();
+        let mut matched_partials = 0;
 
         if !self.prev_peaks.is_empty() {
-            for &(freq, _mag) in &self.peak_scratch {
-                let mut min_diff = f32::MAX;
+            for &(freq, mag) in &self.peak_scratch {
+                let mut min_cost = f32::MAX;
                 let mut best_prev_freq = 0.0_f32;
 
-                for &(prev_freq, _prev_mag) in &self.prev_peaks {
-                    let diff = (freq - prev_freq).abs();
-                    if diff < min_diff {
-                        min_diff = diff;
+                for &(prev_freq, prev_mag) in &self.prev_peaks {
+                    let freq_distance = (freq - prev_freq).abs();
+
+                    // Quick reject: beyond 3% frequency change
+                    if freq_distance > prev_freq * 0.03 {
+                        continue;
+                    }
+
+                    // Combined cost: frequency distance + weighted log-amplitude distance
+                    let log_amp_distance = ((mag + 1e-10).ln() - (prev_mag + 1e-10).ln()).abs();
+                    let cost = freq_distance + AMPLITUDE_COST_WEIGHT * log_amp_distance;
+
+                    if cost < min_cost {
+                        min_cost = cost;
                         best_prev_freq = prev_freq;
                     }
                 }
 
                 // Within 50 cents (~3% change) → same partial
-                if best_prev_freq > 0.0 && min_diff < best_prev_freq * 0.03 {
+                if best_prev_freq > 0.0 && min_cost < f32::MAX {
                     let ratio = freq / best_prev_freq;
                     self.ratio_scratch.push(ratio);
+                    matched_partials += 1;
                 }
             }
         }
+
+        // Update confidence tracking
+        self.last_total_peaks = self.peak_scratch.len();
+        self.last_matched_partials = matched_partials;
+        self.last_confidence = if self.last_total_peaks > 0 {
+            matched_partials as f32 / self.last_total_peaks as f32
+        } else {
+            0.0
+        };
 
         // Swap peaks: reuse prev_peaks capacity
         self.prev_peaks.clear();
         self.prev_peaks.extend_from_slice(&self.peak_scratch);
 
-        // Push median of ratios into drift history
-        if !self.ratio_scratch.is_empty() {
+        // Push median of ratios into drift history only if enough partials matched
+        if matched_partials >= MIN_MATCHED_PARTIALS && !self.ratio_scratch.is_empty() {
             self.ratio_scratch
                 .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let mid = self.ratio_scratch.len() / 2;
@@ -194,18 +198,14 @@ impl PndAnalyzer {
 
         // Compute median of drift_history[..drift_count]
         self.median_scratch.clear();
-        if self.drift_count <= self.drift_history_capacity {
-            // Not yet wrapped: entries are at [0..drift_count] or scattered
-            // Since it's circular, collect all valid entries
-            if self.drift_count < self.drift_history_capacity {
-                // Haven't wrapped yet: entries [0..drift_count]
-                self.median_scratch
-                    .extend_from_slice(&self.drift_history[..self.drift_count]);
-            } else {
-                // Full buffer
-                self.median_scratch
-                    .extend_from_slice(&self.drift_history[..self.drift_history_capacity]);
-            }
+        if self.drift_count < self.drift_history_capacity {
+            // Haven't wrapped yet: entries [0..drift_count]
+            self.median_scratch
+                .extend_from_slice(&self.drift_history[..self.drift_count]);
+        } else {
+            // Full buffer
+            self.median_scratch
+                .extend_from_slice(&self.drift_history[..self.drift_history_capacity]);
         }
 
         self.median_scratch
@@ -215,8 +215,9 @@ impl PndAnalyzer {
     }
 
     pub fn update_analysis_window(&mut self, analysis_window_ms: f32) {
+        let hop_size = self.fft_size / 4;
         let new_capacity =
-            compute_drift_history_capacity(analysis_window_ms, self.sample_rate, self.hop_size);
+            compute_drift_history_capacity(analysis_window_ms, self.sample_rate, hop_size);
         if new_capacity != self.drift_history_capacity {
             self.drift_history = vec![0.0; new_capacity];
             self.drift_write_pos = 0;
@@ -225,12 +226,23 @@ impl PndAnalyzer {
         }
     }
 
+    /// Get the current drift confidence (0.0 to 1.0).
+    pub fn confidence(&self) -> f32 {
+        self.last_confidence
+    }
+
+    /// Get the number of matched partials in the last frame.
+    pub fn matched_partials(&self) -> usize {
+        self.last_matched_partials
+    }
+
+    /// Get the total number of detected peaks in the last frame.
+    pub fn total_peaks(&self) -> usize {
+        self.last_total_peaks
+    }
+
     pub fn reset(&mut self) {
-        // Zero ring buffer state
-        self.ring_buffer.fill(0.0);
-        self.ring_write_pos = 0;
-        self.ring_samples_accumulated = 0;
-        self.ring_filled = false;
+        self.ring.reset();
 
         // Clear peak tracking
         self.prev_peaks.clear();
@@ -242,6 +254,11 @@ impl PndAnalyzer {
         self.drift_write_pos = 0;
         self.drift_count = 0;
         self.median_scratch.clear();
+
+        // Reset confidence
+        self.last_confidence = 0.0;
+        self.last_matched_partials = 0;
+        self.last_total_peaks = 0;
     }
 }
 

@@ -211,18 +211,24 @@ pub fn optimize_room(
 
     // Dispatch to specific workflows based on topology
     if let Some(sys) = &config.system {
-        if sys.model == SystemModel::Stereo {
-            // If any channel uses SpeakerConfig::Group, fall through to the generic path
-            // which handles Groups via process_speaker_group.
-            let has_group = sys.speakers.values().any(|key| {
-                matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_)))
-            });
-            if !has_group {
-                if sys.subwoofers.is_some() {
-                    return super::workflows::optimize_stereo_2_1(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
-                } else {
-                    return super::workflows::optimize_stereo_2_0(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+        // If any channel uses SpeakerConfig::Group, fall through to the generic path
+        // which handles Groups via process_speaker_group.
+        let has_group = sys.speakers.values().any(|key| {
+            matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_)))
+        });
+        if !has_group {
+            match sys.model {
+                SystemModel::Stereo => {
+                    if sys.subwoofers.is_some() {
+                        return super::workflows::optimize_stereo_2_1(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+                    } else {
+                        return super::workflows::optimize_stereo_2_0(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+                    }
                 }
+                SystemModel::HomeCinema => {
+                    return super::workflows::optimize_home_cinema(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+                }
+                SystemModel::Custom => {} // Fall through to generic path
             }
         }
     }

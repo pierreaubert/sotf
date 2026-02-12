@@ -23,8 +23,8 @@ impl DenoiserPlugin {
     /// 2. Smooth gains across frequency bins (prevents musical noise)
     /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_wiener_gains(&mut self) {
-        let reduction_factor = 10.0_f32.powf(self.reduction_db / 20.0);
-        let floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
+        let reduction_factor = self.reduction_linear;
+        let floor_linear = self.floor_linear;
 
         let mut total_reduction = 0.0_f32;
         let mut bin_count = 0;
@@ -159,6 +159,7 @@ impl DenoiserPlugin {
     pub(super) fn update_envelope_coefficients(&mut self) {
         self.attack_coeff = Self::time_to_coeff(self.attack_ms, self.sample_rate, self.hop_size);
         self.release_coeff = Self::time_to_coeff(self.release_ms, self.sample_rate, self.hop_size);
+        self.reduction_linear = 10.0_f32.powf(self.reduction_db / 20.0);
         self.floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
     }
 

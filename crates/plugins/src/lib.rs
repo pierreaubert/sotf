@@ -60,6 +60,7 @@ mod simd;
 mod smoothing;
 mod sofa;
 pub mod speaker_config;
+pub(crate) mod stft_common;
 
 // HAL plugins (macOS only, requires 'hal' feature)
 #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -114,7 +115,7 @@ pub use plugin_multiband_expander::{
     BandExpanderParams, MultibandExpanderData, MultibandExpanderPlugin,
     MultibandExpanderPluginParams,
 };
-pub use plugin_pnd::{PndPlugin, PndPluginParams};
+pub use plugin_pnd::{PndData, PndPlugin, PndPluginParams};
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_upmixer::{
     UpmixerPlugin,

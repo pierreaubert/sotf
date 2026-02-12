@@ -22,11 +22,10 @@ impl DenoiserPlugin {
     /// 2. Smooth gains across frequency bins (prevents musical noise)
     /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_polyphonic_gains(&mut self) {
-        let floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
+        let floor_linear = self.floor_linear;
 
         // 6 dB threshold ~ signal is 4x noise power
-        let snr_threshold_db = 6.0;
-        let snr_threshold_linear = 10.0_f32.powf(snr_threshold_db / 10.0);
+        const SNR_THRESHOLD_LINEAR: f32 = 3.981_072; // 10^(6/10)
 
         let mut total_reduction = 0.0_f32;
         let mut bin_count = 0;
@@ -38,7 +37,7 @@ impl DenoiserPlugin {
                 let noise_power = self.get_effective_noise_power(ch, k);
                 let snr = signal_power / noise_power.max(EPSILON);
 
-                let target_gain = if snr > snr_threshold_linear {
+                let target_gain = if snr > SNR_THRESHOLD_LINEAR {
                     1.0
                 } else {
                     floor_linear

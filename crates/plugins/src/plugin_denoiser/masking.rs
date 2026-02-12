@@ -34,18 +34,30 @@ impl DenoiserPlugin {
         13.0 * (0.76 * f).atan() + 3.5 * (f / 7.5).powi(2).atan()
     }
 
-    /// Precompute Bark mapping for all FFT bins
-    /// Called during initialize() when sample_rate is known
+    /// Precompute Bark mapping and per-bin spreading ranges for all FFT bins.
+    /// Called during initialize() when sample_rate is known.
     pub(super) fn precompute_bark_mapping(&mut self) {
         let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
         for k in 0..self.spectrum_size {
             let freq = k as f32 * bin_hz;
             self.bark_map[k] = Self::freq_to_bark(freq);
         }
+
+        // Precompute the (lo, hi) bin range within MAX_SPREAD_BARK for each bin.
+        // bark_map is monotonically non-decreasing, so we can use partition_point.
+        for j in 0..self.spectrum_size {
+            let bark_j = self.bark_map[j];
+            let lo = self.bark_map[..self.spectrum_size]
+                .partition_point(|&b| b < bark_j - MAX_SPREAD_BARK);
+            let hi = self.bark_map[..self.spectrum_size]
+                .partition_point(|&b| b <= bark_j + MAX_SPREAD_BARK);
+            self.bark_bin_range[j] = (lo, hi);
+        }
     }
 
-    /// Compute masking thresholds for a given channel
-    /// Uses signal power and the Bark-scale spreading function
+    /// Compute masking thresholds for a given channel.
+    /// Uses signal power and the Bark-scale spreading function.
+    /// O(N) per bin thanks to precomputed bark_bin_range.
     pub(super) fn compute_masking_thresholds(&mut self, channel: usize) {
         let n = self.spectrum_size;
 
@@ -54,23 +66,17 @@ impl DenoiserPlugin {
             self.masking_signal_power[k] = self.get_power_at_bin(channel, k).max(EPSILON);
         }
 
-        // Convert to dB for spreading computation
-        // and initialize threshold to very low value
+        // Initialize threshold to very low value
         self.masking_threshold[..n].fill(f32::NEG_INFINITY);
 
-        // For each masker bin, spread its masking energy to nearby bins
+        // For each masker bin, spread its masking energy only to nearby bins
         for j in 0..n {
             let masker_db = 10.0 * self.masking_signal_power[j].log10() + MASKING_OFFSET_DB;
             let bark_j = self.bark_map[j];
+            let (lo, hi) = self.bark_bin_range[j];
 
-            // Only spread to bins within MAX_SPREAD_BARK range
-            for k in 0..n {
-                let bark_k = self.bark_map[k];
-                let bark_diff = bark_k - bark_j;
-
-                if bark_diff.abs() > MAX_SPREAD_BARK {
-                    continue;
-                }
+            for k in lo..hi {
+                let bark_diff = self.bark_map[k] - bark_j;
 
                 // Compute spreading attenuation
                 let spread_db = if bark_diff < 0.0 {
