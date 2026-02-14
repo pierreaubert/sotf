@@ -160,7 +160,7 @@ prod-toolbar:
 	echo "Building ConfigBar/Toolbar..."
 	swiftc \
 		-o "$BUILD_DIR/sotf-toolbar" \
-		"$CONFIGBAR_DIR/src/ConfigBar.swift" \
+		"$CONFIGBAR_DIR"/src/*.swift \
 		-framework SwiftUI \
 		-framework WebKit \
 		-framework UserNotifications \
@@ -198,11 +198,16 @@ prod-hal-driver:
 	chmod 644 "$BUILD_DIR/Contents/Info.plist"
 	# Sign the driver bundle with hardened runtime
 	echo "Signing HAL driver..."
-	codesign --force --sign "$INSTALLER_DEVELOPER_ID" \
-		--options runtime \
-		--timestamp \
-		--deep \
-		"$BUILD_DIR"
+	if [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
+		codesign --force --sign "$INSTALLER_DEVELOPER_ID" \
+			--options runtime \
+			--timestamp \
+			--deep \
+			"$BUILD_DIR"
+	else
+		echo "INSTALLER_DEVELOPER_ID not set, using ad-hoc signing"
+		codesign --force --deep --sign - "$BUILD_DIR"
+	fi
 	echo "✅ HAL driver built and signed: $BUILD_DIR"
 
 # Build all macOS daemon components (daemon + toolbar + HAL driver)

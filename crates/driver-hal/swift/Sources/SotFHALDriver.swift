@@ -402,19 +402,17 @@ private func driverGetPropertyDataSize(_ driver: AudioServerPlugInDriverRef, _ o
         case kPlugInObjectID:
             outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 device
         case kDeviceObjectID:
-            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size * 2)  // 2 streams
+            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 stream (output only)
         default:
             outDataSize.pointee = 0
         }
 
     case kSelector_Streams:
-        // Return size based on scope
+        // Output-only device: no input streams
         if scope == kScope_Input {
-            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 input stream
-        } else if scope == kScope_Output {
-            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 output stream
+            outDataSize.pointee = 0
         } else {
-            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size * 2)  // Both streams
+            outDataSize.pointee = UInt32(MemoryLayout<AudioObjectID>.size)  // 1 output stream
         }
 
     case kSelector_RelatedDevices:
@@ -538,10 +536,8 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
             outData.storeBytes(of: kDeviceObjectID, as: AudioObjectID.self)
             outDataSize.pointee = 4
         case kDeviceObjectID:
-            let streams = outData.assumingMemoryBound(to: AudioObjectID.self)
-            streams[0] = kInputStreamObjectID
-            streams[1] = kOutputStreamObjectID
-            outDataSize.pointee = 8
+            outData.storeBytes(of: kOutputStreamObjectID, as: AudioObjectID.self)
+            outDataSize.pointee = 4
         default:
             outDataSize.pointee = 0
         }
@@ -573,7 +569,9 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outDataSize.pointee = 4
 
     case kSelector_CanBeDefault, kSelector_CanBeSystemDefault:
-        outData.storeBytes(of: UInt32(1), as: UInt32.self)
+        // Output-only device: cannot be default input device
+        let canBe: UInt32 = (scope == kScope_Input) ? 0 : 1
+        outData.storeBytes(of: canBe, as: UInt32.self)
         outDataSize.pointee = 4
 
     case kSelector_Latency:
@@ -623,18 +621,12 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outDataSize.pointee = UInt32(MemoryLayout<AudioValueRange>.size)
 
     case kSelector_Streams:
-        let streams = outData.assumingMemoryBound(to: AudioObjectID.self)
+        // Output-only device: no input streams
         if scope == kScope_Input {
-            streams[0] = kInputStreamObjectID
-            outDataSize.pointee = 4
-        } else if scope == kScope_Output {
-            streams[0] = kOutputStreamObjectID
-            outDataSize.pointee = 4
+            outDataSize.pointee = 0
         } else {
-            // Global or wildcard - return both
-            streams[0] = kInputStreamObjectID
-            streams[1] = kOutputStreamObjectID
-            outDataSize.pointee = 8
+            outData.storeBytes(of: kOutputStreamObjectID, as: AudioObjectID.self)
+            outDataSize.pointee = 4
         }
 
     case kSelector_PreferredStereo:
@@ -644,10 +636,22 @@ private func driverGetPropertyData(_ driver: AudioServerPlugInDriverRef, _ objec
         outDataSize.pointee = 8
 
     case kSelector_StreamConfig:
-        var bufferList = AudioBufferList()
-        bufferList.mNumberBuffers = 1
-        outData.storeBytes(of: bufferList, as: AudioBufferList.self)
-        outDataSize.pointee = UInt32(MemoryLayout<AudioBufferList>.size)
+        if scope == kScope_Input {
+            // No input streams
+            var bufferList = AudioBufferList()
+            bufferList.mNumberBuffers = 0
+            outData.storeBytes(of: bufferList, as: AudioBufferList.self)
+            outDataSize.pointee = UInt32(MemoryLayout<AudioBufferList>.size)
+        } else {
+            // Output: 1 interleaved buffer with proper channel count
+            var bufferList = AudioBufferList()
+            bufferList.mNumberBuffers = 1
+            bufferList.mBuffers.mNumberChannels = state.channelCount
+            bufferList.mBuffers.mDataByteSize = 0
+            bufferList.mBuffers.mData = nil
+            outData.storeBytes(of: bufferList, as: AudioBufferList.self)
+            outDataSize.pointee = UInt32(MemoryLayout<AudioBufferList>.size)
+        }
 
     // Stream properties
     case kSelector_StreamIsActive:
@@ -873,10 +877,8 @@ private func ioOperationName(_ operationID: UInt32) -> String {
 private func driverWillDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ outWillDo: UnsafeMutablePointer<DarwinBoolean>, _ outWillDoInPlace: UnsafeMutablePointer<DarwinBoolean>) -> OSStatus {
     // We support:
     // - Cycle: IO timing notifications
-    // - ReadInput: Provide audio to recording clients
     // - WriteMix: Receive audio from playback clients
     let willDo = (operationID == kIOOperation_Cycle ||
-                  operationID == kIOOperation_ReadInput ||
                   operationID == kIOOperation_WriteMix)
     outWillDo.pointee = DarwinBoolean(willDo)
     outWillDoInPlace.pointee = DarwinBoolean(true)
@@ -954,7 +956,7 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
         // Log on very first call to confirm WriteMix is being invoked
         if !DiagCounter.firstCallLogged {
             DiagCounter.firstCallLogged = true
-            halLog("WriteMix: FIRST CALL - frameCount=\(frameCount), channels=\(channelCount)")
+            halLog("WriteMix: FIRST CALL - frameCount=\(frameCount), channels=\(channelCount), sampleCount=\(sampleCount)")
         }
 
         let shouldLogDiag = (DiagCounter.count % 200) == 0
@@ -962,13 +964,39 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
         let isConnected = state.sharedAudio.isConnected
         let engineReady = state.sharedAudio.engineReady
 
+        // Compute RMS and peak of the incoming CoreAudio buffer to verify data is non-zero
         if shouldLogDiag {
-            // Log diagnostic state using .error so it appears in Console.app
-            os_log("[DIAG] WriteMix: isConnected=%{public}d, engineReady=%{public}d, loopback=%{public}d",
+            var mainRms: Float = 0.0
+            var mainPeak: Float = 0.0
+            let checkCount = min(sampleCount, 1024)
+            for i in 0..<checkCount {
+                let sample = floatBuffer[i]
+                mainRms += sample * sample
+                let absSample = abs(sample)
+                if absSample > mainPeak { mainPeak = absSample }
+            }
+            mainRms = sqrtf(mainRms / Float(checkCount))
+
+            // Also check ioSecondaryBuffer - CoreAudio may place mixed audio there
+            var secRms: Float = 0.0
+            var secPeak: Float = 0.0
+            if let secBuf = ioSecondaryBuffer {
+                let secFloat = secBuf.assumingMemoryBound(to: Float.self)
+                for i in 0..<checkCount {
+                    let sample = secFloat[i]
+                    secRms += sample * sample
+                    let absSample = abs(sample)
+                    if absSample > secPeak { secPeak = absSample }
+                }
+                secRms = sqrtf(secRms / Float(checkCount))
+            }
+
+            os_log("[DIAG] WriteMix: conn=%{public}d eng=%{public}d mainRMS=%{public}.6f mainPeak=%{public}.6f secRMS=%{public}.6f secPeak=%{public}.6f frames=%{public}d sec=%{public}d",
                    log: logger, type: .error,
                    isConnected ? 1 : 0,
                    engineReady ? 1 : 0,
-                   state.loopbackEnabled ? 1 : 0)
+                   mainRms, mainPeak, secRms, secPeak, frameCount,
+                   ioSecondaryBuffer != nil ? 1 : 0)
         }
 
         // Also send to Rust engine if connected and ready

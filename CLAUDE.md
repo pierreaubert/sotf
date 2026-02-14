@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Interaction Rules
 - **Verify Compilation**: Always ensure the code compiles (`cargo check` or `cargo build`) before submitting an answer or marking a task as complete.
+- **Engine & Plugins crates**: When modifying `crates/engine/` or `crates/plugins/`, always create a dedicated PR (not part of a larger PR) and run a code review before merging.
 
 
 ## Project Overview

@@ -718,10 +718,17 @@ class DaemonManager {
         process.executableURL = URL(fileURLWithPath: daemonPath)
         process.arguments = []
 
-        // Redirect output to console for debugging
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        // Redirect output to log file
+        let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("org.spinorama.sotf")
+        try? FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+        let logPath = appSupportDir.appendingPathComponent("sotf-daemon.log").path
+        FileManager.default.createFile(atPath: logPath, contents: nil)
+        let logHandle = FileHandle(forWritingAtPath: logPath)
+        logHandle?.seekToEndOfFile()
+        process.standardOutput = logHandle
+        process.standardError = logHandle
+        process.environment = ProcessInfo.processInfo.environment.merging(["RUST_LOG": "info"]) { _, new in new }
 
         // Handle daemon termination
         process.terminationHandler = { [weak self] proc in

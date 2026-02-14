@@ -965,15 +965,23 @@ impl AudioDaemon {
             }
         }
 
-        // Accept connections
-        for stream in listener.incoming() {
+        // Accept connections (non-blocking so Ctrl-C can interrupt)
+        listener.set_nonblocking(true)?;
+        loop {
             if !*self.running.lock() {
                 println!("Shutdown requested, exiting");
                 break;
             }
 
-            match stream {
-                Ok(stream) => {
+            match listener.accept() {
+                Ok((stream, _addr)) => {
+                    // Accepted streams inherit non-blocking from listener; reset to blocking
+                    // so client reads wait for data instead of returning WouldBlock
+                    if let Err(e) = stream.set_nonblocking(false) {
+                        log::error!("Failed to set client stream to blocking: {}", e);
+                        continue;
+                    }
+
                     // Verify peer credentials before handling
                     match verify_peer_credentials(&stream) {
                         Ok(peer_uid) => {
@@ -1007,6 +1015,9 @@ impl AudioDaemon {
                     std::thread::spawn(move || {
                         daemon.handle_client(stream);
                     });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 Err(e) => {
                     log::error!("Failed to accept connection: {}", e);
