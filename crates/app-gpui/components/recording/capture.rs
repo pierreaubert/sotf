@@ -1178,10 +1178,11 @@ impl PlayerView {
                     };
 
                     let measurement_ref = MeasurementRef::Inline(inline_measurement);
-                    let measurement_source = MeasurementSource::Single(autoeq::read::MeasurementSingle {
-                        measurement: measurement_ref,
-                        speaker_name: None,
-                    });
+                    let measurement_source =
+                        MeasurementSource::Single(autoeq::read::MeasurementSingle {
+                            measurement: measurement_ref,
+                            speaker_name: None,
+                        });
                     let speaker_config = SpeakerConfig::Single(measurement_source);
 
                     speakers.insert(rec.channel_name.clone(), speaker_config);
@@ -1260,9 +1261,7 @@ impl PlayerView {
                 let file_dir = file_path.parent().map(|p| p.to_path_buf());
 
                 // Get file size
-                let file_size = std::fs::metadata(&file_path)
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let file_size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
 
                 // Read file content
                 match std::fs::read_to_string(&file_path) {
@@ -1354,10 +1353,14 @@ impl PlayerView {
                         // Extract inline measurement from speaker config
                         let inline = match speaker_config {
                             autoeq::SpeakerConfig::Single(source) => match source {
-                                autoeq::MeasurementSource::Single(s) => s.measurement.inline_data().cloned(),
-                                autoeq::MeasurementSource::Multiple(m) => {
-                                    m.measurements.first().and_then(|r| r.inline_data()).cloned()
+                                autoeq::MeasurementSource::Single(s) => {
+                                    s.measurement.inline_data().cloned()
                                 }
+                                autoeq::MeasurementSource::Multiple(m) => m
+                                    .measurements
+                                    .first()
+                                    .and_then(|r| r.inline_data())
+                                    .cloned(),
                                 autoeq::MeasurementSource::InMemory(_) => None,
                             },
                             _ => None, // Groups not yet supported in this conversion
@@ -1387,11 +1390,16 @@ impl PlayerView {
                             });
 
                             // Check if inline data is empty - if so, load from CSV
-                            let (frequencies, magnitude_db, phase_deg) = if inline_data.frequencies.is_empty() {
+                            let (frequencies, magnitude_db, phase_deg) = if inline_data
+                                .frequencies
+                                .is_empty()
+                            {
                                 // Try to load from CSV file using autoeq's reader
                                 if let Some(ref csv) = csv_path {
                                     let csv_full_path = std::path::PathBuf::from(csv);
-                                    if let Ok(curve) = autoeq::read::read_curve_from_csv(&csv_full_path) {
+                                    if let Ok(curve) =
+                                        autoeq::read::read_curve_from_csv(&csv_full_path)
+                                    {
                                         log::info!(
                                             "Loaded {} frequency points from CSV for channel '{}'",
                                             curve.freq.len(),
@@ -1400,14 +1408,24 @@ impl PlayerView {
                                         (
                                             curve.freq.iter().map(|&f| f as f32).collect(),
                                             curve.spl.iter().map(|&s| s as f32).collect(),
-                                            curve.phase.map(|p| p.iter().map(|&v| v as f32).collect()).unwrap_or_default(),
+                                            curve
+                                                .phase
+                                                .map(|p| p.iter().map(|&v| v as f32).collect())
+                                                .unwrap_or_default(),
                                         )
                                     } else {
-                                        log::warn!("Failed to load CSV for channel '{}': {:?}", channel_name, csv_full_path);
+                                        log::warn!(
+                                            "Failed to load CSV for channel '{}': {:?}",
+                                            channel_name,
+                                            csv_full_path
+                                        );
                                         (Vec::new(), Vec::new(), Vec::new())
                                     }
                                 } else {
-                                    log::warn!("No CSV path and empty inline data for channel '{}'", channel_name);
+                                    log::warn!(
+                                        "No CSV path and empty inline data for channel '{}'",
+                                        channel_name
+                                    );
                                     (Vec::new(), Vec::new(), Vec::new())
                                 }
                             } else {
@@ -1415,32 +1433,44 @@ impl PlayerView {
                                 (
                                     inline_data.frequencies.iter().map(|&f| f as f32).collect(),
                                     inline_data.magnitude_db.iter().map(|&m| m as f32).collect(),
-                                    inline_data.phase_deg.clone().unwrap_or_default().iter().map(|&p| p as f32).collect(),
+                                    inline_data
+                                        .phase_deg
+                                        .clone()
+                                        .unwrap_or_default()
+                                        .iter()
+                                        .map(|&p| p as f32)
+                                        .collect(),
                                 )
                             };
 
                             // Try to load extended metrics from CSV file
-                            let extended_metrics = crate::components::migration::load_extended_metrics(
-                                csv_path.as_deref(),
-                                file_dir.as_deref(),
-                            );
+                            let extended_metrics =
+                                crate::components::migration::load_extended_metrics(
+                                    csv_path.as_deref(),
+                                    file_dir.as_deref(),
+                                );
 
-                            let (thd_percent, rt60_ms, clarity_c50_db, clarity_c80_db, excess_group_delay_ms) =
-                                if let Some(metrics) = extended_metrics {
-                                    log::info!(
-                                        "Loaded extended metrics for channel '{}' from CSV",
-                                        channel_name
-                                    );
-                                    (
-                                        metrics.thd_percent,
-                                        metrics.rt60_ms,
-                                        metrics.clarity_c50_db,
-                                        metrics.clarity_c80_db,
-                                        metrics.excess_group_delay_ms,
-                                    )
-                                } else {
-                                    (None, None, None, None, None)
-                                };
+                            let (
+                                thd_percent,
+                                rt60_ms,
+                                clarity_c50_db,
+                                clarity_c80_db,
+                                excess_group_delay_ms,
+                            ) = if let Some(metrics) = extended_metrics {
+                                log::info!(
+                                    "Loaded extended metrics for channel '{}' from CSV",
+                                    channel_name
+                                );
+                                (
+                                    metrics.thd_percent,
+                                    metrics.rt60_ms,
+                                    metrics.clarity_c50_db,
+                                    metrics.clarity_c80_db,
+                                    metrics.excess_group_delay_ms,
+                                )
+                            } else {
+                                (None, None, None, None, None)
+                            };
 
                             let result = RecordingResult {
                                 channel: idx,
@@ -1521,15 +1551,13 @@ impl PlayerView {
                             if let (Some(dir), Some(wav)) = (&file_dir, &result.wav_path) {
                                 let abs_path = dir.join(wav);
                                 if abs_path.exists() {
-                                    result.wav_path =
-                                        Some(abs_path.to_string_lossy().to_string());
+                                    result.wav_path = Some(abs_path.to_string_lossy().to_string());
                                 }
                             }
                             if let (Some(dir), Some(csv)) = (&file_dir, &result.csv_path) {
                                 let abs_path = dir.join(csv);
                                 if abs_path.exists() {
-                                    result.csv_path =
-                                        Some(abs_path.to_string_lossy().to_string());
+                                    result.csv_path = Some(abs_path.to_string_lossy().to_string());
                                 }
                             }
 
@@ -1574,10 +1602,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let rec_state = &state.app.measurement_state.recording_state;
 
-        let file_path = rec_state
-            .migration_file_path
-            .clone()
-            .unwrap_or_default();
+        let file_path = rec_state.migration_file_path.clone().unwrap_or_default();
         let file_size_mb = rec_state.migration_file_size.unwrap_or(0) as f64 / 1_000_000.0;
         let channel_count = rec_state.migration_channel_count;
 
@@ -1611,7 +1636,8 @@ impl PlayerView {
                             log::info!("Backdrop clicked - closing modal");
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    let rec_state = &mut state.app.measurement_state.recording_state;
+                                    let rec_state =
+                                        &mut state.app.measurement_state.recording_state;
                                     rec_state.migration_modal_open = false;
                                     rec_state.migration_pending_json = None;
                                 });
@@ -1652,40 +1678,61 @@ impl PlayerView {
                     )
                     // Content
                     .child(
-                        div()
-                            .px_4()
-                            .py_4()
-                            .child(
-                                VStack::new()
-                                    .spacing(StackSpacing::Lg)
-                                    .child(
-                                        Text::new("This recording file uses an older format.")
-                                            .size(TextSize::Md)
-                                            .color(theme.text_primary),
-                                    )
-                                    .child(
-                                        VStack::new()
-                                            .spacing(StackSpacing::Sm)
-                                            .child(
-                                                HStack::new()
-                                                    .spacing(StackSpacing::Md)
-                                                    .child(Text::new("File:").size(TextSize::Sm).color(theme.text_secondary))
-                                                    .child(Text::new(file_name).size(TextSize::Sm).color(theme.text_primary)),
-                                            )
-                                            .child(
-                                                HStack::new()
-                                                    .spacing(StackSpacing::Md)
-                                                    .child(Text::new("Size:").size(TextSize::Sm).color(theme.text_secondary))
-                                                    .child(Text::new(format!("{:.2} MB", file_size_mb)).size(TextSize::Sm).color(theme.warning)),
-                                            )
-                                            .child(
-                                                HStack::new()
-                                                    .spacing(StackSpacing::Md)
-                                                    .child(Text::new("Channels:").size(TextSize::Sm).color(theme.text_secondary))
-                                                    .child(Text::new(format!("{}", channel_count)).size(TextSize::Sm).color(theme.text_primary)),
-                                            ),
-                                    ),
-                            ),
+                        div().px_4().py_4().child(
+                            VStack::new()
+                                .spacing(StackSpacing::Lg)
+                                .child(
+                                    Text::new("This recording file uses an older format.")
+                                        .size(TextSize::Md)
+                                        .color(theme.text_primary),
+                                )
+                                .child(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .child(
+                                            HStack::new()
+                                                .spacing(StackSpacing::Md)
+                                                .child(
+                                                    Text::new("File:")
+                                                        .size(TextSize::Sm)
+                                                        .color(theme.text_secondary),
+                                                )
+                                                .child(
+                                                    Text::new(file_name)
+                                                        .size(TextSize::Sm)
+                                                        .color(theme.text_primary),
+                                                ),
+                                        )
+                                        .child(
+                                            HStack::new()
+                                                .spacing(StackSpacing::Md)
+                                                .child(
+                                                    Text::new("Size:")
+                                                        .size(TextSize::Sm)
+                                                        .color(theme.text_secondary),
+                                                )
+                                                .child(
+                                                    Text::new(format!("{:.2} MB", file_size_mb))
+                                                        .size(TextSize::Sm)
+                                                        .color(theme.warning),
+                                                ),
+                                        )
+                                        .child(
+                                            HStack::new()
+                                                .spacing(StackSpacing::Md)
+                                                .child(
+                                                    Text::new("Channels:")
+                                                        .size(TextSize::Sm)
+                                                        .color(theme.text_secondary),
+                                                )
+                                                .child(
+                                                    Text::new(format!("{}", channel_count))
+                                                        .size(TextSize::Sm)
+                                                        .color(theme.text_primary),
+                                                ),
+                                        ),
+                                ),
+                        ),
                     )
                     // Footer with buttons
                     .child(
@@ -1715,7 +1762,10 @@ impl PlayerView {
                                             log::info!("Cancel button clicked!");
                                             view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    let rec_state = &mut state.app.measurement_state.recording_state;
+                                                    let rec_state = &mut state
+                                                        .app
+                                                        .measurement_state
+                                                        .recording_state;
                                                     rec_state.migration_modal_open = false;
                                                     rec_state.migration_pending_json = None;
                                                 });
@@ -1815,7 +1865,8 @@ impl PlayerView {
                             .iter()
                             .enumerate()
                             .map(|(idx, ch)| {
-                                let safe_channel_name = migration::sanitize_filename(&ch.channel_name);
+                                let safe_channel_name =
+                                    migration::sanitize_filename(&ch.channel_name);
 
                                 // Convert relative paths to absolute paths
                                 let mut result = ch.measurement.clone();
@@ -1828,7 +1879,8 @@ impl PlayerView {
                                 if let Some(wav) = &result.wav_path {
                                     let abs_path = session_dir.join(wav);
                                     if abs_path.exists() {
-                                        result.wav_path = Some(abs_path.to_string_lossy().to_string());
+                                        result.wav_path =
+                                            Some(abs_path.to_string_lossy().to_string());
                                     }
                                 }
 
@@ -1880,5 +1932,4 @@ impl PlayerView {
 
         cx.notify();
     }
-
 }

@@ -692,6 +692,11 @@ mod tests {
 
         let result = validate_room_config(&config);
         assert!(!result.is_valid);
-        assert!(result.errors.iter().any(|e| e.contains("invalid speaker_name")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("invalid speaker_name"))
+        );
     }
 }

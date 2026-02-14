@@ -38,7 +38,10 @@ pub fn optimize_channel_eq(
     if effective_max_freq < config.max_freq || effective_min_freq > config.min_freq {
         log::warn!(
             "  Clamping optimizer freq range [{:.1}, {:.1}] to measurement data range [{:.1}, {:.1}]",
-            config.min_freq, config.max_freq, effective_min_freq, effective_max_freq
+            config.min_freq,
+            config.max_freq,
+            effective_min_freq,
+            effective_max_freq
         );
     }
 
@@ -85,7 +88,11 @@ pub fn optimize_channel_eq(
             // For now, simpler to re-implement common targets or map to Args
             // We can construct minimal Args with curve_name
             let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            crate::workflow::build_target_curve(&dummy_args, &normalized_curve.freq, &normalized_curve)?
+            crate::workflow::build_target_curve(
+                &dummy_args,
+                &normalized_curve.freq,
+                &normalized_curve,
+            )?
         }
         None => {
             // Default flat target
@@ -152,7 +159,7 @@ pub fn optimize_channel_eq(
         // Optimization parameters
         population: config.population,
         maxeval: config.max_iter,
-        refine: config.refine,  // Hybrid optimization: DE + local refinement
+        refine: config.refine, // Hybrid optimization: DE + local refinement
         local_algo: config.local_algo.clone(),
 
         // Spacing constraints

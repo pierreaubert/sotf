@@ -9,8 +9,8 @@
 
 use hound::WavReader;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
 use std::io::Write;
 use std::path::Path;
@@ -233,7 +233,10 @@ impl MicrophoneCompensation {
             spl_db.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))
         );
 
-        Ok(Self { frequencies, spl_db })
+        Ok(Self {
+            frequencies,
+            spl_db,
+        })
     }
 
     /// Interpolate compensation value at a given frequency
@@ -1061,9 +1064,7 @@ pub fn analyze_recording(
 
     // --- Compute Acoustic Metrics ---
     // Debug: Log impulse response stats
-    let ir_max = impulse_response
-        .iter()
-        .fold(0.0f32, |a, &b| a.max(b.abs()));
+    let ir_max = impulse_response.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
     let ir_len = impulse_response.len();
     log::info!(
         "[Analysis] Impulse response: len={}, max_abs={:.6}, sample_rate={}",
@@ -1141,7 +1142,7 @@ fn compute_thd_from_ir(
     }
 
     let num_harmonics = 4; // Compute 2nd, 3rd, 4th, 5th
-                           // Initialize to -120 dB (very low but not absurdly so)
+    // Initialize to -120 dB (very low but not absurdly so)
     let mut harmonics_db = vec![vec![-120.0; frequencies.len()]; num_harmonics];
 
     // Find main peak index (t=0)
@@ -1873,10 +1874,7 @@ fn compute_schroeder_decay(impulse: &[f32]) -> Vec<f32> {
 /// Uses T20 (-5dB to -25dB) extrapolation
 pub fn compute_rt60_broadband(impulse: &[f32], sample_rate: f32) -> f32 {
     let decay = compute_schroeder_decay(impulse);
-    let decay_db: Vec<f32> = decay
-        .iter()
-        .map(|&v| 10.0 * v.max(1e-9).log10())
-        .collect();
+    let decay_db: Vec<f32> = decay.iter().map(|&v| 10.0 * v.max(1e-9).log10()).collect();
 
     // Find -5dB and -25dB points
     let t_minus_5 = decay_db.iter().position(|&v| v < -5.0);
@@ -2136,8 +2134,8 @@ pub fn compute_spectrogram(
     window_size: usize,
     hop_size: usize,
 ) -> (Vec<Vec<f32>>, Vec<f32>, Vec<f32>) {
-    use rustfft::num_complex::Complex;
     use rustfft::FftPlanner;
+    use rustfft::num_complex::Complex;
 
     if impulse.len() < window_size {
         return (Vec::new(), Vec::new(), Vec::new());
@@ -2270,7 +2268,8 @@ pub fn compute_average_response(
         return magnitude_db.first().copied().unwrap_or(0.0);
     }
 
-    let (start_freq, end_freq) = freq_range.unwrap_or((frequencies[0], frequencies[frequencies.len() - 1]));
+    let (start_freq, end_freq) =
+        freq_range.unwrap_or((frequencies[0], frequencies[frequencies.len() - 1]));
 
     let mut sum_weighted_db = 0.0;
     let mut sum_weights = 0.0;
@@ -2295,7 +2294,7 @@ pub fn compute_average_response(
         // For acoustic data, we weight by log frequency (octaves)
         // weight = log2(fb/fa)
         let weight = (fb / fa).log2();
-        
+
         // Average magnitude in this segment
         // We'll use the midpoint value of the segment (or average of endpoints)
         // If the segment is partially outside start_freq/end_freq, we should interpolate

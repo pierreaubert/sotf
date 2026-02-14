@@ -278,7 +278,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_load_apo_file_dialog(f, app);
     } else if app.input_mode == InputMode::LoadSofaFile {
         draw_load_sofa_file_dialog(f, app);
-    } else if matches!(app.input_mode, InputMode::BrowseSofaFile | InputMode::BrowseIrFile) {
+    } else if matches!(
+        app.input_mode,
+        InputMode::BrowseSofaFile | InputMode::BrowseIrFile
+    ) {
         draw_file_browser_modal(f, app);
     }
 
@@ -2267,7 +2270,11 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
+            .style(
+                Style::default()
+                    .bg(app.theme.bg_primary)
+                    .fg(app.theme.fg_primary),
+            )
             .title(format!(
                 "Edit {} Plugin (ESC to close)",
                 plugin.plugin_type().name()
@@ -2283,7 +2290,9 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
             height: modal_area.height.saturating_sub(2),
         };
 
-        let base_style = Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary);
+        let base_style = Style::default()
+            .bg(app.theme.bg_primary)
+            .fg(app.theme.fg_primary);
 
         // Build parameter list
         let mut lines = Vec::new();
@@ -3250,18 +3259,27 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             phase_blend_high_hz,
             ..
         } => vec![
-            ("Center Gain".to_string(), format!("{:.1} dB", center_gain_db)),
+            (
+                "Center Gain".to_string(),
+                format!("{:.1} dB", center_gain_db),
+            ),
             (
                 "Surround Gain".to_string(),
                 format!("{:.1} dB", surround_gain_db),
             ),
-            ("Height Gain".to_string(), format!("{:.1} dB", height_gain_db)),
+            (
+                "Height Gain".to_string(),
+                format!("{:.1} dB", height_gain_db),
+            ),
             ("LFE Gain".to_string(), format!("{:.1} dB", lfe_gain_db)),
             (
                 "Phase Coherence".to_string(),
                 if *phase_coherence { "On" } else { "Off" }.to_string(),
             ),
-            ("Blend Low".to_string(), format!("{:.0} Hz", phase_blend_low_hz)),
+            (
+                "Blend Low".to_string(),
+                format!("{:.0} Hz", phase_blend_low_hz),
+            ),
             (
                 "Blend High".to_string(),
                 format!("{:.0} Hz", phase_blend_high_hz),
@@ -3281,7 +3299,10 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 "Panning EQ".to_string(),
                 if *enable_comp_eq { "On" } else { "Off" }.to_string(),
             ),
-            ("EQ Depth".to_string(), format!("{:.1} dB", comp_eq_depth_db)),
+            (
+                "EQ Depth".to_string(),
+                format!("{:.1} dB", comp_eq_depth_db),
+            ),
             ("Decor Low".to_string(), format!("{:.0} Hz", decor_low_hz)),
             ("Decor High".to_string(), format!("{:.0} Hz", decor_high_hz)),
         ],

@@ -70,7 +70,10 @@ pub fn compute_spectral_alignment(
     let freq = &first_curve.freq;
 
     // Build mask: only consider frequencies within [min_freq, max_freq]
-    let mask: Vec<bool> = freq.iter().map(|&f| f >= min_freq && f <= max_freq).collect();
+    let mask: Vec<bool> = freq
+        .iter()
+        .map(|&f| f >= min_freq && f <= max_freq)
+        .collect();
     let n_active: usize = mask.iter().filter(|m| **m).count();
     if n_active < 3 {
         return HashMap::new();
@@ -321,8 +324,7 @@ fn solve_3x3_wls(
 
     // Solve 3×3 symmetric system via Cramer's rule
     // A = [[a00 a01 a02], [a01 a11 a12], [a02 a12 a22]]
-    let det = a00 * (a11 * a22 - a12 * a12)
-        - a01 * (a01 * a22 - a12 * a02)
+    let det = a00 * (a11 * a22 - a12 * a12) - a01 * (a01 * a22 - a12 * a02)
         + a02 * (a01 * a12 - a11 * a02);
 
     if det.abs() < 1e-30 {
@@ -352,7 +354,11 @@ fn solve_3x3_wls(
     // Compute residual RMS
     let fitted = ls_basis * x0 + hs_basis * x1 + flat_basis * x2;
     let residual = diff - &fitted;
-    let weighted_sq: f64 = residual.iter().zip(weights.iter()).map(|(&r, &w)| w * r * r).sum();
+    let weighted_sq: f64 = residual
+        .iter()
+        .zip(weights.iter())
+        .map(|(&r, &w)| w * r * r)
+        .sum();
     let residual_rms = (weighted_sq / n as f64).sqrt();
 
     (x0, x1, x2, residual_rms)
@@ -426,16 +432,43 @@ mod tests {
         let r = &results["R"];
 
         // Shelves should be near zero
-        assert!(l.lowshelf_gain_db.abs() < 0.3, "L lowshelf should be ~0, got {}", l.lowshelf_gain_db);
-        assert!(l.highshelf_gain_db.abs() < 0.3, "L highshelf should be ~0, got {}", l.highshelf_gain_db);
-        assert!(r.lowshelf_gain_db.abs() < 0.3, "R lowshelf should be ~0, got {}", r.lowshelf_gain_db);
-        assert!(r.highshelf_gain_db.abs() < 0.3, "R highshelf should be ~0, got {}", r.highshelf_gain_db);
+        assert!(
+            l.lowshelf_gain_db.abs() < 0.3,
+            "L lowshelf should be ~0, got {}",
+            l.lowshelf_gain_db
+        );
+        assert!(
+            l.highshelf_gain_db.abs() < 0.3,
+            "L highshelf should be ~0, got {}",
+            l.highshelf_gain_db
+        );
+        assert!(
+            r.lowshelf_gain_db.abs() < 0.3,
+            "R lowshelf should be ~0, got {}",
+            r.lowshelf_gain_db
+        );
+        assert!(
+            r.highshelf_gain_db.abs() < 0.3,
+            "R highshelf should be ~0, got {}",
+            r.highshelf_gain_db
+        );
 
         // Flat gains should be opposite and sum to 0 (after renormalization)
-        assert!((l.flat_gain_db + r.flat_gain_db).abs() < 0.01, "flat gains should sum to 0");
+        assert!(
+            (l.flat_gain_db + r.flat_gain_db).abs() < 0.01,
+            "flat gains should sum to 0"
+        );
         // L should get negative correction, R positive
-        assert!(l.flat_gain_db < -0.5, "L flat should be negative, got {}", l.flat_gain_db);
-        assert!(r.flat_gain_db > 0.5, "R flat should be positive, got {}", r.flat_gain_db);
+        assert!(
+            l.flat_gain_db < -0.5,
+            "L flat should be negative, got {}",
+            l.flat_gain_db
+        );
+        assert!(
+            r.flat_gain_db > 0.5,
+            "R flat should be positive, got {}",
+            r.flat_gain_db
+        );
     }
 
     #[test]
@@ -444,38 +477,54 @@ mod tests {
         // This should produce a lowshelf correction on L.
         let mut curves = HashMap::new();
         // L: +3 dB below 200 Hz, tapering to 0 above
-        curves.insert("L".to_string(), make_curve(|f| {
-            if f < 200.0 { 3.0 } else { 0.0 }
-        }));
+        curves.insert(
+            "L".to_string(),
+            make_curve(|f| if f < 200.0 { 3.0 } else { 0.0 }),
+        );
         curves.insert("R".to_string(), make_curve(|_| 0.0));
 
         let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
 
         let l = &results["L"];
         // L should have negative lowshelf correction (cut bass to match reference)
-        assert!(l.lowshelf_gain_db < -0.3, "L should need LS cut, got {}", l.lowshelf_gain_db);
+        assert!(
+            l.lowshelf_gain_db < -0.3,
+            "L should need LS cut, got {}",
+            l.lowshelf_gain_db
+        );
         // Highshelf should be small
-        assert!(l.highshelf_gain_db.abs() < 1.5, "L HS should be small, got {}", l.highshelf_gain_db);
+        assert!(
+            l.highshelf_gain_db.abs() < 1.5,
+            "L HS should be small, got {}",
+            l.highshelf_gain_db
+        );
     }
 
     #[test]
     fn test_treble_tilt() {
         // L has 3 dB extra treble, R is flat.
         let mut curves = HashMap::new();
-        curves.insert("L".to_string(), make_curve(|f| {
-            if f > 4000.0 { 3.0 } else { 0.0 }
-        }));
+        curves.insert(
+            "L".to_string(),
+            make_curve(|f| if f > 4000.0 { 3.0 } else { 0.0 }),
+        );
         curves.insert("R".to_string(), make_curve(|_| 0.0));
 
         let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
 
         let l = &results["L"];
         // L should have negative highshelf correction (cut treble)
-        assert!(l.highshelf_gain_db < -0.3, "L should need HS cut, got {}", l.highshelf_gain_db);
+        assert!(
+            l.highshelf_gain_db < -0.3,
+            "L should need HS cut, got {}",
+            l.highshelf_gain_db
+        );
         // Lowshelf should be small relative to highshelf
         assert!(
             l.lowshelf_gain_db.abs() < l.highshelf_gain_db.abs(),
-            "LS ({}) should be smaller than HS ({})", l.lowshelf_gain_db, l.highshelf_gain_db
+            "LS ({}) should be smaller than HS ({})",
+            l.lowshelf_gain_db,
+            l.highshelf_gain_db
         );
     }
 
@@ -483,9 +532,10 @@ mod tests {
     fn test_clamping() {
         // L is 20 dB above R — shelves should be clamped to ±6 dB
         let mut curves = HashMap::new();
-        curves.insert("L".to_string(), make_curve(|f| {
-            if f < 200.0 { 20.0 } else { 0.0 }
-        }));
+        curves.insert(
+            "L".to_string(),
+            make_curve(|f| if f < 200.0 { 20.0 } else { 0.0 }),
+        );
         curves.insert("R".to_string(), make_curve(|_| 0.0));
 
         let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
@@ -493,11 +543,15 @@ mod tests {
         for result in results.values() {
             assert!(
                 result.lowshelf_gain_db.abs() <= MAX_SHELF_GAIN_DB + 0.01,
-                "LS gain {} exceeds max ±{}", result.lowshelf_gain_db, MAX_SHELF_GAIN_DB
+                "LS gain {} exceeds max ±{}",
+                result.lowshelf_gain_db,
+                MAX_SHELF_GAIN_DB
             );
             assert!(
                 result.highshelf_gain_db.abs() <= MAX_SHELF_GAIN_DB + 0.01,
-                "HS gain {} exceeds max ±{}", result.highshelf_gain_db, MAX_SHELF_GAIN_DB
+                "HS gain {} exceeds max ±{}",
+                result.highshelf_gain_db,
+                MAX_SHELF_GAIN_DB
             );
         }
     }
@@ -508,7 +562,10 @@ mod tests {
         curves.insert("L".to_string(), make_curve(|_| 0.0));
 
         let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
-        assert!(results.is_empty(), "Single channel should produce no alignment");
+        assert!(
+            results.is_empty(),
+            "Single channel should produce no alignment"
+        );
     }
 
     #[test]
@@ -527,7 +584,11 @@ mod tests {
 
         assert!((ls - 2.0).abs() < 0.01, "LS should be 2.0, got {}", ls);
         assert!((hs - 3.0).abs() < 0.01, "HS should be 3.0, got {}", hs);
-        assert!((flat - 1.0).abs() < 0.01, "flat should be 1.0, got {}", flat);
+        assert!(
+            (flat - 1.0).abs() < 0.01,
+            "flat should be 1.0, got {}",
+            flat
+        );
         assert!(residual < 0.01, "residual should be ~0, got {}", residual);
     }
 
@@ -587,15 +648,25 @@ mod tests {
     fn test_three_channels() {
         // Three channels: L boosted bass, C flat, R boosted treble
         let mut curves = HashMap::new();
-        curves.insert("L".to_string(), make_curve(|f| if f < 200.0 { 2.0 } else { 0.0 }));
+        curves.insert(
+            "L".to_string(),
+            make_curve(|f| if f < 200.0 { 2.0 } else { 0.0 }),
+        );
         curves.insert("C".to_string(), make_curve(|_| 0.0));
-        curves.insert("R".to_string(), make_curve(|f| if f > 4000.0 { 2.0 } else { 0.0 }));
+        curves.insert(
+            "R".to_string(),
+            make_curve(|f| if f > 4000.0 { 2.0 } else { 0.0 }),
+        );
 
         let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
 
         assert_eq!(results.len(), 3);
         // Sum of flat gains should be ~0 after renormalization
         let flat_sum: f64 = results.values().map(|r| r.flat_gain_db).sum();
-        assert!(flat_sum.abs() < 0.1, "flat gains should sum to ~0, got {}", flat_sum);
+        assert!(
+            flat_sum.abs() < 0.1,
+            "flat gains should sum to ~0, got {}",
+            flat_sum
+        );
     }
 }

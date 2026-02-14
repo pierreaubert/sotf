@@ -26,7 +26,7 @@ use super::phase_alignment;
 use super::target_tilt;
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, MixedModeConfig, MultiSubGroup,
-    OptimizerConfig, OptimizationMetadata, ProcessingMode, RoomConfig, SpeakerConfig, SpeakerGroup,
+    OptimizationMetadata, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, SpeakerGroup,
     SystemConfig, SystemModel, TargetCurveConfig, TiltType,
 };
 
@@ -37,13 +37,32 @@ use super::types::{
 /// Internal result type for speaker processing to reduce type complexity
 /// Returns: (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 type SpeakerProcessResult = std::result::Result<
-    (String, ChannelDspChain, f64, f64, crate::Curve, crate::Curve, Vec<crate::iir::Biquad>, f64, Option<f64>),
+    (
+        String,
+        ChannelDspChain,
+        f64,
+        f64,
+        crate::Curve,
+        crate::Curve,
+        Vec<crate::iir::Biquad>,
+        f64,
+        Option<f64>,
+    ),
     AutoeqError,
 >;
 
 /// Result type for mixed mode processing
 /// Returns: (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
-type MixedModeResult = (ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>);
+type MixedModeResult = (
+    ChannelDspChain,
+    f64,
+    f64,
+    Curve,
+    Curve,
+    Vec<Biquad>,
+    f64,
+    Option<f64>,
+);
 
 /// Detect passband and compute mean SPL for normalization
 ///
@@ -58,7 +77,8 @@ fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
     let threshold = peak_spl - 3.0;
 
     let f_low = find_db_point(&freqs_f32, &spl_f32, threshold, true).unwrap_or(freqs_f32[0]);
-    let f_high = find_db_point(&freqs_f32, &spl_f32, threshold, false).unwrap_or(freqs_f32[freqs_f32.len()-1]);
+    let f_high = find_db_point(&freqs_f32, &spl_f32, threshold, false)
+        .unwrap_or(freqs_f32[freqs_f32.len() - 1]);
 
     let norm_range_f32 = Some((f_low, f_high));
     let mean = compute_average_response(&freqs_f32, &spl_f32, norm_range_f32) as f64;
@@ -213,20 +233,36 @@ pub fn optimize_room(
     if let Some(sys) = &config.system {
         // If any channel uses SpeakerConfig::Group, fall through to the generic path
         // which handles Groups via process_speaker_group.
-        let has_group = sys.speakers.values().any(|key| {
-            matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_)))
-        });
+        let has_group = sys
+            .speakers
+            .values()
+            .any(|key| matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_))));
         if !has_group {
             match sys.model {
                 SystemModel::Stereo => {
                     if sys.subwoofers.is_some() {
-                        return super::workflows::optimize_stereo_2_1(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+                        return super::workflows::optimize_stereo_2_1(
+                            config,
+                            sys,
+                            sample_rate,
+                            output_dir.unwrap_or(Path::new(".")),
+                        );
                     } else {
-                        return super::workflows::optimize_stereo_2_0(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+                        return super::workflows::optimize_stereo_2_0(
+                            config,
+                            sys,
+                            sample_rate,
+                            output_dir.unwrap_or(Path::new(".")),
+                        );
                     }
                 }
                 SystemModel::HomeCinema => {
-                    return super::workflows::optimize_home_cinema(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+                    return super::workflows::optimize_home_cinema(
+                        config,
+                        sys,
+                        sample_rate,
+                        output_dir.unwrap_or(Path::new(".")),
+                    );
                 }
                 SystemModel::Custom => {} // Fall through to generic path
             }
@@ -239,18 +275,23 @@ pub fn optimize_room(
         info!("Using SystemConfig for channel mapping");
         sys.speakers
             .iter()
-            .filter_map(|(role, key)| {
-                match config.speakers.get(key) {
-                    Some(cfg) => Some((role.clone(), cfg.clone())),
-                    None => {
-                        warn!("System config references missing speaker key '{}' for role '{}'", key, role);
-                        None
-                    }
+            .filter_map(|(role, key)| match config.speakers.get(key) {
+                Some(cfg) => Some((role.clone(), cfg.clone())),
+                None => {
+                    warn!(
+                        "System config references missing speaker key '{}' for role '{}'",
+                        key, role
+                    );
+                    None
                 }
             })
             .collect()
     } else {
-        config.speakers.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        config
+            .speakers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     };
 
     info!("Processing {} channels", channels_to_process.len());
@@ -261,14 +302,22 @@ pub fn optimize_room(
         .map(|(channel_name, speaker_config)| {
             info!("Processing channel: {}", channel_name);
 
-            let (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms) =
-                process_speaker_internal(
-                    &channel_name,
-                    &speaker_config,
-                    config,
-                    sample_rate,
-                    output_dir,
-                )?;
+            let (
+                chain,
+                pre_score,
+                post_score,
+                initial_curve,
+                final_curve,
+                biquads,
+                mean_spl,
+                arrival_time_ms,
+            ) = process_speaker_internal(
+                &channel_name,
+                &speaker_config,
+                config,
+                sample_rate,
+                output_dir,
+            )?;
 
             Ok((
                 channel_name,
@@ -294,7 +343,17 @@ pub fn optimize_room(
     let mut channel_arrivals: HashMap<String, f64> = HashMap::new();
 
     for res in results {
-        let (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms) = res?;
+        let (
+            channel_name,
+            chain,
+            pre_score,
+            post_score,
+            initial_curve,
+            final_curve,
+            biquads,
+            mean_spl,
+            arrival_time_ms,
+        ) = res?;
 
         channel_chains.insert(channel_name.clone(), chain);
         curves.insert(channel_name.clone(), final_curve.clone());
@@ -349,7 +408,9 @@ pub fn optimize_room(
                 && let Some(chain) = channel_chains.get_mut(channel_name)
             {
                 // Insert delay plugin at the beginning (before EQ)
-                chain.plugins.insert(0, output::create_delay_plugin(*delay_ms));
+                chain
+                    .plugins
+                    .insert(0, output::create_delay_plugin(*delay_ms));
                 info!(
                     "  Channel '{}': added {:.3} ms delay for time alignment",
                     channel_name, delay_ms
@@ -409,8 +470,12 @@ pub fn optimize_room(
         }
 
         // Compute spectral alignment (shelf + gain) for each channel
-        let alignment_results =
-            super::spectral_align::compute_spectral_alignment(&curves, sample_rate, min_freq, max_freq);
+        let alignment_results = super::spectral_align::compute_spectral_alignment(
+            &curves,
+            sample_rate,
+            min_freq,
+            max_freq,
+        );
         super::spectral_align::log_spectral_alignment(&alignment_results);
 
         // Insert alignment plugins after the per-channel PEQ
@@ -466,8 +531,11 @@ pub fn optimize_room(
                             Ok(result) => {
                                 info!(
                                     "  Phase alignment '{}' with '{}': delay={:.2}ms, invert={}, improvement={:.2}dB",
-                                    speaker_name, gd_config.subwoofer,
-                                    result.delay_ms, result.invert_polarity, result.improvement_db
+                                    speaker_name,
+                                    gd_config.subwoofer,
+                                    result.delay_ms,
+                                    result.invert_polarity,
+                                    result.improvement_db
                                 );
                                 phase_alignment_results.insert(
                                     speaker_name.clone(),
@@ -491,9 +559,7 @@ pub fn optimize_room(
 
     // Apply phase alignment results (polarity inversion)
     for (speaker_name, (_delay, invert)) in &phase_alignment_results {
-        if *invert
-            && let Some(chain) = channel_chains.get_mut(speaker_name)
-        {
+        if *invert && let Some(chain) = channel_chains.get_mut(speaker_name) {
             // Insert polarity inversion at the beginning of the chain
             let invert_plugin = output::create_gain_plugin_with_invert(0.0, true);
             chain.plugins.insert(0, invert_plugin);
@@ -518,19 +584,26 @@ pub fn optimize_room(
             if let Some(subs) = &sys.subwoofers {
                 // Invert speakers map to find roles from measurement keys
                 // measurement_key -> role
-                let meas_to_role: HashMap<&String, &String> = sys.speakers.iter().map(|(r, m)| (m, r)).collect();
+                let meas_to_role: HashMap<&String, &String> =
+                    sys.speakers.iter().map(|(r, m)| (m, r)).collect();
 
                 for (sub_meas_key, main_role) in &subs.mapping {
                     if let Some(sub_role) = meas_to_role.get(sub_meas_key) {
                         pairings.push((sub_role.to_string(), main_role.clone()));
                     } else {
-                        warn!("GD-Opt: Subwoofer measurement '{}' not mapped to any output channel", sub_meas_key);
+                        warn!(
+                            "GD-Opt: Subwoofer measurement '{}' not mapped to any output channel",
+                            sub_meas_key
+                        );
                     }
                 }
             }
         } else {
             // Legacy heuristic
-            let sub_channel = curves.keys().find(|name| *name == "lfe" || name.starts_with("sub")).cloned();
+            let sub_channel = curves
+                .keys()
+                .find(|name| *name == "lfe" || name.starts_with("sub"))
+                .cloned();
             if let Some(sub_name) = sub_channel {
                 let main_channels: Vec<String> = curves
                     .keys()
@@ -544,16 +617,18 @@ pub fn optimize_room(
         }
 
         if pairings.is_empty() {
-             warn!("GD-Opt enabled but no valid sub-main pairings found.");
+            warn!("GD-Opt enabled but no valid sub-main pairings found.");
         }
 
         let min_freq = config.optimizer.min_freq;
         let max_freq = 200.0;
 
         for (sub_name, main_name) in pairings {
-            if let (Some(sub_curve), Some(main_curve)) = (curves.get(&sub_name), curves.get(&main_name)) {
+            if let (Some(sub_curve), Some(main_curve)) =
+                (curves.get(&sub_name), curves.get(&main_name))
+            {
                 info!("  Optimizing GD for '{}' vs '{}'", main_name, sub_name);
-                
+
                 match group_delay::optimize_gd_iir(
                     sub_curve,
                     main_curve,
@@ -563,7 +638,10 @@ pub fn optimize_room(
                 ) {
                     Ok(filters) => {
                         if !filters.is_empty() {
-                            info!("    Generated {} All-Pass filters for GD alignment", filters.len());
+                            info!(
+                                "    Generated {} All-Pass filters for GD alignment",
+                                filters.len()
+                            );
                             if let Some(chain) = channel_chains.get_mut(&main_name) {
                                 let plugin = output::create_eq_plugin(&filters);
                                 chain.plugins.push(plugin);
@@ -577,13 +655,18 @@ pub fn optimize_room(
                     }
                 }
             } else {
-                warn!("GD-Opt: Channel '{}' or '{}' not found in results", sub_name, main_name);
+                warn!(
+                    "GD-Opt: Channel '{}' or '{}' not found in results",
+                    sub_name, main_name
+                );
             }
         }
     }
 
     // Group Delay Optimization (Legacy v1)
-    if config.optimizer.allow_delay() && let Some(gd_configs) = &config.group_delay {
+    if config.optimizer.allow_delay()
+        && let Some(gd_configs) = &config.group_delay
+    {
         info!("Optimizing group delay alignments...");
 
         let mut calculated_rel_delays = Vec::new();
@@ -711,7 +794,7 @@ pub fn optimize_room(
     for (group_name, group_channels) in &acoustic_groups {
         if group_channels.len() > 1 {
             debug!("Acoustic Group '{}': {:?}", group_name, group_channels);
-            
+
             // Perform consistency checks between speakers in the same group
             check_group_consistency(group_name, group_channels, &channel_means, &curves);
         }
@@ -746,7 +829,10 @@ fn identify_acoustic_groups(config: &RoomConfig) -> HashMap<String, Vec<String>>
     // 1. Group by explicit speaker_name
     for (channel_name, speaker_cfg) in &config.speakers {
         if let Some(speaker_name) = speaker_cfg.speaker_name() {
-            groups.entry(speaker_name.to_string()).or_default().push(channel_name.clone());
+            groups
+                .entry(speaker_name.to_string())
+                .or_default()
+                .push(channel_name.clone());
         } else {
             positioned_channels.insert(channel_name.clone(), channel_name.clone());
         }
@@ -766,8 +852,12 @@ fn identify_acoustic_groups(config: &RoomConfig) -> HashMap<String, Vec<String>>
         if positioned_channels.contains_key(p1) && positioned_channels.contains_key(p2) {
             let group_name = format!("{}-{}", p1, p2);
             let mut group = Vec::new();
-            if let Some(c1) = positioned_channels.remove(p1) { group.push(c1); }
-            if let Some(c2) = positioned_channels.remove(p2) { group.push(c2); }
+            if let Some(c1) = positioned_channels.remove(p1) {
+                group.push(c1);
+            }
+            if let Some(c2) = positioned_channels.remove(p2) {
+                group.push(c2);
+            }
             groups.insert(group_name, group);
         }
     }
@@ -807,8 +897,22 @@ pub fn optimize_speaker(
         recording_config: None,
     };
 
-    let (chain, pre_score, post_score, initial_curve, final_curve, biquads, _mean_spl, _arrival_time_ms) =
-        process_speaker_internal(channel_name, speaker_config, &room_config, sample_rate, None)?;
+    let (
+        chain,
+        pre_score,
+        post_score,
+        initial_curve,
+        final_curve,
+        biquads,
+        _mean_spl,
+        _arrival_time_ms,
+    ) = process_speaker_internal(
+        channel_name,
+        speaker_config,
+        &room_config,
+        sample_rate,
+        None,
+    )?;
 
     Ok(SpeakerOptimizationResult {
         chain,
@@ -891,8 +995,12 @@ fn process_single_speaker(
     output_dir: &Path,
 ) -> Result<MixedModeResult> {
     // Load measurement
-    let curve = load::load_source(source)
-        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load measurement for channel {}: {}", channel_name, e) })?;
+    let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+        message: format!(
+            "Failed to load measurement for channel {}: {}",
+            channel_name, e
+        ),
+    })?;
 
     debug!(
         "  Loaded measurement: {:.1} Hz - {:.1} Hz",
@@ -901,37 +1009,44 @@ fn process_single_speaker(
     );
 
     // Extract wav_path and calculate arrival time for time alignment
-    let arrival_time_ms: Option<f64> = extract_wav_path(source)
-        .and_then(|wav_path| {
-            let path = std::path::Path::new(&wav_path);
-            if path.exists() {
-                match super::time_align::find_arrival_time(path, None) {
-                    Ok(result) => {
-                        debug!(
-                            "  Arrival time for '{}': {:.2} ms (peak at sample {})",
-                            channel_name, result.arrival_ms, result.arrival_samples
-                        );
-                        Some(result.arrival_ms)
-                    }
-                    Err(e) => {
-                        debug!("  Could not determine arrival time for '{}': {}", channel_name, e);
-                        None
-                    }
+    let arrival_time_ms: Option<f64> = extract_wav_path(source).and_then(|wav_path| {
+        let path = std::path::Path::new(&wav_path);
+        if path.exists() {
+            match super::time_align::find_arrival_time(path, None) {
+                Ok(result) => {
+                    debug!(
+                        "  Arrival time for '{}': {:.2} ms (peak at sample {})",
+                        channel_name, result.arrival_ms, result.arrival_samples
+                    );
+                    Some(result.arrival_ms)
                 }
-            } else {
-                debug!("  WAV file not found for '{}': {:?}", channel_name, path);
-                None
+                Err(e) => {
+                    debug!(
+                        "  Could not determine arrival time for '{}': {}",
+                        channel_name, e
+                    );
+                    None
+                }
             }
-        });
+        } else {
+            debug!("  WAV file not found for '{}': {:?}", channel_name, path);
+            None
+        }
+    });
 
     // ========================================================================
     // Build target curve with tilt (if configured)
     // ========================================================================
     let target_tilt_curve = if let Some(tilt_config) = &room_config.optimizer.target_tilt {
         if tilt_config.tilt_type != TiltType::Flat {
-            info!("  Building target curve with {:?} tilt ({:.2} dB/octave)",
-                  tilt_config.tilt_type, tilt_config.slope_db_per_octave);
-            Some(target_tilt::build_target_curve_with_tilt(&curve.freq, tilt_config))
+            info!(
+                "  Building target curve with {:?} tilt ({:.2} dB/octave)",
+                tilt_config.tilt_type, tilt_config.slope_db_per_octave
+            );
+            Some(target_tilt::build_target_curve_with_tilt(
+                &curve.freq,
+                tilt_config,
+            ))
         } else {
             None
         }
@@ -942,26 +1057,34 @@ fn process_single_speaker(
     // ========================================================================
     // Excursion Protection (detect F3, generate HPF)
     // ========================================================================
-    let excursion_filters: Vec<Biquad> = if let Some(exc_config) = &room_config.optimizer.excursion_protection {
-        if exc_config.enabled {
-            info!("  Applying excursion protection...");
-            match excursion::generate_excursion_protection(&curve, exc_config, sample_rate) {
-                Ok(result) => {
-                    info!("  Excursion protection: F3={:.1}Hz, HPF={:.1}Hz ({} filters)",
-                          result.f3_hz, result.hpf_frequency, result.filters.len());
-                    result.filters
+    let excursion_filters: Vec<Biquad> =
+        if let Some(exc_config) = &room_config.optimizer.excursion_protection {
+            if exc_config.enabled {
+                info!("  Applying excursion protection...");
+                match excursion::generate_excursion_protection(&curve, exc_config, sample_rate) {
+                    Ok(result) => {
+                        info!(
+                            "  Excursion protection: F3={:.1}Hz, HPF={:.1}Hz ({} filters)",
+                            result.f3_hz,
+                            result.hpf_frequency,
+                            result.filters.len()
+                        );
+                        result.filters
+                    }
+                    Err(e) => {
+                        warn!(
+                            "  Excursion protection failed: {}. Continuing without protection.",
+                            e
+                        );
+                        Vec::new()
+                    }
                 }
-                Err(e) => {
-                    warn!("  Excursion protection failed: {}. Continuing without protection.", e);
-                    Vec::new()
-                }
+            } else {
+                Vec::new()
             }
         } else {
             Vec::new()
-        }
-    } else {
-        Vec::new()
-    };
+        };
 
     // Compute pre-score (within EQ range)
     let min_freq = room_config.optimizer.min_freq;
@@ -969,10 +1092,12 @@ fn process_single_speaker(
 
     // Detect passband for normalization
     let (norm_range, mean) = detect_passband_and_mean(&curve);
-    
+
     if let Some((f_low, f_high)) = norm_range {
-        info!("  Detected passband for '{}': {:.1} Hz - {:.1} Hz (Mean SPL: {:.2} dB)", 
-              channel_name, f_low, f_high, mean);
+        info!(
+            "  Detected passband for '{}': {:.1} Hz - {:.1} Hz (Mean SPL: {:.2} dB)",
+            channel_name, f_low, f_high, mean
+        );
     }
 
     let normalized_spl = &curve.spl - mean;
@@ -993,14 +1118,17 @@ fn process_single_speaker(
     match room_config.optimizer.processing_mode {
         ProcessingMode::PhaseLinear => {
             info!("  Generating FIR filter...");
-            
+
             // Check if we should force excess phase correction for GD-Opt on subwoofer
             let mut opt_config = room_config.optimizer.clone();
             if let Some(gd_opt) = &room_config.optimizer.gd_opt {
                 if gd_opt.enabled && (channel_name == "lfe" || channel_name.starts_with("sub")) {
                     if let Some(fir) = &mut opt_config.fir {
                         fir.correct_excess_phase = true;
-                        info!("  GD-Opt: Forcing excess phase correction for '{}'", channel_name);
+                        info!(
+                            "  GD-Opt: Forcing excess phase correction for '{}'",
+                            channel_name
+                        );
                     }
                 }
             }
@@ -1011,12 +1139,17 @@ fn process_single_speaker(
                 room_config.target_curve.as_ref(),
                 sample_rate,
             )
-            .map_err(|e| AutoeqError::OptimizationFailed { message: format!("FIR generation failed: {}", e) })?;
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: format!("FIR generation failed: {}", e),
+            })?;
 
             let filename = format!("{}_fir.wav", channel_name);
             let wav_path = output_dir.join(&filename);
-            crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
-                .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Failed to save FIR WAV: {}", e) })?;
+            crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path).map_err(|e| {
+                AutoeqError::OptimizationFailed {
+                    message: format!("Failed to save FIR WAV: {}", e),
+                }
+            })?;
 
             info!("  Saved FIR filter to {}", wav_path.display());
 
@@ -1039,8 +1172,12 @@ fn process_single_speaker(
             // Compute post_score consistently with pre_score
             let (_, mean_final) = detect_passband_and_mean(&final_curve);
             let normalized_final_spl = &final_curve.spl - mean_final;
-            let post_score =
-                crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+            let post_score = crate::loss::flat_loss(
+                &final_curve.freq,
+                &normalized_final_spl,
+                min_freq,
+                max_freq,
+            );
 
             info!(
                 "  Pre-score: {:.6}, Post-score: {:.6}",
@@ -1051,7 +1188,8 @@ fn process_single_speaker(
             let display_initial = output::extend_curve_to_full_range(&curve);
             let display_fir_resp =
                 response::compute_fir_complex_response(&coeffs, &display_initial.freq, sample_rate);
-            let display_final = response::apply_complex_response(&display_initial, &display_fir_resp);
+            let display_final =
+                response::apply_complex_response(&display_initial, &display_fir_resp);
 
             let mut initial_data: super::types::CurveData = (&display_initial).into();
             initial_data.norm_range = norm_range;
@@ -1062,7 +1200,16 @@ fn process_single_speaker(
             chain.final_curve = Some(final_data.clone());
             chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean_spl, arrival_time_ms))
+            Ok((
+                chain,
+                pre_score,
+                post_score,
+                curve.clone(),
+                final_curve,
+                vec![],
+                mean_spl,
+                arrival_time_ms,
+            ))
         }
         ProcessingMode::Hybrid => {
             // Check for frequency-based crossover configuration
@@ -1107,7 +1254,10 @@ fn process_single_speaker(
                     if is_sub {
                         if let Some(fir) = &mut opt_config.fir {
                             fir.correct_excess_phase = true;
-                            info!("  GD-Opt: Forcing excess phase correction for '{}'", channel_name);
+                            info!(
+                                "  GD-Opt: Forcing excess phase correction for '{}'",
+                                channel_name
+                            );
                         }
                     }
                 }
@@ -1119,7 +1269,12 @@ fn process_single_speaker(
                 room_config.target_curve.as_ref(),
                 sample_rate,
             )
-            .map_err(|e| AutoeqError::OptimizationFailed { message: format!("IIR optimization failed for channel {}: {}", channel_name, e) })?;
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: format!(
+                    "IIR optimization failed for channel {}: {}",
+                    channel_name, e
+                ),
+            })?;
 
             info!("  IIR stage: {} filters", eq_filters.len());
 
@@ -1135,12 +1290,17 @@ fn process_single_speaker(
                 room_config.target_curve.as_ref(),
                 sample_rate,
             )
-            .map_err(|e| AutoeqError::OptimizationFailed { message: format!("FIR generation failed: {}", e) })?;
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: format!("FIR generation failed: {}", e),
+            })?;
 
             let filename = format!("{}_residual_fir.wav", channel_name);
             let wav_path = output_dir.join(&filename);
-            crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
-                .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Failed to save FIR WAV: {}", e) })?;
+            crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path).map_err(|e| {
+                AutoeqError::OptimizationFailed {
+                    message: format!("Failed to save FIR WAV: {}", e),
+                }
+            })?;
 
             info!("  Saved FIR filter to {}", wav_path.display());
 
@@ -1156,8 +1316,12 @@ fn process_single_speaker(
             // Compute post_score consistently with pre_score
             let (_, mean_final) = detect_passband_and_mean(&final_curve);
             let normalized_final_spl = &final_curve.spl - mean_final;
-            let post_score =
-                crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+            let post_score = crate::loss::flat_loss(
+                &final_curve.freq,
+                &normalized_final_spl,
+                min_freq,
+                max_freq,
+            );
 
             info!(
                 "  Pre-score: {:.6}, Post-score: {:.6}",
@@ -1166,12 +1330,17 @@ fn process_single_speaker(
 
             // Extend curves to 20 Hz – 20 kHz for display output
             let display_initial = output::extend_curve_to_full_range(&curve);
-            let display_iir_resp =
-                response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
-            let display_iir_corrected = response::apply_complex_response(&display_initial, &display_iir_resp);
+            let display_iir_resp = response::compute_peq_complex_response(
+                &eq_filters,
+                &display_initial.freq,
+                sample_rate,
+            );
+            let display_iir_corrected =
+                response::apply_complex_response(&display_initial, &display_iir_resp);
             let display_fir_resp =
                 response::compute_fir_complex_response(&coeffs, &display_initial.freq, sample_rate);
-            let display_final = response::apply_complex_response(&display_iir_corrected, &display_fir_resp);
+            let display_final =
+                response::apply_complex_response(&display_iir_corrected, &display_fir_resp);
 
             let mut initial_data: super::types::CurveData = (&display_initial).into();
             initial_data.norm_range = norm_range;
@@ -1182,7 +1351,16 @@ fn process_single_speaker(
             chain.final_curve = Some(final_data.clone());
             chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
+            Ok((
+                chain,
+                pre_score,
+                post_score,
+                curve.clone(),
+                final_curve,
+                eq_filters,
+                mean_spl,
+                arrival_time_ms,
+            ))
         }
         ProcessingMode::LowLatency => {
             // Default IIR mode with enhanced processing
@@ -1201,17 +1379,25 @@ fn process_single_speaker(
             // ================================================================
             // Schroeder Split Optimization (if configured)
             // ================================================================
-            let eq_filters = if let Some(schroeder_config) = &room_config.optimizer.schroeder_split {
+            let eq_filters = if let Some(schroeder_config) = &room_config.optimizer.schroeder_split
+            {
                 if schroeder_config.enabled {
                     let schroeder_freq = if let Some(ref dims) = schroeder_config.room_dimensions {
                         let calculated = dims.schroeder_frequency();
-                        info!("  Schroeder split: calculated frequency {:.1} Hz from room dimensions", calculated);
+                        info!(
+                            "  Schroeder split: calculated frequency {:.1} Hz from room dimensions",
+                            calculated
+                        );
                         calculated
                     } else {
                         schroeder_config.schroeder_freq
                     };
-                    info!("  Schroeder split: optimizing below {:.1} Hz with max_q={:.1}, above with max_q={:.1}",
-                          schroeder_freq, schroeder_config.low_freq_config.max_q, schroeder_config.high_freq_config.max_q);
+                    info!(
+                        "  Schroeder split: optimizing below {:.1} Hz with max_q={:.1}, above with max_q={:.1}",
+                        schroeder_freq,
+                        schroeder_config.low_freq_config.max_q,
+                        schroeder_config.high_freq_config.max_q
+                    );
 
                     // Two-pass optimization with different Q constraints
                     let (low_filters, high_filters) = optimize_with_schroeder_split(
@@ -1223,9 +1409,17 @@ fn process_single_speaker(
 
                     let mut combined_filters = low_filters;
                     combined_filters.extend(high_filters);
-                    info!("  Schroeder split: {} low-freq filters + {} high-freq filters",
-                          combined_filters.iter().filter(|f| f.freq < schroeder_freq).count(),
-                          combined_filters.iter().filter(|f| f.freq >= schroeder_freq).count());
+                    info!(
+                        "  Schroeder split: {} low-freq filters + {} high-freq filters",
+                        combined_filters
+                            .iter()
+                            .filter(|f| f.freq < schroeder_freq)
+                            .count(),
+                        combined_filters
+                            .iter()
+                            .filter(|f| f.freq >= schroeder_freq)
+                            .count()
+                    );
                     combined_filters
                 } else {
                     // Standard optimization
@@ -1235,7 +1429,12 @@ fn process_single_speaker(
                         room_config.target_curve.as_ref(),
                         sample_rate,
                     )
-                    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for channel {}: {}", channel_name, e) })?;
+                    .map_err(|e| AutoeqError::OptimizationFailed {
+                        message: format!(
+                            "EQ optimization failed for channel {}: {}",
+                            channel_name, e
+                        ),
+                    })?;
                     filters
                 }
             } else {
@@ -1246,7 +1445,9 @@ fn process_single_speaker(
                     room_config.target_curve.as_ref(),
                     sample_rate,
                 )
-                .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for channel {}: {}", channel_name, e) })?;
+                .map_err(|e| AutoeqError::OptimizationFailed {
+                    message: format!("EQ optimization failed for channel {}: {}", channel_name, e),
+                })?;
                 filters
             };
 
@@ -1284,8 +1485,12 @@ fn process_single_speaker(
 
             let (_, mean_final) = detect_passband_and_mean(&score_curve);
             let normalized_final_spl = &score_curve.spl - mean_final;
-            let post_score =
-                crate::loss::flat_loss(&score_curve.freq, &normalized_final_spl, min_freq, max_freq);
+            let post_score = crate::loss::flat_loss(
+                &score_curve.freq,
+                &normalized_final_spl,
+                min_freq,
+                max_freq,
+            );
 
             info!(
                 "  Pre-score: {:.6}, Post-score: {:.6}",
@@ -1294,8 +1499,11 @@ fn process_single_speaker(
 
             // Extend curves to 20 Hz – 20 kHz for display output
             let display_initial = output::extend_curve_to_full_range(&curve);
-            let display_resp =
-                response::compute_peq_complex_response(&all_filters, &display_initial.freq, sample_rate);
+            let display_resp = response::compute_peq_complex_response(
+                &all_filters,
+                &display_initial.freq,
+                sample_rate,
+            );
             let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
             let mut initial_data: super::types::CurveData = (&display_initial).into();
@@ -1307,7 +1515,16 @@ fn process_single_speaker(
             chain.final_curve = Some(final_data.clone());
             chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
+            Ok((
+                chain,
+                pre_score,
+                post_score,
+                curve.clone(),
+                final_curve,
+                eq_filters,
+                mean_spl,
+                arrival_time_ms,
+            ))
         }
     }
 }
@@ -1323,7 +1540,6 @@ fn optimize_with_schroeder_split(
     schroeder_config: &super::types::SchroederSplitConfig,
     sample_rate: f64,
 ) -> Result<(Vec<Biquad>, Vec<Biquad>)> {
-
     let schroeder_freq = if let Some(ref dims) = schroeder_config.room_dimensions {
         dims.schroeder_frequency()
     } else {
@@ -1339,11 +1555,15 @@ fn optimize_with_schroeder_split(
     let log_range_low = (schroeder_freq / optimizer.min_freq).max(1.0).log2();
     let low_ratio = log_range_low / log_range_total;
 
-    let low_filters = ((total_filters as f64 * low_ratio).round() as usize).max(1).min(total_filters - 1);
+    let low_filters = ((total_filters as f64 * low_ratio).round() as usize)
+        .max(1)
+        .min(total_filters - 1);
     let high_filters = total_filters - low_filters;
 
-    debug!("  Schroeder split: {} filters below {:.1}Hz, {} filters above",
-           low_filters, schroeder_freq, high_filters);
+    debug!(
+        "  Schroeder split: {} filters below {:.1}Hz, {} filters above",
+        low_filters, schroeder_freq, high_filters
+    );
 
     // Low frequency optimization (below Schroeder)
     let low_optimizer = OptimizerConfig {
@@ -1353,7 +1573,11 @@ fn optimize_with_schroeder_split(
         min_q: low_config.min_q,
         max_q: low_config.max_q,
         min_db: optimizer.min_db,
-        max_db: if low_config.allow_boost { optimizer.max_db } else { 0.0 }, // Cuts only if !allow_boost
+        max_db: if low_config.allow_boost {
+            optimizer.max_db
+        } else {
+            0.0
+        }, // Cuts only if !allow_boost
         ..optimizer.clone()
     };
 
@@ -1378,7 +1602,8 @@ fn optimize_with_schroeder_split(
     };
 
     // Apply low-freq correction first, then optimize high-freq on residual
-    let low_resp = response::compute_peq_complex_response(&low_eq_filters, &curve.freq, sample_rate);
+    let low_resp =
+        response::compute_peq_complex_response(&low_eq_filters, &curve.freq, sample_rate);
     let curve_with_low_correction = response::apply_complex_response(curve, &low_resp);
 
     let (high_eq_filters, _) = eq::optimize_channel_eq(
@@ -1434,14 +1659,14 @@ fn determine_optimization_bands(
                 return (min, max);
             }
         }
-        
+
         if !xover_points.is_empty() {
             if idx < xover_points.len() {
                 let f = xover_points[idx];
                 return (f, f);
             }
         }
-        
+
         // Fallback: log-distribute between 80Hz and 3000Hz
         // This is a rough heuristic if no info is present
         (80.0, 3000.0)
@@ -1483,13 +1708,12 @@ fn process_speaker_group(
     // 1. Load all measurements in the group
     let mut driver_curves = Vec::new();
     for (i, source) in group.measurements.iter().enumerate() {
-        let curve = load::load_source(source)
-            .map_err(|e| AutoeqError::InvalidMeasurement {
-                message: format!(
-                    "Failed to load driver {} measurement for channel {}: {}",
-                    i, channel_name, e
-                ),
-            })?;
+        let curve = load::load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: format!(
+                "Failed to load driver {} measurement for channel {}: {}",
+                i, channel_name, e
+            ),
+        })?;
         driver_curves.push(curve);
     }
 
@@ -1502,7 +1726,9 @@ fn process_speaker_group(
             let max_f = c.freq.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             (min_f * max_f).sqrt()
         };
-        get_mean(a).partial_cmp(&get_mean(b)).unwrap_or(std::cmp::Ordering::Equal)
+        get_mean(a)
+            .partial_cmp(&get_mean(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // 3. Get crossover config
@@ -1522,40 +1748,47 @@ fn process_speaker_group(
 
     // 4. Per-Driver Linearization (Pre-Correction)
     info!("  Linearizing {} drivers...", driver_curves.len());
-    let optimization_bands = determine_optimization_bands(driver_curves.len(), room_config, crossover_config);
+    let optimization_bands =
+        determine_optimization_bands(driver_curves.len(), room_config, crossover_config);
     let mut linearized_drivers = Vec::with_capacity(driver_curves.len());
     let mut per_driver_filters = Vec::with_capacity(driver_curves.len());
 
     for (i, curve) in driver_curves.iter().enumerate() {
         let (min_f, max_f) = optimization_bands[i];
-        info!("    Driver {}: optimizing bandwidth {:.1}-{:.1} Hz", i, min_f, max_f);
+        info!(
+            "    Driver {}: optimizing bandwidth {:.1}-{:.1} Hz",
+            i, min_f, max_f
+        );
 
         // Create driver-specific config
         let mut driver_opt_config = room_config.optimizer.clone();
         driver_opt_config.min_freq = min_f;
         driver_opt_config.max_freq = max_f;
-        
+
         // Optimize EQ for this driver
         let (filters, _) = eq::optimize_channel_eq(
             curve,
             &driver_opt_config,
             room_config.target_curve.as_ref(), // Use global target (usually flat)
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { 
-            message: format!("Linearization failed for driver {}: {}", i, e) 
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!("Linearization failed for driver {}: {}", i, e),
         })?;
 
         // Apply filters to get linearized curve
         let resp = response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
         let linear_curve = response::apply_complex_response(curve, &resp);
-        
+
         linearized_drivers.push(linear_curve);
         per_driver_filters.push(filters);
     }
 
     // 5. Setup Crossover Optimization
     let crossover_type = crossover::parse_crossover_type(&crossover_config.crossover_type)
-        .map_err(|e| AutoeqError::InvalidConfiguration { message: e.to_string() })?;
+        .map_err(|e| AutoeqError::InvalidConfiguration {
+            message: e.to_string(),
+        })?;
 
     let fixed_freqs: Option<Vec<f64>> = if let Some(ref freqs) = crossover_config.frequencies {
         Some(freqs.clone())
@@ -1573,8 +1806,8 @@ fn process_speaker_group(
     // Simple geometric mean estimate for initial guess
     for i in 0..(n_drivers - 1) {
         let (min, max) = match crossover_config.frequency_range {
-            Some((a,b)) => (a,b),
-            None => (80.0, 3000.0)
+            Some((a, b)) => (a, b),
+            None => (80.0, 3000.0),
         };
         initial_xover_freqs.push((min * max).sqrt());
     }
@@ -1602,15 +1835,18 @@ fn process_speaker_group(
     );
 
     // 7. Optimize Crossover (using linearized drivers)
-    let (gains, delays, crossover_freqs, combined_curve, inversions) = crossover::optimize_crossover(
-        linearized_drivers.clone(), // Use linearized curves!
-        crossover_type,
-        sample_rate,
-        &room_config.optimizer,
-        fixed_freqs,
-        crossover_config.frequency_range,
-    )
-    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Crossover optimization failed: {}", e) })?;
+    let (gains, delays, crossover_freqs, combined_curve, inversions) =
+        crossover::optimize_crossover(
+            linearized_drivers.clone(), // Use linearized curves!
+            crossover_type,
+            sample_rate,
+            &room_config.optimizer,
+            fixed_freqs,
+            crossover_config.frequency_range,
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!("Crossover optimization failed: {}", e),
+        })?;
 
     info!(
         "  Optimized crossover: freqs={:?}, gains={:?}, delays={:?}, inversions={:?}",
@@ -1626,7 +1862,12 @@ fn process_speaker_group(
         room_config.target_curve.as_ref(),
         sample_rate,
     )
-    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Global EQ optimization failed for channel {}: {}", channel_name, e) })?;
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!(
+            "Global EQ optimization failed for channel {}: {}",
+            channel_name, e
+        ),
+    })?;
 
     info!("  Optimized {} Global EQ filters", global_eq_filters.len());
     info!(
@@ -1636,7 +1877,7 @@ fn process_speaker_group(
 
     // 9. Build Output DSP Chain
     // We now have per-driver filters AND global filters.
-    
+
     // Prepare display curves (raw drivers extended)
     let driver_curves_for_display: Vec<Curve> = driver_curves
         .iter()
@@ -1658,8 +1899,11 @@ fn process_speaker_group(
     );
 
     // 10. Compute Final Response for validation
-    let global_resp =
-        response::compute_peq_complex_response(&global_eq_filters, &combined_curve.freq, sample_rate);
+    let global_resp = response::compute_peq_complex_response(
+        &global_eq_filters,
+        &combined_curve.freq,
+        sample_rate,
+    );
     let final_curve = response::apply_complex_response(&combined_curve, &global_resp);
 
     // Detect passband
@@ -1667,8 +1911,11 @@ fn process_speaker_group(
 
     // Extend curves for display
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
-    let display_resp =
-        response::compute_peq_complex_response(&global_eq_filters, &display_initial.freq, sample_rate);
+    let display_resp = response::compute_peq_complex_response(
+        &global_eq_filters,
+        &display_initial.freq,
+        sample_rate,
+    );
     let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
     let mut initial_data: super::types::CurveData = (&display_initial).into();
@@ -1715,7 +1962,9 @@ fn process_multisub_group(
 ) -> Result<MixedModeResult> {
     let (result, combined_curve) =
         multisub::optimize_multisub(&group.subwoofers, &room_config.optimizer, sample_rate)
-            .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Multi-sub optimization failed: {}", e) })?;
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: format!("Multi-sub optimization failed: {}", e),
+            })?;
 
     info!(
         "  Multi-sub optimization: gains={:?}, delays={:?} ms",
@@ -1728,7 +1977,9 @@ fn process_multisub_group(
         room_config.target_curve.as_ref(),
         sample_rate,
     )
-    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for multi-sub sum: {}", e) })?;
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!("EQ optimization failed for multi-sub sum: {}", e),
+    })?;
 
     info!(
         "  Global EQ: {} filters, score={:.6}",
@@ -1820,8 +2071,11 @@ fn process_dba(
     _output_dir: &Path,
 ) -> Result<MixedModeResult> {
     let (result, combined_curve) =
-        dba::optimize_dba(dba_config, &room_config.optimizer, sample_rate)
-            .map_err(|e| AutoeqError::OptimizationFailed { message: format!("DBA optimization failed: {}", e) })?;
+        dba::optimize_dba(dba_config, &room_config.optimizer, sample_rate).map_err(|e| {
+            AutoeqError::OptimizationFailed {
+                message: format!("DBA optimization failed: {}", e),
+            }
+        })?;
 
     info!(
         "  DBA Optimization: Front Gain={:.2}dB, Rear Gain={:.2}dB, Rear Delay={:.2}ms",
@@ -1834,7 +2088,9 @@ fn process_dba(
         room_config.target_curve.as_ref(),
         sample_rate,
     )
-    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for DBA sum: {}", e) })?;
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!("EQ optimization failed for DBA sum: {}", e),
+    })?;
 
     info!(
         "  Global EQ: {} filters, score={:.6}",
@@ -1981,10 +2237,18 @@ fn process_mixed_mode_crossover(
         sample_rate,
     )
     .map_err(|e| AutoeqError::OptimizationFailed {
-        message: format!("IIR optimization failed for {} band: {}", if fir_uses_low { "high" } else { "low" }, e),
+        message: format!(
+            "IIR optimization failed for {} band: {}",
+            if fir_uses_low { "high" } else { "low" },
+            e
+        ),
     })?;
 
-    info!("  IIR stage: {} filters for {} band", eq_filters.len(), if fir_uses_low { "high" } else { "low" });
+    info!(
+        "  IIR stage: {} filters for {} band",
+        eq_filters.len(),
+        if fir_uses_low { "high" } else { "low" }
+    );
 
     // Optimize FIR on designated band
     let fir_config = OptimizerConfig {
@@ -2000,16 +2264,21 @@ fn process_mixed_mode_crossover(
         sample_rate,
     )
     .map_err(|e| AutoeqError::OptimizationFailed {
-        message: format!("FIR generation failed for {} band: {}", if fir_uses_low { "low" } else { "high" }, e),
+        message: format!(
+            "FIR generation failed for {} band: {}",
+            if fir_uses_low { "low" } else { "high" },
+            e
+        ),
     })?;
 
     // Save FIR to WAV
     let fir_filename = format!("{}_band_fir.wav", channel_name);
     let wav_path = output_dir.join(&fir_filename);
-    crate::fir::save_fir_to_wav(&fir_coeffs, sample_rate as u32, &wav_path)
-        .map_err(|e| AutoeqError::OptimizationFailed {
+    crate::fir::save_fir_to_wav(&fir_coeffs, sample_rate as u32, &wav_path).map_err(|e| {
+        AutoeqError::OptimizationFailed {
             message: format!("Failed to save FIR WAV: {}", e),
-        })?;
+        }
+    })?;
 
     info!("  Saved FIR filter to {}", wav_path.display());
 
@@ -2032,7 +2301,8 @@ fn process_mixed_mode_crossover(
     let fir_resp = response::compute_fir_complex_response(&fir_coeffs, &curve.freq, sample_rate);
 
     // Compute crossover filter responses (LR24 = 4th order Butterworth)
-    let (lp_resp, hp_resp) = compute_lr24_crossover_responses(&curve.freq, crossover_freq, sample_rate);
+    let (lp_resp, hp_resp) =
+        compute_lr24_crossover_responses(&curve.freq, crossover_freq, sample_rate);
 
     // Combine responses: low_band * fir_or_iir + high_band * iir_or_fir
     let combined_resp: Vec<num_complex::Complex<f64>> = curve
@@ -2055,7 +2325,8 @@ fn process_mixed_mode_crossover(
 
     // Compute post-score
     let normalized_final_spl = &final_curve.spl - mean_final;
-    let post_score = crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+    let post_score =
+        crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
 
     info!(
         "  Pre-score: {:.6}, Post-score: {:.6}",
@@ -2147,7 +2418,10 @@ fn compute_lr24_crossover_responses(
     frequencies: &ndarray::Array1<f64>,
     crossover_freq: f64,
     _sample_rate: f64,
-) -> (Vec<num_complex::Complex<f64>>, Vec<num_complex::Complex<f64>>) {
+) -> (
+    Vec<num_complex::Complex<f64>>,
+    Vec<num_complex::Complex<f64>>,
+) {
     use num_complex::Complex;
 
     let mut lp_resp = Vec::with_capacity(frequencies.len());
@@ -2238,30 +2512,34 @@ fn check_octave_consistency(
     curve2: &Curve,
 ) {
     // Standard acoustic octaves
-    let octave_centers = [31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
-    
+    let octave_centers = [
+        31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+    ];
+
     for &center in &octave_centers {
         let f_min = center / 2.0_f64.sqrt();
         let f_max = center * 2.0_f64.sqrt();
-        
+
         // Find overlap range
         let start_freq = f_min.max(curve1.freq[0]).max(curve2.freq[0]);
-        let end_freq = f_max.min(curve1.freq[curve1.freq.len()-1]).min(curve2.freq[curve2.freq.len()-1]);
-        
+        let end_freq = f_max
+            .min(curve1.freq[curve1.freq.len() - 1])
+            .min(curve2.freq[curve2.freq.len() - 1]);
+
         if end_freq <= start_freq * 1.1 {
             continue; // Not enough bandwidth in this octave for comparison
         }
-        
+
         // Compute average SPL for this octave in both curves
         let freqs1_f32: Vec<f32> = curve1.freq.iter().map(|&f| f as f32).collect();
         let spl1_f32: Vec<f32> = curve1.spl.iter().map(|&s| s as f32).collect();
         let freqs2_f32: Vec<f32> = curve2.freq.iter().map(|&f| f as f32).collect();
         let spl2_f32: Vec<f32> = curve2.spl.iter().map(|&s| s as f32).collect();
-        
+
         let range = Some((start_freq as f32, end_freq as f32));
         let avg1 = compute_average_response(&freqs1_f32, &spl1_f32, range);
         let avg2 = compute_average_response(&freqs2_f32, &spl2_f32, range);
-        
+
         let diff = (avg1 - avg2).abs() as f64;
         if diff > 6.0 {
             warn!(
@@ -2282,53 +2560,60 @@ fn process_cardioid(
     _output_dir: &Path,
 ) -> Result<MixedModeResult> {
     // 1. Load measurements
-    let front_curve = load::load_source(&config.front)
-        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load Front measurement: {}", e) })?;
-    let rear_curve = load::load_source(&config.rear)
-        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load Rear measurement: {}", e) })?;
+    let front_curve =
+        load::load_source(&config.front).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: format!("Failed to load Front measurement: {}", e),
+        })?;
+    let rear_curve =
+        load::load_source(&config.rear).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: format!("Failed to load Rear measurement: {}", e),
+        })?;
 
     // 2. Calculate Delay
     let delay_ms = config.separation_meters / 343.0 * 1000.0;
-    info!("  Cardioid: Separation {:.2}m -> Delay {:.2}ms", config.separation_meters, delay_ms);
+    info!(
+        "  Cardioid: Separation {:.2}m -> Delay {:.2}ms",
+        config.separation_meters, delay_ms
+    );
 
     // 3. Simulate Combined Response
     use num_complex::Complex;
     let n_points = front_curve.freq.len();
     let mut combined_spl = ndarray::Array1::zeros(n_points);
-    
+
     // We need phase. If missing, assume 0.
     let front_phase_zeros = ndarray::Array1::zeros(n_points);
     let rear_phase_zeros = ndarray::Array1::zeros(n_points);
     let front_phase = front_curve.phase.as_ref().unwrap_or(&front_phase_zeros);
     let rear_phase = rear_curve.phase.as_ref().unwrap_or(&rear_phase_zeros);
-    
+
     for i in 0..n_points {
         let f = front_curve.freq[i];
         let omega = 2.0 * std::f64::consts::PI * f;
-        
+
         // Front
         let f_mag = 10.0_f64.powf(front_curve.spl[i] / 20.0);
         let f_phi = front_phase[i].to_radians();
         let f_c = Complex::from_polar(f_mag, f_phi);
-        
+
         // Rear (Inverted + Delayed)
         let r_mag = 10.0_f64.powf(rear_curve.spl[i] / 20.0);
         let r_phi_meas = rear_phase[i].to_radians();
-        
+
         // Delay phase shift: -omega * delay
         let delay_s = delay_ms / 1000.0;
         let delay_phi = -omega * delay_s;
-        
+
         // Inversion: +180 deg (PI rad)
         let invert_phi = std::f64::consts::PI;
-        
+
         let r_phi_total = r_phi_meas + delay_phi + invert_phi;
         let r_c = Complex::from_polar(r_mag, r_phi_total);
-        
+
         let sum = f_c + r_c;
         combined_spl[i] = 20.0 * sum.norm().log10();
     }
-    
+
     let combined_curve = Curve {
         freq: front_curve.freq.clone(),
         spl: combined_spl,
@@ -2342,14 +2627,17 @@ fn process_cardioid(
         room_config.target_curve.as_ref(),
         sample_rate,
     )
-    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for Cardioid sum: {}", e) })?;
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!("EQ optimization failed for Cardioid sum: {}", e),
+    })?;
 
     // Compute pre-score
     let min_freq = room_config.optimizer.min_freq;
     let max_freq = room_config.optimizer.max_freq;
     let (norm_range, mean) = detect_passband_and_mean(&combined_curve);
     let normalized_spl = &combined_curve.spl - mean;
-    let pre_score = crate::loss::flat_loss(&combined_curve.freq, &normalized_spl, min_freq, max_freq);
+    let pre_score =
+        crate::loss::flat_loss(&combined_curve.freq, &normalized_spl, min_freq, max_freq);
 
     info!(
         "  Global EQ: {} filters, score={:.6}",
@@ -2363,10 +2651,10 @@ fn process_cardioid(
         output::extend_curve_to_full_range(&front_curve),
         output::extend_curve_to_full_range(&rear_curve),
     ];
-    
+
     let mut chain = output::build_cardioid_dsp_chain_with_curves(
         channel_name,
-        &[0.0, 0.0], // Gains (0 for now)
+        &[0.0, 0.0],      // Gains (0 for now)
         &[0.0, delay_ms], // Delays
         &eq_filters,
         None,
@@ -2375,7 +2663,8 @@ fn process_cardioid(
     );
 
     // Final Curve calculation
-    let iir_resp = response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
+    let iir_resp =
+        response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
     // Populate initial/final curves in chain

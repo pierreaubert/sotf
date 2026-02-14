@@ -218,7 +218,10 @@ impl Player {
         let state = self.manager.get_state();
         let position_secs = self.manager.get_position();
         let is_playing = matches!(state, StreamingState::Playing);
-        let sample_rate = self.manager.get_audio_info().map(|info| info.spec.sample_rate);
+        let sample_rate = self
+            .manager
+            .get_audio_info()
+            .map(|info| info.spec.sample_rate);
 
         PlaybackState {
             position_secs,

@@ -238,9 +238,7 @@ impl Treemap {
         );
 
         // Render rectangles
-        let color_scheme = self
-            .color_scheme
-            .unwrap_or_else(ColorScheme::tableau10);
+        let color_scheme = self.color_scheme.unwrap_or_else(ColorScheme::tableau10);
         let mut plot_content = div()
             .w(px(plot_width as f32))
             .h(px(plot_height as f32))

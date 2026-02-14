@@ -50,48 +50,69 @@ pub mod stft_common;
 
 pub use analyzer::{AnalyzerData, LoudnessData, SpectrumData};
 pub use analyzer_loudness_monitor::{LoudnessMonitor, LoudnessMonitorPlugin};
-pub use analyzer_spectrum::{SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo, SpectrumAnalyzer, SpectralTiltCorrection, TiltReferenceFreq};
+pub use analyzer_spectrum::{
+    SpectralTiltCorrection, SpectrumAnalyzer, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,
+    TiltReferenceFreq,
+};
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
-pub use host::{DawHost, Host, GraphEdge};
+pub use host::{DawHost, GraphEdge, Host};
 pub use parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-pub use plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext, InPlacePluginAdapter};
-pub use plugin_gain::{GainPlugin, GainPluginParams};
-pub use plugin_matrix::MatrixPlugin;
-pub use plugin_channel_mute_solo::{ChannelMuteSoloPlugin, ChannelState, ChannelMuteSoloParams};
-pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams, CompressorData, default_link_channels as compressor_default_link_channels, default_sidechain_hpf_hz as compressor_default_sidechain_hpf_hz};
-pub use plugin_limiter::{LimiterPlugin, LimiterPluginParams};
-pub use plugin_expander::{ExpanderPlugin, ExpanderPluginParams};
-pub use plugin_gate::{GatePlugin, GatePluginParams, GateData};
-pub use plugin_eq::{EqPlugin, EqPluginParams, BiquadFilterConfig};
+pub use plugin::{
+    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
+};
+pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
+pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
+pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
+pub use plugin_binaural::{
+    BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
+};
+pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
+pub use plugin_compressor::{
+    CompressorData, CompressorPlugin, CompressorPluginParams,
+    default_link_channels as compressor_default_link_channels,
+    default_sidechain_hpf_hz as compressor_default_sidechain_hpf_hz,
+};
+pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
-pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
-pub use plugin_mono_to_stereo::{MonoToStereoPlugin, MonoToStereoPluginParams};
-pub use plugin_multiband_compressor::{MultibandCompressorPlugin, MultibandCompressorPluginParams, BandCompressorParams};
-pub use plugin_multiband_expander::{MultibandExpanderPlugin, MultibandExpanderPluginParams, BandExpanderParams};
-pub use plugin_loudness_compensation::{LoudnessCompensation, LoudnessCompensationPlugin, LoudnessCompensationPluginParams};
-pub use plugin_fletcher_munson::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
-pub use plugin_resampler::ResamplerPlugin;
-pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
-pub use plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams, default_hr_sharpen as upmixer_default_hr_sharpen, default_safety_cap_db as upmixer_default_safety_cap_db, default_subharmonic_gain as upmixer_default_subharmonic_gain};
-pub use plugin_binaural::{BinauralDecoderPlugin, BinauralDecoderParams, RoomModel, binaural_default_enable_optimization};
-pub use plugin_xtc::{XtcPlugin, XtcPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
-pub use plugin_pnd::{PndPlugin, PndPluginParams};
-pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
-pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
-pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
-
-pub use speaker_config::{
-    SpeakerPosition, get_speaker_config_by_channels, get_meter_groups, get_meter_groups_by_channels,
+pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
+pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
+pub use plugin_expander::{ExpanderPlugin, ExpanderPluginParams};
+pub use plugin_fletcher_munson::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
+pub use plugin_gain::{GainPlugin, GainPluginParams};
+pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
+pub use plugin_limiter::{LimiterPlugin, LimiterPluginParams};
+pub use plugin_loudness_compensation::{
+    LoudnessCompensation, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };
-pub use sofa::{HrtfData, SofaFile, SourcePosition};
+pub use plugin_matrix::MatrixPlugin;
+pub use plugin_mono_to_stereo::{MonoToStereoPlugin, MonoToStereoPluginParams};
+pub use plugin_multiband_compressor::{
+    BandCompressorParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
+};
+pub use plugin_multiband_expander::{
+    BandExpanderParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
+};
+pub use plugin_pnd::{PndPlugin, PndPluginParams};
+pub use plugin_resampler::ResamplerPlugin;
+pub use plugin_upmixer::{
+    UpmixerPlugin, UpmixerPluginParams, default_hr_sharpen as upmixer_default_hr_sharpen,
+    default_safety_cap_db as upmixer_default_safety_cap_db,
+    default_subharmonic_gain as upmixer_default_subharmonic_gain,
+};
+pub use plugin_xtc::{XtcPlugin, XtcPluginParams};
+
 pub use simd::enable_ftz_daz;
+pub use sofa::{HrtfData, SofaFile, SourcePosition};
+pub use speaker_config::{
+    SpeakerPosition, get_meter_groups, get_meter_groups_by_channels, get_speaker_config_by_channels,
+};
 
 pub type PluginHost = DawHost;
 
+pub use analyzer_loudness_monitor::LoudnessInfo;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 pub use plugin_hal_input::{HalInputPlugin, HalInputPluginParams};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 pub use plugin_hal_output::{HalOutputPlugin, HalOutputPluginParams};
-pub use analyzer_loudness_monitor::LoudnessInfo;

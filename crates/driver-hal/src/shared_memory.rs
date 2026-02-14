@@ -6,7 +6,7 @@
 use std::fs::OpenOptions;
 use std::io;
 use std::path::Path;
-use std::sync::atomic::{fence, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
 
 use memmap2::MmapMut;
 
@@ -530,9 +530,7 @@ impl SharedAudioBuffer {
 
         // Update read position
         let new_read_pos = read_pos + to_read as u64;
-        header
-            .read_position
-            .store(new_read_pos, Ordering::Release);
+        header.read_position.store(new_read_pos, Ordering::Release);
 
         // TRACE: Log frames consumed from shared memory by Rust daemon
         let frames_read = to_read / channel_count;
@@ -574,11 +572,7 @@ impl SharedAudioBuffer {
             let audio_data = self.audio_data_mut();
 
             // Copy first part
-            std::ptr::copy_nonoverlapping(
-                buffer.as_ptr(),
-                audio_data.add(write_index),
-                first_part,
-            );
+            std::ptr::copy_nonoverlapping(buffer.as_ptr(), audio_data.add(write_index), first_part);
 
             // Copy second part (wrap around)
             if second_part > 0 {
@@ -751,7 +745,8 @@ impl SharedAudioBuffer {
         // ciphertext_size returns bytes for samples + tag, add 8 for nonce
         let ciphertext_bytes = crate::encryption::AudioCipher::ciphertext_size(sample_count);
         let total_bytes = 8 + ciphertext_bytes; // 8 bytes for nonce prefix
-        let encrypted_size = (total_bytes + std::mem::size_of::<f32>() - 1) / std::mem::size_of::<f32>();
+        let encrypted_size =
+            (total_bytes + std::mem::size_of::<f32>() - 1) / std::mem::size_of::<f32>();
 
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
@@ -896,7 +891,10 @@ impl SharedAudioBuffer {
         }
 
         // Convert samples to bytes using pre-allocated buffer
-        crate::encryption::samples_to_encrypted_into(&encrypted_buf[..encrypted_size], ciphertext_buf);
+        crate::encryption::samples_to_encrypted_into(
+            &encrypted_buf[..encrypted_size],
+            ciphertext_buf,
+        );
 
         // Extract nonce and decrypt
         if total_bytes < 8 {
@@ -972,7 +970,11 @@ impl SharedAudioBuffer {
         ciphertext_buf[..8].copy_from_slice(&frame_counter.to_be_bytes());
 
         // Encrypt directly into the buffer after nonce
-        match cipher.encrypt_into(samples, frame_counter, &mut ciphertext_buf[8..8 + ciphertext_size]) {
+        match cipher.encrypt_into(
+            samples,
+            frame_counter,
+            &mut ciphertext_buf[8..8 + ciphertext_size],
+        ) {
             Some(_) => {}
             None => {
                 log::error!("Encryption failed - buffer too small");
@@ -1062,7 +1064,9 @@ impl HalInputReader {
                     buffer: Some(buffer),
                     cipher: None,
                     encrypted_samples_buf: Vec::with_capacity(encrypted_slots),
-                    ciphertext_buf: Vec::with_capacity(crate::encryption::encrypted_byte_size(typical_samples) + 8),
+                    ciphertext_buf: Vec::with_capacity(
+                        crate::encryption::encrypted_byte_size(typical_samples) + 8,
+                    ),
                 })
             }
             Err(e) => {
@@ -1090,19 +1094,33 @@ impl HalInputReader {
             // Log state every 100 reads (~2 seconds)
             if count % 100 == 0 {
                 let header = buf.header();
-                let write_pos = header.write_position.load(std::sync::atomic::Ordering::Acquire);
-                let read_pos = header.read_position.load(std::sync::atomic::Ordering::Acquire);
+                let write_pos = header
+                    .write_position
+                    .load(std::sync::atomic::Ordering::Acquire);
+                let read_pos = header
+                    .read_position
+                    .load(std::sync::atomic::Ordering::Acquire);
                 let available = (write_pos - read_pos) as usize;
                 let channel_count = header.channel_count as usize;
-                let available_frames = if channel_count > 0 { available / channel_count } else { 0 };
+                let available_frames = if channel_count > 0 {
+                    available / channel_count
+                } else {
+                    0
+                };
 
                 log::info!(
                     "[HAL INPUT] State: wpos={}, rpos={}, available={} frames, driver_ready={}, engine_ready={}, active={}",
                     write_pos,
                     read_pos,
                     available_frames,
-                    header.driver_ready.load(std::sync::atomic::Ordering::Acquire) != 0,
-                    header.engine_ready.load(std::sync::atomic::Ordering::Acquire) != 0,
+                    header
+                        .driver_ready
+                        .load(std::sync::atomic::Ordering::Acquire)
+                        != 0,
+                    header
+                        .engine_ready
+                        .load(std::sync::atomic::Ordering::Acquire)
+                        != 0,
                     header.active.load(std::sync::atomic::Ordering::Acquire) != 0
                 );
             }
@@ -1110,7 +1128,10 @@ impl HalInputReader {
             if buf.is_encrypted() {
                 // Check if we need to load/reload cipher
                 let header_fingerprint = buf.key_fingerprint();
-                let need_reload = self.cipher.as_ref().map_or(true, |c| c.fingerprint() != &header_fingerprint);
+                let need_reload = self
+                    .cipher
+                    .as_ref()
+                    .map_or(true, |c| c.fingerprint() != &header_fingerprint);
 
                 if need_reload {
                     log::debug!("Encryption enabled/changed, loading key...");
@@ -1121,7 +1142,11 @@ impl HalInputReader {
                                 self.cipher = Some(cipher);
                                 log::debug!("Loaded encryption key, fingerprint matches");
                             } else {
-                                log::error!("Loaded key fingerprint mismatch! Expected {:?}, got {:?}", header_fingerprint, cipher.fingerprint());
+                                log::error!(
+                                    "Loaded key fingerprint mismatch! Expected {:?}, got {:?}",
+                                    header_fingerprint,
+                                    cipher.fingerprint()
+                                );
                                 self.cipher = None;
                             }
                         }
@@ -1159,15 +1184,15 @@ impl HalInputReader {
 
     /// Get sample rate
     pub fn sample_rate(&self) -> u32 {
-        self.buffer.as_ref().map(|b| b.sample_rate()).unwrap_or(48000)
+        self.buffer
+            .as_ref()
+            .map(|b| b.sample_rate())
+            .unwrap_or(48000)
     }
 
     /// Get channel count
     pub fn channel_count(&self) -> u32 {
-        self.buffer
-            .as_ref()
-            .map(|b| b.channel_count())
-            .unwrap_or(2)
+        self.buffer.as_ref().map(|b| b.channel_count()).unwrap_or(2)
     }
 
     /// Get available frames to read
@@ -1289,7 +1314,10 @@ impl HalOutputWriter {
 
     /// Get sample rate
     pub fn sample_rate(&self) -> u32 {
-        self.buffer.as_ref().map(|b| b.sample_rate()).unwrap_or(48000)
+        self.buffer
+            .as_ref()
+            .map(|b| b.sample_rate())
+            .unwrap_or(48000)
     }
 
     /// Set sample rate
@@ -1313,10 +1341,7 @@ impl HalOutputWriter {
 
     /// Get channel count
     pub fn channel_count(&self) -> u32 {
-        self.buffer
-            .as_ref()
-            .map(|b| b.channel_count())
-            .unwrap_or(2)
+        self.buffer.as_ref().map(|b| b.channel_count()).unwrap_or(2)
     }
 
     /// Set channel count
@@ -1337,7 +1362,10 @@ impl HalOutputWriter {
 
     /// Get buffer frame size
     pub fn buffer_frames(&self) -> u32 {
-        self.buffer.as_ref().map(|b| b.buffer_frames()).unwrap_or(1024)
+        self.buffer
+            .as_ref()
+            .map(|b| b.buffer_frames())
+            .unwrap_or(1024)
     }
 
     /// Set buffer frame size
@@ -1494,8 +1522,7 @@ mod tests {
         // Write audio to shared memory
         let frames_written = buffer.write_audio(&input_audio);
         assert_eq!(
-            frames_written,
-            buffer_frames as usize,
+            frames_written, buffer_frames as usize,
             "Should write all frames"
         );
 
@@ -1503,8 +1530,7 @@ mod tests {
         let mut output_audio = vec![0.0f32; num_samples];
         let frames_read = buffer.read_audio(&mut output_audio);
         assert_eq!(
-            frames_read,
-            buffer_frames as usize,
+            frames_read, buffer_frames as usize,
             "Should read all frames"
         );
 
@@ -1550,8 +1576,7 @@ mod tests {
             // Write
             let frames_written = buffer.write_audio(&input_audio);
             assert_eq!(
-                frames_written,
-                buffer_frames as usize,
+                frames_written, buffer_frames as usize,
                 "Block {}: Should write all frames",
                 block_idx
             );
@@ -1560,8 +1585,7 @@ mod tests {
             let mut output_audio = vec![0.0f32; samples_per_block];
             let frames_read = buffer.read_audio(&mut output_audio);
             assert_eq!(
-                frames_read,
-                buffer_frames as usize,
+                frames_read, buffer_frames as usize,
                 "Block {}: Should read all frames",
                 block_idx
             );
@@ -1779,7 +1803,8 @@ mod tests {
         );
         let err = result.err().expect("Expected error");
         assert!(
-            err.to_string().contains("Invalid shared memory configuration"),
+            err.to_string()
+                .contains("Invalid shared memory configuration"),
             "Expected 'Invalid shared memory configuration' error, got: {}",
             err
         );
@@ -1809,7 +1834,8 @@ mod tests {
         );
         let err = result.err().expect("Expected error");
         assert!(
-            err.to_string().contains("Invalid shared memory configuration"),
+            err.to_string()
+                .contains("Invalid shared memory configuration"),
             "Expected 'Invalid shared memory configuration' error, got: {}",
             err
         );
@@ -1939,7 +1965,10 @@ mod tests {
         buffer.acknowledge_config_change(actual_rate, actual_frames, 1, 0); // status=1 (accepted)
 
         // Verify acknowledgment
-        assert!(!buffer.config_changed(), "Config change flag should be cleared");
+        assert!(
+            !buffer.config_changed(),
+            "Config change flag should be cleared"
+        );
         assert_eq!(buffer.config_status(), 1, "Status should be accepted");
         assert_eq!(buffer.actual_sample_rate(), actual_rate);
         assert_eq!(buffer.actual_buffer_frames(), actual_frames);
@@ -1984,7 +2013,10 @@ mod tests {
         // Multiple increments should be monotonic
         for expected in 2..=100 {
             let counter = buffer.increment_frame_counter();
-            assert_eq!(counter, expected, "Counter should be monotonically increasing");
+            assert_eq!(
+                counter, expected,
+                "Counter should be monotonically increasing"
+            );
         }
     }
 
@@ -2031,7 +2063,11 @@ mod tests {
         buffer.set_key_fingerprint(fingerprint);
 
         assert!(buffer.is_encrypted(), "Should now be encrypted");
-        assert_eq!(buffer.key_fingerprint(), fingerprint, "Fingerprint should match");
+        assert_eq!(
+            buffer.key_fingerprint(),
+            fingerprint,
+            "Fingerprint should match"
+        );
 
         // Disable encryption
         buffer.set_encrypted(false);

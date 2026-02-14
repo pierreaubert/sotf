@@ -124,7 +124,8 @@ fn test_hal_shared_memory_passthrough_bit_exact() {
     let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
 
     // Generate test audio
-    let input_audio = generate_test_audio(buffer_frames as usize, channel_count as usize, sample_rate);
+    let input_audio =
+        generate_test_audio(buffer_frames as usize, channel_count as usize, sample_rate);
 
     // Write to shared memory
     let frames_written = buffer.write_audio(&input_audio);
@@ -214,7 +215,9 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
     let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
         .expect("Failed to create EQ plugin");
 
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     // Generate test audio
     let num_frames = 1024;
@@ -251,12 +254,7 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
             if large_errors <= 5 {
                 eprintln!(
                     "Sample {}: input={:.10} (bits={:#010x}), output={:.10} (bits={:#010x}), ULP diff={}",
-                    i,
-                    input,
-                    input_bits,
-                    output,
-                    output_bits,
-                    ulp_diff
+                    i, input, input_bits, output, output_bits, ulp_diff
                 );
             }
         }
@@ -289,7 +287,9 @@ fn test_eq_empty_filters_passthrough_bit_exact() {
     let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
         .expect("Failed to create EQ plugin");
 
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     let num_frames = 1024;
     let input_audio = generate_test_audio(num_frames, num_channels, sample_rate);
@@ -367,7 +367,9 @@ fn test_hal_with_eq_zero_gain_passthrough() {
 
     let mut plugin = EqPlugin::from_params(channel_count as usize, sample_rate, params)
         .expect("Failed to create EQ plugin");
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     // Generate original audio
     let original_audio =
@@ -446,14 +448,12 @@ fn test_hal_with_eq_zero_gain_passthrough() {
 fn test_eq_zero_gain_with_silence() {
     // Ensure silence remains silence (no DC offset or noise introduced)
     let params = EqPluginParams {
-        filters: vec![
-            BiquadFilterConfig {
-                filter_type: "peak".to_string(),
-                freq: 1000.0,
-                q: 1.0,
-                db_gain: 0.0,
-            },
-        ],
+        filters: vec![BiquadFilterConfig {
+            filter_type: "peak".to_string(),
+            freq: 1000.0,
+            q: 1.0,
+            db_gain: 0.0,
+        }],
         channel_filters: None,
         auto_gain: Default::default(),
     };
@@ -462,7 +462,9 @@ fn test_eq_zero_gain_with_silence() {
     let num_channels = 2;
     let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
         .expect("Failed to create EQ plugin");
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     let num_frames = 1024;
     let input_audio = vec![0.0f32; num_frames * num_channels];
@@ -513,8 +515,8 @@ fn test_hal_multi_channel_support_4ch() {
         .flat_map(|i| {
             let t = i as f32 / sample_rate as f32;
             [
-                (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5,  // Ch0: 440Hz
-                (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.4,  // Ch1: 880Hz
+                (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5, // Ch0: 440Hz
+                (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.4, // Ch1: 880Hz
                 (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.3, // Ch2: 1320Hz
                 (2.0 * std::f32::consts::PI * 1760.0 * t).sin() * 0.2, // Ch3: 1760Hz
             ]
@@ -651,7 +653,9 @@ fn test_volume_control_global_gain() {
 
     // Create GainPlugin with -6dB (approximately 0.5x)
     let mut plugin = GainPlugin::new(num_channels, -6.0);
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     // Generate test audio
     let mut buffer: Vec<f32> = (0..num_frames * num_channels)
@@ -701,7 +705,9 @@ fn test_volume_control_per_channel() {
     };
     let mut plugin =
         GainPlugin::from_params(num_channels, params).expect("Failed to create plugin");
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     // Generate identical audio on both channels
     let mut buffer: Vec<f32> = (0..num_frames)
@@ -757,7 +763,9 @@ fn test_volume_control_multichannel() {
     };
     let mut plugin =
         GainPlugin::from_params(num_channels, params).expect("Failed to create plugin");
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     // Generate audio with same amplitude on all channels
     let amplitude = 0.8;
@@ -867,14 +875,12 @@ fn test_volume_with_hal_pipeline() {
 fn test_eq_zero_gain_preserves_full_scale() {
     // Test with full-scale values to ensure no clipping or modification
     let params = EqPluginParams {
-        filters: vec![
-            BiquadFilterConfig {
-                filter_type: "peak".to_string(),
-                freq: 1000.0,
-                q: 1.0,
-                db_gain: 0.0,
-            },
-        ],
+        filters: vec![BiquadFilterConfig {
+            filter_type: "peak".to_string(),
+            freq: 1000.0,
+            q: 1.0,
+            db_gain: 0.0,
+        }],
         channel_filters: None,
         auto_gain: Default::default(),
     };
@@ -883,12 +889,20 @@ fn test_eq_zero_gain_preserves_full_scale() {
     let num_channels = 2;
     let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
         .expect("Failed to create EQ plugin");
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     let num_frames = 256;
     // Create full-scale square wave
     let input_audio: Vec<f32> = (0..num_frames * num_channels)
-        .map(|i| if (i / num_channels) % 2 == 0 { 1.0 } else { -1.0 })
+        .map(|i| {
+            if (i / num_channels) % 2 == 0 {
+                1.0
+            } else {
+                -1.0
+            }
+        })
         .collect();
     let mut output_audio = vec![0.0f32; input_audio.len()];
 

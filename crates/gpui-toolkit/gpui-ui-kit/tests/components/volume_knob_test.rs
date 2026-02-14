@@ -22,10 +22,7 @@ fn test_volume_knob_configuration() {
 
 #[test]
 fn test_volume_knob_muted() {
-    let knob = VolumeKnob::new()
-        .id("muted-vol")
-        .value(0.5)
-        .muted(true);
+    let knob = VolumeKnob::new().id("muted-vol").value(0.5).muted(true);
 
     drop(knob);
 }
@@ -54,27 +51,21 @@ fn test_volume_knob_handlers() {
 
 #[test]
 fn test_volume_knob_zero_volume() {
-    let knob = VolumeKnob::new()
-        .id("zero-vol")
-        .value(0.0);
+    let knob = VolumeKnob::new().id("zero-vol").value(0.0);
 
     drop(knob);
 }
 
 #[test]
 fn test_volume_knob_max_volume() {
-    let knob = VolumeKnob::new()
-        .id("max-vol")
-        .value(1.0);
+    let knob = VolumeKnob::new().id("max-vol").value(1.0);
 
     drop(knob);
 }
 
 #[test]
 fn test_volume_knob_custom_size() {
-    let knob = VolumeKnob::new()
-        .id("large-vol")
-        .size(gpui::px(96.0));
+    let knob = VolumeKnob::new().id("large-vol").size(gpui::px(96.0));
 
     drop(knob);
 }

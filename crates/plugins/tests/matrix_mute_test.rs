@@ -113,7 +113,9 @@ mod tests {
             sample_rate: 48000,
             num_frames: settle_frames,
         };
-        plugin.process(&settle_input, &mut settle_output, &settle_context).unwrap();
+        plugin
+            .process(&settle_input, &mut settle_output, &settle_context)
+            .unwrap();
 
         // After settling, process one more frame to verify
         let input = vec![1.0, 1.0];
@@ -123,7 +125,11 @@ mod tests {
             num_frames: 1,
         };
         plugin.process(&input, &mut output, &context).unwrap();
-        assert!(output[0].abs() < 1e-5, "Audio should be muted via parameter, got {}", output[0]);
+        assert!(
+            output[0].abs() < 1e-5,
+            "Audio should be muted via parameter, got {}",
+            output[0]
+        );
 
         // Check Dim Parameter
         let dim1_id = ParameterId("dim_1".to_string());
@@ -138,7 +144,9 @@ mod tests {
         }
 
         // Settle the dim smoother
-        plugin.process(&settle_input, &mut settle_output, &settle_context).unwrap();
+        plugin
+            .process(&settle_input, &mut settle_output, &settle_context)
+            .unwrap();
 
         // Verify via process (audio engine effect)
         plugin.process(&input, &mut output, &context).unwrap();

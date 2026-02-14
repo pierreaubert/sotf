@@ -67,7 +67,10 @@ impl HalInputPlugin {
         {
             // On other platforms or when feature is disabled, return a "null" plugin
             // but return error on creation to avoid confusion
-            Err("HAL input plugin is only supported on macOS with 'hal' feature enabled".to_string())
+            Err(
+                "HAL input plugin is only supported on macOS with 'hal' feature enabled"
+                    .to_string(),
+            )
         }
     }
 

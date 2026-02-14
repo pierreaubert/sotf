@@ -30,7 +30,10 @@ impl UpmixerPlugin {
         self.time_out_channels = vec![vec![0.0; self.fft_size]; self.num_output_channels];
         // Also reallocate HR output buffers which depend on channel count
         self.hr_time_out_channels = vec![vec![0.0; self.hr_fft_size]; self.num_output_channels];
-        self.output_accumulator = vec![vec![0.0; self.fft_size * 3]; self.num_output_channels];
+        let accumulator_frames = self.fft_size * 4;
+        debug_assert!(accumulator_frames.is_power_of_two());
+        self.output_accumulator = vec![0.0; accumulator_frames * self.num_output_channels];
+        self.output_accumulator_mask = accumulator_frames - 1;
         self.output_block = vec![0.0; self.fft_size * self.num_output_channels];
         self.blended_decorrelation_filters.clear();
 
@@ -96,6 +99,24 @@ impl UpmixerPlugin {
 
                 self.panning_gains_left.push(left_gain);
                 self.panning_gains_right.push(right_gain);
+            }
+        }
+
+        // Cache per-speaker flags to avoid string/float comparisons in hot path
+        self.cached_is_front.clear();
+        self.cached_is_height.clear();
+        self.cached_is_center.clear();
+        self.cached_hr_active_channels.clear();
+        for (i, speaker) in self.speaker_config.speakers.iter().enumerate() {
+            let is_front = speaker.azimuth.abs() < 80.0;
+            let is_height = speaker.elevation > 10.0;
+            let is_center = speaker.label == "C";
+            self.cached_is_front.push(is_front);
+            self.cached_is_height.push(is_height);
+            self.cached_is_center.push(is_center);
+            // HR path processes front, non-LFE, non-height channels
+            if !speaker.is_lfe && !is_height && speaker.azimuth.abs() < 80.0 {
+                self.cached_hr_active_channels.push(i);
             }
         }
 

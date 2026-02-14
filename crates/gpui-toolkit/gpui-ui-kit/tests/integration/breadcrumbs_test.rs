@@ -196,9 +196,7 @@ async fn test_breadcrumbs_single_item(cx: &mut TestAppContext) {
 
     impl Render for SingleItemView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Breadcrumbs::new().items(vec![BreadcrumbItem::new("home", "Home")]),
-            )
+            div().child(Breadcrumbs::new().items(vec![BreadcrumbItem::new("home", "Home")]))
         }
     }
 

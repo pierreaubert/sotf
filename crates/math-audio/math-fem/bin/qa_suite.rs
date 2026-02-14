@@ -1,10 +1,10 @@
 //! QA Suite for Math-FEM
-//! 
+//!
 //! Comprehensive validation suite for FEM solvers.
 //! Validates:
 //! 1. Cylinder Scattering (Sound-soft) - 2D
 //! 2. Sphere Scattering (Sound-hard) - 3D
-//! 
+//!
 //! Usage:
 //!     cargo run --bin qa-suite --release
 
@@ -15,13 +15,11 @@ use math_audio_fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahed
 use math_audio_fem::solver::{
     GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType, solve,
 };
-use math_audio_wave::special::{
-    legendre_p, spherical_bessel_j, spherical_bessel_y,
-};
-use spec_math::Bessel;
+use math_audio_wave::special::{legendre_p, spherical_bessel_j, spherical_bessel_y};
 use ndarray::Array1;
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
+use spec_math::Bessel;
 use std::f64::consts::PI;
 use std::path::Path;
 use std::time::Instant;
@@ -56,16 +54,13 @@ fn main() -> anyhow::Result<()> {
         SolverType::GmresShiftedLaplacian,
     ];
 
-    let parallel_solvers = [
-        SolverType::GmresPipelinedAmg,
-        SolverType::GmresPipelinedIlu,
-    ];
+    let parallel_solvers = [SolverType::GmresPipelinedAmg, SolverType::GmresPipelinedIlu];
 
     // 1. Cylinder Scattering Test (2D)
     println!("\nRunning Cylinder Scattering Tests (Convergence Study)...");
 
     let k_values = [0.5, 2.0, 3.0, 5.0];
-    
+
     // (n_radial, n_angular, Name)
     let refinements = [
         (8, 16, "Coarse"),
@@ -85,15 +80,23 @@ fn main() -> anyhow::Result<()> {
                 5.0 => *mesh_name != "Very Fine" && *mesh_name != "Super Fine",
                 _ => false,
             };
-            if skip { continue; }
+            if skip {
+                continue;
+            }
 
             // Use Direct solver for small meshes to verify baseline
             if *n_radial <= 16 {
                 results.push(run_cylinder_scattering_test(
                     &format!("Cylinder (k={:.1}) [Direct]", k_val),
                     *k_val,
-                    SolverConfig { solver_type: SolverType::Direct, verbosity: 0, ..Default::default() },
-                    *n_radial, *n_angular, mesh_name
+                    SolverConfig {
+                        solver_type: SolverType::Direct,
+                        verbosity: 0,
+                        ..Default::default()
+                    },
+                    *n_radial,
+                    *n_angular,
+                    mesh_name,
                 )?);
             }
 
@@ -115,20 +118,22 @@ fn main() -> anyhow::Result<()> {
 
                 // Tune Shifted Laplacian for higher k
                 if *solver_type == SolverType::GmresShiftedLaplacian && *k_val >= 3.0 {
-                     config.shifted_laplacian = Some(ShiftedLaplacianConfig::conservative(*k_val));
+                    config.shifted_laplacian = Some(ShiftedLaplacianConfig::conservative(*k_val));
                 }
 
                 results.push(run_cylinder_scattering_test(
                     &format!("Cylinder (k={:.1}) [{:?}]", k_val, solver_type),
                     *k_val,
                     config,
-                    *n_radial, *n_angular, mesh_name
+                    *n_radial,
+                    *n_angular,
+                    mesh_name,
                 )?);
             }
-            
+
             // Test Parallel Solvers on larger meshes
             if *n_radial >= 32 {
-                 for solver_type in &parallel_solvers {
+                for solver_type in &parallel_solvers {
                     let config = SolverConfig {
                         solver_type: *solver_type,
                         verbosity: 0,
@@ -138,15 +143,17 @@ fn main() -> anyhow::Result<()> {
                             tolerance: 1e-10,
                             print_interval: 0,
                         },
-                         ..Default::default()
+                        ..Default::default()
                     };
                     results.push(run_cylinder_scattering_test(
                         &format!("Cylinder (k={:.1}) [{:?}]", k_val, solver_type),
                         *k_val,
                         config,
-                        *n_radial, *n_angular, mesh_name
+                        *n_radial,
+                        *n_angular,
+                        mesh_name,
                     )?);
-                 }
+                }
             }
         }
     }
@@ -161,18 +168,24 @@ fn main() -> anyhow::Result<()> {
     ];
 
     for (k, subdiv, layers, name) in &sphere_cases {
-         // Direct solver check for Coarse
-         if *subdiv == 1 {
+        // Direct solver check for Coarse
+        if *subdiv == 1 {
             results.push(run_sphere_scattering_test(
                 &format!("Sphere (k={:.1}) [Direct]", k),
                 *k,
-                SolverConfig { solver_type: SolverType::Direct, verbosity: 0, ..Default::default() },
-                *subdiv, *layers, name
+                SolverConfig {
+                    solver_type: SolverType::Direct,
+                    verbosity: 0,
+                    ..Default::default()
+                },
+                *subdiv,
+                *layers,
+                name,
             )?);
-         }
+        }
 
         for solver_type in &standard_solvers {
-             let mut config = SolverConfig {
+            let mut config = SolverConfig {
                 solver_type: *solver_type,
                 verbosity: 0,
                 wavenumber: Some(*k),
@@ -184,17 +197,19 @@ fn main() -> anyhow::Result<()> {
                 },
                 ..Default::default()
             };
-            
+
             // For 3D, Shifted Laplacian benefits from aggressive shifts sometimes
             if *solver_type == SolverType::GmresShiftedLaplacian {
-                 config.shifted_laplacian = Some(ShiftedLaplacianConfig::for_wavenumber(*k));
+                config.shifted_laplacian = Some(ShiftedLaplacianConfig::for_wavenumber(*k));
             }
 
             results.push(run_sphere_scattering_test(
                 &format!("Sphere (k={:.1}) [{:?}]", k, solver_type),
                 *k,
                 config,
-                *subdiv, *layers, name
+                *subdiv,
+                *layers,
+                name,
             )?);
         }
     }
@@ -211,7 +226,12 @@ fn main() -> anyhow::Result<()> {
     let mut failed = false;
     for res in &results {
         if !res.passed {
-            eprintln!("TEST FAILED: {} - {} (Error: {:.2}%)", res.test_name, res.mesh_info, res.l2_error * 100.0);
+            eprintln!(
+                "TEST FAILED: {} - {} (Error: {:.2}%)",
+                res.test_name,
+                res.mesh_info,
+                res.l2_error * 100.0
+            );
             failed = true;
         }
     }
@@ -237,7 +257,15 @@ fn run_sphere_scattering_test(
 
     let sphere_radius = 1.0;
     let outer_radius = 2.0;
-    let mesh = spherical_shell_mesh_tetrahedra(0.0, 0.0, 0.0, sphere_radius, outer_radius, subdivisions, layers);
+    let mesh = spherical_shell_mesh_tetrahedra(
+        0.0,
+        0.0,
+        0.0,
+        sphere_radius,
+        outer_radius,
+        subdivisions,
+        layers,
+    );
 
     let num_terms = (k * sphere_radius + 10.0) as usize;
     let coeffs = compute_rigid_sphere_coefficients(k * sphere_radius, num_terms);
@@ -249,7 +277,7 @@ fn run_sphere_scattering_test(
         let cos_theta = if r > 1e-10 { z / r } else { 0.0 };
 
         let mut total = Complex64::new(0.0, 0.0);
-        
+
         // Optimize: Precompute Legendre if possible, but for QA direct eval is fine
         for (n, coeff) in coeffs.iter().enumerate() {
             let n_f64 = n as f64;
@@ -290,15 +318,22 @@ fn run_sphere_scattering_test(
         Ok(sol) => {
             let error = l2_error(&mesh, &sol.values, exact_u);
             let x_norm = sol.values.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
-            
+
             // Relaxed thresholds for 3D P1 elements (they are notoriously inaccurate for wave problems)
             let threshold = match k {
-                v if v < 1.5 => 0.60, 
+                v if v < 1.5 => 0.60,
                 _ => 1.0,
             };
-            
-            (sol.values, sol.iterations, sol.residual, error < threshold, error, x_norm)
-        },
+
+            (
+                sol.values,
+                sol.iterations,
+                sol.residual,
+                error < threshold,
+                error,
+                x_norm,
+            )
+        }
         Err(e) => {
             eprintln!("Solver failed: {}", e);
             (Array1::zeros(problem.num_dofs()), 0, 1.0, false, 1.0, 0.0)
@@ -360,8 +395,8 @@ fn run_cylinder_scattering_test(
         Ok(sol) => {
             let error = l2_error(&mesh, &sol.values, exact_u);
             let x_norm = sol.values.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
-            
-            // Dynamic thresholds based on mesh density (k*h) 
+
+            // Dynamic thresholds based on mesh density (k*h)
             // P1 elements require k*h < 1 (approx 6-10 elements per wavelength)
             // Here we just use approximate "reasonable" error check
             let threshold = match (mesh_name, k) {
@@ -372,11 +407,18 @@ fn run_cylinder_scattering_test(
                 ("Super Fine", 5.0) => 0.50,
                 (_, _) => 0.20,
             };
-            
-            (sol.values, sol.iterations, sol.residual, error < threshold, error, x_norm)
-        },
+
+            (
+                sol.values,
+                sol.iterations,
+                sol.residual,
+                error < threshold,
+                error,
+                x_norm,
+            )
+        }
         Err(e) => {
-             eprintln!("Solver failed: {}", e);
+            eprintln!("Solver failed: {}", e);
             (Array1::zeros(problem.num_dofs()), 0, 1.0, false, 1.0, 0.0)
         }
     };
@@ -407,8 +449,16 @@ fn compute_rigid_sphere_coefficients(ka: f64, num_terms: usize) -> Vec<Complex64
         let jn = j_n_vals[n as usize];
         let yn = y_n_vals[n as usize];
 
-        let jn_minus_1 = if n > 0 { j_n_vals[n-1] } else { ka.cos() / ka };
-        let yn_minus_1 = if n > 0 { y_n_vals[n-1] } else { -ka.sin() / ka };
+        let jn_minus_1 = if n > 0 {
+            j_n_vals[n - 1]
+        } else {
+            ka.cos() / ka
+        };
+        let yn_minus_1 = if n > 0 {
+            y_n_vals[n - 1]
+        } else {
+            -ka.sin() / ka
+        };
 
         let jn_prime = jn_minus_1 - (n_f64 + 1.0) / ka * jn;
         let yn_prime = yn_minus_1 - (n_f64 + 1.0) / ka * yn;
@@ -419,10 +469,18 @@ fn compute_rigid_sphere_coefficients(ka: f64, num_terms: usize) -> Vec<Complex64
     coefficients
 }
 
-fn cylinder_scattering_analytical(k: f64, cylinder_radius: f64, x: f64, y: f64, num_terms: usize) -> Complex64 {
+fn cylinder_scattering_analytical(
+    k: f64,
+    cylinder_radius: f64,
+    x: f64,
+    y: f64,
+    num_terms: usize,
+) -> Complex64 {
     let r = (x * x + y * y).sqrt();
     let theta = y.atan2(x);
-    if r < cylinder_radius * 0.999 { return Complex64::new(0.0, 0.0); }
+    if r < cylinder_radius * 0.999 {
+        return Complex64::new(0.0, 0.0);
+    }
 
     let ka = k * cylinder_radius;
     let kr = k * r;
@@ -432,20 +490,20 @@ fn cylinder_scattering_analytical(k: f64, cylinder_radius: f64, x: f64, y: f64, 
     for n in 0..num_terms {
         let n_f64 = n as f64;
         let epsilon_n = if n == 0 { 1.0 } else { 2.0 };
-        
+
         let jn_ka = ka.bessel_jv(n_f64);
         let yn_ka = ka.bessel_yv(n_f64);
         let jn_kr = kr.bessel_jv(n_f64);
         let yn_kr = kr.bessel_yv(n_f64);
-        
+
         let hn_ka = Complex64::new(jn_ka, yn_ka);
         let hn_kr = Complex64::new(jn_kr, yn_kr);
-        
+
         let i_power_n = match n % 4 {
-             0 => Complex64::new(1.0, 0.0),
-             1 => Complex64::new(0.0, 1.0),
-             2 => Complex64::new(-1.0, 0.0),
-             _ => Complex64::new(0.0, -1.0),
+            0 => Complex64::new(1.0, 0.0),
+            1 => Complex64::new(0.0, 1.0),
+            2 => Complex64::new(-1.0, 0.0),
+            _ => Complex64::new(0.0, -1.0),
         };
 
         let a_n = -epsilon_n * jn_ka / hn_ka * i_power_n;
@@ -454,8 +512,13 @@ fn cylinder_scattering_analytical(k: f64, cylinder_radius: f64, x: f64, y: f64, 
     incident + scattered
 }
 
-fn l2_error<F>(mesh: &math_audio_fem::mesh::Mesh, fem_solution: &Array1<Complex64>, analytical: F) -> f64
-where F: Fn(f64, f64, f64) -> Complex64
+fn l2_error<F>(
+    mesh: &math_audio_fem::mesh::Mesh,
+    fem_solution: &Array1<Complex64>,
+    analytical: F,
+) -> f64
+where
+    F: Fn(f64, f64, f64) -> Complex64,
 {
     let mut error_sq = 0.0;
     let mut norm_sq = 0.0;
@@ -465,7 +528,11 @@ where F: Fn(f64, f64, f64) -> Complex64
         error_sq += (fem_val - exact_val).norm_sqr();
         norm_sq += exact_val.norm_sqr();
     }
-    if norm_sq > 1e-15 { (error_sq / norm_sq).sqrt() } else { error_sq.sqrt() }
+    if norm_sq > 1e-15 {
+        (error_sq / norm_sq).sqrt()
+    } else {
+        error_sq.sqrt()
+    }
 }
 
 fn print_summary(results: &[ValidationResult]) {
@@ -478,7 +545,10 @@ fn print_summary(results: &[ValidationResult]) {
     for res in results {
         let l2_err = res.l2_error * 100.0;
         let status = if res.passed { "PASS" } else { "FAIL" };
-        let solver_short = res.solver.replace("Gmres", "").replace("ShiftedLaplacian", "SL");
+        let solver_short = res
+            .solver
+            .replace("Gmres", "")
+            .replace("ShiftedLaplacian", "SL");
         println!(
             "{:<35} | {:<25} | {:<10} | {:6.2}% | {:<6} | {:<8} | {}",
             res.test_name, solver_short, res.dofs, l2_err, res.iterations, res.duration_ms, status

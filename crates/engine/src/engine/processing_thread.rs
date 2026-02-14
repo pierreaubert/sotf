@@ -208,7 +208,12 @@ impl ProcessingState {
 
     /// Process a frame
     /// Returns the actual number of output frames written
-    fn process_frame(&mut self, input: &[f32], output: &mut [f32], input_frames: usize) -> Result<usize, String> {
+    fn process_frame(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        input_frames: usize,
+    ) -> Result<usize, String> {
         if self.bypassed {
             // Bypass - just copy
             output.copy_from_slice(input);
@@ -346,7 +351,7 @@ fn run_processing_thread(
 
         // Process audio from decoder
         let message = decoder_rx.try_recv();
-        
+
         match message {
             Ok(DecoderMessage::Frame(frame)) => {
                 let output_channels = state.output_channels();
@@ -398,14 +403,19 @@ fn run_processing_thread(
 
                         // Update shared plugin data cache so the UI can read
                         // analyzer results without blocking the audio pipeline.
+                        // Only query plugins that actually have analyzer data
+                        // (cached during host build) to minimize mutex locks.
                         {
-                            let plugin_count = state.host.plugin_count();
-                            let mut cache = plugin_data_cache.write();
-                            if cache.len() != plugin_count {
-                                cache.resize(plugin_count, None);
-                            }
-                            for i in 0..plugin_count {
-                                cache[i] = state.host.get_plugin_data(i);
+                            let analyzer_indices = state.host.analyzer_indices();
+                            if !analyzer_indices.is_empty() {
+                                let plugin_count = state.host.plugin_count();
+                                let mut cache = plugin_data_cache.write();
+                                if cache.len() != plugin_count {
+                                    cache.resize(plugin_count, None);
+                                }
+                                for &i in analyzer_indices {
+                                    cache[i] = state.host.get_plugin_data(i);
+                                }
                             }
                         }
 
@@ -430,11 +440,7 @@ fn run_processing_thread(
                         let mut pending_msg = Some(ProcessingMessage::Frame(processed_frame));
                         // Retry sending until the message is delivered or we shut down
                         while let Some(msg) = pending_msg.take() {
-                            match send_or_interrupt(
-                                &message_tx,
-                                &command_rx,
-                                msg,
-                            ) {
+                            match send_or_interrupt(&message_tx, &command_rx, msg) {
                                 Ok(Some((cmd, unsent))) => {
                                     pending_msg = unsent;
                                     if handle_processing_command(cmd, &mut state, &response_tx) {
@@ -447,7 +453,7 @@ fn run_processing_thread(
                                 }
                                 Err(e) => {
                                     log::debug!("[Processing Thread] Send error: {}", e);
-                                                    break;
+                                    break;
                                 }
                             }
                         }
@@ -1043,7 +1049,12 @@ mod tests {
             let config = settings.to_plugin_config(sample_rate as f64);
             let channels = input_channels_for(&plugin_type);
 
-            let plugin = match create_plugin(&config.plugin_type, &config.parameters, channels, sample_rate) {
+            let plugin = match create_plugin(
+                &config.plugin_type,
+                &config.parameters,
+                channels,
+                sample_rate,
+            ) {
                 Ok(p) => p,
                 Err(e) => panic!("create_plugin failed for '{}': {}", config.plugin_type, e),
             };
@@ -1071,7 +1082,10 @@ mod tests {
 
             match build_plugin_host(&[config.clone()], sample_rate, channels) {
                 Ok(_) => {}
-                Err(e) => panic!("build_plugin_host failed for '{}': {}", config.plugin_type, e),
+                Err(e) => panic!(
+                    "build_plugin_host failed for '{}': {}",
+                    config.plugin_type, e
+                ),
             }
         }
     }

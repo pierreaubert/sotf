@@ -84,7 +84,7 @@ pub fn optimize_crossover(
     // 1. Determine sort order (Low to High freq)
     // We need to pass sorted drivers to the optimizer, but return results in original order.
     let mut permutation: Vec<usize> = (0..n_drivers).collect();
-    
+
     // Helper to get mean freq of a curve
     let get_mean_freq = |c: &Curve| {
         let min_f = c.freq.iter().copied().fold(f64::INFINITY, f64::min);
@@ -103,18 +103,18 @@ pub fn optimize_crossover(
     // 2. Try polarity combinations on SORTED drivers
     // For N drivers, we have 2^(N-1) combinations (driver 0 fixed as reference)
     let num_combinations = 1 << (n_drivers - 1);
-    
+
     struct OptimizationResult {
         result: crate::workflow::DriverOptimizationResult,
         inversions: Vec<bool>,
         data: DriversLossData,
     }
-    
+
     let mut best_opt: Option<OptimizationResult> = None;
 
     // Use crossover-specific frequency range if provided, otherwise fall back to config
-    let (xover_min_freq, xover_max_freq) = crossover_freq_range
-        .unwrap_or((config.min_freq, config.max_freq));
+    let (xover_min_freq, xover_max_freq) =
+        crossover_freq_range.unwrap_or((config.min_freq, config.max_freq));
 
     for i in 0..num_combinations {
         // Driver 0 is always normal (false)
@@ -127,23 +127,28 @@ pub fn optimize_crossover(
         }
 
         // Create modified drivers with inverted phase where needed
-        let modified_drivers: Vec<DriverMeasurement> = sorted_drivers.iter().enumerate().map(|(idx, curve)| {
-            let mut new_curve = curve.clone();
-            if inversions[idx] {
-                if let Some(ref p) = new_curve.phase {
-                    new_curve.phase = Some(p.mapv(|x| x + 180.0));
-                } else {
-                    // Create phase array of 180s if missing
-                    new_curve.phase = Some(ndarray::Array1::from_elem(new_curve.freq.len(), 180.0));
+        let modified_drivers: Vec<DriverMeasurement> = sorted_drivers
+            .iter()
+            .enumerate()
+            .map(|(idx, curve)| {
+                let mut new_curve = curve.clone();
+                if inversions[idx] {
+                    if let Some(ref p) = new_curve.phase {
+                        new_curve.phase = Some(p.mapv(|x| x + 180.0));
+                    } else {
+                        // Create phase array of 180s if missing
+                        new_curve.phase =
+                            Some(ndarray::Array1::from_elem(new_curve.freq.len(), 180.0));
+                    }
                 }
-            }
-            
-            DriverMeasurement {
-                freq: new_curve.freq,
-                spl: new_curve.spl,
-                phase: new_curve.phase,
-            }
-        }).collect();
+
+                DriverMeasurement {
+                    freq: new_curve.freq,
+                    spl: new_curve.spl,
+                    phase: new_curve.phase,
+                }
+            })
+            .collect();
 
         // Note: DriversLossData::new sorts internally, but we already sorted, so order is preserved.
         let drivers_data = DriversLossData::new(modified_drivers, crossover_type);
@@ -177,11 +182,19 @@ pub fn optimize_crossover(
 
         match best_opt {
             None => {
-                best_opt = Some(OptimizationResult { result, inversions, data: drivers_data });
+                best_opt = Some(OptimizationResult {
+                    result,
+                    inversions,
+                    data: drivers_data,
+                });
             }
             Some(ref current_best) => {
                 if result.post_objective < current_best.result.post_objective {
-                    best_opt = Some(OptimizationResult { result, inversions, data: drivers_data });
+                    best_opt = Some(OptimizationResult {
+                        result,
+                        inversions,
+                        data: drivers_data,
+                    });
                 }
             }
         }
@@ -220,9 +233,21 @@ pub fn optimize_crossover(
 
     eprintln!(
         "  Crossover optimization: gains={:?}, delays={:?} ms, freqs={:?}, inverts={:?}, final loss={:.6}",
-        result.gains.iter().map(|g| format!("{:+.2}", g)).collect::<Vec<_>>(),
-        result.delays.iter().map(|d| format!("{:.2}", d)).collect::<Vec<_>>(),
-        result.crossover_freqs.iter().map(|f| format!("{:.0}", f)).collect::<Vec<_>>(),
+        result
+            .gains
+            .iter()
+            .map(|g| format!("{:+.2}", g))
+            .collect::<Vec<_>>(),
+        result
+            .delays
+            .iter()
+            .map(|d| format!("{:.2}", d))
+            .collect::<Vec<_>>(),
+        result
+            .crossover_freqs
+            .iter()
+            .map(|f| format!("{:.0}", f))
+            .collect::<Vec<_>>(),
         sorted_inversions,
         result.post_objective
     );

@@ -51,7 +51,8 @@ pub fn optimize_phase_alignment(
     // Validate that both curves have phase data
     if sub_curve.phase.is_none() {
         return Err(AutoeqError::InvalidMeasurement {
-            message: "Subwoofer measurement must include phase data for phase alignment".to_string(),
+            message: "Subwoofer measurement must include phase data for phase alignment"
+                .to_string(),
         });
     }
     if speaker_curve.phase.is_none() {
@@ -61,13 +62,15 @@ pub fn optimize_phase_alignment(
     }
 
     // Interpolate curves to common frequency grid
-    let common_freqs = create_common_freq_grid(sub_curve, speaker_curve, config.min_freq, config.max_freq);
+    let common_freqs =
+        create_common_freq_grid(sub_curve, speaker_curve, config.min_freq, config.max_freq);
 
     let sub_interp = interpolate_curve_complex(sub_curve, &common_freqs)?;
     let speaker_interp = interpolate_curve_complex(speaker_curve, &common_freqs)?;
 
     // Calculate baseline energy (no delay, no inversion)
-    let energy_before = compute_combined_energy(&sub_interp, &speaker_interp, &common_freqs, 0.0, false);
+    let energy_before =
+        compute_combined_energy(&sub_interp, &speaker_interp, &common_freqs, 0.0, false);
 
     // Grid search parameters
     let delay_step = 0.5; // 0.5 ms steps
@@ -91,7 +94,8 @@ pub fn optimize_phase_alignment(
 
     for &delay in &delay_range {
         for &invert in &polarities {
-            let energy = compute_combined_energy(&sub_interp, &speaker_interp, &common_freqs, delay, invert);
+            let energy =
+                compute_combined_energy(&sub_interp, &speaker_interp, &common_freqs, delay, invert);
             if energy > best_energy {
                 best_energy = energy;
                 best_delay = delay;
@@ -111,7 +115,13 @@ pub fn optimize_phase_alignment(
     };
 
     for &delay in &fine_delay_range {
-        let energy = compute_combined_energy(&sub_interp, &speaker_interp, &common_freqs, delay, best_invert);
+        let energy = compute_combined_energy(
+            &sub_interp,
+            &speaker_interp,
+            &common_freqs,
+            delay,
+            best_invert,
+        );
         if energy > best_energy {
             best_energy = energy;
             best_delay = delay;
@@ -162,9 +172,12 @@ fn create_common_freq_grid(
 
 /// Interpolate a curve to new frequencies, returning complex values
 fn interpolate_curve_complex(curve: &Curve, new_freqs: &Array1<f64>) -> Result<Vec<Complex64>> {
-    let phase = curve.phase.as_ref().ok_or_else(|| AutoeqError::InvalidMeasurement {
-        message: "Phase data required for complex interpolation".to_string(),
-    })?;
+    let phase = curve
+        .phase
+        .as_ref()
+        .ok_or_else(|| AutoeqError::InvalidMeasurement {
+            message: "Phase data required for complex interpolation".to_string(),
+        })?;
 
     let mut result = Vec::with_capacity(new_freqs.len());
 
@@ -368,10 +381,7 @@ mod tests {
     #[test]
     fn test_batch_alignment() {
         let sub = create_test_sub_curve();
-        let speakers = vec![
-            create_test_speaker_curve(),
-            create_test_speaker_curve(),
-        ];
+        let speakers = vec![create_test_speaker_curve(), create_test_speaker_curve()];
         let config = PhaseAlignmentConfig::default();
 
         let results = optimize_phase_alignment_batch(&sub, &speakers, &config)

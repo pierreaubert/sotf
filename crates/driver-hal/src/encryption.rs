@@ -19,8 +19,8 @@
 //! - Resistance to timing attacks
 
 use chacha20poly1305::{
-    aead::{Aead, AeadInPlace, KeyInit},
     ChaCha20Poly1305, Nonce, Tag,
+    aead::{Aead, AeadInPlace, KeyInit},
 };
 use sha2::{Digest, Sha256};
 
@@ -135,7 +135,12 @@ impl AudioCipher {
     ///
     /// # Returns
     /// Number of bytes written to output, or None if output buffer too small
-    pub fn encrypt_into(&self, samples: &[f32], frame_counter: u64, output: &mut [u8]) -> Option<usize> {
+    pub fn encrypt_into(
+        &self,
+        samples: &[f32],
+        frame_counter: u64,
+        output: &mut [u8],
+    ) -> Option<usize> {
         let required_size = encrypted_byte_size(samples.len());
         if output.len() < required_size {
             return None;
@@ -171,7 +176,12 @@ impl AudioCipher {
     ///
     /// # Returns
     /// Number of samples written, or None if decryption failed or buffer too small
-    pub fn decrypt_into(&self, ciphertext: &[u8], frame_counter: u64, output: &mut [f32]) -> Option<usize> {
+    pub fn decrypt_into(
+        &self,
+        ciphertext: &[u8],
+        frame_counter: u64,
+        output: &mut [f32],
+    ) -> Option<usize> {
         if ciphertext.len() < AUTH_TAG_SIZE {
             return None;
         }
@@ -396,7 +406,9 @@ mod tests {
         assert_eq!(ciphertext.len(), samples.len() * 4 + AUTH_TAG_SIZE);
 
         // Decrypt and verify
-        let decrypted = cipher.decrypt(&ciphertext, frame_counter).expect("decryption should succeed");
+        let decrypted = cipher
+            .decrypt(&ciphertext, frame_counter)
+            .expect("decryption should succeed");
 
         // Verify bit-for-bit accuracy
         assert_eq!(samples.len(), decrypted.len());
@@ -474,7 +486,9 @@ mod tests {
         ];
 
         let ciphertext = cipher.encrypt(&samples, 1);
-        let decrypted = cipher.decrypt(&ciphertext, 1).expect("decryption should succeed");
+        let decrypted = cipher
+            .decrypt(&ciphertext, 1)
+            .expect("decryption should succeed");
 
         for (orig, dec) in samples.iter().zip(decrypted.iter()) {
             assert_eq!(orig.to_bits(), dec.to_bits());
@@ -488,7 +502,9 @@ mod tests {
 
         let samples: Vec<f32> = vec![];
         let ciphertext = cipher.encrypt(&samples, 1);
-        let decrypted = cipher.decrypt(&ciphertext, 1).expect("decryption should succeed");
+        let decrypted = cipher
+            .decrypt(&ciphertext, 1)
+            .expect("decryption should succeed");
 
         assert!(decrypted.is_empty());
     }
@@ -551,7 +567,11 @@ mod tests {
         let ciphertext = cipher.encrypt(&samples, 1);
 
         let mut too_small = vec![0.0f32; 10];
-        assert!(cipher.decrypt_into(&ciphertext, 1, &mut too_small).is_none());
+        assert!(
+            cipher
+                .decrypt_into(&ciphertext, 1, &mut too_small)
+                .is_none()
+        );
     }
 
     #[test]

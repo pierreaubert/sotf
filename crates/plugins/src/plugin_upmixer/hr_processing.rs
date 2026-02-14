@@ -58,13 +58,9 @@ impl UpmixerPlugin {
             return;
         }
 
-        for ch_idx in 0..self.num_output_channels {
-            let speaker = &self.speaker_config.speakers[ch_idx];
-            if speaker.is_lfe || speaker.elevation > 10.0 || speaker.azimuth.abs() >= 80.0 {
-                continue;
-            }
-
-            let is_center = speaker.label == "C";
+        // Only process front, non-LFE, non-height channels (cached during build)
+        for &ch_idx in &self.cached_hr_active_channels {
+            let is_center = self.cached_is_center[ch_idx];
             let panning_gain_left = self.panning_gains_left[ch_idx];
             let panning_gain_right = self.panning_gains_right[ch_idx];
 
@@ -80,13 +76,14 @@ impl UpmixerPlugin {
 
             // Optimization: Process bins only above cutoff and use gain_scale
             self.hr_temp_freq_out.fill(Complex::new(0.0, 0.0));
-            
+
             for i in 0..hr_spectrum_size {
                 let freq = i as f32 * freq_per_bin;
                 if freq > hf_cut {
                     let l = self.hr_freq_domain_left[i];
                     let r = self.hr_freq_domain_right[i];
-                    self.hr_temp_freq_out[i] = (l * panning_gain_left + r * panning_gain_right) * gain_scale;
+                    self.hr_temp_freq_out[i] =
+                        (l * panning_gain_left + r * panning_gain_right) * gain_scale;
                 }
             }
 
@@ -104,12 +101,10 @@ impl UpmixerPlugin {
         }
 
         // Re-interleave HR channels into the output block
-        // Optimization: iterate over frames first for sequential writes to output
+        // Only iterate over active HR channels (front, non-LFE, non-height)
         for i in 0..self.hr_fft_size {
             let out_idx = i * self.num_output_channels;
-            for ch_idx in 0..self.num_output_channels {
-                // Only front channels have data, others were cleared by fill(0.0) at start
-                // We could optimize further by only iterating over active HR channels
+            for &ch_idx in &self.cached_hr_active_channels {
                 output[out_idx + ch_idx] += self.hr_time_out_channels[ch_idx][i] * combined_scale;
             }
         }

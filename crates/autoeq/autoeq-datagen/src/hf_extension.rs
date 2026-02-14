@@ -166,7 +166,10 @@ mod tests {
     fn test_speaker_response_shape_flat_at_midband() {
         // Should be close to 0 dB at 1 kHz (midrange, away from presence peak)
         let db = speaker_response_shape(1000.0);
-        assert!(db.abs() < 0.5, "Expected near-flat at 1 kHz, got {db:.2} dB");
+        assert!(
+            db.abs() < 0.5,
+            "Expected near-flat at 1 kHz, got {db:.2} dB"
+        );
     }
 
     #[test]
@@ -189,7 +192,10 @@ mod tests {
         let noise = generate_smooth_noise(&freqs, 42);
         assert_eq!(noise.len(), 100);
         for &v in &noise {
-            assert!(v >= -6.0 && v <= 4.0, "Noise value {v:.2} out of expected range");
+            assert!(
+                v >= -6.0 && v <= 4.0,
+                "Noise value {v:.2} out of expected range"
+            );
         }
     }
 

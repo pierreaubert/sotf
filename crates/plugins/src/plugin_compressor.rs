@@ -330,8 +330,9 @@ impl CompressorPlugin {
 
 impl InPlacePlugin for CompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Compressor", "1.2.0", "SotF")
-            .with_description("Optimized dynamic range compressor with fast math and block-based smoothing")
+        PluginInfo::new("Compressor", "1.2.0", "SotF").with_description(
+            "Optimized dynamic range compressor with fast math and block-based smoothing",
+        )
     }
 
     fn channels(&self) -> usize {
@@ -583,7 +584,6 @@ impl InPlacePlugin for CompressorPlugin {
         }))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

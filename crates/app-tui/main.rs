@@ -105,7 +105,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Add binaural decoder plugin to the chain (before permanent tail)
         let insert_idx = app.plugin_chain.user_plugin_insert_index();
-        app.plugin_chain.insert_plugin(insert_idx, &PluginType::BinauralDecoder);
+        app.plugin_chain
+            .insert_plugin(insert_idx, &PluginType::BinauralDecoder);
 
         // Configure the plugin with SOFA file path and detected input channels
         if let Some(plugin) = app.plugin_chain.get_plugin_mut(insert_idx) {
@@ -248,7 +249,11 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     app.needs_redraw = true; // Always redraw on tick to update meters/position
 
                     // Redraw while scanning or processing
-                    if app.scan_in_progress || app.maintenance_in_progress || app.replay_gain_manager.in_progress || app.waveform_manager.in_progress {
+                    if app.scan_in_progress
+                        || app.maintenance_in_progress
+                        || app.replay_gain_manager.in_progress
+                        || app.waveform_manager.in_progress
+                    {
                         app.needs_redraw = true;
                     }
 
@@ -274,11 +279,14 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         // Advance to next
                         if let Some(path) = app.next_track() {
                             log::info!("[TUI] Auto-advancing to: {:?}", path);
-                            
+
                             // Determine target sample rate based on track's native rate if known
-                            let track_sample_rate = app.current_track().and_then(|t| t.sample_rate).unwrap_or(48000);
+                            let track_sample_rate = app
+                                .current_track()
+                                .and_then(|t| t.sample_rate)
+                                .unwrap_or(48000);
                             let sample_rate = app.get_target_sample_rate(track_sample_rate);
-                            
+
                             log::info!(
                                 "[TUI] Auto-advance rate: track={}Hz, target={}Hz",
                                 track_sample_rate,
@@ -359,7 +367,10 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                     MAX_RETRIES
                                 );
 
-                                let sample_rate = app.current_sample_rate.map(|r| r as f64).unwrap_or_else(|| app.get_current_sample_rate());
+                                let sample_rate = app
+                                    .current_sample_rate
+                                    .map(|r| r as f64)
+                                    .unwrap_or_else(|| app.get_current_sample_rate());
                                 let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
 
                                 match player.update_plugins(plugins) {
@@ -467,9 +478,12 @@ fn handle_player_command(
 
             // Get plugin configs and output channels
             // Determine target sample rate based on track's native rate if known
-            let track_sample_rate = app.current_track().and_then(|t| t.sample_rate).unwrap_or(48000);
+            let track_sample_rate = app
+                .current_track()
+                .and_then(|t| t.sample_rate)
+                .unwrap_or(48000);
             let sample_rate = app.get_target_sample_rate(track_sample_rate);
-            
+
             log::info!(
                 "[TUI] Starting playback: track={}Hz, target={}Hz, device_default={}Hz",
                 track_sample_rate,

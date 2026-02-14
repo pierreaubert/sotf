@@ -255,10 +255,8 @@ fn render_matrix_grid(
     state: &MatrixRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let output_groups = compute_output_groups(
-        state.output_channels,
-        state.speaker_config.as_deref(),
-    );
+    let output_groups =
+        compute_output_groups(state.output_channels, state.speaker_config.as_deref());
 
     div()
         .flex()
@@ -304,22 +302,18 @@ fn render_matrix_grid(
                         })),
                 )
                 // Grid rows
-                .children(
-                    (0..state.output_channels).map(|out_idx| {
-                        render_matrix_row(entity.clone(), plugin_idx, out_idx, state, theme)
-                    }),
-                ),
+                .children((0..state.output_channels).map(|out_idx| {
+                    render_matrix_row(entity.clone(), plugin_idx, out_idx, state, theme)
+                })),
         )
         // Right: M/S/D sidebar
-        .child(
-            render_msd_sidebar(
-                entity.clone(),
-                plugin_idx,
-                state,
-                &output_groups,
-                theme,
-            ),
-        )
+        .child(render_msd_sidebar(
+            entity.clone(),
+            plugin_idx,
+            state,
+            &output_groups,
+            theme,
+        ))
 }
 
 /// Render the M/S/D sidebar column
@@ -679,8 +673,7 @@ fn render_matrix_cell(
                                 matrix[idx] = 0.0;
                             }
                             if output_idx < channel_states.len() {
-                                channel_states[output_idx] =
-                                    sotf_plugins::ChannelState::default();
+                                channel_states[output_idx] = sotf_plugins::ChannelState::default();
                             }
                             state.app.plugin_state.pending_plugin_update =
                                 Some(PluginUpdateType::Structural);

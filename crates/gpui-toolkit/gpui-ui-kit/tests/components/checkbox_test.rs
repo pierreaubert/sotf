@@ -1,7 +1,7 @@
 //! Checkbox component tests
 
-use gpui_ui_kit::checkbox::{Checkbox, CheckboxSize};
 use gpui_ui_kit::ComponentSize;
+use gpui_ui_kit::checkbox::{Checkbox, CheckboxSize};
 
 #[test]
 fn test_checkbox_creation() {

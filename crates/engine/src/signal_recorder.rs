@@ -592,7 +592,12 @@ pub fn record_and_analyze(
 
     // Analyze the recording
     log::debug!("[record_and_analyze] Analyzing recording...");
-    let analysis = analyze_recording(recorded_wav_path, reference_signal, sample_rate, sweep_range)?;
+    let analysis = analyze_recording(
+        recorded_wav_path,
+        reference_signal,
+        sample_rate,
+        sweep_range,
+    )?;
     write_analysis_csv(&analysis, output_csv_path, compensation.as_ref())?;
     log::info!(
         "[record_and_analyze] Wrote analysis to {:?}",
@@ -629,8 +634,6 @@ pub fn parse_channel_list(s: &str) -> Result<Vec<u16>, String> {
 
     Ok(channels)
 }
-
-
 
 // ============================================================================
 // Lightweight Recording Format
@@ -758,8 +761,8 @@ impl RecordingSession {
 
     /// Load session from JSON file
     pub fn load_from_file(path: &Path) -> Result<Self, String> {
-        let file = std::fs::File::open(path)
-            .map_err(|e| format!("Failed to open session file: {}", e))?;
+        let file =
+            std::fs::File::open(path).map_err(|e| format!("Failed to open session file: {}", e))?;
         let session: Self = serde_json::from_reader(file)
             .map_err(|e| format!("Failed to deserialize session: {}", e))?;
         log::info!(
@@ -792,7 +795,7 @@ pub fn reprocess_recordings(
     reference_signal: &[f32],
     mic_compensation_path: Option<&Path>,
 ) -> Result<RecordingSession, String> {
-    use crate::signal_analysis::{analyze_recording, write_analysis_csv, MicrophoneCompensation};
+    use crate::signal_analysis::{MicrophoneCompensation, analyze_recording, write_analysis_csv};
 
     log::info!(
         "[reprocess_recordings] Re-processing {} channels in {:?}",
@@ -847,8 +850,12 @@ pub fn reprocess_recordings(
         );
 
         // Re-analyze the recording
-        match analyze_recording(&wav_path, reference_signal, session.sample_rate, session.sweep_range)
-        {
+        match analyze_recording(
+            &wav_path,
+            reference_signal,
+            session.sample_rate,
+            session.sweep_range,
+        ) {
             Ok(analysis) => {
                 // Write updated CSV
                 if let Err(e) = write_analysis_csv(&analysis, &csv_path, compensation.as_ref()) {
@@ -953,15 +960,17 @@ pub fn migrate_legacy_recording(
     );
 
     // Load legacy format
-    let file = File::open(legacy_json_path)
-        .map_err(|e| format!("Failed to open legacy file: {}", e))?;
+    let file =
+        File::open(legacy_json_path).map_err(|e| format!("Failed to open legacy file: {}", e))?;
     let legacy: LegacyRecordingSession = serde_json::from_reader(file)
         .map_err(|e| format!("Failed to parse legacy format: {}", e))?;
 
     // Create V2 session
     let mut session = RecordingSession {
         version: "2.0".to_string(),
-        timestamp: legacy.timestamp.unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
+        timestamp: legacy
+            .timestamp
+            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
         sample_rate: legacy.sample_rate.unwrap_or(48000),
         signal_type: "sweep".to_string(), // Default, can't recover from legacy
         signal_duration_secs: 5.0,        // Default
@@ -1012,7 +1021,7 @@ pub fn migrate_legacy_recording(
                 legacy_channel.channel_index,
                 &legacy_channel.channel_name,
                 legacy_channel.channel_index, // Assume 1:1 mapping
-                0,                             // Unknown input channel
+                0,                            // Unknown input channel
                 &wav_path,
                 &csv_filename,
                 success,
@@ -1058,8 +1067,8 @@ fn write_extended_csv(
 ) -> Result<(), String> {
     use std::io::Write;
 
-    let mut file = std::fs::File::create(csv_path)
-        .map_err(|e| format!("Failed to create CSV: {}", e))?;
+    let mut file =
+        std::fs::File::create(csv_path).map_err(|e| format!("Failed to create CSV: {}", e))?;
 
     // Header
     writeln!(
@@ -1077,7 +1086,11 @@ fn write_extended_csv(
         let rt60 = analysis.rt60_ms.get(i).copied().unwrap_or(0.0);
         let c50 = analysis.clarity_c50_db.get(i).copied().unwrap_or(0.0);
         let c80 = analysis.clarity_c80_db.get(i).copied().unwrap_or(0.0);
-        let gd = analysis.excess_group_delay_ms.get(i).copied().unwrap_or(0.0);
+        let gd = analysis
+            .excess_group_delay_ms
+            .get(i)
+            .copied()
+            .unwrap_or(0.0);
 
         writeln!(
             file,

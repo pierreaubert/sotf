@@ -302,12 +302,7 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Learn"),
-                        )
+                        .child(div().text_xs().text_color(theme.text_muted).child("Learn"))
                         // Use Captured Profile toggle
                         .child(
                             div()
@@ -341,12 +336,7 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Clear"),
-                        ),
+                        .child(div().text_xs().text_color(theme.text_muted).child("Clear")),
                 ),
         )
 }

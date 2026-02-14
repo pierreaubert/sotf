@@ -27,11 +27,13 @@ impl Render for IconButtonClickView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let click_count = self.click_count.clone();
 
-        div().size_full().child(
-            IconButton::new("test-icon-btn", "✓").on_click(move |_window, _cx| {
-                click_count.fetch_add(1, Ordering::SeqCst);
-            }),
-        )
+        div()
+            .size_full()
+            .child(
+                IconButton::new("test-icon-btn", "✓").on_click(move |_window, _cx| {
+                    click_count.fetch_add(1, Ordering::SeqCst);
+                }),
+            )
     }
 }
 

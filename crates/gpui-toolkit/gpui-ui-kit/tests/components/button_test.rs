@@ -1,7 +1,7 @@
 //! Button component tests
 
-use gpui_ui_kit::button::{Button, ButtonSize, ButtonTheme, ButtonVariant};
 use gpui_ui_kit::ComponentSize;
+use gpui_ui_kit::button::{Button, ButtonSize, ButtonTheme, ButtonVariant};
 
 #[test]
 fn test_button_creation() {

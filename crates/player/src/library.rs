@@ -1272,7 +1272,11 @@ impl MusicLibrary {
                         }
                         // Match track filename (for files with no metadata tags)
                         if let Some(filename) = track.path.file_stem() {
-                            if filename.to_string_lossy().to_lowercase().contains(&query_lower) {
+                            if filename
+                                .to_string_lossy()
+                                .to_lowercase()
+                                .contains(&query_lower)
+                            {
                                 return true;
                             }
                         }

@@ -31,7 +31,10 @@ pub struct ArrivalTimeResult {
 ///
 /// # Returns
 /// * `ArrivalTimeResult` containing arrival time in samples and milliseconds
-pub fn find_arrival_time(wav_path: &Path, threshold_db: Option<f64>) -> Result<ArrivalTimeResult, String> {
+pub fn find_arrival_time(
+    wav_path: &Path,
+    threshold_db: Option<f64>,
+) -> Result<ArrivalTimeResult, String> {
     let threshold_db = threshold_db.unwrap_or(-40.0);
 
     // Load WAV file
@@ -55,15 +58,13 @@ pub fn find_arrival_time(wav_path: &Path, threshold_db: Option<f64>) -> Result<A
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|e| format!("Failed to read samples: {}", e))?
         }
-        hound::SampleFormat::Float => {
-            reader
-                .samples::<f32>()
-                .enumerate()
-                .filter(|(i, _)| i % channels == 0)
-                .map(|(_, s)| s)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| format!("Failed to read samples: {}", e))?
-        }
+        hound::SampleFormat::Float => reader
+            .samples::<f32>()
+            .enumerate()
+            .filter(|(i, _)| i % channels == 0)
+            .map(|(_, s)| s)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to read samples: {}", e))?,
     };
 
     if samples.is_empty() {
@@ -71,17 +72,16 @@ pub fn find_arrival_time(wav_path: &Path, threshold_db: Option<f64>) -> Result<A
     }
 
     // Find the peak (maximum absolute value) for reference
-    let peak_amplitude = samples
-        .iter()
-        .map(|&s| s.abs())
-        .fold(0.0_f32, f32::max);
+    let peak_amplitude = samples.iter().map(|&s| s.abs()).fold(0.0_f32, f32::max);
 
     if peak_amplitude < 1e-6 {
         return Err("Signal appears to be silent (peak amplitude < -120 dB)".to_string());
     }
 
     // Estimate noise floor from the first 10ms of silence (or first 1% of signal, whichever is smaller)
-    let noise_samples = (sample_rate as usize / 100).min(samples.len() / 100).max(10);
+    let noise_samples = (sample_rate as usize / 100)
+        .min(samples.len() / 100)
+        .max(10);
     let noise_floor: f32 = samples[..noise_samples]
         .iter()
         .map(|&s| s.abs())

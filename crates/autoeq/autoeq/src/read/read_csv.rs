@@ -202,8 +202,10 @@ pub fn load_driver_measurement(
         // Parse data
         if parts.len() > freq_idx
             && parts.len() > spl_idx
-            && let (Ok(freq), Ok(spl)) =
-                (parts[freq_idx].parse::<f64>(), parts[spl_idx].parse::<f64>())
+            && let (Ok(freq), Ok(spl)) = (
+                parts[freq_idx].parse::<f64>(),
+                parts[spl_idx].parse::<f64>(),
+            )
         {
             frequencies.push(freq);
             spl_values.push(spl);

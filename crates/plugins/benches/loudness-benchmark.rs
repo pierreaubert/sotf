@@ -20,7 +20,8 @@ fn benchmark_loudness_plugin(c: &mut Criterion) {
             BenchmarkId::new("process", format!("{}ch", channels)),
             &channels,
             |b, &channels| {
-                let mut plugin = LoudnessCompensationPlugin::new(channels, 100.0, 6.0, 10000.0, 6.0);
+                let mut plugin =
+                    LoudnessCompensationPlugin::new(channels, 100.0, 6.0, 10000.0, 6.0);
                 plugin.initialize(sample_rate).unwrap();
 
                 let input = vec![0.5f32; block_size * channels];
@@ -31,7 +32,13 @@ fn benchmark_loudness_plugin(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    plugin.process(black_box(&input), black_box(&mut output), black_box(&context)).unwrap();
+                    plugin
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
+                        .unwrap();
                 });
             },
         );

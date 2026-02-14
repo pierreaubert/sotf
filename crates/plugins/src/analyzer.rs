@@ -104,7 +104,8 @@ impl LoudnessData {
         self.channel_peaks.clear();
         self.channel_peaks.extend_from_slice(&other.channel_peaks);
         self.true_peaks_dbtp.clear();
-        self.true_peaks_dbtp.extend_from_slice(&other.true_peaks_dbtp);
+        self.true_peaks_dbtp
+            .extend_from_slice(&other.true_peaks_dbtp);
         self.correlation_lr = other.correlation_lr;
     }
 }

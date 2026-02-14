@@ -146,7 +146,11 @@ fn scenario_02_small_stereo_2_1() -> Scenario {
         name: "small_stereo_2_1".to_string(),
         description: "Small 3x3x2.4m room, 2.1, sub at front-left corner".to_string(),
         simulation: make_simulation(room, vec![left, right, sub], vec![lp]),
-        source_names: vec!["left".to_string(), "right".to_string(), "subwoofer".to_string()],
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "subwoofer".to_string(),
+        ],
     }
 }
 
@@ -256,7 +260,11 @@ fn scenario_05_medium_2_1() -> Scenario {
         name: "medium_stereo_2_1".to_string(),
         description: "Medium 5x4x2.5m room, 2.1".to_string(),
         simulation: make_simulation(room, vec![left, right, sub], vec![lp]),
-        source_names: vec!["left".to_string(), "right".to_string(), "subwoofer".to_string()],
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "subwoofer".to_string(),
+        ],
     }
 }
 
@@ -274,11 +282,7 @@ fn scenario_06_medium_multi_sub_4() -> Scenario {
     Scenario {
         name: "medium_multi_sub_4".to_string(),
         description: "Medium 5x4x2.5m room, 4 corner subs".to_string(),
-        simulation: make_simulation(
-            room,
-            vec![left, right, sub1, sub2, sub3, sub4],
-            vec![lp],
-        ),
+        simulation: make_simulation(room, vec![left, right, sub1, sub2, sub3, sub4], vec![lp]),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -342,7 +346,11 @@ fn scenario_09_large_2_1() -> Scenario {
         name: "large_stereo_2_1".to_string(),
         description: "Large 7x5.5x2.6m room, 2.1".to_string(),
         simulation: make_simulation(room, vec![left, right, sub], vec![lp]),
-        source_names: vec!["left".to_string(), "right".to_string(), "subwoofer".to_string()],
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "subwoofer".to_string(),
+        ],
     }
 }
 
@@ -360,11 +368,7 @@ fn scenario_10_large_multi_sub_4() -> Scenario {
     Scenario {
         name: "large_multi_sub_4".to_string(),
         description: "Large 7x5.5x2.6m room, 4 corner subs".to_string(),
-        simulation: make_simulation(
-            room,
-            vec![left, right, sub1, sub2, sub3, sub4],
-            vec![lp],
-        ),
+        simulation: make_simulation(room, vec![left, right, sub1, sub2, sub3, sub4], vec![lp]),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -390,7 +394,11 @@ fn scenario_11_large_multi_seat_2_1() -> Scenario {
         name: "large_multi_seat_2_1".to_string(),
         description: "Large 7x5.5x2.6m room, 2.1, 3 seats".to_string(),
         simulation: make_simulation(room, vec![left, right, sub], vec![lp0, lp1, lp2]),
-        source_names: vec!["left".to_string(), "right".to_string(), "subwoofer".to_string()],
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "subwoofer".to_string(),
+        ],
     }
 }
 
@@ -636,9 +644,7 @@ mod tests {
                 NUM_POINTS,
             );
             assert!(scenario.simulation.frequencies[0] >= MIN_FREQ - 1.0);
-            assert!(
-                *scenario.simulation.frequencies.last().unwrap() <= MAX_FREQ + 1.0
-            );
+            assert!(*scenario.simulation.frequencies.last().unwrap() <= MAX_FREQ + 1.0);
         }
     }
 

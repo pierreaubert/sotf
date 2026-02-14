@@ -69,8 +69,14 @@ pub fn get_autoeq_dir() -> Result<PathBuf, EnvError> {
     // Try current directory and its parent
     if let Ok(current_dir) = env::current_dir() {
         // Check if current dir looks like AutoEQ root (has Cargo.toml and autoeq directory or crate)
-        let candidates = vec![current_dir.clone(), current_dir.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("/"))];
-        
+        let candidates = vec![
+            current_dir.clone(),
+            current_dir
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("/")),
+        ];
+
         for dir in candidates {
             if dir.join("Cargo.toml").exists() {
                 // Check for workspace members or specific file structure

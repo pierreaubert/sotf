@@ -7,12 +7,14 @@ use sotf_audio_player::ReleaseChannel;
 
 use super::recording::{RecordingResult, RecordingState};
 use autoeq::roomeq::{
-    CrossoverConfig as BackendCrossoverConfig, ExcursionProtectionConfig as BackendExcursionProtectionConfig,
-    FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType, LowFreqFilterConfig,
-    MeasurementSource, MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
+    CrossoverConfig as BackendCrossoverConfig,
+    ExcursionProtectionConfig as BackendExcursionProtectionConfig, FirConfig as BackendFirConfig,
+    HighFreqFilterConfig, HighpassType, LowFreqFilterConfig, MeasurementSource,
+    MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
     OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
-    RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig,
-    SpeakerGroup, TargetTiltConfig as BackendTargetTiltConfig, TiltType, ProcessingMode as BackendProcessingMode,
+    ProcessingMode as BackendProcessingMode, RoomConfig,
+    SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
+    TargetTiltConfig as BackendTargetTiltConfig, TiltType,
 };
 use std::collections::HashMap;
 
@@ -1363,8 +1365,18 @@ impl RoomEqState {
 
         // Helper to convert measurement to curve
         let to_curve = |meas: &ChannelMeasurement| -> autoeq::Curve {
-            let frequencies: Vec<f64> = meas.measurement.frequencies.iter().map(|&f| f as f64).collect();
-            let magnitude_db: Vec<f64> = meas.measurement.magnitude_db.iter().map(|&db| db as f64).collect();
+            let frequencies: Vec<f64> = meas
+                .measurement
+                .frequencies
+                .iter()
+                .map(|&f| f as f64)
+                .collect();
+            let magnitude_db: Vec<f64> = meas
+                .measurement
+                .magnitude_db
+                .iter()
+                .map(|&db| db as f64)
+                .collect();
 
             autoeq::Curve {
                 freq: ndarray::Array1::from_vec(frequencies),
@@ -1388,9 +1400,13 @@ impl RoomEqState {
         // Iterate over configured speakers
         for speaker_config in &self.speaker_configs {
             let channel_name = &speaker_config.channel_name;
-            
+
             // Find corresponding measurement
-            if let Some(meas) = self.channel_measurements.iter().find(|m| &m.channel_name == channel_name) {
+            if let Some(meas) = self
+                .channel_measurements
+                .iter()
+                .find(|m| &m.channel_name == channel_name)
+            {
                 match speaker_config.config_type {
                     SpeakerConfigType::Single => {
                         let curve = to_curve(meas);
@@ -1403,7 +1419,8 @@ impl RoomEqState {
                         let mut driver_measurements = Vec::new();
                         if meas.is_group && !meas.group_drivers.is_empty() {
                             for driver_res in &meas.group_drivers {
-                                driver_measurements.push(MeasurementSource::InMemory(result_to_curve(driver_res)));
+                                driver_measurements
+                                    .push(MeasurementSource::InMemory(result_to_curve(driver_res)));
                             }
                         } else {
                             driver_measurements.push(MeasurementSource::InMemory(to_curve(meas)));
@@ -1418,12 +1435,15 @@ impl RoomEqState {
                             CrossoverType::Butterworth24 => "Butterworth24",
                         };
 
-                        crossovers.insert(xover_id.clone(), BackendCrossoverConfig {
-                            crossover_type: xover_type.to_string(),
-                            frequency: None,
-                            frequencies: None,
-                            frequency_range: None,
-                        });
+                        crossovers.insert(
+                            xover_id.clone(),
+                            BackendCrossoverConfig {
+                                crossover_type: xover_type.to_string(),
+                                frequency: None,
+                                frequencies: None,
+                                frequency_range: None,
+                            },
+                        );
 
                         speakers.insert(
                             channel_name.clone(),
@@ -1439,7 +1459,11 @@ impl RoomEqState {
             }
         }
 
-        let algorithm = self.optimizer_config.algorithm.to_autoeq_string().to_string();
+        let algorithm = self
+            .optimizer_config
+            .algorithm
+            .to_autoeq_string()
+            .to_string();
 
         let processing_mode = match self.optimizer_config.mode {
             RoomEqOptimizationMode::Iir => BackendProcessingMode::LowLatency,
@@ -1492,7 +1516,8 @@ impl RoomEqState {
                 None
             },
             excursion_protection: if self.optimizer_config.excursion_protection.enabled {
-                let filter_type = if self.optimizer_config.excursion_protection.filter_type == "bw" {
+                let filter_type = if self.optimizer_config.excursion_protection.filter_type == "bw"
+                {
                     HighpassType::Butterworth
                 } else {
                     HighpassType::LinkwitzRiley
@@ -1520,7 +1545,10 @@ impl RoomEqState {
                     },
                     high_freq_config: HighFreqFilterConfig {
                         max_q: self.optimizer_config.schroeder_split.high_freq_max_q,
-                        shelving_only: self.optimizer_config.schroeder_split.high_freq_shelving_only,
+                        shelving_only: self
+                            .optimizer_config
+                            .schroeder_split
+                            .high_freq_shelving_only,
                     },
                 })
             } else {

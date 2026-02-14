@@ -4,9 +4,7 @@
 //! returning complex pressure at each listening position.
 
 use anyhow::Result;
-use math_audio_bem::room_acoustics::{
-    calculate_field_pressure_bem_parallel, solve_bem_system,
-};
+use math_audio_bem::room_acoustics::{calculate_field_pressure_bem_parallel, solve_bem_system};
 use math_audio_xem_common::{Point3D, RoomSimulation};
 use ndarray::Array1;
 use num_complex::Complex64;
@@ -95,10 +93,6 @@ pub fn run_bem(simulation: &RoomSimulation) -> Result<SimulationOutput> {
     Ok(SimulationOutput {
         frequencies: simulation.frequencies.clone(),
         pressures,
-        source_names: simulation
-            .sources
-            .iter()
-            .map(|s| s.name.clone())
-            .collect(),
+        source_names: simulation.sources.iter().map(|s| s.name.clone()).collect(),
     })
 }

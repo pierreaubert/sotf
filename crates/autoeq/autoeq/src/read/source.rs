@@ -136,7 +136,7 @@ pub enum MeasurementSource {
 }
 
 /// Single measurement with metadata
-/// 
+///
 /// Custom implementation to support both string path and object with speaker_name
 #[derive(Debug, Clone, JsonSchema)]
 pub struct MeasurementSingle {
@@ -195,7 +195,7 @@ impl<'de> Deserialize<'de> for MeasurementSingle {
         }
 
         let value = serde_json::Value::deserialize(deserializer)?;
-        
+
         if value.is_string() {
             // Case: "path/to/file.csv"
             let path = value.as_str().unwrap().into();
@@ -207,18 +207,21 @@ impl<'de> Deserialize<'de> for MeasurementSingle {
 
         if let Ok(helper) = serde_json::from_value::<Helper>(value.clone()) {
             let speaker_name = helper.speaker_name;
-            
+
             if let Some(inline) = helper.inline {
                 return Ok(MeasurementSingle {
                     measurement: MeasurementRef::Inline(inline),
                     speaker_name,
                 });
             }
-            
+
             if let Some(path) = helper.path {
                 if let Some(name) = helper.name {
                     return Ok(MeasurementSingle {
-                        measurement: MeasurementRef::Named { path, name: Some(name) },
+                        measurement: MeasurementRef::Named {
+                            path,
+                            name: Some(name),
+                        },
                         speaker_name,
                     });
                 } else {
@@ -337,7 +340,9 @@ pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> 
                 match load_measurement(r) {
                     Ok(c) => curves.push(c),
                     Err(e) => {
-                        let name = r.path().map(|p| p.display().to_string())
+                        let name = r
+                            .path()
+                            .map(|p| p.display().to_string())
                             .or_else(|| r.name().map(String::from))
                             .unwrap_or_else(|| "inline".to_string());
                         eprintln!("Warning: failed to load measurement {}: {}", name, e)

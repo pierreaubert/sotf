@@ -62,22 +62,21 @@ pub fn render_band_split_plugin(
                                 .flex_col()
                                 .gap_1()
                                 .items_center()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("Type")
-                                )
+                                .child(div().text_xs().text_color(theme.text_muted).child("Type"))
                                 .child(render_toggle(
                                     entity.clone(),
                                     plugin_idx,
-                                    if state.crossover_type == "LR48" { "LR48 (48dB)" } else { "LR24 (24dB)" },
+                                    if state.crossover_type == "LR48" {
+                                        "LR48 (48dB)"
+                                    } else {
+                                        "LR24 (24dB)"
+                                    },
                                     state.crossover_type == "LR48",
                                     1,
                                     state.selected_param,
                                     state.is_editing,
                                     theme,
-                                ))
+                                )),
                         ),
                 ),
         )
@@ -86,6 +85,6 @@ pub fn render_band_split_plugin(
                 .text_xs()
                 .text_color(theme.text_muted)
                 .italic()
-                .child("Splits audio into low and high frequency bands for parallel processing.")
+                .child("Splits audio into low and high frequency bands for parallel processing."),
         )
 }

@@ -324,8 +324,7 @@ impl ManagerThread {
         let state = Arc::new(Mutex::new(AudioEngineState::default()));
         let state_clone = Arc::clone(&state);
 
-        let plugin_data_cache: PluginDataCache =
-            Arc::new(parking_lot::RwLock::new(Vec::new()));
+        let plugin_data_cache: PluginDataCache = Arc::new(parking_lot::RwLock::new(Vec::new()));
         let cache_clone = Arc::clone(&plugin_data_cache);
 
         let thread_handle = std::thread::Builder::new()
@@ -379,10 +378,7 @@ impl ManagerThread {
 
     /// Get cached plugin data directly (no command round-trip).
     /// The processing thread updates this cache after every frame.
-    pub fn get_cached_plugin_data(
-        &self,
-        index: usize,
-    ) -> Option<Arc<dyn Any + Send + Sync>> {
+    pub fn get_cached_plugin_data(&self, index: usize) -> Option<Arc<dyn Any + Send + Sync>> {
         let cache = self.plugin_data_cache.read();
         cache.get(index).and_then(|slot| slot.clone())
     }
@@ -902,7 +898,10 @@ fn apply_plugin_update(
             match &response {
                 super::ProcessingResponse::PluginData(_) | super::ProcessingResponse::Ok => {
                     _skipped_responses += 1;
-                    log::trace!("[Manager Thread] Skipping unrelated response: {:?}", response);
+                    log::trace!(
+                        "[Manager Thread] Skipping unrelated response: {:?}",
+                        response
+                    );
                     continue;
                 }
 
@@ -989,8 +988,11 @@ fn apply_plugin_update(
 
 /// Validate plugin configurations before applying
 fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), ConfigError> {
-    log::debug!("[Manager Thread] Starting validation of {} plugins", configs.len());
-    
+    log::debug!(
+        "[Manager Thread] Starting validation of {} plugins",
+        configs.len()
+    );
+
     for (i, config) in configs.iter().enumerate() {
         log::debug!(
             "[Manager Thread] Validating plugin {}: type='{}', params={}",
@@ -1033,7 +1035,10 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
 
         let plugin_type_lower = config.plugin_type.to_lowercase();
         if !valid_types.contains(&plugin_type_lower.as_str()) {
-            log::error!("[Manager Thread] Validation failed: Unknown plugin type '{}'", config.plugin_type);
+            log::error!(
+                "[Manager Thread] Validation failed: Unknown plugin type '{}'",
+                config.plugin_type
+            );
             return Err(ConfigError::ValidationError {
                 plugin_index: i,
                 reason: format!("Unknown plugin type '{}'", config.plugin_type),
@@ -1042,7 +1047,10 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
 
         // Validate that parameters exist
         if config.parameters.is_null() {
-            log::error!("[Manager Thread] Validation failed: Plugin '{}' missing parameters", config.plugin_type);
+            log::error!(
+                "[Manager Thread] Validation failed: Plugin '{}' missing parameters",
+                config.plugin_type
+            );
             return Err(ConfigError::ValidationError {
                 plugin_index: i,
                 reason: format!("Plugin '{}' missing parameters", config.plugin_type),
@@ -1055,20 +1063,27 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
                 // Validate EQ filter structure
                 if let Some(filters) = config.parameters.get("filters") {
                     if !filters.is_array() {
-                        log::error!("[Manager Thread] EQ validation failed: 'filters' must be an array");
+                        log::error!(
+                            "[Manager Thread] EQ validation failed: 'filters' must be an array"
+                        );
                         return Err(ConfigError::ValidationError {
                             plugin_index: i,
                             reason: "Invalid 'filters' parameter (must be array)".to_string(),
                         });
                     }
-                    log::debug!("[Manager Thread] EQ validated with {} filters", filters.as_array().unwrap().len());
+                    log::debug!(
+                        "[Manager Thread] EQ validated with {} filters",
+                        filters.as_array().unwrap().len()
+                    );
                 }
             }
             "gain" => {
                 // Validate gain_db exists
                 if let Some(gain) = config.parameters.get("gain_db") {
                     if !gain.is_number() {
-                        log::error!("[Manager Thread] Gain validation failed: 'gain_db' must be a number");
+                        log::error!(
+                            "[Manager Thread] Gain validation failed: 'gain_db' must be a number"
+                        );
                         return Err(ConfigError::ValidationError {
                             plugin_index: i,
                             reason: "'gain_db' must be a number".to_string(),
@@ -1086,7 +1101,9 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
                 // Validate upmixer mode
                 if let Some(mode) = config.parameters.get("mode") {
                     if !mode.is_string() {
-                        log::error!("[Manager Thread] Upmixer validation failed: 'mode' must be a string");
+                        log::error!(
+                            "[Manager Thread] Upmixer validation failed: 'mode' must be a string"
+                        );
                         return Err(ConfigError::ValidationError {
                             plugin_index: i,
                             reason: "Invalid 'mode' parameter (must be string)".to_string(),
@@ -1100,7 +1117,10 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
         }
     }
 
-    log::debug!("[Manager Thread] All {} plugins validated successfully", configs.len());
+    log::debug!(
+        "[Manager Thread] All {} plugins validated successfully",
+        configs.len()
+    );
     Ok(())
 }
 

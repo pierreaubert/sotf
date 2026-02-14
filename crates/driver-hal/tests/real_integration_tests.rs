@@ -58,7 +58,9 @@ fn is_hal_driver_installed() -> bool {
         "/Library/Audio/Plug-Ins/HAL/AutoEQ.driver",
         "/Library/Audio/Plug-Ins/HAL/sotf_hal.driver",
     ];
-    driver_paths.iter().any(|p| std::path::Path::new(p).exists())
+    driver_paths
+        .iter()
+        .any(|p| std::path::Path::new(p).exists())
 }
 
 // =============================================================================
@@ -178,7 +180,11 @@ fn test_real_shared_memory_read_audio() {
     println!("  Min sample: {:.6}", min_sample);
     println!("  Max sample: {:.6}", max_sample);
     println!("  Average: {:.6}", avg);
-    println!("  Non-zero samples: {} / {}", non_zero_count, frames_read * channel_count);
+    println!(
+        "  Non-zero samples: {} / {}",
+        non_zero_count,
+        frames_read * channel_count
+    );
 
     // Verify audio is valid
     assert!(
@@ -211,7 +217,10 @@ fn test_real_config_negotiation() {
     let current_rate = buffer.sample_rate();
     let current_frames = buffer.buffer_frames();
 
-    println!("Current config: {}Hz, {} frames", current_rate, current_frames);
+    println!(
+        "Current config: {}Hz, {} frames",
+        current_rate, current_frames
+    );
 
     // Check config status
     let config_changed = buffer.config_changed();
@@ -275,13 +284,14 @@ fn test_real_daemon_status_command() {
     // Read response
     let mut reader = BufReader::new(&stream);
     let mut response = String::new();
-    reader.read_line(&mut response).expect("Failed to read response");
+    reader
+        .read_line(&mut response)
+        .expect("Failed to read response");
 
     println!("Status response: {}", response.trim());
 
     // Parse and verify response
-    let json: serde_json::Value =
-        serde_json::from_str(&response).expect("Invalid JSON response");
+    let json: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
 
     assert!(
         json.get("success").is_some(),
@@ -319,12 +329,13 @@ fn test_real_daemon_hal_status() {
     // Read response
     let mut reader = BufReader::new(&stream);
     let mut response = String::new();
-    reader.read_line(&mut response).expect("Failed to read response");
+    reader
+        .read_line(&mut response)
+        .expect("Failed to read response");
 
     println!("HAL status response: {}", response.trim());
 
-    let json: serde_json::Value =
-        serde_json::from_str(&response).expect("Invalid JSON response");
+    let json: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
 
     if let Some(data) = json.get("data") {
         println!("HAL Status:");
@@ -361,12 +372,13 @@ fn test_real_daemon_encryption_status() {
     // Read response
     let mut reader = BufReader::new(&stream);
     let mut response = String::new();
-    reader.read_line(&mut response).expect("Failed to read response");
+    reader
+        .read_line(&mut response)
+        .expect("Failed to read response");
 
     println!("Encryption status response: {}", response.trim());
 
-    let json: serde_json::Value =
-        serde_json::from_str(&response).expect("Invalid JSON response");
+    let json: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
 
     if let Some(data) = json.get("data") {
         println!("Encryption Status:");
@@ -403,10 +415,11 @@ fn test_real_daemon_list_devices() {
     // Read response
     let mut reader = BufReader::new(&stream);
     let mut response = String::new();
-    reader.read_line(&mut response).expect("Failed to read response");
+    reader
+        .read_line(&mut response)
+        .expect("Failed to read response");
 
-    let json: serde_json::Value =
-        serde_json::from_str(&response).expect("Invalid JSON response");
+    let json: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
 
     if let Some(data) = json.get("data") {
         if let Some(devices) = data.get("devices") {
@@ -529,7 +542,10 @@ fn test_real_engine_ready_flag() {
     let buffer = SharedAudioBuffer::open(&shm_path).expect("Failed to open shared memory");
 
     // Read current state
-    let engine_ready = buffer.header().engine_ready.load(std::sync::atomic::Ordering::Acquire);
+    let engine_ready = buffer
+        .header()
+        .engine_ready
+        .load(std::sync::atomic::Ordering::Acquire);
     println!("Current engine_ready state: {}", engine_ready != 0);
 
     // We don't modify the flag here to avoid disrupting the running daemon
@@ -558,9 +574,7 @@ fn test_real_daemon_rapid_connections() {
     for i in 0..num_connections {
         match UnixStream::connect(&socket_path) {
             Ok(mut stream) => {
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(1)))
-                    .ok();
+                stream.set_read_timeout(Some(Duration::from_secs(1))).ok();
 
                 // Send a quick status command
                 if writeln!(stream, r#"{{"command": "status"}}"#).is_ok() {
@@ -656,11 +670,16 @@ fn run_all_real_tests() {
 
     println!("1. Checking prerequisites...");
     println!("   HAL driver installed: {}", is_hal_driver_installed());
-    println!("   Daemon socket exists: {}", get_real_socket_path().exists());
+    println!(
+        "   Daemon socket exists: {}",
+        get_real_socket_path().exists()
+    );
     println!("   Shared memory exists: {}", get_real_shm_path().exists());
 
     println!("\n2. To run individual tests:");
-    println!("   cargo test -p driver-hal --test real_integration_tests <test_name> -- --ignored --nocapture");
+    println!(
+        "   cargo test -p driver-hal --test real_integration_tests <test_name> -- --ignored --nocapture"
+    );
 
     println!("\n3. Available tests:");
     println!("   - test_real_shared_memory_connection");

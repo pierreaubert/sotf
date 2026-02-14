@@ -229,11 +229,13 @@ mod tests {
     fn test_exponential_smoother() {
         let mut s = Smoother::new(0.0, 10.0, 1000); // 10ms at 1kHz = 10 samples
         s.set_target(1.0);
-        
+
         let first = s.next();
         assert!(first > 0.0 && first < 1.0);
-        
-        for _ in 0..100 { s.next(); }
+
+        for _ in 0..100 {
+            s.next();
+        }
         assert!((s.current() - 1.0).abs() < 1e-4);
     }
 
@@ -241,11 +243,13 @@ mod tests {
     fn test_linear_smoother() {
         let mut s = LinearSmoother::new(0.0, 10.0, 1000); // 10 samples
         s.set_target(1.0);
-        
+
         assert!((s.next() - 0.1).abs() < 1e-6);
         assert!((s.next() - 0.2).abs() < 1e-6);
-        
-        for _ in 0..7 { s.next(); }
+
+        for _ in 0..7 {
+            s.next();
+        }
         assert!((s.next() - 1.0).abs() < 1e-6);
         assert!((s.next() - 1.0).abs() < 1e-6);
     }
@@ -254,12 +258,14 @@ mod tests {
     fn test_log_smoother() {
         let mut s = LogSmoother::new(100.0, 10.0, 1000); // 10 samples
         s.set_target(1000.0);
-        
+
         let first = s.next();
         // 100 * (1000/100)^(1/10) = 100 * 10^0.1 approx 125.89
         assert!((first - 125.89).abs() < 0.1);
-        
-        for _ in 0..8 { s.next(); }
+
+        for _ in 0..8 {
+            s.next();
+        }
         assert!((s.next() - 1000.0).abs() < 1e-4);
         assert!((s.next() - 1000.0).abs() < 1e-6);
     }

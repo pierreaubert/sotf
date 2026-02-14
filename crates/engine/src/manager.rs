@@ -316,9 +316,9 @@ impl AudioEngineManager {
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
-            buffer_ms: 200,               // 200ms latency
+            buffer_ms: 200, // 200ms latency
             output_sample_rate: sample_rate,
-            input_channels: 2,            // HAL always provides stereo
+            input_channels: 2, // HAL always provides stereo
             output_channels,
             output_device,
             plugins,

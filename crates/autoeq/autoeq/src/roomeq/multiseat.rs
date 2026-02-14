@@ -131,23 +131,29 @@ pub fn optimize_multiseat(
 
     // Optimize based on strategy
     let (optimal_gains, optimal_delays) = match config.strategy {
-        MultiSeatStrategy::MinimizeVariance => {
-            optimize_minimize_variance(&interpolated, &freqs, measurements.num_subs, min_freq, max_freq)
-        }
-        MultiSeatStrategy::Average => {
-            optimize_average_response(&interpolated, &freqs, measurements.num_subs, min_freq, max_freq)
-        }
-        MultiSeatStrategy::PrimaryWithConstraints => {
-            optimize_primary_with_constraints(
-                &interpolated,
-                &freqs,
-                measurements.num_subs,
-                config.primary_seat,
-                config.max_deviation_db,
-                min_freq,
-                max_freq,
-            )
-        }
+        MultiSeatStrategy::MinimizeVariance => optimize_minimize_variance(
+            &interpolated,
+            &freqs,
+            measurements.num_subs,
+            min_freq,
+            max_freq,
+        ),
+        MultiSeatStrategy::Average => optimize_average_response(
+            &interpolated,
+            &freqs,
+            measurements.num_subs,
+            min_freq,
+            max_freq,
+        ),
+        MultiSeatStrategy::PrimaryWithConstraints => optimize_primary_with_constraints(
+            &interpolated,
+            &freqs,
+            measurements.num_subs,
+            config.primary_seat,
+            config.max_deviation_db,
+            min_freq,
+            max_freq,
+        ),
     };
 
     let variance_after = compute_seat_variance(
@@ -323,7 +329,8 @@ fn compute_seat_variance(
 
         // Compute standard deviation
         let mean = seat_spls.iter().sum::<f64>() / seat_spls.len() as f64;
-        let variance = seat_spls.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / seat_spls.len() as f64;
+        let variance =
+            seat_spls.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / seat_spls.len() as f64;
         total_variance += variance.sqrt();
     }
 
@@ -354,7 +361,8 @@ fn optimize_minimize_variance(
                 let gains = vec![0.0, g1]; // First sub is reference
                 let delays = vec![0.0, d1];
 
-                let variance = compute_seat_variance(interpolated, freqs, &gains, &delays, min_freq, max_freq);
+                let variance =
+                    compute_seat_variance(interpolated, freqs, &gains, &delays, min_freq, max_freq);
 
                 if variance < best_variance {
                     best_variance = variance;
@@ -466,7 +474,10 @@ mod tests {
             .collect();
 
         let spl: Vec<f64> = freqs.iter().map(|_| 90.0 + spl_offset).collect();
-        let phase: Vec<f64> = freqs.iter().map(|f| -180.0 * f / 100.0 + phase_offset).collect();
+        let phase: Vec<f64> = freqs
+            .iter()
+            .map(|f| -180.0 * f / 100.0 + phase_offset)
+            .collect();
 
         Curve {
             freq: Array1::from(freqs),
@@ -515,8 +526,8 @@ mod tests {
             max_deviation_db: 6.0,
         };
 
-        let result = optimize_multiseat(&ms, &config, (20.0, 120.0), 48000.0)
-            .expect("Should optimize");
+        let result =
+            optimize_multiseat(&ms, &config, (20.0, 120.0), 48000.0).expect("Should optimize");
 
         assert_eq!(result.gains.len(), 2);
         assert_eq!(result.delays.len(), 2);
@@ -530,24 +541,19 @@ mod tests {
         let curve1 = create_test_curve(0.0, 0.0);
         let curve2 = create_test_curve(0.0, 0.0);
 
-        let measurements = vec![
-            vec![curve1.clone(), curve2.clone()],
-        ];
+        let measurements = vec![vec![curve1.clone(), curve2.clone()]];
 
         let ms = MultiSeatMeasurements::new(measurements).expect("Should create");
         let freqs = create_eval_frequency_grid(&ms, 30.0, 120.0);
         let interpolated = interpolate_all_measurements(&ms, &freqs).expect("Should interpolate");
 
         // Identical curves should have zero variance
-        let variance = compute_seat_variance(
-            &interpolated,
-            &freqs,
-            &[0.0],
-            &[0.0],
-            30.0,
-            120.0,
-        );
+        let variance = compute_seat_variance(&interpolated, &freqs, &[0.0], &[0.0], 30.0, 120.0);
 
-        assert!(variance < 0.01, "Identical curves should have near-zero variance, got {}", variance);
+        assert!(
+            variance < 0.01,
+            "Identical curves should have near-zero variance, got {}",
+            variance
+        );
     }
 }

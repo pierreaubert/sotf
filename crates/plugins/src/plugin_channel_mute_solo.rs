@@ -198,7 +198,8 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             }
         } else if id == self.param_channel_states {
             if let Some(json_str) = value.as_string() {
-                let states: Vec<ChannelState> = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+                let states: Vec<ChannelState> =
+                    serde_json::from_str(json_str).map_err(|e| e.to_string())?;
                 self.set_channel_states(states);
                 Ok(())
             } else {
@@ -213,7 +214,9 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         if id == &self.param_enabled {
             Some(ParameterValue::Bool(self.enabled))
         } else if id == &self.param_channel_states {
-            serde_json::to_string(&self.channel_states).ok().map(ParameterValue::String)
+            serde_json::to_string(&self.channel_states)
+                .ok()
+                .map(ParameterValue::String)
         } else {
             None
         }
@@ -236,7 +239,10 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         let num_frames = context.num_frames;
 
         // If enabled=false and ALL smoothers have reached target 1.0, bypass overhead
-        let all_at_unity = self.channel_smoothers.iter().all(|s| (s.current() - 1.0).abs() < 1e-5);
+        let all_at_unity = self
+            .channel_smoothers
+            .iter()
+            .all(|s| (s.current() - 1.0).abs() < 1e-5);
         if !self.enabled && all_at_unity {
             return Ok(num_frames);
         }
@@ -256,7 +262,6 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         Ok(num_frames)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -300,8 +305,14 @@ mod tests {
         plugin.set_channel_state(0, true, false, false); // Mute channel 0
 
         let last_frame = process_converged(&mut plugin, 2);
-        assert!((last_frame[0] - 0.0).abs() < TOLERANCE, "Ch0 should be muted");
-        assert!((last_frame[1] - 1.0).abs() < TOLERANCE, "Ch1 should be unchanged");
+        assert!(
+            (last_frame[0] - 0.0).abs() < TOLERANCE,
+            "Ch0 should be muted"
+        );
+        assert!(
+            (last_frame[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should be unchanged"
+        );
     }
 
     #[test]
@@ -310,8 +321,14 @@ mod tests {
         plugin.set_channel_state(0, false, true, false); // Solo channel 0
 
         let last_frame = process_converged(&mut plugin, 2);
-        assert!((last_frame[0] - 1.0).abs() < TOLERANCE, "Ch0 (soloed) should be audible");
-        assert!((last_frame[1] - 0.0).abs() < TOLERANCE, "Ch1 (not soloed) should be muted");
+        assert!(
+            (last_frame[0] - 1.0).abs() < TOLERANCE,
+            "Ch0 (soloed) should be audible"
+        );
+        assert!(
+            (last_frame[1] - 0.0).abs() < TOLERANCE,
+            "Ch1 (not soloed) should be muted"
+        );
     }
 
     #[test]
@@ -321,8 +338,14 @@ mod tests {
         plugin.set_channel_state(1, false, false, false);
 
         let last_frame = process_converged(&mut plugin, 2);
-        assert!((last_frame[0] - 1.0).abs() < TOLERANCE, "Ch0 (soloed) should be audible");
-        assert!((last_frame[1] - 0.0).abs() < TOLERANCE, "Ch1 (not soloed) should be muted");
+        assert!(
+            (last_frame[0] - 1.0).abs() < TOLERANCE,
+            "Ch0 (soloed) should be audible"
+        );
+        assert!(
+            (last_frame[1] - 0.0).abs() < TOLERANCE,
+            "Ch1 (not soloed) should be muted"
+        );
     }
 
     #[test]
@@ -332,10 +355,22 @@ mod tests {
         plugin.set_channel_state(2, true, false, false); // Mute channel 2
 
         let last_frame = process_converged(&mut plugin, 4);
-        assert!((last_frame[0] - 1.0).abs() < TOLERANCE, "Ch0 should be unchanged");
-        assert!((last_frame[1] - 0.0).abs() < TOLERANCE, "Ch1 should be muted");
-        assert!((last_frame[2] - 0.0).abs() < TOLERANCE, "Ch2 should be muted");
-        assert!((last_frame[3] - 1.0).abs() < TOLERANCE, "Ch3 should be unchanged");
+        assert!(
+            (last_frame[0] - 1.0).abs() < TOLERANCE,
+            "Ch0 should be unchanged"
+        );
+        assert!(
+            (last_frame[1] - 0.0).abs() < TOLERANCE,
+            "Ch1 should be muted"
+        );
+        assert!(
+            (last_frame[2] - 0.0).abs() < TOLERANCE,
+            "Ch2 should be muted"
+        );
+        assert!(
+            (last_frame[3] - 1.0).abs() < TOLERANCE,
+            "Ch3 should be unchanged"
+        );
     }
 
     #[test]
@@ -344,8 +379,14 @@ mod tests {
         plugin.set_channel_state(0, false, false, true); // Dim channel 0
 
         let last_frame = process_converged(&mut plugin, 2);
-        assert!((last_frame[0] - 0.1).abs() < TOLERANCE, "Ch0 should be dimmed to 0.1");
-        assert!((last_frame[1] - 1.0).abs() < TOLERANCE, "Ch1 should be unchanged");
+        assert!(
+            (last_frame[0] - 0.1).abs() < TOLERANCE,
+            "Ch0 should be dimmed to 0.1"
+        );
+        assert!(
+            (last_frame[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should be unchanged"
+        );
     }
 
     #[test]
@@ -354,8 +395,14 @@ mod tests {
         plugin.set_channel_state(0, true, false, true); // Both muted AND dimmed
 
         let last_frame = process_converged(&mut plugin, 2);
-        assert!((last_frame[0] - 0.0).abs() < TOLERANCE, "Ch0 should be muted (not dimmed)");
-        assert!((last_frame[1] - 1.0).abs() < TOLERANCE, "Ch1 should be unchanged");
+        assert!(
+            (last_frame[0] - 0.0).abs() < TOLERANCE,
+            "Ch0 should be muted (not dimmed)"
+        );
+        assert!(
+            (last_frame[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should be unchanged"
+        );
     }
 
     #[test]
@@ -388,19 +435,36 @@ mod tests {
         let params = ChannelMuteSoloParams {
             enabled: true,
             channel_states: vec![
-                ChannelState { muted: true, soloed: false, dimmed: false },
-                ChannelState { muted: false, soloed: false, dimmed: false },
+                ChannelState {
+                    muted: true,
+                    soloed: false,
+                    dimmed: false,
+                },
+                ChannelState {
+                    muted: false,
+                    soloed: false,
+                    dimmed: false,
+                },
             ],
         };
 
         let mut plugin = ChannelMuteSoloPlugin::from_params(2, params);
         // Even with just 1 frame, should be at target (smoothers were reset)
         let mut buffer = vec![1.0, 1.0];
-        let context = ProcessContext { sample_rate: 48000, num_frames: 1 };
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1,
+        };
         plugin.process_in_place(&mut buffer, &context).unwrap();
 
-        assert!((buffer[0] - 0.0).abs() < TOLERANCE, "Ch0 should be muted immediately");
-        assert!((buffer[1] - 1.0).abs() < TOLERANCE, "Ch1 should be unchanged");
+        assert!(
+            (buffer[0] - 0.0).abs() < TOLERANCE,
+            "Ch0 should be muted immediately"
+        );
+        assert!(
+            (buffer[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should be unchanged"
+        );
     }
 
     #[test]
@@ -411,7 +475,10 @@ mod tests {
 
         // First frame should be at gain 1.0 (all channels unmuted)
         let mut buffer = vec![1.0, 1.0];
-        let context = ProcessContext { sample_rate: 48000, num_frames: 1 };
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1,
+        };
         plugin.process_in_place(&mut buffer, &context).unwrap();
         assert!((buffer[0] - 1.0).abs() < TOLERANCE);
 

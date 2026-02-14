@@ -174,7 +174,10 @@ fn generate_plots_for_multi_drivers(
             Some(ch) => ch,
             None => {
                 if verbose {
-                    println!("      Warning: channel '{}' not found in output", group.channel_name);
+                    println!(
+                        "      Warning: channel '{}' not found in output",
+                        group.channel_name
+                    );
                 }
                 continue;
             }
@@ -184,7 +187,10 @@ fn generate_plots_for_multi_drivers(
             Some(d) => d,
             None => {
                 if verbose {
-                    println!("      Warning: channel '{}' has no driver output", group.channel_name);
+                    println!(
+                        "      Warning: channel '{}' has no driver output",
+                        group.channel_name
+                    );
                 }
                 continue;
             }
@@ -353,7 +359,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(&test_dir)?;
 
         // Generate random configuration and measurements
-        let (config, _measurement_files, multi_driver_groups) = generate_random_config(&test_dir, i, &mut rng, args.max_speakers)?;
+        let (config, _measurement_files, multi_driver_groups) =
+            generate_random_config(&test_dir, i, &mut rng, args.max_speakers)?;
 
         // Validate config
         if let Err(e) = validate_config(&config) {
@@ -403,7 +410,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         } else {
-            println!("  Test {} failed with exit code: {:?}", i + 1, status.code());
+            println!(
+                "  Test {} failed with exit code: {:?}",
+                i + 1,
+                status.code()
+            );
             failed_tests += 1;
         }
     }
@@ -442,7 +453,8 @@ fn generate_random_config(
 
         if speaker_type_roll < 60 {
             // 60% chance: Single speaker
-            let (source, paths) = generate_random_source(rng, output_dir, test_idx, &channel_name, "main", 0, 1)?;
+            let (source, paths) =
+                generate_random_source(rng, output_dir, test_idx, &channel_name, "main", 0, 1)?;
             measurement_files.extend(paths);
             speakers.insert(channel_name, SpeakerConfig::Single(source));
         } else if speaker_type_roll < 85 {
@@ -450,20 +462,34 @@ fn generate_random_config(
             let num_drivers = rng.random_range(2..=3);
             let mut driver_sources = Vec::new();
             for d in 0..num_drivers {
-                let (source, paths) = generate_random_source(rng, output_dir, test_idx, &channel_name, "driver", d, num_drivers)?;
+                let (source, paths) = generate_random_source(
+                    rng,
+                    output_dir,
+                    test_idx,
+                    &channel_name,
+                    "driver",
+                    d,
+                    num_drivers,
+                )?;
                 measurement_files.extend(paths);
                 driver_sources.push(source);
             }
 
             let xover_id = format!("xover_{}", channel_name);
-            let xover_type = ["LR24", "LR12", "Butterworth12"].choose(rng).unwrap().to_string();
+            let xover_type = ["LR24", "LR12", "Butterworth12"]
+                .choose(rng)
+                .unwrap()
+                .to_string();
 
-            crossovers.insert(xover_id.clone(), CrossoverConfig {
-                crossover_type: xover_type.clone(),
-                frequency: None,
-                frequencies: None,
-                frequency_range: Some((200.0, 5000.0)),
-            });
+            crossovers.insert(
+                xover_id.clone(),
+                CrossoverConfig {
+                    crossover_type: xover_type.clone(),
+                    frequency: None,
+                    frequencies: None,
+                    frequency_range: Some((200.0, 5000.0)),
+                },
+            );
 
             multi_driver_groups.push(MultiDriverGroupInfo {
                 channel_name: channel_name.clone(),
@@ -471,12 +497,15 @@ fn generate_random_config(
                 crossover_type: xover_type,
             });
 
-            speakers.insert(channel_name.clone(), SpeakerConfig::Group(SpeakerGroup {
-                name: channel_name,
-                speaker_name: Some(random_speaker_name()),
-                measurements: driver_sources,
-                crossover: Some(xover_id),
-            }));
+            speakers.insert(
+                channel_name.clone(),
+                SpeakerConfig::Group(SpeakerGroup {
+                    name: channel_name,
+                    speaker_name: Some(random_speaker_name()),
+                    measurements: driver_sources,
+                    crossover: Some(xover_id),
+                }),
+            );
         } else {
             // 15% chance: Multi-sub or DBA
             let is_dba = rng.random_bool(0.5);
@@ -485,34 +514,44 @@ fn generate_random_config(
                 let mut front_sources = Vec::new();
                 let mut rear_sources = Vec::new();
 
-                let (source_f, paths_f) = generate_random_source(rng, output_dir, test_idx, "LFE", "front", 0, 1)?;
+                let (source_f, paths_f) =
+                    generate_random_source(rng, output_dir, test_idx, "LFE", "front", 0, 1)?;
                 measurement_files.extend(paths_f);
                 front_sources.push(source_f);
 
-                let (source_r, paths_r) = generate_random_source(rng, output_dir, test_idx, "LFE", "rear", 0, 1)?;
+                let (source_r, paths_r) =
+                    generate_random_source(rng, output_dir, test_idx, "LFE", "rear", 0, 1)?;
                 measurement_files.extend(paths_r);
                 rear_sources.push(source_r);
 
-                speakers.insert("LFE".to_string(), SpeakerConfig::Dba(DBAConfig {
-                    name: "DBA".to_string(),
-                    speaker_name: Some(random_speaker_name()),
-                    front: front_sources,
-                    rear: rear_sources,
-                }));
+                speakers.insert(
+                    "LFE".to_string(),
+                    SpeakerConfig::Dba(DBAConfig {
+                        name: "DBA".to_string(),
+                        speaker_name: Some(random_speaker_name()),
+                        front: front_sources,
+                        rear: rear_sources,
+                    }),
+                );
             } else {
                 let num_subs = rng.random_range(2..=4);
                 let mut sub_sources = Vec::new();
                 for d in 0..num_subs {
-                    let (source, paths) = generate_random_source(rng, output_dir, test_idx, "LFE", "sub", d, num_subs)?;
+                    let (source, paths) = generate_random_source(
+                        rng, output_dir, test_idx, "LFE", "sub", d, num_subs,
+                    )?;
                     measurement_files.extend(paths);
                     sub_sources.push(source);
                 }
 
-                speakers.insert("LFE".to_string(), SpeakerConfig::MultiSub(MultiSubGroup {
-                    name: "MultiSub".to_string(),
-                    speaker_name: Some(random_speaker_name()),
-                    subwoofers: sub_sources,
-                }));
+                speakers.insert(
+                    "LFE".to_string(),
+                    SpeakerConfig::MultiSub(MultiSubGroup {
+                        name: "MultiSub".to_string(),
+                        speaker_name: Some(random_speaker_name()),
+                        subwoofers: sub_sources,
+                    }),
+                );
             }
         }
     }
@@ -524,9 +563,21 @@ fn generate_random_config(
         None
     };
 
-    let loss_type = if rng.random_bool(0.5) { "flat".to_string() } else { "score".to_string() };
-    let peq_model = if rng.random_bool(0.5) { "pk".to_string() } else { "ls-pk-hs".to_string() };
-    let mode = if rng.random_bool(0.7) { "iir".to_string() } else { "fir".to_string() };
+    let loss_type = if rng.random_bool(0.5) {
+        "flat".to_string()
+    } else {
+        "score".to_string()
+    };
+    let peq_model = if rng.random_bool(0.5) {
+        "pk".to_string()
+    } else {
+        "ls-pk-hs".to_string()
+    };
+    let mode = if rng.random_bool(0.7) {
+        "iir".to_string()
+    } else {
+        "fir".to_string()
+    };
 
     let fir_config = if mode == "fir" {
         Some(autoeq::roomeq::FirConfig {
@@ -543,7 +594,11 @@ fn generate_random_config(
         version: autoeq::roomeq::default_config_version(),
         system: None,
         speakers,
-        crossovers: if crossovers.is_empty() { None } else { Some(crossovers) },
+        crossovers: if crossovers.is_empty() {
+            None
+        } else {
+            Some(crossovers)
+        },
         target_curve,
         group_delay: None,
         optimizer: OptimizerConfig {

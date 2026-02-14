@@ -46,9 +46,19 @@ fn create_test_album(title: &str, artist: &str, composer: Option<&str>) -> Album
 #[gpui::test]
 fn test_smart_search_album_exact(_cx: &mut TestAppContext) {
     let mut state = LibraryState::new_for_test();
-    state.library.albums.push(create_test_album("Lateralus", "Tool", None));
-    state.library.albums.push(create_test_album("Aenima", "Tool", None));
-    state.library.albums.push(create_test_album("Dark Side of the Moon", "Pink Floyd", None));
+    state
+        .library
+        .albums
+        .push(create_test_album("Lateralus", "Tool", None));
+    state
+        .library
+        .albums
+        .push(create_test_album("Aenima", "Tool", None));
+    state.library.albums.push(create_test_album(
+        "Dark Side of the Moon",
+        "Pink Floyd",
+        None,
+    ));
 
     // Default sort order is Album
     state.sort_order = LibrarySortOrder::Year;
@@ -61,8 +71,15 @@ fn test_smart_search_album_exact(_cx: &mut TestAppContext) {
 #[gpui::test]
 fn test_smart_search_artist_exact(_cx: &mut TestAppContext) {
     let mut state = LibraryState::new_for_test();
-    state.library.albums.push(create_test_album("Lateralus", "Tool", None));
-    state.library.albums.push(create_test_album("Dark Side of the Moon", "Pink Floyd", None));
+    state
+        .library
+        .albums
+        .push(create_test_album("Lateralus", "Tool", None));
+    state.library.albums.push(create_test_album(
+        "Dark Side of the Moon",
+        "Pink Floyd",
+        None,
+    ));
 
     state.sort_order = LibrarySortOrder::Album;
 
@@ -74,8 +91,15 @@ fn test_smart_search_artist_exact(_cx: &mut TestAppContext) {
 #[gpui::test]
 fn test_smart_search_composer_exact(_cx: &mut TestAppContext) {
     let mut state = LibraryState::new_for_test();
-    state.library.albums.push(create_test_album("Symphony No. 5", "VPO", Some("Beethoven")));
-    state.library.albums.push(create_test_album("Lateralus", "Tool", None));
+    state.library.albums.push(create_test_album(
+        "Symphony No. 5",
+        "VPO",
+        Some("Beethoven"),
+    ));
+    state
+        .library
+        .albums
+        .push(create_test_album("Lateralus", "Tool", None));
 
     state.sort_order = LibrarySortOrder::Album;
 
@@ -88,9 +112,15 @@ fn test_smart_search_composer_exact(_cx: &mut TestAppContext) {
 fn test_smart_search_priority_album_over_artist(_cx: &mut TestAppContext) {
     let mut state = LibraryState::new_for_test();
     // Album titled "Tool" by artist "Someone Else"
-    state.library.albums.push(create_test_album("Tool", "Someone Else", None));
+    state
+        .library
+        .albums
+        .push(create_test_album("Tool", "Someone Else", None));
     // Album by artist "Tool"
-    state.library.albums.push(create_test_album("Lateralus", "Tool", None));
+    state
+        .library
+        .albums
+        .push(create_test_album("Lateralus", "Tool", None));
 
     state.sort_order = LibrarySortOrder::Year;
 
@@ -102,7 +132,10 @@ fn test_smart_search_priority_album_over_artist(_cx: &mut TestAppContext) {
 #[gpui::test]
 fn test_smart_search_partial_match(_cx: &mut TestAppContext) {
     let mut state = LibraryState::new_for_test();
-    state.library.albums.push(create_test_album("Lateralus", "Tool", None));
+    state
+        .library
+        .albums
+        .push(create_test_album("Lateralus", "Tool", None));
 
     state.sort_order = LibrarySortOrder::Year;
 
@@ -114,7 +147,10 @@ fn test_smart_search_partial_match(_cx: &mut TestAppContext) {
 #[gpui::test]
 fn test_smart_search_no_match_stays_same(_cx: &mut TestAppContext) {
     let mut state = LibraryState::new_for_test();
-    state.library.albums.push(create_test_album("Lateralus", "Tool", None));
+    state
+        .library
+        .albums
+        .push(create_test_album("Lateralus", "Tool", None));
 
     state.sort_order = LibrarySortOrder::Year;
 

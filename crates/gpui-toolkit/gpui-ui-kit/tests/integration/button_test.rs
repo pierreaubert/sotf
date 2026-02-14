@@ -133,9 +133,7 @@ async fn test_button_all_variants_render(cx: &mut TestAppContext) {
                 .flex_col()
                 .gap_2()
                 .child(Button::new("btn-primary", "Primary").variant(ButtonVariant::Primary))
-                .child(
-                    Button::new("btn-secondary", "Secondary").variant(ButtonVariant::Secondary),
-                )
+                .child(Button::new("btn-secondary", "Secondary").variant(ButtonVariant::Secondary))
                 .child(
                     Button::new("btn-destructive", "Destructive")
                         .variant(ButtonVariant::Destructive),

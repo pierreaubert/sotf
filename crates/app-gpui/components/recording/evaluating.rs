@@ -824,8 +824,7 @@ impl PlayerView {
 
                 let smoothed = Self::apply_smoothing(&result.frequencies, thd, smoothing);
 
-                let freqs_f64: Vec<f64> =
-                    result.frequencies.iter().map(|&v| v as f64).collect();
+                let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
                 let thd_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
 
                 Some(Series::new(
@@ -978,8 +977,7 @@ impl PlayerView {
 
                 let smoothed = Self::apply_smoothing(&result.frequencies, &c50, smoothing);
 
-                let freqs_f64: Vec<f64> =
-                    result.frequencies.iter().map(|&v| v as f64).collect();
+                let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
                 let c50_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
 
                 // Check if flat (broadband)

@@ -16,7 +16,9 @@ pub struct BandSplitPluginParams {
     pub crossover_type: String,
 }
 
-fn default_crossover_type() -> String { "LR24".to_string() }
+fn default_crossover_type() -> String {
+    "LR24".to_string()
+}
 
 pub struct BandSplitPlugin {
     input_channels: usize,
@@ -28,7 +30,11 @@ pub struct BandSplitPlugin {
 }
 
 impl BandSplitPlugin {
-    pub fn new(input_channels: usize, frequency: f64, crossover_type: &str) -> Result<Self, String> {
+    pub fn new(
+        input_channels: usize,
+        frequency: f64,
+        crossover_type: &str,
+    ) -> Result<Self, String> {
         let sr = 48000;
         let mut p = Self {
             input_channels,
@@ -42,13 +48,18 @@ impl BandSplitPlugin {
         Ok(p)
     }
 
-    pub fn from_params(input_channels: usize, params: &BandSplitPluginParams) -> Result<Self, String> {
+    pub fn from_params(
+        input_channels: usize,
+        params: &BandSplitPluginParams,
+    ) -> Result<Self, String> {
         Self::new(input_channels, params.frequency, &params.crossover_type)
     }
 
     fn build_filters(&mut self, freq: f64) {
         let n_sects = match self.crossover_type.to_uppercase().as_str() {
-            "LR24" | "LR4" => 2, "LR48" | "LR8" => 4, _ => 2,
+            "LR24" | "LR4" => 2,
+            "LR48" | "LR8" => 4,
+            _ => 2,
         };
         let q = 1.0 / std::f64::consts::SQRT_2;
         let sr = self.sample_rate as f64;
@@ -66,18 +77,39 @@ impl BandSplitPlugin {
 }
 
 impl Plugin for BandSplitPlugin {
-    fn info(&self) -> PluginInfo { PluginInfo::new("BandSplit", "1.1.0", "Sotf") }
-    fn input_channels(&self) -> usize { self.input_channels }
-    fn output_channels(&self) -> usize { self.input_channels * 2 }
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("BandSplit", "1.1.0", "Sotf")
+    }
+    fn input_channels(&self) -> usize {
+        self.input_channels
+    }
+    fn output_channels(&self) -> usize {
+        self.input_channels * 2
+    }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float("frequency", "Frequency", 1000.0, 20.0, 20000.0)]
+        vec![Parameter::new_float(
+            "frequency",
+            "Frequency",
+            1000.0,
+            20.0,
+            20000.0,
+        )]
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if id.0 == "frequency" { self.freq_smoother.set_target(value.as_float().ok_or("val")?); Ok(()) }
-        else { Err("unknown".into()) }
+        if id.0 == "frequency" {
+            self.freq_smoother
+                .set_target(value.as_float().ok_or("val")?);
+            Ok(())
+        } else {
+            Err("unknown".into())
+        }
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "frequency" { Some(ParameterValue::Float(self.freq_smoother.target())) } else { None }
+        if id.0 == "frequency" {
+            Some(ParameterValue::Float(self.freq_smoother.target()))
+        } else {
+            None
+        }
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
@@ -85,9 +117,16 @@ impl Plugin for BandSplitPlugin {
         self.build_filters(self.freq_smoother.target() as f64);
         Ok(())
     }
-    fn reset(&mut self) { self.build_filters(self.freq_smoother.target() as f64); }
+    fn reset(&mut self) {
+        self.build_filters(self.freq_smoother.target() as f64);
+    }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext) -> Result<usize, String> {
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let in_ch = self.input_channels;
@@ -99,8 +138,12 @@ impl Plugin for BandSplitPlugin {
             let q = 1.0 / std::f64::consts::SQRT_2;
             let sr = self.sample_rate as f64;
             for ch in 0..in_ch {
-                for f in &mut self.lowpass[ch] { *f = Biquad::new(BiquadFilterType::Lowpass, f64, sr, q, 0.0); }
-                for f in &mut self.highpass[ch] { *f = Biquad::new(BiquadFilterType::Highpass, f64, sr, q, 0.0); }
+                for f in &mut self.lowpass[ch] {
+                    *f = Biquad::new(BiquadFilterType::Lowpass, f64, sr, q, 0.0);
+                }
+                for f in &mut self.highpass[ch] {
+                    *f = Biquad::new(BiquadFilterType::Highpass, f64, sr, q, 0.0);
+                }
             }
         }
 
@@ -110,11 +153,15 @@ impl Plugin for BandSplitPlugin {
             for ch in 0..in_ch {
                 let s = input[in_off + ch];
                 let mut lp_s = s as f64;
-                for f in &mut self.lowpass[ch] { lp_s = f.process(lp_s); }
+                for f in &mut self.lowpass[ch] {
+                    lp_s = f.process(lp_s);
+                }
                 output[out_off + ch] = lp_s as f32;
 
                 let mut hp_s = s as f64;
-                for f in &mut self.highpass[ch] { hp_s = f.process(hp_s); }
+                for f in &mut self.highpass[ch] {
+                    hp_s = f.process(hp_s);
+                }
                 output[out_off + in_ch + ch] = hp_s as f32;
             }
         }
@@ -130,8 +177,17 @@ mod tests {
     fn test_band_split_basic() {
         let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();
         p.initialize(48000).unwrap();
-        let i = vec![1.0; 1000]; let mut o = vec![0.0; 2000];
-        p.process(&i, &mut o, &ProcessContext { sample_rate: 48000, num_frames: 1000 }).unwrap();
+        let i = vec![1.0; 1000];
+        let mut o = vec![0.0; 2000];
+        p.process(
+            &i,
+            &mut o,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1000,
+            },
+        )
+        .unwrap();
         assert!(o[0].is_finite());
     }
 }

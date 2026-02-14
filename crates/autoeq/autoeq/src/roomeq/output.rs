@@ -65,7 +65,9 @@ pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
         let n_points = ((decades * points_per_decade as f64).ceil() as usize).max(1);
         for i in 1..=n_points {
             let t = i as f64 / n_points as f64;
-            let f = 10f64.powf(log_start + t * (log_end - log_start)).min(DISPLAY_MAX_FREQ);
+            let f = 10f64
+                .powf(log_start + t * (log_end - log_start))
+                .min(DISPLAY_MAX_FREQ);
             freq_vec.push(f);
             spl_vec.push(last_spl);
         }
@@ -333,7 +335,9 @@ pub fn build_multidriver_dsp_chain_with_curves(
             ));
         }
 
-        let driver_curve = driver_initial_curves.and_then(|curves| curves.get(i)).map(|c| c.into());
+        let driver_curve = driver_initial_curves
+            .and_then(|curves| curves.get(i))
+            .map(|c| c.into());
 
         driver_chains.push(DriverDspChain {
             name: get_driver_name(i, n_drivers),
@@ -420,7 +424,9 @@ pub fn build_multisub_dsp_chain_with_curves(
             sub_plugins.push(create_delay_plugin(delays[i]));
         }
 
-        let driver_curve = driver_initial_curves.and_then(|curves| curves.get(i)).map(|c| c.into());
+        let driver_curve = driver_initial_curves
+            .and_then(|curves| curves.get(i))
+            .map(|c| c.into());
 
         driver_chains.push(DriverDspChain {
             name: format!("{}_{}", group_name, i + 1),
@@ -481,7 +487,9 @@ pub fn build_dba_dsp_chain_with_curves(
     if delays[0].abs() > 0.001 {
         front_plugins.push(create_delay_plugin(delays[0]));
     }
-    let front_curve = driver_initial_curves.and_then(|curves| curves.first()).map(|c| c.into());
+    let front_curve = driver_initial_curves
+        .and_then(|curves| curves.first())
+        .map(|c| c.into());
     driver_chains.push(DriverDspChain {
         name: "Front Array".to_string(),
         index: 0,
@@ -497,7 +505,9 @@ pub fn build_dba_dsp_chain_with_curves(
     if delays[1].abs() > 0.001 {
         rear_plugins.push(create_delay_plugin(delays[1]));
     }
-    let rear_curve = driver_initial_curves.and_then(|curves| curves.get(1)).map(|c| c.into());
+    let rear_curve = driver_initial_curves
+        .and_then(|curves| curves.get(1))
+        .map(|c| c.into());
     driver_chains.push(DriverDspChain {
         name: "Rear Array".to_string(),
         index: 1,
@@ -556,7 +566,9 @@ pub fn build_cardioid_dsp_chain_with_curves(
     if delays[0].abs() > 0.001 {
         front_plugins.push(create_delay_plugin(delays[0]));
     }
-    let front_curve = driver_initial_curves.and_then(|curves| curves.first()).map(|c| c.into());
+    let front_curve = driver_initial_curves
+        .and_then(|curves| curves.first())
+        .map(|c| c.into());
     driver_chains.push(DriverDspChain {
         name: "Front Sub".to_string(),
         index: 0,
@@ -566,14 +578,16 @@ pub fn build_cardioid_dsp_chain_with_curves(
 
     // Rear (Index 1) - Cancellation (Inverted + Delayed)
     let mut rear_plugins = Vec::new();
-    
+
     // Always add gain plugin to handle inversion
     rear_plugins.push(create_gain_plugin_with_invert(gains[1], true));
 
     if delays[1].abs() > 0.001 {
         rear_plugins.push(create_delay_plugin(delays[1]));
     }
-    let rear_curve = driver_initial_curves.and_then(|curves| curves.get(1)).map(|c| c.into());
+    let rear_curve = driver_initial_curves
+        .and_then(|curves| curves.get(1))
+        .map(|c| c.into());
     driver_chains.push(DriverDspChain {
         name: "Rear Sub".to_string(),
         index: 1,
@@ -892,8 +906,16 @@ mod tests {
         let delays = vec![2.5, 0.0];
         let crossover_freqs = vec![2500.0];
 
-        let chain =
-            build_multidriver_dsp_chain("left", &gains, &delays, None, &crossover_freqs, "LR24", &[], None);
+        let chain = build_multidriver_dsp_chain(
+            "left",
+            &gains,
+            &delays,
+            None,
+            &crossover_freqs,
+            "LR24",
+            &[],
+            None,
+        );
 
         assert_eq!(chain.channel, "left");
         assert!(chain.drivers.is_some());
@@ -930,8 +952,16 @@ mod tests {
         let delays = vec![0.0, 1.0, 2.0];
         let crossover_freqs = vec![500.0, 3000.0];
 
-        let chain =
-            build_multidriver_dsp_chain("center", &gains, &delays, None, &crossover_freqs, "LR24", &[], None);
+        let chain = build_multidriver_dsp_chain(
+            "center",
+            &gains,
+            &delays,
+            None,
+            &crossover_freqs,
+            "LR24",
+            &[],
+            None,
+        );
 
         let drivers = chain.drivers.as_ref().unwrap();
         assert_eq!(drivers.len(), 3);

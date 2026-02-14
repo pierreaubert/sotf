@@ -28,16 +28,25 @@ fn test_loudness_monitor_performance_96khz() {
     }
     let duration = start.elapsed();
     let avg_ms = duration.as_secs_f64() * 1000.0 / iterations as f64;
-    
+
     // 1024 frames at 96kHz is ~10.67ms of audio
     let budget_ms = (frame_size as f64 / sample_rate as f64) * 1000.0;
-    
-    println!("
-Performance Results (96kHz, {} channels):", channels);
+
+    println!(
+        "
+Performance Results (96kHz, {} channels):",
+        channels
+    );
     println!("Average process time: {:.4} ms", avg_ms);
     println!("Real-time budget:     {:.4} ms", budget_ms);
-    println!("CPU usage (estimated): {:.2}%", (avg_ms / budget_ms) * 100.0);
+    println!(
+        "CPU usage (estimated): {:.2}%",
+        (avg_ms / budget_ms) * 100.0
+    );
 
     // If it takes more than 50% of the budget, it's very risky for real-time
-    assert!(avg_ms < budget_ms, "Loudness monitor is slower than real-time!");
+    assert!(
+        avg_ms < budget_ms,
+        "Loudness monitor is slower than real-time!"
+    );
 }

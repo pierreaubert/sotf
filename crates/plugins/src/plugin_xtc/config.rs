@@ -2,16 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Smoothing mode for head tracking parameter updates
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum SmoothingMode {
-    /// Per-block filter crossfade (efficient, default)
-    #[default]
-    Block,
-    /// Per-sample coefficient interpolation (precise but higher CPU)
-    Sample,
-}
-
 /// XTC plugin configuration parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtcPluginParams {
@@ -74,9 +64,11 @@ pub struct XtcPluginParams {
     #[serde(default = "default_head_tracking_smooth")]
     pub head_tracking_smooth_s: f32,
 
-    /// Smoothing mode for head tracking (Block or Sample)
+    /// Enable spectral energy normalization (default: false).
+    /// When enabled, normalizes per-bin energy to reduce tonal coloration,
+    /// but can degrade cancellation depth.
     #[serde(default)]
-    pub head_tracking_smoothing_mode: SmoothingMode,
+    pub spectral_normalization: bool,
 
     /// Enable plugin (default: true)
     #[serde(default = "default_enabled")]
@@ -137,7 +129,7 @@ impl Default for XtcPluginParams {
             head_offset_z: 0.0,
             head_yaw_deg: 0.0,
             head_tracking_smooth_s: default_head_tracking_smooth(),
-            head_tracking_smoothing_mode: SmoothingMode::default(),
+            spectral_normalization: false,
             enabled: default_enabled(),
         }
     }

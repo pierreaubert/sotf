@@ -29,8 +29,8 @@ pub use signal_recorder::{
 pub mod waveform;
 
 // Re-export from math-dsp crate
-pub use math_audio_dsp::signals;
 pub use math_audio_dsp::analysis as signal_analysis;
+pub use math_audio_dsp::signals;
 pub use math_audio_dsp::{AnalysisResult, read_analysis_csv, write_analysis_csv};
 
 pub mod engine;

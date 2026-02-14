@@ -65,19 +65,39 @@ fn run_bem_pipeline(scenario_name: &str) {
         let lines: Vec<&str> = content.lines().collect();
 
         // Header + n_freqs data lines
-        assert_eq!(lines.len(), n_freqs + 1, "Expected {} lines (header + {n_freqs} data) in {filename}", n_freqs + 1);
+        assert_eq!(
+            lines.len(),
+            n_freqs + 1,
+            "Expected {} lines (header + {n_freqs} data) in {filename}",
+            n_freqs + 1
+        );
         assert_eq!(lines[0], "freq,spl,phase", "Bad header in {filename}");
 
         // Verify first data line is parseable
         let parts: Vec<&str> = lines[1].split(',').collect();
         assert_eq!(parts.len(), 3, "Expected 3 columns in {filename}");
-        let freq: f64 = parts[0].parse().unwrap_or_else(|e| panic!("Bad freq in {filename}: {e}"));
-        let spl: f64 = parts[1].parse().unwrap_or_else(|e| panic!("Bad spl in {filename}: {e}"));
-        let phase: f64 = parts[2].parse().unwrap_or_else(|e| panic!("Bad phase in {filename}: {e}"));
+        let freq: f64 = parts[0]
+            .parse()
+            .unwrap_or_else(|e| panic!("Bad freq in {filename}: {e}"));
+        let spl: f64 = parts[1]
+            .parse()
+            .unwrap_or_else(|e| panic!("Bad spl in {filename}: {e}"));
+        let phase: f64 = parts[2]
+            .parse()
+            .unwrap_or_else(|e| panic!("Bad phase in {filename}: {e}"));
 
-        assert!((19.0..=21.0).contains(&freq), "First freq should be ~20 Hz, got {freq}");
-        assert!((-120.0..=150.0).contains(&spl), "SPL out of range in {filename}: {spl}");
-        assert!((-180.0..=180.0).contains(&phase), "Phase out of range in {filename}: {phase}");
+        assert!(
+            (19.0..=21.0).contains(&freq),
+            "First freq should be ~20 Hz, got {freq}"
+        );
+        assert!(
+            (-120.0..=150.0).contains(&spl),
+            "SPL out of range in {filename}: {spl}"
+        );
+        assert!(
+            (-180.0..=180.0).contains(&phase),
+            "Phase out of range in {filename}: {phase}"
+        );
     }
 
     // Generate roomeq config
@@ -125,9 +145,18 @@ fn test_config_stereo_has_left_right() {
     let temp_dir = TempDir::new().unwrap();
     let config = roomeq_config_gen::generate_config(&scenario, temp_dir.path()).unwrap();
 
-    assert!(config.speakers.contains_key("left"), "Missing 'left' speaker");
-    assert!(config.speakers.contains_key("right"), "Missing 'right' speaker");
-    assert!(!config.speakers.contains_key("lfe"), "Stereo should not have LFE");
+    assert!(
+        config.speakers.contains_key("left"),
+        "Missing 'left' speaker"
+    );
+    assert!(
+        config.speakers.contains_key("right"),
+        "Missing 'right' speaker"
+    );
+    assert!(
+        !config.speakers.contains_key("lfe"),
+        "Stereo should not have LFE"
+    );
 }
 
 #[test]
@@ -147,7 +176,10 @@ fn test_config_multi_sub_has_multisub_lfe() {
     let temp_dir = TempDir::new().unwrap();
     let config = roomeq_config_gen::generate_config(&scenario, temp_dir.path()).unwrap();
 
-    assert!(config.speakers.contains_key("lfe"), "Multi-sub should have LFE");
+    assert!(
+        config.speakers.contains_key("lfe"),
+        "Multi-sub should have LFE"
+    );
     match &config.speakers["lfe"] {
         autoeq::roomeq::SpeakerConfig::MultiSub(group) => {
             assert_eq!(group.subwoofers.len(), 2, "Expected 2 subs");
@@ -158,20 +190,32 @@ fn test_config_multi_sub_has_multisub_lfe() {
 
 #[test]
 fn test_hf_extension_pipeline() {
-    let scenario = scenarios::scenario_by_name("small_stereo_2_1")
-        .expect("Scenario not found");
+    let scenario = scenarios::scenario_by_name("small_stereo_2_1").expect("Scenario not found");
 
-    let sim_output = bem_runner::run_bem(&scenario.simulation)
-        .expect("BEM solve failed");
+    let sim_output = bem_runner::run_bem(&scenario.simulation).expect("BEM solve failed");
 
-    assert_eq!(sim_output.frequencies.len(), 100, "Simulation should have 100 points");
+    assert_eq!(
+        sim_output.frequencies.len(),
+        100,
+        "Simulation should have 100 points"
+    );
 
     let extended = hf_extension::extend_to_full_range(&sim_output);
 
     // 100 simulation + 100 HF extension = 200
-    assert_eq!(extended.frequencies.len(), 200, "Extended should have 200 points");
-    assert!(extended.frequencies[0] >= 19.0, "First freq should be ~20 Hz");
-    assert!(*extended.frequencies.last().unwrap() > 19000.0, "Last freq should be ~20 kHz");
+    assert_eq!(
+        extended.frequencies.len(),
+        200,
+        "Extended should have 200 points"
+    );
+    assert!(
+        extended.frequencies[0] >= 19.0,
+        "First freq should be ~20 Hz"
+    );
+    assert!(
+        *extended.frequencies.last().unwrap() > 19000.0,
+        "Last freq should be ~20 kHz"
+    );
 
     // Source count preserved
     assert_eq!(extended.source_names.len(), sim_output.source_names.len());
@@ -181,7 +225,8 @@ fn test_hf_extension_pipeline() {
     for (src_idx, src_pressures) in extended.pressures.iter().enumerate() {
         for (lp_idx, lp_pressures) in src_pressures.iter().enumerate() {
             assert_eq!(
-                lp_pressures.len(), 200,
+                lp_pressures.len(),
+                200,
                 "Source {src_idx} LP {lp_idx} should have 200 points"
             );
         }
@@ -200,7 +245,10 @@ fn test_hf_extension_pipeline() {
         // Last line should have freq near 20 kHz
         let last_parts: Vec<&str> = lines[200].split(',').collect();
         let last_freq: f64 = last_parts[0].parse().unwrap();
-        assert!(last_freq > 19000.0, "Last CSV freq should be ~20 kHz, got {last_freq}");
+        assert!(
+            last_freq > 19000.0,
+            "Last CSV freq should be ~20 kHz, got {last_freq}"
+        );
     }
 }
 
@@ -239,7 +287,11 @@ fn test_config_5_1_has_surround_and_lfe() {
     assert!(config.speakers.contains_key("surround_left"));
     assert!(config.speakers.contains_key("surround_right"));
     assert!(config.speakers.contains_key("lfe"), "5.1 should have LFE");
-    assert_eq!(config.speakers.len(), 6, "5.1 should have 6 speaker entries");
+    assert_eq!(
+        config.speakers.len(),
+        6,
+        "5.1 should have 6 speaker entries"
+    );
 }
 
 #[test]

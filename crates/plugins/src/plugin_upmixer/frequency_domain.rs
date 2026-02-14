@@ -3,12 +3,45 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use crate::simd::{compute_covariance_simd, flush_denormals_complex_inplace, flush_denormals_inplace};
+use crate::simd::compute_covariance_simd;
 
 use rustfft::num_complex::Complex;
 
 /// Minimum height mask value — prevents deep spectral notches that cause time-domain ringing
 const HEIGHT_MASK_FLOOR: f32 = 0.02;
+
+/// 5-element median using 6 comparisons (optimal).
+/// After eliminating the global minimum via 3 compare-swaps on pairs,
+/// finds the 2nd-smallest of the remaining 4 elements (= median of 5).
+#[inline(always)]
+fn median5(arr: [f32; 5]) -> f32 {
+    let [mut a, mut b, mut c, mut d, mut e] = arr;
+    // Sort pairs: a ≤ b, c ≤ d                        (2 comparisons)
+    if a > b {
+        std::mem::swap(&mut a, &mut b);
+    }
+    if c > d {
+        std::mem::swap(&mut c, &mut d);
+    }
+    // Order pairs so a ≤ c (thus a = min of {a,b,c,d}) (1 comparison)
+    if a > c {
+        std::mem::swap(&mut a, &mut c);
+        std::mem::swap(&mut b, &mut d);
+    }
+    // Discard a (global minimum). Need 2nd-smallest of {b, c, d, e} where c ≤ d.
+    // Sort b,e so b ≤ e                                (1 comparison)
+    if b > e {
+        std::mem::swap(&mut b, &mut e);
+    }
+    // Now b ≤ e, c ≤ d. 2nd-of-4 from two sorted pairs:
+    // merge-pick index 1 = if b ≤ c then min(c, e) else min(b, d)
+    if b <= c {
+        // (1 comparison)
+        if c <= e { c } else { e } // (1 comparison)
+    } else {
+        if b <= d { b } else { d }
+    }
+}
 
 fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
     let coherence_clamped = coherence.clamp(0.0, 1.0);
@@ -19,20 +52,37 @@ fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
 
 impl UpmixerPlugin {
     pub(super) fn process_frequency_domain_erb_bands(&mut self) {
-        if self.sample_rate == 0 || self.fft_size == 0 { return; }
+        if self.sample_rate == 0 || self.fft_size == 0 {
+            return;
+        }
 
-        if self.decorrelation_mode == 1 { self.update_lfo_decorrelation(); }
+        if self.decorrelation_mode == 1 {
+            self.update_lfo_decorrelation();
+        }
 
-        let lfe_cutoff_bin = ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
-        let bandpass_bin = ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
+        let lfe_cutoff_bin =
+            ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
+        let bandpass_bin =
+            ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
         let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
 
         for band_idx in 0..self.erb_bands.len() {
             let start_bin = self.erb_bands[band_idx];
-            let end_bin = if band_idx + 1 < self.erb_bands.len() { self.erb_bands[band_idx + 1] } else { self.fft_size / 2 + 1 };
-            if start_bin >= end_bin || start_bin > self.fft_size / 2 { continue; }
+            let end_bin = if band_idx + 1 < self.erb_bands.len() {
+                self.erb_bands[band_idx + 1]
+            } else {
+                self.fft_size / 2 + 1
+            };
+            if start_bin >= end_bin || start_bin > self.fft_size / 2 {
+                continue;
+            }
 
-            let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&self.freq_domain_left, &self.freq_domain_right, start_bin, end_bin);
+            let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(
+                &self.freq_domain_left,
+                &self.freq_domain_right,
+                start_bin,
+                end_bin,
+            );
 
             let inst_energy = cov_xx + cov_yy;
             let smooth_energy = self.pca_cov_xx[band_idx] + self.pca_cov_yy[band_idx];
@@ -41,7 +91,11 @@ impl UpmixerPlugin {
             let norm = ((center_freq - 100.0) / (8000.0 - 100.0)).clamp(0.0, 1.0);
             let attack_alpha = 0.3 + 0.4 * norm;
             let release_alpha = 0.02 + 0.06 * norm;
-            let alpha = if inst_energy > smooth_energy * 1.5 { attack_alpha } else { release_alpha };
+            let alpha = if inst_energy > smooth_energy * 1.5 {
+                attack_alpha
+            } else {
+                release_alpha
+            };
             self.steering_alphas[band_idx] = alpha;
 
             self.pca_cov_xx[band_idx] = (1.0 - alpha) * self.pca_cov_xx[band_idx] + alpha * cov_xx;
@@ -57,16 +111,18 @@ impl UpmixerPlugin {
             let lambda1 = trace / 2.0 + disc;
             let lambda2 = trace / 2.0 - disc;
 
-            let mut coherence = if trace > 1e-9 { (lambda1 - lambda2) / (lambda1 + lambda2) } else { 0.0 };
+            let mut coherence = if trace > 1e-9 {
+                (lambda1 - lambda2) / (lambda1 + lambda2)
+            } else {
+                0.0
+            };
             coherence = coherence.clamp(0.0, 1.0);
             self.coherence_instant[band_idx] = coherence;
 
             if band_idx < self.coherence_history.len() {
                 let idx = self.coherence_history_idx % 5;
                 self.coherence_history[band_idx][idx] = coherence;
-                let mut sorted = self.coherence_history[band_idx];
-                sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                let median = sorted[2];
+                let median = median5(self.coherence_history[band_idx]);
                 let prev = self.smoothed_coherence[band_idx];
                 self.smoothed_coherence[band_idx] = prev + 0.15 * (median - prev);
                 coherence = self.smoothed_coherence[band_idx];
@@ -76,12 +132,15 @@ impl UpmixerPlugin {
             let lfe_end = (lfe_cutoff_bin + 1).min(end_bin);
             if start_bin < lfe_end {
                 for i in start_bin..lfe_end {
-                    let left = self.freq_domain_left[i]; let right = self.freq_domain_right[i];
+                    let left = self.freq_domain_left[i];
+                    let right = self.freq_domain_right[i];
                     let bin = i.min(self.lfe_low_gains.len() - 1);
                     self.lfe[i] = (left + right) * (0.5 * self.lfe_low_gains[bin]);
                     let hp = self.mains_high_gains[bin];
-                    self.direct_left[i] = left * hp; self.direct_right[i] = right * hp;
-                    self.ambient_left[i] = Complex::new(0.0, 0.0); self.ambient_right[i] = Complex::new(0.0, 0.0);
+                    self.direct_left[i] = left * hp;
+                    self.direct_right[i] = right * hp;
+                    self.ambient_left[i] = Complex::new(0.0, 0.0);
+                    self.ambient_right[i] = Complex::new(0.0, 0.0);
                 }
             }
 
@@ -101,48 +160,80 @@ impl UpmixerPlugin {
             // Upmixing Band
             let upmix_start = bandpass_bin.max(start_bin);
             if upmix_start < end_bin {
-                let ambient_gain = base_ambient_gain_from_coherence(coherence, self.ambient_boost) * (1.0 - self.dialogue_probability * self.dialogue_weight);
-                let eff_coh = coherence + (1.0 - coherence) * (self.dialogue_probability * self.dialogue_weight);
+                let ambient_gain = base_ambient_gain_from_coherence(coherence, self.ambient_boost)
+                    * (1.0 - self.dialogue_probability * self.dialogue_weight);
+                let eff_coh = coherence
+                    + (1.0 - coherence) * (self.dialogue_probability * self.dialogue_weight);
 
                 let (ev_l, ev_r) = if c_xy.norm_sqr() > 1e-18 {
                     let v = lambda1 - c_xx;
-                    let norm = (c_xy.norm_sqr() + v*v).sqrt();
-                    if norm > 1e-9 { (c_xy / norm, Complex::new(v / norm, 0.0)) }
-                    else { (Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0), Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0)) }
-                } else { (Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0), Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0)) };
+                    let norm = (c_xy.norm_sqr() + v * v).sqrt();
+                    if norm > 1e-9 {
+                        (c_xy / norm, Complex::new(v / norm, 0.0))
+                    } else {
+                        (
+                            Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
+                            Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
+                        )
+                    }
+                } else {
+                    (
+                        Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
+                        Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
+                    )
+                };
 
-                let mut in_e = 0.0f32; let mut out_e = 0.0f32;
+                let mut in_e = 0.0f32;
+                let mut out_e = 0.0f32;
                 for i in upmix_start..end_bin {
-                    let l = self.freq_domain_left[i]; let r = self.freq_domain_right[i];
+                    let l = self.freq_domain_left[i];
+                    let r = self.freq_domain_right[i];
                     let proj = l * ev_l.conj() + r * ev_r.conj();
                     self.direct[i] = proj * (ev_l + ev_r) * (eff_coh * 0.5);
-                    self.ambient_left[i] = (l - proj * ev_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
-                    self.ambient_right[i] = (r - proj * ev_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
+                    self.ambient_left[i] =
+                        (l - proj * ev_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
+                    self.ambient_right[i] =
+                        (r - proj * ev_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
                     self.direct_left[i] = l - self.direct[i] * self.stereo_width;
                     self.direct_right[i] = r - self.direct[i] * self.stereo_width;
                     self.lfe[i] = Complex::new(0.0, 0.0);
                     in_e += l.norm_sqr() + r.norm_sqr();
-                    out_e += self.direct[i].norm_sqr() + self.direct_left[i].norm_sqr() + self.direct_right[i].norm_sqr() + self.ambient_left[i].norm_sqr() + self.ambient_right[i].norm_sqr();
+                    out_e += self.direct[i].norm_sqr()
+                        + self.direct_left[i].norm_sqr()
+                        + self.direct_right[i].norm_sqr()
+                        + self.ambient_left[i].norm_sqr()
+                        + self.ambient_right[i].norm_sqr();
                 }
 
-                let corr = if out_e > 1e-12 && in_e > 1e-12 { (in_e / out_e).sqrt().clamp(0.707, 1.414) } else { 1.0 };
-                let tr_red = 1.0 - (self.hr_transient_env * self.height_transient_reduction).min(self.height_transient_reduction);
+                let corr = if out_e > 1e-12 && in_e > 1e-12 {
+                    (in_e / out_e).sqrt().clamp(0.707, 1.414)
+                } else {
+                    1.0
+                };
+                let tr_red = 1.0
+                    - (self.hr_transient_env * self.height_transient_reduction)
+                        .min(self.height_transient_reduction);
                 for i in upmix_start..end_bin {
                     self.energy_correction_per_bin[i] = corr;
-                    let h_suit = (self.height_freq_weights[i] * 0.5 + (1.0 - coherence).max(0.0) * 0.5).min(1.0);
+                    let h_suit = (self.height_freq_weights[i] * 0.5
+                        + (1.0 - coherence).max(0.0) * 0.5)
+                        .min(1.0);
                     self.height_band_gains[i] = (h_suit * tr_red).clamp(HEIGHT_MASK_FLOOR, 1.0);
                 }
             }
         }
 
         self.smooth_and_apply_energy_correction();
-        let strength = ((1.0 - self.hr_transient_env * 0.5).max(0.3) * (1.0 - self.dialogue_probability * 0.7)).max(0.05);
+        let strength = ((1.0 - self.hr_transient_env * 0.5).max(0.3)
+            * (1.0 - self.dialogue_probability * 0.7))
+            .max(0.05);
         self.decorrelation_strength = strength;
 
         let spec_size = self.fft_size / 2 + 1;
         let num_ch = self.num_output_channels;
         if self.blended_decorrelation_filters.len() != num_ch {
-            self.blended_decorrelation_filters = vec![vec![Complex::new(1.0, 0.0); spec_size]; num_ch];
+            self.blended_decorrelation_filters =
+                vec![vec![Complex::new(1.0, 0.0); spec_size]; num_ch];
         }
 
         let id_w = 1.0 - strength;
@@ -152,20 +243,25 @@ impl UpmixerPlugin {
                 self.blended_decorrelation_filters[ch].fill(Complex::new(1.0, 0.0));
                 continue;
             }
-            let decor = if ch < self.decorrelation_filters.len() { &self.decorrelation_filters[ch] }
-                else if s.azimuth > 0.0 { &self.decorrelation_filter_left } else { &self.decorrelation_filter_right };
-            if strength >= 0.99 { self.blended_decorrelation_filters[ch].copy_from_slice(decor); }
-            else {
+            let decor = if ch < self.decorrelation_filters.len() {
+                &self.decorrelation_filters[ch]
+            } else if s.azimuth > 0.0 {
+                &self.decorrelation_filter_left
+            } else {
+                &self.decorrelation_filter_right
+            };
+            if strength >= 0.99 {
+                self.blended_decorrelation_filters[ch].copy_from_slice(decor);
+            } else {
                 for i in 0..spec_size {
-                    self.blended_decorrelation_filters[ch][i] = Complex::new(strength * decor[i].re + id_w, strength * decor[i].im);
+                    self.blended_decorrelation_filters[ch][i] =
+                        Complex::new(strength * decor[i].re + id_w, strength * decor[i].im);
                 }
             }
         }
 
         self.coherence_history_idx = self.coherence_history_idx.wrapping_add(1);
-        flush_denormals_inplace(&mut self.pca_cov_xx);
-        flush_denormals_inplace(&mut self.pca_cov_yy);
-        flush_denormals_complex_inplace(&mut self.pca_cov_xy);
+        // Note: FTZ/DAZ CPU flags handle denormal flushing automatically
         self.smooth_height_gains();
     }
 
@@ -174,9 +270,14 @@ impl UpmixerPlugin {
         let spec_size = self.fft_size / 2 + 1;
         let mut smoothed = std::mem::take(&mut self.energy_correction_temp);
         for i in 0..spec_size {
-            let start = i.saturating_sub(1); let end = (i + 2).min(spec_size);
-            let mut sum = 0.0f32; let mut count = 0;
-            for j in start..end { sum += self.energy_correction_per_bin[j]; count += 1; }
+            let start = i.saturating_sub(1);
+            let end = (i + 2).min(spec_size);
+            let mut sum = 0.0f32;
+            let mut count = 0;
+            for j in start..end {
+                sum += self.energy_correction_per_bin[j];
+                count += 1;
+            }
             smoothed[i] = sum / count as f32;
         }
 
@@ -185,8 +286,11 @@ impl UpmixerPlugin {
             let alpha = if smoothed[i] < prev { 0.3 } else { 0.1 };
             let blended = alpha * smoothed[i] + (1.0 - alpha) * prev;
             self.energy_correction_prev[i] = blended;
-            self.direct[i] *= blended; self.direct_left[i] *= blended; self.direct_right[i] *= blended;
-            self.ambient_left[i] *= blended; self.ambient_right[i] *= blended;
+            self.direct[i] *= blended;
+            self.direct_left[i] *= blended;
+            self.direct_right[i] *= blended;
+            self.ambient_left[i] *= blended;
+            self.ambient_right[i] *= blended;
         }
         self.energy_correction_temp = smoothed;
     }

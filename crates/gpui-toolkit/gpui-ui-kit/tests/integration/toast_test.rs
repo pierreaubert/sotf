@@ -192,8 +192,7 @@ async fn test_toast_container_all_positions(cx: &mut TestAppContext) {
             div()
                 .size_full()
                 .child(
-                    ToastContainer::new(ToastPosition::TopLeft)
-                        .toast(Toast::new("tl", "Top Left")),
+                    ToastContainer::new(ToastPosition::TopLeft).toast(Toast::new("tl", "Top Left")),
                 )
                 .child(
                     ToastContainer::new(ToastPosition::TopCenter)

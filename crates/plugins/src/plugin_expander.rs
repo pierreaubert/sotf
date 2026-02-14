@@ -9,8 +9,8 @@ use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use serde::{Deserialize, Serialize};
-use std::f32::consts::PI;
 use std::any::Any;
+use std::f32::consts::PI;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,26 +39,53 @@ pub struct ExpanderPluginParams {
     pub sidechain_hpf_hz: f32,
 }
 
-fn default_threshold_db() -> f32 { THRESHOLD_DEFAULT }
-fn default_ratio() -> f32 { RATIO_DEFAULT }
-fn default_attack_ms() -> f32 { ATTACK_DEFAULT }
-fn default_release_ms() -> f32 { RELEASE_DEFAULT }
-fn default_range_db() -> f32 { RANGE_DEFAULT }
-fn default_knee_db() -> f32 { KNEE_DEFAULT }
-fn default_hysteresis_db() -> f32 { HYSTERESIS_DEFAULT }
-fn default_hold_ms() -> f32 { HOLD_DEFAULT }
-fn default_mix() -> f32 { MIX_DEFAULT }
-fn default_link_channels() -> bool { LINK_CHANNELS_DEFAULT }
-fn default_sidechain_hpf_hz() -> f32 { SIDECHAIN_HPF_HZ_DEFAULT }
+fn default_threshold_db() -> f32 {
+    THRESHOLD_DEFAULT
+}
+fn default_ratio() -> f32 {
+    RATIO_DEFAULT
+}
+fn default_attack_ms() -> f32 {
+    ATTACK_DEFAULT
+}
+fn default_release_ms() -> f32 {
+    RELEASE_DEFAULT
+}
+fn default_range_db() -> f32 {
+    RANGE_DEFAULT
+}
+fn default_knee_db() -> f32 {
+    KNEE_DEFAULT
+}
+fn default_hysteresis_db() -> f32 {
+    HYSTERESIS_DEFAULT
+}
+fn default_hold_ms() -> f32 {
+    HOLD_DEFAULT
+}
+fn default_mix() -> f32 {
+    MIX_DEFAULT
+}
+fn default_link_channels() -> bool {
+    LINK_CHANNELS_DEFAULT
+}
+fn default_sidechain_hpf_hz() -> f32 {
+    SIDECHAIN_HPF_HZ_DEFAULT
+}
 
 impl Default for ExpanderPluginParams {
     fn default() -> Self {
         Self {
-            threshold_db: default_threshold_db(), ratio: default_ratio(),
-            attack_ms: default_attack_ms(), release_ms: default_release_ms(),
-            range_db: default_range_db(), knee_db: default_knee_db(),
-            hysteresis_db: default_hysteresis_db(), hold_ms: default_hold_ms(),
-            mix: default_mix(), link_channels: default_link_channels(),
+            threshold_db: default_threshold_db(),
+            ratio: default_ratio(),
+            attack_ms: default_attack_ms(),
+            release_ms: default_release_ms(),
+            range_db: default_range_db(),
+            knee_db: default_knee_db(),
+            hysteresis_db: default_hysteresis_db(),
+            hold_ms: default_hold_ms(),
+            mix: default_mix(),
+            link_channels: default_link_channels(),
             sidechain_hpf_hz: default_sidechain_hpf_hz(),
         }
     }
@@ -73,7 +100,11 @@ pub struct ExpanderData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum GateState { Open, Hold, Closing }
+enum GateState {
+    Open,
+    Hold,
+    Closing,
+}
 
 pub struct ExpanderPlugin {
     channels: usize,
@@ -114,22 +145,36 @@ pub struct ExpanderPlugin {
 }
 
 impl ExpanderPlugin {
-    pub fn new(channels: usize) -> Self { Self::with_params(channels, ExpanderPluginParams::default()) }
+    pub fn new(channels: usize) -> Self {
+        Self::with_params(channels, ExpanderPluginParams::default())
+    }
     pub fn with_params(channels: usize, params: ExpanderPluginParams) -> Self {
         let sr = 44100;
         Self {
-            channels, sample_rate: sr,
-            param_threshold: ParameterId::from("threshold"), threshold_db: params.threshold_db,
-            param_ratio: ParameterId::from("ratio"), ratio: params.ratio,
-            param_attack: ParameterId::from("attack"), attack_ms: params.attack_ms,
-            param_release: ParameterId::from("release"), release_ms: params.release_ms,
-            param_range: ParameterId::from("range"), range_db: params.range_db,
-            param_knee: ParameterId::from("knee"), knee_db: params.knee_db,
-            param_hysteresis: ParameterId::from("hysteresis"), hysteresis_db: params.hysteresis_db,
-            param_hold: ParameterId::from("hold"), hold_ms: params.hold_ms,
-            param_mix: ParameterId::from("mix"), mix: params.mix.clamp(0.0, 1.0),
-            param_link_channels: ParameterId::from("link_channels"), link_channels: params.link_channels,
-            param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"), sidechain_hpf_hz: params.sidechain_hpf_hz.max(0.0),
+            channels,
+            sample_rate: sr,
+            param_threshold: ParameterId::from("threshold"),
+            threshold_db: params.threshold_db,
+            param_ratio: ParameterId::from("ratio"),
+            ratio: params.ratio,
+            param_attack: ParameterId::from("attack"),
+            attack_ms: params.attack_ms,
+            param_release: ParameterId::from("release"),
+            release_ms: params.release_ms,
+            param_range: ParameterId::from("range"),
+            range_db: params.range_db,
+            param_knee: ParameterId::from("knee"),
+            knee_db: params.knee_db,
+            param_hysteresis: ParameterId::from("hysteresis"),
+            hysteresis_db: params.hysteresis_db,
+            param_hold: ParameterId::from("hold"),
+            hold_ms: params.hold_ms,
+            param_mix: ParameterId::from("mix"),
+            mix: params.mix.clamp(0.0, 1.0),
+            param_link_channels: ParameterId::from("link_channels"),
+            link_channels: params.link_channels,
+            param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
+            sidechain_hpf_hz: params.sidechain_hpf_hz.max(0.0),
             envelope: vec![0.0; channels],
             gate_state: vec![GateState::Open; channels],
             hold_counter: vec![0; channels],
@@ -137,24 +182,33 @@ impl ExpanderPlugin {
             sidechain_hpf_prev_input: vec![0.0; channels],
             sidechain_hpf_prev_output: vec![0.0; channels],
             sidechain_hpf_alpha: 0.0,
-            attack_coeff: 0.0, release_coeff: 0.0,
+            attack_coeff: 0.0,
+            release_coeff: 0.0,
             threshold_smoother: Smoother::new(params.threshold_db, 5.0, sr),
             mix_smoother: Smoother::new(params.mix, 5.0, sr),
         }
     }
-    pub fn from_params(channels: usize, params: ExpanderPluginParams) -> Self { Self::with_params(channels, params) }
+    pub fn from_params(channels: usize, params: ExpanderPluginParams) -> Self {
+        Self::with_params(channels, params)
+    }
 
     fn calculate_expansion_attenuation(&self, input_db: f32, threshold: f32) -> f32 {
         let knee = self.knee_db.max(0.0);
         let slope = 1.0 - 1.0 / self.ratio.max(1.0);
         let atten = if knee < 0.1 {
-            if input_db >= threshold { 0.0 } else { (threshold - input_db) * slope }
-        } else if input_db > threshold + knee/2.0 { 0.0 }
-        else if input_db < threshold - knee/2.0 { (threshold - input_db) * slope }
-        else {
-            let below = threshold + knee/2.0 - input_db;
+            if input_db >= threshold {
+                0.0
+            } else {
+                (threshold - input_db) * slope
+            }
+        } else if input_db > threshold + knee / 2.0 {
+            0.0
+        } else if input_db < threshold - knee / 2.0 {
+            (threshold - input_db) * slope
+        } else {
+            let below = threshold + knee / 2.0 - input_db;
             let kf = below / knee;
-            kf * kf * (knee/2.0) * slope
+            kf * kf * (knee / 2.0) * slope
         };
         atten.min(self.range_db.max(0.0))
     }
@@ -167,69 +221,141 @@ impl ExpanderPlugin {
             let dt = 1.0 / self.sample_rate as f32;
             let rc = 1.0 / (2.0 * PI * fc);
             self.sidechain_hpf_alpha = rc / (rc + dt);
-        } else { self.sidechain_hpf_alpha = 0.0; }
+        } else {
+            self.sidechain_hpf_alpha = 0.0;
+        }
     }
 
     #[inline]
     fn apply_sidechain_filter(&mut self, ch: usize, sample: f32) -> f32 {
-        if self.sidechain_hpf_alpha <= 0.0 { return sample; }
-        let y = self.sidechain_hpf_alpha * (self.sidechain_hpf_prev_output[ch] + sample - self.sidechain_hpf_prev_input[ch]);
+        if self.sidechain_hpf_alpha <= 0.0 {
+            return sample;
+        }
+        let y = self.sidechain_hpf_alpha
+            * (self.sidechain_hpf_prev_output[ch] + sample - self.sidechain_hpf_prev_input[ch]);
         self.sidechain_hpf_prev_input[ch] = sample;
         self.sidechain_hpf_prev_output[ch] = y;
         y
     }
 
-    fn process_channel(&mut self, ch: usize, input_db: f32, hold_samples: usize, threshold: f32) -> f32 {
+    fn process_channel(
+        &mut self,
+        ch: usize,
+        input_db: f32,
+        hold_samples: usize,
+        threshold: f32,
+    ) -> f32 {
         let open_th = threshold;
         let close_th = threshold - self.hysteresis_db;
         let target = match self.gate_state[ch] {
-            GateState::Open => { if input_db < open_th { self.gate_state[ch] = GateState::Hold; self.hold_counter[ch] = hold_samples; 0.0 } else { 0.0 } }
-            GateState::Hold => {
-                if input_db >= open_th { self.gate_state[ch] = GateState::Open; self.hold_counter[ch] = 0; 0.0 }
-                else if self.hold_counter[ch] > 0 { self.hold_counter[ch] -= 1; 0.0 }
-                else if input_db < close_th { self.gate_state[ch] = GateState::Closing; self.calculate_expansion_attenuation(input_db, threshold) }
-                else { 0.0 }
+            GateState::Open => {
+                if input_db < open_th {
+                    self.gate_state[ch] = GateState::Hold;
+                    self.hold_counter[ch] = hold_samples;
+                    0.0
+                } else {
+                    0.0
+                }
             }
-            GateState::Closing => { if input_db >= open_th { self.gate_state[ch] = GateState::Open; 0.0 } else { self.calculate_expansion_attenuation(input_db, threshold) } }
+            GateState::Hold => {
+                if input_db >= open_th {
+                    self.gate_state[ch] = GateState::Open;
+                    self.hold_counter[ch] = 0;
+                    0.0
+                } else if self.hold_counter[ch] > 0 {
+                    self.hold_counter[ch] -= 1;
+                    0.0
+                } else if input_db < close_th {
+                    self.gate_state[ch] = GateState::Closing;
+                    self.calculate_expansion_attenuation(input_db, threshold)
+                } else {
+                    0.0
+                }
+            }
+            GateState::Closing => {
+                if input_db >= open_th {
+                    self.gate_state[ch] = GateState::Open;
+                    0.0
+                } else {
+                    self.calculate_expansion_attenuation(input_db, threshold)
+                }
+            }
         };
-        let coeff = if target > self.envelope[ch] { self.release_coeff } else { self.attack_coeff };
+        let coeff = if target > self.envelope[ch] {
+            self.release_coeff
+        } else {
+            self.attack_coeff
+        };
         self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
         self.envelope[ch]
     }
 }
 
 impl InPlacePlugin for ExpanderPlugin {
-    fn info(&self) -> PluginInfo { PluginInfo::new("Expander", "1.1.0", "SotF") }
-    fn channels(&self) -> usize { self.channels }
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Expander", "1.1.0", "SotF")
+    }
+    fn channels(&self) -> usize {
+        self.channels
+    }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float("threshold", "Threshold", THRESHOLD_DEFAULT, THRESHOLD_MIN, THRESHOLD_MAX),
-             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)]
+        vec![
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                THRESHOLD_DEFAULT,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            ),
+            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX),
+        ]
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if id == self.param_threshold { self.threshold_db = value.as_float().ok_or("val")?; self.threshold_smoother.set_target(self.threshold_db); }
-        else if id == self.param_ratio { self.ratio = value.as_float().ok_or("val")?.max(1.0); }
-        else if id == self.param_attack { self.attack_ms = value.as_float().ok_or("val")?; self.update_coefficients(); }
-        else if id == self.param_release { self.release_ms = value.as_float().ok_or("val")?; self.update_coefficients(); }
-        else if id == self.param_mix { self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0); self.mix_smoother.set_target(self.mix); }
-        else { return Err("unknown".into()); }
+        if id == self.param_threshold {
+            self.threshold_db = value.as_float().ok_or("val")?;
+            self.threshold_smoother.set_target(self.threshold_db);
+        } else if id == self.param_ratio {
+            self.ratio = value.as_float().ok_or("val")?.max(1.0);
+        } else if id == self.param_attack {
+            self.attack_ms = value.as_float().ok_or("val")?;
+            self.update_coefficients();
+        } else if id == self.param_release {
+            self.release_ms = value.as_float().ok_or("val")?;
+            self.update_coefficients();
+        } else if id == self.param_mix {
+            self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
+            self.mix_smoother.set_target(self.mix);
+        } else {
+            return Err("unknown".into());
+        }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_threshold { Some(ParameterValue::Float(self.threshold_db)) }
-        else { None }
+        if id == &self.param_threshold {
+            Some(ParameterValue::Float(self.threshold_db))
+        } else {
+            None
+        }
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        self.sample_rate = sample_rate; self.update_coefficients();
+        self.sample_rate = sample_rate;
+        self.update_coefficients();
         self.threshold_smoother.set_time(5.0, sample_rate);
         self.mix_smoother.set_time(5.0, sample_rate);
         Ok(())
     }
     fn reset(&mut self) {
-        self.envelope.fill(0.0); self.gate_state.fill(GateState::Open);
-        self.hold_counter.fill(0); self.sidechain_hpf_prev_input.fill(0.0);
+        self.envelope.fill(0.0);
+        self.gate_state.fill(GateState::Open);
+        self.hold_counter.fill(0);
+        self.sidechain_hpf_prev_input.fill(0.0);
         self.sidechain_hpf_prev_output.fill(0.0);
     }
-    fn process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext) -> PluginResult<usize> {
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let hold_samples = (self.hold_ms * 0.001 * self.sample_rate as f32) as usize;
@@ -240,7 +366,10 @@ impl InPlacePlugin for ExpanderPlugin {
             for frame in 0..num_frames {
                 let mut det_level = 0.0f32;
                 for ch in 0..self.channels {
-                    det_level = det_level.max(self.apply_sidechain_filter(ch, buffer[frame * self.channels + ch]).abs());
+                    det_level = det_level.max(
+                        self.apply_sidechain_filter(ch, buffer[frame * self.channels + ch])
+                            .abs(),
+                    );
                 }
                 let input_db = 20.0 * fast_log10(det_level.max(1e-10));
                 let atten = self.process_channel(0, input_db, hold_samples, thresh);
@@ -254,8 +383,15 @@ impl InPlacePlugin for ExpanderPlugin {
             for frame in 0..num_frames {
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
-                    let input_db = 20.0 * fast_log10(self.apply_sidechain_filter(ch, buffer[idx]).abs().max(1e-10));
-                    let gain = fast_pow10(-self.process_channel(ch, input_db, hold_samples, thresh) / 20.0);
+                    let input_db = 20.0
+                        * fast_log10(
+                            self.apply_sidechain_filter(ch, buffer[idx])
+                                .abs()
+                                .max(1e-10),
+                        );
+                    let gain = fast_pow10(
+                        -self.process_channel(ch, input_db, hold_samples, thresh) / 20.0,
+                    );
                     buffer[idx] = buffer[idx] * ((1.0 - mix) + mix * gain);
                 }
             }
@@ -264,7 +400,10 @@ impl InPlacePlugin for ExpanderPlugin {
         Ok(num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let is_open = self.gate_state.iter().any(|&s| s == GateState::Open || s == GateState::Hold);
+        let is_open = self
+            .gate_state
+            .iter()
+            .any(|&s| s == GateState::Open || s == GateState::Hold);
         Some(Arc::new(ExpanderData {
             attenuation_db: self.envelope.clone(),
             is_open,
@@ -281,7 +420,14 @@ mod tests {
         let mut p = ExpanderPlugin::new(1);
         p.initialize(48000).unwrap();
         let mut b = vec![0.1; 1000];
-        p.process_in_place(&mut b, &ProcessContext { sample_rate: 48000, num_frames: 1000 }).unwrap();
+        p.process_in_place(
+            &mut b,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1000,
+            },
+        )
+        .unwrap();
         assert!(b[999] < 0.1);
     }
 }

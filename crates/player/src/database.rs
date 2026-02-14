@@ -1358,7 +1358,8 @@ impl MusicDatabase {
         let track_play_counts = self.get_all_track_play_counts()?;
 
         for album_row in album_rows {
-            let (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite) = album_row?;
+            let (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite) =
+                album_row?;
 
             // Load tracks for this album (now including artist)
             let mut tracks_stmt = self.conn.prepare(
@@ -1377,10 +1378,7 @@ impl MusicDatabase {
                 .query_map(params![album_id], |row| {
                     let path_str = row.get::<_, String>(0)?;
                     let is_fav = row.get::<_, i64>(21)? != 0;
-                    let play_count = track_play_counts
-                        .get(&path_str)
-                        .copied()
-                        .unwrap_or(0);
+                    let play_count = track_play_counts.get(&path_str).copied().unwrap_or(0);
                     Ok(Track {
                         path: PathBuf::from(path_str),
                         title: row.get::<_, Option<String>>(1)?,

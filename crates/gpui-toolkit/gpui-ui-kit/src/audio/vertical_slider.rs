@@ -889,7 +889,8 @@ impl RenderOnce for VerticalSlider {
         );
 
         // Track ID for click-to-position handling
-        let track_id: ElementId = ElementId::Name(SharedString::from(format!("{}-track", element_id)));
+        let track_id: ElementId =
+            ElementId::Name(SharedString::from(format!("{}-track", element_id)));
 
         // Track with fill and thumb
         let mut track = div()

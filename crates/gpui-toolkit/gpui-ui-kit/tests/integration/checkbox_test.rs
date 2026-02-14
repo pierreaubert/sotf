@@ -69,10 +69,7 @@ async fn test_checkbox_click_toggles_on(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(
-            *checked.borrow(),
-            "Should be checked after click"
-        );
+        assert!(*checked.borrow(), "Should be checked after click");
         assert_eq!(
             change_count.load(Ordering::SeqCst),
             1,
@@ -106,10 +103,7 @@ async fn test_checkbox_click_toggles_off(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(
-            !*checked.borrow(),
-            "Should be unchecked after click"
-        );
+        assert!(!*checked.borrow(), "Should be unchecked after click");
         assert_eq!(
             change_count.load(Ordering::SeqCst),
             1,
@@ -167,21 +161,13 @@ async fn test_checkbox_all_sizes(cx: &mut TestAppContext) {
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(
-                    Checkbox::new("cb-sm")
-                        .size(CheckboxSize::Sm)
-                        .label("Small"),
-                )
+                .child(Checkbox::new("cb-sm").size(CheckboxSize::Sm).label("Small"))
                 .child(
                     Checkbox::new("cb-md")
                         .size(CheckboxSize::Md)
                         .label("Medium"),
                 )
-                .child(
-                    Checkbox::new("cb-lg")
-                        .size(CheckboxSize::Lg)
-                        .label("Large"),
-                )
+                .child(Checkbox::new("cb-lg").size(CheckboxSize::Lg).label("Large"))
         }
     }
 

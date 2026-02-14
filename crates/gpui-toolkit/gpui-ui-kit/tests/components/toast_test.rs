@@ -79,7 +79,10 @@ fn test_toast_custom_duration() {
 #[test]
 fn test_toast_default_duration() {
     let toast = Toast::new("d", "msg");
-    assert_eq!(toast.get_duration_secs(), Some(Toast::DEFAULT_DURATION_SECS));
+    assert_eq!(
+        toast.get_duration_secs(),
+        Some(Toast::DEFAULT_DURATION_SECS)
+    );
 }
 
 #[test]

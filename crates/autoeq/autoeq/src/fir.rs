@@ -11,8 +11,8 @@ use std::path::Path;
 
 // Re-export core types from math-iir-fir
 pub use math_audio_iir_fir::{
-    FirDesignConfig, FirPhase, generate_kirkeby_correction as generate_kirkeby_correction_raw,
-    save_fir_to_wav, WindowType,
+    FirDesignConfig, FirPhase, WindowType,
+    generate_kirkeby_correction as generate_kirkeby_correction_raw, save_fir_to_wav,
 };
 
 /// Generate an FIR filter to match a target frequency response
@@ -360,7 +360,8 @@ mod tests {
             &[80.0, 80.0, 80.0, 80.0, 80.0, 80.0],
         );
 
-        let coeffs = generate_kirkeby_correction(&measurement, &target, 48000.0, 4096, 20.0, 1000.0);
+        let coeffs =
+            generate_kirkeby_correction(&measurement, &target, 48000.0, 4096, 20.0, 1000.0);
 
         assert_eq!(coeffs.len(), 4096);
         assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));

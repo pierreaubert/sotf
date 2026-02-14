@@ -300,12 +300,19 @@ impl DecoderState {
                         // Restore a new buffer for next iteration
                         self.frame_send_buffer = Vec::with_capacity(frame_len);
 
-                        let frame = AudioFrame::new(frame_data, actual_output_frames, channels, target_sample_rate);
+                        let frame = AudioFrame::new(
+                            frame_data,
+                            actual_output_frames,
+                            channels,
+                            target_sample_rate,
+                        );
                         debug_assert_eq!(
                             frame.data.len(),
                             frame.num_frames * frame.num_channels,
                             "Resampled frame data size mismatch: data.len()={}, num_frames={}, num_channels={}",
-                            frame.data.len(), frame.num_frames, frame.num_channels,
+                            frame.data.len(),
+                            frame.num_frames,
+                            frame.num_channels,
                         );
                         frame
                     } else {
@@ -323,12 +330,15 @@ impl DecoderState {
                         // Restore a new buffer for next iteration
                         self.frame_send_buffer = Vec::with_capacity(chunk_len);
 
-                        let frame = AudioFrame::new(frame_data, frame_size, channels, source_sample_rate);
+                        let frame =
+                            AudioFrame::new(frame_data, frame_size, channels, source_sample_rate);
                         debug_assert_eq!(
                             frame.data.len(),
                             frame.num_frames * frame.num_channels,
                             "Non-resampled frame data size mismatch: data.len()={}, num_frames={}, num_channels={}",
-                            frame.data.len(), frame.num_frames, frame.num_channels,
+                            frame.data.len(),
+                            frame.num_frames,
+                            frame.num_channels,
                         );
                         frame
                     };
@@ -667,7 +677,6 @@ impl DecoderState {
                 message_tx
                     .send(DecoderMessage::Frame(frame))
                     .map_err(|_| "Failed to send resampled HAL frame")?;
-
             } else {
                 // No resampling needed
                 if self.resampler.is_some() {
@@ -812,18 +821,23 @@ fn run_decoder_thread(
                     state.stop();
                 }
             }
-            
+
             // Handle sleep for non-HAL mode or disconnected HAL
             #[cfg(all(target_os = "macos", feature = "hal"))]
             {
-                if state.hal_reader.as_ref().map_or(true, |r| !r.is_connected()) {
+                if state
+                    .hal_reader
+                    .as_ref()
+                    .map_or(true, |r| !r.is_connected())
+                {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
             }
             #[cfg(not(all(target_os = "macos", feature = "hal")))]
             {
                 // Non-HAL silent source mode: sleep to maintain frame rate
-                let frame_duration_ms = (frame_size as f64 / target_sample_rate as f64 * 1000.0) as u64;
+                let frame_duration_ms =
+                    (frame_size as f64 / target_sample_rate as f64 * 1000.0) as u64;
                 std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms));
             }
         } else if state.decoder.is_some() && !state.paused {

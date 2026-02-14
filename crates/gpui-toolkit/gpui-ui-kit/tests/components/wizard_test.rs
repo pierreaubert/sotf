@@ -1,6 +1,8 @@
 //! Wizard component tests
 
-use gpui_ui_kit::wizard::{StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep, WizardVariant};
+use gpui_ui_kit::wizard::{
+    StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep, WizardVariant,
+};
 
 #[test]
 fn test_wizard_step_creation() {

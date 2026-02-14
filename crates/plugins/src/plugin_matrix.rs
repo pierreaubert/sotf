@@ -135,11 +135,19 @@ impl MatrixPlugin {
     }
 
     pub fn num_inputs(&self) -> usize {
-        if self.input_channel_map.is_empty() { self.physical_input_channels } else { self.input_channel_map.len() }
+        if self.input_channel_map.is_empty() {
+            self.physical_input_channels
+        } else {
+            self.input_channel_map.len()
+        }
     }
 
     pub fn num_outputs(&self) -> usize {
-        if self.output_channel_map.is_empty() { self.physical_output_channels } else { self.output_channel_map.len() }
+        if self.output_channel_map.is_empty() {
+            self.physical_output_channels
+        } else {
+            self.output_channel_map.len()
+        }
     }
 
     pub fn set_matrix(&mut self, matrix: Vec<f32>) -> Result<(), String> {
@@ -147,7 +155,11 @@ impl MatrixPlugin {
         let num_outputs = self.num_outputs();
         let expected = num_outputs * num_inputs;
         if matrix.len() != expected {
-            return Err(format!("Size mismatch: expected {} but got {}", expected, matrix.len()));
+            return Err(format!(
+                "Size mismatch: expected {} but got {}",
+                expected,
+                matrix.len()
+            ));
         }
         for (idx, &gain) in matrix.iter().enumerate() {
             self.matrix[idx] = gain;
@@ -160,7 +172,9 @@ impl MatrixPlugin {
     pub fn set_gain(&mut self, input_ch: usize, output_ch: usize, gain: f32) -> Result<(), String> {
         let num_inputs = self.num_inputs();
         let idx = output_ch * num_inputs + input_ch;
-        if idx >= self.gain_smoothers.len() { return Err("OOB".into()); }
+        if idx >= self.gain_smoothers.len() {
+            return Err("OOB".into());
+        }
         self.matrix[idx] = gain;
         self.gain_smoothers[idx].set_target(gain);
         self.update_active_connections();
@@ -181,16 +195,24 @@ impl MatrixPlugin {
     fn ensure_channel_state_smoothers(&mut self) {
         let num_outputs = self.num_outputs();
         if self.channel_state_smoothers.len() != num_outputs {
-            self.channel_state_smoothers = vec![Smoother::new(1.0, GAIN_SMOOTH_MS, self.sample_rate); num_outputs];
+            self.channel_state_smoothers =
+                vec![Smoother::new(1.0, GAIN_SMOOTH_MS, self.sample_rate); num_outputs];
         }
         let any_soloed = self.channel_states.iter().any(|s| s.soloed);
         for ch in 0..num_outputs {
             let target = if let Some(state) = self.channel_states.get(ch) {
-                if any_soloed { if state.soloed { 1.0 } else { 0.0 } }
-                else if state.muted { 0.0 }
-                else if state.dimmed { 0.1 }
-                else { 1.0 }
-            } else { 1.0 };
+                if any_soloed {
+                    if state.soloed { 1.0 } else { 0.0 }
+                } else if state.muted {
+                    0.0
+                } else if state.dimmed {
+                    0.1
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
             self.channel_state_smoothers[ch].set_target(target);
         }
     }
@@ -198,23 +220,40 @@ impl MatrixPlugin {
     fn reset_channel_state_smoothers(&mut self) {
         let num_outputs = self.num_outputs();
         let any_soloed = self.channel_states.iter().any(|s| s.soloed);
-        self.channel_state_smoothers = (0..num_outputs).map(|ch| {
-            let target = if let Some(state) = self.channel_states.get(ch) {
-                if any_soloed { if state.soloed { 1.0 } else { 0.0 } }
-                else if state.muted { 0.0 }
-                else if state.dimmed { 0.1 }
-                else { 1.0 }
-            } else { 1.0 };
-            Smoother::new(target, GAIN_SMOOTH_MS, self.sample_rate)
-        }).collect();
+        self.channel_state_smoothers = (0..num_outputs)
+            .map(|ch| {
+                let target = if let Some(state) = self.channel_states.get(ch) {
+                    if any_soloed {
+                        if state.soloed { 1.0 } else { 0.0 }
+                    } else if state.muted {
+                        0.0
+                    } else if state.dimmed {
+                        0.1
+                    } else {
+                        1.0
+                    }
+                } else {
+                    1.0
+                };
+                Smoother::new(target, GAIN_SMOOTH_MS, self.sample_rate)
+            })
+            .collect();
     }
 }
 
 impl Plugin for MatrixPlugin {
-    fn info(&self) -> PluginInfo { PluginInfo::new("Matrix", "1.1.0", "SotF") }
-    fn input_channels(&self) -> usize { self.physical_input_channels }
-    fn output_channels(&self) -> usize { self.physical_output_channels }
-    fn parameters(&self) -> Vec<Parameter> { Vec::new() }
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Matrix", "1.1.0", "SotF")
+    }
+    fn input_channels(&self) -> usize {
+        self.physical_input_channels
+    }
+    fn output_channels(&self) -> usize {
+        self.physical_output_channels
+    }
+    fn parameters(&self) -> Vec<Parameter> {
+        Vec::new()
+    }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         let id_str = id.0.as_str();
@@ -227,7 +266,10 @@ impl Plugin for MatrixPlugin {
         if let Some(rest) = id_str.strip_prefix("mute_") {
             let ch = rest.parse::<usize>().map_err(|_| "Invalid ch")?;
             if ch < self.num_outputs() {
-                if self.channel_states.len() <= ch { self.channel_states.resize(self.num_outputs(), ChannelState::default()); }
+                if self.channel_states.len() <= ch {
+                    self.channel_states
+                        .resize(self.num_outputs(), ChannelState::default());
+                }
                 self.channel_states[ch].muted = value.as_bool().ok_or("Invalid bool")?;
                 self.ensure_channel_state_smoothers();
                 return Ok(());
@@ -236,7 +278,10 @@ impl Plugin for MatrixPlugin {
         if let Some(rest) = id_str.strip_prefix("dim_") {
             let ch = rest.parse::<usize>().map_err(|_| "Invalid ch")?;
             if ch < self.num_outputs() {
-                if self.channel_states.len() <= ch { self.channel_states.resize(self.num_outputs(), ChannelState::default()); }
+                if self.channel_states.len() <= ch {
+                    self.channel_states
+                        .resize(self.num_outputs(), ChannelState::default());
+                }
                 self.channel_states[ch].dimmed = value.as_bool().ok_or("Invalid bool")?;
                 self.ensure_channel_state_smoothers();
                 return Ok(());
@@ -255,43 +300,69 @@ impl Plugin for MatrixPlugin {
         }
         if let Some(rest) = id_str.strip_prefix("mute_") {
             let ch = rest.parse::<usize>().ok()?;
-            return self.channel_states.get(ch).map(|s| ParameterValue::Bool(s.muted));
+            return self
+                .channel_states
+                .get(ch)
+                .map(|s| ParameterValue::Bool(s.muted));
         }
         if let Some(rest) = id_str.strip_prefix("dim_") {
             let ch = rest.parse::<usize>().ok()?;
-            return self.channel_states.get(ch).map(|s| ParameterValue::Bool(s.dimmed));
+            return self
+                .channel_states
+                .get(ch)
+                .map(|s| ParameterValue::Bool(s.dimmed));
         }
         None
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        for s in &mut self.gain_smoothers { s.set_time(GAIN_SMOOTH_MS, sample_rate); }
-        for s in &mut self.channel_state_smoothers { s.set_time(GAIN_SMOOTH_MS, sample_rate); }
+        for s in &mut self.gain_smoothers {
+            s.set_time(GAIN_SMOOTH_MS, sample_rate);
+        }
+        for s in &mut self.channel_state_smoothers {
+            s.set_time(GAIN_SMOOTH_MS, sample_rate);
+        }
         Ok(())
     }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext) -> Result<usize, String> {
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
         output.fill(0.0);
         let num_frames = context.num_frames;
         let in_channels = self.physical_input_channels;
         let out_channels = self.physical_output_channels;
 
         for &(logical_in, logical_out, idx) in &self.active_connections {
-            let phys_in = if self.input_channel_map.is_empty() { logical_in } else { self.input_channel_map[logical_in] };
-            let phys_out = if self.output_channel_map.is_empty() { logical_out } else { self.output_channel_map[logical_out] };
+            let phys_in = if self.input_channel_map.is_empty() {
+                logical_in
+            } else {
+                self.input_channel_map[logical_in]
+            };
+            let phys_out = if self.output_channel_map.is_empty() {
+                logical_out
+            } else {
+                self.output_channel_map[logical_out]
+            };
 
             for frame in 0..num_frames {
                 // Ticking smoothers every sample for correctness in tests and audio quality
                 let gain = self.gain_smoothers[idx].next();
                 let ch_gain = if logical_out < self.channel_state_smoothers.len() {
                     self.channel_state_smoothers[logical_out].next()
-                } else { 1.0 };
-                
-                output[frame * out_channels + phys_out] += input[frame * in_channels + phys_in] * gain * ch_gain;
+                } else {
+                    1.0
+                };
+
+                output[frame * out_channels + phys_out] +=
+                    input[frame * in_channels + phys_in] * gain * ch_gain;
             }
         }
-        
+
         // Minor optimization: only update connections if something is still smoothing
         // or we just finished smoothing.
         self.update_active_connections();
@@ -321,8 +392,11 @@ mod tests {
 
         let input = vec![1.0, 2.0];
         let mut output = vec![0.0, 0.0];
-        let context = ProcessContext { sample_rate: 48000, num_frames: 1 };
-        
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1,
+        };
+
         for _ in 0..5000 {
             plugin.process(&input, &mut output, &context).unwrap();
         }
@@ -333,13 +407,17 @@ mod tests {
 
     #[test]
     fn test_sparse_mapping_basic() {
-        let mut plugin = MatrixPlugin::with_sparse_mapping(
-            vec![1, 2], vec![15, 16], vec![1.0, 0.0, 0.0, 1.0]
-        ).unwrap();
+        let mut plugin =
+            MatrixPlugin::with_sparse_mapping(vec![1, 2], vec![15, 16], vec![1.0, 0.0, 0.0, 1.0])
+                .unwrap();
         let mut input = vec![0.0; 3];
-        input[1] = 10.0; input[2] = 20.0;
+        input[1] = 10.0;
+        input[2] = 20.0;
         let mut output = vec![0.0; 17];
-        let context = ProcessContext { sample_rate: 48000, num_frames: 1 };
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1,
+        };
         plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(output[15], 10.0);
         assert_eq!(output[16], 20.0);

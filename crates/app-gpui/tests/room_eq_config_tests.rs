@@ -1,8 +1,6 @@
 //! Room EQ configuration and serialization tests.
 
-use sotf_audio_player_gpui::{
-    ChannelMeasurement, RecordingResult, RoomEqState, RoomEqStep,
-};
+use sotf_audio_player_gpui::{ChannelMeasurement, RecordingResult, RoomEqState, RoomEqStep};
 
 #[test]
 fn test_room_eq_state_defaults() {
@@ -167,7 +165,7 @@ fn test_room_eq_validation() {
 fn test_calculate_normalization_offset() {
     let frequencies = vec![100.0, 1000.0, 1500.0, 2000.0, 5000.0];
     let spl = vec![70.0, 80.0, 82.0, 84.0, 75.0];
-    
+
     // Mean of 80, 82, 84 is 82.0
     let offset = RoomEqState::calculate_normalization_offset(&frequencies, &spl);
     assert!((offset - 82.0).abs() < 0.001);
@@ -177,7 +175,7 @@ fn test_calculate_normalization_offset() {
 fn test_calculate_normalization_offset_fallback() {
     let frequencies = vec![100.0, 200.0];
     let spl = vec![70.0, 72.0];
-    
+
     // No points in 1k-2k range, should use overall mean (71.0)
     let offset = RoomEqState::calculate_normalization_offset(&frequencies, &spl);
     assert!((offset - 71.0).abs() < 0.001);

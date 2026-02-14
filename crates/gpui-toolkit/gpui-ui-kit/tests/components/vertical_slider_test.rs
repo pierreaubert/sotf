@@ -60,8 +60,7 @@ fn test_vertical_slider_with_peak() {
 
 #[test]
 fn test_vertical_slider_no_peak() {
-    let slider = VerticalSlider::new("meter")
-        .peak(None);
+    let slider = VerticalSlider::new("meter").peak(None);
 
     drop(slider);
 }

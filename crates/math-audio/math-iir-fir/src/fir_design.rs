@@ -5,11 +5,11 @@
 //! Kirkeby regularized inversion for room correction.
 
 use num_complex::Complex64;
-use rustfft::num_traits::Zero;
 use rustfft::FftPlanner;
+use rustfft::num_traits::Zero;
 use std::path::Path;
 
-use super::fir::{generate_window, WindowType};
+use super::fir::{WindowType, generate_window};
 
 /// Phase type for FIR generation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
@@ -189,48 +189,47 @@ pub fn generate_kirkeby_correction(
     // Compute excess phase correction if enabled and phase data is available
     // Excess phase = measured phase - minimum phase (derived from magnitude)
     // We only want to correct excess phase, not minimum phase
-    let excess_phase_correction: Option<Vec<f64>> =
-        if config.correct_excess_phase {
-            meas_phase_deg.map(|phase_deg| {
-                // Convert measured phase from degrees to radians
-                let meas_phase_rad: Vec<f64> = phase_deg.iter().map(|&d| d.to_radians()).collect();
+    let excess_phase_correction: Option<Vec<f64>> = if config.correct_excess_phase {
+        meas_phase_deg.map(|phase_deg| {
+            // Convert measured phase from degrees to radians
+            let meas_phase_rad: Vec<f64> = phase_deg.iter().map(|&d| d.to_radians()).collect();
 
-                // Apply phase smoothing via group delay if enabled
-                let smoothed_phase_rad = if config.phase_smoothing_octaves > 0.0 {
-                    super::phase_smooth::smooth_phase_via_group_delay(
-                        meas_freqs,
-                        &meas_phase_rad,
-                        config.phase_smoothing_octaves,
-                    )
-                } else {
-                    meas_phase_rad
-                };
-
-                // Interpolate smoothed phase to linear grid using complex interpolation
-                // (avoids wrap artifacts)
-                let meas_phase_interp = super::phase_smooth::interpolate_phase_complex(
+            // Apply phase smoothing via group delay if enabled
+            let smoothed_phase_rad = if config.phase_smoothing_octaves > 0.0 {
+                super::phase_smooth::smooth_phase_via_group_delay(
                     meas_freqs,
-                    &smoothed_phase_rad,
-                    &linear_freqs,
-                );
+                    &meas_phase_rad,
+                    config.phase_smoothing_octaves,
+                )
+            } else {
+                meas_phase_rad
+            };
 
-                // Compute minimum phase from magnitude using Hilbert transform
-                let min_phase = compute_minimum_phase_from_magnitude(&meas_spl_interp);
+            // Interpolate smoothed phase to linear grid using complex interpolation
+            // (avoids wrap artifacts)
+            let meas_phase_interp = super::phase_smooth::interpolate_phase_complex(
+                meas_freqs,
+                &smoothed_phase_rad,
+                &linear_freqs,
+            );
 
-                // Excess phase = measured - minimum (both in radians for computation)
-                // Correction = -excess_phase (to cancel it out)
-                meas_phase_interp
-                    .iter()
-                    .zip(min_phase.iter())
-                    .map(|(&measured_rad, &min_rad)| {
-                        let excess_rad = measured_rad - min_rad;
-                        -excess_rad // Negative to invert/correct the excess phase
-                    })
-                    .collect()
-            })
-        } else {
-            None // Magnitude-only correction (linear-phase FIR)
-        };
+            // Compute minimum phase from magnitude using Hilbert transform
+            let min_phase = compute_minimum_phase_from_magnitude(&meas_spl_interp);
+
+            // Excess phase = measured - minimum (both in radians for computation)
+            // Correction = -excess_phase (to cancel it out)
+            meas_phase_interp
+                .iter()
+                .zip(min_phase.iter())
+                .map(|(&measured_rad, &min_rad)| {
+                    let excess_rad = measured_rad - min_rad;
+                    -excess_rad // Negative to invert/correct the excess phase
+                })
+                .collect()
+        })
+    } else {
+        None // Magnitude-only correction (linear-phase FIR)
+    };
 
     // Maximum boost/cut limits for room correction
     // Boost is limited more aggressively because boosting deep nulls:
@@ -565,10 +564,7 @@ fn spectrum_to_impulse_response(spectrum: &[Complex64], fft_size: usize) -> Vec<
     ifft.process(&mut ir_complex);
 
     // Extract real part and normalize
-    ir_complex
-        .iter()
-        .map(|c| c.re / fft_size as f64)
-        .collect()
+    ir_complex.iter().map(|c| c.re / fft_size as f64).collect()
 }
 
 /// Finalize impulse response with windowing and centering
@@ -705,8 +701,7 @@ mod tests {
             ..Default::default()
         };
 
-        let coeffs =
-            generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
+        let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
 
         assert_eq!(coeffs.len(), 4096);
         assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));

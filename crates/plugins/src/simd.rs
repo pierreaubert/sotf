@@ -463,7 +463,7 @@ pub fn window_mul_simd(dst: &mut [f32], src: &[f32], window: &[f32]) {
 #[inline]
 pub fn window_mul_simd_inplace(data: &mut [f32], window: &[f32]) {
     let len = data.len().min(window.len());
-    
+
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
         use std::arch::x86_64::*;
@@ -477,7 +477,9 @@ pub fn window_mul_simd_inplace(data: &mut [f32], window: &[f32]) {
                 _mm256_storeu_ps(ptr, _mm256_mul_ps(d, w));
             }
         }
-        for i in simd_len..len { data[i] *= window[i]; }
+        for i in simd_len..len {
+            data[i] *= window[i];
+        }
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -493,7 +495,9 @@ pub fn window_mul_simd_inplace(data: &mut [f32], window: &[f32]) {
                 vst1q_f32(ptr, vmulq_f32(d, w));
             }
         }
-        for i in simd_len..len { data[i] *= window[i]; }
+        for i in simd_len..len {
+            data[i] *= window[i];
+        }
     }
 
     #[cfg(not(any(
@@ -501,7 +505,9 @@ pub fn window_mul_simd_inplace(data: &mut [f32], window: &[f32]) {
         all(target_arch = "aarch64", target_feature = "neon")
     )))]
     {
-        for i in 0..len { data[i] *= window[i]; }
+        for i in 0..len {
+            data[i] *= window[i];
+        }
     }
 }
 
@@ -2130,7 +2136,11 @@ pub fn apply_per_channel_gain_simd(buffer: &mut [f32], channels: usize, gains: &
         #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
         {
             use std::arch::x86_64::*;
-            let gains_vec = unsafe { _mm256_set_ps(gains[1], gains[0], gains[1], gains[0], gains[1], gains[0], gains[1], gains[0]) };
+            let gains_vec = unsafe {
+                _mm256_set_ps(
+                    gains[1], gains[0], gains[1], gains[0], gains[1], gains[0], gains[1], gains[0],
+                )
+            };
             let simd_len = (num_frames / 4) * 4;
             for i in (0..simd_len).step_by(4) {
                 unsafe {
@@ -2146,11 +2156,11 @@ pub fn apply_per_channel_gain_simd(buffer: &mut [f32], channels: usize, gains: &
             }
             return;
         }
-        
+
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             use std::arch::aarch64::*;
-            let gains_vec = unsafe { 
+            let gains_vec = unsafe {
                 let g = [gains[0], gains[1], gains[0], gains[1]];
                 vld1q_f32(g.as_ptr())
             };

@@ -154,24 +154,30 @@ fn run_playback_thread(
             };
             let physical = devices.into_iter().find(|d| {
                 let name = get_device_name(d);
-                !name.contains("SotF") &&
-                !name.contains("BlackHole") &&
-                !name.contains("ZoomAudio") &&
-                !name.contains("Loopback")
+                !name.contains("SotF")
+                    && !name.contains("BlackHole")
+                    && !name.contains("ZoomAudio")
+                    && !name.contains("Loopback")
             });
 
             if let Some(dev) = physical {
-                log::info!("[Playback Thread] Using fallback physical device: {}", get_device_name(&dev));
+                log::info!(
+                    "[Playback Thread] Using fallback physical device: {}",
+                    get_device_name(&dev)
+                );
                 Ok(dev)
             } else {
-                host.default_output_device().ok_or("No default device found".to_string())
+                host.default_output_device()
+                    .ok_or("No default device found".to_string())
             }
         };
 
         // If explicitly requested a virtual device (likely by accident due to it being default),
         // force a fallback to avoid feedback loop
         if device_identifier.contains("SotF") {
-            log::warn!("[Playback Thread] 'SotF' virtual device requested as output - forcing fallback to prevent feedback loop");
+            log::warn!(
+                "[Playback Thread] 'SotF' virtual device requested as output - forcing fallback to prevent feedback loop"
+            );
             find_fallback().map_err(|e| format!("Failed to find fallback device: {}", e))?
         } else {
             // Try to find the device using shared logic
@@ -187,7 +193,8 @@ fn run_playback_thread(
                 Err(e) => {
                     log::info!(
                         "[Playback Thread] Device '{}' not found (error: {}), using default",
-                        device_identifier, e
+                        device_identifier,
+                        e
                     );
                     host.default_output_device()
                         .ok_or("No default output device available")?
@@ -197,7 +204,9 @@ fn run_playback_thread(
     } else {
         // Use default device
         // CHECK if default device is virtual -> if so, use fallback
-        let default_dev = host.default_output_device().ok_or("No output device available")?;
+        let default_dev = host
+            .default_output_device()
+            .ok_or("No output device available")?;
         let get_name = |d: &Device| -> String {
             d.description()
                 .map(|desc| desc.name().to_string())
@@ -206,8 +215,13 @@ fn run_playback_thread(
         let name = get_name(&default_dev);
 
         if name.contains("SotF") || name.contains("BlackHole") {
-            log::warn!("[Playback Thread] Default device is '{}' (virtual) - finding fallback physical device", name);
-            let devices = host.output_devices().map_err(|e| format!("Failed to list devices: {}", e))?;
+            log::warn!(
+                "[Playback Thread] Default device is '{}' (virtual) - finding fallback physical device",
+                name
+            );
+            let devices = host
+                .output_devices()
+                .map_err(|e| format!("Failed to list devices: {}", e))?;
             let physical = devices.into_iter().find(|d| {
                 let n = get_name(d);
                 !n.contains("SotF") && !n.contains("BlackHole") && !n.contains("Loopback")
@@ -410,7 +424,10 @@ fn run_playback_thread(
                                 );
                                 // Resume the old stream so audio doesn't stop
                                 if let Err(resume_err) = stream.play() {
-                                    log::error!("[Playback Thread] Failed to resume old stream: {}", resume_err);
+                                    log::error!(
+                                        "[Playback Thread] Failed to resume old stream: {}",
+                                        resume_err
+                                    );
                                 }
                                 event_tx
                                     .send(ThreadEvent::ProcessingError(format!(
@@ -562,7 +579,10 @@ fn run_playback_thread(
                                 );
                                 // Resume the old stream so audio doesn't stop
                                 if let Err(resume_err) = stream.play() {
-                                    log::error!("[Playback Thread] Failed to resume old stream: {}", resume_err);
+                                    log::error!(
+                                        "[Playback Thread] Failed to resume old stream: {}",
+                                        resume_err
+                                    );
                                 }
                                 event_tx
                                     .send(ThreadEvent::ProcessingError(format!(
@@ -611,7 +631,7 @@ fn run_playback_thread(
 
         // Read from message queue (prioritize draining the queue if we have space)
         let message = message_rx.try_recv();
-        
+
         match message {
             Ok(ProcessingMessage::Frame(frame)) => {
                 frames_received += 1;
@@ -653,8 +673,12 @@ fn run_playback_thread(
                         // Compute normalization factor: 1 / (1 + sum of all mixing coefficients)
                         // This ensures peak output never exceeds the peak of any single input channel
                         let mut coeff_sum: f32 = 1.0 + C_COEFF + SURROUND_COEFF;
-                        if n > sl_idx + 2 { coeff_sum += BACK_COEFF; }   // has back surrounds
-                        if n > tfl_idx { coeff_sum += HEIGHT_COEFF; }     // has heights
+                        if n > sl_idx + 2 {
+                            coeff_sum += BACK_COEFF;
+                        } // has back surrounds
+                        if n > tfl_idx {
+                            coeff_sum += HEIGHT_COEFF;
+                        } // has heights
                         let norm = 1.0 / coeff_sum;
 
                         for i in 0..num_frames {
@@ -720,7 +744,10 @@ fn run_playback_thread(
                         frames_dropped += 1;
                         log::warn!(
                             "[Playback Thread] FRAME DROPPED #{}: {} samples, ring_buffer_space={}, required={}",
-                            frames_dropped, frame_samples, producer.slots(), frame_samples,
+                            frames_dropped,
+                            frame_samples,
+                            producer.slots(),
+                            frame_samples,
                         );
                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
                         continue;
@@ -750,8 +777,11 @@ fn run_playback_thread(
                     // force completion to avoid hanging forever.
                     if let Some(start) = drain_start {
                         if start.elapsed() > drain_timeout {
-                            log::warn!("[Playback Thread] Drain timeout, forcing PlaybackDrained (slots={}, capacity={})",
-                                producer.slots(), buffer_capacity);
+                            log::warn!(
+                                "[Playback Thread] Drain timeout, forcing PlaybackDrained (slots={}, capacity={})",
+                                producer.slots(),
+                                buffer_capacity
+                            );
                             event_tx.send(ThreadEvent::PlaybackDrained).ok();
                             break;
                         }
@@ -767,17 +797,23 @@ fn run_playback_thread(
                 if end_of_stream {
                     // Processing channel closed during drain — wait for ring buffer
                     // to empty so the remaining audio reaches hardware.
-                    log::debug!("[Playback Thread] Queue disconnected during drain, waiting for ring buffer");
+                    log::debug!(
+                        "[Playback Thread] Queue disconnected during drain, waiting for ring buffer"
+                    );
                     let drain_start = std::time::Instant::now();
                     let drain_timeout = std::time::Duration::from_secs(2);
                     loop {
                         if producer.slots() >= buffer_capacity {
-                            log::info!("[Playback Thread] Ring buffer drained (post-disconnect), signaling completion");
+                            log::info!(
+                                "[Playback Thread] Ring buffer drained (post-disconnect), signaling completion"
+                            );
                             event_tx.send(ThreadEvent::PlaybackDrained).ok();
                             break;
                         }
                         if drain_start.elapsed() > drain_timeout {
-                            log::warn!("[Playback Thread] Drain timeout after disconnect, forcing PlaybackDrained");
+                            log::warn!(
+                                "[Playback Thread] Drain timeout after disconnect, forcing PlaybackDrained"
+                            );
                             event_tx.send(ThreadEvent::PlaybackDrained).ok();
                             break;
                         }
@@ -796,10 +832,22 @@ fn run_playback_thread(
     let elapsed_secs = elapsed.as_secs_f64();
     let total_samples = state.total_callback_samples.load(Ordering::Relaxed);
     let total_callbacks = state.callback_count.load(Ordering::Relaxed);
-    let total_frames = if channels > 0 { total_samples / channels as u64 } else { 0 };
-    let effective_rate = if elapsed_secs > 0.0 { (total_frames as f64 / elapsed_secs) as u64 } else { 0 };
+    let total_frames = if channels > 0 {
+        total_samples / channels as u64
+    } else {
+        0
+    };
+    let effective_rate = if elapsed_secs > 0.0 {
+        (total_frames as f64 / elapsed_secs) as u64
+    } else {
+        0
+    };
     let audio_duration = total_frames as f64 / sample_rate as f64;
-    let avg_samples_per_callback = if total_callbacks > 0 { total_samples / total_callbacks } else { 0 };
+    let avg_samples_per_callback = if total_callbacks > 0 {
+        total_samples / total_callbacks
+    } else {
+        0
+    };
     log::warn!(
         "[Playback Thread] CALLBACK RATE: {} callbacks, {} total samples ({} frames) in {:.3}s = {} effective Hz (expected {}Hz), audio_duration={:.3}s, avg_samples/callback={}, channels={}",
         total_callbacks,
@@ -854,7 +902,9 @@ fn build_output_stream(
                 let requested = data.len();
 
                 // Track callback metrics
-                state_clone.total_callback_samples.fetch_add(requested as u64, Ordering::Relaxed);
+                state_clone
+                    .total_callback_samples
+                    .fetch_add(requested as u64, Ordering::Relaxed);
                 state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
 
                 // Try to read requested amount

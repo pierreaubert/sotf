@@ -108,13 +108,10 @@ static TEMP_DIR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn run_optimization(config: &RoomConfig) -> Result<autoeq::roomeq::RoomOptimizationResult> {
     let id = TEMP_DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let temp_dir = std::env::temp_dir().join(format!(
-        "roomeq_qa_{}_{}", std::process::id(), id
-    ));
+    let temp_dir = std::env::temp_dir().join(format!("roomeq_qa_{}_{}", std::process::id(), id));
     std::fs::create_dir_all(&temp_dir)?;
-    let callback = Box::new(|_: &autoeq::roomeq::RoomOptimizationProgress| {
-        CallbackAction::Continue
-    });
+    let callback =
+        Box::new(|_: &autoeq::roomeq::RoomOptimizationProgress| CallbackAction::Continue);
     let result = optimize_room(config, SAMPLE_RATE, Some(callback), Some(&temp_dir))
         .map_err(|e| anyhow!("{}", e));
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -318,7 +315,8 @@ fn run_stereo_workflow_tests(
             post,
             status,
             reason
-        ).unwrap();
+        )
+        .unwrap();
 
         results.push(TestResult {
             label: format!("{} IIR {}", name, mutation),
@@ -400,7 +398,8 @@ fn run_generic_path_tests(
                 post,
                 status,
                 reason
-            ).unwrap();
+            )
+            .unwrap();
 
             results.push(TestResult {
                 label: format!("{} generic {} {}", name, mode_name, mutation),
@@ -435,17 +434,15 @@ fn run_generic_path_tests(
             out,
             "\n  Cross-mode: {} ratio={:.2}x  {}",
             mode_scores, ratio, status
-        ).unwrap();
+        )
+        .unwrap();
 
         results.push(TestResult {
             label: format!("{} cross-mode", name),
             pre_score: 0.0,
             post_score: 0.0,
             pass,
-            reason: format!(
-                "ratio={:.2}x (limit={:.1}x)",
-                ratio, CROSS_MODE_RATIO_LIMIT
-            ),
+            reason: format!("ratio={:.2}x (limit={:.1}x)", ratio, CROSS_MODE_RATIO_LIMIT),
         });
     }
 
@@ -500,7 +497,8 @@ fn main() -> Result<()> {
     // Parse CLI args
     let args: Vec<String> = std::env::args().collect();
     let list_mode = args.iter().any(|a| a == "--list");
-    let case_filter: Option<String> = args.windows(2)
+    let case_filter: Option<String> = args
+        .windows(2)
         .find(|w| w[0] == "--case")
         .map(|w| w[1].clone());
 
@@ -524,12 +522,14 @@ fn main() -> Result<()> {
     // Filter cases if --case is provided (substring match)
     let cases_to_run: Vec<TestCase> = if let Some(ref filter) = case_filter {
         let filter_lower = filter.to_lowercase();
-        let matched: Vec<_> = all_cases.into_iter()
+        let matched: Vec<_> = all_cases
+            .into_iter()
             .filter(|tc| tc.name().to_lowercase().contains(&filter_lower))
             .collect();
         if matched.is_empty() {
             return Err(anyhow!(
-                "No test case matches '{}'. Use --list to see available cases.", filter
+                "No test case matches '{}'. Use --list to see available cases.",
+                filter
             ));
         }
         println!("Running {} case(s) matching '{}'", matched.len(), filter);
@@ -539,24 +539,36 @@ fn main() -> Result<()> {
     };
 
     // Run all test cases in parallel using threads
-    let handles: Vec<_> = cases_to_run.into_iter().map(|tc| {
-        let fem_dir = fem_dir.clone();
-        let optim_dir = optim_dir.clone();
-        std::thread::spawn(move || -> Result<(String, Vec<TestResult>)> {
-            match tc {
-                TestCase::Workflow { name, fem_subdir, optim_subdir } => {
-                    let base_path = fem_dir.join(format!("{}/config.json", fem_subdir));
-                    let override_path = optim_dir.join(format!("{}/optimiser-iir.json", optim_subdir));
-                    run_stereo_workflow_tests(name, &base_path, Some(&override_path))
+    let handles: Vec<_> = cases_to_run
+        .into_iter()
+        .map(|tc| {
+            let fem_dir = fem_dir.clone();
+            let optim_dir = optim_dir.clone();
+            std::thread::spawn(move || -> Result<(String, Vec<TestResult>)> {
+                match tc {
+                    TestCase::Workflow {
+                        name,
+                        fem_subdir,
+                        optim_subdir,
+                    } => {
+                        let base_path = fem_dir.join(format!("{}/config.json", fem_subdir));
+                        let override_path =
+                            optim_dir.join(format!("{}/optimiser-iir.json", optim_subdir));
+                        run_stereo_workflow_tests(name, &base_path, Some(&override_path))
+                    }
+                    TestCase::Generic {
+                        name,
+                        fem_subdir,
+                        optim_subdir,
+                    } => {
+                        let base_path = fem_dir.join(format!("{}/config.json", fem_subdir));
+                        let override_dir = optim_dir.join(optim_subdir);
+                        run_generic_path_tests(name, &base_path, &override_dir)
+                    }
                 }
-                TestCase::Generic { name, fem_subdir, optim_subdir } => {
-                    let base_path = fem_dir.join(format!("{}/config.json", fem_subdir));
-                    let override_dir = optim_dir.join(optim_subdir);
-                    run_generic_path_tests(name, &base_path, &override_dir)
-                }
-            }
+            })
         })
-    }).collect();
+        .collect();
 
     // Collect results in order, printing output as each completes
     let mut all_results: Vec<TestResult> = Vec::new();

@@ -27,6 +27,8 @@ pub(crate) struct XtcFilters {
     pub filter_rl: Option<Vec<Complex<f32>>>,
     /// Diagonal filter for right output (R_out += filter_rr * R_in), None if symmetric
     pub filter_rr: Option<Vec<Complex<f32>>>,
+    /// Whether the filter set is symmetric (yaw ~= 0)
+    pub is_symmetric: bool,
 }
 
 // ============================================================================
@@ -56,14 +58,19 @@ pub(crate) fn compute_xtc_filters_full(
             filter_lr,
             filter_rl: None,
             filter_rr: None,
+            is_symmetric: true,
         }
     } else {
         // Full asymmetric computation for yaw != 0
-        compute_xtc_filters_asymmetric(params, sample_rate, num_bins)
+        let mut f = compute_xtc_filters_asymmetric(params, sample_rate, num_bins);
+        f.is_symmetric = false;
+        f
     };
 
     // Post-processing: spectral energy normalization to prevent tonal imbalance
-    apply_spectral_normalization(&mut filters, num_bins);
+    if params.spectral_normalization {
+        apply_spectral_normalization(&mut filters, num_bins);
+    }
 
     filters
 }
@@ -176,20 +183,26 @@ fn compute_xtc_filters_asymmetric(
     for bin in 0..num_bins {
         let freq = bin as f32 * sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
 
-        // Pinna resonance shaping
-        let pinna = pinna_resonance(freq);
+        // Pinna resonance: full for ipsi paths, angle-dependent for contra paths
+        let pinna_ipsi = pinna_resonance(freq);
 
-        // Left ear transfer functions
-        let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna;
+        // Left ear: ipsi speaker is left speaker (theta_left), contra is right speaker (theta_right)
+        let pinna_left_contra =
+            pinna_resonance_contra(freq, theta_right.abs() * 180.0 / PI);
+        let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_ll = head_shadowing_woodworth(freq, angle_left_contra, a) * amplitude_ratio_left;
         let phase_ll = -2.0 * PI * freq * delta_t_left;
-        let h_ll_contra = Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin()) * pinna;
+        let h_ll_contra =
+            Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin()) * pinna_left_contra;
 
-        // Right ear transfer functions
-        let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna;
+        // Right ear: ipsi speaker is right speaker (theta_right), contra is left speaker (theta_left)
+        let pinna_right_contra =
+            pinna_resonance_contra(freq, theta_left.abs() * 180.0 / PI);
+        let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_rr = head_shadowing_woodworth(freq, angle_right_contra, a) * amplitude_ratio_right;
         let phase_rr = -2.0 * PI * freq * delta_t_right;
-        let h_rr_contra = Complex::new(g_rr * phase_rr.cos(), g_rr * phase_rr.sin()) * pinna;
+        let h_rr_contra =
+            Complex::new(g_rr * phase_rr.cos(), g_rr * phase_rr.sin()) * pinna_right_contra;
 
         let beta = compute_beta_smooth(freq, params);
 
@@ -210,6 +223,7 @@ fn compute_xtc_filters_asymmetric(
         filter_lr,
         filter_rl: Some(filter_rl),
         filter_rr: Some(filter_rr),
+        is_symmetric: false,
     }
 }
 
@@ -273,10 +287,11 @@ fn compute_xtc_filters_symmetric(
         // Frequency-dependent regularization with smooth transitions
         let beta = compute_beta_smooth(freq, params);
 
-        // Pinna resonance shaping applied to both transfer functions
-        let pinna = pinna_resonance(freq);
-        let h_ipsi_shaped = h_ipsi * pinna;
-        let h_contra_shaped = h_contra * pinna;
+        // Pinna resonance shaping: full effect for ipsi, angle-dependent for contra
+        let pinna_ipsi = pinna_resonance(freq);
+        let pinna_contra = pinna_resonance_contra(freq, params.speaker_angle_deg);
+        let h_ipsi_shaped = h_ipsi * pinna_ipsi;
+        let h_contra_shaped = h_contra * pinna_contra;
 
         // Use shared 2x2 inverse computation with gain clamping
         let (w_ll, w_lr) = compute_2x2_inverse(h_ipsi_shaped, h_contra_shaped, beta, max_gain_linear);
@@ -475,6 +490,40 @@ fn pinna_resonance(freq: f32) -> f32 {
     let pinna_response = resonance_peak(freq, f_pinna, q_pinna, gain_pinna_db);
 
     // Combine all resonances (multiplicative in linear domain = additive in dB)
+    ear_response * concha_response * pinna_response
+}
+
+/// Angle-dependent pinna resonance model for the contralateral (far) ear.
+///
+/// The ear canal resonance (2.7 kHz) is a tube resonance and is angle-independent.
+/// The concha resonance (4.5 kHz) and pinna notch (9 kHz) are angle-dependent:
+/// they are strongest when the source is on the ipsilateral side and weaken as
+/// the source moves toward the contralateral side.
+///
+/// `speaker_angle_deg` is the speaker angle from the median plane (e.g., 30°).
+#[inline]
+fn pinna_resonance_contra(freq: f32, speaker_angle_deg: f32) -> f32 {
+    if freq <= 0.0 {
+        return 1.0;
+    }
+
+    // Angle factor: how much of the angle-dependent pinna effects remain.
+    // At 0° (median plane), factor=1.0 (full effect, same as ipsi).
+    // At 90° (directly to the side), factor→0 (minimal concha/pinna effect).
+    // For typical 30° speakers: factor ≈ 0.33
+    let angle_factor = 1.0 - ((90.0 + speaker_angle_deg) / 180.0).clamp(0.0, 1.0);
+
+    // Ear canal resonance: angle-independent (tube resonance)
+    let ear_response = resonance_peak(freq, 2700.0, 1.2, 10.0);
+
+    // Concha resonance: scaled by angle factor
+    let concha_gain_db = 5.0 * angle_factor;
+    let concha_response = resonance_peak(freq, 4500.0, 1.5, concha_gain_db);
+
+    // Pinna notch: depth scaled by angle factor
+    let pinna_gain_db = -6.0 * angle_factor;
+    let pinna_response = resonance_peak(freq, 9000.0, 3.0, pinna_gain_db);
+
     ear_response * concha_response * pinna_response
 }
 

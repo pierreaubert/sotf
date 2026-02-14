@@ -6,8 +6,8 @@
 //! If output is not specified, the input file is overwritten and a .bak backup is created.
 
 use autoeq::{
-    InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
-    RecordingConfiguration, RoomConfig, SpeakerConfig,
+    InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig, RecordingConfiguration,
+    RoomConfig, SpeakerConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -125,26 +125,29 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
     }
 
     // Convert recording configuration if present
-    let recording_config = legacy.configuration.as_ref().map(|cfg| RecordingConfiguration {
-        playback_device_name: Some(cfg.playback_device_name.clone()),
-        playback_device_id: Some(cfg.playback_device_id.clone()),
-        playback_sample_rate: Some(cfg.playback_sample_rate),
-        playback_channels: Some(cfg.playback_channels as usize),
-        speaker_configuration: Some(cfg.speaker_configuration.clone()),
-        channel_names: Some(cfg.channel_names.clone()),
-        recording_device_name: Some(cfg.recording_device_name.clone()),
-        recording_device_id: Some(cfg.recording_device_id.clone()),
-        recording_sample_rate: Some(cfg.recording_sample_rate),
-        recording_channels: Some(cfg.recording_channels as usize),
-        mic_calibration_path: cfg.mic_calibration_path.clone(),
-        recording_directory: cfg.recording_directory.clone(),
-        signal_type: Some(cfg.signal_type.clone()),
-        signal_duration_secs: Some(cfg.signal_duration_secs),
-        signal_level_db: Some(cfg.signal_level_db),
-        // Sweep parameters for recomputing metrics from WAV
-        sweep_start_freq: cfg.sweep_start_freq,
-        sweep_end_freq: cfg.sweep_end_freq,
-    });
+    let recording_config = legacy
+        .configuration
+        .as_ref()
+        .map(|cfg| RecordingConfiguration {
+            playback_device_name: Some(cfg.playback_device_name.clone()),
+            playback_device_id: Some(cfg.playback_device_id.clone()),
+            playback_sample_rate: Some(cfg.playback_sample_rate),
+            playback_channels: Some(cfg.playback_channels as usize),
+            speaker_configuration: Some(cfg.speaker_configuration.clone()),
+            channel_names: Some(cfg.channel_names.clone()),
+            recording_device_name: Some(cfg.recording_device_name.clone()),
+            recording_device_id: Some(cfg.recording_device_id.clone()),
+            recording_sample_rate: Some(cfg.recording_sample_rate),
+            recording_channels: Some(cfg.recording_channels as usize),
+            mic_calibration_path: cfg.mic_calibration_path.clone(),
+            recording_directory: cfg.recording_directory.clone(),
+            signal_type: Some(cfg.signal_type.clone()),
+            signal_duration_secs: Some(cfg.signal_duration_secs),
+            signal_level_db: Some(cfg.signal_level_db),
+            // Sweep parameters for recomputing metrics from WAV
+            sweep_start_freq: cfg.sweep_start_freq,
+            sweep_end_freq: cfg.sweep_end_freq,
+        });
 
     RoomConfig {
         version: "1.2.0".to_string(),
@@ -196,19 +199,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let json = std::fs::read_to_string(&input_path)?;
     let file_size = std::fs::metadata(&input_path)?.len();
 
-    println!("Input: {} ({:.2} KB)", input_path.display(), file_size as f64 / 1024.0);
+    println!(
+        "Input: {} ({:.2} KB)",
+        input_path.display(),
+        file_size as f64 / 1024.0
+    );
 
     // Check if already new format
     if !is_legacy_format(&json) {
         // Try to parse as RoomConfig to verify
         match serde_json::from_str::<RoomConfig>(&json) {
             Ok(config) => {
-                println!("File is already in RoomConfig format (version {})", config.version);
+                println!(
+                    "File is already in RoomConfig format (version {})",
+                    config.version
+                );
                 println!("  {} speaker(s)", config.speakers.len());
                 return Ok(());
             }
             Err(e) => {
-                eprintln!("Error: File doesn't appear to be a valid recording format: {}", e);
+                eprintln!(
+                    "Error: File doesn't appear to be a valid recording format: {}",
+                    e
+                );
                 std::process::exit(1);
             }
         }
@@ -242,7 +255,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(&output_path, &output_json)?;
 
     let output_size = output_json.len();
-    println!("Output: {} ({:.2} KB)", output_path.display(), output_size as f64 / 1024.0);
+    println!(
+        "Output: {} ({:.2} KB)",
+        output_path.display(),
+        output_size as f64 / 1024.0
+    );
     println!("  {} speaker(s)", room_config.speakers.len());
     println!("Conversion complete!");
 

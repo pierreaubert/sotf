@@ -1,8 +1,8 @@
 //! IconButton component tests
 
 use gpui::prelude::*;
-use gpui_ui_kit::icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVariant};
 use gpui_ui_kit::ComponentSize;
+use gpui_ui_kit::icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVariant};
 
 #[test]
 fn test_icon_button_creation() {

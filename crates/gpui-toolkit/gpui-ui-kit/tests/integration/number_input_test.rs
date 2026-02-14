@@ -1151,10 +1151,7 @@ impl Render for GlobalShortcutView {
             .child(
                 div()
                     .p_4()
-                    .child(
-                        NumberInput::new("test-input")
-                            .value(50.0)
-                    )
+                    .child(NumberInput::new("test-input").value(50.0)),
             )
     }
 }
@@ -1182,6 +1179,9 @@ async fn test_number_input_blocks_parent_shortcuts(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         // Parent shortcut should NOT have been triggered while editing number
-        assert!(!triggered.load(Ordering::SeqCst), "Parent shortcut should NOT have been triggered while editing number");
+        assert!(
+            !triggered.load(Ordering::SeqCst),
+            "Parent shortcut should NOT have been triggered while editing number"
+        );
     }
 }

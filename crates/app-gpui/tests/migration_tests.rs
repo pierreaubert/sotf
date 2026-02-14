@@ -107,7 +107,10 @@ fn test_load_new_room_config_format() {
     // Verify recording config
     assert!(room_config.recording_config.is_some());
     let rec_cfg = room_config.recording_config.as_ref().unwrap();
-    assert_eq!(rec_cfg.playback_device_name, Some("Test Device".to_string()));
+    assert_eq!(
+        rec_cfg.playback_device_name,
+        Some("Test Device".to_string())
+    );
     assert_eq!(rec_cfg.signal_type, Some("Sweep".to_string()));
 }
 

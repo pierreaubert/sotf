@@ -65,7 +65,10 @@ impl HalOutputPlugin {
 
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
         {
-            Err("HAL output plugin is only supported on macOS with 'hal' feature enabled".to_string())
+            Err(
+                "HAL output plugin is only supported on macOS with 'hal' feature enabled"
+                    .to_string(),
+            )
         }
     }
 

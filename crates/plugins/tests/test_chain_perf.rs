@@ -1,4 +1,4 @@
-use sotf_plugins::{LoudnessMonitorPlugin, DawHost, Host, InPlacePluginAdapter};
+use sotf_plugins::{DawHost, Host, InPlacePluginAdapter, LoudnessMonitorPlugin};
 use std::time::Instant;
 
 #[test]
@@ -6,21 +6,22 @@ fn test_plugin_chain_performance_with_monitor_96khz() {
     let channels = 2;
     let sample_rate = 96000;
     let frame_size = 1024;
-    
+
     let mut host = DawHost::new(channels, sample_rate);
-    
+
     // EQ
     let eq = sotf_plugins::EqPlugin::new(channels, vec![]);
     host.add_plugin(Box::new(eq)).unwrap();
-    
+
     // Compressor
     let comp = sotf_plugins::CompressorPlugin::new(channels, -20.0, 4.0, 10.0, 100.0, 6.0, 0.0);
-    host.add_plugin(Box::new(InPlacePluginAdapter::new(comp))).unwrap();
-    
+    host.add_plugin(Box::new(InPlacePluginAdapter::new(comp)))
+        .unwrap();
+
     // Monitor
     let monitor = LoudnessMonitorPlugin::new(channels).unwrap();
     host.add_plugin(Box::new(monitor)).unwrap();
-    
+
     host.build().unwrap();
 
     let input = vec![0.1; frame_size * channels];
@@ -39,9 +40,15 @@ fn test_plugin_chain_performance_with_monitor_96khz() {
     let duration = start.elapsed();
     let avg_ms = duration.as_secs_f64() * 1000.0 / iterations as f64;
     let budget_ms = (frame_size as f64 / sample_rate as f64) * 1000.0;
-    
-    println!("\nChain Performance Results (96kHz, {} channels):", channels);
+
+    println!(
+        "\nChain Performance Results (96kHz, {} channels):",
+        channels
+    );
     println!("Average process time: {:.4} ms", avg_ms);
     println!("Real-time budget:     {:.4} ms", budget_ms);
-    println!("CPU usage (estimated): {:.2}%", (avg_ms / budget_ms) * 100.0);
+    println!(
+        "CPU usage (estimated): {:.2}%",
+        (avg_ms / budget_ms) * 100.0
+    );
 }

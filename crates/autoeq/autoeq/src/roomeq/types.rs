@@ -15,8 +15,8 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pub use crate::{MeasurementSingle, MeasurementSource};
 use crate::Curve;
+pub use crate::{MeasurementSingle, MeasurementSource};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -1102,7 +1102,6 @@ pub struct OptimizerConfig {
     // ========================================================================
     // Scenario B (WITHOUT Subwoofers) Configuration
     // ========================================================================
-
     /// Target curve tilt configuration
     /// Default: flat (no tilt)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1121,7 +1120,6 @@ pub struct OptimizerConfig {
     // ========================================================================
     // Scenario A (WITH Subwoofers) Configuration
     // ========================================================================
-
     /// Phase alignment configuration for subwoofer integration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase_alignment: Option<PhaseAlignmentConfig>,
@@ -1442,7 +1440,8 @@ mod tests {
         let invalid_names = vec!["Genelec @ 8361A", "Neumann_KH_120"];
 
         let is_valid = |name: &str| {
-            name.chars().all(|c| c.is_alphanumeric() || c == ' ' || c == '-')
+            name.chars()
+                .all(|c| c.is_alphanumeric() || c == ' ' || c == '-')
         };
 
         for name in valid_names {

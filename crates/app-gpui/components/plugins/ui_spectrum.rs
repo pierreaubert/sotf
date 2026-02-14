@@ -696,7 +696,9 @@ pub fn render_spectrum_analyzer_plugin(
                                     ])
                                     .selected(match state.tilt_correction {
                                         SpectralTiltCorrection::None => "none".to_string(),
-                                        SpectralTiltCorrection::ThreeDbPerOctave => "3db".to_string(),
+                                        SpectralTiltCorrection::ThreeDbPerOctave => {
+                                            "3db".to_string()
+                                        }
                                         SpectralTiltCorrection::SixDbPerOctave => "6db".to_string(),
                                         SpectralTiltCorrection::Pink => "pink".to_string(),
                                         SpectralTiltCorrection::Custom(_) => "none".to_string(),
@@ -718,7 +720,9 @@ pub fn render_spectrum_analyzer_plugin(
                                         move |value, _, cx| {
                                             entity.update(cx, |state, _cx| {
                                                 let tilt = match value.as_ref() {
-                                                    "3db" => SpectralTiltCorrection::ThreeDbPerOctave,
+                                                    "3db" => {
+                                                        SpectralTiltCorrection::ThreeDbPerOctave
+                                                    }
                                                     "6db" => SpectralTiltCorrection::SixDbPerOctave,
                                                     "pink" => SpectralTiltCorrection::Pink,
                                                     _ => SpectralTiltCorrection::None,

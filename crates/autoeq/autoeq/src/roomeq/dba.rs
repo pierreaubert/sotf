@@ -113,13 +113,8 @@ pub fn optimize_dba(
     let mut x = vec![0.0, -3.0, 0.0, 10.0];
 
     // Optimize
-    let opt_result = crate::optim::optimize_filters(
-        &mut x,
-        &lower_bounds,
-        &upper_bounds,
-        objective_data,
-        &args,
-    );
+    let opt_result =
+        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, objective_data, &args);
 
     let converged = opt_result.is_ok();
 

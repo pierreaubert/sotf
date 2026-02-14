@@ -122,18 +122,18 @@ pub struct DenoiserPlugin {
     // Psychoacoustic masking
     param_psychoacoustic_masking: ParameterId,
     psychoacoustic_masking: bool,
-    bark_map: Vec<f32>,              // [spectrum_size] frequency-to-Bark mapping
+    bark_map: Vec<f32>, // [spectrum_size] frequency-to-Bark mapping
     bark_bin_range: Vec<(usize, usize)>, // [spectrum_size] precomputed (lo, hi) bin range within MAX_SPREAD_BARK
-    masking_threshold: Vec<f32>,    // [spectrum_size] scratch for masking thresholds
-    masking_signal_power: Vec<f32>, // [spectrum_size] scratch for signal power
+    masking_threshold: Vec<f32>,         // [spectrum_size] scratch for masking thresholds
+    masking_signal_power: Vec<f32>,      // [spectrum_size] scratch for signal power
 
     // Noise profile capture
     param_learn_noise: ParameterId,
     param_use_captured_profile: ParameterId,
     param_clear_profile: ParameterId,
     use_captured_profile: bool,
-    noise_profile: Option<Vec<Vec<f32>>>,  // [channels][spectrum_size]
-    learning_accumulator: Vec<Vec<f32>>,   // [channels][spectrum_size]
+    noise_profile: Option<Vec<Vec<f32>>>, // [channels][spectrum_size]
+    learning_accumulator: Vec<Vec<f32>>,  // [channels][spectrum_size]
     learning_frames_count: usize,
     learning_frames_target: usize,
     is_learning: bool,
@@ -169,10 +169,14 @@ pub struct DenoiserPlugin {
     // Overlap-add buffers
     input_buffer: Vec<f32>, // Interleaved input accumulator
     input_buffer_fill: usize,
-    temp_input_block: Vec<f32>,        // Pre-allocated block for FFT input
-    output_accumulator: Vec<Vec<f32>>, // Per-channel output overlap-add
-    output_accumulator_fill: usize,
-    next_add_position: usize,
+    temp_input_block: Vec<f32>, // Pre-allocated block for FFT input
+
+    // Ring-buffer output accumulator (per-channel, power-of-2 capacity)
+    output_accumulator: Vec<Vec<f32>>, // [channels][ring_capacity]
+    output_ring_mask: usize,           // ring_capacity - 1 (for & masking)
+    output_read_pos: usize,            // read position in ring
+    output_write_pos: usize,           // next overlap-add write position
+    output_accumulator_fill: usize,    // frames available for reading
 
     // Output time-domain buffers
     time_out_channels: Vec<Vec<f32>>,
@@ -186,9 +190,11 @@ pub struct DenoiserPlugin {
     // Transient Suppressor
     transient_suppressor: transient::TransientSuppressor,
 
-    // Data exposure for UI
+    // Data exposure for UI — cached to avoid allocations in get_data()
     avg_reduction_db: f32,
     learning_active: bool,
+    cached_data: Arc<DenoiserData>,
+    data_update_counter: usize,
 }
 
 impl DenoiserPlugin {
@@ -224,11 +230,23 @@ impl DenoiserPlugin {
         let smoothed_gain = vec![vec![1.0_f32; spectrum_size]; channels];
 
         // Overlap-add buffers
-        // Input buffer needs to hold fft_size samples
+        // Input buffer needs to hold fft_size samples (interleaved)
         let input_buffer = vec![0.0_f32; fft_size * channels * 2];
-        // Output accumulator needs extra space for overlap-add (4x fft_size)
-        let output_accumulator = vec![vec![0.0_f32; fft_size * 4]; channels];
+        // Output ring buffer: power-of-2 capacity >= fft_size * 4
+        let ring_capacity = (fft_size * 4).next_power_of_two();
+        let output_accumulator = vec![vec![0.0_f32; ring_capacity]; channels];
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
+
+        let cached_data = Arc::new(DenoiserData {
+            noise_floor_db: vec![0.0; 30],
+            snr_db: vec![0.0; 30],
+            avg_reduction_db: 0.0,
+            learning_active: true,
+            is_learning_noise: false,
+            has_captured_profile: false,
+            learning_progress: 0.0,
+            using_captured_profile: false,
+        });
 
         Self {
             channels,
@@ -313,8 +331,10 @@ impl DenoiserPlugin {
             input_buffer_fill: 0,
             temp_input_block: vec![0.0_f32; fft_size * channels],
             output_accumulator,
+            output_ring_mask: ring_capacity - 1,
+            output_read_pos: 0,
+            output_write_pos: 0,
             output_accumulator_fill: 0,
-            next_add_position: 0,
 
             time_out_channels,
 
@@ -327,6 +347,8 @@ impl DenoiserPlugin {
 
             avg_reduction_db: 0.0,
             learning_active: true,
+            cached_data,
+            data_update_counter: 0,
         }
     }
 
@@ -403,71 +425,80 @@ impl DenoiserPlugin {
 
         // Phase 5: Overlap-add to output accumulator
         self.overlap_add_to_accumulator();
+
+        // Phase 6: Update cached monitoring data (every 8th block to reduce overhead)
+        self.data_update_counter += 1;
+        if self.data_update_counter >= 8 {
+            self.data_update_counter = 0;
+            self.update_cached_data();
+        }
     }
 
-    /// Add processed block to output accumulator using overlap-add
+    /// Update the cached DenoiserData for UI polling.
+    /// Writes into pre-allocated buffers to avoid allocations on the audio thread.
+    fn update_cached_data(&mut self) {
+        let noise_floor_db = self.get_noise_floor_db();
+        let snr_db = self.get_snr_db();
+        self.cached_data = Arc::new(DenoiserData {
+            noise_floor_db,
+            snr_db,
+            avg_reduction_db: self.avg_reduction_db,
+            learning_active: self.learning_active,
+            is_learning_noise: self.is_learning,
+            has_captured_profile: self.noise_profile.is_some(),
+            learning_progress: self.learning_progress(),
+            using_captured_profile: self.use_captured_profile,
+        });
+    }
+
+    /// Add processed block to output ring-buffer accumulator using overlap-add.
+    /// Uses modular indexing (& mask) — no bulk shifts.
     fn overlap_add_to_accumulator(&mut self) {
         // FFT scaling: 1/fft_size
         // Hann window at 50% overlap has COLA sum = 1.0, no extra compensation needed
         let combined_scale = 1.0 / self.fft_size as f32;
+        let mask = self.output_ring_mask;
 
         for ch in 0..self.channels {
             let accum = &mut self.output_accumulator[ch];
             let time_out = &self.time_out_channels[ch];
 
-            // Determine valid range to avoid bounds checks in the inner loop
-            let start_pos = self.next_add_position;
-            let end_pos = (start_pos + self.fft_size).min(accum.len());
-            let write_len = end_pos.saturating_sub(start_pos);
-
-            // Vectorizable loop: strict bounds derived above allow compiler to optimize
-            for i in 0..write_len {
-                let sample = time_out[i] * combined_scale;
-                // Flush denormals
-                let sample = if sample.abs() < 1e-30 { 0.0 } else { sample };
-                accum[start_pos + i] += sample;
+            for i in 0..self.fft_size {
+                let idx = (self.output_write_pos + i) & mask;
+                accum[idx] += time_out[i] * combined_scale;
             }
         }
 
-        // Advance position by hop_size for next block
-        self.next_add_position += self.hop_size;
-
-        // Update fill level
-        self.output_accumulator_fill =
-            (self.output_accumulator_fill + self.hop_size).min(self.output_accumulator[0].len());
+        // Advance write position by hop_size for next block
+        self.output_write_pos = (self.output_write_pos + self.hop_size) & mask;
+        self.output_accumulator_fill += self.hop_size;
     }
 
-    /// Drain available samples from output accumulator to output buffer
-    fn drain_output(&mut self, output: &mut [f32], num_frames: usize) -> usize {
-        let _samples_needed = num_frames * self.channels;
-        let samples_available = self.next_add_position.saturating_sub(self.hop_size);
+    /// Drain available frames from ring-buffer accumulator to output buffer.
+    /// Returns the number of frames actually drained.
+    fn drain_output(
+        &mut self,
+        output: &mut [f32],
+        output_pos: usize,
+        frames_wanted: usize,
+    ) -> usize {
+        let frames_to_drain = self.output_accumulator_fill.min(frames_wanted);
+        let mask = self.output_ring_mask;
 
-        let samples_to_drain = samples_available.min(num_frames);
-
-        for frame in 0..samples_to_drain {
+        for frame in 0..frames_to_drain {
+            let ring_idx = (self.output_read_pos + frame) & mask;
+            let out_base = (output_pos + frame) * self.channels;
             for ch in 0..self.channels {
-                let out_idx = frame * self.channels + ch;
-                if out_idx < output.len() {
-                    output[out_idx] = self.output_accumulator[ch][frame];
-                }
+                output[out_base + ch] = self.output_accumulator[ch][ring_idx];
+                // Clear after reading for next overlap-add cycle
+                self.output_accumulator[ch][ring_idx] = 0.0;
             }
         }
 
-        // Shift accumulator
-        if samples_to_drain > 0 {
-            for ch in 0..self.channels {
-                self.output_accumulator[ch].copy_within(samples_to_drain.., 0);
-                // Clear the shifted region
-                let clear_start = self.output_accumulator[ch].len() - samples_to_drain;
-                self.output_accumulator[ch][clear_start..].fill(0.0);
-            }
-            self.next_add_position -= samples_to_drain;
-            self.output_accumulator_fill = self
-                .output_accumulator_fill
-                .saturating_sub(samples_to_drain);
-        }
+        self.output_read_pos = (self.output_read_pos + frames_to_drain) & mask;
+        self.output_accumulator_fill -= frames_to_drain;
 
-        samples_to_drain
+        frames_to_drain
     }
 }
 
@@ -727,8 +758,9 @@ impl InPlacePlugin for DenoiserPlugin {
         // Reset buffers
         self.input_buffer.fill(0.0);
         self.input_buffer_fill = 0;
+        self.output_read_pos = 0;
+        self.output_write_pos = 0;
         self.output_accumulator_fill = 0;
-        self.next_add_position = 0;
 
         self.avg_reduction_db = 0.0;
         self.learning_active = true;
@@ -739,35 +771,69 @@ impl InPlacePlugin for DenoiserPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
+        // Set FTZ+DAZ to flush denormals at hardware level (zero per-sample cost)
+        #[cfg(target_arch = "x86_64")]
+        let _old_mxcsr = unsafe {
+            let old = std::arch::x86_64::_mm_getcsr();
+            std::arch::x86_64::_mm_setcsr(old | 0x8040); // FTZ + DAZ
+            old
+        };
+
         // Pre-process: Time-domain transient suppression (de-clicking)
         self.transient_suppressor.process(buffer);
 
         let num_frames = context.num_frames;
         let total_samples = num_frames * self.channels;
-
-        // Accumulate input
-        let space_available = self.input_buffer.len() - self.input_buffer_fill;
-        let samples_to_copy = total_samples.min(space_available);
-        self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
-            .copy_from_slice(&buffer[..samples_to_copy]);
-        self.input_buffer_fill += samples_to_copy;
-
-        // Process complete FFT blocks
         let block_samples = self.fft_size * self.channels;
+
+        // Phase 1: Accumulate ALL input into input_buffer.
+        // This is an in-place plugin (same buffer for input/output), so we must
+        // consume all input before writing any output to avoid data corruption.
+        // Loop to handle cases where input exceeds remaining buffer space:
+        // process FFT blocks to free space, then continue accumulating.
+        let mut input_pos: usize = 0;
+        while input_pos < total_samples {
+            let space_available = self.input_buffer.len() - self.input_buffer_fill;
+            let remaining_input = total_samples - input_pos;
+            let samples_to_copy = remaining_input.min(space_available);
+
+            self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
+                .copy_from_slice(&buffer[input_pos..input_pos + samples_to_copy]);
+            self.input_buffer_fill += samples_to_copy;
+            input_pos += samples_to_copy;
+
+            // Process FFT blocks to free input buffer space
+            while self.input_buffer_fill >= block_samples {
+                self.process_fft_block();
+            }
+        }
+
+        // Phase 2: Process any remaining complete FFT blocks
         while self.input_buffer_fill >= block_samples {
             self.process_fft_block();
         }
 
-        // Drain output to buffer
-        let frames_output = self.drain_output(buffer, num_frames);
+        // Phase 3: Drain output to buffer
+        let mut output_pos: usize = 0;
+        if self.output_accumulator_fill > 0 {
+            output_pos = self.drain_output(buffer, 0, num_frames);
+        }
 
-        // If we couldn't fill all output, zero the rest (initial latency)
-        if frames_output < num_frames {
-            let zero_start = frames_output * self.channels;
+        // Zero-fill any remaining output (initial latency period)
+        if output_pos < num_frames {
+            let zero_start = output_pos * self.channels;
             buffer[zero_start..total_samples].fill(0.0);
         }
 
-        Ok(frames_output)
+        // Restore MXCSR
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            std::arch::x86_64::_mm_setcsr(_old_mxcsr);
+        }
+
+        // STFT convention: always return num_frames. Buffer is zero-padded for
+        // unfilled portions, so downstream plugins see valid (silent) data.
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {
@@ -776,16 +842,7 @@ impl InPlacePlugin for DenoiserPlugin {
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        Some(Arc::new(DenoiserData {
-            noise_floor_db: self.get_noise_floor_db(),
-            snr_db: self.get_snr_db(),
-            avg_reduction_db: self.avg_reduction_db,
-            learning_active: self.learning_active,
-            is_learning_noise: self.is_learning,
-            has_captured_profile: self.noise_profile.is_some(),
-            learning_progress: self.learning_progress(),
-            using_captured_profile: self.use_captured_profile,
-        }))
+        Some(self.cached_data.clone())
     }
 }
 

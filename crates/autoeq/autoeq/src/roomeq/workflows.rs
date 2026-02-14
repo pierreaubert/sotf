@@ -1,27 +1,24 @@
 //! Specific optimization workflows for different system topologies.
 
+use crate::Curve;
 use crate::error::{AutoeqError, Result};
 use crate::read::load_source;
 use crate::response;
-use crate::Curve;
 use log::info;
 use math_audio_dsp::analysis::compute_average_response;
 use math_audio_iir_fir::Biquad;
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::eq;
 use super::crossover;
 use super::dba;
+use super::eq;
 use super::multisub;
+use super::optimize::{ChannelOptimizationResult, RoomOptimizationResult};
 use super::output;
-use super::optimize::{
-    ChannelOptimizationResult, RoomOptimizationResult,
-};
 use super::types::{
     CardioidConfig, ChannelDspChain, DBAConfig, DriverDspChain, MultiSubGroup,
-    OptimizationMetadata, RoomConfig, SubwooferStrategy, SystemConfig,
-    SpeakerConfig,
+    OptimizationMetadata, RoomConfig, SpeakerConfig, SubwooferStrategy, SystemConfig,
 };
 
 /// Align channel levels by normalizing down to the lowest level.
@@ -34,16 +31,14 @@ pub fn align_channels_to_lowest(
 
     for (name, curve) in channels {
         let (min_f, max_f) = ranges.get(name).cloned().unwrap_or((100.0, 2000.0));
-        
+
         let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
         let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-        
-        let mean = compute_average_response(
-            &freqs_f32, 
-            &spl_f32, 
-            Some((min_f as f32, max_f as f32))
-        ) as f64;
-        
+
+        let mean =
+            compute_average_response(&freqs_f32, &spl_f32, Some((min_f as f32, max_f as f32)))
+                as f64;
+
         means.insert(name.clone(), mean);
         if mean < min_mean {
             min_mean = mean;
@@ -54,8 +49,10 @@ pub fn align_channels_to_lowest(
     for (name, mean) in means {
         let diff = min_mean - mean;
         gains.insert(name.clone(), diff);
-        info!("  Level alignment for '{}': {:.2} dB (mean {:.2} -> {:.2})", 
-              name, diff, mean, min_mean);
+        info!(
+            "  Level alignment for '{}': {:.2} dB (mean {:.2} -> {:.2})",
+            name, diff, mean, min_mean
+        );
     }
     gains
 }
@@ -78,20 +75,23 @@ fn compute_flat_score(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
 
 /// Helper to load curves for all logical channels
 fn load_logical_channels(
-    config: &RoomConfig, 
-    sys: &SystemConfig
+    config: &RoomConfig,
+    sys: &SystemConfig,
 ) -> Result<HashMap<String, Curve>> {
     let mut curves = HashMap::new();
     for (role, meas_key) in &sys.speakers {
         if let Some(cfg) = config.speakers.get(meas_key) {
             let source = match cfg {
                 SpeakerConfig::Single(s) => s,
-                _ => return Err(AutoeqError::InvalidConfiguration { 
-                    message: format!("Workflow requires Single speaker config for '{}'", role)
-                }),
+                _ => {
+                    return Err(AutoeqError::InvalidConfiguration {
+                        message: format!("Workflow requires Single speaker config for '{}'", role),
+                    });
+                }
             };
-            let curve = load_source(source)
-                .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+            let curve = load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+                message: e.to_string(),
+            })?;
             curves.insert(role.clone(), curve);
         }
     }
@@ -142,8 +142,9 @@ fn preprocess_sub(
 ) -> Result<SubPreprocessResult> {
     match lfe_config {
         SpeakerConfig::Single(source) => {
-            let curve = load_source(source)
-                .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+            let curve = load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+                message: e.to_string(),
+            })?;
             Ok(SubPreprocessResult {
                 combined_curve: curve,
                 drivers: None,
@@ -153,13 +154,15 @@ fn preprocess_sub(
             SubwooferStrategy::Mso => preprocess_multisub_mso(ms, optimizer, sample_rate),
             SubwooferStrategy::Single => preprocess_multisub_independent(ms),
             SubwooferStrategy::Dba => Err(AutoeqError::InvalidConfiguration {
-                message: "SubwooferStrategy::Dba requires SpeakerConfig::Dba, not MultiSub".to_string(),
+                message: "SubwooferStrategy::Dba requires SpeakerConfig::Dba, not MultiSub"
+                    .to_string(),
             }),
         },
         SpeakerConfig::Cardioid(c) => preprocess_cardioid(c),
         SpeakerConfig::Dba(d) => preprocess_dba(d, optimizer, sample_rate),
         SpeakerConfig::Group(_) => Err(AutoeqError::InvalidConfiguration {
-            message: "Group speaker config should not reach stereo sub workflow; use generic path".to_string(),
+            message: "Group speaker config should not reach stereo sub workflow; use generic path"
+                .to_string(),
         }),
     }
 }
@@ -173,15 +176,21 @@ fn preprocess_multisub_mso(
     info!("  MSO optimization for {} subwoofers", ms.subwoofers.len());
 
     let (result, combined) = multisub::optimize_multisub(&ms.subwoofers, optimizer, sample_rate)
-        .map_err(|e| AutoeqError::OptimizationFailed { message: format!("MSO optimization failed: {}", e) })?;
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!("MSO optimization failed: {}", e),
+        })?;
 
-    info!("  MSO result: gains={:?}, delays={:?}", result.gains, result.delays);
+    info!(
+        "  MSO result: gains={:?}, delays={:?}",
+        result.gains, result.delays
+    );
 
     // Load individual curves for driver info
     let mut drivers = Vec::new();
     for (i, source) in ms.subwoofers.iter().enumerate() {
-        let curve = load_source(source)
-            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        let curve = load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: e.to_string(),
+        })?;
         drivers.push(SubDriverInfo {
             name: format!("{}_{}", ms.name, i + 1),
             gain: result.gains.get(i).copied().unwrap_or(0.0),
@@ -199,12 +208,16 @@ fn preprocess_multisub_mso(
 
 /// Independent subs: average all sub curves, return combined + per-sub info (zero gains/delays)
 fn preprocess_multisub_independent(ms: &MultiSubGroup) -> Result<SubPreprocessResult> {
-    info!("  Independent sub averaging for {} subwoofers", ms.subwoofers.len());
+    info!(
+        "  Independent sub averaging for {} subwoofers",
+        ms.subwoofers.len()
+    );
 
     let mut curves = Vec::new();
     for source in &ms.subwoofers {
-        let curve = load_source(source)
-            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        let curve = load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: e.to_string(),
+        })?;
         curves.push(curve);
     }
 
@@ -243,13 +256,18 @@ fn preprocess_multisub_independent(ms: &MultiSubGroup) -> Result<SubPreprocessRe
 
 /// Cardioid: simulate combined response from front + delayed/inverted rear sub
 fn preprocess_cardioid(c: &CardioidConfig) -> Result<SubPreprocessResult> {
-    let front_curve = load_source(&c.front)
-        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Cardioid front: {}", e) })?;
-    let rear_curve = load_source(&c.rear)
-        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Cardioid rear: {}", e) })?;
+    let front_curve = load_source(&c.front).map_err(|e| AutoeqError::InvalidMeasurement {
+        message: format!("Cardioid front: {}", e),
+    })?;
+    let rear_curve = load_source(&c.rear).map_err(|e| AutoeqError::InvalidMeasurement {
+        message: format!("Cardioid rear: {}", e),
+    })?;
 
     let delay_ms = c.separation_meters / 343.0 * 1000.0;
-    info!("  Cardioid: separation={:.2}m, delay={:.2}ms", c.separation_meters, delay_ms);
+    info!(
+        "  Cardioid: separation={:.2}m, delay={:.2}ms",
+        c.separation_meters, delay_ms
+    );
 
     // Simulate combined response (complex sum of front + delayed/inverted rear)
     use num_complex::Complex;
@@ -320,16 +338,26 @@ fn preprocess_dba(
 ) -> Result<SubPreprocessResult> {
     info!("  DBA optimization");
 
-    let (result, combined) = dba::optimize_dba(d, optimizer, sample_rate)
-        .map_err(|e| AutoeqError::OptimizationFailed { message: format!("DBA optimization failed: {}", e) })?;
+    let (result, combined) = dba::optimize_dba(d, optimizer, sample_rate).map_err(|e| {
+        AutoeqError::OptimizationFailed {
+            message: format!("DBA optimization failed: {}", e),
+        }
+    })?;
 
-    info!("  DBA result: gains={:?}, delays={:?}", result.gains, result.delays);
+    info!(
+        "  DBA result: gains={:?}, delays={:?}",
+        result.gains, result.delays
+    );
 
     // Load front and rear array responses for display
-    let front_curve = dba::sum_array_response(&d.front)
-        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("DBA front array: {}", e) })?;
-    let rear_curve = dba::sum_array_response(&d.rear)
-        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("DBA rear array: {}", e) })?;
+    let front_curve =
+        dba::sum_array_response(&d.front).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: format!("DBA front array: {}", e),
+        })?;
+    let rear_curve =
+        dba::sum_array_response(&d.rear).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: format!("DBA rear array: {}", e),
+        })?;
 
     let drivers = vec![
         SubDriverInfo {
@@ -393,14 +421,20 @@ pub fn optimize_stereo_2_0(
         // Pre-optimization score
         let pre_score = compute_flat_score(&aligned_curve, min_freq, max_freq);
 
-        info!("  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})", role, gain, pre_score);
+        info!(
+            "  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})",
+            role, gain, pre_score
+        );
 
         let (filters, _loss) = eq::optimize_channel_eq(
             &aligned_curve,
             &config.optimizer,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
 
         // Build Chain
         let mut plugins = Vec::new();
@@ -412,7 +446,8 @@ pub fn optimize_stereo_2_0(
         }
 
         // Compute final response
-        let resp = response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
+        let resp =
+            response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
         let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
 
         // Post-optimization score
@@ -436,21 +471,27 @@ pub fn optimize_stereo_2_0(
         pre_scores.push(pre_score);
         post_scores.push(post_score);
 
-        channel_results.insert(role.clone(), ChannelOptimizationResult {
-            name: role.clone(),
-            pre_score,
-            post_score,
-            initial_curve: curve.clone(),
-            final_curve: final_curve_obj,
-            biquads: filters,
-            fir_coeffs: None,
-        });
+        channel_results.insert(
+            role.clone(),
+            ChannelOptimizationResult {
+                name: role.clone(),
+                pre_score,
+                post_score,
+                initial_curve: curve.clone(),
+                final_curve: final_curve_obj,
+                biquads: filters,
+                fir_coeffs: None,
+            },
+        );
     }
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
     let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
 
-    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+    info!(
+        "Average pre-score: {:.4}, post-score: {:.4}",
+        avg_pre, avg_post
+    );
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -481,48 +522,77 @@ pub fn optimize_stereo_2_1(
     // Load L and R (must be Single speaker configs)
     let mut curves = HashMap::new();
     for role in ["L", "R"] {
-        let meas_key = sys.speakers.get(role).ok_or(AutoeqError::InvalidConfiguration {
-            message: format!("Missing speaker mapping for '{}'", role),
-        })?;
-        let cfg = config.speakers.get(meas_key).ok_or(AutoeqError::InvalidConfiguration {
-            message: format!("Missing speaker config for key '{}'", meas_key),
-        })?;
+        let meas_key = sys
+            .speakers
+            .get(role)
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: format!("Missing speaker mapping for '{}'", role),
+            })?;
+        let cfg = config
+            .speakers
+            .get(meas_key)
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: format!("Missing speaker config for key '{}'", meas_key),
+            })?;
         let source = match cfg {
             SpeakerConfig::Single(s) => s,
-            _ => return Err(AutoeqError::InvalidConfiguration {
-                message: format!("'{}' must be a Single speaker config", role),
-            }),
+            _ => {
+                return Err(AutoeqError::InvalidConfiguration {
+                    message: format!("'{}' must be a Single speaker config", role),
+                });
+            }
         };
-        let curve = load_source(source)
-            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        let curve = load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: e.to_string(),
+        })?;
         curves.insert(role.to_string(), curve);
     }
 
     // Preprocess LFE (handles Single, MultiSub/MSO, Cardioid, DBA)
-    let sub_sys = sys.subwoofers.as_ref().ok_or(
-        AutoeqError::InvalidConfiguration { message: "Missing subwoofers configuration".to_string() }
-    )?;
-
-    let lfe_meas_key = sys.speakers.get(sub_role).ok_or(AutoeqError::InvalidConfiguration {
-        message: "Missing speaker mapping for 'LFE'".to_string(),
-    })?;
-    let lfe_speaker_config = config.speakers.get(lfe_meas_key).ok_or(AutoeqError::InvalidConfiguration {
-        message: format!("Missing speaker config for key '{}'", lfe_meas_key),
-    })?;
-
-    let sub_preprocess = preprocess_sub(lfe_speaker_config, &sub_sys.config, &config.optimizer, sample_rate)?;
-    curves.insert(sub_role.to_string(), sub_preprocess.combined_curve.clone());
-    
-    let xover_key = sub_sys.crossover.as_deref().ok_or(
-        AutoeqError::InvalidConfiguration { message: "Subwoofer config requires 'crossover' reference".to_string() }
-    )?;
-    
-    let xover_config = config.crossovers.as_ref()
-        .and_then(|m| m.get(xover_key))
-        .ok_or(AutoeqError::InvalidConfiguration { 
-            message: format!("Crossover '{}' not found in crossovers section", xover_key) 
+    let sub_sys = sys
+        .subwoofers
+        .as_ref()
+        .ok_or(AutoeqError::InvalidConfiguration {
+            message: "Missing subwoofers configuration".to_string(),
         })?;
-        
+
+    let lfe_meas_key = sys
+        .speakers
+        .get(sub_role)
+        .ok_or(AutoeqError::InvalidConfiguration {
+            message: "Missing speaker mapping for 'LFE'".to_string(),
+        })?;
+    let lfe_speaker_config =
+        config
+            .speakers
+            .get(lfe_meas_key)
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: format!("Missing speaker config for key '{}'", lfe_meas_key),
+            })?;
+
+    let sub_preprocess = preprocess_sub(
+        lfe_speaker_config,
+        &sub_sys.config,
+        &config.optimizer,
+        sample_rate,
+    )?;
+    curves.insert(sub_role.to_string(), sub_preprocess.combined_curve.clone());
+
+    let xover_key = sub_sys
+        .crossover
+        .as_deref()
+        .ok_or(AutoeqError::InvalidConfiguration {
+            message: "Subwoofer config requires 'crossover' reference".to_string(),
+        })?;
+
+    let xover_config = config
+        .crossovers
+        .as_ref()
+        .and_then(|m| m.get(xover_key))
+        .ok_or(AutoeqError::InvalidConfiguration {
+            message: format!("Crossover '{}' not found in crossovers section", xover_key),
+        })?;
+
     let xover_type_str = &xover_config.crossover_type;
 
     // Handle fixed frequency vs range
@@ -531,8 +601,8 @@ pub fn optimize_stereo_2_1(
     } else if let Some((min, max)) = xover_config.frequency_range {
         (min, max, (min * max).sqrt())
     } else {
-        return Err(AutoeqError::InvalidConfiguration { 
-            message: "Subwoofer crossover requires 'frequency' or 'frequency_range'".to_string() 
+        return Err(AutoeqError::InvalidConfiguration {
+            message: "Subwoofer crossover requires 'frequency' or 'frequency_range'".to_string(),
         });
     };
 
@@ -552,7 +622,9 @@ pub fn optimize_stereo_2_1(
     for (role, curve) in &curves {
         let mut c = curve.clone();
         let g = *gains.get(role).unwrap_or(&0.0);
-        for s in c.spl.iter_mut() { *s += g; }
+        for s in c.spl.iter_mut() {
+            *s += g;
+        }
         aligned_curves.insert(role.clone(), c);
     }
 
@@ -564,19 +636,29 @@ pub fn optimize_stereo_2_1(
     for role in ["L", "R"] {
         let mut opt_config = config.optimizer.clone();
         opt_config.min_freq = min_xo;
-        
-        info!("  Pre-EQ Linearization for '{}' (min {:.1} Hz)", role, min_xo);
+
+        info!(
+            "  Pre-EQ Linearization for '{}' (min {:.1} Hz)",
+            role, min_xo
+        );
         let (filters, _) = eq::optimize_channel_eq(
             &aligned_curves[role],
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
 
         // Apply filters
-        let resp = response::compute_peq_complex_response(&filters, &aligned_curves[role].freq, sample_rate);
+        let resp = response::compute_peq_complex_response(
+            &filters,
+            &aligned_curves[role].freq,
+            sample_rate,
+        );
         let linear = response::apply_complex_response(&aligned_curves[role], &resp);
-        
+
         pre_eq_filters.insert(role.to_string(), filters);
         linearized_curves.insert(role.to_string(), linear);
     }
@@ -596,7 +678,7 @@ pub fn optimize_stereo_2_1(
     let mut virtual_main = l_curve.clone();
     for i in 0..virtual_main.spl.len() {
         virtual_main.spl[i] = (l_curve.spl[i] + r_curve.spl[i]) / 2.0;
-        // Phase averaging is tricky. Use L phase? 
+        // Phase averaging is tricky. Use L phase?
         // For crossover optimization, we need phase.
         // Assuming L and R are phase-coherent (level aligned).
         // Let's use L phase.
@@ -605,10 +687,13 @@ pub fn optimize_stereo_2_1(
     // Optimize Crossover between Virtual Main and Sub
     // We reuse crossover::optimize_crossover. It expects a list of drivers.
     // [VirtualMain, Sub]
-    
+
     // We need to parse crossover type for the optimizer
-    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str)
-        .map_err(|e| AutoeqError::InvalidConfiguration { message: e.to_string() })?;
+    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str).map_err(|e| {
+        AutoeqError::InvalidConfiguration {
+            message: e.to_string(),
+        }
+    })?;
 
     // Determine fixed freqs vs range for optimizer
     let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
@@ -625,7 +710,10 @@ pub fn optimize_stereo_2_1(
         &config.optimizer,
         fixed_freqs,
         range_opt,
-    ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+    )
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: e.to_string(),
+    })?;
 
     // Results: index 0 = Mains, index 1 = Sub
     let main_gain_post = xo_gains[0];
@@ -635,30 +723,53 @@ pub fn optimize_stereo_2_1(
     let sub_inverted = inversions[1];
     let final_xo_freq = xo_freqs[0];
 
-    info!("  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Sub Delay={:.2}", 
-          final_xo_freq, main_gain_post, sub_gain_post, _sub_delay_post);
+    info!(
+        "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Sub Delay={:.2}",
+        final_xo_freq, main_gain_post, sub_gain_post, _sub_delay_post
+    );
 
     // 6. Apply Crossover (Filters + Gain/Delay)
     // We calculate the post-crossover curves for Post-EQ using FINAL frequency
-    
+
     let hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
     let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
 
-    let apply_chain = |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
-        let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
-        let mut c = response::apply_complex_response(curve, &resp);
-        // Apply gain
-        for s in c.spl.iter_mut() { *s += gain; }
-        // Apply delay/invert (affects phase)
-        // ... phase update logic ...
-        // For Post-EQ magnitude, phase doesn't matter much unless we do more summing.
-        c
-    };
+    let apply_chain =
+        |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
+            let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
+            let mut c = response::apply_complex_response(curve, &resp);
+            // Apply gain
+            for s in c.spl.iter_mut() {
+                *s += gain;
+            }
+            // Apply delay/invert (affects phase)
+            // ... phase update logic ...
+            // For Post-EQ magnitude, phase doesn't matter much unless we do more summing.
+            c
+        };
 
     // Note: Applying to ALIGNED curves (not linearized), and ignoring optimized delay per user request.
-    let l_post = apply_chain(&aligned_curves["L"], &hp_biquads, main_gain_post, 0.0, false);
-    let r_post = apply_chain(&aligned_curves["R"], &hp_biquads, main_gain_post, 0.0, false);
-    let sub_post_initial = apply_chain(&aligned_curves[sub_role], &lp_biquads, sub_gain_post, 0.0, sub_inverted);
+    let l_post = apply_chain(
+        &aligned_curves["L"],
+        &hp_biquads,
+        main_gain_post,
+        0.0,
+        false,
+    );
+    let r_post = apply_chain(
+        &aligned_curves["R"],
+        &hp_biquads,
+        main_gain_post,
+        0.0,
+        false,
+    );
+    let sub_post_initial = apply_chain(
+        &aligned_curves[sub_role],
+        &lp_biquads,
+        sub_gain_post,
+        0.0,
+        sub_inverted,
+    );
 
     // Re-align Subwoofer level after crossover application
     // Calculate mean SPL of filtered curves to ensure levels match at crossover
@@ -667,26 +778,36 @@ pub fn optimize_stereo_2_1(
     let sub_spl_f32: Vec<f32> = sub_post_initial.spl.iter().map(|&s| s as f32).collect();
 
     // Mains: measure above crossover
-    let main_mean = compute_average_response(&freqs_f32, &main_spl_f32, Some((final_xo_freq as f32, 2000.0))) as f64;
-    
+    let main_mean = compute_average_response(
+        &freqs_f32,
+        &main_spl_f32,
+        Some((final_xo_freq as f32, 2000.0)),
+    ) as f64;
+
     // Sub: measure below crossover (full passband)
-    let sub_mean = compute_average_response(&freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32))) as f64;
-    
+    let sub_mean =
+        compute_average_response(&freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32)))
+            as f64;
+
     let sub_correction = main_mean - sub_mean;
-    info!("  Re-aligning Subwoofer: Main={:.2} dB, Sub={:.2} dB, Correction={:+.2} dB", 
-          main_mean, sub_mean, sub_correction);
-    
+    info!(
+        "  Re-aligning Subwoofer: Main={:.2} dB, Sub={:.2} dB, Correction={:+.2} dB",
+        main_mean, sub_mean, sub_correction
+    );
+
     // Apply correction
     let mut sub_post = sub_post_initial.clone();
-    for s in sub_post.spl.iter_mut() { *s += sub_correction; }
-    
+    for s in sub_post.spl.iter_mut() {
+        *s += sub_correction;
+    }
+
     let sub_gain_post = sub_gain_post + sub_correction;
 
     // 7. Post-EQ (Global)
     // L/R: min_freq = xover + 20
     // Sub: max_freq = xover - 20
     let mut post_eq_filters = HashMap::new();
-    
+
     for role in ["L", "R"] {
         let mut opt_config = config.optimizer.clone();
         opt_config.min_freq = final_xo_freq + 20.0;
@@ -697,10 +818,13 @@ pub fn optimize_stereo_2_1(
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
         post_eq_filters.insert(role.to_string(), filters);
     }
-    
+
     // Sub Post-EQ
     {
         let mut opt_config = config.optimizer.clone();
@@ -710,32 +834,43 @@ pub fn optimize_stereo_2_1(
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
         post_eq_filters.insert(sub_role.to_string(), filters);
     }
 
     // 8. Construct Output Chains
     let mut channel_chains = HashMap::new();
-    
+
     // L/R Chain: AlignGain -> Crossover(HP) -> MainGain -> PostEQ (No PreEQ, No Delay)
     for role in ["L", "R"] {
         let mut plugins = Vec::new();
         let align_gain = *gains.get(role).unwrap_or(&0.0);
-        if align_gain.abs() > 0.01 { plugins.push(output::create_gain_plugin(align_gain)); }
-        
+        if align_gain.abs() > 0.01 {
+            plugins.push(output::create_gain_plugin(align_gain));
+        }
+
         // Pre-EQ removed per user request (optimization relies on Post-EQ)
-        
+
         // Crossover HP
-        plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "high"));
-        
+        plugins.push(output::create_crossover_plugin(
+            xover_type_str,
+            final_xo_freq,
+            "high",
+        ));
+
         // Main Post Gain (Delay removed)
-        if main_gain_post.abs() > 0.01 { plugins.push(output::create_gain_plugin(main_gain_post)); }
-        
+        if main_gain_post.abs() > 0.01 {
+            plugins.push(output::create_gain_plugin(main_gain_post));
+        }
+
         let eqs = post_eq_filters.get(role);
         if let Some(e) = eqs {
             plugins.push(output::create_eq_plugin(e));
         }
-        
+
         // Compute final curve
         let intermediate = if role == "L" { &l_post } else { &r_post };
         let final_curve_obj = if let Some(e) = eqs {
@@ -763,13 +898,22 @@ pub fn optimize_stereo_2_1(
     // With optional per-driver chains for multi-sub configurations
     let mut sub_plugins = Vec::new();
     let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
-    if sub_align_gain.abs() > 0.01 { sub_plugins.push(output::create_gain_plugin(sub_align_gain)); }
+    if sub_align_gain.abs() > 0.01 {
+        sub_plugins.push(output::create_gain_plugin(sub_align_gain));
+    }
 
-    sub_plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "low"));
+    sub_plugins.push(output::create_crossover_plugin(
+        xover_type_str,
+        final_xo_freq,
+        "low",
+    ));
 
     // Sub Gain + Invert (Delay removed)
     if sub_inverted || sub_gain_post.abs() > 0.01 {
-        sub_plugins.push(output::create_gain_plugin_with_invert(sub_gain_post, sub_inverted));
+        sub_plugins.push(output::create_gain_plugin_with_invert(
+            sub_gain_post,
+            sub_inverted,
+        ));
     }
 
     let sub_eqs = post_eq_filters.get(sub_role);
@@ -787,28 +931,34 @@ pub fn optimize_stereo_2_1(
 
     // Build per-driver chains if multi-sub
     let driver_chains = sub_preprocess.drivers.as_ref().map(|drivers| {
-        drivers.iter().enumerate().map(|(i, d)| {
-            let mut driver_plugins = Vec::new();
-            if d.inverted || d.gain.abs() > 0.01 {
-                if d.inverted {
-                    driver_plugins.push(output::create_gain_plugin_with_invert(d.gain, true));
-                } else {
-                    driver_plugins.push(output::create_gain_plugin(d.gain));
+        drivers
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                let mut driver_plugins = Vec::new();
+                if d.inverted || d.gain.abs() > 0.01 {
+                    if d.inverted {
+                        driver_plugins.push(output::create_gain_plugin_with_invert(d.gain, true));
+                    } else {
+                        driver_plugins.push(output::create_gain_plugin(d.gain));
+                    }
                 }
-            }
-            if d.delay.abs() > 0.001 {
-                driver_plugins.push(output::create_delay_plugin(d.delay));
-            }
-            let driver_curve = d.initial_curve.as_ref()
-                .map(|c| output::extend_curve_to_full_range(c))
-                .map(|c| (&c).into());
-            DriverDspChain {
-                name: d.name.clone(),
-                index: i,
-                plugins: driver_plugins,
-                initial_curve: driver_curve,
-            }
-        }).collect()
+                if d.delay.abs() > 0.001 {
+                    driver_plugins.push(output::create_delay_plugin(d.delay));
+                }
+                let driver_curve = d
+                    .initial_curve
+                    .as_ref()
+                    .map(|c| output::extend_curve_to_full_range(c))
+                    .map(|c| (&c).into());
+                DriverDspChain {
+                    name: d.name.clone(),
+                    index: i,
+                    plugins: driver_plugins,
+                    initial_curve: driver_curve,
+                }
+            })
+            .collect()
     });
 
     let sub_initial_data: super::types::CurveData = (&aligned_curves[sub_role]).into();
@@ -849,15 +999,18 @@ pub fn optimize_stereo_2_1(
 
         pre_scores.push(pre_score);
         post_scores.push(post_score);
-        channel_results.insert(role.to_string(), ChannelOptimizationResult {
-            name: role.to_string(),
-            pre_score,
-            post_score,
-            initial_curve: aligned_curves[role].clone(),
-            final_curve: final_curve_obj,
-            biquads: post_eq_filters.get(role).cloned().unwrap_or_default(),
-            fir_coeffs: None,
-        });
+        channel_results.insert(
+            role.to_string(),
+            ChannelOptimizationResult {
+                name: role.to_string(),
+                pre_score,
+                post_score,
+                initial_curve: aligned_curves[role].clone(),
+                final_curve: final_curve_obj,
+                biquads: post_eq_filters.get(role).cloned().unwrap_or_default(),
+                fir_coeffs: None,
+            },
+        );
     }
 
     // Sub channel
@@ -866,21 +1019,27 @@ pub fn optimize_stereo_2_1(
         let post_score = compute_flat_score(&final_sub_curve, sub_min_score, final_xo_freq);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
-        channel_results.insert(sub_role.to_string(), ChannelOptimizationResult {
-            name: sub_role.to_string(),
-            pre_score,
-            post_score,
-            initial_curve: aligned_curves[sub_role].clone(),
-            final_curve: final_sub_curve.clone(),
-            biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
-            fir_coeffs: None,
-        });
+        channel_results.insert(
+            sub_role.to_string(),
+            ChannelOptimizationResult {
+                name: sub_role.to_string(),
+                pre_score,
+                post_score,
+                initial_curve: aligned_curves[sub_role].clone(),
+                final_curve: final_sub_curve.clone(),
+                biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
+                fir_coeffs: None,
+            },
+        );
     }
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
     let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
 
-    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+    info!(
+        "Average pre-score: {:.4}, post-score: {:.4}",
+        avg_pre, avg_post
+    );
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -912,46 +1071,78 @@ pub fn optimize_home_cinema(
     let has_sub = sys.speakers.contains_key(sub_role);
 
     // Classify channels into main and sub
-    let main_roles: Vec<String> = sys.speakers.keys()
+    let main_roles: Vec<String> = sys
+        .speakers
+        .keys()
         .filter(|r| *r != sub_role)
         .cloned()
         .collect();
 
-    info!("Running Home Cinema Optimization Workflow ({} mains{})",
-          main_roles.len(), if has_sub { " + LFE" } else { "" });
+    info!(
+        "Running Home Cinema Optimization Workflow ({} mains{})",
+        main_roles.len(),
+        if has_sub { " + LFE" } else { "" }
+    );
 
     // 1. Load main channel measurements
     let mut curves = HashMap::new();
     for role in &main_roles {
-        let meas_key = sys.speakers.get(role).ok_or(AutoeqError::InvalidConfiguration {
-            message: format!("Missing speaker mapping for '{}'", role),
-        })?;
-        let cfg = config.speakers.get(meas_key).ok_or(AutoeqError::InvalidConfiguration {
-            message: format!("Missing speaker config for key '{}'", meas_key),
-        })?;
+        let meas_key = sys
+            .speakers
+            .get(role)
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: format!("Missing speaker mapping for '{}'", role),
+            })?;
+        let cfg = config
+            .speakers
+            .get(meas_key)
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: format!("Missing speaker config for key '{}'", meas_key),
+            })?;
         let source = match cfg {
             SpeakerConfig::Single(s) => s,
-            _ => return Err(AutoeqError::InvalidConfiguration {
-                message: format!("'{}' must be a Single speaker config in home cinema workflow", role),
-            }),
+            _ => {
+                return Err(AutoeqError::InvalidConfiguration {
+                    message: format!(
+                        "'{}' must be a Single speaker config in home cinema workflow",
+                        role
+                    ),
+                });
+            }
         };
-        let curve = load_source(source)
-            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        let curve = load_source(source).map_err(|e| AutoeqError::InvalidMeasurement {
+            message: e.to_string(),
+        })?;
         curves.insert(role.clone(), curve);
     }
 
     // Load LFE if present (handles Single, MultiSub/MSO, Cardioid, DBA)
     let sub_preprocess = if has_sub {
-        let sub_sys = sys.subwoofers.as_ref().ok_or(
-            AutoeqError::InvalidConfiguration { message: "Missing subwoofers configuration for home cinema with LFE".to_string() }
+        let sub_sys = sys
+            .subwoofers
+            .as_ref()
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: "Missing subwoofers configuration for home cinema with LFE".to_string(),
+            })?;
+        let lfe_meas_key = sys
+            .speakers
+            .get(sub_role)
+            .ok_or(AutoeqError::InvalidConfiguration {
+                message: "Missing speaker mapping for 'LFE'".to_string(),
+            })?;
+        let lfe_speaker_config =
+            config
+                .speakers
+                .get(lfe_meas_key)
+                .ok_or(AutoeqError::InvalidConfiguration {
+                    message: format!("Missing speaker config for key '{}'", lfe_meas_key),
+                })?;
+        let sp = preprocess_sub(
+            lfe_speaker_config,
+            &sub_sys.config,
+            &config.optimizer,
+            sample_rate,
         )?;
-        let lfe_meas_key = sys.speakers.get(sub_role).ok_or(AutoeqError::InvalidConfiguration {
-            message: "Missing speaker mapping for 'LFE'".to_string(),
-        })?;
-        let lfe_speaker_config = config.speakers.get(lfe_meas_key).ok_or(AutoeqError::InvalidConfiguration {
-            message: format!("Missing speaker config for key '{}'", lfe_meas_key),
-        })?;
-        let sp = preprocess_sub(lfe_speaker_config, &sub_sys.config, &config.optimizer, sample_rate)?;
         curves.insert(sub_role.to_string(), sp.combined_curve.clone());
         Some(sp)
     } else {
@@ -959,7 +1150,14 @@ pub fn optimize_home_cinema(
     };
 
     if has_sub {
-        optimize_home_cinema_with_sub(config, sys, &main_roles, &curves, sub_preprocess.unwrap(), sample_rate)
+        optimize_home_cinema_with_sub(
+            config,
+            sys,
+            &main_roles,
+            &curves,
+            sub_preprocess.unwrap(),
+            sample_rate,
+        )
     } else {
         optimize_home_cinema_no_sub(config, &main_roles, &curves, sample_rate)
     }
@@ -996,14 +1194,20 @@ fn optimize_home_cinema_no_sub(
         }
 
         let pre_score = compute_flat_score(&aligned_curve, min_freq, max_freq);
-        info!("  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})", role, gain, pre_score);
+        info!(
+            "  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})",
+            role, gain, pre_score
+        );
 
         let (filters, _loss) = eq::optimize_channel_eq(
             &aligned_curve,
             &config.optimizer,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
 
         let mut plugins = Vec::new();
         if gain.abs() > 0.01 {
@@ -1013,7 +1217,8 @@ fn optimize_home_cinema_no_sub(
             plugins.push(output::create_eq_plugin(&filters));
         }
 
-        let resp = response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
+        let resp =
+            response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
         let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
         let post_score = compute_flat_score(&final_curve_obj, min_freq, max_freq);
 
@@ -1035,21 +1240,27 @@ fn optimize_home_cinema_no_sub(
         pre_scores.push(pre_score);
         post_scores.push(post_score);
 
-        channel_results.insert(role.clone(), ChannelOptimizationResult {
-            name: role.clone(),
-            pre_score,
-            post_score,
-            initial_curve: curve.clone(),
-            final_curve: final_curve_obj,
-            biquads: filters,
-            fir_coeffs: None,
-        });
+        channel_results.insert(
+            role.clone(),
+            ChannelOptimizationResult {
+                name: role.clone(),
+                pre_score,
+                post_score,
+                initial_curve: curve.clone(),
+                final_curve: final_curve_obj,
+                biquads: filters,
+                fir_coeffs: None,
+            },
+        );
     }
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
     let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
 
-    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+    info!(
+        "Average pre-score: {:.4}, post-score: {:.4}",
+        avg_pre, avg_post
+    );
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -1079,13 +1290,18 @@ fn optimize_home_cinema_with_sub(
 
     // Resolve crossover config
     let sub_sys = sys.subwoofers.as_ref().unwrap();
-    let xover_key = sub_sys.crossover.as_deref().ok_or(
-        AutoeqError::InvalidConfiguration { message: "Subwoofer config requires 'crossover' reference".to_string() }
-    )?;
-    let xover_config = config.crossovers.as_ref()
+    let xover_key = sub_sys
+        .crossover
+        .as_deref()
+        .ok_or(AutoeqError::InvalidConfiguration {
+            message: "Subwoofer config requires 'crossover' reference".to_string(),
+        })?;
+    let xover_config = config
+        .crossovers
+        .as_ref()
         .and_then(|m| m.get(xover_key))
         .ok_or(AutoeqError::InvalidConfiguration {
-            message: format!("Crossover '{}' not found in crossovers section", xover_key)
+            message: format!("Crossover '{}' not found in crossovers section", xover_key),
         })?;
     let xover_type_str = &xover_config.crossover_type;
 
@@ -1095,7 +1311,7 @@ fn optimize_home_cinema_with_sub(
         (min, max, (min * max).sqrt())
     } else {
         return Err(AutoeqError::InvalidConfiguration {
-            message: "Subwoofer crossover requires 'frequency' or 'frequency_range'".to_string()
+            message: "Subwoofer crossover requires 'frequency' or 'frequency_range'".to_string(),
         });
     };
 
@@ -1113,7 +1329,9 @@ fn optimize_home_cinema_with_sub(
     for (role, curve) in curves {
         let mut c = curve.clone();
         let g = *gains.get(role).unwrap_or(&0.0);
-        for s in c.spl.iter_mut() { *s += g; }
+        for s in c.spl.iter_mut() {
+            *s += g;
+        }
         aligned_curves.insert(role.clone(), c);
     }
 
@@ -1125,15 +1343,25 @@ fn optimize_home_cinema_with_sub(
         let mut opt_config = config.optimizer.clone();
         opt_config.min_freq = min_xo;
 
-        info!("  Pre-EQ Linearization for '{}' (min {:.1} Hz)", role, min_xo);
+        info!(
+            "  Pre-EQ Linearization for '{}' (min {:.1} Hz)",
+            role, min_xo
+        );
         let (filters, _) = eq::optimize_channel_eq(
             &aligned_curves[role],
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
 
-        let resp = response::compute_peq_complex_response(&filters, &aligned_curves[role].freq, sample_rate);
+        let resp = response::compute_peq_complex_response(
+            &filters,
+            &aligned_curves[role].freq,
+            sample_rate,
+        );
         let linear = response::apply_complex_response(&aligned_curves[role], &resp);
 
         pre_eq_filters.insert(role.clone(), filters);
@@ -1144,17 +1372,18 @@ fn optimize_home_cinema_with_sub(
     let ref_curve = &linearized_curves[&main_roles[0]];
     let mut virtual_main = ref_curve.clone();
     for i in 0..virtual_main.spl.len() {
-        let sum: f64 = main_roles.iter()
-            .map(|r| linearized_curves[r].spl[i])
-            .sum();
+        let sum: f64 = main_roles.iter().map(|r| linearized_curves[r].spl[i]).sum();
         virtual_main.spl[i] = sum / main_roles.len() as f64;
     }
 
     // 4. Crossover optimization between Virtual Main and LFE
     let sub_curve = &linearized_curves[sub_role];
 
-    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str)
-        .map_err(|e| AutoeqError::InvalidConfiguration { message: e.to_string() })?;
+    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str).map_err(|e| {
+        AutoeqError::InvalidConfiguration {
+            message: e.to_string(),
+        }
+    })?;
 
     let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
         (Some(vec![est_xo]), None)
@@ -1169,15 +1398,20 @@ fn optimize_home_cinema_with_sub(
         &config.optimizer,
         fixed_freqs,
         range_opt,
-    ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+    )
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: e.to_string(),
+    })?;
 
     let main_gain_post = xo_gains[0];
     let sub_gain_post = xo_gains[1];
     let sub_inverted = inversions[1];
     let final_xo_freq = xo_freqs[0];
 
-    info!("  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}",
-          final_xo_freq, main_gain_post, sub_gain_post);
+    info!(
+        "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}",
+        final_xo_freq, main_gain_post, sub_gain_post
+    );
 
     // 5. Apply crossover filters
     let hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
@@ -1186,7 +1420,9 @@ fn optimize_home_cinema_with_sub(
     let apply_chain = |curve: &Curve, filters: &[Biquad], gain: f64| -> Curve {
         let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
         let mut c = response::apply_complex_response(curve, &resp);
-        for s in c.spl.iter_mut() { *s += gain; }
+        for s in c.spl.iter_mut() {
+            *s += gain;
+        }
         c
     };
 
@@ -1205,16 +1441,26 @@ fn optimize_home_cinema_with_sub(
     let sub_spl_f32: Vec<f32> = sub_post_initial.spl.iter().map(|&s| s as f32).collect();
 
     let main_mean = math_audio_dsp::analysis::compute_average_response(
-        &freqs_f32, &main_spl_f32, Some((final_xo_freq as f32, 2000.0))) as f64;
+        &freqs_f32,
+        &main_spl_f32,
+        Some((final_xo_freq as f32, 2000.0)),
+    ) as f64;
     let sub_mean = math_audio_dsp::analysis::compute_average_response(
-        &freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32))) as f64;
+        &freqs_f32,
+        &sub_spl_f32,
+        Some((20.0, final_xo_freq as f32)),
+    ) as f64;
 
     let sub_correction = main_mean - sub_mean;
-    info!("  Re-aligning Subwoofer: Main={:.2} dB, Sub={:.2} dB, Correction={:+.2} dB",
-          main_mean, sub_mean, sub_correction);
+    info!(
+        "  Re-aligning Subwoofer: Main={:.2} dB, Sub={:.2} dB, Correction={:+.2} dB",
+        main_mean, sub_mean, sub_correction
+    );
 
     let mut sub_post = sub_post_initial.clone();
-    for s in sub_post.spl.iter_mut() { *s += sub_correction; }
+    for s in sub_post.spl.iter_mut() {
+        *s += sub_correction;
+    }
     let sub_gain_post = sub_gain_post + sub_correction;
 
     // 6. Post-EQ
@@ -1229,7 +1475,10 @@ fn optimize_home_cinema_with_sub(
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
         post_eq_filters.insert(role.clone(), filters);
     }
 
@@ -1242,7 +1491,10 @@ fn optimize_home_cinema_with_sub(
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
-        ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: e.to_string(),
+        })?;
         post_eq_filters.insert(sub_role.to_string(), filters);
     }
 
@@ -1253,11 +1505,19 @@ fn optimize_home_cinema_with_sub(
     for role in main_roles {
         let mut plugins = Vec::new();
         let align_gain = *gains.get(role).unwrap_or(&0.0);
-        if align_gain.abs() > 0.01 { plugins.push(output::create_gain_plugin(align_gain)); }
+        if align_gain.abs() > 0.01 {
+            plugins.push(output::create_gain_plugin(align_gain));
+        }
 
-        plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "high"));
+        plugins.push(output::create_crossover_plugin(
+            xover_type_str,
+            final_xo_freq,
+            "high",
+        ));
 
-        if main_gain_post.abs() > 0.01 { plugins.push(output::create_gain_plugin(main_gain_post)); }
+        if main_gain_post.abs() > 0.01 {
+            plugins.push(output::create_gain_plugin(main_gain_post));
+        }
 
         let eqs = post_eq_filters.get(role);
         if let Some(e) = eqs {
@@ -1269,7 +1529,8 @@ fn optimize_home_cinema_with_sub(
         let intermediate = &main_post_curves[role];
         let final_curve_obj = if let Some(e) = eqs {
             if !e.is_empty() {
-                let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
+                let resp =
+                    response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
                 response::apply_complex_response(intermediate, &resp)
             } else {
                 intermediate.clone()
@@ -1295,12 +1556,21 @@ fn optimize_home_cinema_with_sub(
     // Sub chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> PostEQ
     let mut sub_plugins = Vec::new();
     let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
-    if sub_align_gain.abs() > 0.01 { sub_plugins.push(output::create_gain_plugin(sub_align_gain)); }
+    if sub_align_gain.abs() > 0.01 {
+        sub_plugins.push(output::create_gain_plugin(sub_align_gain));
+    }
 
-    sub_plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "low"));
+    sub_plugins.push(output::create_crossover_plugin(
+        xover_type_str,
+        final_xo_freq,
+        "low",
+    ));
 
     if sub_inverted || sub_gain_post.abs() > 0.01 {
-        sub_plugins.push(output::create_gain_plugin_with_invert(sub_gain_post, sub_inverted));
+        sub_plugins.push(output::create_gain_plugin_with_invert(
+            sub_gain_post,
+            sub_inverted,
+        ));
     }
 
     let sub_eqs = post_eq_filters.get(sub_role);
@@ -1323,28 +1593,34 @@ fn optimize_home_cinema_with_sub(
 
     // Build per-driver chains if multi-sub
     let driver_chains = sub_preprocess.drivers.as_ref().map(|drivers| {
-        drivers.iter().enumerate().map(|(i, d)| {
-            let mut driver_plugins = Vec::new();
-            if d.inverted || d.gain.abs() > 0.01 {
-                if d.inverted {
-                    driver_plugins.push(output::create_gain_plugin_with_invert(d.gain, true));
-                } else {
-                    driver_plugins.push(output::create_gain_plugin(d.gain));
+        drivers
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                let mut driver_plugins = Vec::new();
+                if d.inverted || d.gain.abs() > 0.01 {
+                    if d.inverted {
+                        driver_plugins.push(output::create_gain_plugin_with_invert(d.gain, true));
+                    } else {
+                        driver_plugins.push(output::create_gain_plugin(d.gain));
+                    }
                 }
-            }
-            if d.delay.abs() > 0.001 {
-                driver_plugins.push(output::create_delay_plugin(d.delay));
-            }
-            let driver_curve = d.initial_curve.as_ref()
-                .map(|c| output::extend_curve_to_full_range(c))
-                .map(|c| (&c).into());
-            DriverDspChain {
-                name: d.name.clone(),
-                index: i,
-                plugins: driver_plugins,
-                initial_curve: driver_curve,
-            }
-        }).collect()
+                if d.delay.abs() > 0.001 {
+                    driver_plugins.push(output::create_delay_plugin(d.delay));
+                }
+                let driver_curve = d
+                    .initial_curve
+                    .as_ref()
+                    .map(|c| output::extend_curve_to_full_range(c))
+                    .map(|c| (&c).into());
+                DriverDspChain {
+                    name: d.name.clone(),
+                    index: i,
+                    plugins: driver_plugins,
+                    initial_curve: driver_curve,
+                }
+            })
+            .collect()
     });
 
     let sub_initial_data: super::types::CurveData = (&aligned_curves[sub_role]).into();
@@ -1372,7 +1648,8 @@ fn optimize_home_cinema_with_sub(
         let pre_score = compute_flat_score(intermediate, final_xo_freq, max_freq);
         let final_curve_obj = if let Some(e) = post_eq_filters.get(role) {
             if !e.is_empty() {
-                let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
+                let resp =
+                    response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
                 response::apply_complex_response(intermediate, &resp)
             } else {
                 intermediate.clone()
@@ -1384,15 +1661,18 @@ fn optimize_home_cinema_with_sub(
 
         pre_scores.push(pre_score);
         post_scores.push(post_score);
-        channel_results.insert(role.clone(), ChannelOptimizationResult {
-            name: role.clone(),
-            pre_score,
-            post_score,
-            initial_curve: aligned_curves[role].clone(),
-            final_curve: final_curve_obj,
-            biquads: post_eq_filters.get(role).cloned().unwrap_or_default(),
-            fir_coeffs: None,
-        });
+        channel_results.insert(
+            role.clone(),
+            ChannelOptimizationResult {
+                name: role.clone(),
+                pre_score,
+                post_score,
+                initial_curve: aligned_curves[role].clone(),
+                final_curve: final_curve_obj,
+                biquads: post_eq_filters.get(role).cloned().unwrap_or_default(),
+                fir_coeffs: None,
+            },
+        );
     }
 
     // Sub channel score
@@ -1401,21 +1681,27 @@ fn optimize_home_cinema_with_sub(
         let post_score = compute_flat_score(&final_sub_curve, sub_min_score, final_xo_freq);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
-        channel_results.insert(sub_role.to_string(), ChannelOptimizationResult {
-            name: sub_role.to_string(),
-            pre_score,
-            post_score,
-            initial_curve: aligned_curves[sub_role].clone(),
-            final_curve: final_sub_curve.clone(),
-            biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
-            fir_coeffs: None,
-        });
+        channel_results.insert(
+            sub_role.to_string(),
+            ChannelOptimizationResult {
+                name: sub_role.to_string(),
+                pre_score,
+                post_score,
+                initial_curve: aligned_curves[sub_role].clone(),
+                final_curve: final_sub_curve.clone(),
+                biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
+                fir_coeffs: None,
+            },
+        );
     }
 
     let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
     let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
 
-    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+    info!(
+        "Average pre-score: {:.4}, post-score: {:.4}",
+        avg_pre, avg_post
+    );
 
     Ok(RoomOptimizationResult {
         channels: channel_chains,
@@ -1432,17 +1718,50 @@ fn optimize_home_cinema_with_sub(
     })
 }
 
-fn create_crossover_filters(type_str: &str, freq: f64, sample_rate: f64, is_lowpass: bool) -> Vec<Biquad> {
+fn create_crossover_filters(
+    type_str: &str,
+    freq: f64,
+    sample_rate: f64,
+    is_lowpass: bool,
+) -> Vec<Biquad> {
     use math_audio_iir_fir::*;
     let type_lower = type_str.to_lowercase();
     let peq = match type_lower.as_str() {
-        "lr24" | "lr4" => if is_lowpass { peq_linkwitzriley_lowpass(4, freq, sample_rate) } else { peq_linkwitzriley_highpass(4, freq, sample_rate) },
-        "lr48" | "lr8" => if is_lowpass { peq_linkwitzriley_lowpass(8, freq, sample_rate) } else { peq_linkwitzriley_highpass(8, freq, sample_rate) },
-        "bw12" | "butterworth12" => if is_lowpass { peq_butterworth_lowpass(2, freq, sample_rate) } else { peq_butterworth_highpass(2, freq, sample_rate) },
-        "bw24" | "butterworth24" => if is_lowpass { peq_butterworth_lowpass(4, freq, sample_rate) } else { peq_butterworth_highpass(4, freq, sample_rate) },
+        "lr24" | "lr4" => {
+            if is_lowpass {
+                peq_linkwitzriley_lowpass(4, freq, sample_rate)
+            } else {
+                peq_linkwitzriley_highpass(4, freq, sample_rate)
+            }
+        }
+        "lr48" | "lr8" => {
+            if is_lowpass {
+                peq_linkwitzriley_lowpass(8, freq, sample_rate)
+            } else {
+                peq_linkwitzriley_highpass(8, freq, sample_rate)
+            }
+        }
+        "bw12" | "butterworth12" => {
+            if is_lowpass {
+                peq_butterworth_lowpass(2, freq, sample_rate)
+            } else {
+                peq_butterworth_highpass(2, freq, sample_rate)
+            }
+        }
+        "bw24" | "butterworth24" => {
+            if is_lowpass {
+                peq_butterworth_lowpass(4, freq, sample_rate)
+            } else {
+                peq_butterworth_highpass(4, freq, sample_rate)
+            }
+        }
         _ => {
             log::warn!("Unknown crossover type '{}', defaulting to LR24", type_str);
-            if is_lowpass { peq_linkwitzriley_lowpass(4, freq, sample_rate) } else { peq_linkwitzriley_highpass(4, freq, sample_rate) }
+            if is_lowpass {
+                peq_linkwitzriley_lowpass(4, freq, sample_rate)
+            } else {
+                peq_linkwitzriley_highpass(4, freq, sample_rate)
+            }
         }
     };
     peq.into_iter().map(|(_, b)| b).collect()

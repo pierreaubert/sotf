@@ -100,11 +100,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
     }
 }
 
-fn plugin_icon(
-    plugin_type: &PluginType,
-    is_input_mon: bool,
-    is_output_mon: bool,
-) -> &'static str {
+fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> &'static str {
     match plugin_type {
         PluginType::EQ => "≈",
         PluginType::Gain => "▲",
@@ -356,10 +352,10 @@ impl PlayerView {
                         name.clone(),
                         *enabled,
                         selected_idx == idx,
-                        pt.clone(),       // Include plugin type for short_name
-                        *permanent,       // Include permanent flag
-                        *is_input_mon,    // Input monitor flag
-                        *is_output_mon,   // Output monitor flag
+                        pt.clone(),     // Include plugin type for short_name
+                        *permanent,     // Include permanent flag
+                        *is_input_mon,  // Input monitor flag
+                        *is_output_mon, // Output monitor flag
                     )
                 },
             )

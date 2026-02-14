@@ -97,7 +97,9 @@ mod tests {
     use super::*;
 
     fn test_frequencies() -> Array1<f64> {
-        Array1::from(vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0])
+        Array1::from(vec![
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ])
     }
 
     #[test]
@@ -121,16 +123,31 @@ mod tests {
         let curve = build_harman_target_curve(&freqs);
 
         // At 1000 Hz (reference), should be 0 dB
-        let idx_1k = freqs.iter().position(|&f| (f - 1000.0).abs() < 1.0).unwrap();
-        assert!((curve.spl[idx_1k] - 0.0).abs() < 1e-10, "At 1kHz should be 0 dB");
+        let idx_1k = freqs
+            .iter()
+            .position(|&f| (f - 1000.0).abs() < 1.0)
+            .unwrap();
+        assert!(
+            (curve.spl[idx_1k] - 0.0).abs() < 1e-10,
+            "At 1kHz should be 0 dB"
+        );
 
         // At 2000 Hz (1 octave above), should be -0.8 dB
-        let idx_2k = freqs.iter().position(|&f| (f - 2000.0).abs() < 1.0).unwrap();
-        assert!((curve.spl[idx_2k] - (-0.8)).abs() < 1e-10, "At 2kHz should be -0.8 dB");
+        let idx_2k = freqs
+            .iter()
+            .position(|&f| (f - 2000.0).abs() < 1.0)
+            .unwrap();
+        assert!(
+            (curve.spl[idx_2k] - (-0.8)).abs() < 1e-10,
+            "At 2kHz should be -0.8 dB"
+        );
 
         // At 500 Hz (1 octave below), should be +0.8 dB
         let idx_500 = freqs.iter().position(|&f| (f - 500.0).abs() < 1.0).unwrap();
-        assert!((curve.spl[idx_500] - 0.8).abs() < 1e-10, "At 500Hz should be +0.8 dB");
+        assert!(
+            (curve.spl[idx_500] - 0.8).abs() < 1e-10,
+            "At 500Hz should be +0.8 dB"
+        );
     }
 
     #[test]
@@ -146,8 +163,14 @@ mod tests {
         let curve = build_target_curve_with_tilt(&freqs, &config);
 
         // At 2000 Hz (1 octave above), should be -1.5 dB
-        let idx_2k = freqs.iter().position(|&f| (f - 2000.0).abs() < 1.0).unwrap();
-        assert!((curve.spl[idx_2k] - (-1.5)).abs() < 1e-10, "At 2kHz should be -1.5 dB");
+        let idx_2k = freqs
+            .iter()
+            .position(|&f| (f - 2000.0).abs() < 1.0)
+            .unwrap();
+        assert!(
+            (curve.spl[idx_2k] - (-1.5)).abs() < 1e-10,
+            "At 2kHz should be -1.5 dB"
+        );
     }
 
     #[test]
@@ -164,11 +187,20 @@ mod tests {
 
         // Well below shelf frequency should have full boost
         let idx_20 = 0; // 20 Hz
-        assert!(curve.spl[idx_20] > 2.5, "At 20Hz should have significant bass boost");
+        assert!(
+            curve.spl[idx_20] > 2.5,
+            "At 20Hz should have significant bass boost"
+        );
 
         // Well above shelf frequency should have no boost
-        let idx_1k = freqs.iter().position(|&f| (f - 1000.0).abs() < 1.0).unwrap();
-        assert!(curve.spl[idx_1k].abs() < 0.1, "At 1kHz should have negligible boost");
+        let idx_1k = freqs
+            .iter()
+            .position(|&f| (f - 1000.0).abs() < 1.0)
+            .unwrap();
+        assert!(
+            curve.spl[idx_1k].abs() < 0.1,
+            "At 1kHz should have negligible boost"
+        );
     }
 
     #[test]
@@ -177,13 +209,19 @@ mod tests {
         let curve = build_harman_target_curve_with_bass_boost(&freqs, 3.0);
 
         // At 1000 Hz, should still be ~0 dB (reference)
-        let idx_1k = freqs.iter().position(|&f| (f - 1000.0).abs() < 1.0).unwrap();
+        let idx_1k = freqs
+            .iter()
+            .position(|&f| (f - 1000.0).abs() < 1.0)
+            .unwrap();
         assert!(curve.spl[idx_1k].abs() < 0.1, "At 1kHz should be ~0 dB");
 
         // At 20 Hz, should have positive value (tilt + bass boost)
         let idx_20 = 0;
         // Tilt at 20Hz: -0.8 * log2(20/1000) = -0.8 * (-5.64) = +4.5 dB (approx)
         // Plus bass boost (~3 dB)
-        assert!(curve.spl[idx_20] > 5.0, "At 20Hz should have significant boost from tilt + bass shelf");
+        assert!(
+            curve.spl[idx_20] > 5.0,
+            "At 20Hz should have significant boost from tilt + bass shelf"
+        );
     }
 }

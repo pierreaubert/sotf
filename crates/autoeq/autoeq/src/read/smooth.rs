@@ -22,9 +22,9 @@ pub struct PsychoacousticSmoothingConfig {
 impl Default for PsychoacousticSmoothingConfig {
     fn default() -> Self {
         Self {
-            low_freq_n: 48,   // 1/48 octave below 100 Hz (preserve room modes)
-            high_freq_n: 6,   // 1/6 octave above 1 kHz (ignore comb filtering)
-            low_freq: 100.0,  // Transition starts at 100 Hz
+            low_freq_n: 48,    // 1/48 octave below 100 Hz (preserve room modes)
+            high_freq_n: 6,    // 1/6 octave above 1 kHz (ignore comb filtering)
+            low_freq: 100.0,   // Transition starts at 100 Hz
             high_freq: 1000.0, // Transition ends at 1 kHz
         }
     }
@@ -268,7 +268,11 @@ mod tests {
         let config = PsychoacousticSmoothingConfig::default();
         // At geometric mean of 100 and 1000 (≈316 Hz), N should be between 6 and 48
         let n = calculate_variable_n(316.0, &config);
-        assert!(n > 6.0 && n < 48.0, "N at 316 Hz should be between 6 and 48, got {}", n);
+        assert!(
+            n > 6.0 && n < 48.0,
+            "N at 316 Hz should be between 6 and 48, got {}",
+            n
+        );
     }
 
     #[test]

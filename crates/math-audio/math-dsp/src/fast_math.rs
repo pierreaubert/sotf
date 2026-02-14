@@ -97,7 +97,14 @@ mod tests {
             let actual = x.log2();
             let approx = fast_log2(x);
             let error = (actual - approx).abs();
-            assert!(error < 0.1, "log2 error at {}: {} vs {} (err: {})", x, actual, approx, error);
+            assert!(
+                error < 0.1,
+                "log2 error at {}: {} vs {} (err: {})",
+                x,
+                actual,
+                approx,
+                error
+            );
         }
     }
 
@@ -108,7 +115,14 @@ mod tests {
             let actual = x.exp2();
             let approx = fast_exp2(x);
             let rel_error = (actual - approx).abs() / actual;
-            assert!(rel_error < 0.1, "exp2 error at {}: {} vs {} (rel err: {})", x, actual, approx, rel_error);
+            assert!(
+                rel_error < 0.1,
+                "exp2 error at {}: {} vs {} (rel err: {})",
+                x,
+                actual,
+                approx,
+                rel_error
+            );
         }
     }
 
@@ -119,7 +133,14 @@ mod tests {
             let actual = 10.0_f32.powf(x);
             let approx = fast_pow10(x);
             let rel_error = (actual - approx).abs() / actual;
-            assert!(rel_error < 0.1, "pow10 error at {}dB: {} vs {} (rel err: {})", db, actual, approx, rel_error);
+            assert!(
+                rel_error < 0.1,
+                "pow10 error at {}dB: {} vs {} (rel err: {})",
+                db,
+                actual,
+                approx,
+                rel_error
+            );
         }
     }
 
@@ -130,7 +151,14 @@ mod tests {
             let actual = x.sin();
             let approx = fast_sin(x);
             let error = (actual - approx).abs();
-            assert!(error < 0.01, "sin error at {}: {} vs {} (err: {})", x, actual, approx, error);
+            assert!(
+                error < 0.01,
+                "sin error at {}: {} vs {} (err: {})",
+                x,
+                actual,
+                approx,
+                error
+            );
         }
     }
 
@@ -141,7 +169,14 @@ mod tests {
             let actual = x.cos();
             let approx = fast_cos(x);
             let error = (actual - approx).abs();
-            assert!(error < 0.01, "cos error at {}: {} vs {} (err: {})", x, actual, approx, error);
+            assert!(
+                error < 0.01,
+                "cos error at {}: {} vs {} (err: {})",
+                x,
+                actual,
+                approx,
+                error
+            );
         }
     }
 }

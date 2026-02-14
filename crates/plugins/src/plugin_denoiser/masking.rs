@@ -9,6 +9,7 @@
 // Reference: Zwicker & Fastl, "Psychoacoustics: Facts and Models", 1999
 
 use super::DenoiserPlugin;
+use math_audio_dsp::fast_math::fast_log10;
 
 /// Small constant to prevent log(0)
 const EPSILON: f32 = 1e-10;
@@ -58,20 +59,24 @@ impl DenoiserPlugin {
     /// Compute masking thresholds for a given channel.
     /// Uses signal power and the Bark-scale spreading function.
     /// O(N) per bin thanks to precomputed bark_bin_range.
+    ///
+    /// Thresholds are stored in dB domain to avoid expensive powf() conversion.
+    /// Comparison in `is_noise_masked` also works in dB.
     pub(super) fn compute_masking_thresholds(&mut self, channel: usize) {
         let n = self.spectrum_size;
 
-        // Copy signal power to scratch buffer
+        // Compute signal power in dB using fast approximation (1 fast_log10 per bin)
         for k in 0..n {
-            self.masking_signal_power[k] = self.get_power_at_bin(channel, k).max(EPSILON);
+            let power = self.get_power_at_bin(channel, k).max(EPSILON);
+            self.masking_signal_power[k] = 10.0 * fast_log10(power);
         }
 
-        // Initialize threshold to very low value
+        // Initialize threshold to very low value (dB)
         self.masking_threshold[..n].fill(f32::NEG_INFINITY);
 
         // For each masker bin, spread its masking energy only to nearby bins
         for j in 0..n {
-            let masker_db = 10.0 * self.masking_signal_power[j].log10() + MASKING_OFFSET_DB;
+            let masker_db = self.masking_signal_power[j] + MASKING_OFFSET_DB;
             let bark_j = self.bark_map[j];
             let (lo, hi) = self.bark_bin_range[j];
 
@@ -96,16 +101,16 @@ impl DenoiserPlugin {
             }
         }
 
-        // Convert thresholds back from dB to linear power
-        for k in 0..n {
-            self.masking_threshold[k] = 10.0_f32.powf(self.masking_threshold[k] / 10.0);
-        }
+        // Thresholds remain in dB — no powf() conversion needed.
+        // is_noise_masked() compares noise power in dB against these thresholds.
     }
 
-    /// Check if noise at a given bin is perceptually masked
+    /// Check if noise at a given bin is perceptually masked.
+    /// Compares noise power (converted to dB) against the dB-domain threshold.
     #[inline]
     pub(super) fn is_noise_masked(&self, channel: usize, bin: usize) -> bool {
         let noise_power = self.get_noise_power(channel, bin);
-        noise_power < self.masking_threshold[bin]
+        let noise_db = 10.0 * fast_log10(noise_power);
+        noise_db < self.masking_threshold[bin]
     }
 }

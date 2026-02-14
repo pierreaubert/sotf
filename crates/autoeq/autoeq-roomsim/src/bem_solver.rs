@@ -16,9 +16,9 @@
 //! Use hybrid mode for full frequency range (BEM for low freq, ISM for high freq).
 
 use math_audio_bem::room_acoustics::{
-    Directivity as BemDirectivity, DirectivityGrid as BemDirectivityGrid,
-    Point3D as BemPoint3D, RectangularRoom as BemRectangularRoom, RoomGeometry as BemRoomGeometry,
-    RoomMesh, Source as BemSource,
+    Directivity as BemDirectivity, DirectivityGrid as BemDirectivityGrid, Point3D as BemPoint3D,
+    RectangularRoom as BemRectangularRoom, RoomGeometry as BemRoomGeometry, RoomMesh,
+    Source as BemSource,
 };
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};

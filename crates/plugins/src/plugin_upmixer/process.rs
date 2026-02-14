@@ -4,7 +4,6 @@
 
 use super::UpmixerPlugin;
 
-
 impl UpmixerPlugin {
     /// Process one FFT block using VBAP panning
     pub fn process_fft_block(&mut self, input: &[f32], output: &mut [f32]) {
@@ -26,7 +25,9 @@ impl UpmixerPlugin {
                 let current_power = l.norm_sqr() + r.norm_sqr();
                 let prev_power = self.prev_magnitude_spectrum[i];
                 let diff = current_power - prev_power;
-                if diff > 0.0 { flux += diff; }
+                if diff > 0.0 {
+                    flux += diff;
+                }
                 self.prev_magnitude_spectrum[i] = current_power;
             }
 
@@ -35,9 +36,15 @@ impl UpmixerPlugin {
 
             let transient_target = if self.spectral_flux_smooth > 1e-9 {
                 ((flux / self.spectral_flux_smooth - 1.0) / 3.0).clamp(0.0, 1.0)
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
-            let alpha_env = if transient_target > self.hr_transient_env { 0.4 } else { 0.15 };
+            let alpha_env = if transient_target > self.hr_transient_env {
+                0.4
+            } else {
+                0.15
+            };
             self.hr_transient_env += alpha_env * (transient_target - self.hr_transient_env);
         } else {
             self.hr_transient_env = 0.0;

@@ -154,7 +154,8 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .fir.taps = value;
+                            .fir
+                            .taps = value;
                     });
                 }
             })
@@ -167,7 +168,8 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .fir.phase = phase.to_string();
+                            .fir
+                            .phase = phase.to_string();
                         state
                             .app
                             .measurement_state
@@ -716,7 +718,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.enabled = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .target_tilt
+                            .enabled = v;
                     });
                 }
             })
@@ -724,8 +732,19 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.tilt_type = v.to_string();
-                        state.app.measurement_state.room_eq_state.dropdowns.tilt_type_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .target_tilt
+                            .tilt_type = v.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .tilt_type_open = false;
                     });
                 }
             })
@@ -733,7 +752,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.dropdowns.tilt_type_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .tilt_type_open = open;
                         cx.notify();
                     });
                 }
@@ -742,7 +766,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.slope = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .target_tilt
+                            .slope = v;
                     });
                 }
             })
@@ -750,7 +780,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.reference_freq = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .target_tilt
+                            .reference_freq = v;
                     });
                 }
             })
@@ -758,7 +794,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.bass_shelf_db = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .target_tilt
+                            .bass_shelf_db = v;
                     });
                 }
             })
@@ -766,7 +808,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.bass_shelf_freq = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .target_tilt
+                            .bass_shelf_freq = v;
                     });
                 }
             })
@@ -775,7 +823,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.enabled = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .excursion_protection
+                            .enabled = v;
                     });
                 }
             })
@@ -783,7 +837,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.auto_detect_f3 = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .excursion_protection
+                            .auto_detect_f3 = v;
                     });
                 }
             })
@@ -791,7 +851,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.manual_f3_hz = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .excursion_protection
+                            .manual_f3_hz = v;
                     });
                 }
             })
@@ -799,7 +865,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.filter_order = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .excursion_protection
+                            .filter_order = v;
                     });
                 }
             })
@@ -807,8 +879,19 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.filter_type = v.to_string();
-                        state.app.measurement_state.room_eq_state.dropdowns.excursion_filter_type_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .excursion_protection
+                            .filter_type = v.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .excursion_filter_type_open = false;
                     });
                 }
             })
@@ -816,7 +899,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.dropdowns.excursion_filter_type_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .excursion_filter_type_open = open;
                         cx.notify();
                     });
                 }
@@ -825,7 +913,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.margin_octaves = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .excursion_protection
+                            .margin_octaves = v;
                     });
                 }
             })
@@ -834,7 +928,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.enabled = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .schroeder_split
+                            .enabled = v;
                     });
                 }
             })
@@ -842,7 +942,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.schroeder_freq = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .schroeder_split
+                            .schroeder_freq = v;
                     });
                 }
             })
@@ -850,7 +956,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.low_freq_max_q = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .schroeder_split
+                            .low_freq_max_q = v;
                     });
                 }
             })
@@ -858,7 +970,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.low_freq_allow_boost = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .schroeder_split
+                            .low_freq_allow_boost = v;
                     });
                 }
             })
@@ -866,7 +984,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.high_freq_max_q = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .schroeder_split
+                            .high_freq_max_q = v;
                     });
                 }
             })
@@ -874,7 +998,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.high_freq_shelving_only = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .schroeder_split
+                            .high_freq_shelving_only = v;
                     });
                 }
             })
@@ -883,7 +1013,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.enabled = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .phase_alignment
+                            .enabled = v;
                     });
                 }
             })
@@ -891,7 +1027,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.min_freq = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .phase_alignment
+                            .min_freq = v;
                     });
                 }
             })
@@ -899,7 +1041,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.max_freq = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .phase_alignment
+                            .max_freq = v;
                     });
                 }
             })
@@ -907,7 +1055,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.optimize_polarity = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .phase_alignment
+                            .optimize_polarity = v;
                     });
                 }
             })
@@ -915,7 +1069,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.max_delay_ms = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .phase_alignment
+                            .max_delay_ms = v;
                     });
                 }
             })
@@ -924,7 +1084,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.enabled = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_seat
+                            .enabled = v;
                     });
                 }
             })
@@ -932,8 +1098,19 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.strategy = v.to_string();
-                        state.app.measurement_state.room_eq_state.dropdowns.multi_seat_strategy_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_seat
+                            .strategy = v.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .multi_seat_strategy_open = false;
                     });
                 }
             })
@@ -941,7 +1118,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.dropdowns.multi_seat_strategy_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .multi_seat_strategy_open = open;
                         cx.notify();
                     });
                 }
@@ -950,7 +1132,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.primary_seat = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_seat
+                            .primary_seat = v;
                     });
                 }
             })
@@ -958,7 +1146,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.max_deviation_db = v;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_seat
+                            .max_deviation_db = v;
                     });
                 }
             });
@@ -1016,7 +1210,11 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(Text::new("!").color(theme.error).weight(TextWeight::Bold))
-                    .child(Text::new(error.clone()).size(TextSize::Sm).color(theme.error)),
+                    .child(
+                        Text::new(error.clone())
+                            .size(TextSize::Sm)
+                            .color(theme.error),
+                    ),
             );
         }
 
@@ -1025,7 +1223,11 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(Text::new("?").color(theme.warning).weight(TextWeight::Bold))
-                    .child(Text::new(warning.clone()).size(TextSize::Sm).color(theme.warning)),
+                    .child(
+                        Text::new(warning.clone())
+                            .size(TextSize::Sm)
+                            .color(theme.warning),
+                    ),
             );
         }
 

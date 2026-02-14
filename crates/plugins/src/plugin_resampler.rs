@@ -245,10 +245,7 @@ impl Plugin for ResamplerPlugin {
         self.interleaved_to_planar(input, num_input_frames);
 
         // Process resampling using pre-allocated buffers (zero-allocation path)
-        let resampler = self
-            .resampler
-            .as_mut()
-            .ok_or("Resampler not initialized")?;
+        let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
 
         let max_output_frames = resampler.output_frames_max();
         let input_adapter =
@@ -281,7 +278,12 @@ impl Plugin for ResamplerPlugin {
         }
 
         // Convert planar to interleaved
-        Self::planar_to_interleaved(&self.output_buffer, output, output_frames, self.num_channels);
+        Self::planar_to_interleaved(
+            &self.output_buffer,
+            output,
+            output_frames,
+            self.num_channels,
+        );
 
         Ok(output_frames)
     }

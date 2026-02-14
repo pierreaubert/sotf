@@ -662,7 +662,7 @@ When fixing audio bugs (crackling, saturation, speed issues), always investigate
 
 ## Python / Visualization
 
-Python visualization scripts use a virtual environment. Always check for and activate the local venv before running Python scripts. Use `pyright` from the local venv for type checking.
+Python visualization scripts use the virtual environment at `./venv`. Use `./venv/bin/python` to run scripts and `./venv/bin/pyright` for type checking. Do not use the system Python.
 
 ## Known Gotchas
 

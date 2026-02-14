@@ -165,10 +165,9 @@ impl Alert {
 
             if let Some(handler) = self.on_close {
                 let handler_rc = std::rc::Rc::new(handler);
-                close_btn =
-                    close_btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                        handler_rc(window, cx);
-                    });
+                close_btn = close_btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                    handler_rc(window, cx);
+                });
             }
 
             alert = alert.child(close_btn.child("x"));

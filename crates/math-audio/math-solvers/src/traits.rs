@@ -7,9 +7,9 @@
 
 use ndarray::Array1;
 use num_complex::{Complex32, Complex64};
+use num_traits::{Float, NumAssign, One, Zero};
 #[cfg(not(feature = "ndarray-linalg"))]
 use num_traits::{FromPrimitive, ToPrimitive};
-use num_traits::{Float, NumAssign, One, Zero};
 use std::fmt::Debug;
 use std::ops::Neg;
 

@@ -45,9 +45,12 @@ fn test_apo_output_format_golden() {
     assert!(content.starts_with("# AutoEQ"));
     assert!(content.contains("Filter"));
     assert!(content.contains("ON PK")); // Check for standard APO filter format
-    
+
     // Check that we have 3 filters (count occurrences of "Filter")
-    let filter_count = content.lines().filter(|l| l.trim().starts_with("Filter")).count();
+    let filter_count = content
+        .lines()
+        .filter(|l| l.trim().starts_with("Filter"))
+        .count();
     assert_eq!(filter_count, 3, "Should have exactly 3 filters");
 
     assert!(content.contains("Fc")); // Frequency marker
@@ -98,7 +101,7 @@ fn test_peq_parameters_reasonable() {
     // Format example: "Filter  1: ON PK Fc 300.00 Hz Gain -4.00 dB Q 2.00"
     for filter_line in filter_lines {
         let parts: Vec<&str> = filter_line.split_whitespace().collect();
-        
+
         // Find indices of parameters
         let fc_idx = parts.iter().position(|&r| r == "Fc");
         let gain_idx = parts.iter().position(|&r| r == "Gain");
@@ -111,7 +114,11 @@ fn test_peq_parameters_reasonable() {
         // Check Frequency
         let freq_str = parts[fc_idx.unwrap() + 1];
         let freq: f64 = freq_str.parse().expect("Failed to parse frequency");
-        assert!(freq >= 20.0 && freq <= 20000.0, "Frequency out of range: {}", freq);
+        assert!(
+            freq >= 20.0 && freq <= 20000.0,
+            "Frequency out of range: {}",
+            freq
+        );
 
         // Check Gain
         let gain_str = parts[gain_idx.unwrap() + 1];

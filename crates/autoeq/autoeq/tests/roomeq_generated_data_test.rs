@@ -6,7 +6,7 @@
 //! Multi-sub scenarios are currently ignored due to a pre-existing bounds
 //! issue in the multi-sub optimizer (optim.rs:449 slice index out of range).
 
-use autoeq::roomeq::{optimize_room, RoomConfig};
+use autoeq::roomeq::{RoomConfig, optimize_room};
 use std::path::PathBuf;
 
 /// Get workspace root (two levels up from CARGO_MANIFEST_DIR = crates/autoeq)

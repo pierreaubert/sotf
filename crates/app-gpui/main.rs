@@ -92,7 +92,13 @@ fn main() {
         let (language, keymap_preset, release_channel) = config
             .as_ref()
             .map(|c| (c.language, c.keymap_preset, c.release_channel))
-            .unwrap_or_else(|| (Language::default(), KeymapPreset::default(), ReleaseChannel::default()));
+            .unwrap_or_else(|| {
+                (
+                    Language::default(),
+                    KeymapPreset::default(),
+                    ReleaseChannel::default(),
+                )
+            });
 
         let translations = Translations::for_language(language);
 
@@ -107,10 +113,19 @@ fn main() {
             MenuItem::action(translations.screen_recording, SwitchToRecording),
         ];
         if release_channel.allows(Screen::RoomEq.maturity()) {
-            view_menu_items.push(MenuItem::action(translations.screen_room_eq, SwitchToRoomEQ));
+            view_menu_items.push(MenuItem::action(
+                translations.screen_room_eq,
+                SwitchToRoomEQ,
+            ));
         }
-        view_menu_items.push(MenuItem::action(translations.screen_headphone_eq, SwitchToHeadphoneEQ));
-        view_menu_items.push(MenuItem::action(translations.screen_spinorama, SwitchToSpinorama));
+        view_menu_items.push(MenuItem::action(
+            translations.screen_headphone_eq,
+            SwitchToHeadphoneEQ,
+        ));
+        view_menu_items.push(MenuItem::action(
+            translations.screen_spinorama,
+            SwitchToSpinorama,
+        ));
 
         cx.set_menus(vec![
             Menu {

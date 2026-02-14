@@ -1415,8 +1415,10 @@ impl PluginEditingManager for App {
                             true
                         }
                         5 => {
-                            *phase_blend_low_hz = (*phase_blend_low_hz + delta * 10.0)
-                                .clamp(PHASE_BLEND_LOW_HZ_MIN as f64, PHASE_BLEND_LOW_HZ_MAX as f64);
+                            *phase_blend_low_hz = (*phase_blend_low_hz + delta * 10.0).clamp(
+                                PHASE_BLEND_LOW_HZ_MIN as f64,
+                                PHASE_BLEND_LOW_HZ_MAX as f64,
+                            );
                             true
                         }
                         6 => {
@@ -1464,10 +1466,8 @@ impl PluginEditingManager for App {
                             true
                         }
                         5 => {
-                            *decor_high_hz = (*decor_high_hz + delta * 10.0).clamp(
-                                DECOR_HIGH_HZ_MIN as f64,
-                                DECOR_HIGH_HZ_MAX as f64,
-                            );
+                            *decor_high_hz = (*decor_high_hz + delta * 10.0)
+                                .clamp(DECOR_HIGH_HZ_MIN as f64, DECOR_HIGH_HZ_MAX as f64);
                             true
                         }
                         _ => false,
@@ -2360,8 +2360,7 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         8 => {
-                            *dd_alpha =
-                                value.clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
+                            *dd_alpha = value.clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
                             update_needed = true;
                         }
                         9 => {
@@ -2591,19 +2590,23 @@ impl PluginEditingManager for App {
                     use sotf_plugins::param_specs::downmix::*;
                     match param_idx {
                         0 => {
-                            *center_gain_db = value.clamp(CENTER_GAIN_DB_MIN as f64, CENTER_GAIN_DB_MAX as f64);
+                            *center_gain_db =
+                                value.clamp(CENTER_GAIN_DB_MIN as f64, CENTER_GAIN_DB_MAX as f64);
                             update_needed = true;
                         }
                         1 => {
-                            *surround_gain_db = value.clamp(SURROUND_GAIN_DB_MIN as f64, SURROUND_GAIN_DB_MAX as f64);
+                            *surround_gain_db = value
+                                .clamp(SURROUND_GAIN_DB_MIN as f64, SURROUND_GAIN_DB_MAX as f64);
                             update_needed = true;
                         }
                         2 => {
-                            *height_gain_db = value.clamp(HEIGHT_GAIN_DB_MIN as f64, HEIGHT_GAIN_DB_MAX as f64);
+                            *height_gain_db =
+                                value.clamp(HEIGHT_GAIN_DB_MIN as f64, HEIGHT_GAIN_DB_MAX as f64);
                             update_needed = true;
                         }
                         3 => {
-                            *lfe_gain_db = value.clamp(LFE_GAIN_DB_MIN as f64, LFE_GAIN_DB_MAX as f64);
+                            *lfe_gain_db =
+                                value.clamp(LFE_GAIN_DB_MIN as f64, LFE_GAIN_DB_MAX as f64);
                             update_needed = true;
                         }
                         4 => {
@@ -2611,11 +2614,17 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         5 => {
-                            *phase_blend_low_hz = value.clamp(PHASE_BLEND_LOW_HZ_MIN as f64, PHASE_BLEND_LOW_HZ_MAX as f64);
+                            *phase_blend_low_hz = value.clamp(
+                                PHASE_BLEND_LOW_HZ_MIN as f64,
+                                PHASE_BLEND_LOW_HZ_MAX as f64,
+                            );
                             update_needed = true;
                         }
                         6 => {
-                            *phase_blend_high_hz = value.clamp(PHASE_BLEND_HIGH_HZ_MIN as f64, PHASE_BLEND_HIGH_HZ_MAX as f64);
+                            *phase_blend_high_hz = value.clamp(
+                                PHASE_BLEND_HIGH_HZ_MIN as f64,
+                                PHASE_BLEND_HIGH_HZ_MAX as f64,
+                            );
                             update_needed = true;
                         }
                         _ => {}
@@ -2632,11 +2641,13 @@ impl PluginEditingManager for App {
                     use sotf_plugins::param_specs::mono_to_stereo::*;
                     match param_idx {
                         0 => {
-                            *stereo_width = value.clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64);
+                            *stereo_width =
+                                value.clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64);
                             update_needed = true;
                         }
                         1 => {
-                            *haas_delay_ms = value.clamp(HAAS_DELAY_MS_MIN as f64, HAAS_DELAY_MS_MAX as f64);
+                            *haas_delay_ms =
+                                value.clamp(HAAS_DELAY_MS_MIN as f64, HAAS_DELAY_MS_MAX as f64);
                             update_needed = true;
                         }
                         2 => {
@@ -2644,15 +2655,18 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         3 => {
-                            *comp_eq_depth_db = value.clamp(COMP_EQ_DEPTH_DB_MIN as f64, COMP_EQ_DEPTH_DB_MAX as f64);
+                            *comp_eq_depth_db = value
+                                .clamp(COMP_EQ_DEPTH_DB_MIN as f64, COMP_EQ_DEPTH_DB_MAX as f64);
                             update_needed = true;
                         }
                         4 => {
-                            *decor_low_hz = value.clamp(DECOR_LOW_HZ_MIN as f64, DECOR_LOW_HZ_MAX as f64);
+                            *decor_low_hz =
+                                value.clamp(DECOR_LOW_HZ_MIN as f64, DECOR_LOW_HZ_MAX as f64);
                             update_needed = true;
                         }
                         5 => {
-                            *decor_high_hz = value.clamp(DECOR_HIGH_HZ_MIN as f64, DECOR_HIGH_HZ_MAX as f64);
+                            *decor_high_hz =
+                                value.clamp(DECOR_HIGH_HZ_MIN as f64, DECOR_HIGH_HZ_MAX as f64);
                             update_needed = true;
                         }
                         _ => {}
@@ -3708,8 +3722,8 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 9, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms
         PluginSettings::FletcherMunson { .. } => 22, // reference_level, smoothing, 4 bands x 4 params each, + 4 auto-gain params
-        PluginSettings::BandSplit { .. } => 2, // frequency, crossover_type
-        PluginSettings::BandMerge { .. } => 1, // bands
+        PluginSettings::BandSplit { .. } => 2,       // frequency, crossover_type
+        PluginSettings::BandMerge { .. } => 1,       // bands
         PluginSettings::Downmix { .. } => 7, // center, surround, height, lfe, phase_coherence, blend_low, blend_high
         PluginSettings::MonoToStereo { .. } => 6, // width, haas, comp_eq, depth, decor_low, decor_high
     }

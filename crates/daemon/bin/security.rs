@@ -196,7 +196,10 @@ impl KeyManager {
     pub fn new() -> io::Result<Self> {
         let key_path = get_key_path();
         let (key, mtime) = if key_path.exists() {
-            (Self::load_key_from_file(&key_path)?, Self::get_mtime(&key_path))
+            (
+                Self::load_key_from_file(&key_path)?,
+                Self::get_mtime(&key_path),
+            )
         } else {
             let key = Self::create_new_key(&key_path)?;
             (key, Self::get_mtime(&key_path))
@@ -316,7 +319,10 @@ impl KeyManager {
         self.cipher = Some(cipher);
         self.last_mtime = mtime;
 
-        log::info!("Encryption key rotated successfully, fingerprint: {}", self.fingerprint_hex());
+        log::info!(
+            "Encryption key rotated successfully, fingerprint: {}",
+            self.fingerprint_hex()
+        );
         Ok(())
     }
 
@@ -400,8 +406,12 @@ mod tests {
         let uid = get_current_uid();
         let _has_user_isolation = path_str.contains("TMPDIR")
             || path_str.contains(&format!("/{}/", uid))
-            || std::env::var("TMPDIR").map(|t| path_str.contains(&t)).unwrap_or(false)
-            || std::env::var("XDG_RUNTIME_DIR").map(|t| path_str.contains(&t)).unwrap_or(false);
+            || std::env::var("TMPDIR")
+                .map(|t| path_str.contains(&t))
+                .unwrap_or(false)
+            || std::env::var("XDG_RUNTIME_DIR")
+                .map(|t| path_str.contains(&t))
+                .unwrap_or(false);
 
         // On macOS with TMPDIR set, this should pass
         // The important thing is the path is deterministic and user-specific
@@ -521,9 +531,18 @@ mod tests {
     fn test_security_config_defaults() {
         let config = SecurityConfig::default();
 
-        assert!(config.verify_credentials, "Should verify credentials by default");
-        assert!(config.per_user_sockets, "Should use per-user sockets by default");
-        assert!(config.per_user_shm, "Should use per-user shared memory by default");
+        assert!(
+            config.verify_credentials,
+            "Should verify credentials by default"
+        );
+        assert!(
+            config.per_user_sockets,
+            "Should use per-user sockets by default"
+        );
+        assert!(
+            config.per_user_shm,
+            "Should use per-user shared memory by default"
+        );
     }
 
     #[test]
@@ -545,9 +564,15 @@ mod tests {
         let xdg_runtime = std::env::var("XDG_RUNTIME_DIR").ok();
 
         let is_secure = tmpdir.map(|t| path_str.starts_with(&t)).unwrap_or(false)
-            || xdg_runtime.map(|x| path_str.starts_with(&x)).unwrap_or(false)
+            || xdg_runtime
+                .map(|x| path_str.starts_with(&x))
+                .unwrap_or(false)
             || path_str.contains(&format!("sotf-{}", uid));
 
-        assert!(is_secure, "Socket path should be user-isolated: {}", path_str);
+        assert!(
+            is_secure,
+            "Socket path should be user-isolated: {}",
+            path_str
+        );
     }
 }

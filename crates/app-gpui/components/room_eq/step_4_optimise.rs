@@ -354,14 +354,18 @@ impl PlayerView {
         let (room_config, channel_names, max_iter) = {
             let state = self.state.read(cx);
             let room_eq = &state.app.measurement_state.room_eq_state;
-            
+
             let channel_names: Vec<String> = room_eq
                 .channel_measurements
                 .iter()
                 .map(|m| m.channel_name.clone())
                 .collect();
 
-            (room_eq.to_room_config(), channel_names, room_eq.optimizer_config.max_iter)
+            (
+                room_eq.to_room_config(),
+                channel_names,
+                room_eq.optimizer_config.max_iter,
+            )
         };
 
         if channel_names.is_empty() {
@@ -404,15 +408,14 @@ impl PlayerView {
             state.app.measurement_state.room_eq_state.current_loss = 0.0;
 
             // Initialize progress chart state immediately
-            state.app.measurement_state.room_eq_state.progress_chart_state = Some(
-                InteractiveChartStateWrapper::new(
-                    0.0,
-                    max_iter.max(100) as f64,
-                    0.0,
-                    1.0,
-                )
-                .with_log_x(false)
-                .with_size(700.0, 250.0),
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .progress_chart_state = Some(
+                InteractiveChartStateWrapper::new(0.0, max_iter.max(100) as f64, 0.0, 1.0)
+                    .with_log_x(false)
+                    .with_size(700.0, 250.0),
             );
         });
 
@@ -433,7 +436,7 @@ impl PlayerView {
                         state.app.measurement_state.room_eq_state.current_loss = loss;
                         state.app.measurement_state.room_eq_state.overall_progress =
                             overall_progress;
-                        
+
                         // Add to progress history (limit to avoid memory issues)
                         if state
                             .app

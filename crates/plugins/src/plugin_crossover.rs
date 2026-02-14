@@ -5,7 +5,7 @@
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
-use super::smoothing::{LogSmoother};
+use super::smoothing::LogSmoother;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
@@ -27,7 +27,12 @@ pub struct CrossoverPlugin {
 }
 
 impl CrossoverPlugin {
-    pub fn new(num_channels: usize, crossover_type: &str, frequency: f64, output: &str) -> Result<Self, String> {
+    pub fn new(
+        num_channels: usize,
+        crossover_type: &str,
+        frequency: f64,
+        output: &str,
+    ) -> Result<Self, String> {
         let is_highpass = match output.to_lowercase().as_str() {
             "high" | "highpass" | "hp" => true,
             "low" | "lowpass" | "lp" => false,
@@ -44,36 +49,72 @@ impl CrossoverPlugin {
         })
     }
 
-    pub fn from_params(num_channels: usize, params: &CrossoverPluginParams) -> Result<Self, String> {
-        Self::new(num_channels, &params.crossover_type, params.frequency, &params.output)
+    pub fn from_params(
+        num_channels: usize,
+        params: &CrossoverPluginParams,
+    ) -> Result<Self, String> {
+        Self::new(
+            num_channels,
+            &params.crossover_type,
+            params.frequency,
+            &params.output,
+        )
     }
 
     fn build_filters(&mut self, freq: f64) {
         let q = 1.0 / std::f64::consts::SQRT_2;
-        let ftype = if self.is_highpass { BiquadFilterType::Highpass } else { BiquadFilterType::Lowpass };
+        let ftype = if self.is_highpass {
+            BiquadFilterType::Highpass
+        } else {
+            BiquadFilterType::Lowpass
+        };
         let n_sects = match self.crossover_type.to_lowercase().as_str() {
-            "lr24" | "lr4" => 2, "lr48" | "lr8" => 4, "bw12" | "bw1" => 1, _ => 2,
+            "lr24" | "lr4" => 2,
+            "lr48" | "lr8" => 4,
+            "bw12" | "bw1" => 1,
+            _ => 2,
         };
         for ch in 0..self.num_channels {
             let mut sects = Vec::with_capacity(n_sects);
-            for _ in 0..n_sects { sects.push(Biquad::new(ftype, freq, self.sample_rate as f64, q, 0.0)); }
+            for _ in 0..n_sects {
+                sects.push(Biquad::new(ftype, freq, self.sample_rate as f64, q, 0.0));
+            }
             self.filters[ch] = sects;
         }
     }
 }
 
 impl InPlacePlugin for CrossoverPlugin {
-    fn info(&self) -> PluginInfo { PluginInfo::new("Crossover", "1.1.0", "SotF") }
-    fn channels(&self) -> usize { self.num_channels }
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("Crossover", "1.1.0", "SotF")
+    }
+    fn channels(&self) -> usize {
+        self.num_channels
+    }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float("frequency", "Frequency", 1000.0, 20.0, 20000.0)]
+        vec![Parameter::new_float(
+            "frequency",
+            "Frequency",
+            1000.0,
+            20.0,
+            20000.0,
+        )]
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if id.0 == "frequency" { self.freq_smoother.set_target(value.as_float().ok_or("val")?); Ok(()) }
-        else { Err("unknown".into()) }
+        if id.0 == "frequency" {
+            self.freq_smoother
+                .set_target(value.as_float().ok_or("val")?);
+            Ok(())
+        } else {
+            Err("unknown".into())
+        }
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "frequency" { Some(ParameterValue::Float(self.freq_smoother.target())) } else { None }
+        if id.0 == "frequency" {
+            Some(ParameterValue::Float(self.freq_smoother.target()))
+        } else {
+            None
+        }
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
@@ -81,13 +122,19 @@ impl InPlacePlugin for CrossoverPlugin {
         self.build_filters(self.freq_smoother.target() as f64);
         Ok(())
     }
-    fn reset(&mut self) { self.build_filters(self.freq_smoother.target() as f64); }
+    fn reset(&mut self) {
+        self.build_filters(self.freq_smoother.target() as f64);
+    }
 
-    fn process_in_place(&mut self, buffer: &mut [f32], context: &ProcessContext) -> PluginResult<usize> {
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let new_freq = self.freq_smoother.next();
-        
+
         if (new_freq - self.filters[0][0].freq as f32).abs() > 0.1 {
             let f64 = new_freq as f64;
             let q = 1.0 / std::f64::consts::SQRT_2;
@@ -104,7 +151,9 @@ impl InPlacePlugin for CrossoverPlugin {
             for ch in 0..self.num_channels {
                 let idx = frame * self.num_channels + ch;
                 let mut s = buffer[idx] as f64;
-                for f in &mut self.filters[ch] { s = f.process(s); }
+                for f in &mut self.filters[ch] {
+                    s = f.process(s);
+                }
                 buffer[idx] = s as f32;
             }
         }
@@ -121,7 +170,14 @@ mod tests {
         let mut p = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
         p.initialize(48000).unwrap();
         let mut b = vec![1.0; 1000];
-        p.process_in_place(&mut b, &ProcessContext { sample_rate: 48000, num_frames: 1000 }).unwrap();
+        p.process_in_place(
+            &mut b,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1000,
+            },
+        )
+        .unwrap();
         assert!(b[999].is_finite());
     }
 }

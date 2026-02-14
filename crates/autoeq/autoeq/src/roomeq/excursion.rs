@@ -149,13 +149,17 @@ pub fn generate_excursion_protection(
     // Determine F3
     let (f3_hz, auto_detected) = if config.auto_detect_f3 {
         let detection = detect_f3(curve, None)?;
-        info!("  Auto-detected F3: {:.1} Hz (ref level: {:.1} dB)",
-              detection.f3_hz, detection.reference_level_db);
+        info!(
+            "  Auto-detected F3: {:.1} Hz (ref level: {:.1} dB)",
+            detection.f3_hz, detection.reference_level_db
+        );
         (detection.f3_hz, true)
     } else {
-        let f3 = config.manual_f3_hz.ok_or_else(|| AutoeqError::InvalidConfiguration {
-            message: "Manual F3 not specified and auto-detection disabled".to_string(),
-        })?;
+        let f3 = config
+            .manual_f3_hz
+            .ok_or_else(|| AutoeqError::InvalidConfiguration {
+                message: "Manual F3 not specified and auto-detection disabled".to_string(),
+            })?;
         info!("  Using manual F3: {:.1} Hz", f3);
         (f3, false)
     };
@@ -163,8 +167,10 @@ pub fn generate_excursion_protection(
     // Calculate HPF frequency with safety margin
     // HPF at F3 * 2^(-margin_octaves)
     let hpf_frequency = f3_hz * 2.0_f64.powf(-config.margin_octaves);
-    info!("  HPF frequency: {:.1} Hz (F3 - {:.2} octaves)",
-          hpf_frequency, config.margin_octaves);
+    info!(
+        "  HPF frequency: {:.1} Hz (F3 - {:.2} octaves)",
+        hpf_frequency, config.margin_octaves
+    );
 
     // Generate highpass filters
     let filters = generate_highpass_filters(
@@ -202,7 +208,15 @@ fn generate_highpass_filters(
             // Butterworth: cascaded 2nd-order sections
             let num_sections = order / 2;
             (0..num_sections)
-                .map(|_| Biquad::new(BiquadFilterType::Highpass, frequency, sample_rate, 0.707, 0.0))
+                .map(|_| {
+                    Biquad::new(
+                        BiquadFilterType::Highpass,
+                        frequency,
+                        sample_rate,
+                        0.707,
+                        0.0,
+                    )
+                })
                 .collect()
         }
         HighpassType::LinkwitzRiley => {
@@ -271,8 +285,11 @@ mod tests {
         let result = detect_f3(&curve, None).expect("F3 detection should succeed");
 
         // F3 should be detected around 60 Hz (our simulated rolloff point)
-        assert!(result.f3_hz > 40.0 && result.f3_hz < 80.0,
-                "F3 should be around 60 Hz, got {:.1} Hz", result.f3_hz);
+        assert!(
+            result.f3_hz > 40.0 && result.f3_hz < 80.0,
+            "F3 should be around 60 Hz, got {:.1} Hz",
+            result.f3_hz
+        );
     }
 
     #[test]
@@ -291,7 +308,10 @@ mod tests {
             .expect("Excursion protection should succeed");
 
         assert!(result.auto_detected);
-        assert!(result.hpf_frequency < result.f3_hz, "HPF should be below F3");
+        assert!(
+            result.hpf_frequency < result.f3_hz,
+            "HPF should be below F3"
+        );
         assert_eq!(result.filters.len(), 2, "LR4 should have 2 biquad sections");
     }
 
@@ -321,7 +341,11 @@ mod tests {
     #[test]
     fn test_butterworth_filters() {
         let filters = generate_highpass_filters(80.0, 4, &HighpassType::Butterworth, 48000.0);
-        assert_eq!(filters.len(), 2, "4th order Butterworth should have 2 sections");
+        assert_eq!(
+            filters.len(),
+            2,
+            "4th order Butterworth should have 2 sections"
+        );
     }
 
     #[test]

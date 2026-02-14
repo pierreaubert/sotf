@@ -214,8 +214,16 @@ mod upmixer_tests {
 
         let coh1_inst = plugin.coherence_instant[band_idx];
         let coh1_smooth = plugin.smoothed_coherence[band_idx];
-        assert!(coh1_inst > 0.5, "Instant coherence should be high for correlated signal: {}", coh1_inst);
-        assert!(coh1_smooth > 0.0, "Smoothed coherence should be positive: {}", coh1_smooth);
+        assert!(
+            coh1_inst > 0.5,
+            "Instant coherence should be high for correlated signal: {}",
+            coh1_inst
+        );
+        assert!(
+            coh1_smooth > 0.0,
+            "Smoothed coherence should be positive: {}",
+            coh1_smooth
+        );
 
         // Use phase-inverted signal to create strong incoherence
         for i in 0..fft_size {
@@ -231,12 +239,20 @@ mod upmixer_tests {
         let coh2_smooth = plugin.smoothed_coherence[band_idx];
 
         // Instant coherence should drop
-        assert!(coh2_inst < coh1_inst, "Instant coherence should drop: {} vs {}", coh2_inst, coh1_inst);
+        assert!(
+            coh2_inst < coh1_inst,
+            "Instant coherence should drop: {} vs {}",
+            coh2_inst,
+            coh1_inst
+        );
         // Median-filtered smoothed coherence should be higher than instant
         // (median of ring buffer with mostly high values + one low value is still high)
-        assert!(coh2_smooth > coh2_inst,
+        assert!(
+            coh2_smooth > coh2_inst,
             "Smoothed coherence ({}) should be higher than instant ({}) due to median filtering",
-            coh2_smooth, coh2_inst);
+            coh2_smooth,
+            coh2_inst
+        );
     }
 
     #[test]

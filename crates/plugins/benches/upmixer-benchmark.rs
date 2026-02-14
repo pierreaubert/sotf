@@ -15,7 +15,11 @@ use std::time::Duration;
 ///
 /// Uses a sum of log-spaced sinusoids (40Hz–16kHz) with different phase offsets
 /// per channel to produce non-unity coherence across the spectrum.
-fn generate_realistic_input(block_size: usize, sample_rate: u32, include_transients: bool) -> Vec<f32> {
+fn generate_realistic_input(
+    block_size: usize,
+    sample_rate: u32,
+    include_transients: bool,
+) -> Vec<f32> {
     let sr = sample_rate as f64;
     // Log-spaced frequencies from 40Hz to 16kHz (20 tones)
     let freqs: Vec<f64> = (0..20)
@@ -196,8 +200,8 @@ fn bench_upmixer_fft_sizes(c: &mut Criterion) {
             &fft_size,
             |b, &fft_size| {
                 let mut upmixer = create_upmixer(fft_size, "5.1");
-                            upmixer.initialize(sample_rate).unwrap();
-                                let input = generate_realistic_input(block_size, sample_rate, true);
+                upmixer.initialize(sample_rate).unwrap();
+                let input = generate_realistic_input(block_size, sample_rate, true);
                 let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
                 let context = ProcessContext {
                     num_frames: block_size,

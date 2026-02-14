@@ -99,14 +99,18 @@ pub fn generate_fir_correction(
             _ => return Err(format!("Unknown FIR phase type: {}", fir_config.phase).into()),
         };
 
-        let coeffs =
-            crate::fir::generate_fir_from_response(&correction_curve, sample_rate, n_taps, phase_type);
+        let coeffs = crate::fir::generate_fir_from_response(
+            &correction_curve,
+            sample_rate,
+            n_taps,
+            phase_type,
+        );
         Ok(coeffs)
     }
 }
 
 #[cfg(test)]
-pub use math_audio_iir_fir::{generate_window, WindowType};
+pub use math_audio_iir_fir::{WindowType, generate_window};
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,8 +223,14 @@ mod tests {
             &[80.0, 80.0, 80.0, 80.0, 80.0],
         );
 
-        let coeffs =
-            crate::fir::generate_kirkeby_correction(&measurement, &target, 48000.0, 4096, 20.0, 1000.0);
+        let coeffs = crate::fir::generate_kirkeby_correction(
+            &measurement,
+            &target,
+            48000.0,
+            4096,
+            20.0,
+            1000.0,
+        );
 
         assert_eq!(coeffs.len(), 4096);
         assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
@@ -238,8 +248,14 @@ mod tests {
             &[80.0, 80.0, 80.0, 80.0, 80.0],
         );
 
-        let coeffs =
-            crate::fir::generate_kirkeby_correction(&measurement, &target, 48000.0, 4096, 20.0, 1000.0);
+        let coeffs = crate::fir::generate_kirkeby_correction(
+            &measurement,
+            &target,
+            48000.0,
+            4096,
+            20.0,
+            1000.0,
+        );
 
         assert_eq!(coeffs.len(), 4096);
     }

@@ -758,20 +758,38 @@ fn match_device_priority(devices: &[(String, String)], identifier: &str) -> Opti
     }
 
     // 2. Exact Name match (case-insensitive)
-    if let Some(idx) = devices.iter().position(|(_, name)| name.to_lowercase() == target) {
-        log::debug!("[find_device] Found device by Exact Name match: {}", devices[idx].1);
+    if let Some(idx) = devices
+        .iter()
+        .position(|(_, name)| name.to_lowercase() == target)
+    {
+        log::debug!(
+            "[find_device] Found device by Exact Name match: {}",
+            devices[idx].1
+        );
         return Some(idx);
     }
 
     // 3. Starts With match (case-insensitive)
-    if let Some(idx) = devices.iter().position(|(_, name)| name.to_lowercase().starts_with(&target)) {
-        log::debug!("[find_device] Found device by Starts With match: {}", devices[idx].1);
+    if let Some(idx) = devices
+        .iter()
+        .position(|(_, name)| name.to_lowercase().starts_with(&target))
+    {
+        log::debug!(
+            "[find_device] Found device by Starts With match: {}",
+            devices[idx].1
+        );
         return Some(idx);
     }
 
     // 4. Contains match (case-insensitive)
-    if let Some(idx) = devices.iter().position(|(_, name)| name.to_lowercase().contains(&target)) {
-        log::debug!("[find_device] Found device by Contains match: {}", devices[idx].1);
+    if let Some(idx) = devices
+        .iter()
+        .position(|(_, name)| name.to_lowercase().contains(&target))
+    {
+        log::debug!(
+            "[find_device] Found device by Contains match: {}",
+            devices[idx].1
+        );
         return Some(idx);
     }
 
@@ -799,7 +817,11 @@ pub fn find_device(
         .iter()
         .map(|d| {
             let id = d.id().ok().map(|i| i.to_string()).unwrap_or_default();
-            let name = d.description().ok().map(|desc| desc.name().to_string()).unwrap_or_default();
+            let name = d
+                .description()
+                .ok()
+                .map(|desc| desc.name().to_string())
+                .unwrap_or_default();
             (id, name)
         })
         .collect();
@@ -807,8 +829,9 @@ pub fn find_device(
     if let Some(idx) = match_device_priority(&device_info, identifier) {
         Ok(devices[idx].clone())
     } else {
-         // Device not found - provide helpful error message with available devices
-        let available_names: Vec<String> = device_info.iter().map(|(_, name)| name.clone()).collect();
+        // Device not found - provide helpful error message with available devices
+        let available_names: Vec<String> =
+            device_info.iter().map(|(_, name)| name.clone()).collect();
         let device_type = if is_input { "input" } else { "output" };
         Err(format!(
             "Audio device '{}' not found. Available {} devices: {}",
@@ -850,15 +873,15 @@ mod tests {
 
         // 4. Contains
         assert_eq!(match_device_priority(&devices, "Built-in"), Some(1));
-        
+
         // Edge case: "Micro"
         // "Microphone (USB)" starts with it -> idx 2
         assert_eq!(match_device_priority(&devices, "Micro"), Some(2));
-        
+
         // Edge case: "USB"
         // "Microphone (USB)" contains it -> idx 2
         assert_eq!(match_device_priority(&devices, "USB"), Some(2));
-        
+
         // Non-matching
         assert_eq!(match_device_priority(&devices, "Not Found"), None);
     }

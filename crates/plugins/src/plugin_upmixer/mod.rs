@@ -256,6 +256,16 @@ pub struct UpmixerPlugin {
     /// Panning gains for right source (pre-calculated for each speaker)
     panning_gains_right: Vec<f32>,
 
+    // Cached per-speaker flags (computed in recalculate_panning_gains, avoids string/float comparisons in hot path)
+    /// True if speaker is front (|azimuth| < 80)
+    cached_is_front: Vec<bool>,
+    /// True if speaker is height (elevation > 10)
+    cached_is_height: Vec<bool>,
+    /// True if speaker is center (label == "C")
+    cached_is_center: Vec<bool>,
+    /// Indices of channels that the HR path processes (front, non-LFE, non-height)
+    cached_hr_active_channels: Vec<usize>,
+
     // Processing buffers (allocated once, reused)
     /// Time domain buffer for left channel
     time_domain_left: Vec<f32>,
@@ -295,14 +305,17 @@ pub struct UpmixerPlugin {
     window: Vec<f32>,
     /// Hann window for high-resolution FFT path
     hr_window: Vec<f32>,
-    /// Output accumulator for overlap-add (holds fft_size samples per channel)
-    /// This allows us to accumulate processed blocks and drain them gradually
-    output_accumulator: Vec<Vec<f32>>,
-    /// Number of valid samples in output accumulator
+    /// Output accumulator for overlap-add (flat interleaved ring buffer)
+    /// Layout: [ch0_f0, ch1_f0, ..., ch0_f1, ch1_f1, ...]
+    /// Buffer size in frames is always power-of-2 (4 * fft_size) for efficient masking
+    output_accumulator: Vec<f32>,
+    /// Bitmask for ring buffer frame index (buffer_frames - 1), replaces % operator
+    output_accumulator_mask: usize,
+    /// Number of valid frames in output accumulator
     output_accumulator_fill: usize,
-    /// Next position to add a block (tracks overlap-add offset)
+    /// Next frame position to add a block (tracks overlap-add offset)
     next_add_position: usize,
-    /// Current read position in the output accumulator ring buffer
+    /// Current read frame position in the output accumulator ring buffer
     output_read_position: usize,
     /// Pre-allocated output block buffer (reused to avoid allocations)
     output_block: Vec<f32>,
@@ -441,8 +454,12 @@ impl UpmixerPlugin {
         let panning_gains_left = Vec::with_capacity(num_output_channels);
         let panning_gains_right = Vec::with_capacity(num_output_channels);
 
-        // Output accumulator holds up to 4*fft_size samples per channel
-        let output_accumulator = vec![vec![0.0; fft_size * 4]; num_output_channels];
+        // Output accumulator: flat interleaved ring buffer
+        // 4 * fft_size frames (power-of-2 since fft_size is power-of-2)
+        let accumulator_frames = fft_size * 4;
+        debug_assert!(accumulator_frames.is_power_of_two());
+        let output_accumulator = vec![0.0; accumulator_frames * num_output_channels];
+        let output_accumulator_mask = accumulator_frames - 1;
 
         // Allocate output buffers for each channel
         let time_out_channels = vec![vec![0.0; fft_size]; num_output_channels];
@@ -603,6 +620,11 @@ impl UpmixerPlugin {
             panning_gains_left,
             panning_gains_right,
 
+            cached_is_front: Vec::new(),
+            cached_is_height: Vec::new(),
+            cached_is_center: Vec::new(),
+            cached_hr_active_channels: Vec::new(),
+
             // Allocate all buffers
             time_domain_left: vec![0.0; fft_size],
             time_domain_right: vec![0.0; fft_size],
@@ -626,6 +648,7 @@ impl UpmixerPlugin {
             window,
             hr_window,
             output_accumulator,
+            output_accumulator_mask,
             output_accumulator_fill: 0,
             next_add_position: 0,
             output_read_position: 0,
@@ -1448,10 +1471,11 @@ Upper bound for dialogue detection analysis.",
                 return Ok(());
             }
         } else if id == self.param_bypass_all_processing
-            && let Some(enable) = value.as_bool() {
-                self.bypass_all_processing = enable;
-                return Ok(());
-            }
+            && let Some(enable) = value.as_bool()
+        {
+            self.bypass_all_processing = enable;
+            return Ok(());
+        }
         Err(format!("Unknown parameter: {}", id))
     }
 
@@ -1653,7 +1677,7 @@ Upper bound for dialogue detection analysis.",
             channel_buf.fill(0.0);
         }
 
-        self.output_accumulator.iter_mut().for_each(|b| b.fill(0.0));
+        self.output_accumulator.fill(0.0);
         self.output_accumulator_fill = 0;
         self.output_block.fill(0.0);
         self.next_add_position = 0;
@@ -1750,7 +1774,8 @@ Upper bound for dialogue detection analysis.",
 
         let mut input_pos = 0;
         let mut output_pos = 0;
-        let buffer_size = self.output_accumulator[0].len();
+        let mask = self.output_accumulator_mask;
+        let nch = self.num_output_channels;
 
         let mut iteration = 0;
         loop {
@@ -1759,22 +1784,23 @@ Upper bound for dialogue detection analysis.",
                 break;
             }
 
-            // Step 1: Drain available output from ring buffer
+            // Step 1: Drain available output from ring buffer (flat interleaved)
             let frames_to_drain = self
                 .output_accumulator_fill
                 .min(context.num_frames - output_pos);
 
             if frames_to_drain > 0 {
                 for i in 0..frames_to_drain {
-                    let read_idx = (self.output_read_position + i) % buffer_size;
-                    let out_frame_idx = (output_pos + i) * self.num_output_channels;
-                    for ch in 0..self.num_output_channels {
-                        output[out_frame_idx + ch] = self.output_accumulator[ch][read_idx];
+                    let read_idx = (self.output_read_position + i) & mask;
+                    let acc_base = read_idx * nch;
+                    let out_base = (output_pos + i) * nch;
+                    for ch in 0..nch {
+                        output[out_base + ch] = self.output_accumulator[acc_base + ch];
                         // Clear after reading for next overlap-add cycle
-                        self.output_accumulator[ch][read_idx] = 0.0;
+                        self.output_accumulator[acc_base + ch] = 0.0;
                     }
                 }
-                self.output_read_position = (self.output_read_position + frames_to_drain) % buffer_size;
+                self.output_read_position = (self.output_read_position + frames_to_drain) & mask;
                 self.output_accumulator_fill -= frames_to_drain;
                 output_pos += frames_to_drain;
             }
@@ -1819,19 +1845,20 @@ Upper bound for dialogue detection analysis.",
 
                 self.temp_input_block = temp_input;
 
-                // Accumulate to ring buffer
+                // Accumulate to ring buffer (flat interleaved)
                 for i in 0..self.fft_size {
-                    let write_idx = (self.next_add_position + i) % buffer_size;
-                    for ch in 0..self.num_output_channels {
-                        self.output_accumulator[ch][write_idx] +=
-                            output_block[i * self.num_output_channels + ch];
+                    let write_idx = (self.next_add_position + i) & mask;
+                    let acc_base = write_idx * nch;
+                    let src_base = i * nch;
+                    for ch in 0..nch {
+                        self.output_accumulator[acc_base + ch] += output_block[src_base + ch];
                     }
                 }
 
                 self.output_block = output_block;
 
                 // Advance positions
-                self.next_add_position = (self.next_add_position + self.hop_size) % buffer_size;
+                self.next_add_position = (self.next_add_position + self.hop_size) & mask;
                 self.output_accumulator_fill += self.hop_size;
 
                 // Shift input buffer

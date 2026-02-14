@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use autoeq::roomeq::{
-        optimize_room, CrossoverConfig, OptimizerConfig, ProcessingMode, RoomConfig,
-        SpeakerConfig, SubwooferStrategy, SystemConfig, SystemModel,
+        CrossoverConfig, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig,
+        SubwooferStrategy, SystemConfig, SystemModel, optimize_room,
     };
     use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
     use std::collections::HashMap;
@@ -91,12 +91,15 @@ mod tests {
         sub_mapping.insert("sub_meas".to_string(), "L".to_string()); // Align sub to L
 
         let mut crossovers = HashMap::new();
-        crossovers.insert("sub_xo".to_string(), CrossoverConfig {
-            crossover_type: "LR24".to_string(),
-            frequency: Some(80.0),
-            frequencies: None,
-            frequency_range: None,
-        });
+        crossovers.insert(
+            "sub_xo".to_string(),
+            CrossoverConfig {
+                crossover_type: "LR24".to_string(),
+                frequency: Some(80.0),
+                frequencies: None,
+                frequency_range: None,
+            },
+        );
 
         let config = RoomConfig {
             version: "1.2.0".to_string(),

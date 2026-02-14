@@ -71,9 +71,7 @@ impl HalManager {
                 }
                 Err(_) => {
                     log::warn!("HAL shared memory not available yet");
-                    log::warn!(
-                        "This is normal if no app is using the HAL audio device"
-                    );
+                    log::warn!("This is normal if no app is using the HAL audio device");
                     log::warn!("HAL plugins will connect when audio starts playing");
                     // Don't fail - shared memory is created on-demand by HAL driver
                 }

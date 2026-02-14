@@ -15,10 +15,10 @@
 //! - Chroma features (for key/mode detection)
 
 use crate::database::MusicDatabase;
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use bliss_audio::decoder::Decoder as BlissDecoder;
 use bliss_audio::decoder::PreAnalyzedSong;
 use bliss_audio::{Analysis, AnalysisIndex, BlissError, BlissResult};
-use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Fft, FixedSync, Resampler};
 use sotf_audio::decoder::create_decoder;
 use std::path::{Path, PathBuf};
@@ -219,9 +219,15 @@ fn resample_to_bliss_rate(
     // chunk_size should be a power of 2 for FFT efficiency
     let chunk_size = 1024;
 
-    let mut resampler =
-        Fft::<f32>::new(source_rate as usize, target_rate as usize, chunk_size, 2, 1, FixedSync::Both)
-            .map_err(|e| BlissError::DecodingError(format!("Failed to create resampler: {}", e)))?;
+    let mut resampler = Fft::<f32>::new(
+        source_rate as usize,
+        target_rate as usize,
+        chunk_size,
+        2,
+        1,
+        FixedSync::Both,
+    )
+    .map_err(|e| BlissError::DecodingError(format!("Failed to create resampler: {}", e)))?;
 
     let input_frames_needed = resampler.input_frames_next();
     let output_frames_per_chunk = resampler.output_frames_next();

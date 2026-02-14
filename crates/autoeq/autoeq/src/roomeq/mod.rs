@@ -46,18 +46,18 @@ pub use config::{ValidationResult, validate_room_config};
 // Main optimization entry points
 mod optimize;
 pub use optimize::{
-    CallbackAction, ChannelOptimizationResult, RoomOptimizationCallback,
-    RoomOptimizationProgress, RoomOptimizationResult, SpeakerOptimizationCallback,
-    SpeakerOptimizationResult, optimize_room, optimize_speaker,
+    CallbackAction, ChannelOptimizationResult, RoomOptimizationCallback, RoomOptimizationProgress,
+    RoomOptimizationResult, SpeakerOptimizationCallback, SpeakerOptimizationResult, optimize_room,
+    optimize_speaker,
 };
 
 // Individual optimization modules
-mod eq;
 mod crossover;
-mod multisub;
 mod dba;
+mod eq;
 mod fir;
 mod group_delay;
+mod multisub;
 pub mod workflows; // Make public to access from optimize.rs or tests
 
 // DSP chain building
@@ -87,15 +87,22 @@ mod phase_utils;
 mod time_align;
 mod weighted_loss;
 
-pub use time_align::{find_arrival_time, calculate_alignment_delays, ArrivalTimeResult};
+pub use time_align::{ArrivalTimeResult, calculate_alignment_delays, find_arrival_time};
 
 // Advanced room correction features (Scenario A & B)
-pub mod target_tilt;
 pub mod excursion;
-pub mod phase_alignment;
 pub mod multiseat;
+pub mod phase_alignment;
+pub mod target_tilt;
 
-pub use target_tilt::{build_target_curve_with_tilt, build_harman_target_curve, build_harman_target_curve_with_bass_boost};
-pub use excursion::{detect_f3, generate_excursion_protection, ExcursionProtectionResult, F3DetectionResult};
-pub use phase_alignment::{optimize_phase_alignment, optimize_phase_alignment_batch, PhaseAlignmentResult};
-pub use multiseat::{optimize_multiseat, MultiSeatMeasurements, MultiSeatOptimizationResult};
+pub use excursion::{
+    ExcursionProtectionResult, F3DetectionResult, detect_f3, generate_excursion_protection,
+};
+pub use multiseat::{MultiSeatMeasurements, MultiSeatOptimizationResult, optimize_multiseat};
+pub use phase_alignment::{
+    PhaseAlignmentResult, optimize_phase_alignment, optimize_phase_alignment_batch,
+};
+pub use target_tilt::{
+    build_harman_target_curve, build_harman_target_curve_with_bass_boost,
+    build_target_curve_with_tilt,
+};

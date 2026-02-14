@@ -19,9 +19,7 @@ use std::sync::Arc;
 /// Uses N (not N-1) divisor for perfect COLA with 50% overlap.
 pub fn generate_hann_window(size: usize) -> Vec<f32> {
     (0..size)
-        .map(|i| {
-            0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / size as f32).cos())
-        })
+        .map(|i| 0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / size as f32).cos()))
         .collect()
 }
 

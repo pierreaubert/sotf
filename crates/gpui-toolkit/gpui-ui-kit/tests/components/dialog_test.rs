@@ -36,15 +36,15 @@ fn test_dialog_sizes() {
 
 #[test]
 fn test_dialog_content_with_factory() {
-    let dialog = Dialog::new("test")
-        .content_with(|_theme| div().child("Themed content").into_any_element());
+    let dialog =
+        Dialog::new("test").content_with(|_theme| div().child("Themed content").into_any_element());
     drop(dialog);
 }
 
 #[test]
 fn test_dialog_footer_with_factory() {
-    let dialog = Dialog::new("test")
-        .footer_with(|_theme| div().child("Themed footer").into_any_element());
+    let dialog =
+        Dialog::new("test").footer_with(|_theme| div().child("Themed footer").into_any_element());
     drop(dialog);
 }
 

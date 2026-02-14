@@ -60,6 +60,6 @@ pub fn render_band_merge_plugin(
                 .text_xs()
                 .text_color(theme.text_muted)
                 .italic()
-                .child("Merges multiple frequency bands back together by summation.")
+                .child("Merges multiple frequency bands back together by summation."),
         )
 }

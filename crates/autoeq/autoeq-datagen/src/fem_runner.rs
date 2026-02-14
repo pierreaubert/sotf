@@ -114,25 +114,25 @@ pub fn run_fem(simulation: &RoomSimulation) -> Result<SimulationOutput> {
 
                 let boundary_coeffs = compute_boundary_coefficients(simulation, freq);
                 let csr = assembler.assemble(k_complex, &boundary_coeffs);
-                let rhs = assemble_rhs_parallel(&mesh, &single_source, freq, k, DEFAULT_SOURCE_WIDTH);
+                let rhs =
+                    assemble_rhs_parallel(&mesh, &single_source, freq, k, DEFAULT_SOURCE_WIDTH);
                 let rhs_array = ndarray::Array1::from(rhs);
 
-                let solution =
-                    solver::solve_csr_with_guess(&csr, &rhs_array, None, &solver_config)
-                        .unwrap_or_else(|e| {
-                            log::warn!(
-                                "FEM solve failed for source {} freq {:.1} Hz: {}",
-                                source.name,
-                                freq,
-                                e
-                            );
-                            solver::Solution {
-                                values: ndarray::Array1::zeros(mesh.num_nodes()),
-                                iterations: 0,
-                                residual: f64::NAN,
-                                converged: false,
-                            }
-                        });
+                let solution = solver::solve_csr_with_guess(&csr, &rhs_array, None, &solver_config)
+                    .unwrap_or_else(|e| {
+                        log::warn!(
+                            "FEM solve failed for source {} freq {:.1} Hz: {}",
+                            source.name,
+                            freq,
+                            e
+                        );
+                        solver::Solution {
+                            values: ndarray::Array1::zeros(mesh.num_nodes()),
+                            iterations: 0,
+                            residual: f64::NAN,
+                            converged: false,
+                        }
+                    });
 
                 let lp_pressures: Vec<Complex64> = simulation
                     .listening_positions
@@ -162,11 +162,7 @@ pub fn run_fem(simulation: &RoomSimulation) -> Result<SimulationOutput> {
     Ok(SimulationOutput {
         frequencies: simulation.frequencies.clone(),
         pressures,
-        source_names: simulation
-            .sources
-            .iter()
-            .map(|s| s.name.clone())
-            .collect(),
+        source_names: simulation.sources.iter().map(|s| s.name.clone()).collect(),
     })
 }
 
@@ -191,11 +187,7 @@ fn create_room_mesh(simulation: &RoomSimulation, elements_per_meter: usize) -> M
     for k in 0..nz {
         for j in 0..ny {
             for i in 0..nx {
-                mesh.add_node(Point::new_3d(
-                    i as f64 * dx,
-                    j as f64 * dy,
-                    k as f64 * dz,
-                ));
+                mesh.add_node(Point::new_3d(i as f64 * dx, j as f64 * dy, k as f64 * dz));
             }
         }
     }

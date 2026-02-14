@@ -72,8 +72,12 @@ fn handle_file_browser_mode(app: &mut App, key: KeyEvent, is_sofa: bool) -> Opti
                     }
                 } else {
                     // Load IR for Convolution
-                    if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index) {
-                        if let PluginSettings::Convolution { ref mut ir_file, .. } = plugin.settings {
+                    if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
+                    {
+                        if let PluginSettings::Convolution {
+                            ref mut ir_file, ..
+                        } = plugin.settings
+                        {
                             *ir_file = path_str;
                             app.status_message = Some("IR file set".to_string());
                             app.request_plugin_update();

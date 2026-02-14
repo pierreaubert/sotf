@@ -3,8 +3,8 @@
 //! Tests the round-trip accuracy of FIR correction filters and validates
 //! that different phase types work correctly.
 
-use autoeq::fir::{FirPhase, generate_fir_from_response, save_fir_to_wav};
 use autoeq::Curve;
+use autoeq::fir::{FirPhase, generate_fir_from_response, save_fir_to_wav};
 use ndarray::Array1;
 use num_complex::Complex64;
 use rustfft::FftPlanner;
@@ -51,7 +51,9 @@ fn create_curve_with_null(null_freq: f64, null_depth_db: f64) -> Curve {
     freqs.push(null_freq * 1.3);
 
     // Continue with higher frequencies
-    freqs.extend_from_slice(&[150.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0]);
+    freqs.extend_from_slice(&[
+        150.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+    ]);
 
     // Create SPL values with a null
     let baseline = 85.0;
@@ -177,7 +179,9 @@ fn test_fir_round_trip_correction() {
 
     // Measurement with peaks and dips
     let measurement = create_test_curve(
-        &[20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0],
+        &[
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ],
         &[-3.0, 0.0, 3.0, 5.0, 2.0, 0.0, -2.0, -4.0, -6.0, -10.0],
     );
 
@@ -197,7 +201,8 @@ fn test_fir_round_trip_correction() {
         phase: None,
     };
 
-    let coeffs = generate_fir_from_response(&correction_curve, sample_rate, n_taps, FirPhase::Linear);
+    let coeffs =
+        generate_fir_from_response(&correction_curve, sample_rate, n_taps, FirPhase::Linear);
 
     // Compute the FIR response
     let test_freqs: Vec<f64> = measurement.freq.to_vec();
@@ -264,7 +269,8 @@ fn test_fir_handles_room_null_gracefully() {
     let sample_rate = 48000.0;
     let n_taps = 4096;
 
-    let coeffs = generate_fir_from_response(&correction_curve, sample_rate, n_taps, FirPhase::Linear);
+    let coeffs =
+        generate_fir_from_response(&correction_curve, sample_rate, n_taps, FirPhase::Linear);
 
     // FIR should be generated without panicking
     assert_eq!(coeffs.len(), n_taps);

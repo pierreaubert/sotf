@@ -923,13 +923,15 @@ impl PlayerView {
                                         IconName::Heart
                                     })
                                     .xs()
-                                    .color(if track_is_favorite {
-                                        theme_c.accent
-                                    } else if is_current {
-                                        theme_c.text_on_accent
-                                    } else {
-                                        theme_c.text_muted
-                                    }),
+                                    .color(
+                                        if track_is_favorite {
+                                            theme_c.accent
+                                        } else if is_current {
+                                            theme_c.text_on_accent
+                                        } else {
+                                            theme_c.text_muted
+                                        },
+                                    ),
                                 ),
                         )
                         .child(
@@ -947,21 +949,16 @@ impl PlayerView {
             }
         }
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .overflow_hidden()
-            .child(
-                div()
-                    .id("track-list")
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.0))
-                    .flex_1()
-                    .overflow_y_scroll()
-                    .children(all_elements),
-            )
+        div().flex().flex_col().flex_1().overflow_hidden().child(
+            div()
+                .id("track-list")
+                .flex()
+                .flex_col()
+                .gap(px(2.0))
+                .flex_1()
+                .overflow_y_scroll()
+                .children(all_elements),
+        )
     }
 
     /// Find a common prefix in track titles that matches part of the album title.

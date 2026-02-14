@@ -241,10 +241,16 @@ impl DirectivityConfig {
     /// Convert to Directivity
     pub fn to_directivity(&self) -> Result<Directivity, String> {
         match self {
-            DirectivityConfig::Omnidirectional => Ok(Directivity::Grid(DirectivityGrid::omnidirectional())),
-            DirectivityConfig::Classical { horizontal_angle, vertical_angle } => {
-                Ok(Directivity::Classical { h_angle: *horizontal_angle, v_angle: *vertical_angle })
+            DirectivityConfig::Omnidirectional => {
+                Ok(Directivity::Grid(DirectivityGrid::omnidirectional()))
             }
+            DirectivityConfig::Classical {
+                horizontal_angle,
+                vertical_angle,
+            } => Ok(Directivity::Classical {
+                h_angle: *horizontal_angle,
+                v_angle: *vertical_angle,
+            }),
             DirectivityConfig::Custom {
                 horizontal_angles,
                 vertical_angles,

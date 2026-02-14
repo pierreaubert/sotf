@@ -35,9 +35,9 @@ use filters::{compute_xtc_filters_full, XtcFilters};
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
-    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, scale_add_simd, window_mul_simd,
+    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, flush_denormals_inplace,
+    interleave_stereo, scale_add_simd, window_mul_simd,
 };
-use super::smoothing::Smoother;
 use parking_lot::RwLock;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -107,6 +107,9 @@ pub struct XtcPlugin {
     ifft_input: Vec<Complex<f32>>,
     ifft_output: Vec<f32>,
 
+    /// Working buffer for crossfade: holds IFFT of prev_filters result
+    prev_ifft_output: Vec<f32>,
+
     /// Thread-safe crosstalk cancellation filters
     filters: Arc<RwLock<XtcFilters>>,
 
@@ -116,20 +119,6 @@ pub struct XtcPlugin {
     /// Crossfade progress (0.0 = prev, 1.0 = current)
     crossfade_progress: f32,
 
-    /// Smoother for head offset X (Sample mode)
-    smoother_offset_x: Smoother,
-
-    /// Smoother for head offset Z (Sample mode)
-    smoother_offset_z: Smoother,
-
-    /// Smoother for head yaw angle (Sample mode)
-    smoother_yaw: Smoother,
-
-    /// Current smoothed position for Sample mode
-    current_offset_x: f32,
-    current_offset_z: f32,
-    current_yaw_deg: f32,
-
     /// Parameters for dynamic updates
     param_enabled: ParameterId,
     param_distance: ParameterId,
@@ -137,6 +126,59 @@ pub struct XtcPlugin {
     param_head_offset_x: ParameterId,
     param_head_offset_z: ParameterId,
     param_head_yaw: ParameterId,
+    param_spectral_normalization: ParameterId,
+}
+
+// ============================================================================
+// Free-function filter helpers (avoid borrow checker issues with &mut self)
+// ============================================================================
+
+/// Apply XTC filter for left channel: ifft_input = filter_ll * fft_l + filter_lr * fft_r
+#[inline(always)]
+fn apply_filter_left(
+    ifft_input: &mut [Complex<f32>],
+    fft_l: &[Complex<f32>],
+    fft_r: &[Complex<f32>],
+    filters: &XtcFilters,
+) {
+    complex_mul_simd(ifft_input, fft_l, &filters.filter_ll);
+    complex_mul_add_simd(ifft_input, fft_r, &filters.filter_lr);
+    let n = ifft_input.len();
+    ifft_input[0].im = 0.0;
+    ifft_input[n - 1].im = 0.0;
+}
+
+/// Apply XTC filter for right channel: ifft_input = filter_rl * fft_l + filter_rr * fft_r
+/// Uses symmetric shortcuts when is_symmetric is true.
+#[inline(always)]
+fn apply_filter_right(
+    ifft_input: &mut [Complex<f32>],
+    fft_l: &[Complex<f32>],
+    fft_r: &[Complex<f32>],
+    filters: &XtcFilters,
+) {
+    let (filter_rl, filter_rr) = if filters.is_symmetric {
+        (&filters.filter_lr, &filters.filter_ll)
+    } else {
+        (
+            filters.filter_rl.as_ref().unwrap(),
+            filters.filter_rr.as_ref().unwrap(),
+        )
+    };
+    complex_mul_simd(ifft_input, fft_l, filter_rl);
+    complex_mul_add_simd(ifft_input, fft_r, filter_rr);
+    let n = ifft_input.len();
+    ifft_input[0].im = 0.0;
+    ifft_input[n - 1].im = 0.0;
+}
+
+/// Blend two time-domain buffers: dst[i] = (1 - alpha) * prev[i] + alpha * dst[i]
+#[inline(always)]
+fn blend_buffers(dst: &mut [f32], prev: &[f32], alpha: f32) {
+    let one_minus_alpha = 1.0 - alpha;
+    for (d, &p) in dst.iter_mut().zip(prev.iter()) {
+        *d = one_minus_alpha * p + alpha * *d;
+    }
 }
 
 impl XtcPlugin {
@@ -183,9 +225,6 @@ impl XtcPlugin {
         let filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
         let filters = Arc::new(RwLock::new(filters));
 
-        // Initialize smoothers with the smoothing time constant (convert s to ms)
-        let smooth_time_ms = params.head_tracking_smooth_s * 1000.0;
-
         Ok(Self {
             fft_size,
             hop_size,
@@ -209,21 +248,17 @@ impl XtcPlugin {
             fft_output_r: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_input: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_output: vec![0.0; fft_size],
+            prev_ifft_output: vec![0.0; fft_size],
             filters,
             prev_filters: None,
             crossfade_progress: 1.0, // Start fully faded to current
-            smoother_offset_x: Smoother::new(params.head_offset_x, smooth_time_ms, sample_rate),
-            smoother_offset_z: Smoother::new(params.head_offset_z, smooth_time_ms, sample_rate),
-            smoother_yaw: Smoother::new(params.head_yaw_deg, smooth_time_ms, sample_rate),
-            current_offset_x: params.head_offset_x,
-            current_offset_z: params.head_offset_z,
-            current_yaw_deg: params.head_yaw_deg,
             param_enabled: ParameterId::from("enabled"),
             param_distance: ParameterId::from("distance_m"),
             param_speaker_angle: ParameterId::from("speaker_angle_deg"),
             param_head_offset_x: ParameterId::from("head_offset_x"),
             param_head_offset_z: ParameterId::from("head_offset_z"),
             param_head_yaw: ParameterId::from("head_yaw_deg"),
+            param_spectral_normalization: ParameterId::from("spectral_normalization"),
         })
     }
 
@@ -232,18 +267,15 @@ impl XtcPlugin {
         Self::new(params, sample_rate)
     }
 
-    /// Recompute filters when parameters change
-    /// In Block mode: stores old filters for crossfade
-    /// In Sample mode: updates immediately (should only be called when threshold exceeded)
+    /// Recompute filters when parameters change.
+    /// Stores old filters for crossfading to avoid clicks.
     fn update_filters(&mut self, sync: bool) {
         let num_bins = self.fft_size / 2 + 1;
         let params = self.params.clone();
         let sample_rate = self.sample_rate;
 
-        // In Block mode, store old filters for crossfading
-        if self.params.head_tracking_smoothing_mode == SmoothingMode::Block
-            && self.crossfade_progress >= 1.0
-        {
+        // Store old filters for crossfading (only if not already mid-crossfade)
+        if self.crossfade_progress >= 1.0 {
             self.prev_filters = Some(self.filters.clone());
             self.crossfade_progress = 0.0;
         }
@@ -264,12 +296,13 @@ impl XtcPlugin {
         }
     }
 
-    /// Process one STFT frame using SIMD-optimized operations
+    /// Process one STFT frame using SIMD-optimized operations.
+    ///
+    /// During crossfade (after parameter change), blends output from old and new
+    /// filters over ~100ms to avoid clicks. This costs 4 IFFTs per frame instead
+    /// of the normal 2, but crossfade transitions are brief.
     #[inline(always)]
     fn process_stft_frame(&mut self) {
-        // Access filters via read lock (usually very fast if no writer)
-        let filters = self.filters.read();
-
         // Window and FFT left channel (SIMD optimized)
         window_mul_simd(
             &mut self.fft_buffer,
@@ -290,59 +323,127 @@ impl XtcPlugin {
             .process(&mut self.fft_buffer, &mut self.fft_output_r)
             .expect("FFT processing failed");
 
-        // Get filters for right channel (use symmetric if not asymmetric)
-        let filter_rl = filters.filter_rl.as_ref().unwrap_or(&filters.filter_lr);
-        let filter_rr = filters.filter_rr.as_ref().unwrap_or(&filters.filter_ll);
-
-        // Apply XTC filter for LEFT output using SIMD:
-        // L_out = filter_ll * L_in + filter_lr * R_in
-        complex_mul_simd(&mut self.ifft_input, &self.fft_output_l, &filters.filter_ll);
-        complex_mul_add_simd(&mut self.ifft_input, &self.fft_output_r, &filters.filter_lr);
-
-        // Ensure DC and Nyquist bins are real
-        let num_bins = self.ifft_input.len();
-        self.ifft_input[0].im = 0.0;
-        self.ifft_input[num_bins - 1].im = 0.0;
-
-        // IFFT left channel
-        self.fft_inverse
-            .process(&mut self.ifft_input, &mut self.ifft_output)
-            .expect("IFFT processing failed");
-
-        // Overlap-add to left accumulator (SIMD optimized)
-        // Apply crossfade if in transition
         let scale = self.output_scale;
-        scale_add_simd(
-            &mut self.output_accum_l[..self.fft_size],
-            &self.ifft_output,
-            scale,
-        );
+        let fft_size = self.fft_size;
+        let is_crossfading = self.crossfade_progress < 1.0 && self.prev_filters.is_some();
 
-        // Apply XTC filter for RIGHT output using SIMD:
-        // R_out = filter_rl * L_in + filter_rr * R_in
-        complex_mul_simd(&mut self.ifft_input, &self.fft_output_l, filter_rl);
-        complex_mul_add_simd(&mut self.ifft_input, &self.fft_output_r, filter_rr);
+        if is_crossfading {
+            let alpha = self.crossfade_progress;
+            let prev_filters_arc = self.prev_filters.as_ref().unwrap().clone();
+            let prev_filters = prev_filters_arc.read();
 
-        // Ensure DC and Nyquist bins are real
-        self.ifft_input[0].im = 0.0;
-        self.ifft_input[num_bins - 1].im = 0.0;
+            // --- Left channel with crossfade ---
+            // 1. IFFT with prev_filters into prev_ifft_output
+            apply_filter_left(
+                &mut self.ifft_input,
+                &self.fft_output_l,
+                &self.fft_output_r,
+                &prev_filters,
+            );
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.prev_ifft_output)
+                .expect("IFFT processing failed");
 
-        // IFFT right channel
-        self.fft_inverse
-            .process(&mut self.ifft_input, &mut self.ifft_output)
-            .expect("IFFT processing failed");
+            // 2. IFFT with current filters into ifft_output
+            {
+                let current_filters = self.filters.read();
+                apply_filter_left(
+                    &mut self.ifft_input,
+                    &self.fft_output_l,
+                    &self.fft_output_r,
+                    &current_filters,
+                );
+            }
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.ifft_output)
+                .expect("IFFT processing failed");
 
-        // Overlap-add to right accumulator (SIMD optimized)
-        scale_add_simd(
-            &mut self.output_accum_r[..self.fft_size],
-            &self.ifft_output,
-            scale,
-        );
+            // 3. Blend: ifft_output = (1-alpha)*prev + alpha*current
+            blend_buffers(&mut self.ifft_output, &self.prev_ifft_output, alpha);
 
-        // Drop filter lock before updating crossfade
-        drop(filters);
+            // 4. Overlap-add to left accumulator
+            scale_add_simd(
+                &mut self.output_accum_l[..fft_size],
+                &self.ifft_output,
+                scale,
+            );
 
-        // Update crossfade progress (Block mode)
+            // --- Right channel with crossfade ---
+            // 1. IFFT with prev_filters into prev_ifft_output
+            apply_filter_right(
+                &mut self.ifft_input,
+                &self.fft_output_l,
+                &self.fft_output_r,
+                &prev_filters,
+            );
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.prev_ifft_output)
+                .expect("IFFT processing failed");
+
+            // 2. IFFT with current filters into ifft_output
+            {
+                let current_filters = self.filters.read();
+                apply_filter_right(
+                    &mut self.ifft_input,
+                    &self.fft_output_l,
+                    &self.fft_output_r,
+                    &current_filters,
+                );
+            }
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.ifft_output)
+                .expect("IFFT processing failed");
+
+            // 3. Blend
+            blend_buffers(&mut self.ifft_output, &self.prev_ifft_output, alpha);
+
+            // 4. Overlap-add to right accumulator
+            scale_add_simd(
+                &mut self.output_accum_r[..fft_size],
+                &self.ifft_output,
+                scale,
+            );
+
+            // Drop locks before advancing crossfade
+            drop(prev_filters);
+        } else {
+            // Normal path: no crossfade needed
+            let filters = self.filters.read();
+
+            // Left channel
+            apply_filter_left(
+                &mut self.ifft_input,
+                &self.fft_output_l,
+                &self.fft_output_r,
+                &filters,
+            );
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.ifft_output)
+                .expect("IFFT processing failed");
+            scale_add_simd(
+                &mut self.output_accum_l[..fft_size],
+                &self.ifft_output,
+                scale,
+            );
+
+            // Right channel
+            apply_filter_right(
+                &mut self.ifft_input,
+                &self.fft_output_l,
+                &self.fft_output_r,
+                &filters,
+            );
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.ifft_output)
+                .expect("IFFT processing failed");
+            scale_add_simd(
+                &mut self.output_accum_r[..fft_size],
+                &self.ifft_output,
+                scale,
+            );
+        }
+
+        // Advance crossfade progress
         if self.crossfade_progress < 1.0 {
             let smooth_samples = self.params.head_tracking_smooth_s * self.sample_rate as f32;
             let progress_per_hop = self.hop_size as f32 / smooth_samples;
@@ -450,6 +551,13 @@ impl Plugin for XtcPlugin {
             )
             .with_group("Head Tracking")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "spectral_normalization",
+                "Spectral Normalization",
+                self.params.spectral_normalization,
+            )
+            .with_group("Advanced")
+            .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -497,6 +605,13 @@ impl Plugin for XtcPlugin {
             } else {
                 return Err("head_yaw_deg parameter must be float".to_string());
             }
+        } else if id == self.param_spectral_normalization {
+            if let ParameterValue::Bool(v) = value {
+                self.params.spectral_normalization = v;
+                needs_filter_update = true;
+            } else {
+                return Err("spectral_normalization parameter must be bool".to_string());
+            }
         } else {
             return Err(format!("Unknown parameter: {:?}", id));
         }
@@ -521,6 +636,8 @@ impl Plugin for XtcPlugin {
             Some(ParameterValue::Float(self.params.head_offset_z))
         } else if id == &self.param_head_yaw {
             Some(ParameterValue::Float(self.params.head_yaw_deg))
+        } else if id == &self.param_spectral_normalization {
+            Some(ParameterValue::Bool(self.params.spectral_normalization))
         } else {
             None
         }
@@ -545,16 +662,9 @@ impl Plugin for XtcPlugin {
         self.input_buffer_r.fill(0.0);
         self.output_accum_l.fill(0.0);
         self.output_accum_r.fill(0.0);
+        self.prev_ifft_output.fill(0.0);
         self.input_fill = 0;
         self.output_available = 0;
-
-        // Reset smoothers to current parameter values
-        self.smoother_offset_x.reset(self.params.head_offset_x);
-        self.smoother_offset_z.reset(self.params.head_offset_z);
-        self.smoother_yaw.reset(self.params.head_yaw_deg);
-        self.current_offset_x = self.params.head_offset_x;
-        self.current_offset_z = self.params.head_offset_z;
-        self.current_yaw_deg = self.params.head_yaw_deg;
 
         // Reset crossfade state
         self.prev_filters = None;
@@ -632,22 +742,15 @@ impl Plugin for XtcPlugin {
             // Copy available output to output buffer
             let samples_to_output = self.output_available.min(num_frames - out_pos);
             if samples_to_output > 0 {
-                // Interleave output directly with denormal flushing
-                for i in 0..samples_to_output {
-                    let mut sample_l = self.output_accum_l[i];
-                    let mut sample_r = self.output_accum_r[i];
-
-                    // Flush denormals to zero to prevent CPU spikes and audio glitches
-                    if sample_l.abs() < 1e-30 {
-                        sample_l = 0.0;
-                    }
-                    if sample_r.abs() < 1e-30 {
-                        sample_r = 0.0;
-                    }
-
-                    output[(out_pos + i) * 2] = sample_l;
-                    output[(out_pos + i) * 2 + 1] = sample_r;
-                }
+                // Flush denormals in-place then SIMD interleave
+                let n = samples_to_output;
+                flush_denormals_inplace(&mut self.output_accum_l[..n]);
+                flush_denormals_inplace(&mut self.output_accum_r[..n]);
+                interleave_stereo(
+                    &self.output_accum_l[..n],
+                    &self.output_accum_r[..n],
+                    &mut output[out_pos * 2..(out_pos + n) * 2],
+                );
                 out_pos += samples_to_output;
 
                 // Shift accumulator after consuming

@@ -102,10 +102,8 @@ pub const TILT_TYPE_OPTIONS: &[(&str, &str)] = &[
 ];
 
 /// Highpass Filter options
-pub const HIGHPASS_TYPE_OPTIONS: &[(&str, &str)] = &[
-    ("lr", "Linkwitz-Riley"),
-    ("bw", "Butterworth"),
-];
+pub const HIGHPASS_TYPE_OPTIONS: &[(&str, &str)] =
+    &[("lr", "Linkwitz-Riley"), ("bw", "Butterworth")];
 
 /// Multi-Seat Strategy options
 pub const MULTI_SEAT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
@@ -345,7 +343,6 @@ pub struct AutoEqConfig {
     pub system_type: String,
 
     // --- Advanced Room Correction (Scenario B) ---
-
     /// Enable target tilt
     pub use_target_tilt: bool,
     /// Tilt type: flat, harman, custom
@@ -386,7 +383,6 @@ pub struct AutoEqConfig {
     pub schroeder_high_shelving_only: bool,
 
     // --- Advanced System Optimization (Scenario A) ---
-
     /// Enable phase alignment
     pub use_phase_alignment: bool,
     /// Phase alignment min freq
@@ -1514,32 +1510,60 @@ impl RenderOnce for AutoEqForm {
         let on_tilt_type_change_rc = self.on_tilt_type_change.map(std::rc::Rc::new);
         let on_tilt_type_toggle_rc = self.on_tilt_type_toggle.map(std::rc::Rc::new);
         let on_tilt_slope_change_rc = self.on_tilt_slope_change.map(std::rc::Rc::new);
-        let on_tilt_reference_freq_change_rc = self.on_tilt_reference_freq_change.map(std::rc::Rc::new);
-        let on_tilt_bass_shelf_db_change_rc = self.on_tilt_bass_shelf_db_change.map(std::rc::Rc::new);
-        let on_tilt_bass_shelf_freq_change_rc = self.on_tilt_bass_shelf_freq_change.map(std::rc::Rc::new);
-        let on_use_excursion_protection_change_rc = self.on_use_excursion_protection_change.map(std::rc::Rc::new);
-        let on_excursion_auto_detect_f3_change_rc = self.on_excursion_auto_detect_f3_change.map(std::rc::Rc::new);
-        let on_excursion_manual_f3_change_rc = self.on_excursion_manual_f3_change.map(std::rc::Rc::new);
-        let on_excursion_filter_order_change_rc = self.on_excursion_filter_order_change.map(std::rc::Rc::new);
-        let on_excursion_filter_type_change_rc = self.on_excursion_filter_type_change.map(std::rc::Rc::new);
-        let on_excursion_filter_type_toggle_rc = self.on_excursion_filter_type_toggle.map(std::rc::Rc::new);
-        let on_excursion_margin_octaves_change_rc = self.on_excursion_margin_octaves_change.map(std::rc::Rc::new);
-        let on_use_schroeder_split_change_rc = self.on_use_schroeder_split_change.map(std::rc::Rc::new);
+        let on_tilt_reference_freq_change_rc =
+            self.on_tilt_reference_freq_change.map(std::rc::Rc::new);
+        let on_tilt_bass_shelf_db_change_rc =
+            self.on_tilt_bass_shelf_db_change.map(std::rc::Rc::new);
+        let on_tilt_bass_shelf_freq_change_rc =
+            self.on_tilt_bass_shelf_freq_change.map(std::rc::Rc::new);
+        let on_use_excursion_protection_change_rc = self
+            .on_use_excursion_protection_change
+            .map(std::rc::Rc::new);
+        let on_excursion_auto_detect_f3_change_rc = self
+            .on_excursion_auto_detect_f3_change
+            .map(std::rc::Rc::new);
+        let on_excursion_manual_f3_change_rc =
+            self.on_excursion_manual_f3_change.map(std::rc::Rc::new);
+        let on_excursion_filter_order_change_rc =
+            self.on_excursion_filter_order_change.map(std::rc::Rc::new);
+        let on_excursion_filter_type_change_rc =
+            self.on_excursion_filter_type_change.map(std::rc::Rc::new);
+        let on_excursion_filter_type_toggle_rc =
+            self.on_excursion_filter_type_toggle.map(std::rc::Rc::new);
+        let on_excursion_margin_octaves_change_rc = self
+            .on_excursion_margin_octaves_change
+            .map(std::rc::Rc::new);
+        let on_use_schroeder_split_change_rc =
+            self.on_use_schroeder_split_change.map(std::rc::Rc::new);
         let on_schroeder_freq_change_rc = self.on_schroeder_freq_change.map(std::rc::Rc::new);
-        let on_schroeder_low_max_q_change_rc = self.on_schroeder_low_max_q_change.map(std::rc::Rc::new);
-        let on_schroeder_low_allow_boost_change_rc = self.on_schroeder_low_allow_boost_change.map(std::rc::Rc::new);
-        let on_schroeder_high_max_q_change_rc = self.on_schroeder_high_max_q_change.map(std::rc::Rc::new);
-        let on_schroeder_high_shelving_only_change_rc = self.on_schroeder_high_shelving_only_change.map(std::rc::Rc::new);
-        let on_use_phase_alignment_change_rc = self.on_use_phase_alignment_change.map(std::rc::Rc::new);
+        let on_schroeder_low_max_q_change_rc =
+            self.on_schroeder_low_max_q_change.map(std::rc::Rc::new);
+        let on_schroeder_low_allow_boost_change_rc = self
+            .on_schroeder_low_allow_boost_change
+            .map(std::rc::Rc::new);
+        let on_schroeder_high_max_q_change_rc =
+            self.on_schroeder_high_max_q_change.map(std::rc::Rc::new);
+        let on_schroeder_high_shelving_only_change_rc = self
+            .on_schroeder_high_shelving_only_change
+            .map(std::rc::Rc::new);
+        let on_use_phase_alignment_change_rc =
+            self.on_use_phase_alignment_change.map(std::rc::Rc::new);
         let on_phase_min_freq_change_rc = self.on_phase_min_freq_change.map(std::rc::Rc::new);
         let on_phase_max_freq_change_rc = self.on_phase_max_freq_change.map(std::rc::Rc::new);
-        let on_phase_optimize_polarity_change_rc = self.on_phase_optimize_polarity_change.map(std::rc::Rc::new);
-        let on_phase_max_delay_ms_change_rc = self.on_phase_max_delay_ms_change.map(std::rc::Rc::new);
+        let on_phase_optimize_polarity_change_rc =
+            self.on_phase_optimize_polarity_change.map(std::rc::Rc::new);
+        let on_phase_max_delay_ms_change_rc =
+            self.on_phase_max_delay_ms_change.map(std::rc::Rc::new);
         let on_use_multi_seat_change_rc = self.on_use_multi_seat_change.map(std::rc::Rc::new);
-        let on_multi_seat_strategy_change_rc = self.on_multi_seat_strategy_change.map(std::rc::Rc::new);
-        let on_multi_seat_strategy_toggle_rc = self.on_multi_seat_strategy_toggle.map(std::rc::Rc::new);
-        let on_multi_seat_primary_seat_change_rc = self.on_multi_seat_primary_seat_change.map(std::rc::Rc::new);
-        let on_multi_seat_max_deviation_db_change_rc = self.on_multi_seat_max_deviation_db_change.map(std::rc::Rc::new);
+        let on_multi_seat_strategy_change_rc =
+            self.on_multi_seat_strategy_change.map(std::rc::Rc::new);
+        let on_multi_seat_strategy_toggle_rc =
+            self.on_multi_seat_strategy_toggle.map(std::rc::Rc::new);
+        let on_multi_seat_primary_seat_change_rc =
+            self.on_multi_seat_primary_seat_change.map(std::rc::Rc::new);
+        let on_multi_seat_max_deviation_db_change_rc = self
+            .on_multi_seat_max_deviation_db_change
+            .map(std::rc::Rc::new);
 
         let mut form = VStack::new().spacing(StackSpacing::Lg);
         let base_id = id.clone();
@@ -2002,17 +2026,18 @@ impl RenderOnce for AutoEqForm {
                 eq_design_content = eq_design_content.child(peq_model_select);
 
                 // Spacing constraint row
-                let mut spacing_weight_input = NumberInput::new((base_id.clone(), "spacing-weight"))
-                    .value(config.spacing_weight)
-                    .min(ParamLimits::SPACING_WEIGHT.min)
-                    .max(ParamLimits::SPACING_WEIGHT.max)
-                    .step(ParamLimits::SPACING_WEIGHT.step)
-                    .decimals(1)
-                    .label("Spacing Weight")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
+                let mut spacing_weight_input =
+                    NumberInput::new((base_id.clone(), "spacing-weight"))
+                        .value(config.spacing_weight)
+                        .min(ParamLimits::SPACING_WEIGHT.min)
+                        .max(ParamLimits::SPACING_WEIGHT.max)
+                        .step(ParamLimits::SPACING_WEIGHT.step)
+                        .decimals(1)
+                        .label("Spacing Weight")
+                        .size(NumberInputSize::Sm)
+                        .width(100.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
 
                 if let Some(ref handler) = on_spacing_weight_change_rc {
                     let h = handler.clone();
@@ -2020,17 +2045,18 @@ impl RenderOnce for AutoEqForm {
                         spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                let mut min_spacing_oct_input = NumberInput::new((base_id.clone(), "min-spacing-oct"))
-                    .value(config.min_spacing_oct)
-                    .min(ParamLimits::MIN_SPACING_OCT.min)
-                    .max(ParamLimits::MIN_SPACING_OCT.max)
-                    .step(ParamLimits::MIN_SPACING_OCT.step)
-                    .decimals(2)
-                    .label("Min Spacing (oct)")
-                    .size(NumberInputSize::Sm)
-                    .width(120.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
+                let mut min_spacing_oct_input =
+                    NumberInput::new((base_id.clone(), "min-spacing-oct"))
+                        .value(config.min_spacing_oct)
+                        .min(ParamLimits::MIN_SPACING_OCT.min)
+                        .max(ParamLimits::MIN_SPACING_OCT.max)
+                        .step(ParamLimits::MIN_SPACING_OCT.step)
+                        .decimals(2)
+                        .label("Min Spacing (oct)")
+                        .size(NumberInputSize::Sm)
+                        .width(120.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
 
                 if let Some(ref handler) = on_min_spacing_oct_change_rc {
                     let h = handler.clone();
@@ -2502,8 +2528,12 @@ impl RenderOnce for AutoEqForm {
             advanced_b_content = advanced_b_content.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::new("Target Tilt").size(TextSize::Xs).color(theme.label_color))
-                    .child(tilt_toggle)
+                    .child(
+                        Text::new("Target Tilt")
+                            .size(TextSize::Xs)
+                            .color(theme.label_color),
+                    )
+                    .child(tilt_toggle),
             );
 
             if config.use_target_tilt {
@@ -2565,7 +2595,7 @@ impl RenderOnce for AutoEqForm {
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child(slope_input)
-                            .child(ref_freq_input)
+                            .child(ref_freq_input),
                     );
 
                     let mut shelf_db_input = NumberInput::new((base_id.clone(), "tilt-shelf-db"))
@@ -2583,15 +2613,16 @@ impl RenderOnce for AutoEqForm {
                         shelf_db_input = shelf_db_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    let mut shelf_freq_input = NumberInput::new((base_id.clone(), "tilt-shelf-freq"))
-                        .value(config.tilt_bass_shelf_freq)
-                        .min(20.0)
-                        .max(1000.0)
-                        .step(10.0)
-                        .decimals(0)
-                        .label("Shelf Freq (Hz)")
-                        .size(NumberInputSize::Sm)
-                        .theme(theme.number_input_theme.clone());
+                    let mut shelf_freq_input =
+                        NumberInput::new((base_id.clone(), "tilt-shelf-freq"))
+                            .value(config.tilt_bass_shelf_freq)
+                            .min(20.0)
+                            .max(1000.0)
+                            .step(10.0)
+                            .decimals(0)
+                            .label("Shelf Freq (Hz)")
+                            .size(NumberInputSize::Sm)
+                            .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_tilt_bass_shelf_freq_change_rc {
                         let h = h.clone();
@@ -2602,7 +2633,7 @@ impl RenderOnce for AutoEqForm {
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child(shelf_db_input)
-                            .child(shelf_freq_input)
+                            .child(shelf_freq_input),
                     );
                 }
             }
@@ -2621,107 +2652,116 @@ impl RenderOnce for AutoEqForm {
             advanced_b_content = advanced_b_content.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::new("Excursion Protection").size(TextSize::Xs).color(theme.label_color))
-                    .child(excursion_toggle)
+                    .child(
+                        Text::new("Excursion Protection")
+                            .size(TextSize::Xs)
+                            .color(theme.label_color),
+                    )
+                    .child(excursion_toggle),
             );
 
-                            if config.use_excursion_protection {
-                            let mut auto_f3_toggle = Toggle::new((base_id.clone(), "excursion-auto-f3"))
-                                .size(ToggleSize::Sm)
-                                .checked(config.excursion_auto_detect_f3)
-                                .theme(toggle_theme.clone());
-            
-                            if let Some(ref h) = on_excursion_auto_detect_f3_change_rc {
-                                let h = h.clone();
-                                auto_f3_toggle = auto_f3_toggle.on_change(move |v, w, cx| h(v, w, cx));
-                            }
-            
-                            advanced_b_content = advanced_b_content.child(
-                                HStack::new()
-                                    .justify(StackJustify::SpaceBetween)
-                                    .child(Text::new("Auto-detect F3").size(TextSize::Xs).color(theme.label_color))
-                                    .child(auto_f3_toggle)
-                            );
-            
-                            if !config.excursion_auto_detect_f3 {
-                                let mut f3_input = NumberInput::new((base_id.clone(), "excursion-manual-f3"))
-                                    .value(config.excursion_manual_f3)
-                                    .min(10.0)
-                                    .max(500.0)
-                                    .step(1.0)
-                                    .decimals(0)
-                                    .label("Manual F3 (Hz)")
-                                    .size(NumberInputSize::Sm)
-                                    .theme(theme.number_input_theme.clone());
-            
-                                if let Some(ref h) = on_excursion_manual_f3_change_rc {
-                                    let h = h.clone();
-                                    f3_input = f3_input.on_change(move |v, w, cx| h(v, w, cx));
-                                }
-                                advanced_b_content = advanced_b_content.child(f3_input);
-                            }
-            
-                            let hp_options: Vec<SelectOption> = HIGHPASS_TYPE_OPTIONS
-                                .iter()
-                                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                                .collect();
-            
-                            let mut hp_select = Select::new((base_id.clone(), "excursion-hp-type"))
-                                .options(hp_options)
-                                .selected(&config.excursion_filter_type)
-                                .is_open(ui_state.excursion_filter_type_open)
-                                .theme(theme.select_theme.clone());
-            
-                            if let Some(ref h) = on_excursion_filter_type_toggle_rc {
-                                let h = h.clone();
-                                hp_select = hp_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                            }
-            
-                            if let Some(ref h) = on_excursion_filter_type_change_rc {
-                                let h = h.clone();
-                                hp_select = hp_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
-                            }
-            
-                            let mut order_input = NumberInput::new((base_id.clone(), "excursion-order"))
-                                .value(config.excursion_filter_order as f64)
-                                .min(2.0)
-                                .max(8.0)
-                                .step(2.0)
-                                .decimals(0)
-                                .label("Order")
-                                .size(NumberInputSize::Sm)
-                                .theme(theme.number_input_theme.clone());
-            
-                            if let Some(ref h) = on_excursion_filter_order_change_rc {
-                                let h = h.clone();
-                                order_input = order_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                            }
-            
-                            advanced_b_content = advanced_b_content.child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(hp_select)
-                                    .child(order_input)
-                            );
-            
-                            let mut margin_input = NumberInput::new((base_id.clone(), "excursion-margin"))
-                                .value(config.excursion_margin_octaves)
-                                .min(0.0)
-                                .max(1.0)
-                                .step(0.05)
-                                .decimals(2)
-                                .label("Safety Margin (oct)")
-                                .size(NumberInputSize::Sm)
-                                .theme(theme.number_input_theme.clone());
-            
-                            if let Some(ref h) = on_excursion_margin_octaves_change_rc {
-                                let h = h.clone();
-                                margin_input = margin_input.on_change(move |v, w, cx| h(v, w, cx));
-                            }
-            
-                            advanced_b_content = advanced_b_content.child(margin_input);
-                        }
-                        // --- Schroeder Split ---
+            if config.use_excursion_protection {
+                let mut auto_f3_toggle = Toggle::new((base_id.clone(), "excursion-auto-f3"))
+                    .size(ToggleSize::Sm)
+                    .checked(config.excursion_auto_detect_f3)
+                    .theme(toggle_theme.clone());
+
+                if let Some(ref h) = on_excursion_auto_detect_f3_change_rc {
+                    let h = h.clone();
+                    auto_f3_toggle = auto_f3_toggle.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(
+                    HStack::new()
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            Text::new("Auto-detect F3")
+                                .size(TextSize::Xs)
+                                .color(theme.label_color),
+                        )
+                        .child(auto_f3_toggle),
+                );
+
+                if !config.excursion_auto_detect_f3 {
+                    let mut f3_input = NumberInput::new((base_id.clone(), "excursion-manual-f3"))
+                        .value(config.excursion_manual_f3)
+                        .min(10.0)
+                        .max(500.0)
+                        .step(1.0)
+                        .decimals(0)
+                        .label("Manual F3 (Hz)")
+                        .size(NumberInputSize::Sm)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref h) = on_excursion_manual_f3_change_rc {
+                        let h = h.clone();
+                        f3_input = f3_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+                    advanced_b_content = advanced_b_content.child(f3_input);
+                }
+
+                let hp_options: Vec<SelectOption> = HIGHPASS_TYPE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut hp_select = Select::new((base_id.clone(), "excursion-hp-type"))
+                    .options(hp_options)
+                    .selected(&config.excursion_filter_type)
+                    .is_open(ui_state.excursion_filter_type_open)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref h) = on_excursion_filter_type_toggle_rc {
+                    let h = h.clone();
+                    hp_select = hp_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref h) = on_excursion_filter_type_change_rc {
+                    let h = h.clone();
+                    hp_select = hp_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                let mut order_input = NumberInput::new((base_id.clone(), "excursion-order"))
+                    .value(config.excursion_filter_order as f64)
+                    .min(2.0)
+                    .max(8.0)
+                    .step(2.0)
+                    .decimals(0)
+                    .label("Order")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_excursion_filter_order_change_rc {
+                    let h = h.clone();
+                    order_input =
+                        order_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(hp_select)
+                        .child(order_input),
+                );
+
+                let mut margin_input = NumberInput::new((base_id.clone(), "excursion-margin"))
+                    .value(config.excursion_margin_octaves)
+                    .min(0.0)
+                    .max(1.0)
+                    .step(0.05)
+                    .decimals(2)
+                    .label("Safety Margin (oct)")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_excursion_margin_octaves_change_rc {
+                    let h = h.clone();
+                    margin_input = margin_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(margin_input);
+            }
+            // --- Schroeder Split ---
             let mut schroeder_toggle = Toggle::new((base_id.clone(), "schroeder-enabled"))
                 .size(ToggleSize::Sm)
                 .checked(config.use_schroeder_split)
@@ -2735,8 +2775,12 @@ impl RenderOnce for AutoEqForm {
             advanced_b_content = advanced_b_content.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::new("Schroeder Split").size(TextSize::Xs).color(theme.label_color))
-                    .child(schroeder_toggle)
+                    .child(
+                        Text::new("Schroeder Split")
+                            .size(TextSize::Xs)
+                            .color(theme.label_color),
+                    )
+                    .child(schroeder_toggle),
             );
 
             if config.use_schroeder_split {
@@ -2791,7 +2835,7 @@ impl RenderOnce for AutoEqForm {
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .child(low_q_input)
-                        .child(high_q_input)
+                        .child(high_q_input),
                 );
 
                 let mut boost_toggle = Toggle::new((base_id.clone(), "schroeder-boost"))
@@ -2817,15 +2861,23 @@ impl RenderOnce for AutoEqForm {
                 advanced_b_content = advanced_b_content.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
-                        .child(Text::new("Allow LF Boost").size(TextSize::Xs).color(theme.label_color))
-                        .child(boost_toggle)
+                        .child(
+                            Text::new("Allow LF Boost")
+                                .size(TextSize::Xs)
+                                .color(theme.label_color),
+                        )
+                        .child(boost_toggle),
                 );
 
                 advanced_b_content = advanced_b_content.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
-                        .child(Text::new("HF Shelving Only").size(TextSize::Xs).color(theme.label_color))
-                        .child(shelve_toggle)
+                        .child(
+                            Text::new("HF Shelving Only")
+                                .size(TextSize::Xs)
+                                .color(theme.label_color),
+                        )
+                        .child(shelve_toggle),
                 );
             }
 
@@ -2867,8 +2919,12 @@ impl RenderOnce for AutoEqForm {
             advanced_a_content = advanced_a_content.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::new("Phase Alignment").size(TextSize::Xs).color(theme.label_color))
-                    .child(phase_toggle)
+                    .child(
+                        Text::new("Phase Alignment")
+                            .size(TextSize::Xs)
+                            .color(theme.label_color),
+                    )
+                    .child(phase_toggle),
             );
 
             if config.use_phase_alignment {
@@ -2906,7 +2962,7 @@ impl RenderOnce for AutoEqForm {
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .child(min_freq_input)
-                        .child(max_freq_input)
+                        .child(max_freq_input),
                 );
 
                 let mut polarity_toggle = Toggle::new((base_id.clone(), "phase-polarity"))
@@ -2922,8 +2978,12 @@ impl RenderOnce for AutoEqForm {
                 advanced_a_content = advanced_a_content.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
-                        .child(Text::new("Optimize Polarity").size(TextSize::Xs).color(theme.label_color))
-                        .child(polarity_toggle)
+                        .child(
+                            Text::new("Optimize Polarity")
+                                .size(TextSize::Xs)
+                                .color(theme.label_color),
+                        )
+                        .child(polarity_toggle),
                 );
 
                 let mut p_max_delay = NumberInput::new((base_id.clone(), "phase-max-delay"))
@@ -2957,8 +3017,12 @@ impl RenderOnce for AutoEqForm {
             advanced_a_content = advanced_a_content.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
-                    .child(Text::new("Multi-Seat Optimization").size(TextSize::Xs).color(theme.label_color))
-                    .child(multi_seat_toggle)
+                    .child(
+                        Text::new("Multi-Seat Optimization")
+                            .size(TextSize::Xs)
+                            .color(theme.label_color),
+                    )
+                    .child(multi_seat_toggle),
             );
 
             if config.use_multi_seat {
@@ -2980,26 +3044,28 @@ impl RenderOnce for AutoEqForm {
 
                 if let Some(ref h) = on_multi_seat_strategy_change_rc {
                     let h = h.clone();
-                    strategy_select = strategy_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                    strategy_select =
+                        strategy_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                 }
 
                 advanced_a_content = advanced_a_content.child(strategy_select);
 
                 if config.multi_seat_strategy == "primary" {
-                    let mut primary_seat_input = NumberInput::new((base_id.clone(), "multi-seat-primary"))
-                        .value(config.multi_seat_primary_seat as f64)
-                        .min(0.0)
-                        .max(16.0)
-                        .step(1.0)
-                        .decimals(0)
-                        .label("Primary Seat")
-                        .size(NumberInputSize::Sm)
-                        .theme(theme.number_input_theme.clone());
+                    let mut primary_seat_input =
+                        NumberInput::new((base_id.clone(), "multi-seat-primary"))
+                            .value(config.multi_seat_primary_seat as f64)
+                            .min(0.0)
+                            .max(16.0)
+                            .step(1.0)
+                            .decimals(0)
+                            .label("Primary Seat")
+                            .size(NumberInputSize::Sm)
+                            .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_multi_seat_primary_seat_change_rc {
                         let h = h.clone();
-                        primary_seat_input =
-                            primary_seat_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                        primary_seat_input = primary_seat_input
+                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                     }
                     advanced_a_content = advanced_a_content.child(primary_seat_input);
                 }

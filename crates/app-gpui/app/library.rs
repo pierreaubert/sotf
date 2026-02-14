@@ -318,11 +318,7 @@ impl App {
                     .iter()
                     .position(|d| d.path == *path)
                 {
-                    if self
-                        .library_state
-                        .remove_directory(dir_index)
-                        .is_some()
-                    {
+                    if self.library_state.remove_directory(dir_index).is_some() {
                         // Adjust selected_directory_index if needed
                         let tree_items = self.get_directory_tree_items();
                         if self.selected_directory_index >= tree_items.len()

@@ -140,16 +140,46 @@ impl PlayerView {
     fn render_feature_table(&self, theme: &crate::theme::Theme) -> impl IntoElement {
         // --- Features (screens) ---
         let features: Vec<FeatureRow> = vec![
-            FeatureRow { name: "Library", maturity: Screen::Library.maturity() },
-            FeatureRow { name: "Queue", maturity: Screen::Queue.maturity() },
-            FeatureRow { name: "Spectrum", maturity: Screen::Spectrum.maturity() },
-            FeatureRow { name: "Settings", maturity: Screen::Settings.maturity() },
-            FeatureRow { name: "Recording", maturity: Screen::Recording.maturity() },
-            FeatureRow { name: "Headphone EQ", maturity: Screen::HeadphoneEq.maturity() },
-            FeatureRow { name: "Spinorama", maturity: Screen::Spinorama.maturity() },
-            FeatureRow { name: "Plugin Graph", maturity: Screen::PluginGraph.maturity() },
-            FeatureRow { name: "Studio", maturity: Screen::Studio.maturity() },
-            FeatureRow { name: "Room EQ", maturity: Screen::RoomEq.maturity() },
+            FeatureRow {
+                name: "Library",
+                maturity: Screen::Library.maturity(),
+            },
+            FeatureRow {
+                name: "Queue",
+                maturity: Screen::Queue.maturity(),
+            },
+            FeatureRow {
+                name: "Spectrum",
+                maturity: Screen::Spectrum.maturity(),
+            },
+            FeatureRow {
+                name: "Settings",
+                maturity: Screen::Settings.maturity(),
+            },
+            FeatureRow {
+                name: "Recording",
+                maturity: Screen::Recording.maturity(),
+            },
+            FeatureRow {
+                name: "Headphone EQ",
+                maturity: Screen::HeadphoneEq.maturity(),
+            },
+            FeatureRow {
+                name: "Spinorama",
+                maturity: Screen::Spinorama.maturity(),
+            },
+            FeatureRow {
+                name: "Plugin Graph",
+                maturity: Screen::PluginGraph.maturity(),
+            },
+            FeatureRow {
+                name: "Studio",
+                maturity: Screen::Studio.maturity(),
+            },
+            FeatureRow {
+                name: "Room EQ",
+                maturity: Screen::RoomEq.maturity(),
+            },
         ];
 
         // --- Plugins ---
@@ -212,65 +242,60 @@ impl PlayerView {
             );
 
         // Helper to build one table section
-        let build_section =
-            move |label: &'static str, rows: Vec<FeatureRow>| -> Div {
-                let mut section = div().flex().flex_col().gap_0p5();
+        let build_section = move |label: &'static str, rows: Vec<FeatureRow>| -> Div {
+            let mut section = div().flex().flex_col().gap_0p5();
 
-                // Section header
+            // Section header
+            section = section.child(
+                div().flex().mt_3().mb_1().child(
+                    div()
+                        .w(name_w)
+                        .text_xs()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(accent)
+                        .child(label),
+                ),
+            );
+
+            for row in &rows {
+                let mark = |channel: ReleaseChannel| -> Div {
+                    div()
+                        .w(col_w)
+                        .text_xs()
+                        .text_center()
+                        .child(if row.maturity == channel {
+                            SharedString::from("\u{2714}") // checkmark
+                        } else {
+                            SharedString::from("")
+                        })
+                        .text_color(if row.maturity == channel {
+                            accent
+                        } else {
+                            text_secondary
+                        })
+                };
+
                 section = section.child(
                     div()
                         .flex()
-                        .mt_3()
-                        .mb_1()
+                        .py_0p5()
+                        .rounded_sm()
+                        .hover(move |s| s.bg(surface))
                         .child(
                             div()
                                 .w(name_w)
                                 .text_xs()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(accent)
-                                .child(label),
-                        ),
+                                .text_color(text_primary)
+                                .child(row.name),
+                        )
+                        .child(mark(ReleaseChannel::Prod))
+                        .child(mark(ReleaseChannel::Beta))
+                        .child(mark(ReleaseChannel::Alpha)),
                 );
+            }
 
-                for row in &rows {
-                    let mark = |channel: ReleaseChannel| -> Div {
-                        div()
-                            .w(col_w)
-                            .text_xs()
-                            .text_center()
-                            .child(if row.maturity == channel {
-                                SharedString::from("\u{2714}") // checkmark
-                            } else {
-                                SharedString::from("")
-                            })
-                            .text_color(if row.maturity == channel {
-                                accent
-                            } else {
-                                text_secondary
-                            })
-                    };
-
-                    section = section.child(
-                        div()
-                            .flex()
-                            .py_0p5()
-                            .rounded_sm()
-                            .hover(move |s| s.bg(surface))
-                            .child(
-                                div()
-                                    .w(name_w)
-                                    .text_xs()
-                                    .text_color(text_primary)
-                                    .child(row.name),
-                            )
-                            .child(mark(ReleaseChannel::Prod))
-                            .child(mark(ReleaseChannel::Beta))
-                            .child(mark(ReleaseChannel::Alpha)),
-                    );
-                }
-
-                section
-            };
+            section
+        };
 
         div()
             .flex()

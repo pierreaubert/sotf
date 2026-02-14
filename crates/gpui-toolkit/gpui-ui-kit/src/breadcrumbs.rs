@@ -148,10 +148,9 @@ impl Breadcrumbs {
                 if let Some(ref handler_rc) = on_click_rc {
                     let handler = handler_rc.clone();
                     let id = item_id.clone();
-                    crumb =
-                        crumb.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                            handler(&id, window, cx);
-                        });
+                    crumb = crumb.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                        handler(&id, window, cx);
+                    });
                 }
             }
 

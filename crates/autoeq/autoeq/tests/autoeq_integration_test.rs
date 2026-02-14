@@ -52,7 +52,11 @@ fn test_full_optimization_workflow_csv() {
     // Verify output was created
     // Since output_path is the plot file, the PEQ file is in the same directory (parent of plot file)
     let apo_path = output_path.parent().unwrap().join("iir-autoeq-flat.txt");
-    assert!(apo_path.exists(), "APO file should be created at {:?}", apo_path);
+    assert!(
+        apo_path.exists(),
+        "APO file should be created at {:?}",
+        apo_path
+    );
 
     let content = std::fs::read_to_string(&apo_path).unwrap();
     assert!(content.contains("Filter")); // Filter section
@@ -89,7 +93,8 @@ fn test_multi_driver_optimization() {
 
     let output = Command::new(get_autoeq_binary())
         .args(&[
-            "--loss", "drivers-flat", // Must specify loss type for drivers
+            "--loss",
+            "drivers-flat", // Must specify loss type for drivers
             "--driver1",
             &woofer_path.to_string_lossy(),
             "--driver2",

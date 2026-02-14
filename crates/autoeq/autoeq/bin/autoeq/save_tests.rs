@@ -17,9 +17,15 @@ mod tests {
         // Example optimized parameters (3 filters)
         // Note: Frequency parameters must be in log10 scale
         let x = vec![
-            500.0f64.log10(), 2.0, -3.0, // Filter 1
-            1000.0f64.log10(), 5.0, 2.0, // Filter 2
-            3000.0f64.log10(), 3.0, -1.0, // Filter 3
+            500.0f64.log10(),
+            2.0,
+            -3.0, // Filter 1
+            1000.0f64.log10(),
+            5.0,
+            2.0, // Filter 2
+            3000.0f64.log10(),
+            3.0,
+            -1.0, // Filter 3
         ];
 
         let result = save_peq_to_file(&args, &x, &output_path, &LossType::SpeakerFlat).await;

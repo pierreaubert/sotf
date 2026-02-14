@@ -45,8 +45,7 @@ impl DenoiserPlugin {
                     let prev_gain = self.smoothed_gain[ch][k];
                     let prev_pow = self.prev_power[ch][k];
                     let ml_term = (signal_power / noise_power.max(EPSILON) - 1.0).max(0.0);
-                    let dd_term =
-                        prev_gain * prev_gain * prev_pow / noise_power.max(EPSILON);
+                    let dd_term = prev_gain * prev_gain * prev_pow / noise_power.max(EPSILON);
                     dd_alpha * dd_term + (1.0 - dd_alpha) * ml_term
                 } else {
                     ((signal_power - noise_power).max(0.0)) / noise_power.max(EPSILON)

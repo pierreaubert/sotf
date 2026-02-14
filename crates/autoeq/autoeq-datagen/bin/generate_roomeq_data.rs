@@ -4,7 +4,9 @@
 //!   cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir data_tests/roomeq/generated
 
 use anyhow::Result;
-use autoeq_datagen::{bem_runner, csv_export, fem_runner, hf_extension, roomeq_config_gen, scenarios};
+use autoeq_datagen::{
+    bem_runner, csv_export, fem_runner, hf_extension, roomeq_config_gen, scenarios,
+};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
@@ -86,11 +88,9 @@ fn run_solver(
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(if args.verbose {
-        "debug"
-    } else {
-        "info"
-    }))
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or(if args.verbose { "debug" } else { "info" }),
+    )
     .init();
 
     let all_scenarios = if let Some(ref name) = args.scenario {
@@ -137,6 +137,9 @@ fn main() -> Result<()> {
         }
     }
 
-    log::info!("Data generation complete. Output: {}", args.output_dir.display());
+    log::info!(
+        "Data generation complete. Output: {}",
+        args.output_dir.display()
+    );
     Ok(())
 }

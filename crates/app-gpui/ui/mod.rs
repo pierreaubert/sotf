@@ -107,15 +107,20 @@ impl PlayerView {
 
                             if let Some(idx) = chain.input_monitor_engine_index() {
                                 if let Some(data) = player.get_cached_plugin_data(idx) {
-                                    if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
-                                        state.app.playback.input_loudness_info = Some(loudness.clone());
+                                    if let Some(loudness) =
+                                        data.downcast_ref::<sotf_audio_player::LoudnessData>()
+                                    {
+                                        state.app.playback.input_loudness_info =
+                                            Some(loudness.clone());
                                     }
                                 }
                             }
 
                             if let Some(idx) = chain.output_monitor_engine_index() {
                                 if let Some(data) = player.get_cached_plugin_data(idx) {
-                                    if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
+                                    if let Some(loudness) =
+                                        data.downcast_ref::<sotf_audio_player::LoudnessData>()
+                                    {
                                         state.app.playback.loudness_info = Some(loudness.clone());
                                     }
                                 }
@@ -123,16 +128,19 @@ impl PlayerView {
 
                             if include_spectrum {
                                 if let Some(idx) = chain.spectrum_engine_index() {
-                                    state.app.playback.spectrum_info = player
-                                        .get_cached_plugin_data(idx)
-                                        .and_then(|d| d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned());
+                                    state.app.playback.spectrum_info =
+                                        player.get_cached_plugin_data(idx).and_then(|d| {
+                                            d.downcast_ref::<sotf_audio_player::SpectrumData>()
+                                                .cloned()
+                                        });
                                 }
                             }
 
                             if let Some(idx) = chain.compressor_engine_index() {
-                                state.app.playback.compressor_info = player
-                                    .get_cached_plugin_data(idx)
-                                    .and_then(|d| d.downcast_ref::<sotf_plugins::CompressorData>().cloned());
+                                state.app.playback.compressor_info =
+                                    player.get_cached_plugin_data(idx).and_then(|d| {
+                                        d.downcast_ref::<sotf_plugins::CompressorData>().cloned()
+                                    });
                             }
                         }
 
@@ -190,7 +198,10 @@ impl PlayerView {
                     // Background stats computation (outside state update)
                     let (needs_stats, is_stats_computing) = {
                         let state = view.state.read(cx);
-                        (!state.app.library_stats.valid, state.app.library_stats_computing)
+                        (
+                            !state.app.library_stats.valid,
+                            state.app.library_stats_computing,
+                        )
                     };
                     if needs_stats && !is_stats_computing {
                         view.compute_library_stats_async(cx);
@@ -227,7 +238,10 @@ impl PlayerView {
     pub(crate) fn compute_library_stats_async(&self, cx: &mut Context<Self>) {
         let (albums, pending_stats) = {
             let state = self.state.read(cx);
-            (state.app.library_state.library.albums.clone(), state.app.pending_library_stats.clone())
+            (
+                state.app.library_state.library.albums.clone(),
+                state.app.pending_library_stats.clone(),
+            )
         };
 
         // Mark as computing
@@ -236,19 +250,24 @@ impl PlayerView {
         });
 
         // Spawn background task
-        cx.background_executor().spawn(async move {
-            log::info!("[Stats] Starting background stats computation...");
-            let start = std::time::Instant::now();
+        cx.background_executor()
+            .spawn(async move {
+                log::info!("[Stats] Starting background stats computation...");
+                let start = std::time::Instant::now();
 
-            // Run expensive O(N) computation
-            let stats = crate::app::App::compute_library_stats_static(&albums);
+                // Run expensive O(N) computation
+                let stats = crate::app::App::compute_library_stats_static(&albums);
 
-            let duration = start.elapsed();
-            log::info!("[Stats] Background stats computation complete in {:?}", duration);
+                let duration = start.elapsed();
+                log::info!(
+                    "[Stats] Background stats computation complete in {:?}",
+                    duration
+                );
 
-            // Store result for main loop to pick up
-            *pending_stats.lock() = Some(stats);
-        }).detach();
+                // Store result for main loop to pick up
+                *pending_stats.lock() = Some(stats);
+            })
+            .detach();
     }
 
     fn open_config(&mut self, _: &OpenConfig, _: &mut Window, cx: &mut Context<Self>) {
@@ -570,10 +589,8 @@ impl PlayerView {
             });
 
         // Determine target sample rate based on track's native rate and device capabilities
-        let sample_rate = sotf_audio::select_output_sample_rate(
-            track_sample_rate,
-            device_name.as_deref(),
-        ) as f64;
+        let sample_rate =
+            sotf_audio::select_output_sample_rate(track_sample_rate, device_name.as_deref()) as f64;
 
         let output_channels = state.app.plugin_state.plugin_chain.output_channels();
         let plugins = state
@@ -597,7 +614,9 @@ impl PlayerView {
         } else {
             state.app.playback.is_playing = true;
             if let Some(queue_index) = state.app.playback.current_queue_index {
-                state.app.record_playback_started(queue_index, Some(path.clone()));
+                state
+                    .app
+                    .record_playback_started(queue_index, Some(path.clone()));
             }
             state.app.start_track_tracking(path);
         }
@@ -666,7 +685,10 @@ impl PlayerView {
     pub(crate) fn recalculate_pagination(&self, cx: &mut Context<Self>, force_reset: bool) {
         let (window_width, window_height) = {
             let state = self.state.read(cx);
-            (state.app.ui_state.window_width, state.app.ui_state.window_height)
+            (
+                state.app.ui_state.window_width,
+                state.app.ui_state.window_height,
+            )
         };
 
         self.state.update(cx, |state, _cx| {

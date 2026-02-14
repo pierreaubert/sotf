@@ -23,7 +23,11 @@ pub enum ReleaseChannel {
 
 impl ReleaseChannel {
     pub fn all() -> &'static [ReleaseChannel] {
-        &[ReleaseChannel::Prod, ReleaseChannel::Beta, ReleaseChannel::Alpha]
+        &[
+            ReleaseChannel::Prod,
+            ReleaseChannel::Beta,
+            ReleaseChannel::Alpha,
+        ]
     }
 
     pub fn name(&self) -> &'static str {
@@ -2729,17 +2733,15 @@ impl PluginChain {
         }
 
         // Rebuild: collect user (non-permanent) plugins, then wrap them in the default rack
-        let user_plugins: Vec<Plugin> = self
-            .plugins
-            .drain(..)
-            .filter(|p| !p.permanent)
-            .collect();
+        let user_plugins: Vec<Plugin> = self.plugins.drain(..).filter(|p| !p.permanent).collect();
 
         // Build fresh rack
         let input_id = self.next_id;
         self.next_id += 1;
-        self.plugins
-            .push(Plugin::new_permanent(input_id, &PluginType::LoudnessMonitor));
+        self.plugins.push(Plugin::new_permanent(
+            input_id,
+            &PluginType::LoudnessMonitor,
+        ));
 
         // Insert user plugins between input monitor and matrix
         self.plugins.extend(user_plugins);
@@ -2751,13 +2753,12 @@ impl PluginChain {
 
         let output_id = self.next_id;
         self.next_id += 1;
-        self.plugins
-            .push(Plugin::new_permanent(output_id, &PluginType::LoudnessMonitor));
+        self.plugins.push(Plugin::new_permanent(
+            output_id,
+            &PluginType::LoudnessMonitor,
+        ));
 
-        log::info!(
-            "Ensured default rack: {} plugins total",
-            self.plugins.len()
-        );
+        log::info!("Ensured default rack: {} plugins total", self.plugins.len());
     }
 
     /// Find the index where user plugins should be inserted (before Matrix)
@@ -3681,9 +3682,15 @@ mod tests {
 
         // [InputLM, Matrix, OutputLM] - all permanent
         let plugins = chain.plugins();
-        assert!(matches!(plugins[0].plugin_type(), PluginType::LoudnessMonitor));
+        assert!(matches!(
+            plugins[0].plugin_type(),
+            PluginType::LoudnessMonitor
+        ));
         assert!(matches!(plugins[1].plugin_type(), PluginType::Matrix));
-        assert!(matches!(plugins[2].plugin_type(), PluginType::LoudnessMonitor));
+        assert!(matches!(
+            plugins[2].plugin_type(),
+            PluginType::LoudnessMonitor
+        ));
 
         assert!(plugins[0].is_permanent());
         assert!(plugins[1].is_permanent());
@@ -3716,7 +3723,7 @@ mod tests {
         // InputLM is a monitoring plugin moved to front, Matrix is processing, OutputLM is analyzer at end
         assert_eq!(configs.len(), 3);
         assert_eq!(configs[0].plugin_type, "loudness_monitor"); // input monitor
-        assert_eq!(configs[1].plugin_type, "matrix");           // processing
+        assert_eq!(configs[1].plugin_type, "matrix"); // processing
         assert_eq!(configs[2].plugin_type, "loudness_monitor"); // output monitor
     }
 
@@ -3743,10 +3750,19 @@ mod tests {
 
         // Chain should be [InputLM, EQ, Matrix, OutputLM]
         assert_eq!(chain.len(), 4);
-        assert!(matches!(chain.plugins()[0].plugin_type(), PluginType::LoudnessMonitor));
+        assert!(matches!(
+            chain.plugins()[0].plugin_type(),
+            PluginType::LoudnessMonitor
+        ));
         assert!(matches!(chain.plugins()[1].plugin_type(), PluginType::EQ));
-        assert!(matches!(chain.plugins()[2].plugin_type(), PluginType::Matrix));
-        assert!(matches!(chain.plugins()[3].plugin_type(), PluginType::LoudnessMonitor));
+        assert!(matches!(
+            chain.plugins()[2].plugin_type(),
+            PluginType::Matrix
+        ));
+        assert!(matches!(
+            chain.plugins()[3].plugin_type(),
+            PluginType::LoudnessMonitor
+        ));
 
         // Monitor identification still correct
         assert!(chain.is_input_monitor(0));

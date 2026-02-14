@@ -1,9 +1,9 @@
-use crate::error::Result;
 use crate::Curve;
+use crate::error::Result;
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 /// Optimize group delay alignment between a subwoofer and a speaker
 ///
@@ -75,67 +75,82 @@ pub fn optimize_gd_iir(
     // 1. Interpolate to same grid
     let freq = &sub.freq;
     let speaker_interp = interpolate_curve(speaker, freq);
-    
+
     // 2. Calculate Group Delay for Sub and Speaker
     let sub_complex = curve_to_complex(sub);
     let spk_complex = curve_to_complex(&speaker_interp);
-    
+
     let sub_gd = calculate_group_delay(freq, sub_complex.as_slice().unwrap());
     let spk_gd = calculate_group_delay(freq, spk_complex.as_slice().unwrap());
-    
+
     // 3. Define Optimization Target: Minimize RMS error between (Spk_GD + AP_GD) and Sub_GD
     // We want Spk + AP to match Sub GD slope.
-    
+
     // We will optimize 1 or 2 All-Pass filters (2nd order).
     // Params per filter: Freq, Q.
     // Bounds: Freq [min_freq, max_freq], Q [0.1, 5.0]
-    
+
     // For simplicity, let's try a single AP2 filter first.
     // If error is high, try two? For now, 1 AP2 is usually enough for 4th order crossover matching.
-    
+
     let n_filters = 1;
     let bounds_min = vec![min_freq, 0.1];
     let bounds_max = vec![max_freq, 3.0]; // Q usually around 0.5-1.0 for crossover matching
-    
+
     // Simple grid search or DE? DE is overkill for 2 params. Grid search is fine.
     // Grid: Freq (log space), Q (linear)
-    
+
     let mut best_params = vec![0.0, 0.0];
     let mut best_error = f64::INFINITY;
-    
+
     let q_steps = 10;
     let f_steps = 20;
-    
+
     let log_min = min_freq.ln();
     let log_max = max_freq.ln();
-    
+
     for qi in 0..q_steps {
         let q = 0.1 + (qi as f64 / (q_steps - 1) as f64) * 2.9;
-        
+
         for fi in 0..f_steps {
             let t = fi as f64 / (f_steps - 1) as f64;
             let f = (log_min + t * (log_max - log_min)).exp();
-            
-            let error = evaluate_ap_filter(f, q, freq, &spk_gd, &sub_gd, sample_rate, min_freq, max_freq);
-            
+
+            let error = evaluate_ap_filter(
+                f,
+                q,
+                freq,
+                &spk_gd,
+                &sub_gd,
+                sample_rate,
+                min_freq,
+                max_freq,
+            );
+
             if error < best_error {
                 best_error = error;
                 best_params = vec![f, q];
             }
         }
     }
-    
+
     // Fine tune?
     // ... skipping fine tune for brevity, this is a "v2 refactor" which implies logic exists or is being added.
     // Assuming simple grid is enough for proof of concept or initial implementation.
-    
+
     let mut filters = Vec::new();
     if best_error < f64::INFINITY {
-        // Only add if it improves things? 
+        // Only add if it improves things?
         // We assume we want to match.
-        filters.push(Biquad::new(BiquadFilterType::AllPass, best_params[0], sample_rate, best_params[1], 0.0));
+        filters.push(Biquad::new(
+            BiquadFilterType::AllPass,
+            best_params[0],
+            sample_rate,
+            best_params[1],
+            0.0,
+        ));
     }
-    
+
     Ok(filters)
 }
 
@@ -150,14 +165,16 @@ fn evaluate_ap_filter(
     max_f: f64,
 ) -> f64 {
     let filter = Biquad::new(BiquadFilterType::AllPass, ap_freq, sample_rate, ap_q, 0.0);
-    
+
     let mut total_error = 0.0;
     let mut count = 0;
-    
+
     for i in 0..freqs.len() {
         let f = freqs[i];
-        if f < min_f || f > max_f { continue; }
-        
+        if f < min_f || f > max_f {
+            continue;
+        }
+
         // Calculate GD of AP filter
         // Analytic GD for AP2:
         // GD(w) = 2 * (w0/Q * (w0^2 + w^2)) / ((w0^2 - w^2)^2 + (w*w0/Q)^2)
@@ -165,32 +182,37 @@ fn evaluate_ap_filter(
         // Let's use numerical diff on phase for consistency/simplicity here, or analytic if easy.
         // Biquad doesn't expose GD directly usually.
         // Using numerical:
-        
+
         // Approximate GD at f
         let w = 2.0 * PI * f;
         let dw = 0.01; // small delta
         let c1 = filter.complex_response(f);
         let c2 = filter.complex_response(f + 0.1); // f + df
-        
+
         // dPhi / dw
         let d_phi = (c2.arg() - c1.arg()); // careful with wrap... for small step unlikely to wrap
         let d_f_step = 0.1;
         let d_w_step = 2.0 * PI * d_f_step;
-        
+
         // Unwrapping check: if jump is large, adjust
         let mut d_phi_unwrapped = d_phi;
-        if d_phi > PI { d_phi_unwrapped -= 2.0*PI; }
-        else if d_phi < -PI { d_phi_unwrapped += 2.0*PI; }
-        
+        if d_phi > PI {
+            d_phi_unwrapped -= 2.0 * PI;
+        } else if d_phi < -PI {
+            d_phi_unwrapped += 2.0 * PI;
+        }
+
         let ap_gd_val = -d_phi_unwrapped / d_w_step * 1000.0; // ms
-        
+
         let combined_gd = spk_gd[i] + ap_gd_val;
         let diff = combined_gd - sub_gd[i];
         total_error += diff * diff;
         count += 1;
     }
-    
-    if count == 0 { return f64::INFINITY; }
+
+    if count == 0 {
+        return f64::INFINITY;
+    }
     (total_error / count as f64).sqrt()
 }
 

@@ -126,10 +126,7 @@ pub fn perform_migration(
 }
 
 /// Convert legacy RoomEqMeasurementsFile to new RoomConfig format and write to file
-pub fn write_room_config(
-    measurements: &RoomEqMeasurementsFile,
-    path: &Path,
-) -> Result<(), String> {
+pub fn write_room_config(measurements: &RoomEqMeasurementsFile, path: &Path) -> Result<(), String> {
     use autoeq::{
         InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
         RecordingConfiguration, RoomConfig, SpeakerConfig,
@@ -199,8 +196,7 @@ pub fn write_room_config(
         recording_config,
     };
 
-    let file =
-        std::fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
+    let file = std::fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
     serde_json::to_writer_pretty(file, &room_config)
         .map_err(|e| format!("Failed to serialize: {}", e))?;
 
@@ -303,8 +299,7 @@ pub struct ExtendedMetrics {
 pub fn read_extended_metrics_from_csv(csv_path: &Path) -> Result<ExtendedMetrics, String> {
     use std::io::BufRead;
 
-    let file = std::fs::File::open(csv_path)
-        .map_err(|e| format!("Failed to open CSV: {}", e))?;
+    let file = std::fs::File::open(csv_path).map_err(|e| format!("Failed to open CSV: {}", e))?;
     let reader = std::io::BufReader::new(file);
 
     let mut thd_percent = Vec::new();
@@ -316,7 +311,8 @@ pub fn read_extended_metrics_from_csv(csv_path: &Path) -> Result<ExtendedMetrics
     let mut lines = reader.lines();
 
     // Skip header
-    let header = lines.next()
+    let header = lines
+        .next()
         .ok_or("CSV file is empty")?
         .map_err(|e| format!("Failed to read header: {}", e))?;
 

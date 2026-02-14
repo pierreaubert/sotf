@@ -149,8 +149,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         system_speakers.insert(role.to_string(), name.to_string());
     }
 
-    let is_cardioid =
-        sub_sources.contains(&"sub_bottom") && sub_sources.contains(&"sub_top");
+    let is_cardioid = sub_sources.contains(&"sub_bottom") && sub_sources.contains(&"sub_top");
 
     // Configure System Model
     let model = if system_speakers.contains_key("C") || system_speakers.contains_key("SL") {
@@ -200,8 +199,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
                 SubwooferStrategy::Single,
             )
         } else {
-            let sub_sources_objs: Vec<MeasurementSource> =
-                sub_sources.iter().map(|name| make_csv_source(name)).collect();
+            let sub_sources_objs: Vec<MeasurementSource> = sub_sources
+                .iter()
+                .map(|name| make_csv_source(name))
+                .collect();
             (
                 SpeakerConfig::MultiSub(MultiSubGroup {
                     name: "subs".to_string(),

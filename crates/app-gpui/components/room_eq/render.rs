@@ -337,10 +337,7 @@ fn render_response_comparison_graph(
         &frequencies,
         &original_values_raw,
     );
-    let original_normalized: Vec<f64> = original_values_raw
-        .iter()
-        .map(|&db| db - offset)
-        .collect();
+    let original_normalized: Vec<f64> = original_values_raw.iter().map(|&db| db - offset).collect();
 
     // Compute EQ response curve from filters
     let eq_response: Vec<f64> = if eq_filters.is_empty() {

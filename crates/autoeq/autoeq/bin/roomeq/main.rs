@@ -23,8 +23,8 @@ use std::path::PathBuf;
 
 // Use the library types
 use autoeq::roomeq::{
-    CallbackAction, DspChainOutput, RoomOptimizationCallback,
-    RoomOptimizationProgress, load_config, optimize_room, save_dsp_chain,
+    CallbackAction, DspChainOutput, RoomOptimizationCallback, RoomOptimizationProgress,
+    load_config, optimize_room, save_dsp_chain,
 };
 
 /// Room EQ - Optimize multi-channel speaker systems
@@ -80,7 +80,12 @@ fn main() -> Result<()> {
         .output
         .ok_or_else(|| anyhow!("Output file is required"))?;
 
-    run(args.sample_rate, config_path, output_path, args.override_config)
+    run(
+        args.sample_rate,
+        config_path,
+        output_path,
+        args.override_config,
+    )
 }
 
 /// Progress callback that logs to stderr
@@ -113,8 +118,7 @@ fn run(
     // Load room configuration
     info!("Loading room configuration from {:?}", config_path);
 
-    let (room_config, _config_dir) =
-        load_config(&config_path, override_config_path.as_deref())?;
+    let (room_config, _config_dir) = load_config(&config_path, override_config_path.as_deref())?;
 
     info!("Found {} speakers", room_config.speakers.len());
 

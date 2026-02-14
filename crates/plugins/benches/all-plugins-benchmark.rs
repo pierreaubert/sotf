@@ -12,10 +12,8 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
     ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin,
     FletcherMunsonPlugin, FletcherMunsonPluginParams, GatePlugin, InPlacePlugin, LimiterPlugin,
-    LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
-    MultibandCompressorPlugin, MultibandExpanderPlugin,
-    Plugin, ProcessContext,
-    SpectrumAnalyzerPlugin, SpectrumConfig,
+    LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin,
+    MultibandExpanderPlugin, Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig,
 };
 use std::hint::black_box;
 
@@ -62,7 +60,11 @@ fn benchmark_eq(c: &mut Criterion) {
         group.bench_function("1band_stereo", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -71,12 +73,36 @@ fn benchmark_eq(c: &mut Criterion) {
     // Multi-band EQ (6 bands)
     {
         let filters = vec![
-            Biquad::new(BiquadFilterType::Highpass, 30.0, SAMPLE_RATE as f64, 0.707, 0.0),
-            Biquad::new(BiquadFilterType::Lowshelf, 100.0, SAMPLE_RATE as f64, 0.707, 4.0),
+            Biquad::new(
+                BiquadFilterType::Highpass,
+                30.0,
+                SAMPLE_RATE as f64,
+                0.707,
+                0.0,
+            ),
+            Biquad::new(
+                BiquadFilterType::Lowshelf,
+                100.0,
+                SAMPLE_RATE as f64,
+                0.707,
+                4.0,
+            ),
             Biquad::new(BiquadFilterType::Peak, 250.0, SAMPLE_RATE as f64, 1.0, -2.0),
             Biquad::new(BiquadFilterType::Peak, 2000.0, SAMPLE_RATE as f64, 2.0, 3.0),
-            Biquad::new(BiquadFilterType::Peak, 4000.0, SAMPLE_RATE as f64, 1.5, -2.0),
-            Biquad::new(BiquadFilterType::Highshelf, 10000.0, SAMPLE_RATE as f64, 0.707, 3.0),
+            Biquad::new(
+                BiquadFilterType::Peak,
+                4000.0,
+                SAMPLE_RATE as f64,
+                1.5,
+                -2.0,
+            ),
+            Biquad::new(
+                BiquadFilterType::Highshelf,
+                10000.0,
+                SAMPLE_RATE as f64,
+                0.707,
+                3.0,
+            ),
         ];
         let mut plugin = EqPlugin::new(CHANNELS, filters);
         plugin.initialize(SAMPLE_RATE).unwrap();
@@ -91,7 +117,11 @@ fn benchmark_eq(c: &mut Criterion) {
         group.bench_function("6band_stereo", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -101,7 +131,13 @@ fn benchmark_eq(c: &mut Criterion) {
     {
         let filters = vec![
             Biquad::new(BiquadFilterType::Peak, 1000.0, SAMPLE_RATE as f64, 1.0, 3.0),
-            Biquad::new(BiquadFilterType::Highshelf, 8000.0, SAMPLE_RATE as f64, 0.707, 2.0),
+            Biquad::new(
+                BiquadFilterType::Highshelf,
+                8000.0,
+                SAMPLE_RATE as f64,
+                0.707,
+                2.0,
+            ),
         ];
         let channels = 6;
         let mut plugin = EqPlugin::new(channels, filters);
@@ -117,7 +153,11 @@ fn benchmark_eq(c: &mut Criterion) {
         group.bench_function("2band_5.1", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -145,7 +185,11 @@ fn benchmark_eq(c: &mut Criterion) {
         group.bench_function(&format!("1band_{}frames", buf_size), |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -423,7 +467,11 @@ fn benchmark_matrix(c: &mut Criterion) {
         group.bench_function("identity_2x2", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -444,7 +492,11 @@ fn benchmark_matrix(c: &mut Criterion) {
         group.bench_function("upmix_2to6", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -465,7 +517,11 @@ fn benchmark_matrix(c: &mut Criterion) {
         group.bench_function("routing_8x8", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -503,7 +559,11 @@ fn benchmark_analyzers(c: &mut Criterion) {
         group.bench_function("spectrum_30bins", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -524,7 +584,11 @@ fn benchmark_analyzers(c: &mut Criterion) {
         group.bench_function("loudness_monitor", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -560,7 +624,11 @@ fn benchmark_loudness(c: &mut Criterion) {
         group.bench_function("fletcher_munson", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });
@@ -581,7 +649,11 @@ fn benchmark_loudness(c: &mut Criterion) {
         group.bench_function("loudness_compensation", |b| {
             b.iter(|| {
                 plugin
-                    .process(black_box(&input), black_box(&mut output), black_box(&context))
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
                     .unwrap();
             })
         });

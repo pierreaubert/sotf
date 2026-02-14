@@ -1258,12 +1258,13 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
 
     // Check if upmixer requires stereo input
     if (args.plugin.to_lowercase() == "upmixer" || args.plugin.to_lowercase() == "upmix")
-        && channels != 2 {
-            return Err(format!(
-                "Upmixer requires stereo (2-channel) input, but the file has {} channels",
-                channels
-            ));
-        }
+        && channels != 2
+    {
+        return Err(format!(
+            "Upmixer requires stereo (2-channel) input, but the file has {} channels",
+            channels
+        ));
+    }
 
     // Prepare resampled versions for different sample rates
     const TARGET_RATES: [u32; 5] = [44100, 48000, 88200, 96000, 192000];

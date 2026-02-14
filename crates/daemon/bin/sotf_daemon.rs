@@ -27,7 +27,9 @@ mod hal_manager;
 mod security;
 
 use hal_manager::{HalManager, get_hal_status};
-use security::{get_secure_socket_path, verify_peer_credentials, ensure_secure_socket_dir, KeyManager};
+use security::{
+    KeyManager, ensure_secure_socket_dir, get_secure_socket_path, verify_peer_credentials,
+};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -188,8 +190,7 @@ struct AudioDaemon {
 
 impl AudioDaemon {
     fn new() -> Self {
-        let runtime = tokio::runtime::Runtime::new()
-            .expect("Failed to create Tokio runtime");
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
 
         Self {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
@@ -245,14 +246,22 @@ impl AudioDaemon {
             Command::SetVolume { volume } => self.handle_set_volume(volume).await,
             Command::ListDevices => self.handle_list_devices().await,
             Command::SetDevice { device } => self.handle_set_device(&device).await,
-            Command::LoadPlugins { plugins, output_channels } => self.handle_load_plugins_with_channels(plugins, output_channels).await,
+            Command::LoadPlugins {
+                plugins,
+                output_channels,
+            } => {
+                self.handle_load_plugins_with_channels(plugins, output_channels)
+                    .await
+            }
             Command::GetLoudness => self.handle_get_loudness().await,
             Command::GetMetering => self.handle_get_metering().await,
             Command::GetPlugins => self.handle_get_plugins().await,
             Command::GetAvailablePlugins => self.handle_get_available_plugins().await,
             Command::AddPlugin { plugin, index } => self.handle_add_plugin(plugin, index).await,
             Command::RemovePlugin { index } => self.handle_remove_plugin(index).await,
-            Command::UpdatePlugin { index, parameters } => self.handle_update_plugin(index, parameters).await,
+            Command::UpdatePlugin { index, parameters } => {
+                self.handle_update_plugin(index, parameters).await
+            }
             Command::ReorderPlugins { order } => self.handle_reorder_plugins(order).await,
             Command::HalStatus => self.handle_hal_status().await,
             Command::Shutdown => {
@@ -368,7 +377,11 @@ impl AudioDaemon {
         }
     }
 
-    async fn handle_load_plugins_with_channels(&self, plugins: Vec<PluginConfig>, output_channels: usize) -> Response {
+    async fn handle_load_plugins_with_channels(
+        &self,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+    ) -> Response {
         // Strip obsolete hal_input/hal_output plugins (toolbar may still send them)
         let plugins: Vec<PluginConfig> = plugins
             .into_iter()
@@ -397,7 +410,12 @@ impl AudioDaemon {
         let mut output_device = self.selected_device.lock().clone();
 
         // If no device selected (or it's the virtual device), find a safe physical fallback
-        if output_device.is_none() || output_device.as_ref().map(|d| d.contains("SotF")).unwrap_or(false) {
+        if output_device.is_none()
+            || output_device
+                .as_ref()
+                .map(|d| d.contains("SotF"))
+                .unwrap_or(false)
+        {
             output_device = find_fallback_output_device();
             if let Some(ref dev) = output_device {
                 log::info!("Using fallback output device for HAL playback: {}", dev);
@@ -417,7 +435,8 @@ impl AudioDaemon {
                 if hal_rate != 0 && hal_rate != target_rate {
                     log::info!(
                         "HAL sample rate ({}Hz) differs from target ({}Hz), but DecoderThread handles resampling internally.",
-                        hal_rate, target_rate
+                        hal_rate,
+                        target_rate
                     );
                 }
             }
@@ -489,8 +508,13 @@ impl AudioDaemon {
 
                         log::info!("Set engine_ready=true in shared memory");
                     } else {
-                        log::error!("[AUDIO FLOW] CRITICAL: Could not open shared memory to set engine_ready flag!");
-                        log::error!("[AUDIO FLOW] Expected path: /tmp/sotf-{}/audio.shm", unsafe { libc::getuid() });
+                        log::error!(
+                            "[AUDIO FLOW] CRITICAL: Could not open shared memory to set engine_ready flag!"
+                        );
+                        log::error!(
+                            "[AUDIO FLOW] Expected path: /tmp/sotf-{}/audio.shm",
+                            unsafe { libc::getuid() }
+                        );
                     }
                 }
 
@@ -627,7 +651,11 @@ impl AudioDaemon {
         {
             let mut plugins = self.current_plugins.lock();
             if index >= plugins.len() {
-                return Response::err(format!("Plugin index {} out of range (have {})", index, plugins.len()));
+                return Response::err(format!(
+                    "Plugin index {} out of range (have {})",
+                    index,
+                    plugins.len()
+                ));
             }
             plugins.remove(index);
         }
@@ -638,7 +666,11 @@ impl AudioDaemon {
         {
             let mut plugins = self.current_plugins.lock();
             if index >= plugins.len() {
-                return Response::err(format!("Plugin index {} out of range (have {})", index, plugins.len()));
+                return Response::err(format!(
+                    "Plugin index {} out of range (have {})",
+                    index,
+                    plugins.len()
+                ));
             }
             plugins[index].parameters = parameters;
         }
@@ -652,12 +684,19 @@ impl AudioDaemon {
 
             // Validate: order must be a permutation of 0..n
             if order.len() != n {
-                return Response::err(format!("Order length {} doesn't match plugin count {}", order.len(), n));
+                return Response::err(format!(
+                    "Order length {} doesn't match plugin count {}",
+                    order.len(),
+                    n
+                ));
             }
             let mut seen = vec![false; n];
             for &idx in &order {
                 if idx >= n || seen[idx] {
-                    return Response::err(format!("Invalid order: duplicate or out-of-range index {}", idx));
+                    return Response::err(format!(
+                        "Invalid order: duplicate or out-of-range index {}",
+                        idx
+                    ));
                 }
                 seen[idx] = true;
             }
@@ -677,7 +716,8 @@ impl AudioDaemon {
         // Re-use the full load path which auto-injects monitors.
         // We need to temporarily put back the plugins since handle_load_plugins_with_channels
         // will strip and re-store them.
-        self.handle_load_plugins_with_channels(plugins, output_channels).await
+        self.handle_load_plugins_with_channels(plugins, output_channels)
+            .await
     }
 
     async fn handle_hal_status(&self) -> Response {
@@ -722,7 +762,8 @@ impl AudioDaemon {
 
         // Also get frame counter from shared memory if available
         #[cfg(target_os = "macos")]
-        let frame_count = self.get_shared_buffer()
+        let frame_count = self
+            .get_shared_buffer()
             .map(|b| b.frame_counter())
             .unwrap_or(0);
         #[cfg(not(target_os = "macos"))]
@@ -784,7 +825,9 @@ impl AudioDaemon {
 
             if state != sotf_audio::manager::StreamingState::Idle {
                 // Active playback - would need to restart with new rate
-                log::warn!("Cannot change sample rate during active playback, will apply on next start");
+                log::warn!(
+                    "Cannot change sample rate during active playback, will apply on next start"
+                );
             }
 
             // Notify HAL driver via shared memory
@@ -829,14 +872,22 @@ impl AudioDaemon {
             if let Some(mut buffer) = self.get_shared_buffer() {
                 // Read current actual sample rate to preserve it
                 let current_rate = buffer.actual_sample_rate();
-                let rate_to_use = if current_rate > 0 { current_rate } else { buffer.sample_rate() };
+                let rate_to_use = if current_rate > 0 {
+                    current_rate
+                } else {
+                    buffer.sample_rate()
+                };
 
                 buffer.set_actual_sample_rate(rate_to_use);
                 buffer.set_actual_buffer_frames(frames);
                 buffer.set_config_source(2); // Daemon initiated
                 buffer.set_config_changed();
 
-                log::info!("Buffer frames set to {}, HAL driver notified (sample rate preserved at {})", frames, rate_to_use);
+                log::info!(
+                    "Buffer frames set to {}, HAL driver notified (sample rate preserved at {})",
+                    frames,
+                    rate_to_use
+                );
 
                 Response::ok(serde_json::json!({
                     "buffer_frames": frames,
@@ -1125,7 +1176,10 @@ fn handle_hal_config_change(
         return;
     }
     if requested_frames == 0 || requested_frames > 65536 {
-        log::warn!("Invalid config request: buffer_frames={}, out of range", requested_frames);
+        log::warn!(
+            "Invalid config request: buffer_frames={}, out of range",
+            requested_frames
+        );
         buffer.acknowledge_config_change(requested_rate, 512, 3, 3); // Error code 3 = invalid frames
         return;
     }
@@ -1187,7 +1241,10 @@ fn handle_hal_config_change(
                 );
             }
             Err(e) => {
-                log::error!("Pipeline reconfiguration with negotiated rate failed: {}", e);
+                log::error!(
+                    "Pipeline reconfiguration with negotiated rate failed: {}",
+                    e
+                );
                 buffer.acknowledge_config_change(actual_rate, requested_frames, 3, 1);
             }
         }
@@ -1210,8 +1267,7 @@ fn handle_hal_config_change(
 fn reconfigure_audio_pipeline(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
     hal_sample_rate: u32,
-    #[allow(unused_variables)]
-    buffer_frames: u32,
+    #[allow(unused_variables)] buffer_frames: u32,
     current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
     current_output_channels: &Arc<Mutex<usize>>,
 ) -> Result<(), String> {
@@ -1308,11 +1364,19 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
 /// Categorize plugins for the UI picker
 fn plugin_type_category(pt: &PluginType) -> &'static str {
     match pt {
-        PluginType::EQ | PluginType::FletcherMunson | PluginType::LoudnessCompensation => "EQ & Tone",
+        PluginType::EQ | PluginType::FletcherMunson | PluginType::LoudnessCompensation => {
+            "EQ & Tone"
+        }
         PluginType::Gain => "Utility",
-        PluginType::Compressor | PluginType::Limiter | PluginType::Gate | PluginType::Expander => "Dynamics",
+        PluginType::Compressor | PluginType::Limiter | PluginType::Gate | PluginType::Expander => {
+            "Dynamics"
+        }
         PluginType::MultibandCompressor | PluginType::MultibandExpander => "Dynamics",
-        PluginType::Upmixer | PluginType::Downmix | PluginType::MonoToStereo | PluginType::Matrix | PluginType::ChannelMuteSolo => "Spatial & Routing",
+        PluginType::Upmixer
+        | PluginType::Downmix
+        | PluginType::MonoToStereo
+        | PluginType::Matrix
+        | PluginType::ChannelMuteSolo => "Spatial & Routing",
         PluginType::BinauralDecoder | PluginType::XTC => "Spatial & Routing",
         PluginType::Convolution => "Effects",
         PluginType::Denoiser | PluginType::Pnd => "Restoration",
@@ -1327,14 +1391,17 @@ fn find_fallback_output_device() -> Option<String> {
         // Filter out virtual devices
         let physical_device = devices.iter().find(|d| {
             let name = d.get("name").and_then(|n| n.as_str()).unwrap_or("");
-            !name.contains("SotF") && 
-            !name.contains("BlackHole") && 
-            !name.contains("ZoomAudio") && 
-            !name.contains("Loopback")
+            !name.contains("SotF")
+                && !name.contains("BlackHole")
+                && !name.contains("ZoomAudio")
+                && !name.contains("Loopback")
         });
 
         if let Some(device) = physical_device {
-            return device.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
+            return device
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(|s| s.to_string());
         }
     }
     None
@@ -1461,9 +1528,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if status.is_ready() {
                     println!();
                     println!("💡 Audio flow (capture mode):");
-                    println!("   macOS Apps → HAL Driver → SharedMemory → Daemon → cpal → Hardware");
+                    println!(
+                        "   macOS Apps → HAL Driver → SharedMemory → Daemon → cpal → Hardware"
+                    );
                     println!();
-                    println!("   Note: hal_output plugin is NOT needed for direct hardware output.");
+                    println!(
+                        "   Note: hal_output plugin is NOT needed for direct hardware output."
+                    );
                     println!("         The daemon reads from SharedMemory and outputs via cpal.");
                 }
             }
@@ -1528,7 +1599,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let plugins: Vec<PluginConfig> = vec![];
 
         // Use the daemon's shared runtime instead of creating a new one
-        let result = daemon.runtime.block_on(daemon.handle_load_plugins_with_channels(plugins, 2));
+        let result = daemon
+            .runtime
+            .block_on(daemon.handle_load_plugins_with_channels(plugins, 2));
         if result.success {
             println!("   ✅ HAL playback started successfully");
         } else {

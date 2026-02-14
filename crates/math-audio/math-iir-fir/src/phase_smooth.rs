@@ -402,7 +402,9 @@ mod tests {
 
     #[test]
     fn test_smooth_octave_flat_data() {
-        let freqs: Vec<f64> = (1..=10).map(|i| 100.0 * 2.0_f64.powf(i as f64 / 3.0)).collect();
+        let freqs: Vec<f64> = (1..=10)
+            .map(|i| 100.0 * 2.0_f64.powf(i as f64 / 3.0))
+            .collect();
         let values = vec![1.0; freqs.len()];
 
         let smoothed = smooth_octave(&freqs, &values, 0.5);
@@ -415,7 +417,9 @@ mod tests {
 
     #[test]
     fn test_smooth_octave_reduces_noise() {
-        let freqs: Vec<f64> = (0..100).map(|i| 20.0 * 2.0_f64.powf(i as f64 * 0.1)).collect();
+        let freqs: Vec<f64> = (0..100)
+            .map(|i| 20.0 * 2.0_f64.powf(i as f64 * 0.1))
+            .collect();
         let values: Vec<f64> = freqs
             .iter()
             .enumerate()
@@ -426,8 +430,7 @@ mod tests {
 
         // Smoothed values should have lower variance than original
         let orig_var: f64 = values.iter().map(|v| v * v).sum::<f64>() / values.len() as f64;
-        let smooth_var: f64 =
-            smoothed.iter().map(|v| v * v).sum::<f64>() / smoothed.len() as f64;
+        let smooth_var: f64 = smoothed.iter().map(|v| v * v).sum::<f64>() / smoothed.len() as f64;
 
         assert!(
             smooth_var < orig_var,
@@ -463,7 +466,9 @@ mod tests {
     fn test_smooth_phase_via_group_delay_linear_phase() {
         // Linear phase (constant group delay) should be preserved after smoothing
         let delay = 0.001;
-        let freqs: Vec<f64> = (1..=50).map(|i| 20.0 * 2.0_f64.powf(i as f64 * 0.2)).collect();
+        let freqs: Vec<f64> = (1..=50)
+            .map(|i| 20.0 * 2.0_f64.powf(i as f64 * 0.2))
+            .collect();
         let phase: Vec<f64> = freqs.iter().map(|&f| -2.0 * PI * delay * f).collect();
 
         let smoothed = smooth_phase_via_group_delay(&freqs, &phase, 0.167);

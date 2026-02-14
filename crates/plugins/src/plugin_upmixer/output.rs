@@ -3,7 +3,6 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use crate::simd::flush_denormals_inplace;
 
 impl UpmixerPlugin {
     /// Phase 5: Extract real parts from time domain and apply final scaling
@@ -89,6 +88,7 @@ impl UpmixerPlugin {
             }
         }
 
-        flush_denormals_inplace(output);
+        // Note: FTZ/DAZ CPU flags are set by the processing thread (enable_ftz_daz()),
+        // so denormals are flushed to zero by the CPU automatically. No manual flush needed.
     }
 }

@@ -118,10 +118,10 @@ impl Directivity {
             Directivity::Classical { h_angle, v_angle } => {
                 // Classical pattern: Gaussian-like beam narrowing with frequency
                 // Transition from Omni (360) at 80Hz to Target at 800Hz (approx)
-                
+
                 let min_f = 80.0;
                 let max_f = 800.0; // Transition end
-                
+
                 let t = if frequency <= min_f {
                     0.0
                 } else if frequency >= max_f {
@@ -129,36 +129,38 @@ impl Directivity {
                 } else {
                     (frequency.ln() - min_f.ln()) / (max_f.ln() - min_f.ln())
                 };
-                
+
                 let h_width = 360.0 * (1.0 - t) + h_angle * t;
                 let v_width = 360.0 * (1.0 - t) + v_angle * t;
-                
+
                 // Direction relative to forward axis (+Y: theta=90, phi=90)
                 // We need angle from axis.
                 // Axis vector: (0, 1, 0)
                 // Point vector: (sin(theta)cos(phi), sin(theta)sin(phi), cos(theta))
                 // Dot product = sin(theta)sin(phi)
                 // Angle off axis 'alpha' = acos(dot)
-                
+
                 // But we have separate H and V widths.
                 // H angle is deviation in XY plane (phi). Forward is 90.
                 // V angle is deviation in Z plane (theta). Forward is 90.
-                
+
                 let mut phi_deg = phi.to_degrees();
-                while phi_deg < 0.0 { phi_deg += 360.0; }
+                while phi_deg < 0.0 {
+                    phi_deg += 360.0;
+                }
                 let delta_phi = (phi_deg - 90.0).abs().min((360.0 - (phi_deg - 90.0)).abs()); // Shortest distance to 90
-                
+
                 let theta_deg = theta.to_degrees();
                 let delta_theta = (theta_deg - 90.0).abs();
-                
+
                 // Normalized deviations
                 // x = angle / (width/2)
                 let x_h = delta_phi / (h_width / 2.0);
                 let x_v = delta_theta / (v_width / 2.0);
-                
+
                 // Combined distance in parameter space (elliptical cone)
                 let r_sq = x_h * x_h + x_v * x_v;
-                
+
                 // Gaussian: m = 0.5^(r^2) -> -6dB at edge (r=1)
                 0.5_f64.powf(r_sq)
             }
@@ -254,12 +256,20 @@ impl Source {
 
     /// Create a simple omnidirectional source at position
     pub fn omnidirectional(position: Point3D, amplitude: f64) -> Self {
-        Self::new(position, Directivity::Grid(DirectivityGrid::omnidirectional()), amplitude)
+        Self::new(
+            position,
+            Directivity::Grid(DirectivityGrid::omnidirectional()),
+            amplitude,
+        )
     }
-    
+
     /// Create a classical directional source
     pub fn classical(position: Point3D, h_angle: f64, v_angle: f64, amplitude: f64) -> Self {
-        Self::new(position, Directivity::Classical { h_angle, v_angle }, amplitude)
+        Self::new(
+            position,
+            Directivity::Classical { h_angle, v_angle },
+            amplitude,
+        )
     }
 
     /// Set crossover filter
@@ -329,11 +339,11 @@ mod tests {
         let amp = source.amplitude_towards(&Point3D::new(1.0, 0.0, 0.0), 1000.0);
         assert!((amp - 1.0).abs() < 1e-6);
     }
-    
+
     #[test]
     fn test_classical_source_beaming() {
         let source = Source::classical(Point3D::new(0.0, 0.0, 0.0), 60.0, 40.0, 1.0);
-        
+
         // At low freq (50Hz), should be omni
         let amp_low = source.amplitude_towards(&Point3D::new(0.0, -1.0, 0.0), 50.0); // Rear (180 deg)
         // Forward is +Y. Rear is -Y.
@@ -351,14 +361,14 @@ mod tests {
         // But "Typically omni below 80Hz" usually allows some directivity or just "wide".
         // If I want true Omni, I should handle width >= 360 specially or increase width to infinity.
         // But 360 width (-6dB at +/-180) is acceptable for "Omni-like".
-        assert!(amp_low > 0.4); 
-        
+        assert!(amp_low > 0.4);
+
         // At high freq (2000Hz), should be narrow
         // H=60 -> +/- 30 deg is -6dB.
         // Side (90 deg off axis): x = 90/30 = 3. m = 0.5^9 = 0.0019.
         let amp_high_side = source.amplitude_towards(&Point3D::new(1.0, 0.0, 0.0), 2000.0); // Side (X axis, phi=0, delta=90)
         assert!(amp_high_side < 0.1);
-        
+
         // On axis should be 1.0
         let amp_high_on = source.amplitude_towards(&Point3D::new(0.0, 1.0, 0.0), 2000.0); // Forward (+Y)
         assert!((amp_high_on - 1.0).abs() < 1e-6);

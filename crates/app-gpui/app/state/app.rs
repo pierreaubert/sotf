@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use gpui::prelude::*;
 use gpui::Entity;
+use gpui::prelude::*;
 use gpui_ui_kit::workflow::NodeId;
 use sotf_audio_player::Player;
 
@@ -21,8 +21,8 @@ use crate::app::types::{
     OptimizationUiState, QueueItem, RackDisplayMode, ToastMessage,
 };
 
-use super::{InputState, LibraryState, PlaybackState, PluginState, UIState};
 use super::ui::LayoutState;
+use super::{InputState, LibraryState, PlaybackState, PluginState, UIState};
 use crate::app::manager::{Manager, ManagerError};
 use crate::app::state::library::LibraryEvent;
 use crate::components::plugins::editing::PluginEditingManager;

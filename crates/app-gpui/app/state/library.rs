@@ -395,7 +395,9 @@ impl LibraryState {
                 // Continue to see if there's an exact album match (which takes priority)
             }
             // Exact Composer
-            if best_order != Some(LibrarySortOrder::Artist) && best_order != Some(LibrarySortOrder::Album) {
+            if best_order != Some(LibrarySortOrder::Artist)
+                && best_order != Some(LibrarySortOrder::Album)
+            {
                 for track in &album.tracks {
                     if let Some(composer) = &track.composer {
                         if composer.to_lowercase() == query_lower {
@@ -422,7 +424,9 @@ impl LibraryState {
                     // Don't break, keep looking for better matches or continue
                 }
                 // Partial Composer
-                if best_order != Some(LibrarySortOrder::Artist) && best_order != Some(LibrarySortOrder::Album) {
+                if best_order != Some(LibrarySortOrder::Artist)
+                    && best_order != Some(LibrarySortOrder::Album)
+                {
                     for track in &album.tracks {
                         if let Some(composer) = &track.composer {
                             if composer.to_lowercase().contains(&query_lower) {

@@ -483,7 +483,13 @@ pub fn flat_loss_asymmetric(
     min_freq: f64,
     max_freq: f64,
 ) -> f64 {
-    weighted_mse_asymmetric(freqs, error, min_freq, max_freq, &AsymmetricLossConfig::default())
+    weighted_mse_asymmetric(
+        freqs,
+        error,
+        min_freq,
+        max_freq,
+        &AsymmetricLossConfig::default(),
+    )
 }
 
 /// Compute the slope (per octave) using linear regression of y against log2(f).
@@ -554,10 +560,7 @@ fn biquad_complex_response(biquad: &crate::iir::Biquad, f: f64) -> Complex64 {
 }
 
 /// Interpolate and prepare driver curves on a common frequency grid
-fn prepare_driver_curves(
-    data: &DriversLossData,
-    crossover_freqs: &[f64],
-) -> Vec<Curve> {
+fn prepare_driver_curves(data: &DriversLossData, crossover_freqs: &[f64]) -> Vec<Curve> {
     let n_drivers = data.drivers.len();
     let mut driver_curves = Vec::new();
     for (i, driver) in data.drivers.iter().enumerate() {
@@ -671,7 +674,12 @@ fn compute_single_driver_complex(
 }
 
 /// Validate driver arguments (shared by combined and per-driver functions)
-fn validate_driver_args(data: &DriversLossData, gains: &[f64], crossover_freqs: &[f64], delays: Option<&[f64]>) {
+fn validate_driver_args(
+    data: &DriversLossData,
+    gains: &[f64],
+    crossover_freqs: &[f64],
+    delays: Option<&[f64]>,
+) {
     let n_drivers = data.drivers.len();
     assert_eq!(gains.len(), n_drivers);
     if !matches!(data.crossover_type, CrossoverType::None) {
@@ -711,10 +719,18 @@ pub fn compute_drivers_combined_response(
     for i in 0..n_drivers {
         let delay_s = delays.map(|d| d[i]).unwrap_or(0.0) / 1000.0;
         let filters = build_crossover_filters_for_driver(
-            i, n_drivers, data.crossover_type, crossover_freqs, sample_rate,
+            i,
+            n_drivers,
+            data.crossover_type,
+            crossover_freqs,
+            sample_rate,
         );
         let driver_complex = compute_single_driver_complex(
-            &data.freq_grid, &driver_curves[i], gains[i], delay_s, &filters,
+            &data.freq_grid,
+            &driver_curves[i],
+            gains[i],
+            delay_s,
+            &filters,
         );
         combined_complex += &driver_complex;
     }
@@ -753,10 +769,18 @@ pub fn compute_per_driver_responses(
     for i in 0..n_drivers {
         let delay_s = delays.map(|d| d[i]).unwrap_or(0.0) / 1000.0;
         let filters = build_crossover_filters_for_driver(
-            i, n_drivers, data.crossover_type, crossover_freqs, sample_rate,
+            i,
+            n_drivers,
+            data.crossover_type,
+            crossover_freqs,
+            sample_rate,
         );
         let driver_complex = compute_single_driver_complex(
-            &data.freq_grid, &driver_curves[i], gains[i], delay_s, &filters,
+            &data.freq_grid,
+            &driver_curves[i],
+            gains[i],
+            delay_s,
+            &filters,
         );
         results.push(driver_complex.mapv(|z| 20.0 * z.norm().max(1e-12).log10()));
     }

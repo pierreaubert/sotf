@@ -16,7 +16,12 @@ const SAMPLE_RATES: [u32; 5] = [22050, 44100, 48000, 96000, 192000];
 const NUM_FRAMES: usize = 512;
 
 /// Generate a stereo sine wave buffer
-fn generate_sine_stereo(sample_rate: u32, freq: f32, amplitude: f32, num_frames: usize) -> Vec<f32> {
+fn generate_sine_stereo(
+    sample_rate: u32,
+    freq: f32,
+    amplitude: f32,
+    num_frames: usize,
+) -> Vec<f32> {
     (0..num_frames)
         .flat_map(|i| {
             let t = i as f32 / sample_rate as f32;

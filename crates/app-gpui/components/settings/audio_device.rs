@@ -1,7 +1,7 @@
 //! Audio device settings content
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
-use crate::app::state::audio_device::{format_buffer_size, format_sample_rate, HalConfig};
+use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_sample_rate};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 use crate::ui::PlayerView;
@@ -201,15 +201,31 @@ impl PlayerView {
                                     .is_open(hal_dropdowns.sample_rate_open)
                                     .on_change(move |value, _window, cx| {
                                         if let Ok(rate) = value.parse::<u32>() {
-                                            Self::update_hal_sample_rate(&state_for_change, rate, cx);
+                                            Self::update_hal_sample_rate(
+                                                &state_for_change,
+                                                rate,
+                                                cx,
+                                            );
                                         }
                                     })
                                     .on_toggle(move |open, _window, cx| {
                                         state_for_toggle.update(cx, |state, cx| {
                                             // Close other dropdowns
-                                            state.app.audio_device_state.hal_dropdowns.channel_count_open = false;
-                                            state.app.audio_device_state.hal_dropdowns.buffer_size_open = false;
-                                            state.app.audio_device_state.hal_dropdowns.sample_rate_open = open;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .channel_count_open = false;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .buffer_size_open = false;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .sample_rate_open = open;
                                             cx.notify();
                                         });
                                     })
@@ -225,15 +241,31 @@ impl PlayerView {
                                     .is_open(hal_dropdowns.channel_count_open)
                                     .on_change(move |value, _window, cx| {
                                         if let Ok(channels) = value.parse::<u32>() {
-                                            Self::update_hal_channel_count(&state_for_change, channels, cx);
+                                            Self::update_hal_channel_count(
+                                                &state_for_change,
+                                                channels,
+                                                cx,
+                                            );
                                         }
                                     })
                                     .on_toggle(move |open, _window, cx| {
                                         state_for_toggle.update(cx, |state, cx| {
                                             // Close other dropdowns
-                                            state.app.audio_device_state.hal_dropdowns.sample_rate_open = false;
-                                            state.app.audio_device_state.hal_dropdowns.buffer_size_open = false;
-                                            state.app.audio_device_state.hal_dropdowns.channel_count_open = open;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .sample_rate_open = false;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .buffer_size_open = false;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .channel_count_open = open;
                                             cx.notify();
                                         });
                                     })
@@ -249,15 +281,31 @@ impl PlayerView {
                                     .is_open(hal_dropdowns.buffer_size_open)
                                     .on_change(move |value, _window, cx| {
                                         if let Ok(size) = value.parse::<u32>() {
-                                            Self::update_hal_buffer_size(&state_for_change, size, cx);
+                                            Self::update_hal_buffer_size(
+                                                &state_for_change,
+                                                size,
+                                                cx,
+                                            );
                                         }
                                     })
                                     .on_toggle(move |open, _window, cx| {
                                         state_for_toggle.update(cx, |state, cx| {
                                             // Close other dropdowns
-                                            state.app.audio_device_state.hal_dropdowns.sample_rate_open = false;
-                                            state.app.audio_device_state.hal_dropdowns.channel_count_open = false;
-                                            state.app.audio_device_state.hal_dropdowns.buffer_size_open = open;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .sample_rate_open = false;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .channel_count_open = false;
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .hal_dropdowns
+                                                .buffer_size_open = open;
                                             cx.notify();
                                         });
                                     })
@@ -393,9 +441,15 @@ impl PlayerView {
 
                                             // If playing, restart track with new device
                                             if state.app.playback.is_playing {
-                                                if let Some(path) = state.app.get_current_track_path() {
+                                                if let Some(path) =
+                                                    state.app.get_current_track_path()
+                                                {
                                                     let position = state.app.playback.position_secs;
-                                                    Self::play_track_at(state, path, Some(position));
+                                                    Self::play_track_at(
+                                                        state,
+                                                        path,
+                                                        Some(position),
+                                                    );
                                                 }
                                             }
                                         }

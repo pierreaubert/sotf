@@ -113,8 +113,8 @@ pub fn render_mono_to_stereo_plugin(
                                 None,
                                 theme,
                             ))
-                        })
-                )
+                        }),
+                ),
         )
         .child(
             div()
@@ -155,6 +155,6 @@ pub fn render_mono_to_stereo_plugin(
                             None,
                             theme,
                         )),
-                )
+                ),
         )
 }

@@ -91,7 +91,10 @@ fn run_benchmark(n: usize, threads: usize, args: &Args) {
     }
 
     // Force thread count
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .unwrap();
 
     pool.install(|| {
         let start_total = Instant::now();
@@ -131,7 +134,10 @@ fn run_benchmark(n: usize, threads: usize, args: &Args) {
 fn main() {
     let args = Args::parse();
 
-    println!("\n=== 3D Helmholtz Solver Thread Scaling (n={}) ===\n", args.n);
+    println!(
+        "\n=== 3D Helmholtz Solver Thread Scaling (n={}) ===\n",
+        args.n
+    );
     println!("Solver: {:?}", args.solver);
     println!("k: {}", args.k);
     println!();
@@ -142,7 +148,8 @@ fn main() {
     );
     println!("{}", "-".repeat(90));
 
-    let thread_counts: Vec<usize> = args.threads
+    let thread_counts: Vec<usize> = args
+        .threads
         .split(',')
         .filter_map(|s: &str| s.trim().parse().ok())
         .collect();

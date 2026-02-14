@@ -70,14 +70,14 @@ pub use autoeq::roomeq::{
     MultiSubGroup,
     OptimizationMetadata,
     OptimizerConfig,
+    // V2 types
+    ProcessingMode,
     // Config types (re-exported via `pub use types::*` in roomeq/mod.rs)
     RoomConfig,
     SpeakerConfig,
     SpeakerGroup,
-    TargetCurveConfig,
-    // V2 types
-    ProcessingMode,
     SubwooferStrategy,
+    TargetCurveConfig,
 };
 
 use super::speaker::{CallbackConfig, OptimizationStage, SpeakerOptimizationResult};
@@ -344,8 +344,13 @@ pub fn run_multi_speaker_optimization(
     });
 
     // Run optimization using roomeq
-    let result = optimize_room(&room_config, config.args.sample_rate, callback_wrapped, None)
-        .map_err(|e| e.to_string())?;
+    let result = optimize_room(
+        &room_config,
+        config.args.sample_rate,
+        callback_wrapped,
+        None,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Convert result to legacy format
     let speaker_results = to_single_speaker_results(&result);

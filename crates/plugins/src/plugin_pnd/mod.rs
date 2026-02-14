@@ -57,7 +57,7 @@ pub struct PndPlugin {
     planar_output: Vec<Vec<f32>>,
 
     // Block buffering for arbitrary host block sizes
-    input_ring: Vec<f32>,  // Interleaved input accumulator
+    input_ring: Vec<f32>, // Interleaved input accumulator
     input_ring_fill: usize,
     output_ring: Vec<f32>, // Interleaved output drain buffer
     output_ring_fill: usize,
@@ -196,9 +196,12 @@ impl PndPlugin {
         let input_adapter =
             SequentialSliceOfVecs::new(&self.planar_input, self.channels, chunk_frames)
                 .map_err(|e| format!("{:?}", e))?;
-        let mut output_adapter =
-            SequentialSliceOfVecs::new_mut(&mut self.planar_output, self.channels, max_output_frames)
-                .map_err(|e| format!("{:?}", e))?;
+        let mut output_adapter = SequentialSliceOfVecs::new_mut(
+            &mut self.planar_output,
+            self.channels,
+            max_output_frames,
+        )
+        .map_err(|e| format!("{:?}", e))?;
 
         let (_, out_written) = resampler
             .process_into_buffer(&input_adapter, &mut output_adapter, None)
@@ -394,16 +397,15 @@ impl Plugin for PndPlugin {
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let (confidence, matched_partials, total_peaks) =
-            if let Some(analyzer) = &self.analyzer {
-                (
-                    analyzer.confidence(),
-                    analyzer.matched_partials(),
-                    analyzer.total_peaks(),
-                )
-            } else {
-                (0.0, 0, 0)
-            };
+        let (confidence, matched_partials, total_peaks) = if let Some(analyzer) = &self.analyzer {
+            (
+                analyzer.confidence(),
+                analyzer.matched_partials(),
+                analyzer.total_peaks(),
+            )
+        } else {
+            (0.0, 0, 0)
+        };
 
         Some(Arc::new(PndData {
             drift_ratio: self.last_drift_ratio,

@@ -54,7 +54,11 @@ struct UpmixerArgs {
     config: String,
 
     /// Upmixer FFT size (must be power of 2: 1024, 2048, 4096)
-    #[arg(id = "upmixer_fft_size", long = "upmixer-fft-size", default_value = "2048")]
+    #[arg(
+        id = "upmixer_fft_size",
+        long = "upmixer-fft-size",
+        default_value = "2048"
+    )]
     fft_size: usize,
 
     /// Upmixer front direct gain (0.0-2.0)
@@ -74,7 +78,11 @@ struct UpmixerArgs {
     lfe_cutoff_hz: f32,
 
     /// Upmixer stereo width (0.0-1.0)
-    #[arg(id = "upmixer_stereo_width", long = "upmixer-stereo-width", default_value = "0.5")]
+    #[arg(
+        id = "upmixer_stereo_width",
+        long = "upmixer-stereo-width",
+        default_value = "0.5"
+    )]
     stereo_width: f32,
 
     /// Upmixer bandpass / upmix crossover frequency (Hz)
@@ -121,7 +129,11 @@ struct BinauralArgs {
     sofa_file: Option<PathBuf>,
 
     /// Binaural decoder FFT size (must be power of 2: 2048, 4096, 8192)
-    #[arg(id = "binaural_fft_size", long = "binaural-fft-size", default_value = "4096")]
+    #[arg(
+        id = "binaural_fft_size",
+        long = "binaural-fft-size",
+        default_value = "4096"
+    )]
     fft_size: usize,
 
     /// Enable Binaural Decoder Sum-Before-IFFT optimization
@@ -151,27 +163,51 @@ struct GainArgs {
 #[derive(Debug, Clone, clap::Args)]
 struct CompressorArgs {
     /// Enable single-band compressor plugin
-    #[arg(id = "compressor_enabled", long = "compressor", default_value_t = false)]
+    #[arg(
+        id = "compressor_enabled",
+        long = "compressor",
+        default_value_t = false
+    )]
     enabled: bool,
 
     /// Compressor threshold in dB (-60 to 0)
-    #[arg(id = "compressor_threshold_db", long = "compressor-threshold-db", default_value = "-20.0")]
+    #[arg(
+        id = "compressor_threshold_db",
+        long = "compressor-threshold-db",
+        default_value = "-20.0"
+    )]
     threshold_db: f32,
 
     /// Compressor ratio (1.0 to 20.0)
-    #[arg(id = "compressor_ratio", long = "compressor-ratio", default_value = "4.0")]
+    #[arg(
+        id = "compressor_ratio",
+        long = "compressor-ratio",
+        default_value = "4.0"
+    )]
     ratio: f32,
 
     /// Compressor attack time in ms (0.1 to 100)
-    #[arg(id = "compressor_attack_ms", long = "compressor-attack-ms", default_value = "5.0")]
+    #[arg(
+        id = "compressor_attack_ms",
+        long = "compressor-attack-ms",
+        default_value = "5.0"
+    )]
     attack_ms: f32,
 
     /// Compressor release time in ms (10 to 1000)
-    #[arg(id = "compressor_release_ms", long = "compressor-release-ms", default_value = "50.0")]
+    #[arg(
+        id = "compressor_release_ms",
+        long = "compressor-release-ms",
+        default_value = "50.0"
+    )]
     release_ms: f32,
 
     /// Compressor knee width in dB (0 to 20)
-    #[arg(id = "compressor_knee_db", long = "compressor-knee-db", default_value = "6.0")]
+    #[arg(
+        id = "compressor_knee_db",
+        long = "compressor-knee-db",
+        default_value = "6.0"
+    )]
     knee_db: f32,
 
     /// Compressor makeup gain in dB (-24 to 24)
@@ -187,11 +223,19 @@ struct CompressorArgs {
     auto_makeup: bool,
 
     /// Disable compressor channel linking (channels linked by default)
-    #[arg(id = "compressor_unlink_channels", long = "compressor-unlink-channels", default_value_t = false)]
+    #[arg(
+        id = "compressor_unlink_channels",
+        long = "compressor-unlink-channels",
+        default_value_t = false
+    )]
     unlink_channels: bool,
 
     /// Compressor sidechain HPF frequency in Hz (0 to 200)
-    #[arg(id = "compressor_sidechain_hpf_hz", long = "compressor-sidechain-hpf-hz", default_value = "80.0")]
+    #[arg(
+        id = "compressor_sidechain_hpf_hz",
+        long = "compressor-sidechain-hpf-hz",
+        default_value = "80.0"
+    )]
     sidechain_hpf_hz: f32,
 }
 
@@ -202,7 +246,11 @@ struct GateArgs {
     enabled: bool,
 
     /// Gate threshold in dB (-80 to 0)
-    #[arg(id = "gate_threshold_db", long = "gate-threshold-db", default_value = "-40.0")]
+    #[arg(
+        id = "gate_threshold_db",
+        long = "gate-threshold-db",
+        default_value = "-40.0"
+    )]
     threshold_db: f32,
 
     /// Gate ratio (1.0 to 100.0)
@@ -218,7 +266,11 @@ struct GateArgs {
     hold_ms: f32,
 
     /// Gate release time in ms (10 to 2000)
-    #[arg(id = "gate_release_ms", long = "gate-release-ms", default_value = "100.0")]
+    #[arg(
+        id = "gate_release_ms",
+        long = "gate-release-ms",
+        default_value = "100.0"
+    )]
     release_ms: f32,
 
     /// Gate wet/dry mix (0.0 to 1.0)
@@ -226,11 +278,19 @@ struct GateArgs {
     mix: f32,
 
     /// Disable gate channel linking (channels linked by default)
-    #[arg(id = "gate_unlink_channels", long = "gate-unlink-channels", default_value_t = false)]
+    #[arg(
+        id = "gate_unlink_channels",
+        long = "gate-unlink-channels",
+        default_value_t = false
+    )]
     unlink_channels: bool,
 
     /// Gate sidechain HPF frequency in Hz (0 to 200)
-    #[arg(id = "gate_sidechain_hpf_hz", long = "gate-sidechain-hpf-hz", default_value = "0.0")]
+    #[arg(
+        id = "gate_sidechain_hpf_hz",
+        long = "gate-sidechain-hpf-hz",
+        default_value = "0.0"
+    )]
     sidechain_hpf_hz: f32,
 }
 
@@ -241,11 +301,19 @@ struct LimiterArgs {
     enabled: bool,
 
     /// Limiter threshold in dB (-20 to 0)
-    #[arg(id = "limiter_threshold_db", long = "limiter-threshold-db", default_value = "-0.1")]
+    #[arg(
+        id = "limiter_threshold_db",
+        long = "limiter-threshold-db",
+        default_value = "-0.1"
+    )]
     threshold_db: f32,
 
     /// Limiter release time in ms (10 to 1000)
-    #[arg(id = "limiter_release_ms", long = "limiter-release-ms", default_value = "50.0")]
+    #[arg(
+        id = "limiter_release_ms",
+        long = "limiter-release-ms",
+        default_value = "50.0"
+    )]
     release_ms: f32,
 
     /// Limiter lookahead time in ms (0 to 20)
@@ -268,7 +336,11 @@ struct ExpanderArgs {
     enabled: bool,
 
     /// Expander threshold in dB (-80 to 0)
-    #[arg(id = "expander_threshold_db", long = "expander-threshold-db", default_value = "-40.0")]
+    #[arg(
+        id = "expander_threshold_db",
+        long = "expander-threshold-db",
+        default_value = "-40.0"
+    )]
     threshold_db: f32,
 
     /// Expander ratio (1.0 to 20.0)
@@ -276,27 +348,51 @@ struct ExpanderArgs {
     ratio: f32,
 
     /// Expander attack time in ms (0.1 to 50)
-    #[arg(id = "expander_attack_ms", long = "expander-attack-ms", default_value = "1.0")]
+    #[arg(
+        id = "expander_attack_ms",
+        long = "expander-attack-ms",
+        default_value = "1.0"
+    )]
     attack_ms: f32,
 
     /// Expander release time in ms (10 to 2000)
-    #[arg(id = "expander_release_ms", long = "expander-release-ms", default_value = "100.0")]
+    #[arg(
+        id = "expander_release_ms",
+        long = "expander-release-ms",
+        default_value = "100.0"
+    )]
     release_ms: f32,
 
     /// Expander range in dB (0 to 80)
-    #[arg(id = "expander_range_db", long = "expander-range-db", default_value = "40.0")]
+    #[arg(
+        id = "expander_range_db",
+        long = "expander-range-db",
+        default_value = "40.0"
+    )]
     range_db: f32,
 
     /// Expander knee width in dB (0 to 20)
-    #[arg(id = "expander_knee_db", long = "expander-knee-db", default_value = "6.0")]
+    #[arg(
+        id = "expander_knee_db",
+        long = "expander-knee-db",
+        default_value = "6.0"
+    )]
     knee_db: f32,
 
     /// Expander hysteresis in dB (0 to 12)
-    #[arg(id = "expander_hysteresis_db", long = "expander-hysteresis-db", default_value = "4.0")]
+    #[arg(
+        id = "expander_hysteresis_db",
+        long = "expander-hysteresis-db",
+        default_value = "4.0"
+    )]
     hysteresis_db: f32,
 
     /// Expander hold time in ms (0 to 500)
-    #[arg(id = "expander_hold_ms", long = "expander-hold-ms", default_value = "10.0")]
+    #[arg(
+        id = "expander_hold_ms",
+        long = "expander-hold-ms",
+        default_value = "10.0"
+    )]
     hold_ms: f32,
 
     /// Expander wet/dry mix (0.0 to 1.0)
@@ -304,85 +400,161 @@ struct ExpanderArgs {
     mix: f32,
 
     /// Disable expander channel linking (channels linked by default)
-    #[arg(id = "expander_unlink_channels", long = "expander-unlink-channels", default_value_t = false)]
+    #[arg(
+        id = "expander_unlink_channels",
+        long = "expander-unlink-channels",
+        default_value_t = false
+    )]
     unlink_channels: bool,
 
     /// Expander sidechain HPF frequency in Hz (0 to 500)
-    #[arg(id = "expander_sidechain_hpf_hz", long = "expander-sidechain-hpf-hz", default_value = "80.0")]
+    #[arg(
+        id = "expander_sidechain_hpf_hz",
+        long = "expander-sidechain-hpf-hz",
+        default_value = "80.0"
+    )]
     sidechain_hpf_hz: f32,
 }
 
 #[derive(Debug, Clone, clap::Args)]
 struct MultibandCompressorArgs {
     /// Enable multiband compressor plugin (3-band compression with crossovers)
-    #[arg(id = "mb_compressor_enabled", long = "multiband-compressor", default_value_t = false)]
+    #[arg(
+        id = "mb_compressor_enabled",
+        long = "multiband-compressor",
+        default_value_t = false
+    )]
     enabled: bool,
 
     /// Multiband compressor threshold in dB (-60 to 0)
-    #[arg(id = "mb_compressor_threshold_db", long = "mb-compressor-threshold-db", default_value = "-20.0")]
+    #[arg(
+        id = "mb_compressor_threshold_db",
+        long = "mb-compressor-threshold-db",
+        default_value = "-20.0"
+    )]
     threshold_db: f32,
 
     /// Multiband compressor ratio (1.0 to 20.0)
-    #[arg(id = "mb_compressor_ratio", long = "mb-compressor-ratio", default_value = "4.0")]
+    #[arg(
+        id = "mb_compressor_ratio",
+        long = "mb-compressor-ratio",
+        default_value = "4.0"
+    )]
     ratio: f32,
 
     /// Multiband compressor attack time in ms (0.1 to 100)
-    #[arg(id = "mb_compressor_attack_ms", long = "mb-compressor-attack-ms", default_value = "5.0")]
+    #[arg(
+        id = "mb_compressor_attack_ms",
+        long = "mb-compressor-attack-ms",
+        default_value = "5.0"
+    )]
     attack_ms: f32,
 
     /// Multiband compressor release time in ms (10 to 1000)
-    #[arg(id = "mb_compressor_release_ms", long = "mb-compressor-release-ms", default_value = "50.0")]
+    #[arg(
+        id = "mb_compressor_release_ms",
+        long = "mb-compressor-release-ms",
+        default_value = "50.0"
+    )]
     release_ms: f32,
 
     /// Multiband compressor knee width in dB (0 to 20)
-    #[arg(id = "mb_compressor_knee_db", long = "mb-compressor-knee-db", default_value = "6.0")]
+    #[arg(
+        id = "mb_compressor_knee_db",
+        long = "mb-compressor-knee-db",
+        default_value = "6.0"
+    )]
     knee_db: f32,
 
     /// Multiband compressor wet/dry mix (0.0 to 1.0)
-    #[arg(id = "mb_compressor_mix", long = "mb-compressor-mix", default_value = "1.0")]
+    #[arg(
+        id = "mb_compressor_mix",
+        long = "mb-compressor-mix",
+        default_value = "1.0"
+    )]
     mix: f32,
 }
 
 #[derive(Debug, Clone, clap::Args)]
 struct MultibandExpanderArgs {
     /// Enable multiband expander plugin (3-band expansion with crossovers)
-    #[arg(id = "mb_expander_enabled", long = "multiband-expander", default_value_t = false)]
+    #[arg(
+        id = "mb_expander_enabled",
+        long = "multiband-expander",
+        default_value_t = false
+    )]
     enabled: bool,
 
     /// Multiband expander threshold in dB (-80 to 0)
-    #[arg(id = "mb_expander_threshold_db", long = "mb-expander-threshold-db", default_value = "-40.0")]
+    #[arg(
+        id = "mb_expander_threshold_db",
+        long = "mb-expander-threshold-db",
+        default_value = "-40.0"
+    )]
     threshold_db: f32,
 
     /// Multiband expander ratio (1.0 to 20.0)
-    #[arg(id = "mb_expander_ratio", long = "mb-expander-ratio", default_value = "2.0")]
+    #[arg(
+        id = "mb_expander_ratio",
+        long = "mb-expander-ratio",
+        default_value = "2.0"
+    )]
     ratio: f32,
 
     /// Multiband expander attack time in ms (0.1 to 50)
-    #[arg(id = "mb_expander_attack_ms", long = "mb-expander-attack-ms", default_value = "1.0")]
+    #[arg(
+        id = "mb_expander_attack_ms",
+        long = "mb-expander-attack-ms",
+        default_value = "1.0"
+    )]
     attack_ms: f32,
 
     /// Multiband expander release time in ms (10 to 2000)
-    #[arg(id = "mb_expander_release_ms", long = "mb-expander-release-ms", default_value = "100.0")]
+    #[arg(
+        id = "mb_expander_release_ms",
+        long = "mb-expander-release-ms",
+        default_value = "100.0"
+    )]
     release_ms: f32,
 
     /// Multiband expander range in dB (0 to 80)
-    #[arg(id = "mb_expander_range_db", long = "mb-expander-range-db", default_value = "40.0")]
+    #[arg(
+        id = "mb_expander_range_db",
+        long = "mb-expander-range-db",
+        default_value = "40.0"
+    )]
     range_db: f32,
 
     /// Multiband expander knee width in dB (0 to 20)
-    #[arg(id = "mb_expander_knee_db", long = "mb-expander-knee-db", default_value = "6.0")]
+    #[arg(
+        id = "mb_expander_knee_db",
+        long = "mb-expander-knee-db",
+        default_value = "6.0"
+    )]
     knee_db: f32,
 
     /// Multiband expander hysteresis in dB (0 to 12)
-    #[arg(id = "mb_expander_hysteresis_db", long = "mb-expander-hysteresis-db", default_value = "4.0")]
+    #[arg(
+        id = "mb_expander_hysteresis_db",
+        long = "mb-expander-hysteresis-db",
+        default_value = "4.0"
+    )]
     hysteresis_db: f32,
 
     /// Multiband expander hold time in ms (0 to 500)
-    #[arg(id = "mb_expander_hold_ms", long = "mb-expander-hold-ms", default_value = "10.0")]
+    #[arg(
+        id = "mb_expander_hold_ms",
+        long = "mb-expander-hold-ms",
+        default_value = "10.0"
+    )]
     hold_ms: f32,
 
     /// Multiband expander wet/dry mix (0.0 to 1.0)
-    #[arg(id = "mb_expander_mix", long = "mb-expander-mix", default_value = "1.0")]
+    #[arg(
+        id = "mb_expander_mix",
+        long = "mb-expander-mix",
+        default_value = "1.0"
+    )]
     mix: f32,
 }
 
@@ -436,11 +608,19 @@ struct DenoiserArgs {
     smoothing: f32,
 
     /// Denoiser attack time (ms)
-    #[arg(id = "denoiser_attack_ms", long = "denoiser-attack-ms", default_value = "5.0")]
+    #[arg(
+        id = "denoiser_attack_ms",
+        long = "denoiser-attack-ms",
+        default_value = "5.0"
+    )]
     attack_ms: f32,
 
     /// Denoiser release time (ms)
-    #[arg(id = "denoiser_release_ms", long = "denoiser-release-ms", default_value = "50.0")]
+    #[arg(
+        id = "denoiser_release_ms",
+        long = "denoiser-release-ms",
+        default_value = "50.0"
+    )]
     release_ms: f32,
 
     /// Enable low-latency mode for denoiser (512 FFT vs 2048)
@@ -485,7 +665,11 @@ struct FletcherMunsonArgs {
 #[derive(Debug, Clone, clap::Args)]
 struct ConvolutionArgs {
     /// Enable convolution plugin (FIR/impulse response processing)
-    #[arg(id = "convolution_enabled", long = "convolution", default_value_t = false)]
+    #[arg(
+        id = "convolution_enabled",
+        long = "convolution",
+        default_value_t = false
+    )]
     enabled: bool,
 
     /// Path to impulse response file (required when --convolution is enabled)
@@ -493,39 +677,63 @@ struct ConvolutionArgs {
     ir_file: Option<PathBuf>,
 
     /// Convolution wet/dry mix (0.0 to 1.0)
-    #[arg(id = "convolution_mix", long = "convolution-mix", default_value = "1.0")]
+    #[arg(
+        id = "convolution_mix",
+        long = "convolution-mix",
+        default_value = "1.0"
+    )]
     mix: f32,
 
     /// Convolution gain in dB (-20 to 20)
-    #[arg(id = "convolution_gain_db", long = "convolution-gain-db", default_value = "0.0")]
+    #[arg(
+        id = "convolution_gain_db",
+        long = "convolution-gain-db",
+        default_value = "0.0"
+    )]
     gain_db: f32,
 }
 
 #[derive(Debug, Clone, clap::Args)]
 struct SpectrumAnalyzerArgs {
     /// Enable spectrum analyzer plugin
-    #[arg(id = "spectrum_enabled", long = "spectrum-analyzer", default_value_t = false)]
+    #[arg(
+        id = "spectrum_enabled",
+        long = "spectrum-analyzer",
+        default_value_t = false
+    )]
     enabled: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
 struct ChannelMuteSoloArgs {
     /// Enable channel mute/solo plugin
-    #[arg(id = "mute_solo_enabled", long = "channel-mute-solo", default_value_t = false)]
+    #[arg(
+        id = "mute_solo_enabled",
+        long = "channel-mute-solo",
+        default_value_t = false
+    )]
     enabled: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
 struct ABCompareArgs {
     /// Enable A/B comparison plugin
-    #[arg(id = "ab_compare_enabled", long = "ab-compare", default_value_t = false)]
+    #[arg(
+        id = "ab_compare_enabled",
+        long = "ab-compare",
+        default_value_t = false
+    )]
     enabled: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
 struct BandSplitArgs {
     /// Enable band-split plugin (splits audio into low/high bands)
-    #[arg(id = "band_split_enabled", long = "band-split", default_value_t = false)]
+    #[arg(
+        id = "band_split_enabled",
+        long = "band-split",
+        default_value_t = false
+    )]
     enabled: bool,
 
     /// Band-split crossover frequency in Hz (20-20000)
@@ -540,7 +748,11 @@ struct BandSplitArgs {
 #[derive(Debug, Clone, clap::Args)]
 struct BandMergeArgs {
     /// Enable band-merge plugin (merges frequency bands)
-    #[arg(id = "band_merge_enabled", long = "band-merge", default_value_t = false)]
+    #[arg(
+        id = "band_merge_enabled",
+        long = "band-merge",
+        default_value_t = false
+    )]
     enabled: bool,
 
     /// Number of bands to merge (2-8)
@@ -578,11 +790,19 @@ struct DownmixArgs {
 #[derive(Debug, Clone, clap::Args)]
 struct MonoToStereoArgs {
     /// Enable mono-to-stereo conversion plugin
-    #[arg(id = "mono_to_stereo_enabled", long = "mono-to-stereo", default_value_t = false)]
+    #[arg(
+        id = "mono_to_stereo_enabled",
+        long = "mono-to-stereo",
+        default_value_t = false
+    )]
     enabled: bool,
 
     /// Stereo width (0.0 to 1.0)
-    #[arg(id = "mono_to_stereo_width", long = "mono-to-stereo-width", default_value = "0.5")]
+    #[arg(
+        id = "mono_to_stereo_width",
+        long = "mono-to-stereo-width",
+        default_value = "0.5"
+    )]
     stereo_width: f32,
 
     /// Haas effect delay in ms (0.0 to 5.0)
@@ -935,9 +1155,7 @@ fn create_pnd_plugin_config(args: &PndArgs) -> Result<PluginConfig, String> {
     })
 }
 
-fn create_fletcher_munson_plugin_config(
-    args: &FletcherMunsonArgs,
-) -> Result<PluginConfig, String> {
+fn create_fletcher_munson_plugin_config(args: &FletcherMunsonArgs) -> Result<PluginConfig, String> {
     use serde_json::json;
     Ok(PluginConfig {
         plugin_type: "fletcher_munson".to_string(),
@@ -1218,8 +1436,10 @@ fn main() {
         }
         Commands::ReplayGain { file } => match sotf_audio::replaygain::analyze_file(&file) {
             Ok(info) => {
-                let msg = format!("ReplayGain analysis:\n  File: {:?}\n  Gain: {:+.2} dB\n  Peak: {:.6}",
-                    file, info.gain, info.peak);
+                let msg = format!(
+                    "ReplayGain analysis:\n  File: {:?}\n  Gain: {:+.2} dB\n  Peak: {:.6}",
+                    file, info.gain, info.peak
+                );
                 log::info!("{}", msg);
                 println!("{}", msg);
             }
@@ -1603,8 +1823,13 @@ fn play_stream(
         .load_file(&file)
         .map_err(|e| format!("Failed to load audio file: {}", e))?;
 
-    let msg = format!("Loaded audio file:\n  Format: {}\n  Sample rate: {}Hz\n  Channels: {}\n  Bits per sample: {}",
-        audio_info.format, audio_info.spec.sample_rate, audio_info.spec.channels, audio_info.spec.bits_per_sample);
+    let msg = format!(
+        "Loaded audio file:\n  Format: {}\n  Sample rate: {}Hz\n  Channels: {}\n  Bits per sample: {}",
+        audio_info.format,
+        audio_info.spec.sample_rate,
+        audio_info.spec.channels,
+        audio_info.spec.bits_per_sample
+    );
     log::info!("{}", msg);
     println!("{}", msg);
 
@@ -1745,10 +1970,8 @@ fn build_rack_mode_plugins(
 ) -> Result<(Vec<PluginConfig>, usize, Option<usize>), String> {
     log::info!("Using rack mode with plugins: {:?}", rack);
 
-    let sample_rate = sotf_audio::select_output_sample_rate(
-        audio_info.spec.sample_rate,
-        device,
-    ) as f64;
+    let sample_rate =
+        sotf_audio::select_output_sample_rate(audio_info.spec.sample_rate, device) as f64;
 
     let mut chain = PluginChain::new();
     let mut has_lufs = false;
@@ -1872,7 +2095,10 @@ fn build_rack_mode_plugins(
                 }
                 log::info!("Rack: Added Gain plugin ({:.1} dB)", plugins.gain.gain_db);
             }
-            "single-compressor" | "compressor" if plugins.compressor.enabled || plugin_name.to_lowercase() == "single-compressor" => {
+            "single-compressor" | "compressor"
+                if plugins.compressor.enabled
+                    || plugin_name.to_lowercase() == "single-compressor" =>
+            {
                 let idx = chain.add_plugin(&PluginType::Compressor);
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Compressor {
@@ -2314,8 +2540,7 @@ fn build_traditional_mode_plugins(
 
     // 13. Multiband Expander
     if plugins.multiband_expander.enabled {
-        let mb_exp_plugin =
-            create_multiband_expander_plugin_config(&plugins.multiband_expander)?;
+        let mb_exp_plugin = create_multiband_expander_plugin_config(&plugins.multiband_expander)?;
         plugin_configs.push(mb_exp_plugin);
         log::info!("Enabled multiband expander plugin");
     }
@@ -2387,8 +2612,7 @@ fn build_traditional_mode_plugins(
 
     // 22. Channel mapping to hardware (last processing plugin)
     let output_channels = if let Some(mapping_str) = hwaudio_play {
-        let (input_channel_map, output_channel_map, matrix) =
-            parse_channel_mapping(mapping_str)?;
+        let (input_channel_map, output_channel_map, matrix) = parse_channel_mapping(mapping_str)?;
 
         if input_channel_map.len() != output_channels {
             return Err(format!(
