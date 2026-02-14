@@ -360,15 +360,44 @@ pub fn optimize_room(
         info!("No WAV files available for time alignment. Skipping time alignment.");
     }
 
-    // Channel level alignment: add gain plugins to align all channels to the same level
-    if channel_means.len() > 1 {
-        let means: Vec<f64> = channel_means.values().copied().collect();
+    // Spectral channel alignment: fit low-shelf + high-shelf + flat gain to each
+    // channel's deviation from the average post-EQ curve. This corrects both broadband
+    // level differences and frequency-dependent tilt between channels.
+    if curves.len() > 1 {
+        let min_freq = config.optimizer.min_freq;
+        let max_freq = config.optimizer.max_freq;
+        let sample_rate = config
+            .recording_config
+            .as_ref()
+            .and_then(|rc| rc.playback_sample_rate)
+            .unwrap_or(48000) as f64;
+
+        // Compute post-EQ mean SPL per channel for the level spread warning
+        let mut post_eq_means: HashMap<String, f64> = HashMap::new();
+        for (channel_name, final_curve) in &curves {
+            let freqs_f32: Vec<f32> = final_curve.freq.iter().map(|&f| f as f32).collect();
+            let spl_f32: Vec<f32> = final_curve.spl.iter().map(|&s| s as f32).collect();
+            let post_mean = compute_average_response(
+                &freqs_f32,
+                &spl_f32,
+                Some((min_freq as f32, max_freq as f32)),
+            ) as f64;
+            post_eq_means.insert(channel_name.clone(), post_mean);
+        }
+
+        let means: Vec<f64> = post_eq_means.values().copied().collect();
         let min_mean = means.iter().cloned().fold(f64::INFINITY, f64::min);
         let max_mean = means.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let level_spread = max_mean - min_mean;
 
-        // Use the minimum level as reference (avoid boosting, prefer cutting)
-        let reference_level = min_mean;
+        info!(
+            "Post-EQ spectral alignment: level spread = {:.2} dB across {} channels",
+            level_spread,
+            post_eq_means.len()
+        );
+        for (name, mean) in &post_eq_means {
+            info!("  Channel '{}': post-EQ mean SPL = {:.1} dB", name, mean);
+        }
 
         // Warn if level differences are significant (might indicate measurement issues)
         if level_spread > LEVEL_DIFFERENCE_WARNING_THRESHOLD {
@@ -377,25 +406,24 @@ pub fn optimize_room(
                 This may indicate measurement issues (mic placement, cable problems, etc.).",
                 level_spread, LEVEL_DIFFERENCE_WARNING_THRESHOLD
             );
-            for (name, mean) in &channel_means {
-                info!("  Channel '{}': mean SPL = {:.1} dB", name, mean);
-            }
         }
 
-        // Add gain plugins to align channels
-        for (channel_name, mean_spl) in &channel_means {
-            let alignment_gain = reference_level - mean_spl;
+        // Compute spectral alignment (shelf + gain) for each channel
+        let alignment_results =
+            super::spectral_align::compute_spectral_alignment(&curves, sample_rate, min_freq, max_freq);
+        super::spectral_align::log_spectral_alignment(&alignment_results);
 
-            // Only add gain plugin if the adjustment is significant (> 0.1 dB)
-            if alignment_gain.abs() > 0.1
-                && let Some(chain) = channel_chains.get_mut(channel_name)
-            {
-                // Insert gain plugin at the end (after EQ) to adjust final level
-                chain.plugins.push(output::create_gain_plugin(alignment_gain));
-                info!(
-                    "  Channel '{}': added {:.2} dB gain for level alignment",
-                    channel_name, alignment_gain
-                );
+        // Insert alignment plugins after the per-channel PEQ
+        for (channel_name, result) in &alignment_results {
+            if let Some(chain) = channel_chains.get_mut(channel_name) {
+                let (eq_plugin, gain_plugin) =
+                    super::spectral_align::create_alignment_plugins(result, sample_rate);
+                if let Some(eq) = eq_plugin {
+                    chain.plugins.push(eq);
+                }
+                if let Some(gain) = gain_plugin {
+                    chain.plugins.push(gain);
+                }
             }
         }
     }
@@ -1030,8 +1058,9 @@ fn process_single_speaker(
             let mut final_data: super::types::CurveData = (&display_final).into();
             final_data.norm_range = norm_range;
 
-            chain.initial_curve = Some(initial_data);
-            chain.final_curve = Some(final_data);
+            chain.initial_curve = Some(initial_data.clone());
+            chain.final_curve = Some(final_data.clone());
+            chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean_spl, arrival_time_ms))
         }
@@ -1149,8 +1178,9 @@ fn process_single_speaker(
             let mut final_data: super::types::CurveData = (&display_final).into();
             final_data.norm_range = norm_range;
 
-            chain.initial_curve = Some(initial_data);
-            chain.final_curve = Some(final_data);
+            chain.initial_curve = Some(initial_data.clone());
+            chain.final_curve = Some(final_data.clone());
+            chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
         }
@@ -1273,8 +1303,9 @@ fn process_single_speaker(
             let mut final_data: super::types::CurveData = (&display_final).into();
             final_data.norm_range = norm_range;
 
-            chain.initial_curve = Some(initial_data);
-            chain.final_curve = Some(final_data);
+            chain.initial_curve = Some(initial_data.clone());
+            chain.final_curve = Some(final_data.clone());
+            chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
         }
@@ -1645,8 +1676,9 @@ fn process_speaker_group(
     let mut final_data: super::types::CurveData = (&display_final).into();
     final_data.norm_range = norm_range;
 
-    chain.initial_curve = Some(initial_data);
-    chain.final_curve = Some(final_data);
+    chain.initial_curve = Some(initial_data.clone());
+    chain.final_curve = Some(final_data.clone());
+    chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
     // Use global mean for level alignment
     let min_freq = room_config.optimizer.min_freq;
@@ -1761,8 +1793,9 @@ fn process_multisub_group(
     let mut final_data: super::types::CurveData = (&display_final).into();
     final_data.norm_range = norm_range;
 
-    chain.initial_curve = Some(initial_data);
-    chain.final_curve = Some(final_data);
+    chain.initial_curve = Some(initial_data.clone());
+    chain.final_curve = Some(final_data.clone());
+    chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
     Ok((
         chain,
@@ -1862,8 +1895,9 @@ fn process_dba(
     let mut final_data: super::types::CurveData = (&display_final).into();
     final_data.norm_range = norm_range;
 
-    chain.initial_curve = Some(initial_data);
-    chain.final_curve = Some(final_data);
+    chain.initial_curve = Some(initial_data.clone());
+    chain.final_curve = Some(final_data.clone());
+    chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
     Ok((
         chain,
@@ -2055,8 +2089,9 @@ fn process_mixed_mode_crossover(
     let mut final_data: super::types::CurveData = (&display_final).into();
     final_data.norm_range = norm_range;
 
-    chain.initial_curve = Some(initial_data);
-    chain.final_curve = Some(final_data);
+    chain.initial_curve = Some(initial_data.clone());
+    chain.final_curve = Some(final_data.clone());
+    chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
     Ok((
         chain,
@@ -2354,8 +2389,9 @@ fn process_cardioid(
     let mut final_data: super::types::CurveData = (&display_final).into();
     final_data.norm_range = norm_range;
 
-    chain.initial_curve = Some(initial_data);
-    chain.final_curve = Some(final_data);
+    chain.initial_curve = Some(initial_data.clone());
+    chain.final_curve = Some(final_data.clone());
+    chain.eq_response = Some(output::compute_eq_response(&initial_data, &final_data));
 
     // Mean SPL
     let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();

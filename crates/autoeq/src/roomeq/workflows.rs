@@ -420,12 +420,16 @@ pub fn optimize_stereo_2_0(
 
         info!("  '{}' post_score={:.4}", role, post_score);
 
+        let initial_data: super::types::CurveData = (&aligned_curve).into();
+        let final_data: super::types::CurveData = (&final_curve_obj).into();
+        let eq_resp = super::output::compute_eq_response(&initial_data, &final_data);
         let chain = ChannelDspChain {
             channel: role.clone(),
             plugins,
             drivers: None,
-            initial_curve: Some((&aligned_curve).into()),
-            final_curve: Some((&final_curve_obj).into()),
+            initial_curve: Some(initial_data),
+            final_curve: Some(final_data),
+            eq_response: Some(eq_resp),
         };
 
         channel_chains.insert(role.clone(), chain);
@@ -741,12 +745,16 @@ pub fn optimize_stereo_2_1(
             intermediate.clone()
         };
 
+        let initial_data: super::types::CurveData = (&aligned_curves[role]).into();
+        let final_data: super::types::CurveData = (&final_curve_obj).into();
+        let eq_resp = super::output::compute_eq_response(&initial_data, &final_data);
         let chain = ChannelDspChain {
             channel: role.to_string(),
             plugins,
             drivers: None,
-            initial_curve: Some((&aligned_curves[role]).into()),
-            final_curve: Some((&final_curve_obj).into()),
+            initial_curve: Some(initial_data),
+            final_curve: Some(final_data),
+            eq_response: Some(eq_resp),
         };
         channel_chains.insert(role.to_string(), chain);
     }
@@ -803,12 +811,16 @@ pub fn optimize_stereo_2_1(
         }).collect()
     });
 
+    let sub_initial_data: super::types::CurveData = (&aligned_curves[sub_role]).into();
+    let sub_final_data: super::types::CurveData = (&final_sub_curve).into();
+    let sub_eq_resp = super::output::compute_eq_response(&sub_initial_data, &sub_final_data);
     let sub_chain = ChannelDspChain {
         channel: sub_role.to_string(),
         plugins: sub_plugins,
         drivers: driver_chains,
-        initial_curve: Some((&aligned_curves[sub_role]).into()),
-        final_curve: Some((&final_sub_curve).into()),
+        initial_curve: Some(sub_initial_data),
+        final_curve: Some(sub_final_data),
+        eq_response: Some(sub_eq_resp),
     };
     channel_chains.insert(sub_role.to_string(), sub_chain);
 
@@ -1007,12 +1019,16 @@ fn optimize_home_cinema_no_sub(
 
         info!("  '{}' post_score={:.4}", role, post_score);
 
+        let initial_data: super::types::CurveData = (&aligned_curve).into();
+        let final_data: super::types::CurveData = (&final_curve_obj).into();
+        let eq_resp = super::output::compute_eq_response(&initial_data, &final_data);
         let chain = ChannelDspChain {
             channel: role.clone(),
             plugins,
             drivers: None,
-            initial_curve: Some((&aligned_curve).into()),
-            final_curve: Some((&final_curve_obj).into()),
+            initial_curve: Some(initial_data),
+            final_curve: Some(final_data),
+            eq_response: Some(eq_resp),
         };
 
         channel_chains.insert(role.clone(), chain);
@@ -1262,12 +1278,16 @@ fn optimize_home_cinema_with_sub(
             intermediate.clone()
         };
 
+        let initial_data: super::types::CurveData = (&aligned_curves[role]).into();
+        let final_data: super::types::CurveData = (&final_curve_obj).into();
+        let eq_resp = super::output::compute_eq_response(&initial_data, &final_data);
         let chain = ChannelDspChain {
             channel: role.clone(),
             plugins,
             drivers: None,
-            initial_curve: Some((&aligned_curves[role]).into()),
-            final_curve: Some((&final_curve_obj).into()),
+            initial_curve: Some(initial_data),
+            final_curve: Some(final_data),
+            eq_response: Some(eq_resp),
         };
         channel_chains.insert(role.clone(), chain);
     }
@@ -1327,12 +1347,16 @@ fn optimize_home_cinema_with_sub(
         }).collect()
     });
 
+    let sub_initial_data: super::types::CurveData = (&aligned_curves[sub_role]).into();
+    let sub_final_data: super::types::CurveData = (&final_sub_curve).into();
+    let sub_eq_resp = super::output::compute_eq_response(&sub_initial_data, &sub_final_data);
     let sub_chain = ChannelDspChain {
         channel: sub_role.to_string(),
         plugins: sub_plugins,
         drivers: driver_chains,
-        initial_curve: Some((&aligned_curves[sub_role]).into()),
-        final_curve: Some((&final_sub_curve).into()),
+        initial_curve: Some(sub_initial_data),
+        final_curve: Some(sub_final_data),
+        eq_response: Some(sub_eq_resp),
     };
     channel_chains.insert(sub_role.to_string(), sub_chain);
 

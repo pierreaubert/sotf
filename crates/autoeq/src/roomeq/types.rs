@@ -1288,6 +1288,10 @@ pub struct ChannelDspChain {
     /// Final frequency response curve after applying correction (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_curve: Option<CurveData>,
+
+    /// EQ filter response curve (correction magnitude in dB) (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eq_response: Option<CurveData>,
 }
 
 /// DSP chain for an individual driver in a multi-driver speaker

@@ -75,6 +75,13 @@ pub use output::{
 mod progress;
 pub use progress::{MultiStageProgress, ProgressReporter};
 
+// Spectral channel alignment (shelf filters + gain)
+mod spectral_align;
+pub use spectral_align::{
+    SpectralAlignmentResult, compute_spectral_alignment, create_alignment_plugins,
+    log_spectral_alignment,
+};
+
 // Utility modules
 mod phase_utils;
 mod time_align;

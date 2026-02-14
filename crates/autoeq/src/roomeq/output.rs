@@ -197,6 +197,7 @@ pub fn build_channel_dsp_chain_with_curves(
         drivers: None,
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
+        eq_response: None,
     }
 }
 
@@ -354,6 +355,7 @@ pub fn build_multidriver_dsp_chain_with_curves(
         drivers: Some(driver_chains),
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
+        eq_response: None,
     }
 }
 
@@ -440,6 +442,7 @@ pub fn build_multisub_dsp_chain_with_curves(
         drivers: Some(driver_chains),
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
+        eq_response: None,
     }
 }
 
@@ -514,6 +517,7 @@ pub fn build_dba_dsp_chain_with_curves(
         drivers: Some(driver_chains),
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
+        eq_response: None,
     }
 }
 
@@ -589,6 +593,7 @@ pub fn build_cardioid_dsp_chain_with_curves(
         drivers: Some(driver_chains),
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
+        eq_response: None,
     }
 }
 
@@ -601,6 +606,27 @@ pub fn create_dsp_chain_output(
         version: super::types::default_config_version(),
         channels,
         metadata,
+    }
+}
+
+/// Compute the EQ filter response curve from initial and final curves.
+///
+/// Returns a `CurveData` whose SPL values are `final - initial` (the correction in dB).
+pub fn compute_eq_response(
+    initial: &super::types::CurveData,
+    final_curve: &super::types::CurveData,
+) -> super::types::CurveData {
+    let spl: Vec<f64> = final_curve
+        .spl
+        .iter()
+        .zip(initial.spl.iter())
+        .map(|(&f, &i)| f - i)
+        .collect();
+    super::types::CurveData {
+        freq: initial.freq.clone(),
+        spl,
+        phase: None,
+        norm_range: None,
     }
 }
 
@@ -718,6 +744,7 @@ pub fn build_mixed_mode_crossover_chain(
         drivers: None,
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: None, // Will be set by caller after computing response
+        eq_response: None,
     }
 }
 
@@ -998,6 +1025,7 @@ mod tests {
             drivers: None,
             initial_curve: None,
             final_curve: None,
+            eq_response: None,
         };
 
         add_delay_plugin(&mut chain, 10.0);
