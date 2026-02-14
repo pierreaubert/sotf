@@ -303,13 +303,27 @@ def create_zoomed_figure(
 def create_eq_figure(
     channel_name: str,
     eq_filters: list[dict],
+    eq_response_data: dict | None = None,
 ) -> go.Figure | None:
-    """Create a Plotly figure showing the EQ frequency response."""
-    if not eq_filters:
+    """Create a Plotly figure showing the EQ frequency response.
+
+    Args:
+        channel_name: Name of the channel.
+        eq_filters: List of EQ filter dicts (for individual filter decomposition).
+        eq_response_data: Optional pre-computed EQ response from JSON output
+            (with 'freq' and 'spl' keys). When provided, used for the combined
+            EQ curve instead of recomputing from biquad filters.
+    """
+    if not eq_filters and not eq_response_data:
         return None
 
-    freq_points = generate_freq_points(20.0, 20000.0, 500)
-    eq_response = compute_eq_response(eq_filters, freq_points)
+    # Use pre-computed EQ response from JSON if available, otherwise compute from filters
+    if eq_response_data and "freq" in eq_response_data and "spl" in eq_response_data:
+        freq_points = eq_response_data["freq"]
+        eq_response = eq_response_data["spl"]
+    else:
+        freq_points = generate_freq_points(20.0, 20000.0, 500)
+        eq_response = compute_eq_response(eq_filters, freq_points)
 
     if not eq_response:
         return None
@@ -509,7 +523,10 @@ def create_combined_figure(
                 filters = plugin.get("parameters", {}).get("filters", [])
                 eq_filters.extend(filters)
 
-        if eq_filters:
+        eq_response_data = channel_data.get("eq_response")
+        if eq_response_data and "freq" in eq_response_data and "spl" in eq_response_data:
+            all_eq_responses.append(eq_response_data["spl"])
+        elif eq_filters:
             eq_response = compute_eq_response(eq_filters, freq_points)
             all_eq_responses.append(eq_response)
 
@@ -698,18 +715,25 @@ def create_combined_figure(
         color = channel_colors[i % len(channel_colors)]
 
         plugins = channel_data.get("plugins", [])
-        eq_filters = []
-        for plugin in plugins:
-            if plugin.get("plugin_type") == "eq":
-                filters = plugin.get("parameters", {}).get("filters", [])
-                eq_filters.extend(filters)
 
-        if eq_filters:
-            eq_response = compute_eq_response(eq_filters, freq_points)
+        eq_response_data = channel_data.get("eq_response")
+        if eq_response_data and "freq" in eq_response_data and "spl" in eq_response_data:
+            eq_freq = eq_response_data["freq"]
+            eq_spl = eq_response_data["spl"]
+        else:
+            eq_filters = []
+            for plugin in plugins:
+                if plugin.get("plugin_type") == "eq":
+                    filters = plugin.get("parameters", {}).get("filters", [])
+                    eq_filters.extend(filters)
+            eq_freq = freq_points if eq_filters else None
+            eq_spl = compute_eq_response(eq_filters, freq_points) if eq_filters else None
+
+        if eq_spl:
             fig.add_trace(
                 go.Scatter(
-                    x=freq_points,
-                    y=eq_response,
+                    x=eq_freq,
+                    y=eq_spl,
                     mode="lines",
                     name=f"EQ: {channel_name}",
                     line=dict(color=color, width=2),
@@ -719,7 +743,7 @@ def create_combined_figure(
                 row=2,
                 col=1,
             )
-            trace_y_data.append(eq_response)
+            trace_y_data.append(eq_spl)
 
         # Full chain response (gain + crossover + EQ + convolution)
         chain_response = compute_plugin_chain_response(

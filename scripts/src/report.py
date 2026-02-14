@@ -248,7 +248,7 @@ def create_html_report(
         )
 
         # EQ response plot
-        fig_eq = create_eq_figure(channel_name, eq_filters)
+        fig_eq = create_eq_figure(channel_name, eq_filters, channel_data.get("eq_response"))
         if fig_eq:
             eq_html = fig_eq.to_html(full_html=False, include_plotlyjs=False)
             html_parts.append(
