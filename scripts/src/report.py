@@ -14,8 +14,6 @@ def create_html_report(
     data: dict,
     output_path: Path,
     output_json_path: Path | None = None,
-    input_data: dict | None = None,
-    input_json_path: Path | None = None,
 ) -> None:
     """Create an HTML report with all channel plots.
 
@@ -23,8 +21,6 @@ def create_html_report(
         data: Output JSON data (roomeq result)
         output_path: Path to write HTML report
         output_json_path: Path to output JSON (for resolving relative paths)
-        input_data: Optional input JSON data (roomeq config with measurement file paths)
-        input_json_path: Optional path to input JSON (for resolving relative paths)
     """
     channels = data.get("channels", {})
     metadata = data.get("metadata", {})
@@ -195,7 +191,7 @@ def create_html_report(
         )
 
     # Combined plot
-    combined_fig = create_combined_figure(data, output_json_path, input_data, input_json_path)
+    combined_fig = create_combined_figure(data, output_json_path)
     combined_html = combined_fig.to_html(full_html=False, include_plotlyjs=False)
     html_parts.append(
         f"""

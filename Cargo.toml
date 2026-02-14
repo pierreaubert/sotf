@@ -13,13 +13,13 @@ members = [
     "crates/driver-hal",
     "crates/head-tracker",
     "crates/daemon",
-    "crates/math-xem-common",
-    "crates/math-bem",
-    "crates/math-fem",
-    "crates/autoeq-cea2034",
-    "crates/autoeq-roomsim",
-    "crates/autoeq-datagen",
-    "crates/autoeq",
+    "crates/math-audio/math-xem-common",
+    "crates/math-audio/math-bem",
+    "crates/math-audio/math-fem",
+    "crates/autoeq/autoeq-cea2034",
+    "crates/autoeq/autoeq-roomsim",
+    "crates/autoeq/autoeq-datagen",
+    "crates/autoeq/autoeq",
 ]
 resolver = "3"
 
@@ -97,28 +97,28 @@ metaheuristics-nature = "10.1"
 nlopt = "0.8"
 
 # using crates version
-math-test-functions = { path = "crates/math-test-functions", version = "0.3", default-features = false }
-math-solvers = { path = "crates/math-solvers", version = "0.3", default-features = false }
-math-wave = { path = "crates/math-wave", version = "0.3" }
-math-xem-common = { path = "crates/math-xem-common", version = "0.3" }
-math-iir-fir = { path = "crates/math-iir-fir", version = "0.3" }
-math-convex-hull = { path = "crates/math-convex-hull", version = "0.3" }
-math-differential-evolution = { path = "crates/math-differential-evolution", version = "0.3" }
-math-dsp = { path = "crates/math-dsp", version = "0.3" }
-math-bem = { path = "crates/math-bem", version = "0.3", default-features = false, features = ["native"] }
-math-fem = { path = "crates/math-fem", version = "0.3", default-features = false, features = ["native"] }
+math-test-functions = { path = "crates/math-audio/math-test-functions", version = "0.3", default-features = false }
+math-solvers = { path = "crates/math-audio/math-solvers", version = "0.3", default-features = false }
+math-wave = { path = "crates/math-audio/math-wave", version = "0.3" }
+math-xem-common = { path = "crates/math-audio/math-xem-common", version = "0.3" }
+math-iir-fir = { path = "crates/math-audio/math-iir-fir", version = "0.3" }
+math-convex-hull = { path = "crates/math-audio/math-convex-hull", version = "0.3" }
+math-differential-evolution = { path = "crates/math-audio/math-differential-evolution", version = "0.3" }
+math-dsp = { path = "crates/math-audio/math-dsp", version = "0.3" }
+math-bem = { path = "crates/math-audio/math-bem", version = "0.3", default-features = false, features = ["native"] }
+math-fem = { path = "crates/math-audio/math-fem", version = "0.3", default-features = false, features = ["native"] }
 
-autoeq-env = { version = "0.3", path = "crates/autoeq-env" }
-autoeq-cea2034 = { version = "0.3", path = "crates/autoeq-cea2034" }
-autoeq = { version = ">=0.3.12", path = "crates/autoeq" }
-autoeq-roomsim = { version = "0.3", path = "crates/autoeq-roomsim" }
+autoeq-env = { version = "0.3", path = "crates/autoeq/autoeq-env" }
+autoeq-cea2034 = { version = "0.3", path = "crates/autoeq/autoeq-cea2034" }
+autoeq = { version = ">=0.3.12", path = "crates/autoeq/autoeq" }
+autoeq-roomsim = { version = "0.3", path = "crates/autoeq/autoeq-roomsim" }
 
 # using git version
-gpui-d3rs = { version = "0.6", path = "crates/gpui-d3rs" }
-gpui-px = { version = "0.6", path = "crates/gpui-px" }
-gpui-themes = { version = "0.6", path = "crates/gpui-themes" }
-gpui-ui-kit = { version = "0.6", path = "crates/gpui-ui-kit" }
-gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-ui-kit-macros" }
+gpui-d3rs = { version = "0.6", path = "crates/gpui-toolkit/gpui-d3rs" }
+gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px" }
+gpui-themes = { version = "0.6", path = "crates/gpui-toolkit/gpui-themes" }
+gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
+gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 
 engine = { path = "crates/engine", default-features = false }
 midi = { path = "crates/midi" }
