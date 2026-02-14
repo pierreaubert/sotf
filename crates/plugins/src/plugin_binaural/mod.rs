@@ -8,7 +8,7 @@ use super::simd::{complex_mul_add_simd, enable_ftz_daz, flush_denormals_inplace}
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use crate::sofa::SofaFile;
-use parking_lot::RwLock;
+use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::path::PathBuf;
@@ -42,7 +42,7 @@ pub struct BinauralDecoderPlugin {
     fft_r2c: Arc<dyn RealToComplex<f32>>,
     fft_c2r: Arc<dyn ComplexToReal<f32>>,
     freq_size: usize,
-    state: Arc<RwLock<BinauralState>>,
+    state: Arc<ArcSwap<BinauralState>>,
     lfe_lowpass_filter: Vec<Complex<f32>>,
     lfe_gain: f32,
     lfe_channels: Vec<usize>,
@@ -114,7 +114,7 @@ impl BinauralDecoderPlugin {
             fft_r2c,
             fft_c2r,
             freq_size,
-            state: Arc::new(RwLock::new(BinauralState {
+            state: Arc::new(ArcSwap::from_pointee(BinauralState {
                 hrtf_filters_freq: vec![
                     vec![Complex::new(0.0, 0.0); freq_size * 2];
                     input_channels
@@ -178,7 +178,7 @@ impl BinauralDecoderPlugin {
     fn process_audio_block(&mut self) {
         let input_needed = self.hop_size * self.input_channels;
         self.temp_input_block[..input_needed].copy_from_slice(&self.input_buffer[..input_needed]);
-        let state = self.state.read();
+        let state = self.state.load();
         let filters = &state.hrtf_filters_freq;
         let df_eq = &state.diffuse_field_eq_filter;
 

@@ -6,8 +6,9 @@ use super::analyzer::SpectrumData;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 
-use parking_lot::Mutex;
+use arc_swap::ArcSwap;
 use rtrb::{Consumer, RingBuffer};
+use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
@@ -67,8 +68,15 @@ pub struct SpectrumAnalyzerPlugin {
     sample_rate: u32,
     config: SpectrumConfig,
     producer: rtrb::Producer<f32>,
-    consumer: Arc<Mutex<Consumer<f32>>>,
-    shared_data: Arc<Mutex<SpectrumData>>,
+    consumer: Consumer<f32>,
+    shared_data: Arc<ArcSwap<SpectrumData>>,
+    // Pre-allocated FFT resources (zero per-frame allocation)
+    fft_r2c: Arc<dyn realfft::RealToComplex<f32>>,
+    fft_output: Vec<Complex<f32>>,
+    windowed: Vec<f32>,
+    new_mags: Vec<f32>,
+    // Mutable copy of magnitudes for smoothing (avoids cloning shared_data each frame)
+    current_magnitudes: Vec<f32>,
 }
 
 impl SpectrumAnalyzerPlugin {
@@ -85,18 +93,28 @@ impl SpectrumAnalyzerPlugin {
                 .powf(log_min + (log_max - log_min) * ((i + 1) as f32 / config.num_bins as f32));
             freqs.push((f1 * f2).sqrt());
         }
-        let shared_data = Arc::new(Mutex::new(SpectrumData {
+        let initial_data = SpectrumData {
             frequencies: freqs,
             magnitudes: vec![-100.0; config.num_bins],
             peak_magnitude: -100.0,
-        }));
+        };
+        let shared_data = Arc::new(ArcSwap::from_pointee(initial_data));
+        let mut planner = realfft::RealFftPlanner::<f32>::new();
+        let fft_r2c = planner.plan_fft_forward(FFT_SIZE);
+        let fft_output = fft_r2c.make_output_vec();
+        let num_bins = config.num_bins;
         Ok(Self {
             num_channels,
             sample_rate: 48000,
             config,
             producer: p,
-            consumer: Arc::new(Mutex::new(c)),
+            consumer: c,
             shared_data,
+            fft_r2c,
+            fft_output,
+            windowed: vec![0.0; FFT_SIZE],
+            new_mags: vec![-100.0; num_bins],
+            current_magnitudes: vec![-100.0; num_bins],
         })
     }
 
@@ -131,9 +149,12 @@ impl Plugin for SpectrumAnalyzerPlugin {
         Ok(())
     }
     fn reset(&mut self) {
-        let mut d = self.shared_data.lock();
-        d.magnitudes.fill(-100.0);
-        d.peak_magnitude = -100.0;
+        self.current_magnitudes.fill(-100.0);
+        let guard = self.shared_data.load();
+        let mut data = (**guard).clone();
+        data.magnitudes.fill(-100.0);
+        data.peak_magnitude = -100.0;
+        self.shared_data.store(Arc::new(data));
     }
 
     fn process(
@@ -150,15 +171,13 @@ impl Plugin for SpectrumAnalyzerPlugin {
             }
             let _ = self.producer.push(sum / self.num_channels as f32);
         }
-        let mut consumer = self.consumer.lock();
-        let slots = consumer.slots();
+        let slots = self.consumer.slots();
         if slots >= FFT_SIZE {
-            let mut windowed = vec![0.0f32; FFT_SIZE];
-            if let Ok(chunk) = consumer.read_chunk(FFT_SIZE) {
+            if let Ok(chunk) = self.consumer.read_chunk(FFT_SIZE) {
                 let (s1, s2) = chunk.as_slices();
                 let mut idx = 0;
                 for &s in s1 {
-                    windowed[idx] = s
+                    self.windowed[idx] = s
                         * (0.5
                             * (1.0
                                 - (2.0 * std::f32::consts::PI * idx as f32 / FFT_SIZE as f32)
@@ -166,7 +185,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
                     idx += 1;
                 }
                 for &s in s2 {
-                    windowed[idx] = s
+                    self.windowed[idx] = s
                         * (0.5
                             * (1.0
                                 - (2.0 * std::f32::consts::PI * idx as f32 / FFT_SIZE as f32)
@@ -175,16 +194,14 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 }
                 chunk.commit_all();
             }
-            let mut planner = realfft::RealFftPlanner::<f32>::new();
-            let r2c = planner.plan_fft_forward(FFT_SIZE);
-            let mut out = r2c.make_output_vec();
-            r2c.process(&mut windowed, &mut out).unwrap();
-            let mut data = self.shared_data.lock();
+            self.fft_r2c
+                .process(&mut self.windowed, &mut self.fft_output)
+                .unwrap();
             let log_min = self.config.min_freq.log10();
             let log_max = self.config.max_freq.log10();
             let fft_bin_hz = self.sample_rate as f32 / FFT_SIZE as f32;
-            let mut new_mags = vec![-100.0f32; self.config.num_bins];
-            for (i, bin) in out.iter().enumerate().skip(1) {
+            self.new_mags.fill(-100.0);
+            for (i, bin) in self.fft_output.iter().enumerate().skip(1) {
                 let freq = i as f32 * fft_bin_hz;
                 if freq < self.config.min_freq {
                     continue;
@@ -198,19 +215,28 @@ impl Plugin for SpectrumAnalyzerPlugin {
                     * self.config.num_bins as f32)
                     .floor() as usize;
                 if bin_idx < self.config.num_bins {
-                    new_mags[bin_idx] = new_mags[bin_idx].max(db);
+                    self.new_mags[bin_idx] = self.new_mags[bin_idx].max(db);
                 }
             }
             for i in 0..self.config.num_bins {
-                data.magnitudes[i] = self.config.smoothing * data.magnitudes[i]
-                    + (1.0 - self.config.smoothing) * new_mags[i];
+                self.current_magnitudes[i] = self.config.smoothing * self.current_magnitudes[i]
+                    + (1.0 - self.config.smoothing) * self.new_mags[i];
             }
-            data.peak_magnitude = data.magnitudes.iter().copied().fold(-100.0, f32::max);
+            let peak = self
+                .current_magnitudes
+                .iter()
+                .copied()
+                .fold(-100.0, f32::max);
+            let guard = self.shared_data.load();
+            let mut data = (**guard).clone();
+            data.magnitudes.copy_from_slice(&self.current_magnitudes);
+            data.peak_magnitude = peak;
+            self.shared_data.store(Arc::new(data));
         }
         Ok(context.num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let d = self.shared_data.lock();
-        Some(Arc::new(d.clone()))
+        let data = self.shared_data.load_full();
+        Some(data as Arc<dyn Any + Send + Sync>)
     }
 }

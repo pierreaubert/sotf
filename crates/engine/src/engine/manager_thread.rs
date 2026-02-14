@@ -6,14 +6,15 @@
 
 use super::{
     AudioEngineState, ConfigEvent, ConfigWatcher, DecoderCommand, DecoderThread, EngineConfig,
-    ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
+    GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
     PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent,
 };
+use arc_swap::ArcSwap;
 use crate::engine::processing_thread::build_plugin_host;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const SPIN_MS_SLEEP_MANAGER: u64 = 10;
 const SPIN_MS_CHECK_MANAGER: u64 = 50;
@@ -143,19 +144,6 @@ impl ConfigUpdateMetrics {
             return 0.0;
         }
         self.total_update_time_ms as f64 / self.successful_updates as f64
-    }
-}
-
-/// Helper function to safely lock a mutex, handling poisoned mutexes
-/// by recovering the data instead of panicking
-fn safe_lock<T>(mutex: &Arc<Mutex<T>>) -> Result<std::sync::MutexGuard<'_, T>, String> {
-    match mutex.lock() {
-        Ok(guard) => Ok(guard),
-        Err(poisoned) => {
-            log::warn!("[Manager Thread] Mutex was poisoned, recovering data");
-            // Recover the data from the poisoned mutex
-            Ok(poisoned.into_inner())
-        }
     }
 }
 
@@ -310,7 +298,7 @@ impl ConfigUpdateQueue {
 pub struct ManagerThread {
     command_tx: Sender<ManagerCommand>,
     response_rx: Receiver<ManagerResponse>,
-    state: Arc<Mutex<AudioEngineState>>,
+    state: Arc<ArcSwap<AudioEngineState>>,
     plugin_data_cache: PluginDataCache,
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
@@ -321,10 +309,10 @@ impl ManagerThread {
         let (command_tx, command_rx) = channel();
         let (response_tx, response_rx) = channel();
 
-        let state = Arc::new(Mutex::new(AudioEngineState::default()));
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
         let state_clone = Arc::clone(&state);
 
-        let plugin_data_cache: PluginDataCache = Arc::new(parking_lot::RwLock::new(Vec::new()));
+        let plugin_data_cache: PluginDataCache = Arc::new(arc_swap::ArcSwap::from_pointee(Vec::new()));
         let cache_clone = Arc::clone(&plugin_data_cache);
 
         let thread_handle = std::thread::Builder::new()
@@ -366,20 +354,15 @@ impl ManagerThread {
         self.response_rx.try_recv().ok()
     }
 
-    /// Get current state
+    /// Get current state (lock-free)
     pub fn get_state(&self) -> AudioEngineState {
-        safe_lock(&self.state)
-            .map(|guard| guard.clone())
-            .unwrap_or_else(|e| {
-                log::error!("[Manager Thread] Failed to lock state: {}", e);
-                AudioEngineState::default()
-            })
+        (**self.state.load()).clone()
     }
 
     /// Get cached plugin data directly (no command round-trip).
     /// The processing thread updates this cache after every frame.
     pub fn get_cached_plugin_data(&self, index: usize) -> Option<Arc<dyn Any + Send + Sync>> {
-        let cache = self.plugin_data_cache.read();
+        let cache = self.plugin_data_cache.load();
         cache.get(index).and_then(|slot| slot.clone())
     }
 
@@ -403,7 +386,7 @@ fn run_manager_thread(
     config: EngineConfig,
     command_rx: Receiver<ManagerCommand>,
     response_tx: Sender<ManagerResponse>,
-    state: Arc<Mutex<AudioEngineState>>,
+    state: Arc<ArcSwap<AudioEngineState>>,
     plugin_data_cache: PluginDataCache,
 ) -> Result<(), String> {
     log::debug!("[Manager Thread] Starting with config: {:?}", config);
@@ -420,6 +403,10 @@ fn run_manager_thread(
     let (processing_tx, processing_rx) = sync_channel(queue_capacity);
     let (event_tx, event_rx) = channel(); // Events can be unbounded
 
+    // Create GC thread for off-audio-thread deallocation
+    let mut gc_thread = GcThread::new();
+    let gc_tx = gc_thread.sender();
+
     // Create threads
     let mut decoder_thread = DecoderThread::new(
         decoder_tx,
@@ -435,6 +422,7 @@ fn run_manager_thread(
         config.output_sample_rate,
         config.input_channels, // Use input channels, not output
         plugin_data_cache,
+        gc_tx,
     )?;
 
     // Determine actual output channel count by loading plugin chain first
@@ -499,8 +487,10 @@ fn run_manager_thread(
                 match output_channels_confirmed {
                     Some(ch) => {
                         // Update state with actual channel count
-                        if let Ok(mut state_lock) = safe_lock(&state) {
-                            state_lock.num_channels = ch;
+                        {
+                            let mut new_state = (**state.load()).clone();
+                            new_state.num_channels = ch;
+                            state.store(Arc::new(new_state));
                         }
                         ch
                     }
@@ -642,13 +632,14 @@ fn run_manager_thread(
     decoder_thread.shutdown();
     processing_thread.shutdown();
     playback_thread.shutdown();
+    gc_thread.shutdown(); // Last — other threads may still send garbage during shutdown
 
     log::debug!("[Manager Thread] Stopped");
     Ok(())
 }
 
 /// Handle a thread event
-fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>) {
+fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>>) {
     match event {
         ThreadEvent::DecoderEndOfStream => {
             log::debug!("[Manager Thread] Decoder end of stream (waiting for playback drain)");
@@ -657,57 +648,57 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
         }
         ThreadEvent::PlaybackDrained => {
             log::debug!("[Manager Thread] Playback drained - all audio played");
-            if let Ok(mut state) = safe_lock(state) {
-                state.playback_state = PlaybackState::Stopped;
-                state.last_error = None;
-            }
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_state = PlaybackState::Stopped;
+            new_state.last_error = None;
+            state.store(Arc::new(new_state));
         }
         ThreadEvent::DecoderError(err) => {
             log::debug!("[Manager Thread] Decoder error: {}", err);
-            if let Ok(mut state) = safe_lock(state) {
-                state.playback_state = PlaybackState::Stopped;
-                state.last_error = Some(err);
-            }
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_state = PlaybackState::Stopped;
+            new_state.last_error = Some(err);
+            state.store(Arc::new(new_state));
         }
         ThreadEvent::PlaybackUnderrun => {
-            if let Ok(mut state) = safe_lock(state) {
-                state.underruns += 1;
-                // Log summary every 50 underruns to track overall pattern
-                if state.underruns % 50 == 1 {
-                    log::warn!(
-                        "[Manager Thread] Playback underrun count: {}",
-                        state.underruns
-                    );
-                }
+            let mut new_state = (**state.load()).clone();
+            new_state.underruns += 1;
+            // Log summary every 50 underruns to track overall pattern
+            if new_state.underruns % 50 == 1 {
+                log::warn!(
+                    "[Manager Thread] Playback underrun count: {}",
+                    new_state.underruns
+                );
             }
+            state.store(Arc::new(new_state));
         }
         ThreadEvent::ProcessingError(err) => {
             log::debug!("[Manager Thread] Processing error: {}", err);
-            if let Ok(mut state) = safe_lock(state) {
-                state.playback_state = PlaybackState::Stopped;
-                state.last_error = Some(err);
-            }
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_state = PlaybackState::Stopped;
+            new_state.last_error = Some(err);
+            state.store(Arc::new(new_state));
         }
         ThreadEvent::ThreadPanic(thread_name) => {
             log::debug!("[Manager Thread] Thread panicked: {}", thread_name);
-            if let Ok(mut state) = safe_lock(state) {
-                state.playback_state = PlaybackState::Stopped;
-                state.last_error = Some(format!("Thread panicked: {}", thread_name));
-            }
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_state = PlaybackState::Stopped;
+            new_state.last_error = Some(format!("Thread panicked: {}", thread_name));
+            state.store(Arc::new(new_state));
         }
         ThreadEvent::PositionUpdate(position) => {
-            if let Ok(mut state) = safe_lock(state)
-                && state.playback_state != PlaybackState::Stopped
-                && !state.seeking
-            {
-                state.position = position;
+            let current = state.load();
+            if current.playback_state != PlaybackState::Stopped && !current.seeking {
+                let mut new_state = (**current).clone();
+                new_state.position = position;
+                state.store(Arc::new(new_state));
             }
         }
         ThreadEvent::SeekComplete => {
             log::debug!("[Manager Thread] Seek complete");
-            if let Ok(mut state) = safe_lock(state) {
-                state.seeking = false;
-            }
+            let mut new_state = (**state.load()).clone();
+            new_state.seeking = false;
+            state.store(Arc::new(new_state));
         }
     }
 }
@@ -718,7 +709,7 @@ fn handle_config_event(
     event: ConfigEvent,
     config: &EngineConfig,
     config_queue: &mut ConfigUpdateQueue,
-    state: &Arc<Mutex<AudioEngineState>>,
+    state: &Arc<ArcSwap<AudioEngineState>>,
 ) -> Result<bool, String> {
     match event {
         ConfigEvent::ConfigChanged(_) | ConfigEvent::Reload => {
@@ -764,9 +755,9 @@ fn handle_config_event(
             log::debug!("[Manager Thread] Shutdown signal received");
 
             // Update state to Stopped so applications can detect shutdown
-            if let Ok(mut state_lock) = safe_lock(state) {
-                state_lock.playback_state = PlaybackState::Stopped;
-            }
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_state = PlaybackState::Stopped;
+            state.store(Arc::new(new_state));
 
             Ok(true)
         }
@@ -824,7 +815,7 @@ fn apply_plugin_update(
 
     playback: &mut PlaybackThread,
 
-    state: &Arc<Mutex<AudioEngineState>>,
+    state: &Arc<ArcSwap<AudioEngineState>>,
 
     config_queue: &mut ConfigUpdateQueue,
 
@@ -915,15 +906,12 @@ fn apply_plugin_update(
                         output_channels
                     );
 
-                    let old_channels = if let Ok(state_guard) = safe_lock(state) {
-                        state_guard.num_channels
-                    } else {
-                        log::error!("[Manager Thread] State lock error during ACK processing");
-                        return Err(ConfigError::StateLockError);
-                    };
+                    let old_channels = state.load().num_channels;
 
-                    if let Ok(mut state_guard) = safe_lock(state) {
-                        state_guard.num_channels = output_channels;
+                    {
+                        let mut new_state = (**state.load()).clone();
+                        new_state.num_channels = output_channels;
+                        state.store(Arc::new(new_state));
                     }
 
                     if output_channels != old_channels {
@@ -1146,7 +1134,7 @@ fn handle_command(
     decoder: &mut DecoderThread,
     processing: &mut ProcessingThread,
     playback: &mut PlaybackThread,
-    state: &Arc<Mutex<AudioEngineState>>,
+    state: &Arc<ArcSwap<AudioEngineState>>,
     config: &EngineConfig,
     config_queue: &mut ConfigUpdateQueue,
 ) -> ManagerResponse {
@@ -1155,10 +1143,12 @@ fn handle_command(
             log::debug!("[Manager Thread] Play: {:?}", path);
 
             // Update state
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.current_file = Some(path.clone());
-                state_guard.playback_state = PlaybackState::Playing;
-                state_guard.position = 0.0;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.current_file = Some(path.clone());
+                new_state.playback_state = PlaybackState::Playing;
+                new_state.position = 0.0;
+                state.store(Arc::new(new_state));
             }
 
             // Send to decoder
@@ -1172,10 +1162,12 @@ fn handle_command(
             log::debug!("[Manager Thread] PlayAt: {:?} at {:.2}s", path, position);
 
             // Update state
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.current_file = Some(path.clone());
-                state_guard.playback_state = PlaybackState::Playing;
-                state_guard.position = position;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.current_file = Some(path.clone());
+                new_state.playback_state = PlaybackState::Playing;
+                new_state.position = position;
+                state.store(Arc::new(new_state));
             }
 
             // Send to decoder
@@ -1188,8 +1180,10 @@ fn handle_command(
         ManagerCommand::Pause => {
             log::debug!("[Manager Thread] Pause");
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.playback_state = PlaybackState::Paused;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.playback_state = PlaybackState::Paused;
+                state.store(Arc::new(new_state));
             }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Pause) {
@@ -1201,8 +1195,10 @@ fn handle_command(
         ManagerCommand::Resume => {
             log::debug!("[Manager Thread] Resume");
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.playback_state = PlaybackState::Playing;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.playback_state = PlaybackState::Playing;
+                state.store(Arc::new(new_state));
             }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Resume) {
@@ -1214,10 +1210,12 @@ fn handle_command(
         ManagerCommand::Stop => {
             log::debug!("[Manager Thread] Stop");
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.playback_state = PlaybackState::Stopped;
-                state_guard.current_file = None;
-                state_guard.position = 0.0;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.playback_state = PlaybackState::Stopped;
+                new_state.current_file = None;
+                new_state.position = 0.0;
+                state.store(Arc::new(new_state));
             }
 
             decoder.send_command(DecoderCommand::Stop).ok();
@@ -1228,9 +1226,11 @@ fn handle_command(
         ManagerCommand::Seek(position) => {
             log::debug!("[Manager Thread] Seek to {:.2}s", position);
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.position = position;
-                state_guard.seeking = true;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.position = position;
+                new_state.seeking = true;
+                state.store(Arc::new(new_state));
             }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Seek(position)) {
@@ -1242,8 +1242,10 @@ fn handle_command(
         ManagerCommand::SetVolume(volume) => {
             log::debug!("[Manager Thread] Set volume: {:.2}", volume);
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.volume = volume;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.volume = volume;
+                state.store(Arc::new(new_state));
             }
 
             if let Err(e) = playback.send_command(PlaybackCommand::SetVolume(volume)) {
@@ -1255,8 +1257,10 @@ fn handle_command(
         ManagerCommand::Mute(muted) => {
             log::debug!("[Manager Thread] Mute: {}", muted);
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.muted = muted;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.muted = muted;
+                state.store(Arc::new(new_state));
             }
 
             if let Err(e) = playback.send_command(PlaybackCommand::Mute(muted)) {
@@ -1359,8 +1363,10 @@ fn handle_command(
         ManagerCommand::BypassProcessing(bypass) => {
             log::debug!("[Manager Thread] Bypass processing: {}", bypass);
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.processing_bypassed = bypass;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.processing_bypassed = bypass;
+                state.store(Arc::new(new_state));
             }
 
             if let Err(e) = processing.send_command(ProcessingCommand::Bypass(bypass)) {
@@ -1370,18 +1376,10 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::GetState => {
-            if let Ok(state_guard) = safe_lock(state) {
-                ManagerResponse::State(state_guard.clone())
-            } else {
-                ManagerResponse::Error("Failed to lock state".to_string())
-            }
+            ManagerResponse::State((**state.load()).clone())
         }
         ManagerCommand::GetPosition => {
-            if let Ok(state_guard) = safe_lock(state) {
-                ManagerResponse::Position(state_guard.position)
-            } else {
-                ManagerResponse::Error("Failed to lock state".to_string())
-            }
+            ManagerResponse::Position(state.load().position)
         }
         ManagerCommand::GetPluginData(index) => {
             if let Err(e) = processing.send_command(ProcessingCommand::GetPluginData(index)) {
@@ -1457,8 +1455,10 @@ fn handle_command(
         ManagerCommand::Shutdown => {
             log::debug!("[Manager Thread] Shutdown requested");
 
-            if let Ok(mut state_guard) = safe_lock(state) {
-                state_guard.playback_state = PlaybackState::Stopped;
+            {
+                let mut new_state = (**state.load()).clone();
+                new_state.playback_state = PlaybackState::Stopped;
+                state.store(Arc::new(new_state));
             }
 
             // Signal threads to shutdown

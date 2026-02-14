@@ -63,6 +63,7 @@ impl ProcessingThread {
         sample_rate: u32,
         channels: usize,
         plugin_data_cache: super::PluginDataCache,
+        gc_tx: super::GcSender,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -79,6 +80,7 @@ impl ProcessingThread {
                     sample_rate,
                     channels,
                     plugin_data_cache,
+                    gc_tx,
                 ) {
                     log::debug!("[Processing Thread] Error: {}", e);
                 }
@@ -328,6 +330,7 @@ fn run_processing_thread(
     sample_rate: u32,
     channels: usize,
     plugin_data_cache: super::PluginDataCache,
+    gc_tx: super::GcSender,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
     // performance issues in IIR filters and other DSP code
@@ -403,19 +406,23 @@ fn run_processing_thread(
 
                         // Update shared plugin data cache so the UI can read
                         // analyzer results without blocking the audio pipeline.
-                        // Only query plugins that actually have analyzer data
-                        // (cached during host build) to minimize mutex locks.
+                        // Lock-free: clone the Vec of Option<Arc>, update, then swap.
+                        // Old Arc sent to GC thread to avoid deallocation on audio thread.
                         {
                             let analyzer_indices = state.host.analyzer_indices();
                             if !analyzer_indices.is_empty() {
                                 let plugin_count = state.host.plugin_count();
-                                let mut cache = plugin_data_cache.write();
-                                if cache.len() != plugin_count {
-                                    cache.resize(plugin_count, None);
+                                let old = plugin_data_cache.load();
+                                let mut new_cache = (**old).clone();
+                                if new_cache.len() != plugin_count {
+                                    new_cache.resize(plugin_count, None);
                                 }
                                 for &i in analyzer_indices {
-                                    cache[i] = state.host.get_plugin_data(i);
+                                    new_cache[i] = state.host.get_plugin_data(i);
                                 }
+                                let old_arc = plugin_data_cache.swap(std::sync::Arc::new(new_cache));
+                                // Send old Arc to GC thread instead of dropping on audio thread
+                                gc_tx.try_send(super::gc_thread::GcItem::AnyArc(old_arc)).ok();
                             }
                         }
 

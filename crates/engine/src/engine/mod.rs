@@ -33,3 +33,6 @@ pub use config::EngineConfig;
 
 mod config_watcher;
 pub use config_watcher::{ConfigEvent, ConfigWatcher};
+
+mod gc_thread;
+pub use gc_thread::{GcSender, GcThread};

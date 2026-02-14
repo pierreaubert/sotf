@@ -4,6 +4,7 @@
 
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use crate::devices::get_device_current_sample_rate;
@@ -49,18 +50,18 @@ pub struct AudioEngineManager {
     engine: Arc<Mutex<Option<AudioEngine>>>,
     /// Current audio file information
     current_audio_info: Arc<Mutex<Option<AudioFileInfo>>>,
-    /// Current streaming state
-    state: Arc<Mutex<StreamingState>>,
+    /// Current streaming state (StreamingState as u8)
+    state: AtomicU8,
     /// Enable signal watching (Ctrl-C, SIGTERM)
     watch_signals: bool,
-    /// Index of loudness analyzer plugin (if enabled)
-    loudness_plugin_index: Arc<Mutex<Option<usize>>>,
-    /// Index of spectrum analyzer plugin (if enabled)
-    spectrum_plugin_index: Arc<Mutex<Option<usize>>>,
-    /// Current volume level (preserved across song changes)
-    current_volume: Arc<Mutex<f32>>,
+    /// Index of loudness analyzer plugin (ATOMIC_NONE = None)
+    loudness_plugin_index: AtomicU64,
+    /// Index of spectrum analyzer plugin (ATOMIC_NONE = None)
+    spectrum_plugin_index: AtomicU64,
+    /// Current volume level (preserved across song changes), stored as f32 bits
+    current_volume: AtomicU32,
     /// Current mute state (preserved across song changes)
-    current_muted: Arc<Mutex<bool>>,
+    current_muted: AtomicBool,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -83,15 +84,34 @@ pub enum StreamingEvent {
 
 /// Current state of the streaming manager
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(u8)]
 pub enum StreamingState {
-    Idle,
-    Loading,
-    Ready,
-    Playing,
-    Paused,
-    Seeking,
-    Error,
+    Idle = 0,
+    Loading = 1,
+    Ready = 2,
+    Playing = 3,
+    Paused = 4,
+    Seeking = 5,
+    Error = 6,
 }
+
+impl StreamingState {
+    fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Self::Idle,
+            1 => Self::Loading,
+            2 => Self::Ready,
+            3 => Self::Playing,
+            4 => Self::Paused,
+            5 => Self::Seeking,
+            6 => Self::Error,
+            other => panic!("invalid StreamingState discriminant: {}", other),
+        }
+    }
+}
+
+/// Sentinel value representing `None` for atomic Option<usize> fields
+const ATOMIC_NONE: u64 = u64::MAX;
 
 /// Information about the currently loaded audio file
 #[derive(Debug, Clone)]
@@ -117,12 +137,12 @@ impl AudioEngineManager {
         Self {
             engine: Arc::new(Mutex::new(None)),
             current_audio_info: Arc::new(Mutex::new(None)),
-            state: Arc::new(Mutex::new(StreamingState::Idle)),
+            state: AtomicU8::new(StreamingState::Idle as u8),
             watch_signals,
-            loudness_plugin_index: Arc::new(Mutex::new(None)),
-            spectrum_plugin_index: Arc::new(Mutex::new(None)),
-            current_volume: Arc::new(Mutex::new(1.0)),
-            current_muted: Arc::new(Mutex::new(false)),
+            loudness_plugin_index: AtomicU64::new(ATOMIC_NONE),
+            spectrum_plugin_index: AtomicU64::new(ATOMIC_NONE),
+            current_volume: AtomicU32::new(1.0f32.to_bits()),
+            current_muted: AtomicBool::new(false),
         }
     }
 
@@ -200,8 +220,8 @@ impl AudioEngineManager {
             select_output_sample_rate(file_sample_rate, output_device.as_deref());
 
         // Create engine config with preserved volume
-        let volume = *self.current_volume.lock();
-        let muted = *self.current_muted.lock();
+        let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
+        let muted = self.current_muted.load(Ordering::Relaxed);
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
@@ -311,8 +331,8 @@ impl AudioEngineManager {
         // not the hal_input plugin. Empty plugin chains are valid.
 
         // Create engine config for HAL (no file source) with preserved volume
-        let volume = *self.current_volume.lock();
-        let muted = *self.current_muted.lock();
+        let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
+        let muted = self.current_muted.load(Ordering::Relaxed);
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
@@ -411,7 +431,7 @@ impl AudioEngineManager {
 
     /// Get current state
     pub fn get_state(&self) -> StreamingState {
-        *self.state.lock()
+        StreamingState::from_u8(self.state.load(Ordering::Relaxed))
     }
 
     /// Get current audio file info
@@ -429,14 +449,14 @@ impl AudioEngineManager {
         if self.engine.lock().is_some() {
             self.get_engine_state().volume
         } else {
-            *self.current_volume.lock()
+            f32::from_bits(self.current_volume.load(Ordering::Relaxed))
         }
     }
 
     /// Set volume (0.0 = silence, 1.0 = unity gain)
     pub fn set_volume(&self, volume: f32) -> AudioDecoderResult<()> {
         // Store volume so it's preserved across song changes
-        *self.current_volume.lock() = volume;
+        self.current_volume.store(volume.to_bits(), Ordering::Relaxed);
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine
@@ -451,14 +471,14 @@ impl AudioEngineManager {
         if self.engine.lock().is_some() {
             self.get_engine_state().muted
         } else {
-            *self.current_muted.lock()
+            self.current_muted.load(Ordering::Relaxed)
         }
     }
 
     /// Set mute state
     pub fn set_mute(&self, muted: bool) -> AudioDecoderResult<()> {
         // Store mute state so it's preserved
-        *self.current_muted.lock() = muted;
+        self.current_muted.store(muted, Ordering::Relaxed);
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.set_mute(muted).map_err(AudioDecoderError::IoError)?;
@@ -567,7 +587,11 @@ impl AudioEngineManager {
     ///
     /// Returns None if loudness monitoring is not enabled or no data is available yet.
     pub fn get_loudness(&self) -> Option<crate::LoudnessInfo> {
-        let plugin_index = (*self.loudness_plugin_index.lock())?;
+        let raw = self.loudness_plugin_index.load(Ordering::Relaxed);
+        if raw == ATOMIC_NONE {
+            return None;
+        }
+        let plugin_index = raw as usize;
 
         self.get_cached_plugin_data(plugin_index)
             .and_then(|data| data.downcast_ref::<crate::LoudnessInfo>().cloned())
@@ -575,7 +599,8 @@ impl AudioEngineManager {
 
     /// Set the loudness plugin index (call this after adding loudness_monitor to plugin chain)
     pub fn set_loudness_plugin_index(&mut self, index: usize) {
-        *self.loudness_plugin_index.lock() = Some(index);
+        self.loudness_plugin_index
+            .store(index as u64, Ordering::Relaxed);
         log::debug!(
             "[AudioEngineManager] Loudness plugin index set to {}",
             index
@@ -586,7 +611,11 @@ impl AudioEngineManager {
     ///
     /// Returns None if spectrum monitoring is not enabled or no data is available yet.
     pub fn get_spectrum(&self) -> Option<crate::SpectrumInfo> {
-        let plugin_index = (*self.spectrum_plugin_index.lock())?;
+        let raw = self.spectrum_plugin_index.load(Ordering::Relaxed);
+        if raw == ATOMIC_NONE {
+            return None;
+        }
+        let plugin_index = raw as usize;
 
         self.get_cached_plugin_data(plugin_index)
             .and_then(|data| data.downcast_ref::<crate::SpectrumInfo>().cloned())
@@ -634,7 +663,7 @@ impl AudioEngineManager {
     // ========================================================================
 
     fn set_state(&self, state: StreamingState) {
-        *self.state.lock() = state;
+        self.state.store(state as u8, Ordering::Relaxed);
     }
 
     fn get_engine_state(&self) -> AudioEngineState {

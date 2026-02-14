@@ -28,6 +28,7 @@ ctrlc = { workspace = true }
 chrono = { workspace = true }
 libc = { workspace = true }
 netcdf = { workspace = true, optional = true }
+arc-swap = { workspace = true }
 parking_lot = { workspace = true }
 rustfft = { workspace = true }
 realfft = { workspace = true }

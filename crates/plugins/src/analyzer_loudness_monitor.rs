@@ -5,8 +5,8 @@
 use super::analyzer::LoudnessData;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use arc_swap::ArcSwap;
 use ebur128::{EbuR128, Mode};
-use parking_lot::Mutex;
 use rtrb::{Consumer, RingBuffer};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -125,9 +125,9 @@ pub struct LoudnessMonitorPlugin {
     num_channels: usize,
     sample_rate: u32,
     producer: rtrb::Producer<f32>,
-    consumer: Arc<Mutex<Consumer<f32>>>,
-    shared_data: Arc<Mutex<LoudnessData>>,
-    monitor: Arc<Mutex<LoudnessMonitor>>,
+    consumer: Consumer<f32>,
+    shared_data: Arc<ArcSwap<LoudnessData>>,
+    monitor: LoudnessMonitor,
 }
 
 impl LoudnessMonitorPlugin {
@@ -135,14 +135,14 @@ impl LoudnessMonitorPlugin {
         let sr = 48000;
         let (p, c) = RingBuffer::new(sr as usize * 2);
         let monitor = LoudnessMonitor::new(num_channels as u32, sr)?;
-        let shared_data = Arc::new(Mutex::new(LoudnessData::new(num_channels)));
+        let shared_data = Arc::new(ArcSwap::from_pointee(LoudnessData::new(num_channels)));
         Ok(Self {
             num_channels,
             sample_rate: sr,
             producer: p,
-            consumer: Arc::new(Mutex::new(c)),
+            consumer: c,
             shared_data,
-            monitor: Arc::new(Mutex::new(monitor)),
+            monitor,
         })
     }
 }
@@ -168,15 +168,13 @@ impl Plugin for LoudnessMonitorPlugin {
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
-        let mut m = self.monitor.lock();
-        *m = LoudnessMonitor::new(self.num_channels as u32, sr)?;
+        self.monitor = LoudnessMonitor::new(self.num_channels as u32, sr)?;
         Ok(())
     }
     fn reset(&mut self) {
-        let mut m = self.monitor.lock();
-        let _ = m.reset();
-        let mut d = self.shared_data.lock();
-        *d = LoudnessData::new(self.num_channels);
+        let _ = self.monitor.reset();
+        self.shared_data
+            .store(Arc::new(LoudnessData::new(self.num_channels)));
     }
     fn process(
         &mut self,
@@ -188,21 +186,19 @@ impl Plugin for LoudnessMonitorPlugin {
         for &s in input {
             let _ = self.producer.push(s);
         }
-        let mut consumer = self.consumer.lock();
-        let slots = consumer.slots();
-        if let Ok(chunk) = consumer.read_chunk(slots) {
-            let mut m = self.monitor.lock();
+        let slots = self.consumer.slots();
+        if let Ok(chunk) = self.consumer.read_chunk(slots) {
             let (s1, s2) = chunk.as_slices();
-            let _ = m.add_frames(s1);
-            let _ = m.add_frames(s2);
+            let _ = self.monitor.add_frames(s1);
+            let _ = self.monitor.add_frames(s2);
             chunk.commit_all();
-            let mut d = self.shared_data.lock();
-            *d = m.get_loudness();
+            self.shared_data
+                .store(Arc::new(self.monitor.get_loudness()));
         }
         Ok(context.num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let d = self.shared_data.lock();
-        Some(Arc::new(d.clone()))
+        let data = self.shared_data.load_full();
+        Some(data as Arc<dyn Any + Send + Sync>)
     }
 }

@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 /// Shared cache for plugin analyzer data.
 /// The processing thread writes after each frame; the UI reads without
-/// blocking the audio pipeline.
-pub type PluginDataCache = Arc<parking_lot::RwLock<Vec<Option<Arc<dyn Any + Send + Sync>>>>>;
+/// blocking the audio pipeline via lock-free ArcSwap.
+pub type PluginDataCache = Arc<arc_swap::ArcSwap<Vec<Option<Arc<dyn Any + Send + Sync>>>>>;
 
 // ============================================================================
 // Audio Frame - The unit of audio data passed between threads

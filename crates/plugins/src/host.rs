@@ -5,7 +5,7 @@
 use super::plugin::{Plugin, ProcessContext};
 use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // ============================================================================
 // Node Buffer - Simple non-thread-safe buffer for audio data (zero-allocation)
@@ -86,19 +86,15 @@ pub type NodeId = usize;
 
 pub struct GraphNode {
     pub id: NodeId,
-    pub plugin: Arc<Mutex<Box<dyn Plugin>>>,
     pub name: String,
     input_channels: usize,
     output_channels: usize,
 }
 
 impl GraphNode {
-    pub fn new(id: NodeId, name: String, plugin: Box<dyn Plugin>) -> Self {
-        let input_channels = plugin.input_channels();
-        let output_channels = plugin.output_channels();
+    pub fn new(id: NodeId, name: String, input_channels: usize, output_channels: usize) -> Self {
         Self {
             id,
-            plugin: Arc::new(Mutex::new(plugin)),
             name,
             input_channels,
             output_channels,
@@ -155,6 +151,10 @@ impl ProcessingStage {
 
 pub struct DawHost {
     nodes: HashMap<NodeId, GraphNode>,
+    /// Plugin storage indexed by NodeId — disjoint from `nodes` for borrow checker.
+    /// `process()` can borrow `&self.nodes` (topology) and `&mut self.plugins[nid]` (plugin)
+    /// without conflict.
+    plugins: Vec<Option<Box<dyn Plugin>>>,
     edges: Vec<GraphEdge>,
     stages: Vec<ProcessingStage>,
     input_nodes: Vec<NodeId>,
@@ -185,6 +185,7 @@ impl DawHost {
     pub fn new(channels: usize, sample_rate: u32) -> Self {
         Self {
             nodes: HashMap::new(),
+            plugins: Vec::new(),
             edges: Vec::new(),
             stages: Vec::new(),
             input_nodes: Vec::new(),
@@ -221,7 +222,15 @@ impl DawHost {
         let id = self.next_node_id;
         self.next_node_id += 1;
         plugin.initialize(self.sample_rate)?;
-        self.nodes.insert(id, GraphNode::new(id, name, plugin));
+        let input_channels = plugin.input_channels();
+        let output_channels = plugin.output_channels();
+        self.nodes
+            .insert(id, GraphNode::new(id, name, input_channels, output_channels));
+        // Grow plugins vec to accommodate the new id
+        if id >= self.plugins.len() {
+            self.plugins.resize_with(id + 1, || None);
+        }
+        self.plugins[id] = Some(plugin);
         Ok(id)
     }
 
@@ -274,7 +283,7 @@ impl DawHost {
         self.analyzer_indices.clear();
 
         for (chain_idx, &id) in self.chain_nodes.iter().enumerate() {
-            let p = self.nodes[&id].plugin.lock().unwrap();
+            let p = self.plugins[id].as_ref().unwrap();
             if p.output_frames_for_input(100) != 100 {
                 self.cached_frames_identity = false;
             }
@@ -287,7 +296,7 @@ impl DawHost {
         }
 
         self.has_variable_frame_plugin = self.chain_nodes.iter().any(|&id| {
-            let p = self.nodes[&id].plugin.lock().unwrap();
+            let p = self.plugins[id].as_ref().unwrap();
             p.output_frames_for_input(100) != 100 || p.latency_samples() > 0
         });
         self.built = true;
@@ -325,19 +334,17 @@ impl DawHost {
                 self.chain_nodes[index],
             ))?;
         }
-        let node = self.nodes.remove(&id).unwrap();
+        self.nodes.remove(&id).unwrap();
         self.built = false;
-        Ok(Arc::try_unwrap(node.plugin)
-            .map_err(|_| "in use")?
-            .into_inner()
-            .unwrap())
+        Ok(self.plugins[id].take().unwrap())
     }
 
     pub fn plugin_count(&self) -> usize {
         self.chain_nodes.len()
     }
-    pub fn get_plugin(&self, _index: usize) -> Option<&dyn Plugin> {
-        None
+    pub fn get_plugin(&self, index: usize) -> Option<&dyn Plugin> {
+        let &nid = self.chain_nodes.get(index)?;
+        self.plugins.get(nid)?.as_deref()
     }
     pub fn input_channels(&self) -> usize {
         if self.chain_nodes.is_empty() {
@@ -359,9 +366,8 @@ impl DawHost {
         }
         let mut result = f;
         for &id in &self.chain_nodes {
-            result = self.nodes[&id]
-                .plugin
-                .lock()
+            result = self.plugins[id]
+                .as_ref()
                 .unwrap()
                 .output_frames_for_input(result);
         }
@@ -373,9 +379,8 @@ impl DawHost {
         }
         let mut result = r;
         for &id in &self.chain_nodes {
-            result = self.nodes[&id]
-                .plugin
-                .lock()
+            result = self.plugins[id]
+                .as_ref()
                 .unwrap()
                 .output_sample_rate(result);
         }
@@ -383,7 +388,7 @@ impl DawHost {
     }
     pub fn last_output_frames(&self) -> Option<usize> {
         for &id in self.chain_nodes.iter().rev() {
-            if let Some(f) = self.nodes[&id].plugin.lock().unwrap().last_output_frames() {
+            if let Some(f) = self.plugins[id].as_ref().unwrap().last_output_frames() {
                 return Some(f);
             }
         }
@@ -395,10 +400,9 @@ impl DawHost {
         id: &str,
         val: super::parameters::ParameterValue,
     ) -> Result<(), String> {
-        let nid = self.chain_nodes.get(index).ok_or("oob")?;
-        self.nodes[nid]
-            .plugin
-            .lock()
+        let &nid = self.chain_nodes.get(index).ok_or("oob")?;
+        self.plugins[nid]
+            .as_mut()
             .unwrap()
             .set_parameter(super::parameters::ParameterId(id.to_string()), val)
     }
@@ -443,7 +447,7 @@ impl DawHost {
                     bufs.scratch_input[..il].copy_from_slice(&bufs.merge_buffer[..il]);
                     il
                 };
-                let mut p = node.plugin.lock().unwrap();
+                let p = self.plugins[nid].as_mut().unwrap();
                 let context = ProcessContext {
                     sample_rate: self.sample_rate,
                     num_frames: cf,
@@ -536,8 +540,10 @@ impl DawHost {
     }
 
     pub fn reset(&mut self) {
-        for n in self.nodes.values() {
-            n.plugin.lock().unwrap().reset();
+        for &id in self.nodes.keys() {
+            if let Some(p) = self.plugins[id].as_mut() {
+                p.reset();
+            }
         }
     }
     pub fn total_latency_samples(&self) -> usize {
@@ -548,7 +554,7 @@ impl DawHost {
             .unwrap_or(0)
     }
     fn path_latency(&self, id: NodeId) -> usize {
-        let l = self.nodes[&id].plugin.lock().unwrap().latency_samples();
+        let l = self.plugins[id].as_ref().unwrap().latency_samples();
         let inc: Vec<NodeId> = self
             .edges
             .iter()
@@ -693,10 +699,8 @@ impl Host for DawHost {
         self.total_latency_samples()
     }
     fn get_plugin_data(&self, i: usize) -> Option<Arc<dyn Any + Send + Sync>> {
-        let node_id = self.chain_nodes.get(i)?;
-        let node = self.nodes.get(node_id)?;
-        let plugin = node.plugin.lock().unwrap();
-        plugin.get_data()
+        let &node_id = self.chain_nodes.get(i)?;
+        self.plugins.get(node_id)?.as_ref()?.get_data()
     }
 }
 

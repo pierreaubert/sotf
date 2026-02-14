@@ -6,7 +6,7 @@ use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, flush_denormals_inplace};
 use super::smoothing::Smoother;
-use parking_lot::RwLock;
+use arc_swap::ArcSwap;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ pub struct ConvolutionPlugin {
     ir_file: String,
     mix: Smoother,
     gain_linear: Smoother,
-    state: Arc<RwLock<Option<ConvolutionState>>>,
+    state: Arc<ArcSwap<Option<ConvolutionState>>>,
     input_buffers: Vec<Vec<f32>>,
     input_fill: usize,
     fdl: Vec<Vec<Vec<Complex<f32>>>>, // [channel][partition][bin]
@@ -56,7 +56,7 @@ impl ConvolutionPlugin {
             ir_file: String::new(),
             mix: Smoother::new(1.0, 20.0, sample_rate),
             gain_linear: Smoother::new(1.0, 20.0, sample_rate),
-            state: Arc::new(RwLock::new(None)),
+            state: Arc::new(ArcSwap::from_pointee(None)),
             input_buffers: vec![vec![0.0; PARTITION_SIZE]; channels],
             input_fill: 0,
             fdl: vec![vec![vec![Complex::new(0.0, 0.0); FFT_SIZE]; 0]; channels],
@@ -105,13 +105,13 @@ impl ConvolutionPlugin {
         }
 
         let num_partitions = partitions[0].len();
-        *self.state.write() = Some(ConvolutionState {
+        self.state.store(Arc::new(Some(ConvolutionState {
             partitions,
             num_partitions,
             ir_channels,
             fft_forward,
             fft_inverse,
-        });
+        })));
         self.fdl =
             vec![vec![vec![Complex::new(0.0, 0.0); FFT_SIZE]; num_partitions]; self.channels];
         self.ir_file = path.to_string();
@@ -185,8 +185,8 @@ impl Plugin for ConvolutionPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         let nf = context.num_frames;
-        let state_guard = self.state.read();
-        let state = match &*state_guard {
+        let state_guard = self.state.load();
+        let state = match state_guard.as_ref() {
             Some(s) => s,
             None => {
                 output.copy_from_slice(input);

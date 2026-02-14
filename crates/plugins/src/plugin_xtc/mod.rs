@@ -38,7 +38,7 @@ use super::simd::{
     complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, flush_denormals_inplace,
     interleave_stereo, scale_add_simd, window_mul_simd,
 };
-use parking_lot::RwLock;
+use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
@@ -110,11 +110,11 @@ pub struct XtcPlugin {
     /// Working buffer for crossfade: holds IFFT of prev_filters result
     prev_ifft_output: Vec<f32>,
 
-    /// Thread-safe crosstalk cancellation filters
-    filters: Arc<RwLock<XtcFilters>>,
+    /// Thread-safe crosstalk cancellation filters (lock-free via ArcSwap)
+    filters: Arc<ArcSwap<XtcFilters>>,
 
-    /// Previous filter set for crossfading (Block mode)
-    prev_filters: Option<Arc<RwLock<XtcFilters>>>,
+    /// Previous filter snapshot for crossfading (Block mode)
+    prev_filters: Option<Arc<XtcFilters>>,
 
     /// Crossfade progress (0.0 = prev, 1.0 = current)
     crossfade_progress: f32,
@@ -223,7 +223,7 @@ impl XtcPlugin {
         // Compute frequency-domain filters
         let num_bins = fft_size / 2 + 1;
         let filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
-        let filters = Arc::new(RwLock::new(filters));
+        let filters = Arc::new(ArcSwap::from_pointee(filters));
 
         Ok(Self {
             fft_size,
@@ -276,7 +276,7 @@ impl XtcPlugin {
 
         // Store old filters for crossfading (only if not already mid-crossfade)
         if self.crossfade_progress >= 1.0 {
-            self.prev_filters = Some(self.filters.clone());
+            self.prev_filters = Some(self.filters.load_full());
             self.crossfade_progress = 0.0;
         }
 
@@ -284,14 +284,12 @@ impl XtcPlugin {
 
         if sync {
             let new_filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
-            let mut lock = shared_filters.write();
-            *lock = new_filters;
+            shared_filters.store(Arc::new(new_filters));
         } else {
             // Asynchronous update using rayon
             rayon::spawn(move || {
                 let new_filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
-                let mut lock = shared_filters.write();
-                *lock = new_filters;
+                shared_filters.store(Arc::new(new_filters));
             });
         }
     }
@@ -329,8 +327,7 @@ impl XtcPlugin {
 
         if is_crossfading {
             let alpha = self.crossfade_progress;
-            let prev_filters_arc = self.prev_filters.as_ref().unwrap().clone();
-            let prev_filters = prev_filters_arc.read();
+            let prev_filters = self.prev_filters.as_ref().unwrap();
 
             // --- Left channel with crossfade ---
             // 1. IFFT with prev_filters into prev_ifft_output
@@ -338,7 +335,7 @@ impl XtcPlugin {
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
-                &prev_filters,
+                prev_filters,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.prev_ifft_output)
@@ -346,7 +343,7 @@ impl XtcPlugin {
 
             // 2. IFFT with current filters into ifft_output
             {
-                let current_filters = self.filters.read();
+                let current_filters = self.filters.load();
                 apply_filter_left(
                     &mut self.ifft_input,
                     &self.fft_output_l,
@@ -374,7 +371,7 @@ impl XtcPlugin {
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
-                &prev_filters,
+                prev_filters,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.prev_ifft_output)
@@ -382,7 +379,7 @@ impl XtcPlugin {
 
             // 2. IFFT with current filters into ifft_output
             {
-                let current_filters = self.filters.read();
+                let current_filters = self.filters.load();
                 apply_filter_right(
                     &mut self.ifft_input,
                     &self.fft_output_l,
@@ -403,12 +400,9 @@ impl XtcPlugin {
                 &self.ifft_output,
                 scale,
             );
-
-            // Drop locks before advancing crossfade
-            drop(prev_filters);
         } else {
             // Normal path: no crossfade needed
-            let filters = self.filters.read();
+            let filters = self.filters.load();
 
             // Left channel
             apply_filter_left(
