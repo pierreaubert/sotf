@@ -66,7 +66,7 @@ impl<T: ComplexField> IluPreconditioner<T> {
 
                 let u_kk = values[u_kk_idx];
 
-                if u_kk.norm() < T::Real::from_f64(1e-30).unwrap() {
+                if u_kk.norm() < T::Real::from_f64(1e-20).unwrap() {
                     continue;
                 }
 
@@ -162,7 +162,7 @@ impl<T: ComplexField> Preconditioner<T> for IluPreconditioner<T> {
             }
 
             let u_ii = self.u_diag[i];
-            if u_ii.norm() > T::Real::from_f64(1e-30).unwrap() {
+            if u_ii.norm() > T::Real::from_f64(1e-20).unwrap() {
                 x[i] *= u_ii.inv();
             }
         }

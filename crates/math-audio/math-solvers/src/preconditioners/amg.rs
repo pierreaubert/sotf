@@ -34,7 +34,7 @@ use crate::parallel::{parallel_enumerate_map, parallel_map_indexed};
 use crate::sparse::CsrMatrix;
 use crate::traits::{ComplexField, Preconditioner};
 use ndarray::Array1;
-use num_traits::FromPrimitive;
+use num_traits::{FromPrimitive, Zero};
 
 /// Coarsening algorithm for AMG hierarchy construction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -680,6 +680,32 @@ where
                         .collect();
 
                     if c_neighbors.is_empty() {
+                        // Fall back to direct diagonal interpolation if no strong C-neighbors exist.
+                        // We find the strongest neighbor that is a C-point, even if it's not "strong"
+                        // according to the threshold, or just pick the first coarse point if all else fails.
+                        let mut best_c = usize::MAX;
+                        let mut max_val = T::Real::zero();
+
+                        for (j, val) in matrix.row_entries(i) {
+                            if point_types[j] == PointType::Coarse {
+                                let norm = val.norm();
+                                if norm > max_val {
+                                    max_val = norm;
+                                    best_c = j;
+                                }
+                            }
+                        }
+
+                        if best_c != usize::MAX {
+                            triplets.push((i, fine_to_coarse[best_c], T::one()));
+                        } else {
+                            // If absolutely no C-neighbors exist in the row, 
+                            // this indicates a disconnected component or extremely bad coarsening.
+                            // We pick the first available coarse point as a last resort.
+                            if !coarse_to_fine.is_empty() {
+                                triplets.push((i, 0, T::one()));
+                            }
+                        }
                         continue;
                     }
 

@@ -6,7 +6,7 @@
 
 use crate::blas_helpers::{inner_product, vector_norm};
 use crate::iterative::gmres::{GmresConfig, GmresSolution};
-use crate::traits::{ComplexField, LinearOperator, Preconditioner};
+use crate::traits::{ComplexField, LinearOperator, Preconditioner, SolverStatus};
 use ndarray::{Array1, Array2};
 use num_traits::{Float, FromPrimitive, One, ToPrimitive, Zero};
 use rayon::prelude::*;
@@ -55,6 +55,7 @@ where
             restarts: 0,
             residual: T::Real::zero(),
             converged: true,
+            status: SolverStatus::Converged,
         };
     }
 
@@ -81,6 +82,7 @@ where
                 restarts,
                 residual: rel_residual,
                 converged: true,
+                status: SolverStatus::Converged,
             };
         }
 
@@ -144,7 +146,7 @@ where
             h[[j + 1, j]] = T::from_real(norm_v);
 
             // Breakdown check
-            let breakdown_tol = T::Real::from_f64(1e-14).unwrap();
+            let breakdown_tol = T::Real::from_f64(1e-20).unwrap();
 
             if norm_v < breakdown_tol {
                 inner_converged = true;
@@ -173,7 +175,9 @@ where
             g[j + 1] = T::zero() - s * g[j] + c * g[j + 1];
             g[j] = temp;
 
-            let rel_residual = g[j + 1].norm() / b_norm;
+            let abs_residual = g[j + 1].norm();
+            let rel_residual = abs_residual / b_norm;
+            let abs_tol = T::Real::from_f64(1e-20).unwrap();
 
             if config.print_interval > 0 && total_iterations % config.print_interval == 0 {
                 log::info!(
@@ -184,7 +188,7 @@ where
                 );
             }
 
-            if rel_residual < config.tolerance || inner_converged {
+            if rel_residual < config.tolerance || abs_residual < abs_tol || inner_converged {
                 let y = solve_upper_triangular(&h, &g, j + 1);
                 for (i, &yi) in y.iter().enumerate() {
                     // x = x + v[i] * yi
@@ -197,6 +201,11 @@ where
                     restarts,
                     residual: rel_residual,
                     converged: true,
+                    status: if inner_converged && rel_residual >= config.tolerance && abs_residual >= abs_tol {
+                        SolverStatus::Breakdown
+                    } else {
+                        SolverStatus::Converged
+                    },
                 };
             }
         }
@@ -221,6 +230,7 @@ where
         restarts,
         residual: rel_residual,
         converged: false,
+        status: SolverStatus::MaxIterationsReached,
     }
 }
 

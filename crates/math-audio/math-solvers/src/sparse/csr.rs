@@ -164,10 +164,6 @@ impl<T: ComplexField> CsrMatrix<T> {
                     *last += val;
                 }
             } else {
-                // New entry - push it
-                values.push(val);
-                col_indices.push(col);
-
                 // Update row pointers for any rows we skipped
                 if row != prev_row {
                     let start = if prev_row == usize::MAX {
@@ -176,9 +172,13 @@ impl<T: ComplexField> CsrMatrix<T> {
                         prev_row + 1
                     };
                     for item in row_ptrs.iter_mut().take(row + 1).skip(start) {
-                        *item = values.len() - 1;
+                        *item = values.len();
                     }
                 }
+
+                // New entry - push it
+                values.push(val);
+                col_indices.push(col);
 
                 prev_row = row;
                 prev_col = col;
@@ -352,7 +352,12 @@ impl<T: ComplexField> CsrMatrix<T> {
         let mut diag = Array1::from_elem(n, T::zero());
 
         for i in 0..n {
-            diag[i] = self.get(i, i);
+            for idx in self.row_range(i) {
+                if self.col_indices[idx] == i {
+                    diag[i] = self.values[idx];
+                    break;
+                }
+            }
         }
 
         diag
@@ -590,7 +595,7 @@ impl<T: ComplexField> BlockedCsr<T> {
 ///
 /// For CSR matrices A (m×k) and B (k×n), computes C (m×n).
 impl<T: ComplexField> CsrMatrix<T> {
-    /// Compute C = A * B using optimized approach
+    /// Compute C = A * B using optimized approach (Gustavson's algorithm)
     pub fn matmul(&self, other: &CsrMatrix<T>) -> CsrMatrix<T> {
         assert_eq!(
             self.num_cols, other.num_rows,
@@ -607,41 +612,41 @@ impl<T: ComplexField> CsrMatrix<T> {
 
         let tol = T::Real::from_f64(1e-15).unwrap();
 
-        let mut triplets: Vec<(usize, usize, T)> = Vec::with_capacity(self.nnz() * 4);
+        let mut triplets: Vec<(usize, usize, T)> = Vec::with_capacity(self.nnz() * 2);
+        
+        // Workspace for Gustavson's algorithm
+        let mut sparse_accumulator = vec![T::zero(); n];
+        let mut active_indices = Vec::with_capacity(n);
+        let mut occupied = vec![false; n];
 
         for i in 0..m {
-            let mut row_data: Vec<(usize, T)> = Vec::new();
-
             for (k, a_ik) in self.row_entries(i) {
                 for (j, b_kj) in other.row_entries(k) {
-                    row_data.push((j, a_ik * b_kj));
+                    if !occupied[j] {
+                        occupied[j] = true;
+                        active_indices.push(j);
+                    }
+                    sparse_accumulator[j] += a_ik * b_kj;
                 }
             }
 
-            if row_data.is_empty() {
+            if active_indices.is_empty() {
                 continue;
             }
 
-            row_data.sort_by_key(|&(j, _)| j);
+            // To keep C's rows sorted by column index, we sort active_indices
+            active_indices.sort_unstable();
 
-            let mut current_j = row_data[0].0;
-            let mut current_val = row_data[0].1;
-
-            for &(j, val) in &row_data[1..] {
-                if j == current_j {
-                    current_val += val;
-                } else {
-                    if current_val.norm() > tol {
-                        triplets.push((i, current_j, current_val));
-                    }
-                    current_j = j;
-                    current_val = val;
+            for &j in &active_indices {
+                let val = sparse_accumulator[j];
+                if val.norm() > tol {
+                    triplets.push((i, j, val));
                 }
+                // Reset for next row
+                sparse_accumulator[j] = T::zero();
+                occupied[j] = false;
             }
-
-            if current_val.norm() > tol {
-                triplets.push((i, current_j, current_val));
-            }
+            active_indices.clear();
         }
 
         CsrMatrix::from_triplets(m, n, triplets)

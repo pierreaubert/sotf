@@ -43,32 +43,33 @@ impl<T: ComplexField> LuFactorization<T> {
             });
         }
 
-        let mut x = b.clone();
+        let mut x = Array1::from_elem(self.n, T::zero());
 
-        // Apply row permutations (forward substitution with L)
+        // Apply row permutations Pb
         for i in 0..self.n {
-            let pivot = self.pivots[i];
-            if pivot != i {
-                x.swap(i, pivot);
-            }
+            x[i] = b[self.pivots[i]];
         }
 
         // Forward substitution: Ly = Pb
         for i in 0..self.n {
+            #[allow(clippy::needless_range_loop)]
             for j in 0..i {
                 let l_ij = self.lu[[i, j]];
-                x[i] = x[i] - l_ij * x[j];
+                let x_j = x[j];
+                x[i] -= l_ij * x_j;
             }
         }
 
         // Backward substitution: Ux = y
         for i in (0..self.n).rev() {
+            #[allow(clippy::needless_range_loop)]
             for j in (i + 1)..self.n {
                 let u_ij = self.lu[[i, j]];
-                x[i] = x[i] - u_ij * x[j];
+                let x_j = x[j];
+                x[i] -= u_ij * x_j;
             }
             let u_ii = self.lu[[i, i]];
-            if u_ii.norm() < T::Real::from_f64(1e-30).unwrap() {
+            if u_ii.is_zero_approx(T::Real::from_f64(1e-20).unwrap()) {
                 return Err(LuError::SingularMatrix);
             }
             x[i] *= u_ii.inv();
@@ -106,7 +107,7 @@ pub fn lu_factorize<T: ComplexField>(a: &Array2<T>) -> Result<LuFactorization<T>
         }
 
         // Check for singularity
-        if max_val < T::Real::from_f64(1e-30).unwrap() {
+        if max_val < T::Real::from_f64(1e-20).unwrap() {
             return Err(LuError::SingularMatrix);
         }
 
@@ -139,17 +140,18 @@ pub fn lu_factorize<T: ComplexField>(a: &Array2<T>) -> Result<LuFactorization<T>
 /// Solve Ax = b using LU decomposition
 ///
 /// This is a convenience function that combines factorization and solve.
-pub fn lu_solve<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, LuError> {
-    #[cfg(feature = "ndarray-linalg")]
-    {
-        a.solve_into(b.clone()).map_err(|_| LuError::SingularMatrix)
-    }
+#[cfg(feature = "ndarray-linalg")]
+pub fn lu_solve<T: ComplexField + ndarray_linalg::Lapack>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, LuError> {
+    a.solve_into(b.clone()).map_err(|_| LuError::SingularMatrix)
+}
 
-    #[cfg(not(feature = "ndarray-linalg"))]
-    {
-        let factorization = lu_factorize(a)?;
-        factorization.solve(b)
-    }
+/// Solve Ax = b using LU decomposition
+///
+/// This is a convenience function that combines factorization and solve.
+#[cfg(not(feature = "ndarray-linalg"))]
+pub fn lu_solve<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, LuError> {
+    let factorization = lu_factorize(a)?;
+    factorization.solve(b)
 }
 
 #[cfg(test)]

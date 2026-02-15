@@ -73,7 +73,7 @@ impl<T: ComplexField> IluColoringPreconditioner<T> {
                     }
                 }
 
-                if u_kk.norm() < T::Real::from_f64(1e-30).unwrap() {
+                if u_kk.norm() < T::Real::from_f64(1e-20).unwrap() {
                     continue;
                 }
 
@@ -250,7 +250,7 @@ impl<T: ComplexField + Send + Sync> IluColoringPreconditioner<T> {
             }
 
             let u_ii = self.u_diag[i];
-            if u_ii.norm() > T::Real::from_f64(1e-30).unwrap() {
+            if u_ii.norm() > T::Real::from_f64(1e-20).unwrap() {
                 x[i] *= u_ii.inv();
             }
         }
@@ -325,7 +325,7 @@ impl<T: ComplexField + Send + Sync> IluColoringPreconditioner<T> {
                     }
                     let xi = x.get(i) - sum;
                     let u_ii = u_diag[i];
-                    if u_ii.norm() > T::Real::from_f64(1e-30).unwrap() {
+                    if u_ii.norm() > T::Real::from_f64(1e-20).unwrap() {
                         x.set(i, xi * u_ii.inv());
                     } else {
                         x.set(i, xi);
@@ -343,7 +343,7 @@ impl<T: ComplexField + Send + Sync> IluColoringPreconditioner<T> {
                     }
                     let xi = x.get(i) - sum;
                     let u_ii = self.u_diag[i];
-                    if u_ii.norm() > T::Real::from_f64(1e-30).unwrap() {
+                    if u_ii.norm() > T::Real::from_f64(1e-20).unwrap() {
                         x.set(i, xi * u_ii.inv());
                     } else {
                         x.set(i, xi);
@@ -417,7 +417,7 @@ impl<T: ComplexField> IluFixedPointPreconditioner<T> {
                     }
                 }
 
-                if u_kk.norm() < T::Real::from_f64(1e-30).unwrap() {
+                if u_kk.norm() < T::Real::from_f64(1e-20).unwrap() {
                     continue;
                 }
 
@@ -462,7 +462,7 @@ impl<T: ComplexField> IluFixedPointPreconditioner<T> {
                     l_col_indices.push(j);
                 } else if j == i {
                     // Diagonal
-                    if val.norm() > T::Real::from_f64(1e-30).unwrap() {
+                    if val.norm() > T::Real::from_f64(1e-20).unwrap() {
                         u_diag_inv[i] = val.inv();
                     }
                 } else {

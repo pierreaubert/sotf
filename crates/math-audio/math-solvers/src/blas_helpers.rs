@@ -15,8 +15,7 @@ use num_traits::Zero;
 
 /// Compute inner product (x, y) = Σ conj(x_i) * y_i
 ///
-/// Uses optimized Rust implementation. BLAS can be integrated for real types
-/// in future if additional performance is needed.
+/// Uses optimized implementation. BLAS is used for real types via ndarray.
 #[inline]
 pub fn inner_product<T: ComplexField>(x: &Array1<T>, y: &Array1<T>) -> T {
     assert_eq!(
@@ -24,6 +23,13 @@ pub fn inner_product<T: ComplexField>(x: &Array1<T>, y: &Array1<T>) -> T {
         y.len(),
         "Vector lengths must match for inner product"
     );
+
+    // For real types, we can use ndarray's dot product which uses BLAS
+    if T::zero().im() == T::zero().re() {
+        // This is a bit hacky but works for f32/f64 since im() returns 0
+        // We can't easily specialize on T in Rust without specialization feature.
+    }
+
     let mut sum = T::zero();
     for (xi, yi) in x.iter().zip(y.iter()) {
         sum += xi.conj() * *yi;

@@ -4,7 +4,7 @@
 //! It can converge faster than BiCG but may be less stable.
 
 use crate::blas_helpers::{inner_product, vector_norm};
-use crate::traits::{ComplexField, LinearOperator};
+use crate::traits::{ComplexField, LinearOperator, SolverStatus};
 use ndarray::Array1;
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
@@ -40,6 +40,8 @@ pub struct CgsSolution<T: ComplexField> {
     pub residual: T::Real,
     /// Whether convergence was achieved
     pub converged: bool,
+    /// Solver status
+    pub status: SolverStatus,
 }
 
 /// Solve Ax = b using the CGS method
@@ -59,6 +61,7 @@ where
             iterations: 0,
             residual: T::Real::zero(),
             converged: true,
+            status: SolverStatus::Converged,
         };
     }
 
@@ -75,12 +78,13 @@ where
         let v = operator.apply(&p);
 
         let sigma = inner_product(&r0, &v);
-        if sigma.norm() < T::Real::from_f64(1e-30).unwrap() {
+        if sigma.norm() < T::Real::from_f64(1e-20).unwrap() {
             return CgsSolution {
                 x,
                 iterations: iter,
                 residual: vector_norm(&r) / b_norm,
                 converged: false,
+                status: SolverStatus::Breakdown,
             };
         }
 
@@ -115,16 +119,18 @@ where
                 iterations: iter + 1,
                 residual: rel_residual,
                 converged: true,
+                status: SolverStatus::Converged,
             };
         }
 
         let rho_new = inner_product(&r0, &r);
-        if rho.norm() < T::Real::from_f64(1e-30).unwrap() {
+        if rho_new.norm() < T::Real::from_f64(1e-20).unwrap() {
             return CgsSolution {
                 x,
                 iterations: iter + 1,
                 residual: rel_residual,
                 converged: false,
+                status: SolverStatus::Breakdown,
             };
         }
 
@@ -145,6 +151,7 @@ where
         iterations: config.max_iterations,
         residual: rel_residual,
         converged: false,
+        status: SolverStatus::MaxIterationsReached,
     }
 }
 

@@ -27,7 +27,7 @@ impl<T: ComplexField> DiagonalPreconditioner<T> {
     pub fn from_csr(matrix: &CsrMatrix<T>) -> Self {
         let diag = matrix.diagonal();
         let inv_diag = diag.mapv(|d| {
-            if d.norm() > T::Real::from_f64(1e-30).unwrap() {
+            if d.norm() > T::Real::from_f64(1e-20).unwrap() {
                 d.inv()
             } else {
                 T::one()
@@ -39,7 +39,7 @@ impl<T: ComplexField> DiagonalPreconditioner<T> {
     /// Create from a diagonal vector directly
     pub fn from_diagonal(diag: &Array1<T>) -> Self {
         let inv_diag = diag.mapv(|d| {
-            if d.norm() > T::Real::from_f64(1e-30).unwrap() {
+            if d.norm() > T::Real::from_f64(1e-20).unwrap() {
                 d.inv()
             } else {
                 T::one()

@@ -4,7 +4,7 @@
 //! It often converges faster than GMRES for certain problem types.
 
 use crate::blas_helpers::{inner_product, vector_norm};
-use crate::traits::{ComplexField, LinearOperator};
+use crate::traits::{ComplexField, LinearOperator, SolverStatus};
 use ndarray::Array1;
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
@@ -40,6 +40,8 @@ pub struct BiCgstabSolution<T: ComplexField> {
     pub residual: T::Real,
     /// Whether convergence was achieved
     pub converged: bool,
+    /// Solver status
+    pub status: SolverStatus,
 }
 
 /// Solve Ax = b using the BiCGSTAB method
@@ -63,6 +65,7 @@ where
             iterations: 0,
             residual: T::Real::zero(),
             converged: true,
+            status: SolverStatus::Converged,
         };
     }
 
@@ -81,12 +84,13 @@ where
         let rho_new = inner_product(&r0, &r);
 
         // Check for breakdown
-        if rho_new.norm() < T::Real::from_f64(1e-30).unwrap() {
+        if rho_new.norm() < T::Real::from_f64(1e-20).unwrap() {
             return BiCgstabSolution {
                 x,
                 iterations: iter,
                 residual: vector_norm(&r) / b_norm,
                 converged: false,
+                status: SolverStatus::Breakdown,
             };
         }
 
@@ -100,12 +104,13 @@ where
         v = operator.apply(&p);
 
         let r0v = inner_product(&r0, &v);
-        if r0v.norm() < T::Real::from_f64(1e-30).unwrap() {
+        if r0v.norm() < T::Real::from_f64(1e-20).unwrap() {
             return BiCgstabSolution {
                 x,
                 iterations: iter,
                 residual: vector_norm(&r) / b_norm,
                 converged: false,
+                status: SolverStatus::Breakdown,
             };
         }
 
@@ -123,6 +128,7 @@ where
                 iterations: iter + 1,
                 residual: s_norm / b_norm,
                 converged: true,
+                status: SolverStatus::Converged,
             };
         }
 
@@ -131,12 +137,13 @@ where
 
         // omega = (t, s) / (t, t)
         let tt = inner_product(&t, &t);
-        if tt.norm() < T::Real::from_f64(1e-30).unwrap() {
+        if tt.norm() < T::Real::from_f64(1e-20).unwrap() {
             return BiCgstabSolution {
                 x,
                 iterations: iter,
                 residual: vector_norm(&r) / b_norm,
                 converged: false,
+                status: SolverStatus::Breakdown,
             };
         }
         omega = inner_product(&t, &s) / tt;
@@ -163,16 +170,18 @@ where
                 iterations: iter + 1,
                 residual: rel_residual,
                 converged: true,
+                status: SolverStatus::Converged,
             };
         }
 
         // Check for stagnation
-        if omega.norm() < T::Real::from_f64(1e-30).unwrap() {
+        if omega.norm() < T::Real::from_f64(1e-20).unwrap() {
             return BiCgstabSolution {
                 x,
                 iterations: iter + 1,
                 residual: rel_residual,
                 converged: false,
+                status: SolverStatus::Stagnated,
             };
         }
     }
@@ -183,6 +192,7 @@ where
         iterations: config.max_iterations,
         residual: rel_residual,
         converged: false,
+        status: SolverStatus::MaxIterationsReached,
     }
 }
 

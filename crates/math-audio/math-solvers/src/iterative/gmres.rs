@@ -7,7 +7,7 @@
 //! convergence behavior.
 
 use crate::blas_helpers::{axpy, inner_product, vector_norm};
-use crate::traits::{ComplexField, LinearOperator, Preconditioner};
+use crate::traits::{ComplexField, LinearOperator, Preconditioner, SolverStatus};
 use ndarray::{Array1, Array2};
 use num_traits::{Float, FromPrimitive, One, ToPrimitive, Zero};
 
@@ -82,6 +82,8 @@ pub struct GmresSolution<T: ComplexField> {
     pub residual: T::Real,
     /// Whether convergence was achieved
     pub converged: bool,
+    /// Solver status
+    pub status: SolverStatus,
 }
 
 /// Solve Ax = b using the restarted GMRES method
@@ -131,6 +133,7 @@ where
             restarts: 0,
             residual: T::Real::zero(),
             converged: true,
+            status: SolverStatus::Converged,
         };
     }
 
@@ -153,6 +156,7 @@ where
                 restarts,
                 residual: rel_residual,
                 converged: true,
+                status: SolverStatus::Converged,
             };
         }
 
@@ -191,14 +195,11 @@ where
             h[[j + 1, j]] = T::from_real(w_norm);
 
             // Check for breakdown
-            let breakdown_tol = T::Real::from_f64(1e-14).unwrap();
+            let breakdown_tol = T::Real::from_f64(1e-20).unwrap();
             if w_norm < breakdown_tol {
                 inner_converged = true;
             } else {
-                let inv_norm = T::from_real(T::Real::one() / w_norm);
-                let mut new_v = w.clone();
-                axpy(inv_norm - T::one(), &w, &mut new_v);
-                v.push(new_v);
+                v.push(w.mapv(|wi| wi * T::from_real(T::Real::one() / w_norm)));
             }
 
             // Apply previous Givens rotations to new column of H
@@ -222,7 +223,9 @@ where
             g[j] = temp;
 
             // Check convergence
-            let rel_residual = g[j + 1].norm() / b_norm;
+            let abs_residual = g[j + 1].norm();
+            let rel_residual = abs_residual / b_norm;
+            let abs_tol = T::Real::from_f64(1e-20).unwrap();
 
             if config.print_interval > 0 && total_iterations % config.print_interval == 0 {
                 log::info!(
@@ -233,7 +236,7 @@ where
                 );
             }
 
-            if rel_residual < config.tolerance || inner_converged {
+            if rel_residual < config.tolerance || abs_residual < abs_tol || inner_converged {
                 // Solve upper triangular system Hy = g
                 let y = solve_upper_triangular(&h, &g, j + 1);
 
@@ -242,12 +245,19 @@ where
                     axpy(yi, &v[i], &mut x);
                 }
 
+                let status = if inner_converged && rel_residual >= config.tolerance && abs_residual >= abs_tol {
+                    SolverStatus::Breakdown
+                } else {
+                    SolverStatus::Converged
+                };
+
                 return GmresSolution {
                     x,
                     iterations: total_iterations,
                     restarts,
                     residual: rel_residual,
                     converged: true,
+                    status,
                 };
             }
         }
@@ -273,6 +283,7 @@ where
         restarts,
         residual: rel_residual,
         converged: false,
+        status: SolverStatus::MaxIterationsReached,
     }
 }
 
@@ -306,6 +317,7 @@ where
             restarts: 0,
             residual: T::Real::zero(),
             converged: true,
+            status: SolverStatus::Converged,
         };
     }
 
@@ -327,6 +339,7 @@ where
                 restarts,
                 residual: rel_residual,
                 converged: true,
+                status: SolverStatus::Converged,
             };
         }
 
@@ -359,7 +372,7 @@ where
             let w_norm = vector_norm(&w);
             h[[j + 1, j]] = T::from_real(w_norm);
 
-            let breakdown_tol = T::Real::from_f64(1e-14).unwrap();
+            let breakdown_tol = T::Real::from_f64(1e-20).unwrap();
             if w_norm < breakdown_tol {
                 inner_converged = true;
             } else {
@@ -384,9 +397,11 @@ where
             g[j + 1] = T::zero() - s * g[j] + c * g[j + 1];
             g[j] = temp;
 
-            let rel_residual = g[j + 1].norm() / b_norm;
+            let abs_residual = g[j + 1].norm();
+            let rel_residual = abs_residual / b_norm;
+            let abs_tol = T::Real::from_f64(1e-20).unwrap();
 
-            if rel_residual < config.tolerance || inner_converged {
+            if rel_residual < config.tolerance || abs_residual < abs_tol || inner_converged {
                 let y = solve_upper_triangular(&h, &g, j + 1);
 
                 for (i, &yi) in y.iter().enumerate() {
@@ -399,6 +414,11 @@ where
                     restarts,
                     residual: rel_residual,
                     converged: true,
+                    status: if inner_converged && rel_residual >= config.tolerance && abs_residual >= abs_tol {
+                        SolverStatus::Breakdown
+                    } else {
+                        SolverStatus::Converged
+                    },
                 };
             }
         }
@@ -424,6 +444,7 @@ where
         restarts,
         residual: rel_residual,
         converged: false,
+        status: SolverStatus::MaxIterationsReached,
     }
 }
 
@@ -463,6 +484,7 @@ where
             restarts: 0,
             residual: T::Real::zero(),
             converged: true,
+            status: SolverStatus::Converged,
         };
     }
 
@@ -484,6 +506,7 @@ where
                 restarts,
                 residual: rel_residual,
                 converged: true,
+                status: SolverStatus::Converged,
             };
         }
 
@@ -516,7 +539,7 @@ where
             let w_norm = vector_norm(&w);
             h[[j + 1, j]] = T::from_real(w_norm);
 
-            let breakdown_tol = T::Real::from_f64(1e-14).unwrap();
+            let breakdown_tol = T::Real::from_f64(1e-20).unwrap();
             if w_norm < breakdown_tol {
                 inner_converged = true;
             } else {
@@ -541,9 +564,11 @@ where
             g[j + 1] = T::zero() - s * g[j] + c * g[j + 1];
             g[j] = temp;
 
-            let rel_residual = g[j + 1].norm() / b_norm;
+            let abs_residual = g[j + 1].norm();
+            let rel_residual = abs_residual / b_norm;
+            let abs_tol = T::Real::from_f64(1e-20).unwrap();
 
-            if rel_residual < config.tolerance || inner_converged {
+            if rel_residual < config.tolerance || abs_residual < abs_tol || inner_converged {
                 let y = solve_upper_triangular(&h, &g, j + 1);
 
                 for (i, &yi) in y.iter().enumerate() {
@@ -556,6 +581,11 @@ where
                     restarts,
                     residual: rel_residual,
                     converged: true,
+                    status: if inner_converged && rel_residual >= config.tolerance && abs_residual >= abs_tol {
+                        SolverStatus::Breakdown
+                    } else {
+                        SolverStatus::Converged
+                    },
                 };
             }
         }
@@ -581,6 +611,7 @@ where
         restarts,
         residual: rel_residual,
         converged: false,
+        status: SolverStatus::MaxIterationsReached,
     }
 }
 

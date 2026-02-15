@@ -8,7 +8,6 @@
 use ndarray::Array1;
 use num_complex::{Complex32, Complex64};
 use num_traits::{Float, NumAssign, One, Zero};
-#[cfg(not(feature = "ndarray-linalg"))]
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::fmt::Debug;
 use std::ops::Neg;
@@ -18,68 +17,6 @@ use std::ops::Neg;
 /// This trait abstracts over real and complex number types, providing
 /// a unified interface for operations like conjugation, norm computation,
 /// and conversion from real values.
-///
-/// # Implementations
-///
-/// Provided for:
-/// - `Complex64` (default for most acoustic applications)
-/// - `Complex32` (for memory-constrained applications)
-/// - `f64` (for real-valued problems)
-/// - `f32` (for real-valued, memory-constrained applications)
-#[cfg(feature = "ndarray-linalg")]
-pub trait ComplexField:
-    NumAssign
-    + Clone
-    + Copy
-    + Send
-    + Sync
-    + Debug
-    + Zero
-    + One
-    + Neg<Output = Self>
-    + ndarray_linalg::Lapack
-    + 'static
-{
-    // type Real inherited from ndarray_linalg::Scalar via Lapack
-
-    /// Complex conjugate
-    #[cfg(not(feature = "ndarray-linalg"))]
-    fn conj(&self) -> Self;
-
-    /// Squared magnitude |z|²
-    fn norm_sqr(&self) -> Self::Real;
-
-    /// Magnitude |z|
-    fn norm(&self) -> Self::Real {
-        self.norm_sqr().sqrt()
-    }
-
-    /// Create from a real value
-    #[cfg(not(feature = "ndarray-linalg"))]
-    fn from_real(r: Self::Real) -> Self;
-
-    /// Create from real and imaginary parts
-    fn from_re_im(re: Self::Real, im: Self::Real) -> Self;
-
-    /// Real part
-    fn re(&self) -> Self::Real;
-
-    /// Imaginary part
-    fn im(&self) -> Self::Real;
-
-    /// Check if this is approximately zero
-    fn is_zero_approx(&self, tol: Self::Real) -> bool {
-        self.norm_sqr() < tol * tol
-    }
-
-    /// Multiplicative inverse (1/z)
-    fn inv(&self) -> Self;
-
-    /// Square root
-    fn sqrt(&self) -> Self;
-}
-
-#[cfg(not(feature = "ndarray-linalg"))]
 pub trait ComplexField:
     NumAssign + Clone + Copy + Send + Sync + Debug + Zero + One + Neg<Output = Self> + 'static
 {
@@ -122,11 +59,9 @@ pub trait ComplexField:
 }
 
 impl ComplexField for Complex64 {
-    #[cfg(not(feature = "ndarray-linalg"))]
     type Real = f64;
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn conj(&self) -> Self {
         Complex64::conj(self)
     }
@@ -137,7 +72,6 @@ impl ComplexField for Complex64 {
     }
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn from_real(r: f64) -> Self {
         Complex64::new(r, 0.0)
     }
@@ -170,11 +104,9 @@ impl ComplexField for Complex64 {
 }
 
 impl ComplexField for Complex32 {
-    #[cfg(not(feature = "ndarray-linalg"))]
     type Real = f32;
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn conj(&self) -> Self {
         Complex32::conj(self)
     }
@@ -185,7 +117,6 @@ impl ComplexField for Complex32 {
     }
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn from_real(r: f32) -> Self {
         Complex32::new(r, 0.0)
     }
@@ -218,11 +149,9 @@ impl ComplexField for Complex32 {
 }
 
 impl ComplexField for f64 {
-    #[cfg(not(feature = "ndarray-linalg"))]
     type Real = f64;
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn conj(&self) -> Self {
         *self
     }
@@ -233,7 +162,6 @@ impl ComplexField for f64 {
     }
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn from_real(r: f64) -> Self {
         r
     }
@@ -265,11 +193,9 @@ impl ComplexField for f64 {
 }
 
 impl ComplexField for f32 {
-    #[cfg(not(feature = "ndarray-linalg"))]
     type Real = f32;
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn conj(&self) -> Self {
         *self
     }
@@ -280,7 +206,6 @@ impl ComplexField for f32 {
     }
 
     #[inline]
-    #[cfg(not(feature = "ndarray-linalg"))]
     fn from_real(r: f32) -> Self {
         r
     }
@@ -330,39 +255,43 @@ pub trait LinearOperator<T: ComplexField>: Send + Sync {
 
     /// Apply the Hermitian (conjugate transpose): y = A^H * x
     fn apply_hermitian(&self, x: &Array1<T>) -> Array1<T> {
-        // Default implementation: conjugate(A^T * conj(x))
-        // Note: x.mapv(|v| v.conj()) uses scalar conjugation.
-        // If ComplexField does not have conj(), this relies on Scalar::conj().
-        // However, mapv takes a closure.
-        let x_conj: Array1<T> = x.mapv(|v| {
-            #[cfg(feature = "ndarray-linalg")]
-            {
-                ndarray_linalg::Scalar::conj(&v)
-            }
-            #[cfg(not(feature = "ndarray-linalg"))]
-            {
-                v.conj()
-            }
-        });
-
+        let x_conj: Array1<T> = x.mapv(|v| v.conj());
         let y = self.apply_transpose(&x_conj);
-
-        y.mapv(|v| {
-            #[cfg(feature = "ndarray-linalg")]
-            {
-                ndarray_linalg::Scalar::conj(&v)
-            }
-            #[cfg(not(feature = "ndarray-linalg"))]
-            {
-                v.conj()
-            }
-        })
+        y.mapv(|v| v.conj())
     }
 
     /// Check if the operator is square
     fn is_square(&self) -> bool {
         self.num_rows() == self.num_cols()
     }
+}
+
+/// Status of an iterative solver
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SolverStatus {
+    /// Solver converged to the desired tolerance
+    Converged,
+    /// Solver reached the maximum number of iterations without converging
+    MaxIterationsReached,
+    /// Solver encountered a breakdown (e.g., division by zero)
+    Breakdown,
+    /// Solver stagnated (no progress made)
+    Stagnated,
+    /// Solver diverged (residual is increasing)
+    Diverged,
+}
+
+/// Error information from iterative solvers
+#[derive(Debug, thiserror::Error)]
+pub enum SolverError {
+    #[error("Solver failed to converge: {status:?}")]
+    ConvergenceError {
+        status: SolverStatus,
+        iterations: usize,
+        residual: f64,
+    },
+    #[error("Linear operator dimension mismatch: expected {expected}, got {got}")]
+    DimensionMismatch { expected: usize, got: usize },
 }
 
 /// Trait for preconditioners used in iterative solvers.
@@ -397,13 +326,7 @@ mod tests {
         assert_relative_eq!(z.norm_sqr(), 25.0);
         assert_relative_eq!(z.norm(), 5.0);
 
-        // When ndarray-linalg is on, conj is from Scalar.
-        // We can't test "ComplexField::conj" but we can test method call syntax.
-        #[cfg(not(feature = "ndarray-linalg"))]
-        let z_conj = ComplexField::conj(&z);
-        #[cfg(feature = "ndarray-linalg")]
-        let z_conj = ndarray_linalg::Scalar::conj(&z);
-
+        let z_conj = z.conj();
         assert_relative_eq!(z_conj.re, 3.0);
         assert_relative_eq!(z_conj.im, -4.0);
 
@@ -418,12 +341,7 @@ mod tests {
         let x: f64 = 3.0;
         assert_relative_eq!(x.norm_sqr(), 9.0);
         assert_relative_eq!(x.norm(), 3.0);
-
-        #[cfg(not(feature = "ndarray-linalg"))]
-        assert_relative_eq!(ComplexField::conj(&x), 3.0);
-        #[cfg(feature = "ndarray-linalg")]
-        assert_relative_eq!(ndarray_linalg::Scalar::conj(&x), 3.0);
-
+        assert_relative_eq!(x.conj(), 3.0);
         assert_relative_eq!(x.inv(), 1.0 / 3.0);
     }
 
