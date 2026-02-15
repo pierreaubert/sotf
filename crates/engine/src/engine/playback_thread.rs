@@ -18,6 +18,8 @@ use std::sync::mpsc::{Receiver, Sender};
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
 const SPIN_MS_SIGNAL: u64 = 1;
+/// Max input channels for the stack-allocated downmix coefficient arrays.
+const MAX_DOWNMIX_CH: usize = 16;
 
 /// Playback thread handle
 pub struct PlaybackThread {
@@ -659,47 +661,57 @@ fn run_playback_thread(
                         //   6ch (5.1): L=0, R=1, C=2, LFE=3, SL=4, SR=5
                         //   8ch (7.1): L=0, R=1, C=2, LFE=3, SL=4, SR=5, BL=6, BR=7
                         //   10ch+ (Atmos): ..., TFL=8, TFR=9, ...
-                        let n = frame.num_channels;
-                        let has_lfe = n != 5; // 5.0 has no LFE; 5.1/7.1/Atmos do
+                        let n = frame.num_channels.min(MAX_DOWNMIX_CH);
+                        let has_lfe = n != 5;
 
-                        // Extract channel indices based on layout
                         let (sl_idx, sr_idx) = if has_lfe { (4, 5) } else { (3, 4) };
                         let (bl_idx, br_idx) = if has_lfe { (6, 7) } else { (5, 6) };
                         let (tfl_idx, tfr_idx) = if has_lfe { (8, 9) } else { (7, 8) };
 
-                        // ITU-R BS.775 coefficients
                         const C_COEFF: f32 = 0.707;
                         const SURROUND_COEFF: f32 = 0.707;
                         const BACK_COEFF: f32 = 0.5;
                         const HEIGHT_COEFF: f32 = 0.5;
 
-                        // Compute normalization factor: 1 / (1 + sum of all mixing coefficients)
-                        // This ensures peak output never exceeds the peak of any single input channel
                         let mut coeff_sum: f32 = 1.0 + C_COEFF + SURROUND_COEFF;
                         if n > sl_idx + 2 {
                             coeff_sum += BACK_COEFF;
-                        } // has back surrounds
+                        }
                         if n > tfl_idx {
                             coeff_sum += HEIGHT_COEFF;
-                        } // has heights
+                        }
                         let norm = 1.0 / coeff_sum;
 
+                        // Pre-compute per-channel L/R coefficients (stack, no alloc).
+                        // Moves all branching out of the inner loop so the dot-product
+                        // is branchless with direct indexing (auto-vectorisation friendly).
+                        let mut lc = [0.0f32; MAX_DOWNMIX_CH];
+                        let mut rc = [0.0f32; MAX_DOWNMIX_CH];
+                        lc[0] = norm;
+                        rc[1] = norm;
+                        if n > 2 {
+                            lc[2] = C_COEFF * norm;
+                            rc[2] = C_COEFF * norm;
+                        }
+                        if sl_idx < n { lc[sl_idx] = SURROUND_COEFF * norm; }
+                        if sr_idx < n { rc[sr_idx] = SURROUND_COEFF * norm; }
+                        if bl_idx < n { lc[bl_idx] = BACK_COEFF * norm; }
+                        if br_idx < n { rc[br_idx] = BACK_COEFF * norm; }
+                        if tfl_idx < n { lc[tfl_idx] = HEIGHT_COEFF * norm; }
+                        if tfr_idx < n { rc[tfr_idx] = HEIGHT_COEFF * norm; }
+
+                        let lc = &lc[..n];
+                        let rc = &rc[..n];
                         for i in 0..num_frames {
-                            let base = i * n;
-                            let src = &frame.data[base..base + n];
-
-                            let l = src[0];
-                            let r = src[1];
-                            let c = src.get(2).copied().unwrap_or(0.0) * C_COEFF;
-                            let sl = src.get(sl_idx).copied().unwrap_or(0.0) * SURROUND_COEFF;
-                            let sr = src.get(sr_idx).copied().unwrap_or(0.0) * SURROUND_COEFF;
-                            let bl = src.get(bl_idx).copied().unwrap_or(0.0) * BACK_COEFF;
-                            let br = src.get(br_idx).copied().unwrap_or(0.0) * BACK_COEFF;
-                            let tfl = src.get(tfl_idx).copied().unwrap_or(0.0) * HEIGHT_COEFF;
-                            let tfr = src.get(tfr_idx).copied().unwrap_or(0.0) * HEIGHT_COEFF;
-
-                            conversion_buffer[i * 2] = (l + c + sl + bl + tfl) * norm;
-                            conversion_buffer[i * 2 + 1] = (r + c + sr + br + tfr) * norm;
+                            let src = &frame.data[i * n..i * n + n];
+                            let mut l = 0.0f32;
+                            let mut r = 0.0f32;
+                            for ch in 0..n {
+                                l += src[ch] * lc[ch];
+                                r += src[ch] * rc[ch];
+                            }
+                            conversion_buffer[i * 2] = l;
+                            conversion_buffer[i * 2 + 1] = r;
                         }
                     } else if frame.num_channels == 2 && channels > 2 {
                         // 2 -> N Upmix (L/R to fronts, rest silent)
