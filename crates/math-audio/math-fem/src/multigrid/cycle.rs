@@ -3,7 +3,7 @@
 //! Provides V-cycle, W-cycle, and F-cycle algorithms.
 
 use super::hierarchy::MultigridHierarchy;
-use super::smoother::{SmootherConfig, compute_residual, smooth};
+use super::smoother::{compute_residual, smooth, SmootherConfig};
 use super::transfer::{prolongate, restrict};
 use num_complex::Complex64;
 
@@ -265,15 +265,21 @@ fn w_cycle(
         post_config,
     );
 
-    // Second coarse grid correction (W-cycle pattern)
+    // Second coarse grid correction (W-cycle pattern) - use fresh vector
+    let mut e_coarse2 = vec![Complex64::new(0.0, 0.0); n_coarse];
     w_cycle(
         hierarchy,
         level + 1,
-        &mut e_coarse,
+        &mut e_coarse2,
         &r_coarse,
         pre_config,
         post_config,
     );
+
+    // Add both corrections
+    for i in 0..e_coarse.len() {
+        e_coarse[i] += e_coarse2[i];
+    }
 
     // Prolongate and add correction
     let prolongation = hierarchy.levels[level + 1]
@@ -363,7 +369,7 @@ mod tests {
         // Apply Dirichlet BCs to make the system non-singular
         use crate::assembly::HelmholtzProblem;
         use crate::boundary::apply_homogeneous_dirichlet;
-        use crate::multigrid::smoother::{SmootherConfig, residual_norm, smooth};
+        use crate::multigrid::smoother::{residual_norm, smooth, SmootherConfig};
 
         let mesh = unit_square_triangles(4);
         let k = Complex64::new(0.0, 0.0);
