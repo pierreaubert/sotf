@@ -70,7 +70,7 @@ impl PndAnalyzer {
             drift_count: 0,
             drift_history_capacity,
 
-            median_scratch: Vec::new(),
+            median_scratch: vec![0.0; drift_history_capacity],
 
             last_confidence: 0.0,
             last_matched_partials: 0,
@@ -178,9 +178,10 @@ impl PndAnalyzer {
 
         // Push median of ratios into drift history only if enough partials matched
         if matched_partials >= MIN_MATCHED_PARTIALS && !self.ratio_scratch.is_empty() {
-            self.ratio_scratch
-                .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let mid = self.ratio_scratch.len() / 2;
+            self.ratio_scratch.select_nth_unstable_by(mid, |a, b| {
+                a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+            });
             let frame_drift = self.ratio_scratch[mid];
 
             self.drift_history[self.drift_write_pos] = frame_drift;
@@ -196,21 +197,14 @@ impl PndAnalyzer {
             return 1.0;
         }
 
-        // Compute median of drift_history[..drift_count]
-        self.median_scratch.clear();
-        if self.drift_count < self.drift_history_capacity {
-            // Haven't wrapped yet: entries [0..drift_count]
-            self.median_scratch
-                .extend_from_slice(&self.drift_history[..self.drift_count]);
-        } else {
-            // Full buffer
-            self.median_scratch
-                .extend_from_slice(&self.drift_history[..self.drift_history_capacity]);
-        }
+        // Compute median of drift_history[..drift_count] using O(n) selection
+        let len = self.drift_count.min(self.drift_history_capacity);
+        self.median_scratch[..len].copy_from_slice(&self.drift_history[..len]);
 
-        self.median_scratch
-            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let mid = self.median_scratch.len() / 2;
+        let mid = len / 2;
+        self.median_scratch[..len].select_nth_unstable_by(mid, |a, b| {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        });
         self.median_scratch[mid]
     }
 
@@ -220,6 +214,7 @@ impl PndAnalyzer {
             compute_drift_history_capacity(analysis_window_ms, self.sample_rate, hop_size);
         if new_capacity != self.drift_history_capacity {
             self.drift_history = vec![0.0; new_capacity];
+            self.median_scratch.resize(new_capacity, 0.0);
             self.drift_write_pos = 0;
             self.drift_count = 0;
             self.drift_history_capacity = new_capacity;

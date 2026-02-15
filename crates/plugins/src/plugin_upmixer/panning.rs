@@ -35,13 +35,13 @@ impl UpmixerPlugin {
                     if gfd == 0.0 && gra == 0.0 {
                         0.0
                     } else {
-                        self.surround_direct_bleed
+                        self.surround_direct_bleed.current()
                     }
                 };
                 let mut ag = if is_f && !is_h {
                     gfa
                 } else {
-                    gra * self.rear_ambient_boost
+                    gra * self.rear_ambient_boost.current()
                 };
 
                 if is_f && !is_h && hr_mix > 0.0 {
@@ -55,26 +55,44 @@ impl UpmixerPlugin {
                 let pra = p_r * ag;
 
                 if is_h {
-                    let dl = self.height_direct_leak;
+                    // Pre-compute scalar products outside inner loop
+                    let pld_dl = pld * self.height_direct_leak.current();
+                    let prd_dl = prd * self.height_direct_leak.current();
                     let dec = &self.blended_decorrelation_filters[ch];
-                    for i in 0..spectrum_size {
-                        let d_comp = (self.direct_left[i] * pld + self.direct_right[i] * prd) * dl;
-                        let a_mono = if spk.azimuth > 0.0 {
-                            self.ambient_left[i] * pla + self.ambient_right[i] * pra
-                        } else {
-                            self.ambient_right[i] * pla + self.ambient_left[i] * pra
-                        };
-                        let mut a_comp = a_mono * dec[i];
-                        if !is_f {
-                            a_comp += (self.direct_left[i] + self.direct_right[i])
-                                * self.rear_late_reflection;
+
+                    // Resolve ambient channel swap outside inner loop for branch-free vectorization
+                    let (amb_l_gain, amb_r_gain) = if spk.azimuth > 0.0 {
+                        (pla, pra)
+                    } else {
+                        (pra, pla)
+                    };
+
+                    if !is_f {
+                        let rlr = self.rear_late_reflection.current();
+                        for i in 0..spectrum_size {
+                            let d_comp =
+                                self.direct_left[i] * pld_dl + self.direct_right[i] * prd_dl;
+                            let a_mono = self.ambient_left[i] * amb_l_gain
+                                + self.ambient_right[i] * amb_r_gain;
+                            let a_comp = a_mono * dec[i]
+                                + (self.direct_left[i] + self.direct_right[i]) * rlr;
+                            self.temp_freq_out[i] =
+                                (d_comp + a_comp) * (hg * self.height_band_gains[i]);
                         }
-                        self.temp_freq_out[i] =
-                            (d_comp + a_comp) * (hg * self.height_band_gains[i]);
+                    } else {
+                        for i in 0..spectrum_size {
+                            let d_comp =
+                                self.direct_left[i] * pld_dl + self.direct_right[i] * prd_dl;
+                            let a_mono = self.ambient_left[i] * amb_l_gain
+                                + self.ambient_right[i] * amb_r_gain;
+                            let a_comp = a_mono * dec[i];
+                            self.temp_freq_out[i] =
+                                (d_comp + a_comp) * (hg * self.height_band_gains[i]);
+                        }
                     }
                 } else {
                     let ss = if is_f && is_c {
-                        1.0 - self.center_spread.clamp(0.0, 1.0)
+                        1.0 - self.center_spread.current()
                     } else {
                         1.0
                     };

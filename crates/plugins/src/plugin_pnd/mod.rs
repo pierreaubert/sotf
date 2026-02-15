@@ -5,6 +5,8 @@
 use super::param_specs::pnd::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::{deinterleave_stereo, interleave_stereo};
+use super::smoothing::Smoother;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use std::any::Any;
@@ -18,6 +20,10 @@ pub use config::PndPluginParams;
 
 /// Resampler chunk size — the fixed input block size expected by rubato.
 const RESAMPLER_CHUNK_SIZE: usize = 1024;
+
+/// Smoothing time for correction_strength parameter changes (ms).
+/// Prevents audible pitch jumps when tweaking correction strength live.
+const CORRECTION_STRENGTH_SMOOTH_MS: f32 = 50.0;
 
 // ============================================================================
 // Exposed Data Structure
@@ -52,7 +58,6 @@ pub struct PndPlugin {
     last_drift_ratio: f64,
 
     // Pre-allocated buffers for zero-allocation process()
-    mono_buffer: Vec<f32>,
     planar_input: Vec<Vec<f32>>,
     planar_output: Vec<Vec<f32>>,
 
@@ -66,6 +71,7 @@ pub struct PndPlugin {
     // Parameters
     param_correction_strength: ParameterId,
     correction_strength: f32,
+    correction_strength_smoother: Smoother,
 
     param_analysis_window_ms: ParameterId,
     analysis_window_ms: f32,
@@ -83,7 +89,6 @@ impl PndPlugin {
             resampler: None,
             current_ratio: 1.0,
             last_drift_ratio: 1.0,
-            mono_buffer: Vec::new(),
             planar_input: vec![Vec::new(); channels],
             planar_output: Vec::new(),
             input_ring: Vec::new(),
@@ -94,6 +99,12 @@ impl PndPlugin {
 
             param_correction_strength: ParameterId::from("correction_strength"),
             correction_strength: CORRECTION_STRENGTH_DEFAULT,
+            // Rough default; re-initialized in initialize() with correct chunk rate
+            correction_strength_smoother: Smoother::new(
+                CORRECTION_STRENGTH_DEFAULT,
+                CORRECTION_STRENGTH_SMOOTH_MS,
+                43, // ~44100/1024
+            ),
 
             param_analysis_window_ms: ParameterId::from("analysis_window_ms"),
             analysis_window_ms: ANALYSIS_WINDOW_MS_DEFAULT,
@@ -141,44 +152,43 @@ impl PndPlugin {
         let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
         let chunk_frames = resampler.input_frames_next();
 
-        // 1. Analyze input for drift (mono/first channel)
-        if self.mono_buffer.len() < chunk_frames {
-            self.mono_buffer.resize(chunk_frames, 0.0);
-        }
-        for i in 0..chunk_frames {
-            self.mono_buffer[i] = self.input_ring[i * self.channels];
+        // 1. De-interleave input into planar buffers
+        //    Done first so we can analyze directly from planar_input[0] (no separate mono buffer)
+        debug_assert!(self.planar_input.iter().all(|ch| ch.len() >= chunk_frames));
+        if self.channels == 2 {
+            let (left, rest) = self.planar_input.split_at_mut(1);
+            deinterleave_stereo(
+                &self.input_ring[..chunk_frames * 2],
+                &mut left[0][..chunk_frames],
+                &mut rest[0][..chunk_frames],
+            );
+        } else {
+            for i in 0..chunk_frames {
+                for c in 0..self.channels {
+                    self.planar_input[c][i] = self.input_ring[i * self.channels + c];
+                }
+            }
         }
 
+        // 2. Analyze first channel for drift
         let drift_ratio = if let Some(analyzer) = &mut self.analyzer {
-            analyzer.analyze(&self.mono_buffer[..chunk_frames])
+            analyzer.analyze(&self.planar_input[0][..chunk_frames])
         } else {
             1.0
         };
         self.last_drift_ratio = drift_ratio as f64;
 
-        // 2. Calculate Correction Ratio
+        // 3. Calculate correction ratio (smoothed correction_strength prevents pitch jumps)
         let target_correction = 1.0 / drift_ratio as f64;
         let alpha = self.drift_smoothing as f64;
         self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
 
-        let strength = self.correction_strength as f64;
+        let strength = self.correction_strength_smoother.next() as f64;
         let final_ratio = 1.0 + (self.current_ratio - 1.0) * strength;
 
         resampler
             .set_resample_ratio(final_ratio, true)
             .map_err(|e| format!("{:?}", e))?;
-
-        // 3. De-interleave input into planar buffers
-        for c in 0..self.channels {
-            if self.planar_input[c].len() < chunk_frames {
-                self.planar_input[c].resize(chunk_frames, 0.0);
-            }
-        }
-        for i in 0..chunk_frames {
-            for c in 0..self.channels {
-                self.planar_input[c][i] = self.input_ring[i * self.channels + c];
-            }
-        }
 
         // Shift consumed samples out of input ring
         let consumed_samples = chunk_frames * self.channels;
@@ -187,11 +197,10 @@ impl PndPlugin {
 
         // 4. Resample
         let max_output_frames = resampler.output_frames_max();
-        for c in 0..self.channels {
-            if self.planar_output[c].len() < max_output_frames {
-                self.planar_output[c].resize(max_output_frames, 0.0);
-            }
-        }
+        debug_assert!(self
+            .planar_output
+            .iter()
+            .all(|ch| ch.len() >= max_output_frames));
 
         let input_adapter =
             SequentialSliceOfVecs::new(&self.planar_input, self.channels, chunk_frames)
@@ -208,14 +217,25 @@ impl PndPlugin {
             .map_err(|e| format!("{:?}", e))?;
 
         // 5. Re-interleave into output ring
-        let needed = self.output_ring_fill + out_written * self.channels;
-        if self.output_ring.len() < needed {
-            self.output_ring.resize(needed, 0.0);
-        }
-        for i in 0..out_written {
-            for c in 0..self.channels {
-                self.output_ring[self.output_ring_fill + i * self.channels + c] =
-                    self.planar_output[c][i];
+        debug_assert!(
+            self.output_ring.len() >= self.output_ring_fill + out_written * self.channels,
+            "output_ring overflow: len={}, needed={}",
+            self.output_ring.len(),
+            self.output_ring_fill + out_written * self.channels
+        );
+        if self.channels == 2 {
+            interleave_stereo(
+                &self.planar_output[0][..out_written],
+                &self.planar_output[1][..out_written],
+                &mut self.output_ring
+                    [self.output_ring_fill..self.output_ring_fill + out_written * 2],
+            );
+        } else {
+            for i in 0..out_written {
+                for c in 0..self.channels {
+                    self.output_ring[self.output_ring_fill + i * self.channels + c] =
+                        self.planar_output[c][i];
+                }
             }
         }
         self.output_ring_fill += out_written * self.channels;
@@ -273,6 +293,8 @@ impl Plugin for PndPlugin {
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         if id == self.param_correction_strength {
             self.correction_strength = value.as_float().ok_or("Invalid value")?;
+            self.correction_strength_smoother
+                .set_target(self.correction_strength);
         } else if id == self.param_analysis_window_ms {
             self.analysis_window_ms = value.as_float().ok_or("Invalid value")?;
             if let Some(analyzer) = &mut self.analyzer {
@@ -301,11 +323,9 @@ impl Plugin for PndPlugin {
         self.init_resampler()?;
         self.init_analyzer();
 
-        // Pre-allocate buffers
-        self.mono_buffer.resize(RESAMPLER_CHUNK_SIZE, 0.0);
+        // Pre-allocate buffers sized for resampler chunk requirements
         self.planar_input = vec![vec![0.0; RESAMPLER_CHUNK_SIZE]; self.channels];
 
-        // Pre-allocate planar output (resampler may produce up to ~1.1x input frames)
         let max_output_frames = if let Some(ref resampler) = self.resampler {
             resampler.output_frames_max()
         } else {
@@ -324,6 +344,14 @@ impl Plugin for PndPlugin {
         self.output_ring = vec![0.0; output_ring_capacity];
         self.output_ring_fill = 0;
         self.output_ring_read_pos = 0;
+
+        // Initialize correction_strength smoother at chunk rate
+        let chunk_rate = (sample_rate as f32 / RESAMPLER_CHUNK_SIZE as f32) as u32;
+        self.correction_strength_smoother = Smoother::new(
+            self.correction_strength,
+            CORRECTION_STRENGTH_SMOOTH_MS,
+            chunk_rate.max(1),
+        );
 
         Ok(())
     }
@@ -390,6 +418,8 @@ impl Plugin for PndPlugin {
         self.input_ring_fill = 0;
         self.output_ring_fill = 0;
         self.output_ring_read_pos = 0;
+        self.correction_strength_smoother
+            .reset(self.correction_strength);
     }
 
     fn latency_samples(&self) -> usize {

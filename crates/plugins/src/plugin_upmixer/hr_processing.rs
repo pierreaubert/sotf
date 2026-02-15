@@ -66,7 +66,7 @@ impl UpmixerPlugin {
 
             let mut gain_scale = gain_front_direct;
             if is_center {
-                let spread = self.center_spread.clamp(0.0, 1.0);
+                let spread = self.center_spread.current();
                 gain_scale *= 1.0 - spread;
             }
 

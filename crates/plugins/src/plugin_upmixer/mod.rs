@@ -99,10 +99,10 @@ pub struct UpmixerPlugin {
 
     /// Stereo width (0.0 = wide, 1.0 = narrow, 0.5 = balanced)
     param_stereo_width: ParameterId,
-    stereo_width: f32,
+    stereo_width: Smoother,
 
     param_center_spread: ParameterId,
-    center_spread: f32,
+    center_spread: Smoother,
 
     /// Bandpass frequency in Hz (must be > lfe_cutoff_hz)
     param_bandpass_hz: ParameterId,
@@ -176,25 +176,25 @@ pub struct UpmixerPlugin {
     param_height_hf_cap_hz: ParameterId,
     height_hf_cap_hz: f32,
     param_height_transient_reduction: ParameterId,
-    height_transient_reduction: f32,
+    height_transient_reduction: Smoother,
     param_height_direct_leak: ParameterId,
-    height_direct_leak: f32,
+    height_direct_leak: Smoother,
 
     // Surround routing parameters
     param_surround_direct_bleed: ParameterId,
-    surround_direct_bleed: f32,
+    surround_direct_bleed: Smoother,
     param_rear_ambient_boost: ParameterId,
-    rear_ambient_boost: f32,
+    rear_ambient_boost: Smoother,
     param_rear_late_reflection: ParameterId,
-    rear_late_reflection: f32,
+    rear_late_reflection: Smoother,
 
     // Ambient/coherence parameters
     param_ambient_boost: ParameterId,
-    ambient_boost: f32,
+    ambient_boost: Smoother,
 
     // Dialogue detection parameters
     param_dialogue_weight: ParameterId,
-    dialogue_weight: f32,
+    dialogue_weight: Smoother,
     param_voice_freq_min_hz: ParameterId,
     voice_freq_min_hz: f32,
     param_voice_freq_max_hz: ParameterId,
@@ -305,6 +305,8 @@ pub struct UpmixerPlugin {
     window: Vec<f32>,
     /// Hann window for high-resolution FFT path
     hr_window: Vec<f32>,
+    /// Pre-computed raised-cosine edge taper table for height channels (avoids cos() in hot path)
+    edge_taper_table: Vec<f32>,
     /// Output accumulator for overlap-add (flat interleaved ring buffer)
     /// Layout: [ch0_f0, ch1_f0, ..., ch0_f1, ch1_f1, ...]
     /// Buffer size in frames is always power-of-2 (4 * fft_size) for efficient masking
@@ -362,6 +364,8 @@ pub struct UpmixerPlugin {
     dialogue_probability: f32,
     /// Current adaptive decorrelation strength (0.0 to 1.0)
     pub(super) decorrelation_strength: f32,
+    /// Previous decorrelation strength for skipping redundant filter blends
+    prev_decorrelation_strength: f32,
     /// Pre-calculated blended decorrelation filters (one per channel)
     pub(super) blended_decorrelation_filters: Vec<Vec<Complex<f32>>>,
 }
@@ -438,6 +442,15 @@ impl UpmixerPlugin {
             })
             .collect();
 
+        // Pre-compute raised-cosine edge taper for height channels (64 values)
+        const TAPER_LEN: usize = 64;
+        let edge_taper_table: Vec<f32> = (0..TAPER_LEN)
+            .map(|i| {
+                let t = i as f32 / TAPER_LEN as f32;
+                0.5 * (1.0 - (std::f32::consts::PI * t).cos())
+            })
+            .collect();
+
         // Get speaker configuration
         let speaker_config = get_speaker_config(speaker_config_id).unwrap_or_else(|| {
             log::info!(
@@ -492,10 +505,10 @@ impl UpmixerPlugin {
             lfe_cutoff_hz,
 
             param_stereo_width: ParameterId::from("stereo_width"),
-            stereo_width,
+            stereo_width: Smoother::new(stereo_width, 5.0, sample_rate),
 
             param_center_spread: ParameterId::from("center_spread"),
-            center_spread: default_center_spread(),
+            center_spread: Smoother::new(default_center_spread(), 5.0, sample_rate),
 
             param_bandpass_hz: ParameterId::from("bandpass_hz"),
             bandpass_hz,
@@ -541,25 +554,25 @@ impl UpmixerPlugin {
             param_height_hf_cap_hz: ParameterId::from("height_hf_cap_hz"),
             height_hf_cap_hz: default_height_hf_cap_hz(),
             param_height_transient_reduction: ParameterId::from("height_transient_reduction"),
-            height_transient_reduction: default_height_transient_reduction(),
+            height_transient_reduction: Smoother::new(default_height_transient_reduction(), 5.0, sample_rate),
             param_height_direct_leak: ParameterId::from("height_direct_leak"),
-            height_direct_leak: default_height_direct_leak(),
+            height_direct_leak: Smoother::new(default_height_direct_leak(), 5.0, sample_rate),
 
             // Surround routing parameters
             param_surround_direct_bleed: ParameterId::from("surround_direct_bleed"),
-            surround_direct_bleed: default_surround_direct_bleed(),
+            surround_direct_bleed: Smoother::new(default_surround_direct_bleed(), 5.0, sample_rate),
             param_rear_ambient_boost: ParameterId::from("rear_ambient_boost"),
-            rear_ambient_boost: default_rear_ambient_boost(),
+            rear_ambient_boost: Smoother::new(default_rear_ambient_boost(), 5.0, sample_rate),
             param_rear_late_reflection: ParameterId::from("rear_late_reflection"),
-            rear_late_reflection: default_rear_late_reflection(),
+            rear_late_reflection: Smoother::new(default_rear_late_reflection(), 5.0, sample_rate),
 
             // Ambient/coherence parameters
             param_ambient_boost: ParameterId::from("ambient_boost"),
-            ambient_boost: default_ambient_boost(),
+            ambient_boost: Smoother::new(default_ambient_boost(), 5.0, sample_rate),
 
             // Dialogue detection parameters
             param_dialogue_weight: ParameterId::from("dialogue_weight"),
-            dialogue_weight: default_dialogue_weight(),
+            dialogue_weight: Smoother::new(default_dialogue_weight(), 5.0, sample_rate),
             param_voice_freq_min_hz: ParameterId::from("voice_freq_min_hz"),
             voice_freq_min_hz: default_voice_freq_min_hz(),
             param_voice_freq_max_hz: ParameterId::from("voice_freq_max_hz"),
@@ -647,6 +660,7 @@ impl UpmixerPlugin {
 
             window,
             hr_window,
+            edge_taper_table,
             output_accumulator,
             output_accumulator_mask,
             output_accumulator_fill: 0,
@@ -676,6 +690,7 @@ impl UpmixerPlugin {
             dialogue_prev_rms: 0.0,
             dialogue_probability: 0.0,
             decorrelation_strength: 1.0,
+            prev_decorrelation_strength: -1.0, // Force initial computation
             blended_decorrelation_filters: Vec::new(),
         };
 
@@ -701,7 +716,7 @@ impl UpmixerPlugin {
             params.enable_subharmonic_synth,
             params.subharmonic_gain,
         );
-        plugin.center_spread = params.center_spread.clamp(0.0, 1.0);
+        plugin.center_spread.set_target(params.center_spread.clamp(0.0, 1.0));
         plugin.enable_hr_direct = params.enable_hr_direct;
         plugin.hr_sharpen = params.hr_sharpen.clamp(0.0, 1.0);
         plugin.safety_cap_db = params.safety_cap_db.max(0.0);
@@ -720,19 +735,19 @@ impl UpmixerPlugin {
 
         // Height channel parameters
         plugin.height_hf_cap_hz = params.height_hf_cap_hz.clamp(8000.0, 20000.0);
-        plugin.height_transient_reduction = params.height_transient_reduction.clamp(0.0, 1.0);
-        plugin.height_direct_leak = params.height_direct_leak.clamp(0.0, 0.5);
+        plugin.height_transient_reduction.set_target(params.height_transient_reduction.clamp(0.0, 1.0));
+        plugin.height_direct_leak.set_target(params.height_direct_leak.clamp(0.0, 0.5));
 
         // Surround routing parameters
-        plugin.surround_direct_bleed = params.surround_direct_bleed.clamp(0.0, 1.0);
-        plugin.rear_ambient_boost = params.rear_ambient_boost.clamp(1.0, 3.0);
-        plugin.rear_late_reflection = params.rear_late_reflection.clamp(0.0, 0.5);
+        plugin.surround_direct_bleed.set_target(params.surround_direct_bleed.clamp(0.0, 1.0));
+        plugin.rear_ambient_boost.set_target(params.rear_ambient_boost.clamp(1.0, 3.0));
+        plugin.rear_late_reflection.set_target(params.rear_late_reflection.clamp(0.0, 0.5));
 
         // Ambient/coherence parameters
-        plugin.ambient_boost = params.ambient_boost.clamp(0.5, 2.0);
+        plugin.ambient_boost.set_target(params.ambient_boost.clamp(0.5, 2.0));
 
         // Dialogue detection parameters
-        plugin.dialogue_weight = params.dialogue_weight.clamp(0.0, 1.0);
+        plugin.dialogue_weight.set_target(params.dialogue_weight.clamp(0.0, 1.0));
         plugin.voice_freq_min_hz = params.voice_freq_min_hz.clamp(200.0, 800.0);
         plugin.voice_freq_max_hz = params.voice_freq_max_hz.clamp(2000.0, 5000.0);
 
@@ -1297,12 +1312,12 @@ Upper bound for dialogue detection analysis.",
         } else if id == self.param_stereo_width
             && let Some(width) = value.as_float()
         {
-            self.stereo_width = width.clamp(0.0, 1.0);
+            self.stereo_width.set_target(width.clamp(0.0, 1.0));
             return Ok(());
         } else if id == self.param_center_spread
             && let Some(spread) = value.as_float()
         {
-            self.center_spread = spread.clamp(0.0, 1.0);
+            self.center_spread.set_target(spread.clamp(0.0, 1.0));
             return Ok(());
         } else if id == self.param_bandpass_hz
             && let Some(freq) = value.as_float()
@@ -1411,43 +1426,43 @@ Upper bound for dialogue detection analysis.",
         } else if id == self.param_height_transient_reduction
             && let Some(val) = value.as_float()
         {
-            self.height_transient_reduction = val.clamp(0.0, 1.0);
+            self.height_transient_reduction.set_target(val.clamp(0.0, 1.0));
             return Ok(());
         } else if id == self.param_height_direct_leak
             && let Some(val) = value.as_float()
         {
-            self.height_direct_leak = val.clamp(0.0, 0.5);
+            self.height_direct_leak.set_target(val.clamp(0.0, 0.5));
             return Ok(());
         }
         // Surround routing parameters
         else if id == self.param_surround_direct_bleed
             && let Some(val) = value.as_float()
         {
-            self.surround_direct_bleed = val.clamp(0.0, 1.0);
+            self.surround_direct_bleed.set_target(val.clamp(0.0, 1.0));
             return Ok(());
         } else if id == self.param_rear_ambient_boost
             && let Some(val) = value.as_float()
         {
-            self.rear_ambient_boost = val.clamp(1.0, 3.0);
+            self.rear_ambient_boost.set_target(val.clamp(1.0, 3.0));
             return Ok(());
         } else if id == self.param_rear_late_reflection
             && let Some(val) = value.as_float()
         {
-            self.rear_late_reflection = val.clamp(0.0, 0.5);
+            self.rear_late_reflection.set_target(val.clamp(0.0, 0.5));
             return Ok(());
         }
         // Ambient parameters
         else if id == self.param_ambient_boost
             && let Some(val) = value.as_float()
         {
-            self.ambient_boost = val.clamp(0.5, 2.0);
+            self.ambient_boost.set_target(val.clamp(0.5, 2.0));
             return Ok(());
         }
         // Dialogue detection parameters
         else if id == self.param_dialogue_weight
             && let Some(val) = value.as_float()
         {
-            self.dialogue_weight = val.clamp(0.0, 1.0);
+            self.dialogue_weight.set_target(val.clamp(0.0, 1.0));
             return Ok(());
         } else if id == self.param_voice_freq_min_hz
             && let Some(val) = value.as_float()
@@ -1508,9 +1523,9 @@ Upper bound for dialogue detection analysis.",
         } else if id == &self.param_lfe_cutoff_hz {
             Some(ParameterValue::Float(self.lfe_cutoff_hz))
         } else if id == &self.param_stereo_width {
-            Some(ParameterValue::Float(self.stereo_width))
+            Some(ParameterValue::Float(self.stereo_width.target()))
         } else if id == &self.param_center_spread {
-            Some(ParameterValue::Float(self.center_spread))
+            Some(ParameterValue::Float(self.center_spread.target()))
         } else if id == &self.param_bandpass_hz {
             Some(ParameterValue::Float(self.bandpass_hz))
         } else if id == &self.param_enable_subharmonic_synth {
@@ -1544,25 +1559,25 @@ Upper bound for dialogue detection analysis.",
         else if id == &self.param_height_hf_cap_hz {
             Some(ParameterValue::Float(self.height_hf_cap_hz))
         } else if id == &self.param_height_transient_reduction {
-            Some(ParameterValue::Float(self.height_transient_reduction))
+            Some(ParameterValue::Float(self.height_transient_reduction.target()))
         } else if id == &self.param_height_direct_leak {
-            Some(ParameterValue::Float(self.height_direct_leak))
+            Some(ParameterValue::Float(self.height_direct_leak.target()))
         }
         // Surround routing parameters
         else if id == &self.param_surround_direct_bleed {
-            Some(ParameterValue::Float(self.surround_direct_bleed))
+            Some(ParameterValue::Float(self.surround_direct_bleed.target()))
         } else if id == &self.param_rear_ambient_boost {
-            Some(ParameterValue::Float(self.rear_ambient_boost))
+            Some(ParameterValue::Float(self.rear_ambient_boost.target()))
         } else if id == &self.param_rear_late_reflection {
-            Some(ParameterValue::Float(self.rear_late_reflection))
+            Some(ParameterValue::Float(self.rear_late_reflection.target()))
         }
         // Ambient parameters
         else if id == &self.param_ambient_boost {
-            Some(ParameterValue::Float(self.ambient_boost))
+            Some(ParameterValue::Float(self.ambient_boost.target()))
         }
         // Dialogue detection parameters
         else if id == &self.param_dialogue_weight {
-            Some(ParameterValue::Float(self.dialogue_weight))
+            Some(ParameterValue::Float(self.dialogue_weight.target()))
         } else if id == &self.param_voice_freq_min_hz {
             Some(ParameterValue::Float(self.voice_freq_min_hz))
         } else if id == &self.param_voice_freq_max_hz {
@@ -1633,6 +1648,15 @@ Upper bound for dialogue detection analysis.",
         self.height_gain.set_time(time_ms, sample_rate);
         self.lfe_gain.set_time(time_ms, sample_rate);
         self.subharmonic_gain.set_time(time_ms, sample_rate);
+        self.stereo_width.set_time(time_ms, sample_rate);
+        self.center_spread.set_time(time_ms, sample_rate);
+        self.ambient_boost.set_time(time_ms, sample_rate);
+        self.dialogue_weight.set_time(time_ms, sample_rate);
+        self.surround_direct_bleed.set_time(time_ms, sample_rate);
+        self.rear_ambient_boost.set_time(time_ms, sample_rate);
+        self.rear_late_reflection.set_time(time_ms, sample_rate);
+        self.height_direct_leak.set_time(time_ms, sample_rate);
+        self.height_transient_reduction.set_time(time_ms, sample_rate);
 
         Ok(())
     }
@@ -1704,6 +1728,9 @@ Upper bound for dialogue detection analysis.",
             *h = [0.0; 5];
         }
 
+        // Force recomputation of blended decorrelation filters
+        self.prev_decorrelation_strength = -1.0;
+
         // Clear height mask; it will be recomputed in process_fft_block
         self.height_band_gains.fill(0.0);
         self.height_band_gains_prev.fill(0.0);
@@ -1728,6 +1755,15 @@ Upper bound for dialogue detection analysis.",
         self.height_gain.next();
         self.lfe_gain.next();
         self.subharmonic_gain.next();
+        self.stereo_width.next();
+        self.center_spread.next();
+        self.ambient_boost.next();
+        self.dialogue_weight.next();
+        self.surround_direct_bleed.next();
+        self.rear_ambient_boost.next();
+        self.rear_late_reflection.next();
+        self.height_direct_leak.next();
+        self.height_transient_reduction.next();
 
         // If bypass is enabled, just copy stereo input to output and return
         if self.bypass_all_processing {

@@ -119,6 +119,9 @@ pub struct XtcPlugin {
     /// Crossfade progress (0.0 = prev, 1.0 = current)
     crossfade_progress: f32,
 
+    /// Cached progress increment per STFT hop (recomputed in update_filters)
+    progress_per_hop: f32,
+
     /// Parameters for dynamic updates
     param_enabled: ParameterId,
     param_distance: ParameterId,
@@ -252,6 +255,7 @@ impl XtcPlugin {
             filters,
             prev_filters: None,
             crossfade_progress: 1.0, // Start fully faded to current
+            progress_per_hop: 0.0,
             param_enabled: ParameterId::from("enabled"),
             param_distance: ParameterId::from("distance_m"),
             param_speaker_angle: ParameterId::from("speaker_angle_deg"),
@@ -273,6 +277,10 @@ impl XtcPlugin {
         let num_bins = self.fft_size / 2 + 1;
         let params = self.params.clone();
         let sample_rate = self.sample_rate;
+
+        // Cache progress_per_hop (only depends on params + sample_rate + hop_size)
+        let smooth_samples = self.params.head_tracking_smooth_s * self.sample_rate as f32;
+        self.progress_per_hop = self.hop_size as f32 / smooth_samples;
 
         // Store old filters for crossfading (only if not already mid-crossfade)
         if self.crossfade_progress >= 1.0 {
@@ -328,6 +336,8 @@ impl XtcPlugin {
         if is_crossfading {
             let alpha = self.crossfade_progress;
             let prev_filters = self.prev_filters.as_ref().unwrap();
+            // Single atomic load for both L and R channels (guarantees filter consistency)
+            let current_filters = self.filters.load();
 
             // --- Left channel with crossfade ---
             // 1. IFFT with prev_filters into prev_ifft_output
@@ -342,15 +352,12 @@ impl XtcPlugin {
                 .expect("IFFT processing failed");
 
             // 2. IFFT with current filters into ifft_output
-            {
-                let current_filters = self.filters.load();
-                apply_filter_left(
-                    &mut self.ifft_input,
-                    &self.fft_output_l,
-                    &self.fft_output_r,
-                    &current_filters,
-                );
-            }
+            apply_filter_left(
+                &mut self.ifft_input,
+                &self.fft_output_l,
+                &self.fft_output_r,
+                &current_filters,
+            );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
@@ -378,15 +385,12 @@ impl XtcPlugin {
                 .expect("IFFT processing failed");
 
             // 2. IFFT with current filters into ifft_output
-            {
-                let current_filters = self.filters.load();
-                apply_filter_right(
-                    &mut self.ifft_input,
-                    &self.fft_output_l,
-                    &self.fft_output_r,
-                    &current_filters,
-                );
-            }
+            apply_filter_right(
+                &mut self.ifft_input,
+                &self.fft_output_l,
+                &self.fft_output_r,
+                &current_filters,
+            );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
@@ -439,9 +443,7 @@ impl XtcPlugin {
 
         // Advance crossfade progress
         if self.crossfade_progress < 1.0 {
-            let smooth_samples = self.params.head_tracking_smooth_s * self.sample_rate as f32;
-            let progress_per_hop = self.hop_size as f32 / smooth_samples;
-            self.crossfade_progress = (self.crossfade_progress + progress_per_hop).min(1.0);
+            self.crossfade_progress = (self.crossfade_progress + self.progress_per_hop).min(1.0);
             if self.crossfade_progress >= 1.0 {
                 self.prev_filters = None; // Release old filters
             }

@@ -51,7 +51,7 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
 
-        assert!((plugin.center_spread - 0.0).abs() < 1e-6);
+        assert!((plugin.center_spread.target() - 0.0).abs() < 1e-6);
 
         plugin
             .set_parameter(
@@ -59,7 +59,7 @@ mod upmixer_tests {
                 ParameterValue::Float(0.7),
             )
             .unwrap();
-        assert!((plugin.center_spread - 0.7).abs() < 1e-6);
+        assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
 
         // Values outside [0.0, 1.0] are clamped
         let res = plugin.set_parameter(
@@ -67,7 +67,7 @@ mod upmixer_tests {
             ParameterValue::Float(1.5),
         );
         assert!(res.is_ok());
-        assert!((plugin.center_spread - 1.0).abs() < 1e-6);
+        assert!((plugin.center_spread.target() - 1.0).abs() < 1e-6);
 
         // Test lower bound clamping
         let res = plugin.set_parameter(
@@ -75,7 +75,7 @@ mod upmixer_tests {
             ParameterValue::Float(-0.5),
         );
         assert!(res.is_ok());
-        assert!((plugin.center_spread - 0.0).abs() < 1e-6);
+        assert!((plugin.center_spread.target() - 0.0).abs() < 1e-6);
     }
 
     #[test]
@@ -84,7 +84,7 @@ mod upmixer_tests {
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
 
-        assert!((plugin.stereo_width - 0.5).abs() < 1e-6);
+        assert!((plugin.stereo_width.target() - 0.5).abs() < 1e-6);
 
         plugin
             .set_parameter(
@@ -92,7 +92,7 @@ mod upmixer_tests {
                 ParameterValue::Float(0.3),
             )
             .unwrap();
-        assert!((plugin.stereo_width - 0.3).abs() < 1e-6);
+        assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
 
         // Values outside [0.0, 1.0] are clamped
         let res = plugin.set_parameter(
@@ -100,7 +100,7 @@ mod upmixer_tests {
             ParameterValue::Float(2.0),
         );
         assert!(res.is_ok());
-        assert!((plugin.stereo_width - 1.0).abs() < 1e-6);
+        assert!((plugin.stereo_width.target() - 1.0).abs() < 1e-6);
 
         // Test lower bound clamping
         let res = plugin.set_parameter(
@@ -108,7 +108,7 @@ mod upmixer_tests {
             ParameterValue::Float(-1.0),
         );
         assert!(res.is_ok());
-        assert!((plugin.stereo_width - 0.0).abs() < 1e-6);
+        assert!((plugin.stereo_width.target() - 0.0).abs() < 1e-6);
     }
 
     #[test]
@@ -336,7 +336,7 @@ mod upmixer_tests {
                 2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
             );
             plugin.initialize(44100).unwrap();
-            plugin.center_spread = center_spread.clamp(0.0, 1.0);
+            plugin.center_spread.set_target(center_spread.clamp(0.0, 1.0));
 
             let fft_size = plugin.fft_size;
             let mut input = vec![0.0f32; fft_size * 2];
@@ -1542,7 +1542,7 @@ mod upmixer_tests {
             false, 0.5,
         );
         plugin.initialize(44100).unwrap();
-        plugin.center_spread = 0.0; // Focus direct sound to center speaker
+        plugin.center_spread.set_target(0.0); // Focus direct sound to center speaker
 
         // Create a mono sine wave input
         let buffer_size = 4096;

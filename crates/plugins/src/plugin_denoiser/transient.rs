@@ -17,8 +17,9 @@ pub struct TransientSuppressor {
     slope_envelope: Vec<f32>,
 
     // Parameters
-    sensitivity: f32, // Threshold multiplier (higher = less sensitive)
-    decay: f32,       // Envelope decay factor
+    sensitivity: f32,     // Threshold multiplier (higher = less sensitive)
+    decay: f32,           // Envelope decay factor
+    one_minus_decay: f32, // Precomputed 1.0 - decay
 }
 
 impl TransientSuppressor {
@@ -29,6 +30,7 @@ impl TransientSuppressor {
             slope_envelope: vec![0.0; channels],
             sensitivity: 10.0, // Default sensitivity
             decay: 0.99,       // Fast tracking for transients
+            one_minus_decay: 0.01,
         }
     }
 
@@ -81,7 +83,7 @@ impl TransientSuppressor {
                         self.slope_envelope[ch] = abs_delta;
                     } else {
                         self.slope_envelope[ch] =
-                            self.slope_envelope[ch] * self.decay + abs_delta * (1.0 - self.decay);
+                            self.slope_envelope[ch] * self.decay + abs_delta * self.one_minus_decay;
                     }
                 }
 

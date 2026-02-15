@@ -13,19 +13,18 @@ impl UpmixerPlugin {
         // 2. Overlap-add with hop_size = fft_size/2
         // Applying window again here would break COLA and cause amplitude modulation artifacts
 
-        // Apply raised cosine edge taper to height channels only.
+        // Apply pre-computed raised cosine edge taper to height channels only.
         // The magnitude mask applied to height bins in the frequency domain can cause
         // frame-edge discontinuities at overlap-add boundaries. A short taper at the
         // edges smooths these discontinuities without affecting the COLA sum for
-        // non-height channels.
-        const TAPER_LEN: usize = 64;
+        // non-height channels. Uses pre-computed table to avoid cos() in hot path.
+        let taper_len = self.edge_taper_table.len();
         for ch in 0..self.num_output_channels {
             let speaker = &self.speaker_config.speakers[ch];
             if speaker.elevation > 10.0 {
-                let taper_end = TAPER_LEN.min(self.fft_size / 2);
+                let taper_end = taper_len.min(self.fft_size / 2);
                 for i in 0..taper_end {
-                    let t = i as f32 / TAPER_LEN as f32;
-                    let fade = 0.5 * (1.0 - (std::f32::consts::PI * t).cos());
+                    let fade = self.edge_taper_table[i];
                     self.time_out_channels[ch][i] *= fade;
                     self.time_out_channels[ch][self.fft_size - 1 - i] *= fade;
                 }
@@ -34,10 +33,17 @@ impl UpmixerPlugin {
 
         // Safety cap: optionally reduce overall gain so that the block peak does not
         // exceed safety_cap_db (in dB) above unit amplitude.
+        // Exclude height channels from peak detection: the height_band_gains spectral
+        // mask (values down to 0.02) creates time-domain ringing after IFFT, producing
+        // erratic peaks that would modulate the safety cap and cause scratchiness in
+        // the bed channels (L/R/C/surround).
         let mut target_safety_scale = 1.0_f32;
         if self.safety_cap_db > 0.0 {
             let mut max_abs = 0.0_f32;
             for ch in 0..self.num_output_channels {
+                if self.cached_is_height[ch] {
+                    continue;
+                }
                 for i in 0..self.fft_size {
                     let v = self.time_out_channels[ch][i].abs();
                     if v > max_abs {

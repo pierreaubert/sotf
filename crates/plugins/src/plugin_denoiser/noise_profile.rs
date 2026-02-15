@@ -34,21 +34,21 @@ impl DenoiserPlugin {
         }
     }
 
-    /// Finalize the noise profile by averaging accumulated frames
+    /// Finalize the noise profile by averaging accumulated frames.
+    /// Writes into pre-allocated storage to avoid allocations on the audio thread.
     fn finalize_noise_profile(&mut self) {
         let count = self.learning_frames_count as f32;
         if count < 1.0 {
             return;
         }
 
-        let mut profile = vec![vec![0.0_f32; self.spectrum_size]; self.channels];
-        for (ch, profile_ch) in profile.iter_mut().enumerate() {
-            for (k, profile_bin) in profile_ch.iter_mut().enumerate() {
-                *profile_bin = self.learning_accumulator[ch][k] / count;
+        for ch in 0..self.channels {
+            for k in 0..self.spectrum_size {
+                self.noise_profile_storage[ch][k] = self.learning_accumulator[ch][k] / count;
             }
         }
 
-        self.noise_profile = Some(profile);
+        self.has_noise_profile = true;
         self.use_captured_profile = true;
         self.is_learning = false;
 
@@ -70,7 +70,7 @@ impl DenoiserPlugin {
 
     /// Clear the captured noise profile
     pub(super) fn clear_noise_profile(&mut self) {
-        self.noise_profile = None;
+        self.has_noise_profile = false;
         self.use_captured_profile = false;
         self.is_learning = false;
         self.learning_frames_count = 0;
@@ -83,10 +83,8 @@ impl DenoiserPlugin {
     /// Returns captured profile if active and available, otherwise live MCRA.
     #[inline]
     pub(super) fn get_effective_noise_power(&self, channel: usize, bin: usize) -> f32 {
-        if self.use_captured_profile
-            && let Some(ref profile) = self.noise_profile
-        {
-            return profile[channel][bin].max(EPSILON);
+        if self.use_captured_profile && self.has_noise_profile {
+            return self.noise_profile_storage[channel][bin].max(EPSILON);
         }
         self.get_noise_power(channel, bin)
     }

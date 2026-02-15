@@ -37,6 +37,9 @@ mod wiener;
 
 pub use config::DenoiserPluginParams;
 
+/// Number of frequency bands for display/monitoring
+const NUM_DISPLAY_BANDS: usize = 30;
+
 // ============================================================================
 // Exposed Data Structure
 // ============================================================================
@@ -132,7 +135,8 @@ pub struct DenoiserPlugin {
     param_use_captured_profile: ParameterId,
     param_clear_profile: ParameterId,
     use_captured_profile: bool,
-    noise_profile: Option<Vec<Vec<f32>>>, // [channels][spectrum_size]
+    has_noise_profile: bool,
+    noise_profile_storage: Vec<Vec<f32>>, // [channels][spectrum_size] pre-allocated
     learning_accumulator: Vec<Vec<f32>>,  // [channels][spectrum_size]
     learning_frames_count: usize,
     learning_frames_target: usize,
@@ -163,8 +167,9 @@ pub struct DenoiserPlugin {
     gain: Vec<Vec<f32>>,          // Current Wiener gains per bin
     smoothed_gain: Vec<Vec<f32>>, // Temporally smoothed gains
 
-    // Frequency smoothing scratch buffer
-    freq_smooth_temp: Vec<f32>, // [spectrum_size] scratch for smoothing across bins
+    // Frequency smoothing scratch buffer and precomputed kernel
+    freq_smooth_temp: Vec<f32>,          // [spectrum_size] scratch for smoothing across bins
+    freq_smooth_kernel: (f32, f32, f32), // Precomputed (c0, c1, c2) Gaussian weights
 
     // Overlap-add buffers
     input_buffer: Vec<f32>, // Interleaved input accumulator
@@ -195,6 +200,8 @@ pub struct DenoiserPlugin {
     learning_active: bool,
     cached_data: Arc<DenoiserData>,
     data_update_counter: usize,
+    cached_noise_floor_buf: Vec<f32>, // [NUM_DISPLAY_BANDS] pre-allocated
+    cached_snr_buf: Vec<f32>,         // [NUM_DISPLAY_BANDS] pre-allocated
 }
 
 impl DenoiserPlugin {
@@ -238,8 +245,8 @@ impl DenoiserPlugin {
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
 
         let cached_data = Arc::new(DenoiserData {
-            noise_floor_db: vec![0.0; 30],
-            snr_db: vec![0.0; 30],
+            noise_floor_db: vec![0.0; NUM_DISPLAY_BANDS],
+            snr_db: vec![0.0; NUM_DISPLAY_BANDS],
             avg_reduction_db: 0.0,
             learning_active: true,
             is_learning_noise: false,
@@ -299,7 +306,8 @@ impl DenoiserPlugin {
             param_use_captured_profile: ParameterId::from("use_captured_profile"),
             param_clear_profile: ParameterId::from("clear_profile"),
             use_captured_profile: USE_CAPTURED_PROFILE_DEFAULT,
-            noise_profile: None,
+            has_noise_profile: false,
+            noise_profile_storage: vec![vec![0.0_f32; spectrum_size]; channels],
             learning_accumulator: vec![vec![0.0_f32; spectrum_size]; channels],
             learning_frames_count: 0,
             learning_frames_target: LEARN_FRAMES,
@@ -326,6 +334,7 @@ impl DenoiserPlugin {
             smoothed_gain,
 
             freq_smooth_temp: vec![0.0_f32; spectrum_size],
+            freq_smooth_kernel: Self::compute_smoothing_kernel(SMOOTHING_DEFAULT),
 
             input_buffer,
             input_buffer_fill: 0,
@@ -349,6 +358,8 @@ impl DenoiserPlugin {
             learning_active: true,
             cached_data,
             data_update_counter: 0,
+            cached_noise_floor_buf: vec![0.0; NUM_DISPLAY_BANDS],
+            cached_snr_buf: vec![0.0; NUM_DISPLAY_BANDS],
         }
     }
 
@@ -381,6 +392,7 @@ impl DenoiserPlugin {
 
         plugin.reduction_linear = 10.0_f32.powf(plugin.reduction_db / 20.0);
         plugin.floor_linear = 10.0_f32.powf(plugin.floor_db / 20.0);
+        plugin.freq_smooth_kernel = Self::compute_smoothing_kernel(plugin.smoothing);
 
         plugin
     }
@@ -437,15 +449,15 @@ impl DenoiserPlugin {
     /// Update the cached DenoiserData for UI polling.
     /// Writes into pre-allocated buffers to avoid allocations on the audio thread.
     fn update_cached_data(&mut self) {
-        let noise_floor_db = self.get_noise_floor_db();
-        let snr_db = self.get_snr_db();
+        self.compute_noise_floor_db();
+        self.compute_snr_db();
         self.cached_data = Arc::new(DenoiserData {
-            noise_floor_db,
-            snr_db,
+            noise_floor_db: self.cached_noise_floor_buf.clone(),
+            snr_db: self.cached_snr_buf.clone(),
             avg_reduction_db: self.avg_reduction_db,
             learning_active: self.learning_active,
             is_learning_noise: self.is_learning,
-            has_captured_profile: self.noise_profile.is_some(),
+            has_captured_profile: self.has_noise_profile,
             learning_progress: self.learning_progress(),
             using_captured_profile: self.use_captured_profile,
         });
@@ -639,6 +651,7 @@ impl InPlacePlugin for DenoiserPlugin {
                 .as_float()
                 .ok_or("Invalid smoothing value")?
                 .clamp(SMOOTHING_MIN, SMOOTHING_MAX);
+            self.freq_smooth_kernel = Self::compute_smoothing_kernel(self.smoothing);
         } else if id == self.param_attack_ms {
             self.attack_ms = value
                 .as_float()

@@ -160,10 +160,10 @@ impl UpmixerPlugin {
             // Upmixing Band
             let upmix_start = bandpass_bin.max(start_bin);
             if upmix_start < end_bin {
-                let ambient_gain = base_ambient_gain_from_coherence(coherence, self.ambient_boost)
-                    * (1.0 - self.dialogue_probability * self.dialogue_weight);
+                let ambient_gain = base_ambient_gain_from_coherence(coherence, self.ambient_boost.current())
+                    * (1.0 - self.dialogue_probability * self.dialogue_weight.current());
                 let eff_coh = coherence
-                    + (1.0 - coherence) * (self.dialogue_probability * self.dialogue_weight);
+                    + (1.0 - coherence) * (self.dialogue_probability * self.dialogue_weight.current());
 
                 let (ev_l, ev_r) = if c_xy.norm_sqr() > 1e-18 {
                     let v = lambda1 - c_xx;
@@ -194,8 +194,8 @@ impl UpmixerPlugin {
                         (l - proj * ev_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
                     self.ambient_right[i] =
                         (r - proj * ev_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
-                    self.direct_left[i] = l - self.direct[i] * self.stereo_width;
-                    self.direct_right[i] = r - self.direct[i] * self.stereo_width;
+                    self.direct_left[i] = l - self.direct[i] * self.stereo_width.current();
+                    self.direct_right[i] = r - self.direct[i] * self.stereo_width.current();
                     self.lfe[i] = Complex::new(0.0, 0.0);
                     in_e += l.norm_sqr() + r.norm_sqr();
                     out_e += self.direct[i].norm_sqr()
@@ -211,8 +211,8 @@ impl UpmixerPlugin {
                     1.0
                 };
                 let tr_red = 1.0
-                    - (self.hr_transient_env * self.height_transient_reduction)
-                        .min(self.height_transient_reduction);
+                    - (self.hr_transient_env * self.height_transient_reduction.current())
+                        .min(self.height_transient_reduction.current());
                 for i in upmix_start..end_bin {
                     self.energy_correction_per_bin[i] = corr;
                     let h_suit = (self.height_freq_weights[i] * 0.5
@@ -234,28 +234,37 @@ impl UpmixerPlugin {
         if self.blended_decorrelation_filters.len() != num_ch {
             self.blended_decorrelation_filters =
                 vec![vec![Complex::new(1.0, 0.0); spec_size]; num_ch];
+            self.prev_decorrelation_strength = -1.0; // Force recompute
         }
 
-        let id_w = 1.0 - strength;
-        for ch in 0..num_ch {
-            let s = &self.speaker_config.speakers[ch];
-            if s.is_lfe || (s.azimuth.abs() < 80.0 && s.elevation.abs() < 10.0) {
-                self.blended_decorrelation_filters[ch].fill(Complex::new(1.0, 0.0));
-                continue;
-            }
-            let decor = if ch < self.decorrelation_filters.len() {
-                &self.decorrelation_filters[ch]
-            } else if s.azimuth > 0.0 {
-                &self.decorrelation_filter_left
-            } else {
-                &self.decorrelation_filter_right
-            };
-            if strength >= 0.99 {
-                self.blended_decorrelation_filters[ch].copy_from_slice(decor);
-            } else {
-                for i in 0..spec_size {
-                    self.blended_decorrelation_filters[ch][i] =
-                        Complex::new(strength * decor[i].re + id_w, strength * decor[i].im);
+        // Only reblend when strength changed significantly, or in LFO mode
+        // (LFO mode updates the underlying decorrelation filters every block)
+        let needs_reblend = self.decorrelation_mode == 1
+            || (strength - self.prev_decorrelation_strength).abs() > 0.01;
+
+        if needs_reblend {
+            self.prev_decorrelation_strength = strength;
+            let id_w = 1.0 - strength;
+            for ch in 0..num_ch {
+                let s = &self.speaker_config.speakers[ch];
+                if s.is_lfe || (s.azimuth.abs() < 80.0 && s.elevation.abs() < 10.0) {
+                    self.blended_decorrelation_filters[ch].fill(Complex::new(1.0, 0.0));
+                    continue;
+                }
+                let decor = if ch < self.decorrelation_filters.len() {
+                    &self.decorrelation_filters[ch]
+                } else if s.azimuth > 0.0 {
+                    &self.decorrelation_filter_left
+                } else {
+                    &self.decorrelation_filter_right
+                };
+                if strength >= 0.99 {
+                    self.blended_decorrelation_filters[ch].copy_from_slice(decor);
+                } else {
+                    for i in 0..spec_size {
+                        self.blended_decorrelation_filters[ch][i] =
+                            Complex::new(strength * decor[i].re + id_w, strength * decor[i].im);
+                    }
                 }
             }
         }

@@ -103,26 +103,31 @@ impl DenoiserPlugin {
         }
     }
 
-    /// Smooth gains across frequency bins using a 5-tap Gaussian kernel.
-    /// The `smoothing` parameter controls the kernel width (σ = smoothing × 2 bins).
-    /// Uses replicate boundary conditions at edges.
-    pub(super) fn smooth_gains_across_frequency(&mut self, channel: usize) {
-        if self.smoothing < EPSILON {
-            return; // No smoothing needed
+    /// Compute the 5-tap Gaussian kernel weights for a given smoothing value.
+    /// Returns (c0, c1, c2) normalized weights. Returns (1, 0, 0) if smoothing is zero.
+    pub(super) fn compute_smoothing_kernel(smoothing: f32) -> (f32, f32, f32) {
+        if smoothing < EPSILON {
+            return (1.0, 0.0, 0.0);
         }
-
-        let n = self.spectrum_size;
-        let sigma = self.smoothing * 2.0;
+        let sigma = smoothing * 2.0;
         let inv_2sigma_sq = 0.5 / (sigma * sigma);
-
-        // 5-tap Gaussian weights: center always dominates
         let w0 = 1.0_f32;
         let w1 = (-inv_2sigma_sq).exp();
         let w2 = (-4.0 * inv_2sigma_sq).exp();
         let sum = w0 + 2.0 * w1 + 2.0 * w2;
-        let c0 = w0 / sum;
-        let c1 = w1 / sum;
-        let c2 = w2 / sum;
+        (w0 / sum, w1 / sum, w2 / sum)
+    }
+
+    /// Smooth gains across frequency bins using a 5-tap Gaussian kernel.
+    /// The `smoothing` parameter controls the kernel width (σ = smoothing × 2 bins).
+    /// Uses replicate boundary conditions at edges.
+    pub(super) fn smooth_gains_across_frequency(&mut self, channel: usize) {
+        let (c0, c1, c2) = self.freq_smooth_kernel;
+        if c1 == 0.0 && c2 == 0.0 {
+            return; // No smoothing needed
+        }
+
+        let n = self.spectrum_size;
 
         // Copy current gains to scratch buffer
         self.freq_smooth_temp[..n].copy_from_slice(&self.gain[channel][..n]);
@@ -162,15 +167,13 @@ impl DenoiserPlugin {
         self.floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
     }
 
-    /// Get average estimated noise floor in dB (averaged across channels)
-    pub(super) fn get_noise_floor_db(&self) -> Vec<f32> {
-        // Downsample to ~30 bands for display
-        let num_display_bands = 30;
+    /// Compute average estimated noise floor in dB (averaged across channels).
+    /// Writes into `self.cached_noise_floor_buf` to avoid allocations.
+    pub(super) fn compute_noise_floor_db(&mut self) {
+        let num_display_bands = self.cached_noise_floor_buf.len();
         let bins_per_band = (self.spectrum_size / num_display_bands).max(1);
 
-        let mut noise_floor = vec![0.0_f32; num_display_bands];
-
-        for (band, noise_val) in noise_floor.iter_mut().enumerate() {
+        for band in 0..num_display_bands {
             let start_bin = band * bins_per_band;
             let end_bin = ((band + 1) * bins_per_band).min(self.spectrum_size);
 
@@ -185,25 +188,22 @@ impl DenoiserPlugin {
                 }
             }
 
-            if count > 0 {
+            self.cached_noise_floor_buf[band] = if count > 0 {
                 let avg_power = sum / count as f32;
-                *noise_val = 10.0 * avg_power.log10();
+                10.0 * avg_power.log10()
             } else {
-                *noise_val = -100.0;
-            }
+                -100.0
+            };
         }
-
-        noise_floor
     }
 
-    /// Get current SNR estimate per band in dB (averaged across channels)
-    pub(super) fn get_snr_db(&self) -> Vec<f32> {
-        let num_display_bands = 30;
+    /// Compute current SNR estimate per band in dB (averaged across channels).
+    /// Writes into `self.cached_snr_buf` to avoid allocations.
+    pub(super) fn compute_snr_db(&mut self) {
+        let num_display_bands = self.cached_snr_buf.len();
         let bins_per_band = (self.spectrum_size / num_display_bands).max(1);
 
-        let mut snr = vec![0.0_f32; num_display_bands];
-
-        for (band, snr_val) in snr.iter_mut().enumerate() {
+        for band in 0..num_display_bands {
             let start_bin = band * bins_per_band;
             let end_bin = ((band + 1) * bins_per_band).min(self.spectrum_size);
 
@@ -220,14 +220,12 @@ impl DenoiserPlugin {
                 }
             }
 
-            if count > 0 {
+            self.cached_snr_buf[band] = if count > 0 {
                 let avg_snr = sum_snr / count as f32;
-                *snr_val = 10.0 * avg_snr.log10();
+                10.0 * avg_snr.log10()
             } else {
-                *snr_val = 0.0;
-            }
+                0.0
+            };
         }
-
-        snr
     }
 }
