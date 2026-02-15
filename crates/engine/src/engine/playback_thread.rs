@@ -91,36 +91,25 @@ impl Drop for PlaybackThread {
     }
 }
 
-/// Shared state between thread and cpal callback
+/// Shared state between thread and cpal callback (all fields are lock-free atomics)
 struct PlaybackState {
-    // Consumer end of lock-free ring buffer
-    // Moved into the callback closure, but kept here for ownership management
-    // Note: This is an Option because we move it out when building the stream
-    ring_buffer_consumer: parking_lot::Mutex<Option<Consumer<f32>>>,
-
-    // Capacity of the ring buffer (for metrics)
     capacity: usize,
-
     volume: Arc<AtomicU32>, // Atomic f32 stored as u32 bits
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
-
-    // Diagnostic: total samples requested by cpal callback
     total_callback_samples: Arc<AtomicU64>,
-    // Diagnostic: number of cpal callbacks
     callback_count: Arc<AtomicU64>,
 }
 
 impl PlaybackState {
-    fn new(consumer: Consumer<f32>, capacity: usize) -> Self {
+    fn new(capacity: usize) -> Self {
         Self {
-            ring_buffer_consumer: parking_lot::Mutex::new(Some(consumer)),
             capacity,
             volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
-            last_buffer_level: Arc::new(AtomicU64::new(100)), // Start at 100%
+            last_buffer_level: Arc::new(AtomicU64::new(100)),
             total_callback_samples: Arc::new(AtomicU64::new(0)),
             callback_count: Arc::new(AtomicU64::new(0)),
         }
@@ -250,13 +239,13 @@ fn run_playback_thread(
     // Create shared state (ring buffer with ~500ms capacity)
     let mut buffer_capacity = (sample_rate as usize * 500) / 1000 * channels; // 500ms * channels
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
-    let mut state = Arc::new(PlaybackState::new(consumer, buffer_capacity));
+    let mut state = Arc::new(PlaybackState::new(buffer_capacity));
 
     // Pre-allocate buffer for channel conversions (fallback downmix/upmix)
     let mut conversion_buffer = Vec::with_capacity(4096);
 
     // Build cpal stream
-    let mut stream = build_output_stream(&device, &config, Arc::clone(&state), event_tx.clone())?;
+    let mut stream = build_output_stream(&device, &config, Arc::clone(&state), event_tx.clone(), consumer)?;
 
     // Start stream
     stream
@@ -363,7 +352,7 @@ fn run_playback_thread(
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
                         let new_state =
-                            Arc::new(PlaybackState::new(new_consumer, new_buffer_capacity));
+                            Arc::new(PlaybackState::new(new_buffer_capacity));
 
                         // Drain any frames that arrived during setup
                         while message_rx.try_recv().is_ok() {
@@ -392,6 +381,7 @@ fn run_playback_thread(
                             &new_config,
                             Arc::clone(&new_state),
                             event_tx.clone(),
+                            new_consumer,
                         ) {
                             Ok(new_stream) => {
                                 if let Err(e) = new_stream.play() {
@@ -495,7 +485,7 @@ fn run_playback_thread(
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
                         let new_state =
-                            Arc::new(PlaybackState::new(new_consumer, new_buffer_capacity));
+                            Arc::new(PlaybackState::new(new_buffer_capacity));
 
                         // Continuously drain frames during rebuild - they may have wrong channel count
                         // Use a closure to drain and count
@@ -534,6 +524,7 @@ fn run_playback_thread(
                             &new_config,
                             Arc::clone(&new_state),
                             event_tx.clone(),
+                            new_consumer,
                         ) {
                             Ok(new_stream) => {
                                 log::info!("[Playback Thread] Stream built, starting playback...");
@@ -900,16 +891,10 @@ fn build_output_stream(
     config: &StreamConfig,
     state: Arc<PlaybackState>,
     event_tx: Sender<ThreadEvent>,
+    mut consumer: Consumer<f32>,
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
     let event_tx_data = event_tx.clone();
-
-    // Take the consumer out of the mutex
-    // This is safe because we only do this once when building the stream
-    let mut consumer = {
-        let mut guard = state.ring_buffer_consumer.lock();
-        guard.take().ok_or("Ring buffer consumer already taken")?
-    };
 
     let capacity = state.capacity;
 

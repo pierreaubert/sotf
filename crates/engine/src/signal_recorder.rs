@@ -252,7 +252,7 @@ pub fn record_and_analyze(
 ) -> Result<crate::signal_analysis::AnalysisResult, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use parking_lot::Mutex;
+    use std::sync::Mutex;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -346,7 +346,7 @@ pub fn record_and_analyze(
         .build_input_stream(
             &input_config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut recorded = recorded_samples_clone.lock();
+                let mut recorded = recorded_samples_clone.lock().unwrap();
 
                 // Extract only the specified input channel
                 // Data is interleaved: [ch0, ch1, ..., chN, ch0, ch1, ..., chN, ...]
@@ -482,7 +482,7 @@ pub fn record_and_analyze(
         elapsed += check_interval;
 
         // Check recording progress
-        let current_sample_count = recorded_samples.lock().len();
+        let current_sample_count = recorded_samples.lock().unwrap().len();
 
         // Print progress every second
         if elapsed.as_millis() % 1000 < check_interval.as_millis() {
@@ -537,7 +537,7 @@ pub fn record_and_analyze(
     sleep(Duration::from_millis(100));
 
     // Get recorded samples
-    let recorded = recorded_samples.lock().clone();
+    let recorded = recorded_samples.lock().unwrap().clone();
     log::info!(
         "[record_and_analyze] Total recorded: {} samples ({:.2}s)",
         recorded.len(),

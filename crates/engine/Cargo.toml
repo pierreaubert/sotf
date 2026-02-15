@@ -26,7 +26,6 @@ clap = { workspace = true }
 ctrlc = { workspace = true }
 chrono = { workspace = true }
 libc = { workspace = true }
-parking_lot = { workspace = true }
 arc-swap = { workspace = true }
 crossbeam = { workspace = true }
 rustfft = { workspace = true }

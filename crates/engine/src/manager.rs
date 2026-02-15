@@ -2,7 +2,7 @@
 // Audio Streaming Manager
 // ============================================================================
 
-use parking_lot::Mutex;
+use std::sync::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -177,7 +177,7 @@ impl AudioEngineManager {
             audio_info.duration_seconds
         );
 
-        *self.current_audio_info.lock() = Some(audio_info.clone());
+        *self.current_audio_info.lock().unwrap() = Some(audio_info.clone());
         self.set_state(StreamingState::Ready);
 
         Ok(audio_info)
@@ -203,7 +203,7 @@ impl AudioEngineManager {
     ) -> AudioDecoderResult<()> {
         let audio_info = self
             .current_audio_info
-            .lock()
+            .lock().unwrap()
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
@@ -269,7 +269,7 @@ impl AudioEngineManager {
         }
 
         // Store engine
-        *self.engine.lock() = Some(engine);
+        *self.engine.lock().unwrap() = Some(engine);
         self.set_state(StreamingState::Playing);
 
         log::debug!("[AudioEngineManager] Playback started");
@@ -361,7 +361,7 @@ impl AudioEngineManager {
         })?;
 
         // Store engine
-        *self.engine.lock() = Some(engine);
+        *self.engine.lock().unwrap() = Some(engine);
         self.set_state(StreamingState::Playing);
 
         log::debug!("[AudioEngineManager] HAL playback started");
@@ -373,7 +373,7 @@ impl AudioEngineManager {
     pub fn pause(&self) -> AudioDecoderResult<()> {
         log::debug!("[AudioEngineManager] Pausing");
 
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine.pause().map_err(AudioDecoderError::IoError)?;
             self.set_state(StreamingState::Paused);
         }
@@ -385,7 +385,7 @@ impl AudioEngineManager {
     pub fn resume(&self) -> AudioDecoderResult<()> {
         log::debug!("[AudioEngineManager] Resuming");
 
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine.resume().map_err(AudioDecoderError::IoError)?;
             self.set_state(StreamingState::Playing);
         }
@@ -397,7 +397,7 @@ impl AudioEngineManager {
     pub fn stop(&mut self) -> AudioDecoderResult<()> {
         log::debug!("[AudioEngineManager] Stopping");
 
-        if let Some(mut engine) = self.engine.lock().take() {
+        if let Some(mut engine) = self.engine.lock().unwrap().take() {
             engine.stop().map_err(AudioDecoderError::IoError)?;
             engine.shutdown().map_err(AudioDecoderError::IoError)?;
         }
@@ -413,7 +413,7 @@ impl AudioEngineManager {
 
         self.set_state(StreamingState::Seeking);
 
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine.seek(seconds).map_err(AudioDecoderError::IoError)?;
         }
 
@@ -436,7 +436,7 @@ impl AudioEngineManager {
 
     /// Get current audio file info
     pub fn get_audio_info(&self) -> Option<AudioFileInfo> {
-        self.current_audio_info.lock().clone()
+        self.current_audio_info.lock().unwrap().clone()
     }
 
     /// Get current position in seconds
@@ -446,7 +446,7 @@ impl AudioEngineManager {
 
     /// Get current volume (0.0 - 1.0)
     pub fn get_volume(&self) -> f32 {
-        if self.engine.lock().is_some() {
+        if self.engine.lock().unwrap().is_some() {
             self.get_engine_state().volume
         } else {
             f32::from_bits(self.current_volume.load(Ordering::Relaxed))
@@ -458,7 +458,7 @@ impl AudioEngineManager {
         // Store volume so it's preserved across song changes
         self.current_volume.store(volume.to_bits(), Ordering::Relaxed);
 
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine
                 .set_volume(volume)
                 .map_err(AudioDecoderError::IoError)?;
@@ -468,7 +468,7 @@ impl AudioEngineManager {
 
     /// Get mute state
     pub fn is_muted(&self) -> bool {
-        if self.engine.lock().is_some() {
+        if self.engine.lock().unwrap().is_some() {
             self.get_engine_state().muted
         } else {
             self.current_muted.load(Ordering::Relaxed)
@@ -480,7 +480,7 @@ impl AudioEngineManager {
         // Store mute state so it's preserved
         self.current_muted.store(muted, Ordering::Relaxed);
 
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine.set_mute(muted).map_err(AudioDecoderError::IoError)?;
         }
         Ok(())
@@ -518,7 +518,7 @@ impl AudioEngineManager {
             plugins.len()
         );
 
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine.update_plugin_chain(plugins)?;
             log::debug!("[AudioEngineManager] Plugin chain updated successfully");
             Ok(())
@@ -544,7 +544,7 @@ impl AudioEngineManager {
             value
         );
 
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine.set_plugin_parameter(plugin_index, param_id, value)?;
             log::debug!("[AudioEngineManager] Parameter set successfully");
             Ok(())
@@ -559,7 +559,7 @@ impl AudioEngineManager {
         &self,
         index: usize,
     ) -> AudioDecoderResult<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
-        if let Some(ref mut engine) = *self.engine.lock() {
+        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
             engine
                 .get_plugin_data(index)
                 .map_err(AudioDecoderError::ConfigError)
@@ -576,7 +576,7 @@ impl AudioEngineManager {
         &self,
         index: usize,
     ) -> Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
-        if let Some(ref engine) = *self.engine.lock() {
+        if let Some(ref engine) = *self.engine.lock().unwrap() {
             engine.get_cached_plugin_data(index)
         } else {
             None
@@ -667,7 +667,7 @@ impl AudioEngineManager {
     }
 
     fn get_engine_state(&self) -> AudioEngineState {
-        if let Some(ref engine) = *self.engine.lock() {
+        if let Some(ref engine) = *self.engine.lock().unwrap() {
             engine.get_state()
         } else {
             AudioEngineState::default()
@@ -684,7 +684,7 @@ impl Default for AudioEngineManager {
 impl Drop for AudioEngineManager {
     fn drop(&mut self) {
         // Synchronous stop for drop
-        if let Some(mut engine) = self.engine.lock().take() {
+        if let Some(mut engine) = self.engine.lock().unwrap().take() {
             engine.shutdown().ok();
         }
     }
