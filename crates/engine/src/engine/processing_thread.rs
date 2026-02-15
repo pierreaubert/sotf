@@ -169,6 +169,9 @@ struct ProcessingState {
     first_frame_time: Option<std::time::Instant>,
     /// Sample rate (for effective rate calculation)
     sample_rate: u32,
+    /// Spare Arc from previous plugin_data_cache swap, reused via Arc::get_mut
+    /// to avoid per-frame Vec allocation when no UI reader holds a reference.
+    spare_cache_arc: Option<std::sync::Arc<super::PluginDataVec>>,
 }
 
 impl ProcessingState {
@@ -182,6 +185,7 @@ impl ProcessingState {
             total_output_samples: 0,
             first_frame_time: None,
             sample_rate,
+            spare_cache_arc: None,
         }
     }
 
@@ -409,23 +413,48 @@ fn run_processing_thread(
 
                         // Update shared plugin data cache so the UI can read
                         // analyzer results without blocking the audio pipeline.
-                        // Lock-free: clone the Vec of Option<Arc>, update, then swap.
-                        // Old Arc sent to GC thread to avoid deallocation on audio thread.
+                        // Uses spare Arc reuse: after swap, keep the old Arc. Next
+                        // frame, if refcount==1 (no active UI reader), Arc::get_mut
+                        // lets us mutate in place — zero allocations in steady state.
                         {
                             let analyzer_indices = state.host.analyzer_indices();
                             if !analyzer_indices.is_empty() {
                                 let plugin_count = state.host.plugin_count();
-                                let old = plugin_data_cache.load();
-                                let mut new_cache = (**old).clone();
-                                if new_cache.len() != plugin_count {
-                                    new_cache.resize(plugin_count, None);
+
+                                let reused = if let Some(mut spare) = state.spare_cache_arc.take() {
+                                    if let Some(vec) = std::sync::Arc::get_mut(&mut spare) {
+                                        // Sole owner — mutate in place, zero allocations
+                                        if vec.len() != plugin_count {
+                                            vec.resize(plugin_count, None);
+                                        }
+                                        for &i in analyzer_indices {
+                                            vec[i] = state.host.get_plugin_data(i);
+                                        }
+                                        let old = plugin_data_cache.swap(spare);
+                                        state.spare_cache_arc = Some(old);
+                                        true
+                                    } else {
+                                        // UI thread still reading — send to GC, fall back to clone
+                                        gc_tx.try_send(super::gc_thread::GcItem::AnyArc(spare)).ok();
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+
+                                if !reused {
+                                    // First frame or rare contention: clone + allocate
+                                    let old = plugin_data_cache.load();
+                                    let mut new_cache = (**old).clone();
+                                    if new_cache.len() != plugin_count {
+                                        new_cache.resize(plugin_count, None);
+                                    }
+                                    for &i in analyzer_indices {
+                                        new_cache[i] = state.host.get_plugin_data(i);
+                                    }
+                                    let old_arc = plugin_data_cache.swap(std::sync::Arc::new(new_cache));
+                                    state.spare_cache_arc = Some(old_arc);
                                 }
-                                for &i in analyzer_indices {
-                                    new_cache[i] = state.host.get_plugin_data(i);
-                                }
-                                let old_arc = plugin_data_cache.swap(std::sync::Arc::new(new_cache));
-                                // Send old Arc to GC thread instead of dropping on audio thread
-                                gc_tx.try_send(super::gc_thread::GcItem::AnyArc(old_arc)).ok();
                             }
                         }
 

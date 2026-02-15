@@ -12,10 +12,13 @@ use std::sync::Arc;
 // Plugin Data Cache - Lock-free(ish) shared cache for analyzer data
 // ============================================================================
 
+/// One snapshot of plugin analyzer data (one slot per plugin in the chain).
+pub type PluginDataVec = Vec<Option<Arc<dyn Any + Send + Sync>>>;
+
 /// Shared cache for plugin analyzer data.
 /// The processing thread writes after each frame; the UI reads without
 /// blocking the audio pipeline via lock-free ArcSwap.
-pub type PluginDataCache = Arc<arc_swap::ArcSwap<Vec<Option<Arc<dyn Any + Send + Sync>>>>>;
+pub type PluginDataCache = Arc<arc_swap::ArcSwap<PluginDataVec>>;
 
 // ============================================================================
 // Audio Frame - The unit of audio data passed between threads
