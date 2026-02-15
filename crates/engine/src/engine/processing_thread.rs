@@ -64,6 +64,7 @@ impl ProcessingThread {
         channels: usize,
         plugin_data_cache: super::PluginDataCache,
         gc_tx: super::GcSender,
+        recycle_rx: Receiver<Vec<f32>>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -81,6 +82,7 @@ impl ProcessingThread {
                     channels,
                     plugin_data_cache,
                     gc_tx,
+                    recycle_rx,
                 ) {
                     log::debug!("[Processing Thread] Error: {}", e);
                 }
@@ -331,6 +333,7 @@ fn run_processing_thread(
     channels: usize,
     plugin_data_cache: super::PluginDataCache,
     gc_tx: super::GcSender,
+    recycle_rx: Receiver<Vec<f32>>,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
     // performance issues in IIR filters and other DSP code
@@ -432,9 +435,16 @@ fn run_processing_thread(
                         }
                         state.total_output_samples += actual_output_samples as u64;
 
-                        // Create send vec directly from process_buffer (one unavoidable
-                        // allocation per frame since AudioFrame owns its data for cross-thread send)
-                        let frame_data = process_buffer[..actual_output_samples].to_vec();
+                        // Reuse a recycled Vec from the playback thread if available,
+                        // otherwise allocate (only happens during startup ramp-up)
+                        let frame_data = {
+                            let mut buf = match recycle_rx.try_recv() {
+                                Ok(mut v) => { v.clear(); v }
+                                Err(_) => Vec::with_capacity(actual_output_samples),
+                            };
+                            buf.extend_from_slice(&process_buffer[..actual_output_samples]);
+                            buf
+                        };
 
                         // Use actual output frame count and sample rate (accounts for resampler)
                         let processed_frame = super::AudioFrame::new(

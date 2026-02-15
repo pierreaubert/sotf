@@ -33,6 +33,7 @@ impl PlaybackThread {
         sample_rate: u32,
         channels: usize,
         output_device: Option<String>,
+        recycle_tx: Sender<Vec<f32>>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
 
@@ -47,6 +48,7 @@ impl PlaybackThread {
                     sample_rate,
                     channels,
                     output_device,
+                    recycle_tx,
                 ) {
                     log::debug!("[Playback Thread] Error: {}", e);
                     error_tx
@@ -131,6 +133,7 @@ fn run_playback_thread(
     sample_rate: u32,
     initial_channels: usize,
     output_device: Option<String>,
+    recycle_tx: Sender<Vec<f32>>,
 ) -> Result<(), String> {
     // Initialize cpal
     let host = cpal::default_host();
@@ -730,6 +733,7 @@ fn run_playback_thread(
                         }
                     };
                     chunk.fill_from_iter(conversion_buffer.iter().copied());
+                    recycle_tx.send(frame.data).ok();
                     continue;
                 }
 
@@ -749,11 +753,13 @@ fn run_playback_thread(
                             producer.slots(),
                             frame_samples,
                         );
+                        recycle_tx.send(frame.data).ok();
                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
                         continue;
                     }
                 };
-                chunk.fill_from_iter(frame.data.into_iter());
+                chunk.fill_from_iter(frame.data.iter().copied());
+                recycle_tx.send(frame.data).ok();
                 frames_written += 1;
                 total_samples_written += frame_samples as u64;
             }

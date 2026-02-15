@@ -402,6 +402,7 @@ fn run_manager_thread(
     let (decoder_tx, decoder_rx) = sync_channel(queue_capacity);
     let (processing_tx, processing_rx) = sync_channel(queue_capacity);
     let (event_tx, event_rx) = channel(); // Events can be unbounded
+    let (recycle_tx, recycle_rx) = channel(); // Vec<f32> recycling: playback → processing
 
     // Create GC thread for off-audio-thread deallocation
     let mut gc_thread = GcThread::new();
@@ -423,6 +424,7 @@ fn run_manager_thread(
         config.input_channels, // Use input channels, not output
         plugin_data_cache,
         gc_tx,
+        recycle_rx,
     )?;
 
     // Determine actual output channel count by loading plugin chain first
@@ -519,6 +521,7 @@ fn run_manager_thread(
         config.output_sample_rate,
         actual_output_channels,
         config.output_device.clone(),
+        recycle_tx,
     )?;
 
     // Set initial volume and mute
