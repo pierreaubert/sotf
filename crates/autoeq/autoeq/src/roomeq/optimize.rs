@@ -27,7 +27,7 @@ use super::target_tilt;
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, MixedModeConfig, MultiSubGroup,
     OptimizationMetadata, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, SpeakerGroup,
-    SystemConfig, SystemModel, TargetCurveConfig, TiltType,
+    SystemModel, TargetCurveConfig, TiltType,
 };
 
 // ============================================================================
@@ -2414,44 +2414,50 @@ fn split_curve_at_frequency(curve: &Curve, crossover_freq: f64) -> (Curve, Curve
 /// Compute Linkwitz-Riley 24dB/oct crossover filter responses
 ///
 /// Returns (lowpass_response, highpass_response) as complex vectors
+///
+/// LR24 consists of two cascaded 2nd-order Butterworth filters.
+/// This implementation computes the actual complex response including phase,
+/// which is critical for accurate band summation in hybrid mode.
 fn compute_lr24_crossover_responses(
     frequencies: &ndarray::Array1<f64>,
     crossover_freq: f64,
-    _sample_rate: f64,
+    sample_rate: f64,
 ) -> (
     Vec<num_complex::Complex<f64>>,
     Vec<num_complex::Complex<f64>>,
 ) {
-    use num_complex::Complex;
+    use math_audio_iir_fir::{Biquad, BiquadFilterType};
+
+    // LR24 = two cascaded Butterworth LP2 filters (Q = 0.7071 each)
+    // For LR24 lowpass: two 2nd-order Butterworth lowpass filters in series
+    // For LR24 highpass: two 2nd-order Butterworth highpass filters in series
+
+    let q = std::f64::consts::FRAC_1_SQRT_2; // Q = 0.7071 for Butterworth
+
+    // Create biquad filters for lowpass (2 cascaded)
+    let lp1 = Biquad::new(BiquadFilterType::Lowpass, crossover_freq, sample_rate, q, 0.0);
+    let lp2 = Biquad::new(BiquadFilterType::Lowpass, crossover_freq, sample_rate, q, 0.0);
+
+    // Create biquad filters for highpass (2 cascaded)
+    let hp1 = Biquad::new(BiquadFilterType::Highpass, crossover_freq, sample_rate, q, 0.0);
+    let hp2 = Biquad::new(BiquadFilterType::Highpass, crossover_freq, sample_rate, q, 0.0);
 
     let mut lp_resp = Vec::with_capacity(frequencies.len());
     let mut hp_resp = Vec::with_capacity(frequencies.len());
 
-    // LR24 = two cascaded 2nd-order Butterworth filters
-    // Using simplified magnitude response formula
-
     for &freq in frequencies.iter() {
-        // 2nd-order Butterworth lowpass transfer function (analog)
-        // H(s) = 1 / (s^2 + s/Q + 1)  (normalized)
-        // After bilinear transform and cascading twice for LR24
+        // Compute cascaded response: H_lp = H_lp1 * H_lp2
+        let lp1_resp = lp1.complex_response(freq);
+        let lp2_resp = lp2.complex_response(freq);
+        let lp_total = lp1_resp * lp2_resp;
 
-        // Simplified: compute magnitude response directly
-        // For LR24 lowpass: |H|^2 = 1 / (1 + (f/fc)^8)
-        let ratio = freq / crossover_freq;
-        let ratio_sq = ratio * ratio;
-        let ratio_4 = ratio_sq * ratio_sq;
-        let ratio_8 = ratio_4 * ratio_4;
+        // Compute cascaded response: H_hp = H_hp1 * H_hp2
+        let hp1_resp = hp1.complex_response(freq);
+        let hp2_resp = hp2.complex_response(freq);
+        let hp_total = hp1_resp * hp2_resp;
 
-        let lp_mag_sq = 1.0 / (1.0 + ratio_8);
-        let hp_mag_sq = ratio_8 / (1.0 + ratio_8);
-
-        // LR crossovers have 0 or 180 degree phase at crossover
-        // For scoring purposes, we primarily care about magnitude
-        let lp_mag = lp_mag_sq.sqrt();
-        let hp_mag = hp_mag_sq.sqrt();
-
-        lp_resp.push(Complex::new(lp_mag, 0.0));
-        hp_resp.push(Complex::new(hp_mag, 0.0));
+        lp_resp.push(lp_total);
+        hp_resp.push(hp_total);
     }
 
     (lp_resp, hp_resp)

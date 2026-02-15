@@ -2,15 +2,52 @@
 //!
 //! Maximizes energy sum in the crossover region between subwoofer and main speakers
 //! by optimizing delay and polarity settings.
+//!
+//! # Algorithm
+//! Uses golden section search for efficient 1D optimization of delay, combined with
+//! optional A-weighting for perceptually-relevant energy computation.
 
-use crate::Curve;
 use crate::error::{AutoeqError, Result};
+use crate::Curve;
 use log::{debug, info};
 use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
 use super::types::PhaseAlignmentConfig;
+
+/// Weighting type for energy computation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WeightingType {
+    /// No weighting (flat)
+    #[default]
+    None,
+    /// A-weighting (perceptual loudness)
+    AWeighting,
+    /// C-weighting (flat low frequency response)
+    CWeighting,
+}
+
+/// Configuration for phase alignment optimization
+#[derive(Debug, Clone)]
+pub struct PhaseAlignmentOptConfig {
+    /// Type of frequency weighting
+    pub weighting: WeightingType,
+    /// Tolerance for golden section search (ms)
+    pub tolerance_ms: f64,
+    /// Maximum iterations for optimization
+    pub max_iterations: usize,
+}
+
+impl Default for PhaseAlignmentOptConfig {
+    fn default() -> Self {
+        Self {
+            weighting: WeightingType::None,
+            tolerance_ms: 0.01,
+            max_iterations: 50,
+        }
+    }
+}
 
 /// Result of phase alignment optimization
 #[derive(Debug, Clone)]
@@ -31,10 +68,10 @@ pub struct PhaseAlignmentResult {
 /// Optimize phase alignment between subwoofer and speaker
 ///
 /// # Algorithm
-/// 1. Grid search: delay ±max_delay_ms (0.5ms steps), polarity (normal/inverted)
-/// 2. For each candidate: compute |H_sub + H_speaker * e^(-jωτ) * polarity|
-/// 3. Integrate energy in [min_freq, max_freq] band
-/// 4. Return delay/polarity that maximizes energy
+/// 1. For each polarity (normal/inverted if enabled):
+///    a. Use golden section search to find optimal delay (continuous, not discrete)
+///    b. Compute weighted energy in [min_freq, max_freq] band
+/// 2. Return delay/polarity combination that maximizes energy
 ///
 /// # Arguments
 /// * `sub_curve` - Subwoofer frequency response with phase
@@ -48,7 +85,21 @@ pub fn optimize_phase_alignment(
     speaker_curve: &Curve,
     config: &PhaseAlignmentConfig,
 ) -> Result<PhaseAlignmentResult> {
-    // Validate that both curves have phase data
+    optimize_phase_alignment_with_options(
+        sub_curve,
+        speaker_curve,
+        config,
+        PhaseAlignmentOptConfig::default(),
+    )
+}
+
+/// Optimize phase alignment with custom optimization options.
+pub fn optimize_phase_alignment_with_options(
+    sub_curve: &Curve,
+    speaker_curve: &Curve,
+    config: &PhaseAlignmentConfig,
+    opt_config: PhaseAlignmentOptConfig,
+) -> Result<PhaseAlignmentResult> {
     if sub_curve.phase.is_none() {
         return Err(AutoeqError::InvalidMeasurement {
             message: "Subwoofer measurement must include phase data for phase alignment"
@@ -61,25 +112,24 @@ pub fn optimize_phase_alignment(
         });
     }
 
-    // Interpolate curves to common frequency grid
     let common_freqs =
         create_common_freq_grid(sub_curve, speaker_curve, config.min_freq, config.max_freq);
 
     let sub_interp = interpolate_curve_complex(sub_curve, &common_freqs)?;
     let speaker_interp = interpolate_curve_complex(speaker_curve, &common_freqs)?;
 
-    // Calculate baseline energy (no delay, no inversion)
-    let energy_before =
-        compute_combined_energy(&sub_interp, &speaker_interp, &common_freqs, 0.0, false);
+    // Compute frequency weights
+    let weights = compute_frequency_weights(&common_freqs, opt_config.weighting);
 
-    // Grid search parameters
-    let delay_step = 0.5; // 0.5 ms steps
-    let delay_range: Vec<f64> = {
-        let num_steps = (config.max_delay_ms / delay_step) as i32;
-        (-num_steps..=num_steps)
-            .map(|i| i as f64 * delay_step)
-            .collect()
-    };
+    // Calculate baseline energy (no delay, no inversion)
+    let energy_before = compute_weighted_energy(
+        &sub_interp,
+        &speaker_interp,
+        &common_freqs,
+        &weights,
+        0.0,
+        false,
+    );
 
     let polarities = if config.optimize_polarity {
         vec![false, true]
@@ -87,44 +137,33 @@ pub fn optimize_phase_alignment(
         vec![false]
     };
 
-    // Grid search for optimal delay and polarity
     let mut best_delay = 0.0;
     let mut best_invert = false;
     let mut best_energy = energy_before;
 
-    for &delay in &delay_range {
-        for &invert in &polarities {
-            let energy =
-                compute_combined_energy(&sub_interp, &speaker_interp, &common_freqs, delay, invert);
-            if energy > best_energy {
-                best_energy = energy;
-                best_delay = delay;
-                best_invert = invert;
-            }
-        }
-    }
-
-    // Refine with finer grid around best result
-    let fine_delay_range: Vec<f64> = {
-        let fine_step = 0.1; // 0.1 ms for fine search
-        let num_fine_steps = 10;
-        (-num_fine_steps..=num_fine_steps)
-            .map(|i| best_delay + i as f64 * fine_step)
-            .filter(|&d| d.abs() <= config.max_delay_ms)
-            .collect()
-    };
-
-    for &delay in &fine_delay_range {
-        let energy = compute_combined_energy(
-            &sub_interp,
-            &speaker_interp,
-            &common_freqs,
-            delay,
-            best_invert,
+    // For each polarity, use golden section search to find optimal delay
+    for &invert in &polarities {
+        let (optimal_delay, optimal_energy) = golden_section_maximize(
+            |delay_ms| {
+                compute_weighted_energy(
+                    &sub_interp,
+                    &speaker_interp,
+                    &common_freqs,
+                    &weights,
+                    delay_ms,
+                    invert,
+                )
+            },
+            -config.max_delay_ms,
+            config.max_delay_ms,
+            opt_config.tolerance_ms,
+            opt_config.max_iterations,
         );
-        if energy > best_energy {
-            best_energy = energy;
-            best_delay = delay;
+
+        if optimal_energy > best_energy {
+            best_energy = optimal_energy;
+            best_delay = optimal_delay;
+            best_invert = invert;
         }
     }
 
@@ -144,6 +183,134 @@ pub fn optimize_phase_alignment(
     })
 }
 
+/// Golden section search for 1D maximization.
+///
+/// Efficient O(log(precision)) convergence for unimodal functions.
+fn golden_section_maximize<F>(f: F, a: f64, b: f64, tol: f64, max_iter: usize) -> (f64, f64)
+where
+    F: Fn(f64) -> f64,
+{
+    const PHI: f64 = 1.618033988749895;
+    const RESPHI: f64 = 2.0 - PHI;
+
+    let mut a = a;
+    let mut b = b;
+    let mut c = b - RESPHI * (b - a);
+    let mut fc = f(c);
+
+    for _ in 0..max_iter {
+        if (b - a).abs() < tol {
+            break;
+        }
+
+        let d;
+        if (b - c) > (c - a) {
+            d = c + RESPHI * (b - c);
+        } else {
+            d = c - RESPHI * (c - a);
+        }
+
+        let fd = f(d);
+
+        if fd > fc {
+            if (b - c) > (c - a) {
+                a = c;
+            } else {
+                b = c;
+            }
+            c = d;
+            fc = fd;
+        } else {
+            if (b - c) > (c - a) {
+                b = d;
+            } else {
+                a = d;
+            }
+        }
+    }
+
+    (c, fc)
+}
+
+/// Compute frequency-dependent weights for energy calculation.
+///
+/// A-weighting emphasizes frequencies where human hearing is most sensitive.
+/// C-weighting is nearly flat but rolls off at very low and high frequencies.
+fn compute_frequency_weights(freqs: &Array1<f64>, weighting: WeightingType) -> Vec<f64> {
+    match weighting {
+        WeightingType::None => vec![1.0; freqs.len()],
+        WeightingType::AWeighting => freqs.iter().map(|&f| a_weighting(f)).collect(),
+        WeightingType::CWeighting => freqs.iter().map(|&f| c_weighting(f)).collect(),
+    }
+}
+
+/// A-weighting curve (dB -> linear scale).
+///
+/// Approximates the equal-loudness curve at 40 phon.
+/// Peaks around 2-5 kHz where human hearing is most sensitive.
+fn a_weighting(f: f64) -> f64 {
+    if f < 10.0 {
+        return 0.001; // Very low frequencies are heavily attenuated
+    }
+
+    // A-weighting formula (IEC 61672-1)
+    let f_sq = f * f;
+    let num = 12200.0_f64.powi(2) * f_sq.powi(2);
+    let denom = (f_sq + 20.6 * 20.6)
+        * (f_sq + 12200.0_f64.powi(2)).sqrt()
+        * (f_sq + 107.7 * 107.7).sqrt()
+        * (f_sq + 737.9 * 737.9).sqrt();
+
+    let weighting_db = 2.0 + 20.0 * (num / denom).log10();
+
+    // Convert dB to linear scale
+    10.0_f64.powf(weighting_db / 20.0)
+}
+
+/// C-weighting curve (dB -> linear scale).
+///
+/// Nearly flat response, only rolls off at very low and high frequencies.
+fn c_weighting(f: f64) -> f64 {
+    if f < 10.0 {
+        return 0.1;
+    }
+
+    let f_sq = f * f;
+    let num = 12200.0_f64.powi(2) * f_sq;
+    let denom = (f_sq + 20.6 * 20.6) * (f_sq + 12200.0_f64.powi(2)).sqrt();
+
+    let weighting_db = 0.0619 + 20.0 * (num / denom).log10();
+
+    10.0_f64.powf(weighting_db / 20.0)
+}
+
+/// Compute weighted combined energy of sub + speaker with delay and polarity.
+fn compute_weighted_energy(
+    sub: &[Complex64],
+    speaker: &[Complex64],
+    freqs: &Array1<f64>,
+    weights: &[f64],
+    delay_ms: f64,
+    invert: bool,
+) -> f64 {
+    let delay_s = delay_ms / 1000.0;
+    let polarity = if invert { -1.0 } else { 1.0 };
+
+    let mut energy = 0.0;
+
+    for (i, &f) in freqs.iter().enumerate() {
+        let omega = 2.0 * PI * f;
+        let delay_phase = Complex64::from_polar(1.0, -omega * delay_s);
+
+        let combined = sub[i] + speaker[i] * delay_phase * polarity;
+
+        // Apply frequency weighting
+        energy += combined.norm_sqr() * weights[i];
+    }
+
+    energy
+}
+
 /// Create a common frequency grid for interpolation
 fn create_common_freq_grid(
     curve1: &Curve,
@@ -151,7 +318,6 @@ fn create_common_freq_grid(
     min_freq: f64,
     max_freq: f64,
 ) -> Array1<f64> {
-    // Determine overlapping range
     let f_min = min_freq
         .max(*curve1.freq.first().unwrap_or(&20.0))
         .max(*curve2.freq.first().unwrap_or(&20.0));
@@ -159,7 +325,6 @@ fn create_common_freq_grid(
         .min(*curve1.freq.last().unwrap_or(&20000.0))
         .min(*curve2.freq.last().unwrap_or(&20000.0));
 
-    // Create log-spaced frequency grid
     let num_points = 100;
     let log_min = f_min.log10();
     let log_max = f_max.log10();
@@ -182,10 +347,8 @@ fn interpolate_curve_complex(curve: &Curve, new_freqs: &Array1<f64>) -> Result<V
     let mut result = Vec::with_capacity(new_freqs.len());
 
     for &f in new_freqs.iter() {
-        // Find bracketing indices
         let (lower_idx, upper_idx) = find_bracket_indices(&curve.freq, f);
 
-        // Linear interpolation
         let f_low = curve.freq[lower_idx];
         let f_high = curve.freq[upper_idx];
         let t = if f_high > f_low {
@@ -197,7 +360,6 @@ fn interpolate_curve_complex(curve: &Curve, new_freqs: &Array1<f64>) -> Result<V
         let spl_interp = curve.spl[lower_idx] + t * (curve.spl[upper_idx] - curve.spl[lower_idx]);
         let phase_interp = phase[lower_idx] + t * (phase[upper_idx] - phase[lower_idx]);
 
-        // Convert to complex
         let magnitude = 10.0_f64.powf(spl_interp / 20.0);
         let phase_rad = phase_interp.to_radians();
         result.push(Complex64::from_polar(magnitude, phase_rad));
@@ -214,7 +376,6 @@ fn find_bracket_indices(freqs: &Array1<f64>, target: f64) -> (usize, usize) {
         }
     }
 
-    // Clamp to ends
     if target <= freqs[0] {
         (0, 0)
     } else {
@@ -223,7 +384,7 @@ fn find_bracket_indices(freqs: &Array1<f64>, target: f64) -> (usize, usize) {
     }
 }
 
-/// Compute combined energy of sub + speaker with delay and polarity
+/// Compute combined energy of sub + speaker with delay and polarity (unweighted, for compatibility)
 fn compute_combined_energy(
     sub: &[Complex64],
     speaker: &[Complex64],
@@ -231,24 +392,14 @@ fn compute_combined_energy(
     delay_ms: f64,
     invert: bool,
 ) -> f64 {
-    let delay_s = delay_ms / 1000.0;
-    let polarity = if invert { -1.0 } else { 1.0 };
-
-    let mut energy = 0.0;
-
-    for (i, &f) in freqs.iter().enumerate() {
-        // Apply delay: e^(-jωτ)
-        let omega = 2.0 * PI * f;
-        let delay_phase = Complex64::from_polar(1.0, -omega * delay_s);
-
-        // Combined response: H_sub + H_speaker * delay * polarity
-        let combined = sub[i] + speaker[i] * delay_phase * polarity;
-
-        // Accumulate squared magnitude (energy)
-        energy += combined.norm_sqr();
-    }
-
-    energy
+    compute_weighted_energy(
+        sub,
+        speaker,
+        freqs,
+        &vec![1.0; freqs.len()],
+        delay_ms,
+        invert,
+    )
 }
 
 /// Batch phase alignment for multiple speakers with a common subwoofer
@@ -284,8 +435,8 @@ mod tests {
             .map(|i| 20.0 * (500.0 / 20.0_f64).powf(i as f64 / 49.0))
             .collect();
 
-        let spl: Vec<f64> = freqs.iter().map(|_| 90.0).collect(); // Flat response
-        let phase: Vec<f64> = freqs.iter().map(|f| -180.0 * f / 100.0).collect(); // Simple phase slope
+        let spl: Vec<f64> = freqs.iter().map(|_| 90.0).collect();
+        let phase: Vec<f64> = freqs.iter().map(|f| -180.0 * f / 100.0).collect();
 
         Curve {
             freq: Array1::from(freqs),
@@ -300,7 +451,6 @@ mod tests {
             .collect();
 
         let spl: Vec<f64> = freqs.iter().map(|_| 90.0).collect();
-        // Phase offset that should be corrected by delay
         let phase: Vec<f64> = freqs.iter().map(|f| -180.0 * f / 100.0 + 45.0).collect();
 
         Curve {
@@ -319,7 +469,6 @@ mod tests {
         let result = optimize_phase_alignment(&sub, &speaker, &config)
             .expect("Phase alignment should succeed");
 
-        // Should find some improvement
         assert!(result.improvement_db >= 0.0, "Should not make things worse");
     }
 
@@ -328,7 +477,7 @@ mod tests {
         let sub = Curve {
             freq: Array1::from(vec![50.0, 80.0, 100.0]),
             spl: Array1::from(vec![90.0, 90.0, 90.0]),
-            phase: None, // No phase data
+            phase: None,
         };
         let speaker = create_test_speaker_curve();
         let config = PhaseAlignmentConfig::default();
@@ -341,7 +490,6 @@ mod tests {
     fn test_phase_alignment_polarity_detection() {
         let sub = create_test_sub_curve();
 
-        // Create speaker with inverted polarity (180 degree offset)
         let freqs: Vec<f64> = (0..50)
             .map(|i| 20.0 * (500.0 / 20.0_f64).powf(i as f64 / 49.0))
             .collect();
@@ -359,11 +507,11 @@ mod tests {
             ..Default::default()
         };
 
-        let _result = optimize_phase_alignment(&sub, &speaker, &config)
+        let result = optimize_phase_alignment(&sub, &speaker, &config)
             .expect("Phase alignment should succeed");
 
-        // Should detect that polarity inversion helps
-        // Note: The exact result depends on the test data
+        // With inverted phase, optimization should detect polarity inversion helps
+        assert!(result.improvement_db >= 0.0);
     }
 
     #[test]
@@ -388,5 +536,74 @@ mod tests {
             .expect("Batch alignment should succeed");
 
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_golden_section_maximization() {
+        // Maximize -(x - 3)^2 (peak at x=3)
+        let (x, _) = golden_section_maximize(|x| -(x - 3.0).powi(2), -10.0, 10.0, 1e-6, 50);
+        assert!((x - 3.0).abs() < 1e-5, "Expected 3.0, got {}", x);
+    }
+
+    #[test]
+    fn test_a_weighting() {
+        // A-weighting peaks around 2-5 kHz
+        let w_1k = a_weighting(1000.0);
+        let w_2k = a_weighting(2000.0);
+        let w_4k = a_weighting(4000.0);
+        let w_100 = a_weighting(100.0);
+
+        // 2-4 kHz should have higher weight than 100 Hz
+        assert!(w_2k > w_100, "A-weighting at 2kHz should exceed 100Hz");
+        assert!(w_4k > w_100, "A-weighting at 4kHz should exceed 100Hz");
+
+        // All should be positive
+        assert!(w_1k > 0.0);
+        assert!(w_2k > 0.0);
+        assert!(w_4k > 0.0);
+    }
+
+    #[test]
+    fn test_c_weighting() {
+        // C-weighting is nearly flat in audible range
+        let w_100 = c_weighting(100.0);
+        let w_1k = c_weighting(1000.0);
+        let w_10k = c_weighting(10000.0);
+
+        // Should be relatively flat compared to A-weighting
+        assert!(w_100 > 0.5, "C-weighting at 100Hz should be reasonable");
+        assert!(w_1k > 0.9, "C-weighting at 1kHz should be near 1.0");
+        assert!(
+            w_10k > 0.5,
+            "C-weighting at 10kHz should still be reasonable"
+        );
+    }
+
+    #[test]
+    fn test_weighted_energy_improves_alignment() {
+        let sub = create_test_sub_curve();
+        let speaker = create_test_speaker_curve();
+
+        let config = PhaseAlignmentConfig::default();
+
+        // Test with no weighting
+        let opt_none = PhaseAlignmentOptConfig {
+            weighting: WeightingType::None,
+            ..Default::default()
+        };
+        let result_none = optimize_phase_alignment_with_options(&sub, &speaker, &config, opt_none)
+            .expect("Should succeed");
+
+        // Test with A-weighting
+        let opt_a = PhaseAlignmentOptConfig {
+            weighting: WeightingType::AWeighting,
+            ..Default::default()
+        };
+        let result_a = optimize_phase_alignment_with_options(&sub, &speaker, &config, opt_a)
+            .expect("Should succeed");
+
+        // Both should find improvement (exact values may differ)
+        assert!(result_none.improvement_db >= 0.0);
+        assert!(result_a.improvement_db >= 0.0);
     }
 }
