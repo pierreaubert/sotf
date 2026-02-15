@@ -23,6 +23,27 @@ enum DecoderLoopAction {
     Interrupted(DecoderCommand),
 }
 
+/// Take frame_send_buffer for sending, then restore it from a recycled
+/// Vec (zero alloc in steady state) or fall back to Vec::with_capacity.
+fn take_frame_buffer(
+    frame_send_buffer: &mut Vec<f32>,
+    recycle_rx: &Receiver<Vec<f32>>,
+    len: usize,
+) -> Vec<f32> {
+    let mut frame_data = std::mem::take(frame_send_buffer);
+    frame_data.truncate(len);
+
+    *frame_send_buffer = match recycle_rx.try_recv() {
+        Ok(mut v) => {
+            v.clear();
+            v
+        }
+        Err(_) => Vec::with_capacity(len),
+    };
+
+    frame_data
+}
+
 /// Helper to send a message with backpressure handling and interruption support
 fn send_or_interrupt<T>(
     tx: &SyncSender<T>,
@@ -58,6 +79,7 @@ impl DecoderThread {
         event_tx: Sender<ThreadEvent>,
         target_sample_rate: u32,
         frame_size: usize,
+        recycle_rx: Receiver<Vec<f32>>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
 
@@ -70,6 +92,7 @@ impl DecoderThread {
                     event_tx,
                     target_sample_rate,
                     frame_size,
+                    recycle_rx,
                 ) {
                     log::error!("[Decoder Thread] Error: {}", e);
                 }
@@ -119,6 +142,8 @@ struct DecoderState {
     chunk_buffer: Vec<f32>,
     /// Pre-allocated buffer for frame sending (avoids allocation in hot path)
     frame_send_buffer: Vec<f32>,
+    /// Receives recycled Vec<f32> buffers from the processing thread
+    recycle_rx: Receiver<Vec<f32>>,
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_input_buffer: Vec<f32>,
@@ -131,7 +156,7 @@ struct DecoderState {
 }
 
 impl DecoderState {
-    fn new() -> Self {
+    fn new(recycle_rx: Receiver<Vec<f32>>) -> Self {
         Self {
             decoder: None,
             resampler: None,
@@ -145,6 +170,7 @@ impl DecoderState {
             // Pre-allocate for typical frame size (1024 frames * 8 channels)
             chunk_buffer: Vec::with_capacity(1024 * 8),
             frame_send_buffer: Vec::with_capacity(1024 * 8),
+            recycle_rx,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -294,11 +320,7 @@ impl DecoderState {
                         self.frame_send_buffer[..frame_len]
                             .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                        // Take the buffer, truncate to exact size, create frame
-                        let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
-                        frame_data.truncate(frame_len);
-                        // Restore a new buffer for next iteration
-                        self.frame_send_buffer = Vec::with_capacity(frame_len);
+                        let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
 
                         let frame = AudioFrame::new(
                             frame_data,
@@ -324,11 +346,7 @@ impl DecoderState {
                             .copy_from_slice(&self.resampler_buffer[..chunk_len]);
                         self.resampler_buffer.drain(..chunk_len);
 
-                        // Take the buffer, truncate to exact size, create frame
-                        let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
-                        frame_data.truncate(chunk_len);
-                        // Restore a new buffer for next iteration
-                        self.frame_send_buffer = Vec::with_capacity(chunk_len);
+                        let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, chunk_len);
 
                         let frame =
                             AudioFrame::new(frame_data, frame_size, channels, source_sample_rate);
@@ -432,9 +450,7 @@ impl DecoderState {
                             self.frame_send_buffer[..frame_len]
                                 .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                            let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
-                            frame_data.truncate(frame_len);
-                            self.frame_send_buffer = Vec::with_capacity(frame_len);
+                            let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
 
                             let frame = AudioFrame::new(
                                 frame_data,
@@ -661,10 +677,7 @@ impl DecoderState {
                 self.frame_send_buffer[..frame_len]
                     .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                // Prepare frame
-                let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
-                frame_data.truncate(frame_len);
-                self.frame_send_buffer = Vec::with_capacity(frame_len);
+                let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
 
                 // Send frame with TARGET sample rate
                 let frame = AudioFrame::new(
@@ -714,9 +727,7 @@ impl DecoderState {
         }
         self.frame_send_buffer[..silent_len].fill(0.0);
 
-        let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
-        frame_data.truncate(silent_len);
-        self.frame_send_buffer = Vec::with_capacity(silent_len);
+        let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, silent_len);
 
         let frame = AudioFrame::new(frame_data, frame_size, 2, target_sample_rate);
         message_tx
@@ -734,8 +745,9 @@ fn run_decoder_thread(
     event_tx: Sender<ThreadEvent>,
     target_sample_rate: u32,
     frame_size: usize,
+    recycle_rx: Receiver<Vec<f32>>,
 ) -> Result<(), String> {
-    let mut state = DecoderState::new();
+    let mut state = DecoderState::new(recycle_rx);
 
     log::info!(
         "[Decoder Thread] Started - target {}Hz, frame size {}",

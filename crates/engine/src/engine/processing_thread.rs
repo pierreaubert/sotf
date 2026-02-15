@@ -65,6 +65,7 @@ impl ProcessingThread {
         plugin_data_cache: super::PluginDataCache,
         gc_tx: super::GcSender,
         recycle_rx: Receiver<Vec<f32>>,
+        decoder_recycle_tx: Sender<Vec<f32>>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -83,6 +84,7 @@ impl ProcessingThread {
                     plugin_data_cache,
                     gc_tx,
                     recycle_rx,
+                    decoder_recycle_tx,
                 ) {
                     log::debug!("[Processing Thread] Error: {}", e);
                 }
@@ -338,6 +340,7 @@ fn run_processing_thread(
     plugin_data_cache: super::PluginDataCache,
     gc_tx: super::GcSender,
     recycle_rx: Receiver<Vec<f32>>,
+    decoder_recycle_tx: Sender<Vec<f32>>,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
     // performance issues in IIR filters and other DSP code
@@ -396,6 +399,9 @@ fn run_processing_thread(
 
                 match state.process_frame(&frame.data, &mut process_buffer, frame.num_frames) {
                     Ok(actual_output_frames) => {
+                        // Recycle the decoder frame's buffer back for reuse
+                        decoder_recycle_tx.send(frame.data).ok();
+
                         // Use actual output frame count from processing (not max)
                         let actual_output_samples = actual_output_frames * output_channels;
 

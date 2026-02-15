@@ -403,6 +403,7 @@ fn run_manager_thread(
     let (processing_tx, processing_rx) = sync_channel(queue_capacity);
     let (event_tx, event_rx) = channel(); // Events can be unbounded
     let (recycle_tx, recycle_rx) = channel(); // Vec<f32> recycling: playback → processing
+    let (decoder_recycle_tx, decoder_recycle_rx) = channel(); // Vec<f32> recycling: processing → decoder
 
     // Create GC thread for off-audio-thread deallocation
     let mut gc_thread = GcThread::new();
@@ -414,6 +415,7 @@ fn run_manager_thread(
         event_tx.clone(),
         config.output_sample_rate,
         config.frame_size,
+        decoder_recycle_rx,
     )?;
 
     let mut processing_thread = ProcessingThread::new(
@@ -425,6 +427,7 @@ fn run_manager_thread(
         plugin_data_cache,
         gc_tx,
         recycle_rx,
+        decoder_recycle_tx,
     )?;
 
     // Determine actual output channel count by loading plugin chain first
