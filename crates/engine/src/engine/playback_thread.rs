@@ -976,14 +976,13 @@ fn build_output_stream(
                 if muted {
                     data.fill(0.0);
                 } else if (volume - 1.0).abs() > 0.001 {
+                    // Fused volume + clamp in one pass (half the memory bandwidth)
                     for sample in data.iter_mut() {
-                        *sample *= volume;
+                        *sample = (*sample * volume).clamp(-1.0, 1.0);
                     }
-                }
-
-                // Hard clip to prevent saturation at hardware output
-                for sample in data.iter_mut() {
-                    if *sample > 1.0 || *sample < -1.0 {
+                } else {
+                    // Branchless clamp — compiles to vmaxps/vminps (auto-vectorised)
+                    for sample in data.iter_mut() {
                         *sample = sample.clamp(-1.0, 1.0);
                     }
                 }
