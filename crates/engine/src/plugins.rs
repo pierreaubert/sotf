@@ -1686,6 +1686,7 @@ impl PluginSettings {
                 json!({
                     "num_bands": num_bands,
                     "crossover_preset": crossover_preset,
+                    "crossover_frequencies": [crossover_freq_1, crossover_freq_2, crossover_freq_3, crossover_freq_4],
                     "crossover_freq_1": crossover_freq_1,
                     "crossover_freq_2": crossover_freq_2,
                     "crossover_freq_3": crossover_freq_3,
@@ -1723,6 +1724,7 @@ impl PluginSettings {
                 json!({
                     "num_bands": num_bands,
                     "crossover_preset": crossover_preset,
+                    "crossover_frequencies": [crossover_freq_1, crossover_freq_2, crossover_freq_3, crossover_freq_4],
                     "crossover_freq_1": crossover_freq_1,
                     "crossover_freq_2": crossover_freq_2,
                     "crossover_freq_3": crossover_freq_3,

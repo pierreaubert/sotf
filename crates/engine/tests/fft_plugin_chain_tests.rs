@@ -51,6 +51,7 @@ fn test_fft_chain_arbitrary_frame_sizes() {
         muted: false,
         config_path: None,
         watch_config: false,
+        hal_mode: false,
     };
 
     let mut engine = AudioEngine::new(config).expect("Failed to create engine");

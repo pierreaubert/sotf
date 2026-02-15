@@ -18,6 +18,7 @@
 use super::param_specs::upmixer::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -1748,6 +1749,8 @@ Upper bound for dialogue detection analysis.",
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
+        enable_ftz_daz();
+
         // Update smoothers once per block
         self.gain_front_direct.next();
         self.gain_front_ambient.next();
@@ -1922,6 +1925,8 @@ Upper bound for dialogue detection analysis.",
 
             break;
         }
+
+        flush_denormals_inplace(output);
 
         // Return actual number of frames produced. DawHost handles silence padding.
         Ok(output_pos)

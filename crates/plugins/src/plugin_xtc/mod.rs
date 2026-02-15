@@ -35,8 +35,8 @@ use filters::{compute_xtc_filters_full, XtcFilters};
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
-    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, flush_denormals_inplace,
-    interleave_stereo, scale_add_simd, window_mul_simd,
+    blend_simd, complex_mul_add_simd, complex_mul_simd, deinterleave_stereo,
+    flush_denormals_inplace, interleave_stereo, scale_add_simd, window_mul_simd,
 };
 use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -173,15 +173,6 @@ fn apply_filter_right(
     let n = ifft_input.len();
     ifft_input[0].im = 0.0;
     ifft_input[n - 1].im = 0.0;
-}
-
-/// Blend two time-domain buffers: dst[i] = (1 - alpha) * prev[i] + alpha * dst[i]
-#[inline(always)]
-fn blend_buffers(dst: &mut [f32], prev: &[f32], alpha: f32) {
-    let one_minus_alpha = 1.0 - alpha;
-    for (d, &p) in dst.iter_mut().zip(prev.iter()) {
-        *d = one_minus_alpha * p + alpha * *d;
-    }
 }
 
 impl XtcPlugin {
@@ -363,7 +354,7 @@ impl XtcPlugin {
                 .expect("IFFT processing failed");
 
             // 3. Blend: ifft_output = (1-alpha)*prev + alpha*current
-            blend_buffers(&mut self.ifft_output, &self.prev_ifft_output, alpha);
+            blend_simd(&mut self.ifft_output, &self.prev_ifft_output, alpha);
 
             // 4. Overlap-add to left accumulator
             scale_add_simd(
@@ -396,7 +387,7 @@ impl XtcPlugin {
                 .expect("IFFT processing failed");
 
             // 3. Blend
-            blend_buffers(&mut self.ifft_output, &self.prev_ifft_output, alpha);
+            blend_simd(&mut self.ifft_output, &self.prev_ifft_output, alpha);
 
             // 4. Overlap-add to right accumulator
             scale_add_simd(

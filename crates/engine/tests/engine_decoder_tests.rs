@@ -9,6 +9,19 @@ use std::sync::mpsc::{channel, sync_channel};
 use std::time::Duration;
 use tempfile::NamedTempFile;
 
+/// Helper to create a DecoderThread with a recycle channel
+fn create_decoder(
+    message_tx: std::sync::mpsc::SyncSender<DecoderMessage>,
+    event_tx: std::sync::mpsc::Sender<ThreadEvent>,
+    sample_rate: u32,
+    frame_size: usize,
+) -> (DecoderThread, std::sync::mpsc::Sender<Vec<f32>>) {
+    let (recycle_tx, recycle_rx) = channel();
+    let decoder = DecoderThread::new(message_tx, event_tx, sample_rate, frame_size, recycle_rx)
+        .expect("Failed to create decoder thread");
+    (decoder, recycle_tx)
+}
+
 /// Helper to create a test WAV file
 fn create_test_wav(duration_secs: f32, sample_rate: u32) -> NamedTempFile {
     let spec = WavSpec {
@@ -40,8 +53,8 @@ fn test_decoder_thread_creation() {
     let (message_tx, _message_rx) = sync_channel(100);
     let (event_tx, _event_rx) = channel();
 
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512);
-    assert!(decoder.is_ok(), "Failed to create decoder thread");
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
+    let _ = decoder;
 
     // Shutdown is automatic via Drop
 }
@@ -51,7 +64,7 @@ fn test_decoder_load_and_decode() {
     let (message_tx, message_rx) = sync_channel(100);
     let (event_tx, event_rx) = channel();
 
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
     // Create a test WAV file
     let temp_file = create_test_wav(0.1, 48000); // 100ms
@@ -105,7 +118,7 @@ fn test_decoder_pause_resume() {
     let (message_tx, message_rx) = sync_channel(100);
     let (event_tx, _event_rx) = channel();
 
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
     // Create a longer test file
     let temp_file = create_test_wav(5.0, 48000); // 5 seconds
@@ -152,7 +165,7 @@ fn test_decoder_seek() {
     let (message_tx, message_rx) = sync_channel(100);
     let (event_tx, _event_rx) = channel();
 
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
     // Create a test file
     let temp_file = create_test_wav(2.0, 48000); // 2 seconds
@@ -196,7 +209,7 @@ fn test_decoder_resampling() {
 
     // Create decoder with 48kHz target
     let target_sr = 48000;
-    let decoder = DecoderThread::new(message_tx, event_tx, target_sr, 512).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, target_sr, 512);
 
     // Create a 44.1kHz file (needs resampling)
     let source_sr = 44100;
@@ -236,7 +249,7 @@ fn test_decoder_stop() {
     let (message_tx, message_rx) = sync_channel(100);
     let (event_tx, _event_rx) = channel();
 
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
     let temp_file = create_test_wav(1.0, 48000);
     let path = temp_file.path().to_path_buf();
@@ -263,7 +276,7 @@ fn test_decoder_invalid_file() {
     let (message_tx, _message_rx) = sync_channel(100);
     let (event_tx, event_rx) = channel();
 
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
     // Try to play non-existent file
     let invalid_path = PathBuf::from("/nonexistent/file.wav");
@@ -293,7 +306,7 @@ fn test_decoder_shutdown() {
     let (message_tx, message_rx) = sync_channel(100);
     let (event_tx, _event_rx) = channel();
 
-    let mut decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
+    let (mut decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
     let temp_file = create_test_wav(1.0, 48000);
     let path = temp_file.path().to_path_buf();
@@ -341,7 +354,7 @@ fn test_decoder_multiple_files() {
     let (message_tx, message_rx) = sync_channel(100);
     let (event_tx, _event_rx) = channel();
 
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
 
     // Play first file
     let temp_file1 = create_test_wav(0.1, 48000);
@@ -381,7 +394,7 @@ fn test_decoder_frame_size_consistency() {
     let (event_tx, _event_rx) = channel();
 
     let frame_size = 512;
-    let decoder = DecoderThread::new(message_tx, event_tx, 48000, frame_size).unwrap();
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, frame_size);
 
     let temp_file = create_test_wav(0.5, 48000);
     decoder

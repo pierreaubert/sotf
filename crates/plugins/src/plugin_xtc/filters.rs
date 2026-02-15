@@ -180,8 +180,10 @@ fn compute_xtc_filters_asymmetric(
     // Max gain limit (convert dB to linear)
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
 
+    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
     for bin in 0..num_bins {
-        let freq = bin as f32 * sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+        let freq = bin as f32 * freq_per_bin;
 
         // Pinna resonance: full for ipsi paths, angle-dependent for contra paths
         let pinna_ipsi = pinna_resonance(freq);
@@ -272,8 +274,10 @@ fn compute_xtc_filters_symmetric(
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
 
     // Process each frequency bin
+    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
     for bin in 0..num_bins {
-        let freq = bin as f32 * sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+        let freq = bin as f32 * freq_per_bin;
 
         // Transfer function for ipsilateral path (reference = 1)
         let h_ipsi = Complex::new(1.0, 0.0);
@@ -620,8 +624,10 @@ pub(crate) fn compute_xtc_filters(
     let delta_t = (l_contra - l_ipsi) / speed_of_sound;
 
     // Process each frequency bin
+    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
     for bin in 0..num_bins {
-        let freq = bin as f32 * sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+        let freq = bin as f32 * freq_per_bin;
 
         // Transfer function for ipsilateral path (reference = 1)
         let h_ipsi = Complex::new(1.0, 0.0);

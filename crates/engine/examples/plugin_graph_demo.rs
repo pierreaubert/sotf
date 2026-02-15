@@ -5,7 +5,7 @@
 // This example shows how to use the DawHost to create complex
 // audio processing topologies with parallel processing and stream merging.
 
-use sotf_plugins::{DawGraphEdge, DawHost, GainPlugin, InPlacePluginAdapter};
+use sotf_plugins::{GraphEdge, DawHost, GainPlugin, InPlacePluginAdapter};
 
 fn main() -> Result<(), String> {
     println!("=== Plugin Graph Demo ===\n");
@@ -53,7 +53,7 @@ fn linear_chain_example() -> Result<(), String> {
     )?;
 
     // Connect nodes
-    graph.add_edge(DawGraphEdge::new(node1, node2))?;
+    graph.add_edge(GraphEdge::new(node1, node2))?;
 
     // Build and analyze
     graph.build()?;
@@ -113,10 +113,10 @@ fn parallel_diamond_example() -> Result<(), String> {
     )?;
 
     // Connect edges
-    graph.add_edge(DawGraphEdge::new(node1, node2))?; // Split to branch A
-    graph.add_edge(DawGraphEdge::new(node1, node3))?; // Split to branch B
-    graph.add_edge(DawGraphEdge::new(node2, node4))?; // Merge from branch A
-    graph.add_edge(DawGraphEdge::new(node3, node4))?; // Merge from branch B
+    graph.add_edge(GraphEdge::new(node1, node2))?; // Split to branch A
+    graph.add_edge(GraphEdge::new(node1, node3))?; // Split to branch B
+    graph.add_edge(GraphEdge::new(node2, node4))?; // Merge from branch A
+    graph.add_edge(GraphEdge::new(node3, node4))?; // Merge from branch B
 
     // Build and analyze
     graph.build()?;
@@ -177,12 +177,12 @@ fn stream_merge_example() -> Result<(), String> {
     )?;
 
     // Split
-    graph.add_edge(DawGraphEdge::new(split, path1))?;
-    graph.add_edge(DawGraphEdge::new(split, path2))?;
+    graph.add_edge(GraphEdge::new(split, path1))?;
+    graph.add_edge(GraphEdge::new(split, path2))?;
 
     // Merge (this is the synchronization point)
-    graph.add_edge(DawGraphEdge::new(path1, merge))?;
-    graph.add_edge(DawGraphEdge::new(path2, merge))?;
+    graph.add_edge(GraphEdge::new(path1, merge))?;
+    graph.add_edge(GraphEdge::new(path2, merge))?;
 
     // Build
     graph.build()?;

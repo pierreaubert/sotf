@@ -389,6 +389,84 @@ pub fn scale_add_simd(dst: &mut [f32], src: &[f32], scale: f32) {
     }
 }
 
+/// SIMD-optimized linear interpolation (blend) between two buffers
+///
+/// Computes: dst[i] = prev[i] + alpha * (dst[i] - prev[i]) for all i
+/// Equivalent to: dst[i] = (1 - alpha) * prev[i] + alpha * dst[i]
+///
+/// Used for crossfading between old and new filter outputs in STFT plugins.
+#[inline]
+pub fn blend_simd(dst: &mut [f32], prev: &[f32], alpha: f32) {
+    debug_assert_eq!(dst.len(), prev.len());
+    let len = dst.len();
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let alpha_vec = unsafe { _mm256_set1_ps(alpha) };
+        let simd_len = (len / 8) * 8;
+
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let prev_ptr = prev.as_ptr().add(i);
+                let dst_ptr = dst.as_mut_ptr().add(i);
+
+                let p = _mm256_loadu_ps(prev_ptr);
+                let d = _mm256_loadu_ps(dst_ptr);
+
+                // prev + alpha * (dst - prev)
+                let diff = _mm256_sub_ps(d, p);
+                let result = _mm256_fmadd_ps(alpha_vec, diff, p);
+
+                _mm256_storeu_ps(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] = prev[i] + alpha * (dst[i] - prev[i]);
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+
+        let alpha_vec = unsafe { vdupq_n_f32(alpha) };
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let prev_ptr = prev.as_ptr().add(i);
+                let dst_ptr = dst.as_mut_ptr().add(i);
+
+                let p = vld1q_f32(prev_ptr);
+                let d = vld1q_f32(dst_ptr);
+
+                // prev + alpha * (dst - prev)
+                let diff = vsubq_f32(d, p);
+                let result = vfmaq_f32(p, alpha_vec, diff);
+
+                vst1q_f32(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] = prev[i] + alpha * (dst[i] - prev[i]);
+        }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for i in 0..len {
+            dst[i] = prev[i] + alpha * (dst[i] - prev[i]);
+        }
+    }
+}
+
 /// SIMD-optimized windowed copy (for FFT input preparation)
 ///
 /// Computes: dst[i] = src[i] * window[i] for all i

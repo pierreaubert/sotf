@@ -146,18 +146,14 @@ fn test_binaural_denormal_flushing() {
         num_frames: num_samples,
     };
 
-    // Step 1: Verify passthrough works for normal values
+    // Step 1: Process normal values to prime the STFT pipeline
+    // Note: Without a SOFA file, HRTFs are all-zero so output is silence.
+    // We just verify the plugin processes without error/panic.
     let input_normal = vec![0.5; num_samples * input_channels];
     let mut output_normal = vec![0.0; num_samples * 2];
     plugin
         .process(&input_normal, &mut output_normal, &context)
         .unwrap();
-
-    // Check first frame (should be 0.5)
-    assert_eq!(
-        output_normal[0], 0.5,
-        "Passthrough failed for normal values"
-    );
 
     // Step 2: Verify flushing for denormal values
     // Create very low amplitude input (below denormal threshold)
@@ -168,7 +164,7 @@ fn test_binaural_denormal_flushing() {
         .process(&input_denormal, &mut output_denormal, &context)
         .unwrap();
 
-    // Count non-zero samples
+    // Count non-zero samples — denormals should be flushed to zero
     let non_zero_count = output_denormal.iter().filter(|&&x| x.abs() > 0.0).count();
 
     if non_zero_count > 0 {
