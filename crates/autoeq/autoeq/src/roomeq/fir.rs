@@ -43,7 +43,14 @@ pub fn generate_fir_correction(
             use crate::cli::Args;
             use clap::Parser;
             let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            crate::workflow::build_target_curve(&dummy_args, &measurement.freq, measurement)?
+            match crate::workflow::build_target_curve(&dummy_args, &measurement.freq, measurement) {
+                Ok(curve) => curve,
+                Err(_) => {
+                    // Fallback to file path
+                    let target = crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
+                    crate::read::normalize_and_interpolate_response(&measurement.freq, &target)
+                }
+            }
         }
         None => {
             // Default target: flat at measurement's mean level (within the optimization band)

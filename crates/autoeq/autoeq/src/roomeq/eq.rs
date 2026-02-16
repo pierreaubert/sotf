@@ -112,15 +112,20 @@ pub fn optimize_channel_eq(
         }
         Some(TargetCurveConfig::Predefined(name)) => {
             // Generate predefined target
-            // Use dummy args to leverage existing target builder logic or re-implement
-            // For now, simpler to re-implement common targets or map to Args
-            // We can construct minimal Args with curve_name
             let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            crate::workflow::build_target_curve(
+            match crate::workflow::build_target_curve(
                 &dummy_args,
                 &normalized_curve.freq,
                 &normalized_curve,
-            )?
+            ) {
+                Ok(curve) => curve,
+                Err(_) => {
+                    // Fallback: If not a known predefined curve, treat name as a file path
+                    debug!("  Target '{}' not a predefined curve, trying as file path...", name);
+                    let target = crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
+                    crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
+                }
+            }
         }
         None => {
             // Default flat target

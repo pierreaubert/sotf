@@ -171,6 +171,7 @@ dirs = "6"
 # sysinfo = "0.37"
 # memory-stats = "1.2"
 crossbeam = "0.8"
+arc-swap = "1"
 
 # WASM support
 wasm-bindgen = { version = "0.2" }

@@ -315,7 +315,7 @@ impl RoomConfig {
 
 /// Default configuration version
 pub fn default_config_version() -> String {
-    "1.2.0".to_string()
+    "1.3.0".to_string()
 }
 
 /// Group delay optimization configuration (Legacy v1)
@@ -523,11 +523,11 @@ pub struct CrossoverConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum TargetCurveConfig {
-    /// Path to CSV file (freq, spl columns)
-    Path(PathBuf),
-
     /// Predefined target (e.g., "flat", "harman")
     Predefined(String),
+
+    /// Path to CSV file (freq, spl columns)
+    Path(PathBuf),
 }
 
 /// FIR filter configuration
@@ -1135,6 +1135,33 @@ pub struct OptimizerConfig {
     /// Voice of God optimization configuration (v2)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vog: Option<VoiceOfGodConfig>,
+
+    /// Broadband target matching configuration (v2.1)
+    /// Fits shelf filters to match target curve across full spectrum before fine EQ
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broadband_target_matching: Option<BroadbandTargetMatchingConfig>,
+}
+
+// ============================================================================
+// Broadband Target Matching Configuration
+// ============================================================================
+
+/// Configuration for broadband target matching
+///
+/// Fits Low Shelf, High Shelf, and Gain filters to match the target curve
+/// across the full frequency range (20Hz-20kHz) before fine-grained PEQ optimization.
+/// This provides broad tonal balance correction even if fine EQ is limited to a smaller range.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BroadbandTargetMatchingConfig {
+    /// Enable broadband target matching
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for BroadbandTargetMatchingConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 // Default values for OptimizerConfig
@@ -1234,6 +1261,7 @@ impl Default for OptimizerConfig {
             // V2 Configs
             gd_opt: None,
             vog: None,
+            broadband_target_matching: None,
         }
     }
 }

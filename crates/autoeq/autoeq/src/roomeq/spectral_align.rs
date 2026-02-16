@@ -20,10 +20,10 @@ use super::output;
 use super::types::PluginConfigWrapper;
 
 /// Low-shelf center frequency for alignment basis
-const LOWSHELF_FREQ: f64 = 200.0;
+pub const LOWSHELF_FREQ: f64 = 200.0;
 
 /// High-shelf center frequency for alignment basis
-const HIGHSHELF_FREQ: f64 = 4000.0;
+pub const HIGHSHELF_FREQ: f64 = 4000.0;
 
 /// Maximum allowed shelf gain magnitude (dB)
 const MAX_SHELF_GAIN_DB: f64 = 6.0;
@@ -204,6 +204,99 @@ pub fn create_alignment_plugins(
     };
 
     (eq_plugin, gain_plugin)
+}
+
+// ============================================================================
+// Public helpers (exposed for broadband target matching)
+// ============================================================================
+
+/// Compute broadband alignment corrections to match a specific target curve.
+///
+/// Unlike `compute_spectral_alignment` which matches channels to their average,
+/// this function matches a single channel to an explicit target curve.
+/// This is used for "Broadband Target Matching" before fine EQ.
+pub fn compute_target_alignment(
+    curve: &Curve,
+    target: &Curve,
+    min_freq: f64,
+    max_freq: f64,
+    sample_rate: f64,
+) -> Option<SpectralAlignmentResult> {
+    // Build mask: only consider frequencies within [min_freq, max_freq]
+    // where both curve and target have data (assuming same freq grid)
+    let freq = &curve.freq;
+    let mask: Vec<bool> = freq
+        .iter()
+        .map(|&f| f >= min_freq && f <= max_freq)
+        .collect();
+    let n_active: usize = mask.iter().filter(|m| **m).count();
+
+    if n_active < 3 {
+        return None;
+    }
+
+    // Extract active frequencies
+    let active_freq: Array1<f64> = Array1::from(
+        freq.iter()
+            .zip(mask.iter())
+            .filter(|(_, m)| **m)
+            .map(|(f, _)| *f)
+            .collect::<Vec<_>>(),
+    );
+
+    // Extract active SPL for channel and target
+    let channel_spl: Array1<f64> = Array1::from(
+        curve.spl
+            .iter()
+            .zip(mask.iter())
+            .filter(|(_, m)| **m)
+            .map(|(s, _)| *s)
+            .collect::<Vec<_>>(),
+    );
+
+    let target_spl: Array1<f64> = Array1::from(
+        target.spl
+            .iter()
+            .zip(mask.iter())
+            .filter(|(_, m)| **m)
+            .map(|(s, _)| *s)
+            .collect::<Vec<_>>(),
+    );
+
+    // diff = channel - target (positive diff means channel is too loud)
+    let diff = &channel_spl - &target_spl;
+
+    // Build basis vectors
+    let (ls_basis, hs_basis) = build_basis_vectors(&active_freq, sample_rate);
+    let flat_basis = Array1::ones(n_active);
+
+    // Compute weights
+    let weights = compute_octave_weights(&active_freq);
+
+    // Solve for best fit of filters to the difference
+    // results are what the channel *has* relative to target
+    let (ls_fit, hs_fit, flat_fit, residual_rms) =
+        solve_3x3_wls(&diff, &ls_basis, &hs_basis, &flat_basis, &weights);
+
+    // Determine corrections (negative of fit)
+    let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
+    let hs_gain = (-hs_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
+    let flat_gain = -flat_fit;
+
+    // If corrections are negligible, return None
+    if ls_gain.abs() < MIN_CORRECTION_DB
+        && hs_gain.abs() < MIN_CORRECTION_DB
+        && flat_gain.abs() < MIN_CORRECTION_DB
+    {
+        return None;
+    }
+
+    Some(SpectralAlignmentResult {
+        lowshelf_gain_db: ls_gain,
+        highshelf_gain_db: hs_gain,
+        flat_gain_db: flat_gain,
+        residual_rms_db: residual_rms,
+    })
 }
 
 // ============================================================================

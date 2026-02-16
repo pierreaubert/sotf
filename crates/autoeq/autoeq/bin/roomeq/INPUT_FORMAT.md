@@ -413,6 +413,31 @@ Controls the optimization algorithm and constraints.
 | `max_iter` | integer | `10000` | Maximum optimization iterations |
 | `peq_model` | string | `"pk"` | PEQ model type |
 
+### Broadband Target Matching (v2.1)
+
+Using `min_freq` / `max_freq` limits the optimization range, which effectively disables correction outside this band. This can leave significant spectral imbalances (e.g., too much bass or treble) if the optimization range is narrow (e.g., 20Hz-1kHz).
+
+**Broadband Target Matching** solves this by performing a preliminary alignment pass:
+1.  Analyzes the full 20Hz-20kHz spectrum.
+2.  Fits Low Shelf (200Hz), High Shelf (4kHz), and Gain filters to match the target curve.
+3.  Applies this correction *before* the fine-grained PEQ optimization.
+
+This ensures the overall tonal balance is correct even if the main optimizer only focuses on accurate modal correction below 1kHz.
+
+```json
+{
+  "optimizer": {
+    "broadband_target_matching": {
+      "enabled": true
+    }
+  }
+}
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enabled` | boolean | true | Enable broadband target matching |
+
 ### FIR Configuration
 
 When `mode` is `"fir"` or `"mixed"`:

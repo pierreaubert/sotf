@@ -464,6 +464,10 @@
         "multi_seat": {
           "$ref": "#/$defs/MultiSeatConfig",
           "description": "Multi-seat variance optimization configuration"
+        },
+        "broadband_target_matching": {
+          "$ref": "#/$defs/BroadbandTargetMatchingConfig",
+          "description": "Broadband target matching configuration (shelf filters)"
         }
       },
       "additionalProperties": false
@@ -750,6 +754,18 @@
           "minimum": 0,
           "maximum": 20,
           "default": 6
+        }
+      },
+      "additionalProperties": false
+    },
+    "BroadbandTargetMatchingConfig": {
+      "type": "object",
+      "description": "Configuration for broadband target matching. Fits Low Shelf, High Shelf, and Gain filters to match the target curve across the full frequency range (20Hz-20kHz) before fine-grained optimization.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable broadband target matching",
+          "default": true
         }
       },
       "additionalProperties": false

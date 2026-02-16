@@ -317,6 +317,7 @@ pub fn run_multi_speaker_optimization(
             multi_seat: None,
             gd_opt: None,
             vog: None,
+            broadband_target_matching: None,
         },
         recording_config: None,
     };
@@ -473,6 +474,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         multi_seat: None,
         gd_opt: None,
         vog: None,
+        broadband_target_matching: None,
     }
 }
 

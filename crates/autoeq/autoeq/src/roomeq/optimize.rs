@@ -12,6 +12,8 @@ use math_audio_iir_fir::Biquad;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
+use ndarray::Array1;
+use super::spectral_align;
 
 use super::config::validate_room_config;
 use super::crossover;
@@ -1115,6 +1117,133 @@ fn process_single_speaker(
         Some((min_freq as f32, max_freq as f32)),
     ) as f64;
 
+    // ========================================================================
+    // Broadband Target Matching (v2.1)
+    // ========================================================================
+    // Fit shelves/gain to the target curve across the full 20Hz-20kHz range
+    // to establish a balanced baseline before fine-grained optimization.
+    let (curve_for_optim, broadband_plugins, bb_mean_shift) =
+        if let Some(bb_config) = &room_config.optimizer.broadband_target_matching {
+            if bb_config.enabled {
+                info!("  Broadband Target Matching enabled...");
+                // 1. Construct the target curve (with tilt if configured, or flat)
+                let target = target_tilt_curve.clone().unwrap_or_else(|| {
+                    // Create a flat (0 dB) target curve matching the input frequency grid
+                    Curve {
+                        freq: curve.freq.clone(),
+                        spl: Array1::zeros(curve.freq.len()),
+                        phase: None,
+                    }
+                });
+
+                // 2. Compute alignment
+                if let Some(result) = spectral_align::compute_target_alignment(
+                    &curve,
+                    &target,
+                    20.0,
+                    20000.0,
+                    sample_rate,
+                ) {
+                    info!(
+                        "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
+                        result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
+                    );
+
+                    // 3. Create plugins
+                    let (eq_plugin, gain_plugin) =
+                        spectral_align::create_alignment_plugins(&result, sample_rate);
+                    
+                    let mut plugins = Vec::new();
+                    // NOTE: In the DSP chain, we probably want Gain then EQ, or vice versa.
+                    // spectral_align returns them as (Option<EQ>, Option<Gain>).
+                    if let Some(g) = gain_plugin {
+                        plugins.push(g);
+                    }
+                    if let Some(eq) = eq_plugin {
+                        plugins.push(eq);
+                    }
+
+                    // 4. precise simulation of the correction
+                    // We need to construct the filters again to simulate them, or use the result params.
+                    // Ideally `create_alignment_plugins` would return the filters too, but it returns ConfigWrappers.
+                    // We can reconstruct them easily using spectral_align constants.
+                    
+                    use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
+                    let mut filters = Vec::new();
+                    if result.lowshelf_gain_db.abs() > 1e-3 {
+                         filters.push(Biquad::new(
+                            BiquadFilterType::Lowshelf,
+                            spectral_align::LOWSHELF_FREQ,
+                            sample_rate,
+                            DEFAULT_Q_HIGH_LOW_SHELF,
+                            result.lowshelf_gain_db,
+                        ));
+                    }
+                     if result.highshelf_gain_db.abs() > 1e-3 {
+                         filters.push(Biquad::new(
+                            BiquadFilterType::Highshelf,
+                            spectral_align::HIGHSHELF_FREQ,
+                            sample_rate,
+                            DEFAULT_Q_HIGH_LOW_SHELF,
+                            result.highshelf_gain_db,
+                        ));
+                    }
+                    
+                    // Gain is just a scalar addition in dB
+                    let mut corrected_spl = curve.spl.clone();
+                    corrected_spl += result.flat_gain_db;
+                    
+                    // Apply filters if any
+                    if !filters.is_empty() {
+                         let resp = response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
+                         // Apply magnitude response (add db)
+                         for (i, c) in resp.iter().enumerate() {
+                             corrected_spl[i] += c.norm().log10() * 20.0;
+                         }
+                         // TODO: Update phase if we want to be perfect, but for magnitude opt it's fine.
+                         // Let's do it properly using the complex response
+                         let corrected_curve = response::apply_complex_response(
+                             &Curve { freq: curve.freq.clone(), spl: corrected_spl.clone() - result.flat_gain_db, phase: curve.phase.clone() }, // hack: apply_complex adds to input
+                             &resp
+                         );
+                         // Re-add gain
+                         corrected_spl = corrected_curve.spl + result.flat_gain_db;
+                    }
+
+                    let new_curve = Curve {
+                        freq: curve.freq.clone(),
+                        spl: corrected_spl,
+                        phase: curve.phase.clone(), // Phase is arguably changed by IIR, but for now we keep it simple or use `apply_complex_response` which handles it.
+                    };
+                    
+                    // Better way:
+                    // 1. Gain
+                    let mut temp_curve = curve.clone();
+                    temp_curve.spl += result.flat_gain_db;
+                    
+                    // 2. Filters
+                    let final_curve = if !filters.is_empty() {
+                        let resp = response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
+                        response::apply_complex_response(&temp_curve, &resp)
+                    } else {
+                        temp_curve
+                    };
+
+                    (final_curve, plugins, result.flat_gain_db)
+                    
+                } else {
+                    (curve.clone(), Vec::new(), 0.0)
+                }
+            } else {
+                (curve.clone(), Vec::new(), 0.0)
+            }
+        } else {
+            (curve.clone(), Vec::new(), 0.0)
+        };
+    
+    // We must update the mean_spl because the broadband gain shifted it
+    let mean_spl = mean_spl + bb_mean_shift;
+
     match room_config.optimizer.processing_mode {
         ProcessingMode::PhaseLinear => {
             info!("  Generating FIR filter...");
@@ -1134,7 +1263,7 @@ fn process_single_speaker(
             }
 
             let coeffs = fir::generate_fir_correction(
-                &curve,
+                &curve_for_optim,
                 &opt_config,
                 room_config.target_curve.as_ref(),
                 sample_rate,
@@ -1158,16 +1287,17 @@ fn process_single_speaker(
             let mut chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
                 None,
-                Vec::new(),
+                broadband_plugins,
                 &[],
                 None,
                 None,
             );
             chain.plugins.push(convolution_plugin);
 
+
             let complex_resp =
                 response::compute_fir_complex_response(&coeffs, &curve.freq, sample_rate);
-            let final_curve = response::apply_complex_response(&curve, &complex_resp);
+            let final_curve = response::apply_complex_response(&curve_for_optim, &complex_resp);
 
             // Compute post_score consistently with pre_score
             let (_, mean_final) = detect_passband_and_mean(&final_curve);
@@ -1217,7 +1347,7 @@ fn process_single_speaker(
                 // New frequency-based mixed mode: FIR on one band, IIR on the other
                 return process_mixed_mode_crossover(
                     channel_name,
-                    &curve,
+                    &curve_for_optim,
                     room_config,
                     mixed_config,
                     sample_rate,
@@ -1264,7 +1394,7 @@ fn process_single_speaker(
             }
 
             let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
-                &curve,
+                &curve_for_optim,
                 &opt_config, // Use modified config
                 room_config.target_curve.as_ref(),
                 sample_rate,
@@ -1306,7 +1436,7 @@ fn process_single_speaker(
 
             let conv_plugin = output::create_convolution_plugin(&filename);
             let mut chain =
-                output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
+                output::build_channel_dsp_chain(channel_name, None, broadband_plugins, &eq_filters);
             chain.plugins.push(conv_plugin);
 
             let fir_resp =
@@ -1368,12 +1498,12 @@ fn process_single_speaker(
             // Apply target tilt to the curve (subtract tilt from measurement)
             let optimization_curve = if let Some(ref tilt_curve) = target_tilt_curve {
                 Curve {
-                    freq: curve.freq.clone(),
-                    spl: &curve.spl - &tilt_curve.spl,
-                    phase: curve.phase.clone(),
+                    freq: curve_for_optim.freq.clone(),
+                    spl: &curve_for_optim.spl - &tilt_curve.spl,
+                    phase: curve_for_optim.phase.clone(),
                 }
             } else {
-                curve.clone()
+                curve_for_optim.clone()
             };
 
             // ================================================================
@@ -1452,6 +1582,7 @@ fn process_single_speaker(
             };
 
             info!("  Optimized {} EQ filters", eq_filters.len());
+            info!("  Optimized {} EQ filters", eq_filters.len());
 
             // Combine excursion protection filters with EQ filters
             let mut all_filters = excursion_filters.clone();
@@ -1460,7 +1591,7 @@ fn process_single_speaker(
             let mut chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
                 None,
-                Vec::new(),
+                broadband_plugins, // Add broadband plugins here!
                 &all_filters,
                 None,
                 None,
