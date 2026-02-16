@@ -11,6 +11,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
 /// A named scenario for data generation
+#[derive(Clone)]
 pub struct Scenario {
     /// Unique name for file/directory naming
     pub name: String,
@@ -794,7 +795,7 @@ fn randomized_scenario_variant(
     let mut simulation = base.simulation.clone();
 
     let room = match simulation.room {
-        RoomGeometry::Rectangular(room) => room,
+        RoomGeometry::Rectangular(ref room) => room,
         _ => return base.clone(),
     };
 

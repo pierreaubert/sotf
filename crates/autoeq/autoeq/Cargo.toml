@@ -85,8 +85,12 @@ name = "roomeq-fuzzer"
 path = "bin/roomeq_fuzzer.rs"
 
 [[bin]]
-name = "roomeq-qa"
-path = "bin/roomeq_qa.rs"
+name = "roomeq-qa-quality"
+path = "bin/roomeq_qa_quality.rs"
+
+[[bin]]
+name = "roomeq-qa-coverage"
+path = "bin/roomeq_qa_coverage.rs"
 
 [[bin]]
 name = "convert-recording"

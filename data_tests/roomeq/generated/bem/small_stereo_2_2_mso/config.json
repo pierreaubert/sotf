@@ -3,20 +3,26 @@
   "system": {
     "model": "stereo",
     "speakers": {
-      "R": "right",
+      "LFE": "lfe",
       "L": "left",
-      "LFE": "lfe"
+      "R": "right"
     },
     "subwoofers": {
-      "config": "single",
+      "config": "mso",
       "crossover": "first",
       "lfe": "L"
     }
   },
   "speakers": {
-    "right": "right_lp0.csv",
-    "lfe": "subwoofer_lp0.csv",
-    "left": "left_lp0.csv"
+    "lfe": {
+      "name": "subs",
+      "subwoofers": [
+        "sub1_lp0.csv",
+        "sub2_lp0.csv"
+      ]
+    },
+    "left": "left_lp0.csv",
+    "right": "right_lp0.csv"
   },
   "crossovers": {
     "first": {
