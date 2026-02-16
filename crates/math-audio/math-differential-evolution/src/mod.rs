@@ -8,7 +8,10 @@
 //!
 //! - Multiple mutation strategies (Best1, Rand1, CurrentToBest1, etc.)
 //! - Binomial and exponential crossover
-//! - Adaptive parameter control
+//! - Adaptive parameter control (SHADE-style)
+//! - **L-SHADE**: Linear population size reduction for faster convergence
+//! - **External Archive**: Maintains diversity by storing discarded solutions
+//! - **Current-to-pbest/1**: SHADE mutation strategy for balanced exploration
 //! - Parallel population evaluation
 //! - Constraint handling via penalty methods
 //! - Latin Hypercube initialization
@@ -34,6 +37,37 @@
 //!
 //! assert!(result.fun < 1e-6);
 //! ```
+//!
+//! # L-SHADE Example
+//!
+//! ```rust
+//! use math_audio_differential_evolution::{differential_evolution, DEConfigBuilder, Strategy, LShadeConfig};
+//!
+//! let bounds = vec![(-5.0, 5.0), (-5.0, 5.0)];
+//! let lshade_config = LShadeConfig {
+//!     np_init: 18,
+//!     np_final: 4,
+//!     p: 0.11,
+//!     arc_rate: 2.1,
+//!     ..Default::default()
+//! };
+//!
+//! let config = DEConfigBuilder::new()
+//!     .maxiter(100)
+//!     .strategy(Strategy::LShadeBin)
+//!     .lshade(lshade_config)
+//!     .seed(42)
+//!     .build()
+//!     .expect("invalid config");
+//!
+//! let result = differential_evolution(
+//!     &|x| x.iter().map(|&xi| xi * xi).sum(),
+//!     &bounds,
+//!     config,
+//! ).expect("optimization should succeed");
+//!
+//! assert!(result.fun < 1e-6);
+//! ```
 #![doc = include_str!("../README.md")]
 #![doc = include_str!("../REFERENCES.md")]
 #![warn(missing_docs)]
@@ -44,6 +78,7 @@ pub use error::{DEError, Result};
 use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use ndarray::{Array1, Array2, Zip};
 use rand::rngs::StdRng;
@@ -60,10 +95,14 @@ pub mod apply_wls;
 
 /// Utilities for selecting distinct random indices from a population.
 pub mod distinct_indices;
+/// External archive for L-SHADE algorithm.
+pub mod external_archive;
 /// Latin Hypercube Sampling initialization strategy.
 pub mod init_latin_hypercube;
 /// Random uniform initialization strategy.
 pub mod init_random;
+/// L-SHADE configuration.
+pub mod lshade;
 
 /// Adaptive mutation strategy with dynamic parameter control.
 pub mod mutant_adaptive;
@@ -73,6 +112,8 @@ pub mod mutant_best1;
 pub mod mutant_best2;
 /// Current-to-best/1 mutation: blends current with best individual.
 pub mod mutant_current_to_best1;
+/// Current-to-pbest/1 mutation: blends current with p-best individual (SHADE).
+pub mod mutant_current_to_pbest1;
 /// Rand/1 mutation strategy: uses random individual plus one difference vector.
 pub mod mutant_rand1;
 /// Rand/2 mutation strategy: uses random individual plus two difference vectors.
@@ -103,6 +144,8 @@ pub mod recorder;
 /// Recorded optimization wrapper for testing.
 pub mod run_recorded;
 pub use differential_evolution::differential_evolution;
+pub use external_archive::ExternalArchive;
+pub use lshade::LShadeConfig;
 pub use parallel_eval::ParallelConfig;
 pub use recorder::{OptimizationRecord, OptimizationRecorder};
 pub use run_recorded::run_recorded_differential_evolution;
@@ -165,6 +208,10 @@ pub enum Strategy {
     AdaptiveBin,
     /// Adaptive mutation with exponential crossover
     AdaptiveExp,
+    /// L-SHADE with binomial crossover: current-to-pbest/1 + linear pop reduction + archive
+    LShadeBin,
+    /// L-SHADE with exponential crossover: current-to-pbest/1 + linear pop reduction + archive
+    LShadeExp,
 }
 
 impl FromStr for Strategy {
@@ -196,6 +243,8 @@ impl FromStr for Strategy {
                 Ok(Strategy::AdaptiveBin)
             }
             "adaptiveexp" | "adaptive-exp" | "adaptive_exp" => Ok(Strategy::AdaptiveExp),
+            "lshadebin" | "lshade-bin" | "lshade_bin" | "lshade" => Ok(Strategy::LShadeBin),
+            "lshadeexp" | "lshade-exp" | "lshade_exp" => Ok(Strategy::LShadeExp),
             _ => Err(format!("unknown strategy: {}", s)),
         }
     }
@@ -575,6 +624,8 @@ pub struct DEConfig {
     pub adaptive: AdaptiveConfig,
     /// Parallel evaluation configuration.
     pub parallel: parallel_eval::ParallelConfig,
+    /// L-SHADE configuration for population reduction and pbest selection.
+    pub lshade: lshade::LShadeConfig,
 }
 
 impl Default for DEConfig {
@@ -601,6 +652,7 @@ impl Default for DEConfig {
             polish: None,
             adaptive: AdaptiveConfig::default(),
             parallel: parallel_eval::ParallelConfig::default(),
+            lshade: lshade::LShadeConfig::default(),
         }
     }
 }
@@ -774,6 +826,11 @@ impl DEConfigBuilder {
         self.cfg.parallel.num_threads = Some(num_threads);
         self
     }
+    /// Sets the L-SHADE configuration.
+    pub fn lshade(mut self, lshade: lshade::LShadeConfig) -> Self {
+        self.cfg.lshade = lshade;
+        self
+    }
     /// Builds and returns the configuration.
     ///
     /// # Errors
@@ -922,9 +979,10 @@ where
         use mutant_best1::mutant_best1;
         use mutant_best2::mutant_best2;
         use mutant_current_to_best1::mutant_current_to_best1;
-        use mutant_rand_to_best1::mutant_rand_to_best1;
+        use mutant_current_to_pbest1;
         use mutant_rand1::mutant_rand1;
         use mutant_rand2::mutant_rand2;
+        use mutant_rand_to_best1::mutant_rand_to_best1;
         use parallel_eval::evaluate_trials_parallel;
         use std::sync::Arc;
 
@@ -1156,6 +1214,21 @@ where
             None
         };
 
+        // Initialize external archive for L-SHADE strategies
+        let external_archive: Option<Arc<RwLock<external_archive::ExternalArchive>>> = if matches!(
+            self.config.strategy,
+            Strategy::LShadeBin | Strategy::LShadeExp
+        ) {
+            Some(Arc::new(RwLock::new(
+                external_archive::ExternalArchive::with_population_size(
+                    npop,
+                    self.config.lshade.arc_rate,
+                ),
+            )))
+        } else {
+            None
+        };
+
         // Main loop
         let mut success = false;
         let mut message = String::new();
@@ -1175,10 +1248,13 @@ where
 
             let iter_start = Instant::now();
 
-            // Pre-sort indices for adaptive strategies to avoid re-sorting in the loop
+            // Pre-sort indices for adaptive/L-SHADE strategies to avoid re-sorting in the loop
             let sorted_indices = if matches!(
                 self.config.strategy,
-                Strategy::AdaptiveBin | Strategy::AdaptiveExp
+                Strategy::AdaptiveBin
+                    | Strategy::AdaptiveExp
+                    | Strategy::LShadeBin
+                    | Strategy::LShadeExp
             ) {
                 let mut indices: Vec<usize> = (0..npop).collect();
                 indices.sort_by(|&a, &b| {
@@ -1318,6 +1394,44 @@ where
                                 )
                             }
                         }
+                        Strategy::LShadeBin => {
+                            let pbest_size = mutant_current_to_pbest1::compute_pbest_size(
+                                self.config.lshade.p,
+                                pop.nrows(),
+                            );
+                            let archive_ref = external_archive.as_ref().and_then(|a| a.read().ok());
+                            (
+                                mutant_current_to_pbest1::mutant_current_to_pbest1(
+                                    i,
+                                    &pop,
+                                    &sorted_indices,
+                                    pbest_size,
+                                    archive_ref.as_deref(),
+                                    f,
+                                    &mut local_rng,
+                                ),
+                                Crossover::Binomial,
+                            )
+                        }
+                        Strategy::LShadeExp => {
+                            let pbest_size = mutant_current_to_pbest1::compute_pbest_size(
+                                self.config.lshade.p,
+                                pop.nrows(),
+                            );
+                            let archive_ref = external_archive.as_ref().and_then(|a| a.read().ok());
+                            (
+                                mutant_current_to_pbest1::mutant_current_to_pbest1(
+                                    i,
+                                    &pop,
+                                    &sorted_indices,
+                                    pbest_size,
+                                    archive_ref.as_deref(),
+                                    f,
+                                    &mut local_rng,
+                                ),
+                                Crossover::Exponential,
+                            )
+                        }
                     };
 
                     // If strategy didn't dictate crossover, fallback to config
@@ -1382,6 +1496,13 @@ where
 
                 // Selection: replace if better
                 if *trial_energy <= energies[i] {
+                    // For L-SHADE: add replaced solution to archive
+                    if let Some(ref archive) = external_archive
+                        && *trial_energy < energies[i]
+                        && let Ok(mut arch) = archive.write()
+                    {
+                        arch.add(pop.row(i).to_owned());
+                    }
                     pop.row_mut(i).assign(&trial.view());
                     energies[i] = *trial_energy;
                     accepted_trials += 1;

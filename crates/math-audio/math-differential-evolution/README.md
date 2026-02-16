@@ -2,14 +2,17 @@
 
 # Math Audio Differential Evolution
 
-This crate provides a pure Rust implementation of Differential Evolution (DE) global optimization algorithm with advanced features.
+This crate provides a pure Rust implementation of Differential Evolution (DE) global optimization algorithm with advanced features including L-SHADE.
 
 ## Features
 
 - **Pure Rust Implementation**: No external dependencies for core optimization
 - **Multiple DE Strategies**: Various mutation and crossover strategies
+- **L-SHADE**: Linear population size reduction for faster convergence
+- **External Archive**: Maintains diversity by storing discarded solutions
+- **Current-to-pbest/1**: SHADE mutation strategy for balanced exploration
 - **Constraint Handling**: Linear and nonlinear constraint support
-- **Adaptive Parameters**: Self-adjusting F and CR parameters
+- **Adaptive Parameters**: Self-adjusting F and CR parameters (SHADE-style)
 - **Evaluation Recording**: Track optimization progress and convergence
 - **Visualization Tools**: Plot test functions and optimization traces
 
@@ -21,6 +24,44 @@ This crate provides a pure Rust implementation of Differential Evolution (DE) gl
 - `DE/best/1`: `x_trial = x_best + F * (x_r1 - x_r2)`
 - `DE/current-to-best/1`: Combines current and best vectors
 - `DE/rand/2`: Uses five random vectors for mutation
+- `DE/current-to-pbest/1`: Blends current with top-p% individual (SHADE)
+
+### L-SHADE Strategy
+
+L-SHADE combines three key improvements:
+1. **Linear Population Reduction**: Starts with large population (18×dim), reduces to minimum (4)
+2. **External Archive**: Stores discarded solutions for diversity
+3. **Current-to-pbest/1**: Selects pbest from top p% of population
+
+```rust
+use math_audio_differential_evolution::{
+    differential_evolution, DEConfigBuilder, Strategy, LShadeConfig
+};
+
+let bounds = vec![(-5.0, 5.0); 10];  // 10D problem
+
+let lshade_config = LShadeConfig {
+    np_init: 18,      // Initial NP = 18 × dim = 180
+    np_final: 4,      // Final NP = 4
+    p: 0.11,          // Select from top 11%
+    arc_rate: 2.1,    // Archive size = 2.1 × current NP
+    ..Default::default()
+};
+
+let config = DEConfigBuilder::new()
+    .maxiter(500)
+    .strategy(Strategy::LShadeBin)
+    .lshade(lshade_config)
+    .seed(42)
+    .build()
+    .expect("invalid config");
+
+let result = differential_evolution(
+    &|x| x.iter().map(|&xi| xi * xi).sum(),
+    &bounds,
+    config,
+).expect("optimization should succeed");
+```
 
 ### Crossover Strategies
 
@@ -30,7 +71,7 @@ This crate provides a pure Rust implementation of Differential Evolution (DE) gl
 ## Usage
 
 ```rust
-use math_audio_differential_evolution::{differential_evolution, DEConfig, Strategy, Mutation};
+use math_audio_differential_evolution::{differential_evolution, DEConfigBuilder, Strategy, Mutation};
 use ndarray::Array1;
 
 // Example objective function (Rosenbrock)
@@ -43,15 +84,15 @@ let objective = |x: &Array1<f64>| {
 // Define bounds for 2D problem
 let bounds = vec![(-5.0, 5.0), (-5.0, 5.0)];
 
-let config = DEConfig {
-    strategy: Strategy::Rand1Bin,
-    maxiter: 1000,
-    popsize: 50,
-    mutation: Mutation::Factor(0.8),
-    recombination: 0.9,
-    seed: Some(42),
-    ..Default::default()
-};
+let config = DEConfigBuilder::new()
+    .strategy(Strategy::Rand1Bin)
+    .maxiter(1000)
+    .popsize(50)
+    .mutation(Mutation::Factor(0.8))
+    .recombination(0.9)
+    .seed(42)
+    .build()
+    .expect("invalid config");
 
 let result = differential_evolution(&objective, &bounds, config)
     .expect("optimization should succeed");
@@ -114,6 +155,13 @@ The crate includes several example programs demonstrating different DE capabilit
 - `basic_de`: Simple unconstrained optimization
 - `linear_constraints`: Linear constraint handling
 - `nonlinear_constraints`: Complex constraint optimization
+
+## Performance Tips
+
+1. **Use L-SHADE for high-dimensional problems** (>10 dimensions)
+2. **Start with default LShadeConfig** and tune p if needed
+3. **Lower p values (0.05-0.1)** favor exploitation
+4. **Higher p values (0.15-0.25)** favor exploration
 
 ## [References](./REFERENCES.md)
 

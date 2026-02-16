@@ -1,6 +1,6 @@
 use ndarray::{Array1, Array2};
-use rand::Rng;
 use rand::seq::SliceRandom;
+use rand::Rng;
 
 use crate::mutant_rand1::mutant_rand1;
 
@@ -48,7 +48,7 @@ pub(crate) fn mutant_adaptive<R: Rng + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{AdaptiveConfig, DEConfigBuilder, Mutation, Strategy, differential_evolution};
+    use crate::{differential_evolution, AdaptiveConfig, DEConfigBuilder, Mutation, Strategy};
     use math_audio_test_functions::quadratic;
 
     #[test]
