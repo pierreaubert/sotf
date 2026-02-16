@@ -10,6 +10,7 @@ mod bicgstab;
 mod cg;
 mod cgs;
 mod gmres;
+pub mod gmres_deflated;
 #[cfg(feature = "rayon")]
 pub mod gmres_pipelined;
 
@@ -20,5 +21,6 @@ pub use gmres::{
     GmresConfig, GmresSolution, gmres, gmres_preconditioned, gmres_preconditioned_with_guess,
     gmres_with_guess,
 };
+pub use gmres_deflated::{DeflationSubspace, gmres_deflated, gmres_deflated_preconditioned};
 #[cfg(feature = "rayon")]
 pub use gmres_pipelined::gmres_pipelined;

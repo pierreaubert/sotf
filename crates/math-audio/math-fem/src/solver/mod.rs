@@ -10,16 +10,22 @@
 //! - **GMRES+ILU**: GMRES with ILU(0) preconditioning (recommended for large problems)
 //! - **GMRES+ShiftedLaplacian**: GMRES with shifted-Laplacian preconditioner (best for Helmholtz)
 //! - **GMRES+AMG**: GMRES with algebraic multigrid preconditioning (best parallel scalability)
+//! - **GMRES+Deflated+ShiftedLaplacian**: Deflated GMRES with shifted-Laplacian (best for clustered eigenvalues)
+
+mod deflation;
+
+pub use deflation::{DeflationConfig, DeflationMethod};
 
 use crate::assembly::HelmholtzProblem;
 use crate::assembly::{MassMatrix, StiffnessMatrix};
 use math_audio_solvers::iterative::{
-    gmres_pipelined, gmres_preconditioned, gmres_preconditioned_with_guess,
+    gmres_deflated_preconditioned, gmres_pipelined, gmres_preconditioned,
+    gmres_preconditioned_with_guess,
 };
 use math_audio_solvers::{
-    AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix, DiagonalPreconditioner,
-    GmresConfig, IdentityPreconditioner, IluColoringPreconditioner, IluFixedPointPreconditioner,
-    IluPreconditioner, gmres, lu_solve,
+    AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix,
+    DeflationSubspace, DiagonalPreconditioner, GmresConfig, IdentityPreconditioner,
+    IluColoringPreconditioner, IluFixedPointPreconditioner, IluPreconditioner, gmres, lu_solve,
 };
 use ndarray::Array1;
 use num_complex::Complex64;
@@ -48,6 +54,8 @@ pub struct SolverConfig {
     pub wavenumber: Option<f64>,
     /// WaveHoltz configuration (for WaveHoltz solver)
     pub waveholtz: Option<crate::waveholtz::WaveHoltzConfig>,
+    /// Deflation configuration (for GmresDeflatedShiftedLaplacian solver)
+    pub deflation: Option<DeflationConfig>,
 }
 
 impl Default for SolverConfig {
@@ -66,6 +74,7 @@ impl Default for SolverConfig {
             shifted_laplacian: None,
             wavenumber: None,
             waveholtz: None,
+            deflation: None,
         }
     }
 }
@@ -105,6 +114,14 @@ pub enum SolverType {
     ///
     /// Reference: Erlangga et al. (2006) "A class of preconditioners for the Helmholtz equation"
     GmresShiftedLaplacian,
+    /// Deflated GMRES with Shifted-Laplacian preconditioner
+    ///
+    /// Combines deflation (projecting out near-k² eigenmodes) with shifted-Laplacian
+    /// preconditioning. The deflation subspace is computed via inverse iteration
+    /// and dramatically reduces iteration counts for problems with clustered eigenvalues.
+    ///
+    /// Reference: Erlangga & Nabben (2008), Gaul et al. (2013)
+    GmresDeflatedShiftedLaplacian,
     /// GMRES with shifted-Laplacian and V-cycle multigrid smoothing
     GmresShiftedLaplacianMg,
     /// WaveHoltz: O(N) solver via wave equation time-stepping
@@ -291,6 +308,9 @@ pub fn solve(problem: &HelmholtzProblem, config: &SolverConfig) -> Result<Soluti
         SolverType::GmresPipelinedAmg => solve_gmres_pipelined_amg(&csr, &rhs, config),
         SolverType::GmresShiftedLaplacian => {
             solve_gmres_shifted_laplacian(problem, &csr, &rhs, config)
+        }
+        SolverType::GmresDeflatedShiftedLaplacian => {
+            solve_gmres_deflated_shifted_laplacian(problem, &csr, &rhs, config)
         }
         SolverType::GmresShiftedLaplacianMg => {
             solve_gmres_shifted_laplacian_mg(problem, &csr, &rhs, config)
@@ -1210,7 +1230,7 @@ fn solve_gmres_pipelined_amg_with_guess(
 /// A = K - k²M to P = K + (α + iβ)M which has more favorable spectral properties.
 ///
 /// Reference: Erlangga et al. (2006) "A class of preconditioners for the Helmholtz equation"
-fn build_shifted_laplacian(
+pub(crate) fn build_shifted_laplacian(
     stiffness: &StiffnessMatrix,
     mass: &MassMatrix,
     alpha: f64,
@@ -1484,6 +1504,135 @@ fn solve_gmres_shifted_laplacian_mg_with_guess(
     })
 }
 
+/// Solve using deflated GMRES with Shifted-Laplacian preconditioner
+///
+/// Computes deflation vectors via inverse iteration, then runs deflated GMRES
+/// with shifted-Laplacian AMG preconditioning. Best for problems with
+/// eigenvalues clustered near k².
+fn solve_gmres_deflated_shifted_laplacian(
+    problem: &HelmholtzProblem,
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let k = config.wavenumber.unwrap_or(1.0);
+    let default_sl = ShiftedLaplacianConfig::for_wavenumber(k);
+    let sl_config = config.shifted_laplacian.as_ref().unwrap_or(&default_sl);
+    let default_defl = DeflationConfig::for_frequency_sweep(10);
+    let defl_config = config.deflation.as_ref().unwrap_or(&default_defl);
+
+    if config.verbosity > 0 {
+        println!(
+            "  [FEM] Deflated+SL: α={:.4}, β={:.4}, {} deflation vectors",
+            sl_config.alpha, sl_config.beta, defl_config.num_vectors
+        );
+    }
+
+    let setup_start = Instant::now();
+
+    // Compute deflation subspace
+    let deflation = deflation::compute_deflation_subspace(problem, csr, k, defl_config);
+
+    // Build shifted-Laplacian preconditioner
+    let p_matrix = build_shifted_laplacian(
+        &problem.stiffness,
+        &problem.mass,
+        sl_config.alpha,
+        sl_config.beta,
+    );
+    let mut amg_config = AmgConfig::for_parallel();
+    amg_config.smoother = math_audio_solvers::AmgSmoother::L1Jacobi;
+    amg_config.strong_threshold = 0.5;
+    let precond = AmgPreconditioner::from_csr(&p_matrix, amg_config);
+
+    let setup_time = setup_start.elapsed();
+
+    if config.verbosity > 0 {
+        println!(
+            "  [FEM] Deflated+SL setup: {:.1}ms",
+            setup_time.as_secs_f64() * 1000.0
+        );
+    }
+
+    let result = gmres_deflated_preconditioned(csr, &precond, &deflation, rhs, None, &config.gmres);
+
+    if config.verbosity > 0 {
+        println!(
+            "  [FEM] Deflated+SL-GMRES {} in {} iterations (residual: {:.2e})",
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using deflated GMRES with a pre-computed deflation subspace
+///
+/// This is useful for frequency sweeps where the same deflation subspace
+/// can be reused across multiple frequencies, avoiding recomputation.
+///
+/// # Arguments
+/// * `problem` - The assembled Helmholtz problem
+/// * `deflation` - Pre-computed deflation subspace (from `deflation::compute_deflation_subspace`)
+/// * `config` - Solver configuration
+pub fn solve_deflated_with_subspace(
+    problem: &HelmholtzProblem,
+    deflation: &DeflationSubspace<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let csr = problem.matrix.to_csr();
+    let rhs = Array1::from(problem.rhs.clone());
+
+    let k = config.wavenumber.unwrap_or(1.0);
+    let default_sl = ShiftedLaplacianConfig::for_wavenumber(k);
+    let sl_config = config.shifted_laplacian.as_ref().unwrap_or(&default_sl);
+
+    let p_matrix = build_shifted_laplacian(
+        &problem.stiffness,
+        &problem.mass,
+        sl_config.alpha,
+        sl_config.beta,
+    );
+    let mut amg_config = AmgConfig::for_parallel();
+    amg_config.smoother = math_audio_solvers::AmgSmoother::L1Jacobi;
+    amg_config.strong_threshold = 0.5;
+    let precond = AmgPreconditioner::from_csr(&p_matrix, amg_config);
+
+    let result = gmres_deflated_preconditioned(&csr, &precond, deflation, &rhs, None, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
 /// Solve a Helmholtz problem directly from CSR matrix and RHS
 ///
 /// This is useful when you have pre-assembled sparse matrices.
@@ -1541,7 +1690,7 @@ pub fn solve_csr_with_guess(
         SolverType::GmresPipelined => solve_gmres_pipelined_with_guess(csr, rhs, x0, config),
         SolverType::GmresPipelinedIlu => solve_gmres_pipelined_ilu_with_guess(csr, rhs, x0, config),
         SolverType::GmresPipelinedAmg => solve_gmres_pipelined_amg_with_guess(csr, rhs, x0, config),
-        SolverType::GmresShiftedLaplacian => {
+        SolverType::GmresShiftedLaplacian | SolverType::GmresDeflatedShiftedLaplacian => {
             Err(SolverError::InvalidConfiguration(
                 "Shifted-Laplacian solver requires HelmholtzProblem, not CSR matrix. Use solve() instead.".into()
             ))
@@ -1889,6 +2038,88 @@ mod tests {
         let solution = solve(&problem, &config).expect("Solver should succeed");
         assert!(solution.converged);
         assert_eq!(solution.values.len(), problem.num_dofs());
+    }
+
+    #[test]
+    fn test_solve_helmholtz_gmres_deflated_shifted_laplacian() {
+        let mesh = unit_square_triangles(8);
+        let k = Complex64::new(5.0, 0.0);
+
+        let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, |x, y, _| {
+            Complex64::new(
+                (x * std::f64::consts::PI).sin() * (y * std::f64::consts::PI).sin(),
+                0.0,
+            )
+        });
+
+        let config = SolverConfig {
+            solver_type: SolverType::GmresDeflatedShiftedLaplacian,
+            gmres: GmresConfigF64 {
+                max_iterations: 200,
+                restart: 30,
+                tolerance: 1e-8,
+                print_interval: 0,
+            },
+            wavenumber: Some(5.0),
+            deflation: Some(DeflationConfig::for_frequency_sweep(5)),
+            ..Default::default()
+        };
+
+        let solution = solve(&problem, &config).expect("Deflated solver should succeed");
+        assert!(solution.converged);
+        assert_eq!(solution.values.len(), problem.num_dofs());
+    }
+
+    #[test]
+    fn test_deflated_vs_standard_iteration_count() {
+        let mesh = unit_square_triangles(8);
+        let k = Complex64::new(5.0, 0.0);
+
+        let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, |x, y, _| {
+            Complex64::new(
+                (x * std::f64::consts::PI).sin() * (y * std::f64::consts::PI).sin(),
+                0.0,
+            )
+        });
+
+        let gmres_config = GmresConfigF64 {
+            max_iterations: 500,
+            restart: 50,
+            tolerance: 1e-8,
+            print_interval: 0,
+        };
+
+        // Non-deflated shifted-Laplacian
+        let config_sl = SolverConfig {
+            solver_type: SolverType::GmresShiftedLaplacian,
+            gmres: gmres_config.clone(),
+            wavenumber: Some(5.0),
+            ..Default::default()
+        };
+
+        // Deflated shifted-Laplacian
+        let config_defl = SolverConfig {
+            solver_type: SolverType::GmresDeflatedShiftedLaplacian,
+            gmres: gmres_config,
+            wavenumber: Some(5.0),
+            deflation: Some(DeflationConfig::for_frequency_sweep(5)),
+            ..Default::default()
+        };
+
+        let sol_sl = solve(&problem, &config_sl).expect("SL should converge");
+        let sol_defl = solve(&problem, &config_defl).expect("Deflated should converge");
+
+        assert!(sol_sl.converged);
+        assert!(sol_defl.converged);
+
+        // Deflated should use fewer or comparable iterations
+        // (with generous margin since the test problem is small)
+        assert!(
+            sol_defl.iterations <= sol_sl.iterations + 20,
+            "Deflated ({}) should not use significantly more iterations than SL ({})",
+            sol_defl.iterations,
+            sol_sl.iterations
+        );
     }
 
     #[test]

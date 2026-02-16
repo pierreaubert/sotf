@@ -4,6 +4,6 @@
 //! - [`lu_solve`]: LU decomposition with partial pivoting
 //! - (Future: Cholesky for SPD systems)
 
-mod lu;
+pub(crate) mod lu;
 
-pub use lu::{LuFactorization, lu_solve};
+pub use lu::{LuError, LuFactorization, lu_factorize, lu_solve};

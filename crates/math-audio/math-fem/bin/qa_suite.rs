@@ -15,7 +15,7 @@ use math_audio_fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahed
 use math_audio_fem::neural_multigrid::{NeuralMultigridConfig, solve_neural_multigrid};
 use math_audio_fem::schwarz_pml::{SchwarzPmlConfig, SchwarzVariant, solve_schwarz_pml};
 use math_audio_fem::solver::{
-    GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType, solve,
+    DeflationConfig, GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType, solve,
 };
 use math_audio_fem::waveholtz::WaveHoltzConfig;
 use math_audio_wave::special::{legendre_p, spherical_bessel_j, spherical_bessel_y};
@@ -78,6 +78,7 @@ fn main() -> anyhow::Result<()> {
         SolverType::GmresIlu,
         SolverType::GmresAmg,
         SolverType::GmresShiftedLaplacian,
+        SolverType::GmresDeflatedShiftedLaplacian,
         SolverType::WaveHoltz,
         SolverType::SchwarzPmlAdditive,
         SolverType::NeuralMultigrid,
@@ -149,6 +150,12 @@ fn main() -> anyhow::Result<()> {
                 // Tune Shifted Laplacian for higher k
                 if *solver_type == SolverType::GmresShiftedLaplacian && *k_val >= 3.0 {
                     config.shifted_laplacian = Some(ShiftedLaplacianConfig::conservative(*k_val));
+                }
+
+                // Configure Deflated Shifted Laplacian
+                if *solver_type == SolverType::GmresDeflatedShiftedLaplacian {
+                    config.shifted_laplacian = Some(ShiftedLaplacianConfig::for_wavenumber(*k_val));
+                    config.deflation = Some(DeflationConfig::for_frequency_sweep(10));
                 }
 
                 // Configure WaveHoltz
@@ -254,6 +261,12 @@ fn main() -> anyhow::Result<()> {
             // For 3D, Shifted Laplacian benefits from aggressive shifts sometimes
             if *solver_type == SolverType::GmresShiftedLaplacian {
                 config.shifted_laplacian = Some(ShiftedLaplacianConfig::for_wavenumber(*k));
+            }
+
+            // Configure Deflated Shifted Laplacian
+            if *solver_type == SolverType::GmresDeflatedShiftedLaplacian {
+                config.shifted_laplacian = Some(ShiftedLaplacianConfig::for_wavenumber(*k));
+                config.deflation = Some(DeflationConfig::for_frequency_sweep(10));
             }
 
             // Configure WaveHoltz
