@@ -8,6 +8,7 @@
 //! - Pink noise (1/f spectrum)
 //! - M-weighted noise (ITU-R 468)
 
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use std::f32::consts::PI;
 
 /// Clip a sample to prevent overflow in PCM conversion
@@ -220,47 +221,44 @@ pub fn gen_pink_noise(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
 /// * `sample_rate` - Sample rate in Hz
 /// * `duration` - Duration in seconds
 pub fn gen_m_noise(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
-    // M-weighted noise uses ITU-R 468 weighting curve
-    // This is an approximation using a shaped white noise approach
     let n_frames = frames_for(duration, sample_rate);
-    let mut signal = Vec::with_capacity(n_frames);
+    let srate = sample_rate as f64;
 
-    // Generate white noise first
+    // Generate white noise
     let mut seed: u64 = 1122334455;
     let mut noise_buffer = Vec::with_capacity(n_frames);
-
     for _ in 0..n_frames {
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-        // Mask to 32 bits to get proper range [0, u32::MAX]
         let random_u32 = (seed & 0xFFFFFFFF) as u32;
-        let white = (random_u32 as f32 / u32::MAX as f32) * 2.0 - 1.0;
+        let white = (random_u32 as f64 / u32::MAX as f64) * 2.0 - 1.0;
         noise_buffer.push(white);
     }
 
-    // Apply ITU-R 468 weighting approximation using IIR filters
-    // This is a simplified version that boosts high frequencies (emphasis around 6.3 kHz)
-    let mut hp_state = 0.0f32;
+    // ITU-R 468 weighting approximation using cascaded biquad filters:
+    //   - Highpass at 20 Hz removes sub-bass
+    //   - Low shelf +5 dB at 100 Hz shapes the low-frequency rise
+    //   - Peak +12 dB at 6.3 kHz is the characteristic ITU-R 468 peak
+    //   - Peak -4 dB at 12 kHz shapes the descent above the peak
+    //   - Lowpass at 22 kHz rolls off ultrasonics
+    let mut filters = [
+        Biquad::new(BiquadFilterType::Highpass, 20.0, srate, 0.0, 0.0),
+        Biquad::new(BiquadFilterType::Lowshelf, 100.0, srate, 0.6, 5.0),
+        Biquad::new(BiquadFilterType::Peak, 6300.0, srate, 1.0, 12.0),
+        Biquad::new(BiquadFilterType::Peak, 12000.0, srate, 0.8, -4.0),
+        Biquad::new(BiquadFilterType::Lowpass, 22000.0, srate, 0.0, 0.0),
+    ];
 
-    // High-pass filter coefficient (cutoff around 30 Hz)
-    let hp_coeff = (-2.0 * PI * 30.0 / sample_rate as f32).exp();
-
-    // Peak filter coefficients (peak around 6300 Hz)
-    let peak_freq = 6300.0;
-    let peak_gain_db = 12.0; // ITU-R 468 has peak around 6.3 kHz
-    let w0 = 2.0 * PI * peak_freq / sample_rate as f32;
-    let a = 10.0f32.powf(peak_gain_db / 40.0);
-
-    for &white in &noise_buffer {
-        // High-pass filter
-        hp_state = hp_coeff * (hp_state + white);
-
-        // Simplified peak boost (approximate ITU-R 468 weighting)
-        let boosted = hp_state * (1.0 + (w0 * hp_state.abs()).sin() * a * 0.3);
-
-        signal.push(clip(amp * boosted * 0.7));
-    }
-
-    signal
+    let amp_f64 = amp as f64;
+    noise_buffer
+        .iter()
+        .map(|&sample| {
+            let mut s = sample;
+            for f in &mut filters {
+                s = f.process(s);
+            }
+            clip((amp_f64 * s) as f32)
+        })
+        .collect()
 }
 
 /// Interleave per-channel signals into a multi-channel interleaved buffer
@@ -385,8 +383,11 @@ pub fn prepare_signal_for_playback(
     apply_fade_in(&mut signal, fade_samples);
     apply_fade_out(&mut signal, fade_samples);
 
-    // Add silence padding
-    add_silence_padding(&signal, padding_samples, padding_samples)
+    // Pad in-place: extend with zeros for both pads, then rotate pre-padding to the front
+    let signal_len = signal.len();
+    signal.resize(signal_len + 2 * padding_samples, 0.0);
+    signal.rotate_right(padding_samples);
+    signal
 }
 
 /// Convert mono signal to stereo by copying to both channels

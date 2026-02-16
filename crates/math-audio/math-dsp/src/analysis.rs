@@ -11,9 +11,23 @@ use hound::WavReader;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
+use std::cell::RefCell;
 use std::f32::consts::PI;
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
+
+thread_local! {
+    static FFT_PLANNER: RefCell<FftPlanner<f32>> = RefCell::new(FftPlanner::new());
+}
+
+fn plan_fft_forward(size: usize) -> Arc<dyn rustfft::Fft<f32>> {
+    FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_forward(size))
+}
+
+fn plan_fft_inverse(size: usize) -> Arc<dyn rustfft::Fft<f32>> {
+    FFT_PLANNER.with(|p| p.borrow_mut().plan_fft_inverse(size))
+}
 
 /// Microphone compensation data (frequency response correction)
 #[derive(Debug, Clone)]
@@ -71,7 +85,7 @@ impl MicrophoneCompensation {
 
             // Debug output for sample points
             if debug_points.contains(&i) {
-                log::info!(
+                log::debug!(
                     "[apply_to_sweep] t={:.3}s, freq={:.1}Hz, comp_db={:.2}dB, gain_db={:.2}dB, gain={:.3}x",
                     t,
                     freq,
@@ -84,7 +98,7 @@ impl MicrophoneCompensation {
             compensated.push(sample * gain);
         }
 
-        log::info!(
+        log::debug!(
             "[apply_to_sweep] Processed {} samples, duration={:.2}s",
             signal.len(),
             duration
@@ -519,8 +533,7 @@ fn compute_welch_spectrum_internal(
     let window_power: f32 = hann_window.iter().map(|&w| w * w).sum();
     let scale_factor = 2.0 / window_power;
 
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(fft_size);
+    let fft = plan_fft_forward(fft_size);
 
     let mut windowed = vec![0.0_f32; fft_size];
     let mut buffer = vec![Complex::new(0.0, 0.0); fft_size];
@@ -610,8 +623,7 @@ fn compute_single_fft_spectrum_internal(
 
     let mut buffer: Vec<Complex<f32>> = windowed.iter().map(|&x| Complex::new(x, 0.0)).collect();
 
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(fft_size);
+    let fft = plan_fft_forward(fft_size);
     fft.process(&mut buffer);
 
     let scale_factor = if no_window {
@@ -670,7 +682,7 @@ fn interpolate_log(x: &[f32], y: &[f32], x_new: &[f32]) -> Vec<f32> {
     x_new
         .iter()
         .map(|&freq| {
-            let idx = x.iter().position(|&f| f >= freq).unwrap_or(x.len() - 1);
+            let idx = x.partition_point(|&f| f < freq).min(x.len() - 1);
 
             if idx == 0 {
                 return y[0];
@@ -743,13 +755,13 @@ pub fn analyze_recording(
     sweep_range: Option<(f32, f32)>,
 ) -> Result<AnalysisResult, String> {
     // Load recorded WAV
-    log::info!("[FFT Analysis] Loading recorded file: {:?}", recorded_path);
+    log::debug!("[FFT Analysis] Loading recorded file: {:?}", recorded_path);
     let recorded = load_wav_mono(recorded_path)?;
-    log::info!(
+    log::debug!(
         "[FFT Analysis] Loaded {} samples from recording",
         recorded.len()
     );
-    log::info!(
+    log::debug!(
         "[FFT Analysis] Reference has {} samples",
         reference_signal.len()
     );
@@ -765,61 +777,62 @@ pub fn analyze_recording(
     let recorded = &recorded[..];
     let reference = reference_signal;
 
-    // Debug: Check signal statistics
-    let ref_max = reference
-        .iter()
-        .map(|&x| x.abs())
-        .fold(0.0_f32, |a, b| a.max(b));
-    let rec_max = recorded
-        .iter()
-        .map(|&x| x.abs())
-        .fold(0.0_f32, |a, b| a.max(b));
-    let ref_rms = (reference.iter().map(|&x| x * x).sum::<f32>() / reference.len() as f32).sqrt();
-    let rec_rms = (recorded.iter().map(|&x| x * x).sum::<f32>() / recorded.len() as f32).sqrt();
+    // Debug: Check signal statistics (guarded to skip O(n) computation when disabled)
+    if log::log_enabled!(log::Level::Debug) {
+        let ref_max = reference
+            .iter()
+            .map(|&x| x.abs())
+            .fold(0.0_f32, |a, b| a.max(b));
+        let rec_max = recorded
+            .iter()
+            .map(|&x| x.abs())
+            .fold(0.0_f32, |a, b| a.max(b));
+        let ref_rms =
+            (reference.iter().map(|&x| x * x).sum::<f32>() / reference.len() as f32).sqrt();
+        let rec_rms =
+            (recorded.iter().map(|&x| x * x).sum::<f32>() / recorded.len() as f32).sqrt();
 
-    log::info!(
-        "[FFT Analysis] Reference: max={:.4}, RMS={:.4}",
-        ref_max,
-        ref_rms
-    );
-    log::info!(
-        "[FFT Analysis] Recorded:  max={:.4}, RMS={:.4}",
-        rec_max,
-        rec_rms
-    );
+        log::debug!(
+            "[FFT Analysis] Reference: max={:.4}, RMS={:.4}",
+            ref_max,
+            ref_rms
+        );
+        log::debug!(
+            "[FFT Analysis] Recorded:  max={:.4}, RMS={:.4}",
+            rec_max,
+            rec_rms
+        );
+        log::debug!(
+            "[FFT Analysis] First 5 reference samples: {:?}",
+            &reference[..5.min(reference.len())]
+        );
+        log::debug!(
+            "[FFT Analysis] First 5 recorded samples:  {:?}",
+            &recorded[..5.min(recorded.len())]
+        );
 
-    // Show first 10 samples for comparison
-    log::info!(
-        "[FFT Analysis] First 5 reference samples: {:?}",
-        &reference[..5.min(reference.len())]
-    );
-    log::info!(
-        "[FFT Analysis] First 5 recorded samples:  {:?}",
-        &recorded[..5.min(recorded.len())]
-    );
-
-    // Check if signals are identical (compare overlap region)
-    let check_len = reference.len().min(recorded.len());
-    let mut identical_count = 0;
-    for (r, c) in reference[..check_len]
-        .iter()
-        .zip(recorded[..check_len].iter())
-    {
-        if (r - c).abs() < 1e-6 {
-            identical_count += 1;
+        let check_len = reference.len().min(recorded.len());
+        let mut identical_count = 0;
+        for (r, c) in reference[..check_len]
+            .iter()
+            .zip(recorded[..check_len].iter())
+        {
+            if (r - c).abs() < 1e-6 {
+                identical_count += 1;
+            }
         }
+        log::debug!(
+            "[FFT Analysis] Identical samples: {}/{} ({:.1}%)",
+            identical_count,
+            check_len,
+            identical_count as f32 * 100.0 / check_len as f32
+        );
     }
-    log::info!(
-        "[FFT Analysis] Identical samples: {}/{} ({:.1}%)",
-        identical_count,
-        check_len,
-        identical_count as f32 * 100.0 / check_len as f32
-    );
 
     // Estimate lag using cross-correlation
     let lag = estimate_lag(reference, recorded)?;
 
-    log::info!(
+    log::debug!(
         "[FFT Analysis] Estimated lag: {} samples ({:.2} ms)",
         lag,
         lag as f32 * 1000.0 / sample_rate as f32
@@ -844,7 +857,7 @@ pub fn analyze_recording(
         (&reference[lag_usize..], &recorded[..])
     };
 
-    log::info!(
+    log::debug!(
         "[FFT Analysis] Aligned lengths: ref={}, rec={} (tail included)",
         aligned_ref.len(),
         aligned_rec.len()
@@ -887,7 +900,7 @@ pub fn analyze_recording(
 
         if bin_lower > bin_upper || bin_upper >= ref_spectrum.len() {
             if skipped_count < 5 {
-                log::info!(
+                log::debug!(
                     "[FFT Analysis] Skipping freq {:.1} Hz: bin_lower={}, bin_upper={}, ref_spectrum.len()={}",
                     target_freq,
                     bin_lower,
@@ -922,10 +935,7 @@ pub fn analyze_recording(
 
             // Phase from cross-spectrum (signals are already time-aligned)
             let cross_spectrum = ref_spectrum[k].conj() * rec_spectrum[k];
-            let mut phase_rad = cross_spectrum.arg();
-
-            // Wrap phase to [-pi, pi] range
-            phase_rad = phase_rad.sin().atan2(phase_rad.cos());
+            let phase_rad = cross_spectrum.arg();
 
             // Accumulate for averaging
             sum_magnitude += magnitude;
@@ -944,9 +954,8 @@ pub fn analyze_recording(
         // Convert to dB
         let db = 20.0 * avg_magnitude.max(1e-10).log10();
 
-        // Debug: log first few points to see what's happening
         if frequencies.len() < 5 {
-            log::info!(
+            log::debug!(
                 "[FFT Analysis] freq={:.1} Hz: avg_magnitude={:.6}, dB={:.2}",
                 target_freq,
                 avg_magnitude,
@@ -963,20 +972,20 @@ pub fn analyze_recording(
         phase_deg.push(phase);
     }
 
-    log::info!(
+    log::debug!(
         "[FFT Analysis] Generated {} frequency points for CSV output",
         frequencies.len()
     );
-    log::info!(
+    log::debug!(
         "[FFT Analysis] Skipped {} frequency points (out of {})",
         skipped_count,
         num_output_points
     );
 
-    if !spl_db.is_empty() {
+    if log::log_enabled!(log::Level::Debug) && !spl_db.is_empty() {
         let min_spl = spl_db.iter().fold(f32::INFINITY, |a, &b| a.min(b));
         let max_spl = spl_db.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-        log::info!(
+        log::debug!(
             "[FFT Analysis] SPL range: {:.2} dB to {:.2} dB",
             min_spl,
             max_spl
@@ -996,8 +1005,7 @@ pub fn analyze_recording(
     }
 
     // IFFT to get Impulse Response
-    let mut planner = FftPlanner::new();
-    let ifft = planner.plan_fft_inverse(fft_size);
+    let ifft = plan_fft_inverse(fft_size);
     ifft.process(&mut transfer_function);
 
     // Normalize and take real part (input was real, so output should be real-ish)
@@ -1471,8 +1479,7 @@ fn estimate_lag(reference: &[f32], recorded: &[f32]) -> Result<isize, String> {
         .collect();
 
     // IFFT to get cross-correlation in time domain
-    let mut planner = FftPlanner::new();
-    let ifft = planner.plan_fft_inverse(fft_size);
+    let ifft = plan_fft_inverse(fft_size);
     ifft.process(&mut cross_corr_fft);
 
     // Find peak
@@ -1520,13 +1527,14 @@ fn compute_fft(
 
 /// Compute FFT with zero-padding
 fn compute_fft_padded(signal: &[f32], fft_size: usize) -> Result<Vec<Complex<f32>>, String> {
-    // Zero-pad to fft_size
-    let mut buffer: Vec<Complex<f32>> = signal.iter().map(|&x| Complex::new(x, 0.0)).collect();
-    buffer.resize(fft_size, Complex::new(0.0, 0.0));
+    // Single allocation at final size; trailing elements are already zero-padded
+    let mut buffer = vec![Complex::new(0.0, 0.0); fft_size];
+    for (dst, &src) in buffer.iter_mut().zip(signal.iter()) {
+        dst.re = src;
+    }
 
     // Compute FFT
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(fft_size);
+    let fft = plan_fft_forward(fft_size);
     fft.process(&mut buffer);
 
     // Normalize by FFT size (standard FFT normalization)
@@ -1684,12 +1692,27 @@ fn load_wav_mono(path: &Path) -> Result<Vec<f32>, String> {
 // ============================================================================
 
 /// Apply octave smoothing to frequency response data (f64 version)
+///
+/// Frequencies must be sorted in ascending order (as from FFT or log-spaced grids).
+/// Uses a prefix sum with two-pointer sliding window for O(n) complexity.
 pub fn smooth_response_f64(frequencies: &[f64], values: &[f64], octaves: f64) -> Vec<f64> {
     if octaves <= 0.0 || frequencies.is_empty() || values.is_empty() {
         return values.to_vec();
     }
 
-    let mut smoothed = Vec::with_capacity(values.len());
+    let n = values.len();
+
+    // Prefix sum for O(1) range averages
+    let mut prefix = Vec::with_capacity(n + 1);
+    prefix.push(0.0);
+    for &v in values {
+        prefix.push(prefix.last().unwrap() + v);
+    }
+
+    let ratio = 2.0_f64.powf(octaves / 2.0);
+    let mut smoothed = Vec::with_capacity(n);
+    let mut lo = 0usize;
+    let mut hi = 0usize;
 
     for (i, &center_freq) in frequencies.iter().enumerate() {
         if center_freq <= 0.0 {
@@ -1697,24 +1720,21 @@ pub fn smooth_response_f64(frequencies: &[f64], values: &[f64], octaves: f64) ->
             continue;
         }
 
-        // Calculate frequency range for smoothing window
-        let ratio = 2.0_f64.powf(octaves / 2.0);
         let low_freq = center_freq / ratio;
         let high_freq = center_freq * ratio;
 
-        // Average values within the window
-        let mut sum = 0.0;
-        let mut count = 0;
-
-        for (j, &freq) in frequencies.iter().enumerate() {
-            if freq >= low_freq && freq <= high_freq {
-                sum += values[j];
-                count += 1;
-            }
+        // Advance lo past frequencies below the window
+        while lo < n && frequencies[lo] < low_freq {
+            lo += 1;
+        }
+        // Advance hi to include frequencies within the window
+        while hi < n && frequencies[hi] <= high_freq {
+            hi += 1;
         }
 
+        let count = hi - lo;
         if count > 0 {
-            smoothed.push(sum / count as f64);
+            smoothed.push((prefix[hi] - prefix[lo]) / count as f64);
         } else {
             smoothed.push(values[i]);
         }
@@ -1724,15 +1744,27 @@ pub fn smooth_response_f64(frequencies: &[f64], values: &[f64], octaves: f64) ->
 }
 
 /// Apply octave smoothing to frequency response data (f32 version)
+///
+/// Frequencies must be sorted in ascending order (as from FFT or log-spaced grids).
+/// Uses a prefix sum with two-pointer sliding window for O(n) complexity.
 pub fn smooth_response_f32(frequencies: &[f32], values: &[f32], octaves: f32) -> Vec<f32> {
     if octaves <= 0.0 || frequencies.is_empty() || values.is_empty() {
         return values.to_vec();
     }
 
-    let mut smoothed = Vec::with_capacity(values.len());
+    let n = values.len();
 
-    // Octave smoothing: for each frequency, average values within +/- half the octave bandwidth
-    let half_octave_ratio = 2.0_f32.powf(octaves / 2.0);
+    // Prefix sum for O(1) range averages (accumulate in f64 to avoid precision loss)
+    let mut prefix = Vec::with_capacity(n + 1);
+    prefix.push(0.0_f64);
+    for &v in values {
+        prefix.push(prefix.last().unwrap() + v as f64);
+    }
+
+    let ratio = 2.0_f32.powf(octaves / 2.0);
+    let mut smoothed = Vec::with_capacity(n);
+    let mut lo = 0usize;
+    let mut hi = 0usize;
 
     for (i, &center_freq) in frequencies.iter().enumerate() {
         if center_freq <= 0.0 {
@@ -1740,21 +1772,21 @@ pub fn smooth_response_f32(frequencies: &[f32], values: &[f32], octaves: f32) ->
             continue;
         }
 
-        let low_freq = center_freq / half_octave_ratio;
-        let high_freq = center_freq * half_octave_ratio;
+        let low_freq = center_freq / ratio;
+        let high_freq = center_freq * ratio;
 
-        let mut sum = 0.0_f32;
-        let mut count = 0;
-
-        for (j, &freq) in frequencies.iter().enumerate() {
-            if freq >= low_freq && freq <= high_freq {
-                sum += values[j];
-                count += 1;
-            }
+        // Advance lo past frequencies below the window
+        while lo < n && frequencies[lo] < low_freq {
+            lo += 1;
+        }
+        // Advance hi to include frequencies within the window
+        while hi < n && frequencies[hi] <= high_freq {
+            hi += 1;
         }
 
+        let count = hi - lo;
         if count > 0 {
-            smoothed.push(sum / count as f32);
+            smoothed.push(((prefix[hi] - prefix[lo]) / count as f64) as f32);
         } else {
             smoothed.push(values[i]);
         }
@@ -2134,7 +2166,6 @@ pub fn compute_spectrogram(
     window_size: usize,
     hop_size: usize,
 ) -> (Vec<Vec<f32>>, Vec<f32>, Vec<f32>) {
-    use rustfft::FftPlanner;
     use rustfft::num_complex::Complex;
 
     if impulse.len() < window_size {
@@ -2151,8 +2182,7 @@ pub fn compute_spectrogram(
         .collect();
 
     // Setup FFT
-    let mut planner = FftPlanner::new();
-    let fft = planner.plan_fft_forward(window_size);
+    let fft = plan_fft_forward(window_size);
 
     for i in 0..num_frames {
         let start = i * hop_size;
