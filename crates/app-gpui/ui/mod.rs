@@ -40,7 +40,7 @@ impl PlayerView {
 
         // Subscribe to layout changes for granular re-renders
         let layout = state.read(cx).layout.clone();
-        cx.subscribe(&layout, |view, _, _, cx| {
+        cx.subscribe(&layout, |_view, _, _, cx| {
             cx.notify();
         })
         .detach();

@@ -4396,8 +4396,9 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
         lines.push(Line::from(""));
 
         // Add wrapped error message
+        let text_style = Style::default().fg(app.theme.fg_primary);
         for line in wrapped_lines {
-            lines.push(Line::from(Span::raw(line)));
+            lines.push(Line::from(Span::styled(line, text_style)));
         }
 
         lines.push(Line::from(""));
@@ -4405,32 +4406,33 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
 
         // Add instructions
         lines.push(Line::from(vec![
-            Span::styled("Press ", Style::default()),
+            Span::styled("Press ", text_style),
             Span::styled(
                 "ESC",
                 Style::default()
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(", ", Style::default()),
+            Span::styled(", ", text_style),
             Span::styled(
                 "Enter",
                 Style::default()
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(", or ", Style::default()),
+            Span::styled(", or ", text_style),
             Span::styled(
                 "Space",
                 Style::default()
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" to close", Style::default()),
+            Span::styled(" to close", text_style),
         ]));
 
         let paragraph = Paragraph::new(lines)
             .block(Block::default())
+            .style(text_style)
             .alignment(Alignment::Center)
             .wrap(Wrap { trim: false });
 

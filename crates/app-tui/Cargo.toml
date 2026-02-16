@@ -61,6 +61,15 @@ chrono = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
 
+# Media controls (Now Playing / media keys)
+souvlaki = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { workspace = true }
+objc2-app-kit = { workspace = true, features = ["NSApplication", "NSRunningApplication", "NSEvent"] }
+objc2-foundation = { workspace = true, features = ["NSObjCRuntime", "NSString", "NSDate"] }
+core-foundation-sys = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

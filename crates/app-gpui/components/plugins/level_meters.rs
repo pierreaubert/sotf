@@ -1126,6 +1126,7 @@ impl PlayerView {
 
     /// Render separate Meters panel (for queue screen)
     pub fn render_meters_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        // Extract all data from state first to avoid borrow issues
         let (theme, loudness, groups, selected_group, peak_hold) = {
             let state = self.state.read(cx);
             (
@@ -1136,7 +1137,6 @@ impl PlayerView {
                 state.app.level_meter_peak_hold.clone(),
             )
         };
-
         let theme_c = theme.clone();
         div()
             .flex()

@@ -22,7 +22,6 @@ impl PlayerView {
                     volume_start_y,
                     volume_start_value,
                     window_height,
-                    meters_ratio,
                 ) = {
                     let state = view.state.read(cx);
                     let layout = state.layout.read(cx);
@@ -35,7 +34,6 @@ impl PlayerView {
                         state.app.volume_drag_start_y,
                         state.app.volume_drag_start_value,
                         state.app.ui_state.window_height,
-                        layout.meters_panel_ratio,
                     )
                 };
 

@@ -114,7 +114,21 @@ impl Render for PlayerView {
             state.app.library_state.ensure_cache_valid();
         });
 
-        let (current_screen, input_mode, theme, layout_mode, active_menu, font_scale) = {
+        // Batch all state reads into a single scope to minimize locking overhead
+        let (
+            current_screen,
+            input_mode,
+            theme,
+            layout_mode,
+            active_menu,
+            font_scale,
+            theme_id,
+            show_migration_modal,
+            context_menu,
+            show_studio_menu,
+            show_device_popup,
+            playback_output_devices,
+        ) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.current_screen,
@@ -123,6 +137,12 @@ impl Render for PlayerView {
                 state.app.ui_state.layout_mode,
                 state.app.ui_state.active_menu,
                 state.app.ui_state.font_scale,
+                state.app.ui_state.theme_id,
+                state.app.measurement_state.recording_state.migration_modal_open,
+                state.app.ui_state.context_menu.is_some(),
+                state.app.ui_state.show_studio_menu,
+                state.app.ui_state.show_device_popup,
+                state.app.ui_state.translations.playback_output_devices.clone(),
             )
         };
 
@@ -132,7 +152,6 @@ impl Render for PlayerView {
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
-        let theme_id = self.state.read(cx).app.ui_state.theme_id;
         let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id);
         cx.set_global(UiKitThemeState {
             theme: ui_kit_theme,
@@ -140,13 +159,10 @@ impl Render for PlayerView {
 
         // Determine key context based on input mode
         // Use "TextInput" context when typing to disable single-letter keybindings
-        let key_context = {
-            let state = self.state.read(cx);
-            if Self::is_text_input_mode(state.app.ui_state.input_mode) {
-                "TextInput"
-            } else {
-                "PlayerView"
-            }
+        let key_context = if Self::is_text_input_mode(input_mode) {
+            "TextInput"
+        } else {
+            "PlayerView"
         };
 
         div()
@@ -395,26 +411,20 @@ impl Render for PlayerView {
             // Scan progress modal
             .child(self.render_scan_progress_modal(cx))
             // Migration modal for recording format conversion
-            .when(
-                self.state.read(cx).app.measurement_state.recording_state.migration_modal_open,
-                |div| div.child(self.render_migration_modal(cx)),
-            )
+            .when(show_migration_modal, |div| div.child(self.render_migration_modal(cx)))
             .child(self.render_toast(cx))
-            .when(self.state.read(cx).app.ui_state.context_menu.is_some(), |div| {
-                div.child(self.render_context_menu(cx))
-            })
+            .when(context_menu, |div| div.child(self.render_context_menu(cx)))
             // Studio menu overlay (click outside to close)
-            .when(self.state.read(cx).app.ui_state.show_studio_menu, |div| {
+            .when(show_studio_menu, |div| {
                 div.child(self.render_studio_menu_overlay(cx))
             })
             // Device popup overlay (click outside to close)
-            .when(self.state.read(cx).app.ui_state.show_device_popup, |div| {
+            .when(show_device_popup, |div| {
                 div.child(self.render_device_popup_overlay(cx))
             })
             // Device popup (rendered here to be above overlay)
-            .when(self.state.read(cx).app.ui_state.show_device_popup, |div| {
-                let translations = &self.state.read(cx).app.ui_state.translations;
-                div.child(self.render_device_popup(translations.playback_output_devices, cx))
+            .when(show_device_popup, |div| {
+                div.child(self.render_device_popup(playback_output_devices.clone(), cx))
             })
             // Menu dropdowns rendered last for z-ordering
             .when(active_menu != crate::app::ActiveMenu::None, |div| {
@@ -455,7 +465,7 @@ impl PlayerView {
                         crate::app::LayoutOrientation::Vertical => {
                             self.render_vertical_3panel(cx).into_any_element()
                         }
-                    },
+                    }
                     crate::app::LayoutMode::Compact => {
                         if screen == Screen::Library {
                             self.render_library_screen(cx).into_any_element()

@@ -16,7 +16,7 @@ default:
 # Downloads
 # ----------------------------------------------------------------------
 
-download-once: download-sofa download-speakers generate-audio-tests
+download-once: download-sofa download-speakers generate-audio-tests generate-roomeq-tests
 
 download-sofa:
 	mkdir -p data_cached/org.sofacoustics/mit
@@ -39,6 +39,14 @@ convert-sofa-to-sqlite:
 
 generate-audio-tests: prod-generate-audio-tests
 	cargo run --bin generate-audio-tests -p tools --release --no-default-features
+
+generate-roomeq-tests: generate-roomeq-tests-bem generate-roomeq-fem
+
+generate-roomeq-bem:
+	cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir data_tests/roomeq/generated
+
+generate-roomeq-fem:
+	cargo run --bin generate-roomeq-data --release -- --solver fem --output-dir data_tests/roomeq/generated
 
 # ----------------------------------------------------------------------
 # TEST
@@ -737,7 +745,7 @@ qa-plugin-fuzzer:
 qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21 qa-roomeq-small-stereo-22 qa-roomeq-convergence
 
 qa-roomeq-convergence:
-	cargo run --bin roomeq-qa --release
+	cargo run --bin roomeq-qa-quality --release
 
 qa-roomeq-small-stereo-20:
 	@for method in iir fir mixed; do \
@@ -782,6 +790,19 @@ qa-roomeq-small-stereo-22:
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
 	  done \
 	done
+
+# New comprehensive QA using roomeq-qa-full binary
+qa-roomeq-coverage: prod-autoeq
+	cargo run --bin roomeq-qa-coverage --release
+
+qa-roomeq-quick: prod-autoeq
+	cargo run --bin roomeq-qa-coverage --release -- --quick --maxeval 200
+
+qa-roomeq-list:
+	cargo run --bin roomeq-qa-coverage --release -- --list
+
+qa-roomeq-matrix:
+	cargo run --bin roomeq-qa-coverage --release -- --matrix
 
 
 # ----------------------------------------------------------------------

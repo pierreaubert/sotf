@@ -4214,20 +4214,30 @@ impl App {
         self.album_images.clear();
         self.selected_image_index = 0;
 
-        // Initialize image picker if not already done
+        // Initialize image picker if not already done.
+        // macOS Terminal.app doesn't support graphics protocols (Kitty/iTerm2)
+        // and the stdio query leaks escape sequences onto the screen.
+        // Use halfblocks directly for terminals that don't support graphics.
         if self.image_picker.is_none() {
-            // Query terminal for actual font size to avoid mangled images
-            match ratatui_image::picker::Picker::from_query_stdio() {
-                Ok(picker) => {
-                    self.image_picker = Some(picker);
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to query terminal for font size: {}, using halfblocks fallback",
-                        e
-                    );
-                    // Fallback to halfblocks which works in all terminals
-                    self.image_picker = Some(ratatui_image::picker::Picker::halfblocks());
+            let use_halfblocks = std::env::var("TERM_PROGRAM")
+                .map(|tp| tp == "Apple_Terminal")
+                .unwrap_or(false);
+
+            if use_halfblocks {
+                log::info!("Terminal.app detected, using halfblocks for album art");
+                self.image_picker = Some(ratatui_image::picker::Picker::halfblocks());
+            } else {
+                match ratatui_image::picker::Picker::from_query_stdio() {
+                    Ok(picker) => {
+                        self.image_picker = Some(picker);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to query terminal for font size: {}, using halfblocks fallback",
+                            e
+                        );
+                        self.image_picker = Some(ratatui_image::picker::Picker::halfblocks());
+                    }
                 }
             }
         }

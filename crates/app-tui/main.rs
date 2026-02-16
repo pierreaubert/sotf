@@ -4,10 +4,14 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
+use souvlaki::{MediaPlayback, MediaPosition};
 use sotf_audio::run_preflight_checks;
 use sotf_audio_player::{Player, PluginSettings, PluginType};
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
-use sotf_audio_player_tui::events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
+use sotf_audio_player_tui::events::{
+    AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
+};
+use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::theme;
 use sotf_audio_player_tui::ui;
 use std::fs::OpenOptions;
@@ -187,8 +191,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Initialize media controls (best-effort: works without them on headless servers)
+    let mut media_controls = match TuiMediaControls::new() {
+        Ok(mc) => {
+            log::info!("Media controls initialized (Now Playing + media keys)");
+            Some(mc)
+        }
+        Err(e) => {
+            log::warn!("Media controls unavailable: {}. Continuing without them.", e);
+            None
+        }
+    };
+
     // Main loop
-    let result = run_app(&mut terminal, &mut app, &mut player);
+    let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls);
 
     // Save configuration before exit
     if let Err(e) = app.save_config() {
@@ -212,6 +228,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     player: &mut Player,
+    media_controls: &mut Option<TuiMediaControls>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         // Draw UI only if needed
@@ -221,7 +238,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
         }
 
         // Handle events
-        if let Some(event) = handle_events(Duration::from_millis(100))? {
+        if let Some(event) =
+            handle_events(Duration::from_millis(100), media_controls.as_ref())?
+        {
             app.needs_redraw = true;
             match event {
                 AppEvent::Key(key) => {
@@ -232,6 +251,18 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             app.input_mode = InputMode::ShowError;
                             app.is_playing = false;
                         }
+                        update_media_controls(app, player, media_controls);
+                    }
+                }
+                AppEvent::MediaControl(event) => {
+                    if let Some(cmd) = handle_media_control_event(app, event) {
+                        if let Err(e) = handle_player_command(player, app, cmd) {
+                            log::error!("[TUI] Media control command error: {}", e);
+                            app.error_message = Some(e.to_string());
+                            app.input_mode = InputMode::ShowError;
+                            app.is_playing = false;
+                        }
+                        update_media_controls(app, player, media_controls);
                     }
                 }
                 AppEvent::Tick => {
@@ -328,6 +359,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             log::info!("[TUI] No more tracks in queue, stopping playback");
                             app.is_playing = false;
                         }
+                        update_media_controls(app, player, media_controls);
                     }
 
                     // Apply pending plugin updates with debouncing and retry logic
@@ -455,6 +487,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
             }
         }
 
+        // Pump macOS event loop so media key callbacks are delivered
+        media_controls::pump_macos_event_loop();
+
         if app.should_quit {
             break;
         }
@@ -558,4 +593,72 @@ fn handle_player_command(
         }
     }
     Ok(())
+}
+
+fn update_media_controls(
+    app: &App,
+    player: &Player,
+    media_controls: &mut Option<TuiMediaControls>,
+) {
+    let Some(mc) = media_controls.as_mut() else {
+        return;
+    };
+
+    // Update metadata from current track
+    let track = app.current_track();
+    let album_title = app
+        .current_queue_index
+        .and_then(|idx| app.queue.get(idx))
+        .map(|entry| entry.item.album.title.as_str());
+
+    let title_owned: String;
+    let artist_owned: String;
+
+    let (title, artist) = match track {
+        Some(t) => {
+            title_owned = t.title.clone().unwrap_or_default();
+            artist_owned = t.artist.clone().unwrap_or_default();
+            (
+                if title_owned.is_empty() {
+                    None
+                } else {
+                    Some(title_owned.as_str())
+                },
+                if artist_owned.is_empty() {
+                    None
+                } else {
+                    Some(artist_owned.as_str())
+                },
+            )
+        }
+        None => (None, None),
+    };
+
+    let duration = track
+        .and_then(|t| t.duration_secs)
+        .map(Duration::from_secs);
+
+    // Build cover URL from album art path (file:// URL for macOS)
+    let cover_url_owned = app
+        .current_queue_index
+        .and_then(|idx| app.queue.get(idx))
+        .and_then(|entry| entry.item.album.album_art_path.as_ref())
+        .map(|path| format!("file://{}", path.display()));
+    let cover_url = cover_url_owned.as_deref();
+
+    mc.set_metadata(title, artist, album_title, duration, cover_url);
+
+    // Update playback state
+    let position_secs = player.get_position();
+    let progress = Some(MediaPosition(Duration::from_secs_f64(position_secs)));
+
+    let playback = if app.is_playing {
+        MediaPlayback::Playing { progress }
+    } else if app.current_queue_index.is_some() {
+        MediaPlayback::Paused { progress }
+    } else {
+        MediaPlayback::Stopped
+    };
+
+    mc.set_playback(playback);
 }

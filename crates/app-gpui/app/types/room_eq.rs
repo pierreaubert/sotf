@@ -1582,6 +1582,7 @@ impl RoomEqState {
             },
             gd_opt: None,
             vog: None,
+            broadband_target_matching: None,
         };
 
         RoomConfig {

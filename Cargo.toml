@@ -13,7 +13,11 @@ members = [
     "crates/driver-hal",
     "crates/head-tracker",
     "crates/daemon",
+    "crates/math-audio/math-differential-evolution",
     "crates/math-audio/math-xem-common",
+    "crates/math-audio/math-solvers",
+    "crates/math-audio/math-iir-fir",
+    "crates/math-audio/math-dsp",
     "crates/math-audio/math-bem",
     "crates/math-audio/math-fem",
     "crates/autoeq/autoeq-cea2034",
@@ -220,8 +224,12 @@ objc2-core-image = "0.3"
 objc2-core-video = "0.3"
 objc2-av-foundation = "0.3"
 objc2-core-media = "0.3"
+objc2-app-kit = "0.3"
 block2 = "0.6"
 dispatch = "0.2"
+
+# Media controls
+souvlaki = "0.8"
 
 # Camera capture
 nokhwa = { version = "0.10", default-features = false }

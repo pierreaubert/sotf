@@ -5,5 +5,6 @@
 
 pub mod app;
 pub mod events;
+pub mod media_controls;
 pub mod theme;
 pub mod ui;

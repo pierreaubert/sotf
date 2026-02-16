@@ -44,7 +44,20 @@ fn main() {
     let _args = Args::parse();
     // Initialize logging to file
     if let Some(log_path) = sotf_audio_player::config::get_gpui_log_path() {
-        if let Ok(log_file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+        // Initialize logging to file with restricted permissions (owner only)
+        #[cfg(unix)]
+        let log_result = {
+            use std::os::unix::fs::OpenOptionsExt;
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .mode(0o600)  // Owner read/write only
+                .open(&log_path)
+        };
+        #[cfg(not(unix))]
+        let log_result = OpenOptions::new().create(true).append(true).open(&log_path);
+        
+        if let Ok(log_file) = log_result {
             env_logger::Builder::from_default_env()
                 .target(env_logger::Target::Pipe(Box::new(log_file)))
                 .filter_level(log::LevelFilter::Debug)
