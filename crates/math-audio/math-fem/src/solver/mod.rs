@@ -44,8 +44,10 @@ pub struct SolverConfig {
     pub schwarz_overlap: usize,
     /// Shifted-Laplacian configuration (for GmresShiftedLaplacian solver)
     pub shifted_laplacian: Option<ShiftedLaplacianConfig>,
-    /// Wavenumber k (used for default shifted-laplacian parameters)
+    /// Wavenumber k (used for default shifted-laplacian and WaveHoltz parameters)
     pub wavenumber: Option<f64>,
+    /// WaveHoltz configuration (for WaveHoltz solver)
+    pub waveholtz: Option<crate::waveholtz::WaveHoltzConfig>,
 }
 
 impl Default for SolverConfig {
@@ -63,6 +65,7 @@ impl Default for SolverConfig {
             schwarz_overlap: 2,
             shifted_laplacian: None,
             wavenumber: None,
+            waveholtz: None,
         }
     }
 }
@@ -104,6 +107,15 @@ pub enum SolverType {
     GmresShiftedLaplacian,
     /// GMRES with shifted-Laplacian and V-cycle multigrid smoothing
     GmresShiftedLaplacianMg,
+    /// WaveHoltz: O(N) solver via wave equation time-stepping
+    ///
+    /// Converts the indefinite Helmholtz problem into positive-definite
+    /// wave equation time-steps with CG+AMG inner solves, accelerated
+    /// by outer GMRES iteration.
+    ///
+    /// Reference: Appelo et al. (2020) "WaveHoltz: Iterative Solution of the
+    /// Helmholtz Equation via the Wave Equation"
+    WaveHoltz,
 }
 
 /// Configuration for Shifted-Laplacian preconditioner
@@ -257,6 +269,11 @@ pub fn solve(problem: &HelmholtzProblem, config: &SolverConfig) -> Result<Soluti
         }
         SolverType::GmresShiftedLaplacianMg => {
             solve_gmres_shifted_laplacian_mg(problem, &csr, &rhs, config)
+        }
+        SolverType::WaveHoltz => {
+            let default_wh = crate::waveholtz::WaveHoltzConfig::default();
+            let wh_config = config.waveholtz.as_ref().unwrap_or(&default_wh);
+            crate::waveholtz::solve_waveholtz_from_problem(problem, config, wh_config)
         }
     };
     let solve_time = solve_start.elapsed();
@@ -1497,6 +1514,11 @@ pub fn solve_csr_with_guess(
         SolverType::GmresShiftedLaplacianMg => {
             Err(SolverError::InvalidConfiguration(
                 "Shifted-Laplacian solver requires HelmholtzProblem, not CSR matrix. Use solve() instead.".into()
+            ))
+        }
+        SolverType::WaveHoltz => {
+            Err(SolverError::InvalidConfiguration(
+                "WaveHoltz solver requires HelmholtzAssembler, not CSR matrix. Use solve() or solve_waveholtz() instead.".into()
             ))
         }
     }

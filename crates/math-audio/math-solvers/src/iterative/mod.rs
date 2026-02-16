@@ -14,7 +14,7 @@ mod gmres;
 pub mod gmres_pipelined;
 
 pub use bicgstab::{BiCgstabConfig, BiCgstabSolution, bicgstab};
-pub use cg::{CgConfig, CgSolution, cg};
+pub use cg::{CgConfig, CgSolution, cg, pcg};
 pub use cgs::{CgsConfig, CgsSolution, cgs};
 pub use gmres::{
     GmresConfig, GmresSolution, gmres, gmres_preconditioned, gmres_preconditioned_with_guess,

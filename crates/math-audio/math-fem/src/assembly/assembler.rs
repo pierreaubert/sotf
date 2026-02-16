@@ -284,6 +284,66 @@ impl HelmholtzAssembler {
         )
     }
 
+    /// Assemble a real-valued matrix as a linear combination: result = k_coeff * K + m_coeff * M
+    ///
+    /// This is used by WaveHoltz to build SPD matrices like:
+    /// - A_impl = M + (dt²/4) K  → k_coeff = dt²/4, m_coeff = 1
+    /// - B_rhs  = 2M - (dt²/2) K → k_coeff = -dt²/2, m_coeff = 2
+    pub fn assemble_real(&self, k_coeff: f64, m_coeff: f64) -> CsrMatrix<f64> {
+        let nnz = self.k_values.len();
+
+        let values: Vec<f64> = (0..nnz)
+            .into_par_iter()
+            .map(|i| k_coeff * self.k_values[i] + m_coeff * self.m_values[i])
+            .collect();
+
+        CsrMatrix::from_raw_parts(
+            self.num_rows,
+            self.num_rows,
+            self.row_ptrs.clone(),
+            self.col_indices.clone(),
+            values,
+        )
+    }
+
+    /// Assemble a real-valued matrix with boundary contributions
+    ///
+    /// result = k_coeff * K + m_coeff * M + Σ boundary_coeffs[tag] * M_boundary[tag]
+    pub fn assemble_real_with_boundaries(
+        &self,
+        k_coeff: f64,
+        m_coeff: f64,
+        boundary_coeffs: &HashMap<usize, f64>,
+    ) -> CsrMatrix<f64> {
+        let nnz = self.k_values.len();
+
+        let values: Vec<f64> = (0..nnz)
+            .into_par_iter()
+            .map(|i| {
+                let mut val = k_coeff * self.k_values[i] + m_coeff * self.m_values[i];
+
+                if !self.boundary_values.is_empty() {
+                    for (tag, &coeff) in boundary_coeffs {
+                        if let Some(b_vals) = self.boundary_values.get(tag)
+                            && b_vals[i] != 0.0
+                        {
+                            val += coeff * b_vals[i];
+                        }
+                    }
+                }
+                val
+            })
+            .collect();
+
+        CsrMatrix::from_raw_parts(
+            self.num_rows,
+            self.num_rows,
+            self.row_ptrs.clone(),
+            self.col_indices.clone(),
+            values,
+        )
+    }
+
     /// Estimate memory usage in bytes
     pub fn memory_usage(&self) -> usize {
         let usize_size = std::mem::size_of::<usize>();

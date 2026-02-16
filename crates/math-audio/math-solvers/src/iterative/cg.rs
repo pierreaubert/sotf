@@ -145,6 +145,116 @@ where
     }
 }
 
+/// Solve Ax = b using the Preconditioned Conjugate Gradient method
+///
+/// Uses a preconditioner M to accelerate convergence. At each iteration,
+/// the preconditioner is applied as z = M^{-1} r, and the search direction
+/// is computed using the preconditioned residual.
+///
+/// Note: Both A and M^{-1} must be symmetric positive definite.
+pub fn pcg<T, A, P>(
+    operator: &A,
+    precond: &P,
+    b: &Array1<T>,
+    config: &CgConfig<T::Real>,
+) -> CgSolution<T>
+where
+    T: ComplexField,
+    A: LinearOperator<T>,
+    P: crate::traits::Preconditioner<T>,
+{
+    let n = b.len();
+    let mut x = Array1::from_elem(n, T::zero());
+
+    let b_norm = vector_norm(b);
+    let tol_threshold = T::Real::from_f64(1e-15).unwrap();
+    if b_norm < tol_threshold {
+        return CgSolution {
+            x,
+            iterations: 0,
+            residual: T::Real::zero(),
+            converged: true,
+            status: SolverStatus::Converged,
+        };
+    }
+
+    // Initial residual r = b - Ax = b (since x = 0)
+    let mut r = b.clone();
+    let mut z = precond.apply(&r);
+    let mut p = z.clone();
+    let mut rho = inner_product(&r, &z);
+
+    for iter in 0..config.max_iterations {
+        let q = operator.apply(&p);
+
+        let pq = inner_product(&p, &q);
+        if pq.norm() < T::Real::from_f64(1e-20).unwrap() {
+            return CgSolution {
+                x,
+                iterations: iter,
+                residual: vector_norm(&r) / b_norm,
+                converged: false,
+                status: SolverStatus::Breakdown,
+            };
+        }
+
+        let alpha = rho / pq;
+
+        // x = x + alpha * p
+        x = &x + &p.mapv(|pi| pi * alpha);
+
+        // r = r - alpha * q
+        r = &r - &q.mapv(|qi| qi * alpha);
+
+        let rel_residual = vector_norm(&r) / b_norm;
+
+        if config.print_interval > 0 && (iter + 1) % config.print_interval == 0 {
+            log::info!(
+                "PCG iteration {}: relative residual = {:.6e}",
+                iter + 1,
+                rel_residual.to_f64().unwrap_or(0.0)
+            );
+        }
+
+        if rel_residual < config.tolerance {
+            return CgSolution {
+                x,
+                iterations: iter + 1,
+                residual: rel_residual,
+                converged: true,
+                status: SolverStatus::Converged,
+            };
+        }
+
+        z = precond.apply(&r);
+        let rho_new = inner_product(&r, &z);
+        if rho_new.norm() < T::Real::from_f64(1e-20).unwrap() {
+            return CgSolution {
+                x,
+                iterations: iter + 1,
+                residual: rel_residual,
+                converged: false,
+                status: SolverStatus::Breakdown,
+            };
+        }
+
+        let beta = rho_new / rho;
+        rho = rho_new;
+
+        // p = z + beta * p
+        p = &z + &p.mapv(|pi| pi * beta);
+    }
+
+    let rel_residual = vector_norm(&r) / b_norm;
+    CgSolution {
+        x,
+        iterations: config.max_iterations,
+        residual: rel_residual,
+        converged: false,
+        status: SolverStatus::MaxIterationsReached,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

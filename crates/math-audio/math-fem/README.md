@@ -17,6 +17,7 @@ math-fem = { version = "0.3" }
 - **Lagrange elements**: P1, P2, P3 polynomial basis functions
 - **Boundary conditions**: Dirichlet, Neumann, Robin (impedance/absorption), PML
 - **Optimized Assembly**: `HelmholtzAssembler` for efficient frequency sweeps without CSR topology reconstruction
+- **WaveHoltz solver**: O(N) Helmholtz solver via time-filtering of the wave equation, with GMRES acceleration and multigrid inner solves
 - **Multigrid solver**: V-cycle, W-cycle with geometric coarsening
 - **Parallel processing**: Rayon-based parallel matrix and RHS assembly
 - **Room Acoustics Simulator**: CLI tool for frequency-domain room simulation
@@ -83,6 +84,27 @@ High-performance matrix assembly:
 - **HelmholtzAssembler**: Pre-assembles sparsity patterns for lightning-fast frequency updates.
 - **Boundary Mass**: Efficiently integrates terms over boundary surfaces.
 
+### solver
+
+Multiple solver strategies for the Helmholtz system:
+
+| Solver | Best For | Complexity |
+|--------|----------|------------|
+| Direct (LU) | N < 1000 | O(N³) |
+| GMRES+ILU | N < 10000 | O(N) per iter |
+| GMRES+AMG | Large parallel | O(N) per iter |
+| Shifted-Laplacian | High frequency | O(N) per iter |
+| **WaveHoltz** | **High frequency, large N** | **O(N) total** |
+
+### waveholtz
+
+WaveHoltz solver that converts the indefinite Helmholtz problem into positive-definite
+wave equation time-steps. Features:
+- Implicit Newmark time-stepping with CG+AMG inner solves
+- GMRES-accelerated outer iteration
+- Multi-frequency solving
+- Dispersion correction for high-accuracy
+
 ### multigrid
 
 Geometric multigrid solver for large systems.
@@ -108,3 +130,20 @@ Geometric multigrid solver for large systems.
 - `math-xem-common` - Shared room acoustics types and configurations
 - `ndarray` - N-dimensional arrays for numerical computing
 - `num-complex` - Complex number support for Helmholtz systems
+
+## References
+
+- D. Appelo, D. Garcia, O. Runborg. "WaveHoltz: Iterative Solution of the Helmholtz
+  Equation via the Wave Equation." SIAM J. Sci. Comput., 2020.
+  https://doi.org/10.1137/19M1299062 | https://arxiv.org/abs/1910.10148
+
+- D. Appelo, J.W. Banks, W.D. Henshaw, D.W. Schwendeman. "An Optimal O(N) Helmholtz
+  Solver for Complex Geometry using WaveHoltz and Overset Grids." 2025.
+  https://arxiv.org/abs/2504.03074
+
+- D. Appelo, J.W. Banks, W.D. Henshaw, F. Schillinger. "A Multi-Frequency Helmholtz
+  Solver Based on the WaveHoltz Algorithm." 2025.
+  https://arxiv.org/abs/2507.23613
+
+- T. Hagstrom, D. Appelo. "Convergence of the Semi-Discrete WaveHoltz Iteration." 2024.
+  https://arxiv.org/abs/2407.06929

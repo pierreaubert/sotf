@@ -34,6 +34,7 @@ pub mod mesh;
 pub mod multigrid;
 pub mod quadrature;
 pub mod solver;
+pub mod waveholtz;
 
 /// Library version
 pub fn version() -> &'static str {
