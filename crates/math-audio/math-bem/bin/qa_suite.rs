@@ -1,28 +1,41 @@
 //! QA Suite for Math-BEM
 //!
 //! Comprehensive validation suite for BEM solvers.
-//! Validates:
+//!
+//! ## Tests
 //! 1. Rigid Sphere Scattering (Rayleigh, Mie, Geometric regimes)
 //! 2. Pulsating Sphere Radiation (Monopole)
 //!
-//! Solver selection based on problem size (see CLAUDE.md):
+//! ## Solver Selection
 //! | Problem Size | Solver Method |
-//! |--------------|---------------|
-//! | N < 1000 | Direct (LU) |
-//! | N < 5000 | GMRES+ILU |
-//! | N < 20000 | FMM+GMRES+ILU |
-//! | N > 20000 | FMM+Batched |
+//! //! |--------------|---------------|
+//! //! | N < 1000 | Direct (LU) |
+//! //! | N < 5000 | GMRES+ILU |
+//! //! | N < 20000 | FMM+GMRES+ILU |
+//! //! | N > 20000 | FMM+Batched |
+//!
+//! ## Bug Fixes Applied (Feb 2026)
+//! - Parallel assembly free term sign correction (tbem.rs)
+//! - Quad post-processing shape functions (pressure.rs)
+//! - Near-cluster symmetry in FMM (slfmm.rs)
+//! - Subelement indexing for singular integration (singular.rs)
+//! - Element size estimation via sqrt(area) (singular.rs)
+//! - Characteristic radius from bounding box (tbem.rs)
+//! - Beta scale threshold consistency (types.rs)
 //!
 //! Usage:
-//!     cargo run --bin qa-suite --release
+//!     cargo run --release --bin qa-suite
+//!     cargo run --release --bin qa-suite -- --debug
+//!     cargo run --release --bin qa-suite -- --skip-radiation
 
+use clap::Parser;
 use math_audio_bem::analytical::sphere_scattering_3d;
 use math_audio_bem::core::assembly::tbem::build_tbem_system_with_beta;
 use math_audio_bem::core::incident::IncidentField;
 use math_audio_bem::core::mesh::generators::generate_icosphere_mesh;
 use math_audio_bem::core::solver::{
-    BiCgstabConfig, CgsConfig, DenseOperator, GmresConfig, direct::lu_solve,
-    gmres_solve_tbem_with_ilu, solve_bicgstab, solve_cgs,
+    direct::lu_solve, gmres_solve_tbem_with_ilu, solve_bicgstab, solve_cgs, BiCgstabConfig,
+    CgsConfig, DenseOperator, GmresConfig,
 };
 use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};
 use math_audio_bem::testing::ValidationResult;
@@ -31,7 +44,21 @@ use num_complex::Complex64;
 use std::f64::consts::PI;
 use std::path::Path;
 
+#[derive(Parser, Debug)]
+#[command(name = "qa-suite")]
+#[command(about = "Quality assurance tests for Math-BEM", long_about = None)]
+struct Args {
+    /// Enable verbose debug output for diagnostics
+    #[arg(short, long)]
+    debug: bool,
+
+    /// Skip radiation (pulsating sphere) tests
+    #[arg(long)]
+    skip_radiation: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum SolverType {
     Lu,
     GmresIlu,
@@ -51,6 +78,7 @@ impl std::fmt::Display for SolverType {
 }
 
 /// Returns the best solver type based on problem size (number of DOFs)
+#[allow(dead_code)]
 fn best_solver_for_size(n_dofs: usize) -> SolverType {
     match n_dofs {
         n if n < 1000 => SolverType::Lu, // Direct LU for small problems
@@ -60,11 +88,17 @@ fn best_solver_for_size(n_dofs: usize) -> SolverType {
 }
 
 fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
     // Initialize logging
     env_logger::init();
 
     println!("Starting Math-BEM QA Suite...");
     println!("=============================");
+
+    if args.debug {
+        println!("Debug mode enabled");
+    }
 
     let mut results = Vec::new();
     let radius = 0.1;
@@ -85,6 +119,7 @@ fn main() -> anyhow::Result<()> {
             speed_of_sound,
             density,
             *solver,
+            args.debug,
         )?);
     }
 
@@ -97,6 +132,7 @@ fn main() -> anyhow::Result<()> {
             speed_of_sound,
             density,
             *solver,
+            args.debug,
         )?);
     }
 
@@ -109,6 +145,7 @@ fn main() -> anyhow::Result<()> {
             speed_of_sound,
             density,
             *solver,
+            args.debug,
         )?);
     }
 
@@ -123,6 +160,7 @@ fn main() -> anyhow::Result<()> {
         speed_of_sound,
         density,
         SolverType::Lu,
+        args.debug,
     )?);
 
     // Mie: Medium problem, use GMRES+ILU
@@ -133,6 +171,7 @@ fn main() -> anyhow::Result<()> {
         speed_of_sound,
         density,
         SolverType::GmresIlu,
+        args.debug,
     )?);
 
     // Geometric: Larger problem, use GMRES+ILU
@@ -143,21 +182,26 @@ fn main() -> anyhow::Result<()> {
         speed_of_sound,
         density,
         SolverType::GmresIlu,
+        args.debug,
     )?);
 
-    // 2. Pulsating Sphere Radiation Test
-    // Disabled until formulation for radiation is fixed
-    // println!("\nRunning Pulsating Sphere Radiation Tests...");
-    // for solver in &solvers {
-    //     results.push(run_pulsating_sphere_test(
-    //         &format!("Radiation (Monopole, ka=1.0) [{}]", solver),
-    //         radius,
-    //         1.0,
-    //         speed_of_sound,
-    //         density,
-    //         *solver,
-    //     )?);
-    // }
+    // 3. Pulsating Sphere Radiation Test
+    if !args.skip_radiation {
+        println!("\nRunning Pulsating Sphere Radiation Tests...");
+        for solver in &solvers {
+            results.push(run_pulsating_sphere_test(
+                &format!("Radiation (Monopole, ka=1.0) [{}]", solver),
+                radius,
+                1.0,
+                speed_of_sound,
+                density,
+                *solver,
+                args.debug,
+            )?);
+        }
+    } else {
+        println!("\nSkipping Pulsating Sphere Radiation Tests (--skip-radiation)");
+    }
 
     // Summary
     print_summary(&results);
@@ -170,12 +214,12 @@ fn main() -> anyhow::Result<()> {
     // Check strict pass/fail
     let mut failed = false;
     for res in &results {
-        // Rayleigh (low freq) should be very accurate with the fix
+        // Rayleigh (low freq) should be very accurate after bug fixes
         // Resonance regimes (Mie/Geometric) are harder for constant elements
         let tolerance = if res.parameters.dimensionless_param >= 1.0 {
             0.30
         } else {
-            0.05
+            0.02 // Tightened from 0.05 after bug fixes
         };
 
         if !res.passed(tolerance) {
@@ -203,6 +247,7 @@ fn run_scattering_test(
     c: f64,
     rho: f64,
     solver_type: SolverType,
+    debug: bool,
 ) -> anyhow::Result<ValidationResult> {
     println!("  Executing: {}...", name);
     let start_time = std::time::Instant::now();
@@ -221,6 +266,31 @@ fn run_scattering_test(
     for (i, elem) in elements.iter_mut().enumerate() {
         elem.boundary_condition = BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
         elem.dof_addresses = vec![i];
+    }
+
+    // Compute characteristic radius for diagnostics
+    let mut min_coord = [f64::MAX, f64::MAX, f64::MAX];
+    let mut max_coord = [f64::MIN, f64::MIN, f64::MIN];
+    for elem in &elements {
+        for d in 0..3 {
+            min_coord[d] = min_coord[d].min(elem.center[d]);
+            max_coord[d] = max_coord[d].max(elem.center[d]);
+        }
+    }
+    let characteristic_radius = 0.5
+        * (max_coord[0] - min_coord[0])
+            .max(max_coord[1] - min_coord[1])
+            .max(max_coord[2] - min_coord[2]);
+    let computed_ka = k * characteristic_radius;
+    let beta_scale = PhysicsParams::optimal_beta_scale(computed_ka);
+
+    if debug {
+        println!("    Diagnostics:");
+        println!("      Characteristic radius: {:.4}m", characteristic_radius);
+        println!("      Computed ka: {:.3}", computed_ka);
+        println!("      Beta scale: {}", beta_scale);
+        println!("      Mesh subdivisions: {}", subdivisions);
+        println!("      Elements: {}", elements.len());
     }
 
     // Solve
@@ -293,8 +363,8 @@ fn run_scattering_test(
     let mut p_analytical = Vec::with_capacity(n_elem);
     let mut positions = Vec::with_capacity(n_elem);
 
-    for i in 0..n_elem {
-        let center = &elements[i].center;
+    for elem in &elements {
+        let center = &elem.center;
         positions.push(Point {
             x: center[0],
             y: center[1],
@@ -332,6 +402,7 @@ fn run_pulsating_sphere_test(
     c: f64,
     rho: f64,
     solver_type: SolverType,
+    debug: bool,
 ) -> anyhow::Result<ValidationResult> {
     println!("  Executing: {}...", name);
     let start_time = std::time::Instant::now();
@@ -350,8 +421,18 @@ fn run_pulsating_sphere_test(
         elem.dof_addresses = vec![i];
     }
 
+    if debug {
+        println!("    Diagnostics:");
+        println!("      Elements: {}", elements.len());
+        println!("      Velocity BC: v0 = 1.0 m/s");
+        println!(
+            "      Analytical surface pressure: {:.6}",
+            Complex64::new(0.0, 1.0) * ka * rho * c * v0 / (Complex64::new(0.0, 1.0) * ka - 1.0)
+        );
+    }
+
     let beta = physics.burton_miller_beta();
-    // Use build_tbem_system_with_beta directly for radiation as row sum correction applies to rigid scattering logic
+    // Use build_tbem_system_with_beta directly for radiation
     let system = build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta);
 
     // No incident field, only BC excitation (which is in system.rhs)
@@ -407,8 +488,8 @@ fn run_pulsating_sphere_test(
     let mut p_analytical = Vec::with_capacity(n_elem);
     let mut positions = Vec::with_capacity(n_elem);
 
-    for i in 0..n_elem {
-        let center = &elements[i].center;
+    for elem in &elements {
+        let center = &elem.center;
         positions.push(Point {
             x: center[0],
             y: center[1],
@@ -444,10 +525,11 @@ fn print_summary(results: &[ValidationResult]) {
         let l2_err = res.errors.l2_relative * 100.0;
         let max_err = res.errors.max_relative * 100.0;
 
-        let tolerance = if res.parameters.dimensionless_param > 4.0 {
-            0.15
+        // Tightened Rayleigh tolerance after bug fixes
+        let tolerance = if res.parameters.dimensionless_param >= 1.0 {
+            0.30
         } else {
-            0.05
+            0.02
         };
         let status = if res.passed(tolerance) {
             "PASS"

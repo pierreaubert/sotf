@@ -7,12 +7,22 @@
 //! - Adaptive integration for near-singular elements
 //! - Parallel assembly and field evaluation
 //!
+//! ## Bug Fixes Applied (Feb 2026)
+//! See qa_suite.rs for complete list of bug fixes that improve accuracy:
+//! - Parallel assembly free term sign correction (tbem.rs)
+//! - Quad post-processing shape functions (pressure.rs)
+//! - Near-cluster symmetry in FMM (slfmm.rs)
+//! - Subelement indexing for singular integration (singular.rs)
+//! - Element size estimation via sqrt(area) (singular.rs)
+//! - Characteristic radius from bounding box (tbem.rs)
+//! - Beta scale threshold consistency (types.rs)
+//!
 //! Usage:
 //!   cargo run --release --bin room_simulator_bem -- --config configs/example_multi_source.json
 //!   cargo run --release --bin room_simulator_bem -- --help
 
 use math_audio_bem::core::solver::{
-    GmresConfig, gmres_solve_fmm_batched_with_ilu, gmres_solve_with_ilu,
+    gmres_solve_fmm_batched_with_ilu, gmres_solve_with_ilu, GmresConfig,
 };
 use math_audio_bem::room_acoustics::*;
 // Re-import FMM solver types from room_acoustics (they're re-exported from solver.rs)
@@ -46,6 +56,10 @@ struct Args {
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    /// Enable detailed debug output for diagnostics
+    #[arg(long)]
+    debug: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -103,12 +117,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run simulation based on solver method
     let output_data = match solver_method {
-        SolverMethod::Direct => run_direct_gmres(&simulation, &config, args.verbose)?,
-        SolverMethod::GmresIlu => run_gmres_with_ilu(&simulation, &config, args.verbose)?,
-        SolverMethod::Fmm | SolverMethod::FmmIlu => {
-            run_fmm_gmres_ilu(&simulation, &config, args.verbose)?
+        SolverMethod::Direct => run_direct_gmres(&simulation, &config, args.verbose, args.debug)?,
+        SolverMethod::GmresIlu => {
+            run_gmres_with_ilu(&simulation, &config, args.verbose, args.debug)?
         }
-        SolverMethod::FmmBatched => run_fmm_batched(&simulation, &config, args.verbose)?,
+        SolverMethod::Fmm | SolverMethod::FmmIlu => {
+            run_fmm_gmres_ilu(&simulation, &config, args.verbose, args.debug)?
+        }
+        SolverMethod::FmmBatched => {
+            run_fmm_batched(&simulation, &config, args.verbose, args.debug)?
+        }
     };
 
     // Save results
@@ -228,6 +246,7 @@ fn run_direct_gmres(
     simulation: &RoomSimulation,
     config: &RoomConfig,
     verbose: bool,
+    debug: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     println!("\n=== Direct GMRES Solver ===");
 
@@ -237,6 +256,12 @@ fn run_direct_gmres(
         mesh.nodes.len(),
         mesh.elements.len()
     );
+
+    if debug {
+        println!("  Mesh quality diagnostics:");
+        println!("    Total elements: {}", mesh.elements.len());
+        println!("    Total nodes: {}", mesh.nodes.len());
+    }
 
     let lp = simulation.listening_positions[0];
     let mut lp_spl_values = Vec::new();
@@ -288,6 +313,7 @@ fn run_gmres_with_ilu(
     simulation: &RoomSimulation,
     config: &RoomConfig,
     verbose: bool,
+    debug: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     println!("\n=== GMRES + ILU Preconditioner ===");
 
@@ -308,6 +334,12 @@ fn run_gmres_with_ilu(
         mesh.nodes.len(),
         mesh.elements.len()
     );
+
+    if debug {
+        println!("  Mesh quality diagnostics:");
+        println!("    Total elements: {}", mesh.elements.len());
+        println!("    Total nodes: {}", mesh.nodes.len());
+    }
 
     // GMRES configuration
     let gmres_config = GmresConfig {
@@ -420,6 +452,7 @@ fn run_fmm_gmres_ilu(
     simulation: &RoomSimulation,
     config: &RoomConfig,
     verbose: bool,
+    debug: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     println!("\n=== FMM + GMRES + ILU Solver ===");
 
@@ -440,6 +473,12 @@ fn run_fmm_gmres_ilu(
         mesh.nodes.len(),
         mesh.elements.len()
     );
+
+    if debug {
+        println!("  Mesh quality diagnostics:");
+        println!("    Total elements: {}", mesh.elements.len());
+        println!("    Total nodes: {}", mesh.nodes.len());
+    }
 
     // FMM configuration
     let fmm_config = FmmSolverConfig::default();
@@ -561,6 +600,7 @@ fn run_fmm_batched(
     simulation: &RoomSimulation,
     config: &RoomConfig,
     verbose: bool,
+    debug: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     println!("\n=== FMM + GMRES + Batched BLAS Solver ===");
 
@@ -581,6 +621,12 @@ fn run_fmm_batched(
         mesh.nodes.len(),
         mesh.elements.len()
     );
+
+    if debug {
+        println!("  Mesh quality diagnostics:");
+        println!("    Total elements: {}", mesh.elements.len());
+        println!("    Total nodes: {}", mesh.nodes.len());
+    }
 
     // FMM configuration
     let fmm_config = FmmSolverConfig::default();
