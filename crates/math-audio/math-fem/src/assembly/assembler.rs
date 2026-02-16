@@ -344,6 +344,42 @@ impl HelmholtzAssembler {
         )
     }
 
+    /// Apply Dirichlet boundary conditions to the assembler's K, M, and boundary matrices
+    ///
+    /// For each Dirichlet node i:
+    /// - Zero out row i in K and M
+    /// - Set K[i,i] = 1, M[i,i] = 0
+    /// - Zero out boundary_values for row i
+    ///
+    /// This ensures WaveHoltz (which builds matrices from K and M separately)
+    /// correctly enforces Dirichlet BCs.
+    pub fn apply_dirichlet_nodes(&mut self, dirichlet_nodes: &std::collections::HashSet<usize>) {
+        if dirichlet_nodes.is_empty() {
+            return;
+        }
+
+        for row in 0..self.num_rows {
+            if !dirichlet_nodes.contains(&row) {
+                continue;
+            }
+            let start = self.row_ptrs[row];
+            let end = self.row_ptrs[row + 1];
+            for idx in start..end {
+                let col = self.col_indices[idx];
+                if row == col {
+                    self.k_values[idx] = 1.0;
+                    self.m_values[idx] = 0.0;
+                } else {
+                    self.k_values[idx] = 0.0;
+                    self.m_values[idx] = 0.0;
+                }
+                for bv in self.boundary_values.values_mut() {
+                    bv[idx] = 0.0;
+                }
+            }
+        }
+    }
+
     /// Estimate memory usage in bytes
     pub fn memory_usage(&self) -> usize {
         let usize_size = std::mem::size_of::<usize>();

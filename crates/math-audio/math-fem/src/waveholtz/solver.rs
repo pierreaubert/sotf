@@ -269,15 +269,19 @@ pub fn solve_waveholtz_multi_frequency(
 /// Bridge function for integration with solver/mod.rs
 ///
 /// Constructs a HelmholtzAssembler from the problem's stiffness/mass matrices,
-/// extracts the real part of the RHS, and calls solve_waveholtz.
+/// applies Dirichlet boundary conditions to K/M, extracts the real part of the
+/// RHS, and calls solve_waveholtz.
 pub(crate) fn solve_waveholtz_from_problem(
     problem: &crate::assembly::HelmholtzProblem,
     config: &crate::solver::SolverConfig,
     wh_config: &WaveHoltzConfig,
 ) -> Result<Solution, SolverError> {
     // Build assembler from problem's K and M
-    let assembler =
+    let mut assembler =
         HelmholtzAssembler::from_matrices(&problem.stiffness, &problem.mass, &[]);
+
+    // Apply Dirichlet BCs to K/M so WaveHoltz sees them
+    assembler.apply_dirichlet_nodes(&problem.dirichlet_nodes);
 
     // Extract omega from wavenumber
     let omega = config.wavenumber.ok_or_else(|| {

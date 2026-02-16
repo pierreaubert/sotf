@@ -23,6 +23,6 @@ mod time_stepper;
 
 pub use config::WaveHoltzConfig;
 pub use filter::CosineFilter;
-pub use solver::{solve_waveholtz, solve_waveholtz_multi_frequency};
+pub use solver::{solve_waveholtz, solve_waveholtz_multi_frequency, solve_waveholtz_with_boundaries};
 pub(crate) use solver::solve_waveholtz_from_problem;
 pub use time_stepper::WaveTimeStepper;

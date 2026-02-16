@@ -13,6 +13,7 @@ use crate::basis::PolynomialDegree;
 use crate::mesh::Mesh;
 use math_audio_solvers::CsrMatrix;
 use num_complex::Complex64;
+use std::collections::HashSet;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -136,6 +137,8 @@ pub struct HelmholtzProblem {
     pub stiffness: StiffnessMatrix,
     /// Mass matrix (for reference)
     pub mass: MassMatrix,
+    /// Nodes where Dirichlet BCs have been applied (populated by apply_dirichlet())
+    pub dirichlet_nodes: HashSet<usize>,
 }
 
 impl HelmholtzProblem {
@@ -167,6 +170,7 @@ impl HelmholtzProblem {
             rhs,
             stiffness,
             mass,
+            dirichlet_nodes: HashSet::new(),
         }
     }
 

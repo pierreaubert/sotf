@@ -173,6 +173,9 @@ pub fn apply_dirichlet(problem: &mut HelmholtzProblem, mesh: &Mesh, dirichlet_bc
         dim: n,
         wavenumber: matrix.wavenumber,
     };
+
+    // Record which nodes have Dirichlet BCs for downstream solvers (e.g. WaveHoltz)
+    problem.dirichlet_nodes = dirichlet_set;
 }
 
 /// Apply homogeneous Dirichlet conditions (u = 0)

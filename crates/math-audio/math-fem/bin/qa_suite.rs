@@ -15,6 +15,7 @@ use math_audio_fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahed
 use math_audio_fem::solver::{
     GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType, solve,
 };
+use math_audio_fem::waveholtz::WaveHoltzConfig;
 use math_audio_wave::special::{legendre_p, spherical_bessel_j, spherical_bessel_y};
 use ndarray::Array1;
 use num_complex::Complex64;
@@ -52,6 +53,7 @@ fn main() -> anyhow::Result<()> {
         SolverType::GmresIlu,
         SolverType::GmresAmg,
         SolverType::GmresShiftedLaplacian,
+        SolverType::WaveHoltz,
     ];
 
     let parallel_solvers = [SolverType::GmresPipelinedAmg, SolverType::GmresPipelinedIlu];
@@ -119,6 +121,11 @@ fn main() -> anyhow::Result<()> {
                 // Tune Shifted Laplacian for higher k
                 if *solver_type == SolverType::GmresShiftedLaplacian && *k_val >= 3.0 {
                     config.shifted_laplacian = Some(ShiftedLaplacianConfig::conservative(*k_val));
+                }
+
+                // Configure WaveHoltz
+                if *solver_type == SolverType::WaveHoltz {
+                    config.waveholtz = Some(WaveHoltzConfig::for_wavenumber(*k_val));
                 }
 
                 results.push(run_cylinder_scattering_test(
@@ -201,6 +208,11 @@ fn main() -> anyhow::Result<()> {
             // For 3D, Shifted Laplacian benefits from aggressive shifts sometimes
             if *solver_type == SolverType::GmresShiftedLaplacian {
                 config.shifted_laplacian = Some(ShiftedLaplacianConfig::for_wavenumber(*k));
+            }
+
+            // Configure WaveHoltz
+            if *solver_type == SolverType::WaveHoltz {
+                config.waveholtz = Some(WaveHoltzConfig::for_wavenumber(*k));
             }
 
             results.push(run_sphere_scattering_test(

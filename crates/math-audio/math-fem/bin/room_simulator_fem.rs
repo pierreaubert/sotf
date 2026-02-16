@@ -25,6 +25,7 @@ use math_audio_fem::mesh::{BoundaryType, ElementType, Mesh, Point};
 use math_audio_fem::solver::{
     self, GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType,
 };
+use math_audio_fem::waveholtz::WaveHoltzConfig;
 use num_complex::Complex64;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -98,6 +99,15 @@ impl MemoryEstimate {
     /// Estimate per-frequency memory in bytes
     /// This is the memory needed for ONE concurrent frequency solve
     fn per_frequency_memory(&self) -> usize {
+        if self.solver_type == SolverType::WaveHoltz {
+            // WaveHoltz doesn't assemble a complex CSR per frequency.
+            // Per-frequency cost is just the RHS, solution, and preconditioner setup.
+            let rhs = self.n_dofs * Self::F64_SIZE; // Real-valued RHS
+            let solution = self.n_dofs * Self::COMPLEX_SIZE; // Complex solution output
+            let precond = self.preconditioner_memory();
+            return rhs + solution + precond;
+        }
+
         // Helmholtz CSR matrix: similar nnz to K
         let helmholtz_csr = self.k_nnz * (Self::USIZE_SIZE + Self::COMPLEX_SIZE)
             + (self.n_dofs + 1) * Self::USIZE_SIZE;
@@ -176,6 +186,19 @@ impl MemoryEstimate {
                     (operator_complexity * self.k_nnz as f64) as usize * Self::COMPLEX_SIZE;
                 let shifted_matrix = self.k_nnz + self.m_nnz;
                 amg_matrices + shifted_matrix * Self::COMPLEX_SIZE
+            }
+            SolverType::WaveHoltz => {
+                // WaveHoltz: A_impl and B_rhs real CSR matrices + AMG on A_impl
+                // + CG/GMRES workspace + time stepper vectors
+                let real_csr = self.k_nnz * (Self::USIZE_SIZE + Self::F64_SIZE);
+                let two_real_csrs = 2 * real_csr; // A_impl + B_rhs
+                // AMG on A_impl (real-valued, smaller than complex)
+                let amg_real = (1.8 * self.k_nnz as f64) as usize * Self::F64_SIZE;
+                // Time stepper vectors: ~6 vectors of n_dofs * f64
+                let stepper_vecs = 6 * self.n_dofs * Self::F64_SIZE;
+                // Outer GMRES workspace (real-valued)
+                let gmres_vecs = self.n_dofs * self.krylov_size * Self::F64_SIZE;
+                two_real_csrs + amg_real + stepper_vecs + gmres_vecs
             }
         }
     }
@@ -619,6 +642,22 @@ struct Args {
     #[arg(long)]
     memory_gb: Option<f64>,
 
+    /// WaveHoltz time steps per period (0 = auto based on wavenumber)
+    #[arg(long, default_value = "0")]
+    waveholtz_steps: usize,
+
+    /// WaveHoltz outer GMRES tolerance
+    #[arg(long, default_value = "1e-10")]
+    waveholtz_tolerance: f64,
+
+    /// WaveHoltz inner CG tolerance
+    #[arg(long, default_value = "1e-12")]
+    waveholtz_inner_tolerance: f64,
+
+    /// Disable WaveHoltz dispersion correction
+    #[arg(long)]
+    waveholtz_no_dispersion: bool,
+
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -641,6 +680,7 @@ enum CliSolverType {
     Direct,
     Gmres,
     Pipelined,
+    Waveholtz,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -733,9 +773,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (CliSolverType::Pipelined, Some(CliPreconditionerType::ShiftedLaplacian)) => {
             SolverType::GmresShiftedLaplacian
         }
+        (CliSolverType::Waveholtz, _) => SolverType::WaveHoltz,
     };
 
+    // Validate boundary conditions for WaveHoltz
+    if internal_solver_type == SolverType::WaveHoltz {
+        let b = &config.boundaries;
+        let surfaces: &[(&str, &SurfaceConfig)] = &[
+            ("floor", &b.floor),
+            ("ceiling", &b.ceiling),
+            ("walls", &b.walls),
+        ];
+        let wall_overrides: &[(&str, &Option<SurfaceConfig>)] = &[
+            ("front_wall", &b.front_wall),
+            ("back_wall", &b.back_wall),
+            ("left_wall", &b.left_wall),
+            ("right_wall", &b.right_wall),
+        ];
+
+        for (name, surface) in surfaces {
+            if !matches!(surface, SurfaceConfig::Rigid) {
+                eprintln!(
+                    "Error: WaveHoltz only supports rigid boundaries, but {} is {:?}",
+                    name, surface
+                );
+                eprintln!("Hint: Use a GMRES-based solver for non-rigid boundaries.");
+                std::process::exit(1);
+            }
+        }
+        for (name, override_opt) in wall_overrides {
+            if let Some(surface) = override_opt {
+                if !matches!(surface, SurfaceConfig::Rigid) {
+                    eprintln!(
+                        "Error: WaveHoltz only supports rigid boundaries, but {} is {:?}",
+                        name, surface
+                    );
+                    eprintln!("Hint: Use a GMRES-based solver for non-rigid boundaries.");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     let available_memory_gb = args.memory_gb.or_else(get_system_memory_gb);
+
+    // Build WaveHoltz config from CLI args (if applicable)
+    let waveholtz_config = if internal_solver_type == SolverType::WaveHoltz {
+        Some(WaveHoltzConfig {
+            steps_per_period: args.waveholtz_steps, // 0 = auto per-frequency
+            tolerance: args.waveholtz_tolerance,
+            inner_tolerance: args.waveholtz_inner_tolerance,
+            dispersion_correction: !args.waveholtz_no_dispersion,
+            ..Default::default()
+        })
+    } else {
+        None
+    };
 
     let output_data = if args.adaptive_mesh {
         run_fem_simulation_adaptive(
@@ -754,6 +847,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.sl_alpha,
             args.sl_beta,
             args.sl_mg_cycles,
+            waveholtz_config.as_ref(),
         )?
     } else {
         run_fem_simulation(
@@ -772,6 +866,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.sl_alpha,
             args.sl_beta,
             args.sl_mg_cycles,
+            waveholtz_config.as_ref(),
         )?
     };
 
@@ -954,6 +1049,7 @@ fn run_fem_simulation(
     sl_alpha: Option<f64>,
     sl_beta: Option<f64>,
     sl_mg_cycles: usize,
+    waveholtz_config: Option<&WaveHoltzConfig>,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let solver_name = format!("{:?}", solver_type);
     println!("\n=== {} Solver (Parallel) ===", solver_name.to_uppercase());
@@ -996,6 +1092,7 @@ fn run_fem_simulation(
         schwarz_overlap: 2,
         shifted_laplacian: sl_config,
         wavenumber: None,
+        waveholtz: waveholtz_config.cloned(),
     };
 
     // Assemble stiffness and mass matrices ONCE (frequency-independent)
@@ -1109,7 +1206,9 @@ fn run_fem_simulation(
     let progress_counter = AtomicUsize::new(0);
 
     // Process frequencies - either with warm start or cold start
-    let mut all_results = if warm_start && n_freqs > anchor_stride {
+    // WaveHoltz doesn't support initial guesses, so skip warm start
+    let use_warm_start = warm_start && n_freqs > anchor_stride && solver_type != SolverType::WaveHoltz;
+    let mut all_results = if use_warm_start {
         run_hierarchical_solve(
             &mesh,
             &assembler,
@@ -1258,6 +1357,7 @@ fn run_fem_simulation_adaptive(
     sl_alpha: Option<f64>,
     sl_beta: Option<f64>,
     sl_mg_cycles: usize,
+    waveholtz_config: Option<&WaveHoltzConfig>,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let solver_name = format!("{:?}", solver_type);
     println!(
@@ -1312,6 +1412,7 @@ fn run_fem_simulation_adaptive(
         schwarz_overlap: 2,
         shifted_laplacian: sl_config,
         wavenumber: None,
+        waveholtz: waveholtz_config.cloned(),
     };
 
     let n_freqs = simulation.frequencies.len();
@@ -1599,23 +1700,53 @@ fn solve_single_frequency(
     listening_positions: &[Point3D],
     lp_elements: &[Option<usize>],
 ) -> (Vec<f64>, usize, f64) {
-    let k = Complex64::new(wavenumber, 0.0);
-
-    // Compute boundary coefficients
-    let boundary_coeffs = compute_boundary_coefficients(simulation, frequency);
-
-    // Assemble matrix efficiently
-    let csr = assembler.assemble(k, &boundary_coeffs);
-
     // Assemble RHS for this frequency (parallel over elements)
     let rhs = assemble_rhs_parallel(mesh, sources, frequency, source_width);
 
-    // Convert RHS to Array1
-    let rhs_array = ndarray::Array1::from(rhs);
+    let solution = if solver_config.solver_type == SolverType::WaveHoltz {
+        // WaveHoltz path: use real-valued solve directly
+        let rhs_real = ndarray::Array1::from_iter(rhs.iter().map(|c| c.re));
 
-    // Solve the system
-    let solution =
-        solver::solve_csr_with_guess(&csr, &rhs_array, None, solver_config).expect("Solver failed");
+        // Convert complex boundary coefficients to real (all zero for rigid walls)
+        let boundary_coeffs = compute_boundary_coefficients(simulation, frequency);
+        let real_boundary_coeffs: HashMap<usize, f64> = boundary_coeffs
+            .iter()
+            .map(|(&tag, c)| (tag, c.re))
+            .collect();
+
+        // Auto-select steps per period if set to 0
+        let wh_config = if let Some(base) = solver_config.waveholtz.as_ref() {
+            if base.steps_per_period == 0 {
+                let auto = WaveHoltzConfig::for_wavenumber(wavenumber);
+                WaveHoltzConfig {
+                    steps_per_period: auto.steps_per_period,
+                    ..base.clone()
+                }
+            } else {
+                base.clone()
+            }
+        } else {
+            WaveHoltzConfig::for_wavenumber(wavenumber)
+        };
+
+        math_audio_fem::waveholtz::solve_waveholtz_with_boundaries(
+            assembler,
+            &rhs_real,
+            wavenumber,
+            &wh_config,
+            &real_boundary_coeffs,
+        )
+        .expect("WaveHoltz solver failed")
+    } else {
+        // Standard GMRES path
+        let k = Complex64::new(wavenumber, 0.0);
+        let boundary_coeffs = compute_boundary_coefficients(simulation, frequency);
+        let csr = assembler.assemble(k, &boundary_coeffs);
+        let rhs_array = ndarray::Array1::from(rhs);
+
+        solver::solve_csr_with_guess(&csr, &rhs_array, None, solver_config)
+            .expect("Solver failed")
+    };
 
     // Evaluate pressure at all listening positions
     let spl_values: Vec<f64> = listening_positions
@@ -1900,22 +2031,51 @@ fn solve_single_frequency_returning_solution(
     lp_elements: &[Option<usize>],
     initial_guess: Option<&ndarray::Array1<Complex64>>,
 ) -> (ndarray::Array1<Complex64>, Vec<f64>, usize, f64) {
-    let k = Complex64::new(wavenumber, 0.0);
-
-    // Compute boundary coefficients
-    let boundary_coeffs = compute_boundary_coefficients(simulation, frequency);
-
-    // Assemble matrix efficiently
-    let csr = assembler.assemble(k, &boundary_coeffs);
-
     // Assemble RHS for this frequency (parallel over elements)
     let rhs = assemble_rhs_parallel(mesh, sources, frequency, source_width);
 
-    // Convert to CSR and solve with optional initial guess
-    let rhs_array = ndarray::Array1::from(rhs);
+    let solution = if solver_config.solver_type == SolverType::WaveHoltz {
+        // WaveHoltz path (ignores initial_guess — not supported)
+        let rhs_real = ndarray::Array1::from_iter(rhs.iter().map(|c| c.re));
 
-    let solution = solver::solve_csr_with_guess(&csr, &rhs_array, initial_guess, solver_config)
-        .expect("Solver failed");
+        let boundary_coeffs = compute_boundary_coefficients(simulation, frequency);
+        let real_boundary_coeffs: HashMap<usize, f64> = boundary_coeffs
+            .iter()
+            .map(|(&tag, c)| (tag, c.re))
+            .collect();
+
+        let wh_config = if let Some(base) = solver_config.waveholtz.as_ref() {
+            if base.steps_per_period == 0 {
+                let auto = WaveHoltzConfig::for_wavenumber(wavenumber);
+                WaveHoltzConfig {
+                    steps_per_period: auto.steps_per_period,
+                    ..base.clone()
+                }
+            } else {
+                base.clone()
+            }
+        } else {
+            WaveHoltzConfig::for_wavenumber(wavenumber)
+        };
+
+        math_audio_fem::waveholtz::solve_waveholtz_with_boundaries(
+            assembler,
+            &rhs_real,
+            wavenumber,
+            &wh_config,
+            &real_boundary_coeffs,
+        )
+        .expect("WaveHoltz solver failed")
+    } else {
+        // Standard GMRES path
+        let k = Complex64::new(wavenumber, 0.0);
+        let boundary_coeffs = compute_boundary_coefficients(simulation, frequency);
+        let csr = assembler.assemble(k, &boundary_coeffs);
+        let rhs_array = ndarray::Array1::from(rhs);
+
+        solver::solve_csr_with_guess(&csr, &rhs_array, initial_guess, solver_config)
+            .expect("Solver failed")
+    };
 
     // Evaluate pressure at all listening positions
     let spl_values: Vec<f64> = listening_positions
