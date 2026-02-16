@@ -227,6 +227,16 @@ impl MemoryEstimate {
                 let mapping = self.n_dofs * Self::USIZE_SIZE * 2;
                 (sub_csr + sub_ilu) * num_subs + pou + mapping
             }
+            SolverType::NeuralMultigrid => {
+                // Wave hierarchy: operators + stiffness/mass CSRs at each level (~4 levels)
+                // Plus eikonal vectors + ADR workspace
+                let n_levels = 4;
+                let hierarchy_ops = (1.5 * self.k_nnz as f64) as usize * Self::COMPLEX_SIZE;
+                let stiffness_mass = 2 * hierarchy_ops; // K and M at each level
+                let eikonal_vecs = 5 * self.n_dofs * Self::F64_SIZE; // tau, grad(3), laplacian
+                let adr_workspace = self.n_dofs * Self::COMPLEX_SIZE * 4; // ADR matrix + vectors
+                n_levels * (hierarchy_ops + stiffness_mass) / n_levels + eikonal_vecs + adr_workspace
+            }
         }
     }
 
@@ -729,6 +739,7 @@ enum CliSolverType {
     Pipelined,
     Waveholtz,
     SchwarzPml,
+    NeuralMultigrid,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -832,6 +843,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             CliSchwarzVariant::Additive => SolverType::SchwarzPmlAdditive,
             CliSchwarzVariant::Multiplicative => SolverType::SchwarzPmlMultiplicative,
         },
+        (CliSolverType::NeuralMultigrid, _) => SolverType::NeuralMultigrid,
     };
 
     let is_schwarz_pml = matches!(
@@ -839,9 +851,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative
     );
 
-    // Validate boundary conditions for WaveHoltz and Schwarz-PML (rigid only)
-    if internal_solver_type == SolverType::WaveHoltz || is_schwarz_pml {
-        let solver_label = if is_schwarz_pml { "Schwarz-PML" } else { "WaveHoltz" };
+    let is_nmg = internal_solver_type == SolverType::NeuralMultigrid;
+
+    // Validate boundary conditions for WaveHoltz, Schwarz-PML, and NeuralMultigrid (rigid only)
+    if internal_solver_type == SolverType::WaveHoltz || is_schwarz_pml || is_nmg {
+        let solver_label = if is_schwarz_pml { "Schwarz-PML" } else if is_nmg { "NeuralMultigrid" } else { "WaveHoltz" };
         let b = &config.boundaries;
         let surfaces: &[(&str, &SurfaceConfig)] = &[
             ("floor", &b.floor),
@@ -1800,6 +1814,8 @@ fn solve_single_frequency(
         SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative
     );
 
+    let is_nmg = solver_config.solver_type == SolverType::NeuralMultigrid;
+
     let solution = if is_spml {
         // Schwarz-PML path: solve directly with mesh geometry
         let k_complex = Complex64::new(wavenumber, 0.0);
@@ -1831,6 +1847,21 @@ fn solve_single_frequency(
             &spml_config,
         )
         .expect("Schwarz-PML solver failed")
+    } else if is_nmg {
+        // Neural Multigrid path: solve directly with mesh geometry
+        let k_complex = Complex64::new(wavenumber, 0.0);
+        let dirichlet_bcs: Vec<(usize, Complex64)> = Vec::new();
+        let nmg_config = math_audio_fem::neural_multigrid::NeuralMultigridConfig::for_wavenumber(wavenumber);
+
+        math_audio_fem::neural_multigrid::solve_neural_multigrid(
+            mesh,
+            PolynomialDegree::P1,
+            k_complex,
+            &rhs,
+            &dirichlet_bcs,
+            &nmg_config,
+        )
+        .expect("Neural Multigrid solver failed")
     } else if solver_config.solver_type == SolverType::WaveHoltz {
         // WaveHoltz path: use real-valued solve directly
         let rhs_real = ndarray::Array1::from_iter(rhs.iter().map(|c| c.re));

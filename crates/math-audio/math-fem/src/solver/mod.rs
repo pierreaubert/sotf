@@ -132,6 +132,15 @@ pub enum SolverType {
     ///
     /// Reference: Galkowski et al. (2024, arXiv:2408.16580)
     SchwarzPmlMultiplicative,
+    /// Neural Multigrid (Wave-ADR-NS) solver
+    ///
+    /// Deep-learning-enhanced multigrid using Chebyshev-accelerated wave
+    /// smoothing and ADR correction from WKB decomposition. Targets
+    /// heterogeneous Helmholtz at high wavenumbers. Requires mesh
+    /// geometry — use `neural_multigrid::solve_neural_multigrid()` directly.
+    ///
+    /// Reference: Cui & Jiang (2024, arXiv:2404.02493)
+    NeuralMultigrid,
 }
 
 /// Configuration for Shifted-Laplacian preconditioner
@@ -294,6 +303,11 @@ pub fn solve(problem: &HelmholtzProblem, config: &SolverConfig) -> Result<Soluti
         SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative => {
             Err(SolverError::InvalidConfiguration(
                 "Schwarz-PML solver requires mesh geometry. Use schwarz_pml::solve_schwarz_pml() instead.".into()
+            ))
+        }
+        SolverType::NeuralMultigrid => {
+            Err(SolverError::InvalidConfiguration(
+                "NeuralMultigrid solver requires mesh geometry. Use neural_multigrid::solve_neural_multigrid() instead.".into()
             ))
         }
     };
@@ -1545,6 +1559,11 @@ pub fn solve_csr_with_guess(
         SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative => {
             Err(SolverError::InvalidConfiguration(
                 "Schwarz-PML solver requires mesh geometry. Use schwarz_pml::solve_schwarz_pml() instead.".into()
+            ))
+        }
+        SolverType::NeuralMultigrid => {
+            Err(SolverError::InvalidConfiguration(
+                "NeuralMultigrid solver requires mesh geometry. Use neural_multigrid::solve_neural_multigrid() instead.".into()
             ))
         }
     }

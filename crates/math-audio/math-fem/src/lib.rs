@@ -32,6 +32,7 @@ pub mod basis;
 pub mod boundary;
 pub mod mesh;
 pub mod multigrid;
+pub mod neural_multigrid;
 pub mod quadrature;
 pub mod schwarz_pml;
 pub mod solver;

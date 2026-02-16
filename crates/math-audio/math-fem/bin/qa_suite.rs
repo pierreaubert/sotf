@@ -12,6 +12,7 @@ use math_audio_fem::assembly::HelmholtzProblem;
 use math_audio_fem::basis::PolynomialDegree;
 use math_audio_fem::boundary::{DirichletBC, apply_dirichlet};
 use math_audio_fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahedra, Mesh};
+use math_audio_fem::neural_multigrid::{NeuralMultigridConfig, solve_neural_multigrid};
 use math_audio_fem::schwarz_pml::{SchwarzPmlConfig, SchwarzVariant, solve_schwarz_pml};
 use math_audio_fem::solver::{
     GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType, solve,
@@ -79,6 +80,7 @@ fn main() -> anyhow::Result<()> {
         SolverType::GmresShiftedLaplacian,
         SolverType::WaveHoltz,
         SolverType::SchwarzPmlAdditive,
+        SolverType::NeuralMultigrid,
     ];
 
     let parallel_solvers = [SolverType::GmresPipelinedAmg, SolverType::GmresPipelinedIlu];
@@ -383,7 +385,7 @@ fn run_sphere_scattering_test(
     let num_dofs = problem.num_dofs();
     let b_norm = problem.rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
 
-    // Solve: branch for Schwarz PML (needs mesh geometry) vs standard path
+    // Solve: branch for Schwarz PML / NeuralMultigrid (need mesh geometry) vs standard path
     let result = if let Some(spml_config) = schwarz_pml_config {
         let bc_outer = DirichletBC::new(2, exact_u.clone());
         let dirichlet_pairs = collect_dirichlet_pairs(&mesh, &[bc_outer]);
@@ -394,6 +396,18 @@ fn run_sphere_scattering_test(
             &problem.rhs,
             &dirichlet_pairs,
             spml_config,
+        )
+    } else if config.solver_type == SolverType::NeuralMultigrid {
+        let bc_outer = DirichletBC::new(2, exact_u.clone());
+        let dirichlet_pairs = collect_dirichlet_pairs(&mesh, &[bc_outer]);
+        let nmg_config = NeuralMultigridConfig::for_wavenumber(k);
+        solve_neural_multigrid(
+            &mesh,
+            PolynomialDegree::P1,
+            k_complex,
+            &problem.rhs,
+            &dirichlet_pairs,
+            &nmg_config,
         )
     } else {
         let mut problem = problem;
@@ -475,7 +489,7 @@ fn run_cylinder_scattering_test(
     let num_dofs = problem.num_dofs();
     let b_norm = problem.rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
 
-    // Solve: branch for Schwarz PML (needs mesh geometry) vs standard path
+    // Solve: branch for Schwarz PML / NeuralMultigrid (need mesh geometry) vs standard path
     let result = if let Some(spml_config) = schwarz_pml_config {
         let bc_inner = DirichletBC::new(1, |_x, _y, _z| Complex64::new(0.0, 0.0));
         let bc_outer = DirichletBC::new(2, exact_u);
@@ -487,6 +501,19 @@ fn run_cylinder_scattering_test(
             &problem.rhs,
             &dirichlet_pairs,
             spml_config,
+        )
+    } else if config.solver_type == SolverType::NeuralMultigrid {
+        let bc_inner = DirichletBC::new(1, |_x, _y, _z| Complex64::new(0.0, 0.0));
+        let bc_outer = DirichletBC::new(2, exact_u);
+        let dirichlet_pairs = collect_dirichlet_pairs(&mesh, &[bc_inner, bc_outer]);
+        let nmg_config = NeuralMultigridConfig::for_wavenumber(k);
+        solve_neural_multigrid(
+            &mesh,
+            PolynomialDegree::P1,
+            k_complex,
+            &problem.rhs,
+            &dirichlet_pairs,
+            &nmg_config,
         )
     } else {
         let mut problem = problem;
