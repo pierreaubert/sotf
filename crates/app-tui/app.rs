@@ -720,69 +720,37 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 knee_db,
                 mix,
                 link_channels,
+                bands,
                 ..
-            } => vec![
-                TuiParamSpec {
-                    name: "Bands".to_string(),
-                    value: format!("{}", num_bands),
-                    unit: "".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 1".to_string(),
-                    value: format!("{:.0}", crossover_freq_1),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 2".to_string(),
-                    value: format!("{:.0}", crossover_freq_2),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 3".to_string(),
-                    value: format!("{:.0}", crossover_freq_3),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 4".to_string(),
-                    value: format!("{:.0}", crossover_freq_4),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Threshold".to_string(),
-                    value: format!("{:.1}", threshold_db),
-                    unit: "dB".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Ratio".to_string(),
-                    value: format!("{:.1}", ratio),
-                    unit: ":1".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Attack".to_string(),
-                    value: format!("{:.1}", attack_ms),
-                    unit: "ms".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Release".to_string(),
-                    value: format!("{:.0}", release_ms),
-                    unit: "ms".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Knee".to_string(),
-                    value: format!("{:.1}", knee_db),
-                    unit: "dB".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Mix".to_string(),
-                    value: format!("{:.0}", mix * 100.0),
-                    unit: "%".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Link".to_string(),
-                    value: (if *link_channels { "Linked" } else { "Unlinked" }).to_string(),
-                    unit: "".to_string(),
-                },
-            ],
+            } => {
+                let mut params = vec![
+                    TuiParamSpec { name: "Bands".into(), value: format!("{}", num_bands), unit: "".into() },
+                    TuiParamSpec { name: "Crossover 1".into(), value: format!("{:.0}", crossover_freq_1), unit: "Hz".into() },
+                    TuiParamSpec { name: "Crossover 2".into(), value: format!("{:.0}", crossover_freq_2), unit: "Hz".into() },
+                    TuiParamSpec { name: "Crossover 3".into(), value: format!("{:.0}", crossover_freq_3), unit: "Hz".into() },
+                    TuiParamSpec { name: "Crossover 4".into(), value: format!("{:.0}", crossover_freq_4), unit: "Hz".into() },
+                    TuiParamSpec { name: "Threshold".into(), value: format!("{:.1}", threshold_db), unit: "dB".into() },
+                    TuiParamSpec { name: "Ratio".into(), value: format!("{:.1}", ratio), unit: ":1".into() },
+                    TuiParamSpec { name: "Attack".into(), value: format!("{:.1}", attack_ms), unit: "ms".into() },
+                    TuiParamSpec { name: "Release".into(), value: format!("{:.0}", release_ms), unit: "ms".into() },
+                    TuiParamSpec { name: "Knee".into(), value: format!("{:.1}", knee_db), unit: "dB".into() },
+                    TuiParamSpec { name: "Mix".into(), value: format!("{:.0}", mix * 100.0), unit: "%".into() },
+                    TuiParamSpec { name: "Link".into(), value: (if *link_channels { "Linked" } else { "Unlinked" }).into(), unit: "".into() },
+                ];
+                // Per-band params: 8 per band (solo, bypass, threshold, ratio, attack, release, knee, makeup)
+                for i in 0..*num_bands {
+                    let band = bands.get(i);
+                    params.push(TuiParamSpec { name: format!("B{} Solo", i+1), value: if band.is_some_and(|b| b.solo) { "On" } else { "Off" }.into(), unit: "".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Bypass", i+1), value: if band.is_some_and(|b| b.bypass) { "On" } else { "Off" }.into(), unit: "".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Threshold", i+1), value: band.and_then(|b| b.threshold_db).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "dB".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Ratio", i+1), value: band.and_then(|b| b.ratio).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: ":1".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Attack", i+1), value: band.and_then(|b| b.attack_ms).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "ms".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Release", i+1), value: band.and_then(|b| b.release_ms).map(|v| format!("{:.0}", v)).unwrap_or("Global".into()), unit: "ms".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Knee", i+1), value: band.and_then(|b| b.knee_db).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "dB".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Makeup", i+1), value: format!("{:.1}", band.map(|b| b.makeup_gain_db).unwrap_or(0.0)), unit: "dB".into() });
+                }
+                params
+            }
             sotf_audio_player::PluginSettings::MultibandExpander {
                 num_bands,
                 crossover_freq_1,
@@ -799,84 +767,42 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 hold_ms,
                 mix,
                 link_channels,
+                bands,
                 ..
-            } => vec![
-                TuiParamSpec {
-                    name: "Bands".to_string(),
-                    value: format!("{}", num_bands),
-                    unit: "".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 1".to_string(),
-                    value: format!("{:.0}", crossover_freq_1),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 2".to_string(),
-                    value: format!("{:.0}", crossover_freq_2),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 3".to_string(),
-                    value: format!("{:.0}", crossover_freq_3),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Crossover 4".to_string(),
-                    value: format!("{:.0}", crossover_freq_4),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Threshold".to_string(),
-                    value: format!("{:.1}", threshold_db),
-                    unit: "dB".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Ratio".to_string(),
-                    value: format!("{:.1}", ratio),
-                    unit: ":1".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Attack".to_string(),
-                    value: format!("{:.1}", attack_ms),
-                    unit: "ms".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Release".to_string(),
-                    value: format!("{:.0}", release_ms),
-                    unit: "ms".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Range".to_string(),
-                    value: format!("{:.1}", range_db),
-                    unit: "dB".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Knee".to_string(),
-                    value: format!("{:.1}", knee_db),
-                    unit: "dB".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Hysteresis".to_string(),
-                    value: format!("{:.1}", hysteresis_db),
-                    unit: "dB".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Hold".to_string(),
-                    value: format!("{:.0}", hold_ms),
-                    unit: "ms".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Mix".to_string(),
-                    value: format!("{:.0}", mix * 100.0),
-                    unit: "%".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Link".to_string(),
-                    value: (if *link_channels { "Linked" } else { "Unlinked" }).to_string(),
-                    unit: "".to_string(),
-                },
-            ],
+            } => {
+                let mut params = vec![
+                    TuiParamSpec { name: "Bands".into(), value: format!("{}", num_bands), unit: "".into() },
+                    TuiParamSpec { name: "Crossover 1".into(), value: format!("{:.0}", crossover_freq_1), unit: "Hz".into() },
+                    TuiParamSpec { name: "Crossover 2".into(), value: format!("{:.0}", crossover_freq_2), unit: "Hz".into() },
+                    TuiParamSpec { name: "Crossover 3".into(), value: format!("{:.0}", crossover_freq_3), unit: "Hz".into() },
+                    TuiParamSpec { name: "Crossover 4".into(), value: format!("{:.0}", crossover_freq_4), unit: "Hz".into() },
+                    TuiParamSpec { name: "Threshold".into(), value: format!("{:.1}", threshold_db), unit: "dB".into() },
+                    TuiParamSpec { name: "Ratio".into(), value: format!("{:.1}", ratio), unit: ":1".into() },
+                    TuiParamSpec { name: "Attack".into(), value: format!("{:.1}", attack_ms), unit: "ms".into() },
+                    TuiParamSpec { name: "Release".into(), value: format!("{:.0}", release_ms), unit: "ms".into() },
+                    TuiParamSpec { name: "Range".into(), value: format!("{:.1}", range_db), unit: "dB".into() },
+                    TuiParamSpec { name: "Knee".into(), value: format!("{:.1}", knee_db), unit: "dB".into() },
+                    TuiParamSpec { name: "Hysteresis".into(), value: format!("{:.1}", hysteresis_db), unit: "dB".into() },
+                    TuiParamSpec { name: "Hold".into(), value: format!("{:.0}", hold_ms), unit: "ms".into() },
+                    TuiParamSpec { name: "Mix".into(), value: format!("{:.0}", mix * 100.0), unit: "%".into() },
+                    TuiParamSpec { name: "Link".into(), value: (if *link_channels { "Linked" } else { "Unlinked" }).into(), unit: "".into() },
+                ];
+                // Per-band params: 10 per band (solo, bypass, threshold, ratio, attack, release, range, knee, hysteresis, hold)
+                for i in 0..*num_bands {
+                    let band = bands.get(i);
+                    params.push(TuiParamSpec { name: format!("B{} Solo", i+1), value: if band.is_some_and(|b| b.solo) { "On" } else { "Off" }.into(), unit: "".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Bypass", i+1), value: if band.is_some_and(|b| b.bypass) { "On" } else { "Off" }.into(), unit: "".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Threshold", i+1), value: band.and_then(|b| b.threshold_db).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "dB".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Ratio", i+1), value: band.and_then(|b| b.ratio).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: ":1".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Attack", i+1), value: band.and_then(|b| b.attack_ms).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "ms".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Release", i+1), value: band.and_then(|b| b.release_ms).map(|v| format!("{:.0}", v)).unwrap_or("Global".into()), unit: "ms".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Range", i+1), value: band.and_then(|b| b.range_db).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "dB".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Knee", i+1), value: band.and_then(|b| b.knee_db).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "dB".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Hysteresis", i+1), value: band.and_then(|b| b.hysteresis_db).map(|v| format!("{:.1}", v)).unwrap_or("Global".into()), unit: "dB".into() });
+                    params.push(TuiParamSpec { name: format!("B{} Hold", i+1), value: band.and_then(|b| b.hold_ms).map(|v| format!("{:.0}", v)).unwrap_or("Global".into()), unit: "ms".into() });
+                }
+                params
+            }
             sotf_audio_player::PluginSettings::XTC {
                 distance_m,
                 speaker_angle_deg,
@@ -1593,14 +1519,20 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 knee_db,
                 mix,
                 link_channels,
+                bands,
                 ..
             } => {
                 use sotf_plugins::param_specs::multiband_compressor::*;
+                const GLOBAL_COUNT: usize = 12;
+                const BAND_PARAMS: usize = 8; // solo, bypass, threshold, ratio, attack, release, knee, makeup
                 match index {
                     0 => {
-                        *num_bands = ((*num_bands as i64) + delta as i64)
+                        let new_bands = ((*num_bands as i64) + delta as i64)
                             .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
-                            as usize
+                            as usize;
+                        *num_bands = new_bands;
+                        // Resize bands vector to match
+                        bands.resize_with(new_bands, Default::default);
                     }
                     1 => {
                         *crossover_freq_1 = (*crossover_freq_1 + delta * 5.0)
@@ -1636,7 +1568,70 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     }
                     10 => *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64),
                     11 => *link_channels = !*link_channels,
-                    _ => return false,
+                    _ => {
+                        // Per-band parameters
+                        let band_offset = index - GLOBAL_COUNT;
+                        let band_idx = band_offset / BAND_PARAMS;
+                        let param_in_band = band_offset % BAND_PARAMS;
+                        // Ensure bands vec is large enough
+                        if band_idx >= bands.len() {
+                            bands.resize_with(band_idx + 1, Default::default);
+                        }
+                        let band = &mut bands[band_idx];
+                        match param_in_band {
+                            0 => band.solo = !band.solo,
+                            1 => band.bypass = !band.bypass,
+                            2 => { // threshold: toggle between Global/override
+                                band.threshold_db = match band.threshold_db {
+                                    None => Some(*threshold_db as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32;
+                                        if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
+                                    }
+                                };
+                            }
+                            3 => { // ratio
+                                band.ratio = match band.ratio {
+                                    None => Some(*ratio as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32 * 0.1;
+                                        if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
+                                    }
+                                };
+                            }
+                            4 => { // attack
+                                band.attack_ms = match band.attack_ms {
+                                    None => Some(*attack_ms as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32 * 0.1;
+                                        if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
+                                    }
+                                };
+                            }
+                            5 => { // release
+                                band.release_ms = match band.release_ms {
+                                    None => Some(*release_ms as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32;
+                                        if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
+                                    }
+                                };
+                            }
+                            6 => { // knee
+                                band.knee_db = match band.knee_db {
+                                    None => Some(*knee_db as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32 * 0.1;
+                                        if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
+                                    }
+                                };
+                            }
+                            7 => { // makeup gain
+                                band.makeup_gain_db = (band.makeup_gain_db + delta as f32 * 0.5).clamp(-24.0, 24.0);
+                            }
+                            _ => return false,
+                        }
+                    }
                 }
                 return true;
             }
@@ -1656,14 +1651,19 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 hold_ms,
                 mix,
                 link_channels,
+                bands,
                 ..
             } => {
                 use sotf_plugins::param_specs::multiband_expander::*;
+                const GLOBAL_COUNT: usize = 15;
+                const BAND_PARAMS: usize = 10; // solo, bypass, threshold, ratio, attack, release, range, knee, hysteresis, hold
                 match index {
                     0 => {
-                        *num_bands = ((*num_bands as i64) + delta as i64)
+                        let new_bands = ((*num_bands as i64) + delta as i64)
                             .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
-                            as usize
+                            as usize;
+                        *num_bands = new_bands;
+                        bands.resize_with(new_bands, Default::default);
                     }
                     1 => {
                         *crossover_freq_1 = (*crossover_freq_1 + delta * 5.0)
@@ -1705,7 +1705,93 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     12 => *hold_ms = (*hold_ms + delta).clamp(HOLD_MIN as f64, HOLD_MAX as f64),
                     13 => *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64),
                     14 => *link_channels = !*link_channels,
-                    _ => return false,
+                    _ => {
+                        // Per-band parameters
+                        let band_offset = index - GLOBAL_COUNT;
+                        let band_idx = band_offset / BAND_PARAMS;
+                        let param_in_band = band_offset % BAND_PARAMS;
+                        if band_idx >= bands.len() {
+                            bands.resize_with(band_idx + 1, Default::default);
+                        }
+                        let band = &mut bands[band_idx];
+                        match param_in_band {
+                            0 => band.solo = !band.solo,
+                            1 => band.bypass = !band.bypass,
+                            2 => { // threshold
+                                band.threshold_db = match band.threshold_db {
+                                    None => Some(*threshold_db as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32;
+                                        if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
+                                    }
+                                };
+                            }
+                            3 => { // ratio
+                                band.ratio = match band.ratio {
+                                    None => Some(*ratio as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32 * 0.1;
+                                        if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
+                                    }
+                                };
+                            }
+                            4 => { // attack
+                                band.attack_ms = match band.attack_ms {
+                                    None => Some(*attack_ms as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32 * 0.1;
+                                        if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
+                                    }
+                                };
+                            }
+                            5 => { // release
+                                band.release_ms = match band.release_ms {
+                                    None => Some(*release_ms as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32;
+                                        if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
+                                    }
+                                };
+                            }
+                            6 => { // range
+                                band.range_db = match band.range_db {
+                                    None => Some(*range_db as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32;
+                                        if new_v < RANGE_MIN { None } else { Some(new_v.clamp(RANGE_MIN, RANGE_MAX)) }
+                                    }
+                                };
+                            }
+                            7 => { // knee
+                                band.knee_db = match band.knee_db {
+                                    None => Some(*knee_db as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32 * 0.1;
+                                        if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
+                                    }
+                                };
+                            }
+                            8 => { // hysteresis
+                                band.hysteresis_db = match band.hysteresis_db {
+                                    None => Some(*hysteresis_db as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32 * 0.1;
+                                        if new_v < HYSTERESIS_MIN { None } else { Some(new_v.clamp(HYSTERESIS_MIN, HYSTERESIS_MAX)) }
+                                    }
+                                };
+                            }
+                            9 => { // hold
+                                band.hold_ms = match band.hold_ms {
+                                    None => Some(*hold_ms as f32),
+                                    Some(v) => {
+                                        let new_v = v + delta as f32;
+                                        if new_v < HOLD_MIN { None } else { Some(new_v.clamp(HOLD_MIN, HOLD_MAX)) }
+                                    }
+                                };
+                            }
+                            _ => return false,
+                        }
+                    }
                 }
                 return true;
             }
@@ -4769,8 +4855,8 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::ChannelMuteSolo { .. } => 1, // enabled toggle
         PluginSettings::Matrix { .. } => 2,          // input_channels, output_channels
         PluginSettings::Expander { .. } => 11, // threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels, sidechain_hpf
-        PluginSettings::MultibandCompressor { .. } => 12, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
-        PluginSettings::MultibandExpander { .. } => 15, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
+        PluginSettings::MultibandCompressor { num_bands, .. } => 12 + num_bands * 8, // global + per-band (solo, bypass, threshold, ratio, attack, release, knee, makeup)
+        PluginSettings::MultibandExpander { num_bands, .. } => 15 + num_bands * 10, // global + per-band (solo, bypass, threshold, ratio, attack, release, range, knee, hysteresis, hold)
         PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
         PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing

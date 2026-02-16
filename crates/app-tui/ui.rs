@@ -2305,34 +2305,77 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         ]));
         lines.push(Line::from(Span::styled("", base_style)));
 
-        let params = get_plugin_parameters(&plugin.settings, app.plugin_param_selection);
+        let entries = get_plugin_parameters(&plugin.settings, app.plugin_param_selection);
 
-        // Compute the max label width for right-alignment
-        let max_label_width = params.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+        // Compute the max label width for right-alignment (only from Param entries)
+        let max_label_width = entries
+            .iter()
+            .filter_map(|e| match e {
+                ParamDisplayEntry::Param(name, _) => Some(name.len()),
+                ParamDisplayEntry::Separator(_) => None,
+            })
+            .max()
+            .unwrap_or(0);
 
-        for (i, (name, value)) in params.iter().enumerate() {
-            let style = if i == app.plugin_param_selection {
-                Style::default()
-                    .fg(app.theme.fg_selected)
-                    .bg(app.theme.bg_selected)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                base_style
-            };
+        let inner_width = inner.width as usize;
+        let mut param_index = 0usize;
+        let mut selected_line_index = 0usize; // display line of selected param
+        for entry in &entries {
+            match entry {
+                ParamDisplayEntry::Separator(title) => {
+                    // Render as a separator line: ── Title ──────
+                    let prefix = "\u{2500}\u{2500} ";
+                    let suffix_char = '\u{2500}';
+                    let label = format!("{}{} ", prefix, title);
+                    let remaining = inner_width.saturating_sub(label.len());
+                    let separator_line = format!(
+                        "{}{}",
+                        label,
+                        std::iter::repeat(suffix_char).take(remaining).collect::<String>()
+                    );
+                    lines.push(Line::from(Span::styled(
+                        separator_line,
+                        base_style.fg(app.theme.fg_secondary),
+                    )));
+                }
+                ParamDisplayEntry::Param(name, value) => {
+                    if param_index == app.plugin_param_selection {
+                        selected_line_index = lines.len();
+                    }
+                    let style = if param_index == app.plugin_param_selection {
+                        Style::default()
+                            .fg(app.theme.fg_selected)
+                            .bg(app.theme.bg_selected)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        base_style
+                    };
 
-            // Right-align the label by padding on the left
-            let padded_name = format!("{:>width$}", name, width = max_label_width + 1);
+                    // Right-align the label by padding on the left
+                    let padded_name =
+                        format!("{:>width$}", name, width = max_label_width + 1);
 
-            lines.push(Line::from(vec![
-                Span::styled(format!("{} ", padded_name), style),
-                Span::styled(value.to_string(), style.fg(app.theme.title_color)),
-            ]));
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("{} ", padded_name), style),
+                        Span::styled(value.to_string(), style.fg(app.theme.title_color)),
+                    ]));
+                    param_index += 1;
+                }
+            }
         }
+
+        // Auto-scroll to keep selected parameter visible
+        let visible_height = inner.height as usize;
+        let scroll_offset = if selected_line_index >= visible_height {
+            (selected_line_index - visible_height + 2) as u16
+        } else {
+            0
+        };
 
         let paragraph = Paragraph::new(lines)
             .block(Block::default())
             .style(base_style)
-            .wrap(Wrap { trim: false });
+            .scroll((scroll_offset, 0));
 
         f.render_widget(paragraph, inner);
     }
@@ -2608,8 +2651,215 @@ fn draw_matrix_grid(
     f.render_widget(table, area);
 }
 
-/// Get the parameters for a plugin as (name, value) pairs
-fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(String, String)> {
+/// Entry in the plugin parameter display list.
+/// Can be a selectable parameter or a non-selectable section separator.
+enum ParamDisplayEntry {
+    /// A selectable parameter with name and formatted value
+    Param(String, String),
+    /// A section separator line (not selectable)
+    Separator(String),
+}
+
+/// Get the parameters for a plugin as display entries.
+/// Returns a mix of selectable parameters and non-selectable separators.
+fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<ParamDisplayEntry> {
+    use ParamDisplayEntry::{Param, Separator};
+
+    match settings {
+        PluginSettings::MultibandCompressor {
+            num_bands,
+            crossover_freq_1,
+            crossover_freq_2,
+            crossover_freq_3,
+            crossover_freq_4,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            mix,
+            link_channels,
+            bands,
+            ..
+        } => {
+            let mut entries = vec![
+                Separator("Global".to_string()),
+                Param("Bands".to_string(), format!("{}", num_bands)),
+                Param("Crossover 1".to_string(), format!("{:.0} Hz", crossover_freq_1)),
+                Param("Crossover 2".to_string(), format!("{:.0} Hz", crossover_freq_2)),
+                Param("Crossover 3".to_string(), format!("{:.0} Hz", crossover_freq_3)),
+                Param("Crossover 4".to_string(), format!("{:.0} Hz", crossover_freq_4)),
+                Param("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+                Param("Ratio".to_string(), format!("{:.1}:1", ratio)),
+                Param("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+                Param("Release".to_string(), format!("{:.0} ms", release_ms)),
+                Param("Knee".to_string(), format!("{:.1} dB", knee_db)),
+                Param("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+                Param(
+                    "Link Channels".to_string(),
+                    if *link_channels { "Yes" } else { "No" }.to_string(),
+                ),
+            ];
+            for i in 0..*num_bands {
+                let band = bands.get(i);
+                entries.push(Separator(format!("Band {}", i + 1)));
+                entries.push(Param(
+                    "Solo".to_string(),
+                    if band.is_some_and(|b| b.solo) { "On" } else { "Off" }.to_string(),
+                ));
+                entries.push(Param(
+                    "Bypass".to_string(),
+                    if band.is_some_and(|b| b.bypass) { "On" } else { "Off" }.to_string(),
+                ));
+                entries.push(Param(
+                    "Threshold".to_string(),
+                    band.and_then(|b| b.threshold_db)
+                        .map(|v| format!("{:.1} dB", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Ratio".to_string(),
+                    band.and_then(|b| b.ratio)
+                        .map(|v| format!("{:.1}:1", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Attack".to_string(),
+                    band.and_then(|b| b.attack_ms)
+                        .map(|v| format!("{:.1} ms", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Release".to_string(),
+                    band.and_then(|b| b.release_ms)
+                        .map(|v| format!("{:.0} ms", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Knee".to_string(),
+                    band.and_then(|b| b.knee_db)
+                        .map(|v| format!("{:.1} dB", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Makeup Gain".to_string(),
+                    format!("{:.1} dB", band.map(|b| b.makeup_gain_db).unwrap_or(0.0)),
+                ));
+            }
+            entries
+        }
+        PluginSettings::MultibandExpander {
+            num_bands,
+            crossover_freq_1,
+            crossover_freq_2,
+            crossover_freq_3,
+            crossover_freq_4,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            bands,
+            ..
+        } => {
+            let mut entries = vec![
+                Separator("Global".to_string()),
+                Param("Bands".to_string(), format!("{}", num_bands)),
+                Param("Crossover 1".to_string(), format!("{:.0} Hz", crossover_freq_1)),
+                Param("Crossover 2".to_string(), format!("{:.0} Hz", crossover_freq_2)),
+                Param("Crossover 3".to_string(), format!("{:.0} Hz", crossover_freq_3)),
+                Param("Crossover 4".to_string(), format!("{:.0} Hz", crossover_freq_4)),
+                Param("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+                Param("Ratio".to_string(), format!("{:.1}:1", ratio)),
+                Param("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+                Param("Release".to_string(), format!("{:.0} ms", release_ms)),
+                Param("Range".to_string(), format!("{:.1} dB", range_db)),
+                Param("Knee".to_string(), format!("{:.1} dB", knee_db)),
+                Param("Hysteresis".to_string(), format!("{:.1} dB", hysteresis_db)),
+                Param("Hold".to_string(), format!("{:.0} ms", hold_ms)),
+                Param("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+                Param(
+                    "Link Channels".to_string(),
+                    if *link_channels { "Yes" } else { "No" }.to_string(),
+                ),
+            ];
+            for i in 0..*num_bands {
+                let band = bands.get(i);
+                entries.push(Separator(format!("Band {}", i + 1)));
+                entries.push(Param(
+                    "Solo".to_string(),
+                    if band.is_some_and(|b| b.solo) { "On" } else { "Off" }.to_string(),
+                ));
+                entries.push(Param(
+                    "Bypass".to_string(),
+                    if band.is_some_and(|b| b.bypass) { "On" } else { "Off" }.to_string(),
+                ));
+                entries.push(Param(
+                    "Threshold".to_string(),
+                    band.and_then(|b| b.threshold_db)
+                        .map(|v| format!("{:.1} dB", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Ratio".to_string(),
+                    band.and_then(|b| b.ratio)
+                        .map(|v| format!("{:.1}:1", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Attack".to_string(),
+                    band.and_then(|b| b.attack_ms)
+                        .map(|v| format!("{:.1} ms", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Release".to_string(),
+                    band.and_then(|b| b.release_ms)
+                        .map(|v| format!("{:.0} ms", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Range".to_string(),
+                    band.and_then(|b| b.range_db)
+                        .map(|v| format!("{:.1} dB", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Knee".to_string(),
+                    band.and_then(|b| b.knee_db)
+                        .map(|v| format!("{:.1} dB", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Hysteresis".to_string(),
+                    band.and_then(|b| b.hysteresis_db)
+                        .map(|v| format!("{:.1} dB", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+                entries.push(Param(
+                    "Hold".to_string(),
+                    band.and_then(|b| b.hold_ms)
+                        .map(|v| format!("{:.0} ms", v))
+                        .unwrap_or("Global".to_string()),
+                ));
+            }
+            entries
+        }
+        other => get_plain_plugin_parameters(other)
+            .into_iter()
+            .map(|(n, v)| Param(n, v))
+            .collect(),
+    }
+}
+
+/// Get the parameters for a plugin as simple (name, value) pairs.
+/// Used for plugins that don't need section separators.
+fn get_plain_plugin_parameters(settings: &PluginSettings) -> Vec<(String, String)> {
     match settings {
         PluginSettings::Upmixer {
             speaker_config,
@@ -2951,106 +3201,10 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 format!("{:.0} Hz", sidechain_hpf_hz),
             ),
         ],
-        PluginSettings::MultibandCompressor {
-            num_bands,
-            crossover_freq_1,
-            crossover_freq_2,
-            crossover_freq_3,
-            crossover_freq_4,
-            threshold_db,
-            ratio,
-            attack_ms,
-            release_ms,
-            knee_db,
-            mix,
-            link_channels,
-            ..
-        } => vec![
-            ("Bands".to_string(), format!("{}", num_bands)),
-            (
-                "Crossover 1".to_string(),
-                format!("{:.0} Hz", crossover_freq_1),
-            ),
-            (
-                "Crossover 2".to_string(),
-                format!("{:.0} Hz", crossover_freq_2),
-            ),
-            (
-                "Crossover 3".to_string(),
-                format!("{:.0} Hz", crossover_freq_3),
-            ),
-            (
-                "Crossover 4".to_string(),
-                format!("{:.0} Hz", crossover_freq_4),
-            ),
-            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
-            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
-            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
-            ("Release".to_string(), format!("{:.0} ms", release_ms)),
-            ("Knee".to_string(), format!("{:.1} dB", knee_db)),
-            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            (
-                "Link Channels".to_string(),
-                if *link_channels {
-                    "Yes".to_string()
-                } else {
-                    "No".to_string()
-                },
-            ),
-        ],
-        PluginSettings::MultibandExpander {
-            num_bands,
-            crossover_freq_1,
-            crossover_freq_2,
-            crossover_freq_3,
-            crossover_freq_4,
-            threshold_db,
-            ratio,
-            attack_ms,
-            release_ms,
-            range_db,
-            knee_db,
-            hysteresis_db,
-            hold_ms,
-            mix,
-            link_channels,
-            ..
-        } => vec![
-            ("Bands".to_string(), format!("{}", num_bands)),
-            (
-                "Crossover 1".to_string(),
-                format!("{:.0} Hz", crossover_freq_1),
-            ),
-            (
-                "Crossover 2".to_string(),
-                format!("{:.0} Hz", crossover_freq_2),
-            ),
-            (
-                "Crossover 3".to_string(),
-                format!("{:.0} Hz", crossover_freq_3),
-            ),
-            (
-                "Crossover 4".to_string(),
-                format!("{:.0} Hz", crossover_freq_4),
-            ),
-            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
-            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
-            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
-            ("Release".to_string(), format!("{:.0} ms", release_ms)),
-            ("Range".to_string(), format!("{:.1} dB", range_db)),
-            ("Knee".to_string(), format!("{:.1} dB", knee_db)),
-            ("Hysteresis".to_string(), format!("{:.1} dB", hysteresis_db)),
-            ("Hold".to_string(), format!("{:.0} ms", hold_ms)),
-            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            (
-                "Link Channels".to_string(),
-                if *link_channels {
-                    "Yes".to_string()
-                } else {
-                    "No".to_string()
-                },
-            ),
-        ],
+        // Handled by get_plugin_parameters directly (with separators)
+        PluginSettings::MultibandCompressor { .. } | PluginSettings::MultibandExpander { .. } => {
+            unreachable!("multiband plugins are handled in get_plugin_parameters")
+        }
         PluginSettings::XTC {
             distance_m,
             speaker_angle_deg,

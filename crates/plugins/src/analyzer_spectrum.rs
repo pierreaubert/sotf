@@ -119,9 +119,40 @@ impl SpectrumAnalyzerPlugin {
     }
 
     pub fn with_config(num_channels: usize, config: SpectrumConfig) -> Result<Self, String> {
-        let mut plugin = Self::new(num_channels)?;
-        plugin.config = config;
-        Ok(plugin)
+        let (p, c) = RingBuffer::new(FFT_SIZE * 4);
+        let log_min = config.min_freq.log10();
+        let log_max = config.max_freq.log10();
+        let mut freqs = Vec::with_capacity(config.num_bins);
+        for i in 0..config.num_bins {
+            let f1 =
+                10.0f32.powf(log_min + (log_max - log_min) * (i as f32 / config.num_bins as f32));
+            let f2 = 10.0f32
+                .powf(log_min + (log_max - log_min) * ((i + 1) as f32 / config.num_bins as f32));
+            freqs.push((f1 * f2).sqrt());
+        }
+        let initial_data = SpectrumData {
+            frequencies: freqs,
+            magnitudes: vec![-100.0; config.num_bins],
+            peak_magnitude: -100.0,
+        };
+        let shared_data = Arc::new(ArcSwap::from_pointee(initial_data));
+        let mut planner = realfft::RealFftPlanner::<f32>::new();
+        let fft_r2c = planner.plan_fft_forward(FFT_SIZE);
+        let fft_output = fft_r2c.make_output_vec();
+        let num_bins = config.num_bins;
+        Ok(Self {
+            num_channels,
+            sample_rate: 48000,
+            config,
+            producer: p,
+            consumer: c,
+            shared_data,
+            fft_r2c,
+            fft_output,
+            windowed: vec![0.0; FFT_SIZE],
+            new_mags: vec![-100.0; num_bins],
+            current_magnitudes: vec![-100.0; num_bins],
+        })
     }
 }
 
