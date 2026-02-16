@@ -7,6 +7,8 @@ use math_audio_xem_common::{
     BoundaryConfig, CrossoverFilter, Point3D, RectangularRoom, RoomGeometry, RoomSimulation,
     Source, SurfaceConfig,
 };
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 
 /// A named scenario for data generation
 pub struct Scenario {
@@ -53,8 +55,6 @@ fn make_fullrange_source(position: Point3D, name: &str) -> Source {
     Source::classical(position, 60.0, 40.0, 1.0).with_name(name.to_string())
 }
 
-/// Typical domestic room boundary absorption coefficients.
-/// Floor (carpet/rug): α ≈ 0.3, ceiling (plaster): α ≈ 0.05, walls (drywall): α ≈ 0.1.
 fn default_boundaries() -> BoundaryConfig {
     BoundaryConfig {
         floor: SurfaceConfig::Absorption { coefficient: 0.3 },
@@ -64,10 +64,44 @@ fn default_boundaries() -> BoundaryConfig {
     }
 }
 
-fn make_simulation(
+fn concrete_basement_boundaries() -> BoundaryConfig {
+    BoundaryConfig {
+        floor: SurfaceConfig::Absorption { coefficient: 0.1 },
+        ceiling: SurfaceConfig::Absorption { coefficient: 0.1 },
+        walls: SurfaceConfig::Absorption { coefficient: 0.05 },
+        ..Default::default()
+    }
+}
+
+fn treated_front_boundaries() -> BoundaryConfig {
+    BoundaryConfig {
+        floor: SurfaceConfig::Absorption { coefficient: 0.3 },
+        ceiling: SurfaceConfig::Absorption { coefficient: 0.1 },
+        walls: SurfaceConfig::Absorption { coefficient: 0.08 },
+        front_wall: Some(SurfaceConfig::Absorption { coefficient: 0.4 }),
+        back_wall: Some(SurfaceConfig::Absorption { coefficient: 0.2 }),
+        left_wall: None,
+        right_wall: None,
+    }
+}
+
+fn asymmetric_side_boundaries() -> BoundaryConfig {
+    BoundaryConfig {
+        floor: SurfaceConfig::Absorption { coefficient: 0.25 },
+        ceiling: SurfaceConfig::Absorption { coefficient: 0.08 },
+        walls: SurfaceConfig::Absorption { coefficient: 0.12 },
+        front_wall: None,
+        back_wall: None,
+        left_wall: Some(SurfaceConfig::Absorption { coefficient: 0.25 }),
+        right_wall: Some(SurfaceConfig::Absorption { coefficient: 0.05 }),
+    }
+}
+
+fn make_simulation_with_boundaries(
     room: RectangularRoom,
     sources: Vec<Source>,
     listening_positions: Vec<Point3D>,
+    boundaries: BoundaryConfig,
 ) -> RoomSimulation {
     let mut sim = RoomSimulation::with_frequencies(
         RoomGeometry::Rectangular(room),
@@ -77,8 +111,16 @@ fn make_simulation(
         MAX_FREQ,
         NUM_POINTS,
     );
-    sim.boundaries = default_boundaries();
+    sim.boundaries = boundaries;
     sim
+}
+
+fn make_simulation(
+    room: RectangularRoom,
+    sources: Vec<Source>,
+    listening_positions: Vec<Point3D>,
+) -> RoomSimulation {
+    make_simulation_with_boundaries(room, sources, listening_positions, default_boundaries())
 }
 
 /// Generate all 19 scenarios
@@ -166,7 +208,12 @@ fn scenario_03_small_stereo_2_2_mso() -> Scenario {
     Scenario {
         name: "small_stereo_2_2_mso".to_string(),
         description: "Small 3x3x2.4m room, 2 subs in front corners (MSO)".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub1, sub2], vec![lp]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right, sub1, sub2],
+            vec![lp],
+            concrete_basement_boundaries(),
+        ),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -282,7 +329,12 @@ fn scenario_06_medium_multi_sub_4() -> Scenario {
     Scenario {
         name: "medium_multi_sub_4".to_string(),
         description: "Medium 5x4x2.5m room, 4 corner subs".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub1, sub2, sub3, sub4], vec![lp]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right, sub1, sub2, sub3, sub4],
+            vec![lp],
+            treated_front_boundaries(),
+        ),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -306,7 +358,12 @@ fn scenario_07_medium_multi_seat() -> Scenario {
     Scenario {
         name: "medium_multi_seat".to_string(),
         description: "Medium 5x4x2.5m room, stereo, 3 seats".to_string(),
-        simulation: make_simulation(room, vec![left, right], vec![lp0, lp1, lp2]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right],
+            vec![lp0, lp1, lp2],
+            asymmetric_side_boundaries(),
+        ),
         source_names: vec!["left".to_string(), "right".to_string()],
     }
 }
@@ -329,7 +386,12 @@ fn scenario_08_large_stereo() -> Scenario {
     Scenario {
         name: "large_stereo_2_0".to_string(),
         description: "Large 7x5.5x2.6m room, stereo 2.0, fullrange".to_string(),
-        simulation: make_simulation(room, vec![left, right], vec![lp]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right],
+            vec![lp],
+            treated_front_boundaries(),
+        ),
         source_names: vec!["left".to_string(), "right".to_string()],
     }
 }
@@ -345,7 +407,12 @@ fn scenario_09_large_2_1() -> Scenario {
     Scenario {
         name: "large_stereo_2_1".to_string(),
         description: "Large 7x5.5x2.6m room, 2.1".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub], vec![lp]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right, sub],
+            vec![lp],
+            treated_front_boundaries(),
+        ),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -368,7 +435,12 @@ fn scenario_10_large_multi_sub_4() -> Scenario {
     Scenario {
         name: "large_multi_sub_4".to_string(),
         description: "Large 7x5.5x2.6m room, 4 corner subs".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub1, sub2, sub3, sub4], vec![lp]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right, sub1, sub2, sub3, sub4],
+            vec![lp],
+            concrete_basement_boundaries(),
+        ),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -393,7 +465,12 @@ fn scenario_11_large_multi_seat_2_1() -> Scenario {
     Scenario {
         name: "large_multi_seat_2_1".to_string(),
         description: "Large 7x5.5x2.6m room, 2.1, 3 seats".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub], vec![lp0, lp1, lp2]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right, sub],
+            vec![lp0, lp1, lp2],
+            asymmetric_side_boundaries(),
+        ),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -415,7 +492,12 @@ fn scenario_12_medium_multi_sub_multi_seat() -> Scenario {
     Scenario {
         name: "medium_multi_sub_multi_seat".to_string(),
         description: "Medium 5x4x2.5m room, 2 subs, 2 seats".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub1, sub2], vec![lp0, lp1]),
+        simulation: make_simulation_with_boundaries(
+            room,
+            vec![left, right, sub1, sub2],
+            vec![lp0, lp1],
+            treated_front_boundaries(),
+        ),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -448,10 +530,11 @@ fn scenario_13_medium_surround_5_0() -> Scenario {
     Scenario {
         name: "medium_surround_5_0".to_string(),
         description: "Medium 5x4x2.5m room, 5.0 surround, fullrange".to_string(),
-        simulation: make_simulation(
+        simulation: make_simulation_with_boundaries(
             room,
             vec![left, right, center, surr_left, surr_right],
             vec![lp],
+            treated_front_boundaries(),
         ),
         source_names: vec![
             "left".to_string(),
@@ -477,10 +560,11 @@ fn scenario_14_medium_surround_5_1() -> Scenario {
     Scenario {
         name: "medium_surround_5_1".to_string(),
         description: "Medium 5x4x2.5m room, 5.1 surround".to_string(),
-        simulation: make_simulation(
+        simulation: make_simulation_with_boundaries(
             room,
             vec![left, right, center, surr_left, surr_right, sub],
             vec![lp],
+            treated_front_boundaries(),
         ),
         source_names: vec![
             "left".to_string(),
@@ -514,12 +598,13 @@ fn scenario_15_medium_surround_5_1_4() -> Scenario {
     Scenario {
         name: "medium_surround_5_1_4".to_string(),
         description: "Medium 5x4x2.5m room, 5.1.4 Dolby Atmos".to_string(),
-        simulation: make_simulation(
+        simulation: make_simulation_with_boundaries(
             room,
             vec![
                 left, right, center, surr_left, surr_right, top_fl, top_fr, top_rl, top_rr, sub,
             ],
             vec![lp],
+            treated_front_boundaries(),
         ),
         source_names: vec![
             "left".to_string(),
@@ -554,10 +639,11 @@ fn scenario_16_large_surround_5_1() -> Scenario {
     Scenario {
         name: "large_surround_5_1".to_string(),
         description: "Large 7x5.5x2.6m room, 5.1 surround".to_string(),
-        simulation: make_simulation(
+        simulation: make_simulation_with_boundaries(
             room,
             vec![left, right, center, surr_left, surr_right, sub],
             vec![lp],
+            asymmetric_side_boundaries(),
         ),
         source_names: vec![
             "left".to_string(),
@@ -591,12 +677,13 @@ fn scenario_17_large_surround_5_1_4() -> Scenario {
     Scenario {
         name: "large_surround_5_1_4".to_string(),
         description: "Large 7x5.5x2.6m room, 5.1.4 Dolby Atmos".to_string(),
-        simulation: make_simulation(
+        simulation: make_simulation_with_boundaries(
             room,
             vec![
                 left, right, center, surr_left, surr_right, top_fl, top_fr, top_rl, top_rr, sub,
             ],
             vec![lp],
+            asymmetric_side_boundaries(),
         ),
         source_names: vec![
             "left".to_string(),
@@ -611,6 +698,159 @@ fn scenario_17_large_surround_5_1_4() -> Scenario {
             "subwoofer".to_string(),
         ],
     }
+}
+
+fn jitter_absorption_coefficient(rng: &mut SmallRng, base: f64, amount: f64) -> f64 {
+    let delta: f64 = rng.random_range(-amount..amount);
+    let value = base + delta;
+    value.max(0.02).min(0.9)
+}
+
+fn jitter_surface(
+    rng: &mut SmallRng,
+    surface: &SurfaceConfig,
+    amount: f64,
+) -> SurfaceConfig {
+    match surface {
+        SurfaceConfig::Absorption { coefficient } => SurfaceConfig::Absorption {
+            coefficient: jitter_absorption_coefficient(rng, *coefficient, amount),
+        },
+        other => other.clone(),
+    }
+}
+
+fn jitter_boundaries(
+    rng: &mut SmallRng,
+    base: &BoundaryConfig,
+    amount: f64,
+) -> BoundaryConfig {
+    BoundaryConfig {
+        floor: jitter_surface(rng, &base.floor, amount),
+        ceiling: jitter_surface(rng, &base.ceiling, amount),
+        walls: jitter_surface(rng, &base.walls, amount),
+        front_wall: base
+            .front_wall
+            .as_ref()
+            .map(|s| jitter_surface(rng, s, amount)),
+        back_wall: base
+            .back_wall
+            .as_ref()
+            .map(|s| jitter_surface(rng, s, amount)),
+        left_wall: base
+            .left_wall
+            .as_ref()
+            .map(|s| jitter_surface(rng, s, amount)),
+        right_wall: base
+            .right_wall
+            .as_ref()
+            .map(|s| jitter_surface(rng, s, amount)),
+    }
+}
+
+fn jitter_point_within_room(
+    rng: &mut SmallRng,
+    p: Point3D,
+    max_dx: f64,
+    max_dy: f64,
+    max_dz: f64,
+    room: &RectangularRoom,
+) -> Point3D {
+    let dx: f64 = rng.random_range(-max_dx..max_dx);
+    let dy: f64 = rng.random_range(-max_dy..max_dy);
+    let dz: f64 = rng.random_range(-max_dz..max_dz);
+
+    let mut x = p.x + dx;
+    let mut y = p.y + dy;
+    let mut z = p.z + dz;
+
+    if x < 0.1 {
+        x = 0.1;
+    }
+    if x > room.width - 0.1 {
+        x = room.width - 0.1;
+    }
+    if y < 0.1 {
+        y = 0.1;
+    }
+    if y > room.depth - 0.1 {
+        y = room.depth - 0.1;
+    }
+    if z < 0.1 {
+        z = 0.1;
+    }
+    if z > room.height - 0.1 {
+        z = room.height - 0.1;
+    }
+
+    Point3D::new(x, y, z)
+}
+
+fn randomized_scenario_variant(
+    base: &Scenario,
+    variant_index: usize,
+    seed: u64,
+) -> Scenario {
+    let mut rng = SmallRng::seed_from_u64(seed);
+    let mut simulation = base.simulation.clone();
+
+    let room = match simulation.room {
+        RoomGeometry::Rectangular(room) => room,
+        _ => return base.clone(),
+    };
+
+    let max_dx = room.width * 0.03;
+    let max_dy = room.depth * 0.03;
+    let max_dz = room.height * 0.02;
+
+    for source in &mut simulation.sources {
+        source.position = jitter_point_within_room(
+            &mut rng,
+            source.position,
+            max_dx,
+            max_dy,
+            max_dz,
+            &room,
+        );
+    }
+
+    let lp_max_dx = room.width * 0.04;
+    let lp_max_dy = room.depth * 0.04;
+    let lp_max_dz = room.height * 0.03;
+
+    for lp in &mut simulation.listening_positions {
+        *lp = jitter_point_within_room(
+            &mut rng,
+            *lp,
+            lp_max_dx,
+            lp_max_dy,
+            lp_max_dz,
+            &room,
+        );
+    }
+
+    simulation.boundaries = jitter_boundaries(&mut rng, &simulation.boundaries, 0.05);
+
+    Scenario {
+        name: format!("{}_v{}", base.name, variant_index + 1),
+        description: base.description.clone(),
+        simulation,
+        source_names: base.source_names.clone(),
+    }
+}
+
+pub fn randomized_scenarios(seed: u64, variants_per_scenario: usize) -> Vec<Scenario> {
+    let base = all_scenarios();
+    let mut out = Vec::new();
+
+    for (idx, scenario) in base.into_iter().enumerate() {
+        let scenario_seed = seed ^ ((idx as u64) << 32);
+        for v in 0..variants_per_scenario {
+            let seed_v = scenario_seed ^ (v as u64);
+            out.push(randomized_scenario_variant(&scenario, v, seed_v));
+        }
+    }
+
+    out
 }
 
 #[cfg(test)]

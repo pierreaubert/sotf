@@ -200,7 +200,7 @@ fn test_hf_extension_pipeline() {
         "Simulation should have 100 points"
     );
 
-    let extended = hf_extension::extend_to_full_range(&sim_output);
+    let extended = hf_extension::extend_to_full_range_with_room(&sim_output, &scenario.simulation);
 
     // 100 simulation + 100 HF extension = 200
     assert_eq!(

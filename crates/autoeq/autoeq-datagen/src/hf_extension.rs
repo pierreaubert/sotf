@@ -10,7 +10,7 @@
 //! since they already have an 80 Hz lowpass crossover.
 
 use crate::SimulationOutput;
-use math_audio_xem_common::log_space;
+use math_audio_xem_common::{log_space, RoomSimulation};
 use num_complex::Complex64;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -28,11 +28,21 @@ const NOISE_CONTROL_POINTS: usize = 12;
 /// Reference pressure for SPL conversion (20 µPa)
 const P_REF: f64 = 20e-6;
 
-/// Extend a `SimulationOutput` (20–500 Hz) to cover 20 Hz – 20 kHz.
-///
-/// The original simulation data is kept verbatim; 100 additional log-spaced
-/// points are appended from just above 500 Hz up to 20 kHz.
 pub fn extend_to_full_range(output: &SimulationOutput) -> SimulationOutput {
+    extend_to_full_range_with_simulation(output, None)
+}
+
+pub fn extend_to_full_range_with_room(
+    output: &SimulationOutput,
+    simulation: &RoomSimulation,
+) -> SimulationOutput {
+    extend_to_full_range_with_simulation(output, Some(simulation))
+}
+
+fn extend_to_full_range_with_simulation(
+    output: &SimulationOutput,
+    simulation: Option<&RoomSimulation>,
+) -> SimulationOutput {
     let last_sim_freq = *output.frequencies.last().expect("empty frequency list");
 
     // Start slightly above the last simulated point to avoid a duplicate
@@ -45,7 +55,8 @@ pub fn extend_to_full_range(output: &SimulationOutput) -> SimulationOutput {
     let mut extended_pressures = Vec::with_capacity(output.pressures.len());
 
     for (src_idx, src_pressures) in output.pressures.iter().enumerate() {
-        let is_sub = output.source_names[src_idx].starts_with("sub");
+        let source_name = &output.source_names[src_idx];
+        let is_sub = source_name.starts_with("sub");
         let mut src_extended = Vec::with_capacity(src_pressures.len());
 
         for (lp_idx, lp_pressures) in src_pressures.iter().enumerate() {
@@ -55,25 +66,29 @@ pub fn extend_to_full_range(output: &SimulationOutput) -> SimulationOutput {
 
             let mut extended = lp_pressures.clone();
 
-            if is_sub {
-                // Steep rolloff: -60 dB/octave above the simulation range
-                for &freq in &hf_freqs {
-                    let octaves_above = (freq / last_sim_freq).log2();
-                    let spl = last_spl - 60.0 * octaves_above;
-                    let phase = last_phase - 2.0 * PI * freq * 0.001;
-                    extended.push(spl_phase_to_pressure(spl, phase));
+            match is_sub {
+                true => {
+                    for &freq in &hf_freqs {
+                        let octaves_above = (freq / last_sim_freq).log2();
+                        let spl = last_spl - 60.0 * octaves_above;
+                        let phase = last_phase - 2.0 * PI * freq * 0.001;
+                        extended.push(spl_phase_to_pressure(spl, phase));
+                    }
                 }
-            } else {
-                // Seeded RNG for reproducible per-source-per-LP noise
-                let seed = (src_idx as u64) * 10_000 + (lp_idx as u64) + 0xCAFE;
-                let noise = generate_smooth_noise(&hf_freqs, seed);
+                false => {
+                    let seed = (src_idx as u64) * 10_000 + (lp_idx as u64) + 0xCAFE;
+                    let noise = generate_smooth_noise(&hf_freqs, seed);
+                    let angle_deg = simulation
+                        .map(|sim| off_axis_angle_degrees(sim, src_idx, lp_idx))
+                        .unwrap_or(0.0);
 
-                for (i, &freq) in hf_freqs.iter().enumerate() {
-                    let shape_db = speaker_response_shape(freq);
-                    let spl = last_spl + shape_db + noise[i];
-                    // Gentle linear phase accumulation (group delay ~ 0.3 ms)
-                    let phase = last_phase - 2.0 * PI * freq * 0.0003;
-                    extended.push(spl_phase_to_pressure(spl, phase));
+                    for (i, &freq) in hf_freqs.iter().enumerate() {
+                        let shape_db = speaker_response_shape_for_name(source_name, freq);
+                        let off_axis_db = hf_off_axis_tilt(freq, angle_deg);
+                        let spl = last_spl + shape_db + noise[i] + off_axis_db;
+                        let phase = last_phase - 2.0 * PI * freq * 0.0003;
+                        extended.push(spl_phase_to_pressure(spl, phase));
+                    }
                 }
             }
 
@@ -90,11 +105,6 @@ pub fn extend_to_full_range(output: &SimulationOutput) -> SimulationOutput {
     }
 }
 
-/// Typical speaker direct-sound response shape (dB relative to midband).
-///
-/// - Flat through the midrange (500 Hz – 3 kHz)
-/// - Small presence rise ~+1.5 dB around 2–4 kHz
-/// - Gentle treble rolloff starting at ~8 kHz, about -6 dB at 20 kHz
 fn speaker_response_shape(freq: f64) -> f64 {
     // Presence bump: Gaussian centred at 3 kHz, ~1 octave wide
     let presence = 1.5 * (-0.5 * ((freq / 3000.0).ln() / 0.5_f64.ln()).powi(2)).exp();
@@ -107,6 +117,89 @@ fn speaker_response_shape(freq: f64) -> f64 {
     };
 
     presence + rolloff
+}
+
+fn surround_response_shape(freq: f64) -> f64 {
+    let base = speaker_response_shape(freq);
+    if freq > 4000.0 {
+        base - 2.0 * ((freq / 4000.0).log2()).min(1.5)
+    } else {
+        base
+    }
+}
+
+fn center_response_shape(freq: f64) -> f64 {
+    let base = speaker_response_shape(freq);
+    if freq < 300.0 {
+        base - 1.0
+    } else {
+        base
+    }
+}
+
+fn speaker_response_shape_for_name(name: &str, freq: f64) -> f64 {
+    if name.contains("surround") {
+        surround_response_shape(freq)
+    } else if name == "center" {
+        center_response_shape(freq)
+    } else {
+        speaker_response_shape(freq)
+    }
+}
+
+fn off_axis_angle_degrees(simulation: &RoomSimulation, src_idx: usize, lp_idx: usize) -> f64 {
+    let src = &simulation.sources[src_idx];
+    let lp = simulation.listening_positions[lp_idx];
+    let dx = lp.x - src.position.x;
+    let dy = lp.y - src.position.y;
+    let dz = lp.z - src.position.z;
+    let r = (dx * dx + dy * dy + dz * dz).sqrt();
+    if r < 1e-9 {
+        return 0.0;
+    }
+
+    let n = simulation.listening_positions.len() as f64;
+    let mut cx = 0.0;
+    let mut cy = 0.0;
+    let mut cz = 0.0;
+    for p in &simulation.listening_positions {
+        cx += p.x;
+        cy += p.y;
+        cz += p.z;
+    }
+    cx /= n;
+    cy /= n;
+    cz /= n;
+
+    let fx = cx - src.position.x;
+    let fy = cy - src.position.y;
+    let fz = cz - src.position.z;
+    let fr = (fx * fx + fy * fy + fz * fz).sqrt();
+    if fr < 1e-9 {
+        return 0.0;
+    }
+
+    let dot = dx * fx + dy * fy + dz * fz;
+    let cos_angle = (dot / (r * fr)).clamp(-1.0, 1.0);
+    cos_angle.acos().to_degrees()
+}
+
+fn hf_off_axis_tilt(freq: f64, angle_deg: f64) -> f64 {
+    if freq < 2000.0 {
+        return 0.0;
+    }
+
+    let clamped_angle = angle_deg.max(0.0).min(120.0);
+    let base_db = if clamped_angle <= 15.0 {
+        0.0
+    } else {
+        let t = ((clamped_angle - 15.0) / 75.0).min(1.0);
+        -6.0 * t
+    };
+
+    let hf_ratio = (freq / 2000.0).log2() / (HF_MAX_FREQ / 2000.0).log2();
+    let hf_factor = hf_ratio.max(0.0).min(1.0);
+    base_db * hf_factor
 }
 
 /// Generate slowly-varying noise via cosine interpolation between random

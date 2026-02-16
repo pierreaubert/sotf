@@ -60,8 +60,7 @@ fn run_solver(
         other => anyhow::bail!("Unknown solver: {other}"),
     };
 
-    // Extend simulated 20–500 Hz data to 20 kHz with synthetic speaker response
-    let output = hf_extension::extend_to_full_range(&sim_output);
+    let output = hf_extension::extend_to_full_range_with_room(&sim_output, &scenario.simulation);
 
     // Export CSVs
     let csv_files = csv_export::export_csvs(&output, &scenario_dir)?;
