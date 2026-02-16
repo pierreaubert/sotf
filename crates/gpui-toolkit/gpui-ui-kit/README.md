@@ -538,6 +538,42 @@ Component::new(required_args)
     // Either render directly or build for additional handlers
 ```
 
+### FormField Macro (Procedural)
+
+Use the `FormField` derive macro to generate builder boilerplate for custom form components:
+
+```rust
+use gpui_ui_kit::FormField;
+
+#[derive(FormField)]
+pub struct MyCustomInput {
+    #[field(required)]
+    id: ElementId,
+    
+    #[field(optional, into)]
+    value: Option<SharedString>,
+    
+    #[field(optional, into)]
+    label: Option<SharedString>,
+    
+    disabled: bool,
+}
+
+// Generated API:
+let input = MyCustomInput::new("my-id")
+    .value("Hello")
+    .label("Name")
+    .disabled(true);
+```
+
+**Macro Attributes:**
+- `#[field(required)]` - Required in constructor
+- `#[field(optional)]` - Optional field, wraps in `Some()`
+- `#[field(into)]` - Accepts `impl Into<T>` for the setter
+- `#[field(builder = false)]` - Skip builder method
+- `#[field(default = "expr")]` - Custom default value
+- `#[field(skip)]` - Skip field entirely
+
 ### Event Handlers
 
 Components that support interaction accept closures:

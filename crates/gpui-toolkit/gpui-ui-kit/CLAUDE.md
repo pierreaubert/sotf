@@ -10,6 +10,52 @@ Reusable UI component library for the GPUI framework.
 - Workflow builder
 - Read `GPUI.md` at the project root before working on GPUI code
 
+## FormField Macro
+
+The `FormField` derive macro reduces boilerplate for form component structs by generating:
+
+- `new()` constructor
+- Builder pattern setters for each field
+
+### Usage
+
+```rust
+use gpui_ui_kit::FormField;
+
+#[derive(FormField)]
+pub struct MyInput {
+    #[field(required)]           // Required in constructor
+    id: ElementId,
+    
+    #[field(optional, into)]     // Optional field, accepts impl Into<T>
+    value: Option<SharedString>,
+    
+    #[field(optional, into)]
+    label: Option<SharedString>,
+    
+    #[field(default = "false")]  // Custom default value
+    disabled: bool,
+    
+    #[field(builder = false)]    // Skip builder method
+    on_change: Option<Box<dyn Fn(&str, &mut Window, &mut App) + 'static>>,
+}
+
+// Generated API:
+let input = MyInput::new("my-id")
+    .value("Hello")
+    .label("Name")
+    .disabled(true);
+```
+
+### Attributes
+
+- `#[field(required)]` - Required field (must be provided in `new()`)
+- `#[field(optional)]` - Optional field (wraps in `Some()`)
+- `#[field(into)]` - Use `impl Into<T>` for the setter
+- `#[field(builder = false)]` - Skip generating builder method
+- `#[field(default = "expr")]` - Custom default value expression
+- `#[field(skip)]` - Skip field entirely
+
 ## Dependencies
 
 - `gpui` - GPU-accelerated UI framework
