@@ -600,9 +600,11 @@ impl<T: Clone> KeyframeAnimation<T> {
     /// Add a keyframe
     pub fn keyframe(mut self, keyframe: Keyframe<T>) -> Self {
         self.keyframes.push(keyframe);
-        // Keep sorted by position
-        self.keyframes
-            .sort_by(|a, b| a.at.partial_cmp(&b.at).unwrap());
+        // Keep sorted by position - handle NaN by treating it as 0.0 to avoid panic
+        self.keyframes.sort_by(|a, b| {
+            a.at.partial_cmp(&b.at)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         self
     }
 
