@@ -11,7 +11,8 @@
 use math_audio_fem::assembly::HelmholtzProblem;
 use math_audio_fem::basis::PolynomialDegree;
 use math_audio_fem::boundary::{DirichletBC, apply_dirichlet};
-use math_audio_fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahedra};
+use math_audio_fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahedra, Mesh};
+use math_audio_fem::schwarz_pml::{SchwarzPmlConfig, SchwarzVariant, solve_schwarz_pml};
 use math_audio_fem::solver::{
     GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType, solve,
 };
@@ -40,6 +41,29 @@ pub struct ValidationResult {
     pub passed: bool,
 }
 
+/// Collect Dirichlet BC (node_index, value) pairs from mesh and BC definitions
+fn collect_dirichlet_pairs(mesh: &Mesh, bcs: &[DirichletBC]) -> Vec<(usize, Complex64)> {
+    let mut pairs = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for bc in bcs {
+        for &node in &bc.boundary_nodes(mesh) {
+            if seen.insert(node) {
+                let pt = &mesh.nodes[node];
+                pairs.push((node, bc.value(pt.x, pt.y, pt.z)));
+            }
+        }
+    }
+    pairs
+}
+
+/// Check if a solver type is a Schwarz-PML variant
+fn is_schwarz_pml(solver_type: SolverType) -> bool {
+    matches!(
+        solver_type,
+        SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative
+    )
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -54,6 +78,7 @@ fn main() -> anyhow::Result<()> {
         SolverType::GmresAmg,
         SolverType::GmresShiftedLaplacian,
         SolverType::WaveHoltz,
+        SolverType::SchwarzPmlAdditive,
     ];
 
     let parallel_solvers = [SolverType::GmresPipelinedAmg, SolverType::GmresPipelinedIlu];
@@ -96,6 +121,7 @@ fn main() -> anyhow::Result<()> {
                         verbosity: 0,
                         ..Default::default()
                     },
+                    None,
                     *n_radial,
                     *n_angular,
                     mesh_name,
@@ -128,10 +154,26 @@ fn main() -> anyhow::Result<()> {
                     config.waveholtz = Some(WaveHoltzConfig::for_wavenumber(*k_val));
                 }
 
+                // Schwarz PML config (only used for Schwarz PML solvers)
+                let schwarz_pml_config = if is_schwarz_pml(*solver_type) {
+                    let variant = match solver_type {
+                        SolverType::SchwarzPmlMultiplicative => SchwarzVariant::Multiplicative,
+                        _ => SchwarzVariant::Additive,
+                    };
+                    Some(SchwarzPmlConfig {
+                        variant,
+                        verbosity: 2,
+                        ..SchwarzPmlConfig::for_wavenumber(*k_val)
+                    })
+                } else {
+                    None
+                };
+
                 results.push(run_cylinder_scattering_test(
                     &format!("Cylinder (k={:.1}) [{:?}]", k_val, solver_type),
                     *k_val,
                     config,
+                    schwarz_pml_config.as_ref(),
                     *n_radial,
                     *n_angular,
                     mesh_name,
@@ -156,6 +198,7 @@ fn main() -> anyhow::Result<()> {
                         &format!("Cylinder (k={:.1}) [{:?}]", k_val, solver_type),
                         *k_val,
                         config,
+                        None,
                         *n_radial,
                         *n_angular,
                         mesh_name,
@@ -185,6 +228,7 @@ fn main() -> anyhow::Result<()> {
                     verbosity: 0,
                     ..Default::default()
                 },
+                None,
                 *subdiv,
                 *layers,
                 name,
@@ -215,10 +259,26 @@ fn main() -> anyhow::Result<()> {
                 config.waveholtz = Some(WaveHoltzConfig::for_wavenumber(*k));
             }
 
+            // Schwarz PML config
+            let schwarz_pml_config = if is_schwarz_pml(*solver_type) {
+                let variant = match solver_type {
+                    SolverType::SchwarzPmlMultiplicative => SchwarzVariant::Multiplicative,
+                    _ => SchwarzVariant::Additive,
+                };
+                Some(SchwarzPmlConfig {
+                    variant,
+                    verbosity: 0,
+                    ..SchwarzPmlConfig::for_wavenumber(*k)
+                })
+            } else {
+                None
+            };
+
             results.push(run_sphere_scattering_test(
                 &format!("Sphere (k={:.1}) [{:?}]", k, solver_type),
                 *k,
                 config,
+                schwarz_pml_config.as_ref(),
                 *subdiv,
                 *layers,
                 name,
@@ -260,6 +320,7 @@ fn run_sphere_scattering_test(
     name: &str,
     k: f64,
     config: SolverConfig,
+    schwarz_pml_config: Option<&SchwarzPmlConfig>,
     subdivisions: usize,
     layers: usize,
     mesh_name: &str,
@@ -316,13 +377,30 @@ fn run_sphere_scattering_test(
 
     let k_complex = Complex64::new(k, 0.0);
     let source = |_x: f64, _y: f64, _z: f64| Complex64::new(0.0, 0.0);
-    let mut problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, source);
 
-    let bc_outer = DirichletBC::new(2, exact_u.clone());
-    apply_dirichlet(&mut problem, &mesh, &[bc_outer]);
+    // Assemble problem (used for RHS and metadata)
+    let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, source);
+    let num_dofs = problem.num_dofs();
+    let b_norm = problem.rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
 
-    // Solve
-    let result = solve(&problem, &config);
+    // Solve: branch for Schwarz PML (needs mesh geometry) vs standard path
+    let result = if let Some(spml_config) = schwarz_pml_config {
+        let bc_outer = DirichletBC::new(2, exact_u.clone());
+        let dirichlet_pairs = collect_dirichlet_pairs(&mesh, &[bc_outer]);
+        solve_schwarz_pml(
+            &mesh,
+            PolynomialDegree::P1,
+            k_complex,
+            &problem.rhs,
+            &dirichlet_pairs,
+            spml_config,
+        )
+    } else {
+        let mut problem = problem;
+        let bc_outer = DirichletBC::new(2, exact_u.clone());
+        apply_dirichlet(&mut problem, &mesh, &[bc_outer]);
+        solve(&problem, &config)
+    };
 
     let duration = start_time.elapsed().as_millis() as u64;
 
@@ -348,17 +426,15 @@ fn run_sphere_scattering_test(
         }
         Err(e) => {
             eprintln!("Solver failed: {}", e);
-            (Array1::zeros(problem.num_dofs()), 0, 1.0, false, 1.0, 0.0)
+            (Array1::zeros(num_dofs), 0, 1.0, false, 1.0, 0.0)
         }
     };
-
-    let b_norm = problem.rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
 
     Ok(ValidationResult {
         test_name: name.to_string(),
         solver: format!("{:?}", config.solver_type),
-        mesh_info: format!("{} ({} DOFs)", mesh_name, problem.num_dofs()),
-        dofs: problem.num_dofs(),
+        mesh_info: format!("{} ({} DOFs)", mesh_name, num_dofs),
+        dofs: num_dofs,
         duration_ms: duration,
         l2_error: error,
         iterations,
@@ -373,6 +449,7 @@ fn run_cylinder_scattering_test(
     name: &str,
     k: f64,
     config: SolverConfig,
+    schwarz_pml_config: Option<&SchwarzPmlConfig>,
     n_radial: usize,
     n_angular: usize,
     mesh_name: &str,
@@ -392,14 +469,32 @@ fn run_cylinder_scattering_test(
 
     let k_complex = Complex64::new(k, 0.0);
     let source = |_x: f64, _y: f64, _z: f64| Complex64::new(0.0, 0.0);
-    let mut problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, source);
 
-    let bc_inner = DirichletBC::new(1, |_x, _y, _z| Complex64::new(0.0, 0.0));
-    let bc_outer = DirichletBC::new(2, exact_u);
-    apply_dirichlet(&mut problem, &mesh, &[bc_inner, bc_outer]);
+    // Assemble problem (used for RHS and metadata)
+    let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, source);
+    let num_dofs = problem.num_dofs();
+    let b_norm = problem.rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
 
-    // Solve
-    let result = solve(&problem, &config);
+    // Solve: branch for Schwarz PML (needs mesh geometry) vs standard path
+    let result = if let Some(spml_config) = schwarz_pml_config {
+        let bc_inner = DirichletBC::new(1, |_x, _y, _z| Complex64::new(0.0, 0.0));
+        let bc_outer = DirichletBC::new(2, exact_u);
+        let dirichlet_pairs = collect_dirichlet_pairs(&mesh, &[bc_inner, bc_outer]);
+        solve_schwarz_pml(
+            &mesh,
+            PolynomialDegree::P1,
+            k_complex,
+            &problem.rhs,
+            &dirichlet_pairs,
+            spml_config,
+        )
+    } else {
+        let mut problem = problem;
+        let bc_inner = DirichletBC::new(1, |_x, _y, _z| Complex64::new(0.0, 0.0));
+        let bc_outer = DirichletBC::new(2, exact_u);
+        apply_dirichlet(&mut problem, &mesh, &[bc_inner, bc_outer]);
+        solve(&problem, &config)
+    };
 
     let duration = start_time.elapsed().as_millis() as u64;
 
@@ -431,17 +526,15 @@ fn run_cylinder_scattering_test(
         }
         Err(e) => {
             eprintln!("Solver failed: {}", e);
-            (Array1::zeros(problem.num_dofs()), 0, 1.0, false, 1.0, 0.0)
+            (Array1::zeros(num_dofs), 0, 1.0, false, 1.0, 0.0)
         }
     };
-
-    let b_norm = problem.rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
 
     Ok(ValidationResult {
         test_name: name.to_string(),
         solver: format!("{:?}", config.solver_type),
-        mesh_info: format!("{} ({} DOFs)", mesh_name, problem.num_dofs()),
-        dofs: problem.num_dofs(),
+        mesh_info: format!("{} ({} DOFs)", mesh_name, num_dofs),
+        dofs: num_dofs,
         duration_ms: duration,
         l2_error: error,
         iterations,

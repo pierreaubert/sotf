@@ -1,6 +1,6 @@
 [package]
 name = "math-fem"
-version = "0.3.7"
+version = "0.3.8"
 description = "Multigrid FEM solver for the Helmholtz equation"
 edition = { workspace = true }
 authors = { workspace = true }

@@ -25,6 +25,7 @@ use math_audio_fem::mesh::{BoundaryType, ElementType, Mesh, Point};
 use math_audio_fem::solver::{
     self, GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType,
 };
+use math_audio_fem::schwarz_pml::{SchwarzPmlConfig, SchwarzVariant};
 use math_audio_fem::waveholtz::WaveHoltzConfig;
 use num_complex::Complex64;
 use rayon::prelude::*;
@@ -104,6 +105,17 @@ impl MemoryEstimate {
             // Per-frequency cost is just the RHS, solution, and preconditioner setup.
             let rhs = self.n_dofs * Self::F64_SIZE; // Real-valued RHS
             let solution = self.n_dofs * Self::COMPLEX_SIZE; // Complex solution output
+            let precond = self.preconditioner_memory();
+            return rhs + solution + precond;
+        }
+
+        if matches!(
+            self.solver_type,
+            SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative
+        ) {
+            // Schwarz-PML: each subdomain has its own local complex CSR + local solution
+            let rhs = self.n_dofs * Self::COMPLEX_SIZE;
+            let solution = self.n_dofs * Self::COMPLEX_SIZE;
             let precond = self.preconditioner_memory();
             return rhs + solution + precond;
         }
@@ -199,6 +211,21 @@ impl MemoryEstimate {
                 // Outer GMRES workspace (real-valued)
                 let gmres_vecs = self.n_dofs * self.krylov_size * Self::F64_SIZE;
                 two_real_csrs + amg_real + stepper_vecs + gmres_vecs
+            }
+            SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative => {
+                // Each subdomain has a local complex CSR + ILU preconditioner
+                // Subdomain size ~= n_dofs / num_subdomains * 1.3 (with overlap + PML extension)
+                let num_subs = self.schwarz_domains.max(4);
+                let sub_size = (self.n_dofs as f64 / num_subs as f64 * 1.3) as usize;
+                let sub_nnz = (self.k_nnz as f64 / num_subs as f64 * 1.3) as usize;
+                // Per subdomain: complex CSR + ILU(L+U)
+                let sub_csr = sub_nnz * (Self::USIZE_SIZE + Self::COMPLEX_SIZE)
+                    + (sub_size + 1) * Self::USIZE_SIZE;
+                let sub_ilu = 2 * sub_nnz * (Self::USIZE_SIZE + Self::COMPLEX_SIZE);
+                // Partition of unity weights + node mapping
+                let pou = self.n_dofs * num_subs * Self::F64_SIZE;
+                let mapping = self.n_dofs * Self::USIZE_SIZE * 2;
+                (sub_csr + sub_ilu) * num_subs + pou + mapping
             }
         }
     }
@@ -658,6 +685,26 @@ struct Args {
     #[arg(long)]
     waveholtz_no_dispersion: bool,
 
+    /// Schwarz-PML variant: additive (parallel) or multiplicative (sequential)
+    #[arg(long, default_value = "additive")]
+    schwarz_pml_variant: CliSchwarzVariant,
+
+    /// Number of Schwarz-PML subdomains (0 = auto based on wavenumber)
+    #[arg(long, default_value = "0")]
+    schwarz_pml_subdomains: usize,
+
+    /// Schwarz-PML overlap as fraction of strip width
+    #[arg(long, default_value = "0.1")]
+    schwarz_pml_overlap: f64,
+
+    /// Schwarz-PML convergence tolerance
+    #[arg(long, default_value = "1e-8")]
+    schwarz_pml_tolerance: f64,
+
+    /// Maximum Schwarz-PML outer iterations
+    #[arg(long, default_value = "50")]
+    schwarz_pml_max_iter: usize,
+
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
@@ -681,6 +728,7 @@ enum CliSolverType {
     Gmres,
     Pipelined,
     Waveholtz,
+    SchwarzPml,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -692,6 +740,12 @@ enum CliPreconditionerType {
     Schwarz,
     Amg,
     ShiftedLaplacian,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CliSchwarzVariant {
+    Additive,
+    Multiplicative,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -774,10 +828,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SolverType::GmresShiftedLaplacian
         }
         (CliSolverType::Waveholtz, _) => SolverType::WaveHoltz,
+        (CliSolverType::SchwarzPml, _) => match args.schwarz_pml_variant {
+            CliSchwarzVariant::Additive => SolverType::SchwarzPmlAdditive,
+            CliSchwarzVariant::Multiplicative => SolverType::SchwarzPmlMultiplicative,
+        },
     };
 
-    // Validate boundary conditions for WaveHoltz
-    if internal_solver_type == SolverType::WaveHoltz {
+    let is_schwarz_pml = matches!(
+        internal_solver_type,
+        SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative
+    );
+
+    // Validate boundary conditions for WaveHoltz and Schwarz-PML (rigid only)
+    if internal_solver_type == SolverType::WaveHoltz || is_schwarz_pml {
+        let solver_label = if is_schwarz_pml { "Schwarz-PML" } else { "WaveHoltz" };
         let b = &config.boundaries;
         let surfaces: &[(&str, &SurfaceConfig)] = &[
             ("floor", &b.floor),
@@ -794,8 +858,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (name, surface) in surfaces {
             if !matches!(surface, SurfaceConfig::Rigid) {
                 eprintln!(
-                    "Error: WaveHoltz only supports rigid boundaries, but {} is {:?}",
-                    name, surface
+                    "Error: {} only supports rigid boundaries, but {} is {:?}",
+                    solver_label, name, surface
                 );
                 eprintln!("Hint: Use a GMRES-based solver for non-rigid boundaries.");
                 std::process::exit(1);
@@ -805,8 +869,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(surface) = override_opt {
                 if !matches!(surface, SurfaceConfig::Rigid) {
                     eprintln!(
-                        "Error: WaveHoltz only supports rigid boundaries, but {} is {:?}",
-                        name, surface
+                        "Error: {} only supports rigid boundaries, but {} is {:?}",
+                        solver_label, name, surface
                     );
                     eprintln!("Hint: Use a GMRES-based solver for non-rigid boundaries.");
                     std::process::exit(1);
@@ -824,6 +888,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tolerance: args.waveholtz_tolerance,
             inner_tolerance: args.waveholtz_inner_tolerance,
             dispersion_correction: !args.waveholtz_no_dispersion,
+            ..Default::default()
+        })
+    } else {
+        None
+    };
+
+    // Build Schwarz-PML config from CLI args (if applicable)
+    let schwarz_pml_config = if is_schwarz_pml {
+        let variant = match args.schwarz_pml_variant {
+            CliSchwarzVariant::Additive => SchwarzVariant::Additive,
+            CliSchwarzVariant::Multiplicative => SchwarzVariant::Multiplicative,
+        };
+        Some(SchwarzPmlConfig {
+            variant,
+            num_subdomains: args.schwarz_pml_subdomains, // 0 = auto per-frequency
+            overlap_fraction: args.schwarz_pml_overlap,
+            tolerance: args.schwarz_pml_tolerance,
+            max_iterations: args.schwarz_pml_max_iter,
+            verbosity: if args.verbose { 2 } else { 0 },
             ..Default::default()
         })
     } else {
@@ -848,6 +931,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.sl_beta,
             args.sl_mg_cycles,
             waveholtz_config.as_ref(),
+            schwarz_pml_config.as_ref(),
         )?
     } else {
         run_fem_simulation(
@@ -867,6 +951,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.sl_beta,
             args.sl_mg_cycles,
             waveholtz_config.as_ref(),
+            schwarz_pml_config.as_ref(),
         )?
     };
 
@@ -1050,6 +1135,7 @@ fn run_fem_simulation(
     sl_beta: Option<f64>,
     sl_mg_cycles: usize,
     waveholtz_config: Option<&WaveHoltzConfig>,
+    schwarz_pml_config: Option<&SchwarzPmlConfig>,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let solver_name = format!("{:?}", solver_type);
     println!("\n=== {} Solver (Parallel) ===", solver_name.to_uppercase());
@@ -1206,8 +1292,9 @@ fn run_fem_simulation(
     let progress_counter = AtomicUsize::new(0);
 
     // Process frequencies - either with warm start or cold start
-    // WaveHoltz doesn't support initial guesses, so skip warm start
-    let use_warm_start = warm_start && n_freqs > anchor_stride && solver_type != SolverType::WaveHoltz;
+    // WaveHoltz and Schwarz-PML don't support initial guesses, so skip warm start
+    let is_spml = matches!(solver_type, SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative);
+    let use_warm_start = warm_start && n_freqs > anchor_stride && solver_type != SolverType::WaveHoltz && !is_spml;
     let mut all_results = if use_warm_start {
         run_hierarchical_solve(
             &mesh,
@@ -1256,6 +1343,7 @@ fn run_fem_simulation(
                         source_width,
                         listening_positions,
                         &lp_elements,
+                        schwarz_pml_config,
                     );
 
                     // Update progress
@@ -1358,6 +1446,7 @@ fn run_fem_simulation_adaptive(
     sl_beta: Option<f64>,
     sl_mg_cycles: usize,
     waveholtz_config: Option<&WaveHoltzConfig>,
+    schwarz_pml_config: Option<&SchwarzPmlConfig>,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let solver_name = format!("{:?}", solver_type);
     println!(
@@ -1551,6 +1640,7 @@ fn run_fem_simulation_adaptive(
                         source_width,
                         listening_positions,
                         &lp_elements,
+                        schwarz_pml_config,
                     );
 
                     let completed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1688,6 +1778,7 @@ fn compute_boundary_coefficients(
 /// Solve for a single frequency (called in parallel)
 ///
 /// Returns (spl_values, iterations, residual)
+#[allow(clippy::too_many_arguments)]
 fn solve_single_frequency(
     mesh: &Mesh,
     assembler: &HelmholtzAssembler,
@@ -1699,11 +1790,48 @@ fn solve_single_frequency(
     source_width: f64,
     listening_positions: &[Point3D],
     lp_elements: &[Option<usize>],
+    schwarz_pml_config: Option<&SchwarzPmlConfig>,
 ) -> (Vec<f64>, usize, f64) {
     // Assemble RHS for this frequency (parallel over elements)
     let rhs = assemble_rhs_parallel(mesh, sources, frequency, source_width);
 
-    let solution = if solver_config.solver_type == SolverType::WaveHoltz {
+    let is_spml = matches!(
+        solver_config.solver_type,
+        SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative
+    );
+
+    let solution = if is_spml {
+        // Schwarz-PML path: solve directly with mesh geometry
+        let k_complex = Complex64::new(wavenumber, 0.0);
+
+        // Auto-tune subdomains if set to 0
+        let spml_config = if let Some(base) = schwarz_pml_config {
+            if base.num_subdomains == 0 {
+                let auto = SchwarzPmlConfig::for_wavenumber(wavenumber);
+                SchwarzPmlConfig {
+                    num_subdomains: auto.num_subdomains,
+                    ..base.clone()
+                }
+            } else {
+                base.clone()
+            }
+        } else {
+            SchwarzPmlConfig::for_wavenumber(wavenumber)
+        };
+
+        // Rigid walls = Neumann BCs = no Dirichlet BCs needed
+        let dirichlet_bcs: Vec<(usize, Complex64)> = Vec::new();
+
+        math_audio_fem::schwarz_pml::solve_schwarz_pml(
+            mesh,
+            PolynomialDegree::P1,
+            k_complex,
+            &rhs,
+            &dirichlet_bcs,
+            &spml_config,
+        )
+        .expect("Schwarz-PML solver failed")
+    } else if solver_config.solver_type == SolverType::WaveHoltz {
         // WaveHoltz path: use real-valued solve directly
         let rhs_real = ndarray::Array1::from_iter(rhs.iter().map(|c| c.re));
 

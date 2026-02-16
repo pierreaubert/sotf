@@ -116,6 +116,22 @@ pub enum SolverType {
     /// Reference: Appelo et al. (2020) "WaveHoltz: Iterative Solution of the
     /// Helmholtz Equation via the Wave Equation"
     WaveHoltz,
+    /// Additive Schwarz with PML transmission conditions
+    ///
+    /// Domain decomposition with PML at artificial boundaries achieves
+    /// k-independent convergence. Requires mesh geometry — use
+    /// `schwarz_pml::solve_schwarz_pml()` directly.
+    ///
+    /// Reference: Galkowski et al. (2024, arXiv:2408.16580)
+    SchwarzPmlAdditive,
+    /// Multiplicative Schwarz with PML transmission conditions
+    ///
+    /// Sequential variant of PML-Schwarz. Each subdomain sees updated
+    /// solution from previous subdomains. Requires mesh geometry — use
+    /// `schwarz_pml::solve_schwarz_pml()` directly.
+    ///
+    /// Reference: Galkowski et al. (2024, arXiv:2408.16580)
+    SchwarzPmlMultiplicative,
 }
 
 /// Configuration for Shifted-Laplacian preconditioner
@@ -274,6 +290,11 @@ pub fn solve(problem: &HelmholtzProblem, config: &SolverConfig) -> Result<Soluti
             let default_wh = crate::waveholtz::WaveHoltzConfig::default();
             let wh_config = config.waveholtz.as_ref().unwrap_or(&default_wh);
             crate::waveholtz::solve_waveholtz_from_problem(problem, config, wh_config)
+        }
+        SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative => {
+            Err(SolverError::InvalidConfiguration(
+                "Schwarz-PML solver requires mesh geometry. Use schwarz_pml::solve_schwarz_pml() instead.".into()
+            ))
         }
     };
     let solve_time = solve_start.elapsed();
@@ -1519,6 +1540,11 @@ pub fn solve_csr_with_guess(
         SolverType::WaveHoltz => {
             Err(SolverError::InvalidConfiguration(
                 "WaveHoltz solver requires HelmholtzAssembler, not CSR matrix. Use solve() or solve_waveholtz() instead.".into()
+            ))
+        }
+        SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative => {
+            Err(SolverError::InvalidConfiguration(
+                "Schwarz-PML solver requires mesh geometry. Use schwarz_pml::solve_schwarz_pml() instead.".into()
             ))
         }
     }

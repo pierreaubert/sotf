@@ -33,6 +33,7 @@ pub mod boundary;
 pub mod mesh;
 pub mod multigrid;
 pub mod quadrature;
+pub mod schwarz_pml;
 pub mod solver;
 pub mod waveholtz;
 

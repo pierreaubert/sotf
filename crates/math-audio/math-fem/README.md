@@ -18,6 +18,7 @@ math-fem = { version = "0.3" }
 - **Boundary conditions**: Dirichlet, Neumann, Robin (impedance/absorption), PML
 - **Optimized Assembly**: `HelmholtzAssembler` for efficient frequency sweeps without CSR topology reconstruction
 - **WaveHoltz solver**: O(N) Helmholtz solver via time-filtering of the wave equation, with GMRES acceleration and multigrid inner solves
+- **Schwarz-PML solver**: Domain decomposition with PML transmission conditions for k-independent convergence
 - **Multigrid solver**: V-cycle, W-cycle with geometric coarsening
 - **Parallel processing**: Rayon-based parallel matrix and RHS assembly
 - **Room Acoustics Simulator**: CLI tool for frequency-domain room simulation
@@ -95,6 +96,7 @@ Multiple solver strategies for the Helmholtz system:
 | GMRES+AMG | Large parallel | O(N) per iter |
 | Shifted-Laplacian | High frequency | O(N) per iter |
 | **WaveHoltz** | **High frequency, large N** | **O(N) total** |
+| **Schwarz-PML** | **High frequency, k-robust** | **O(N) per iter** |
 
 ### waveholtz
 
@@ -104,6 +106,18 @@ wave equation time-steps. Features:
 - GMRES-accelerated outer iteration
 - Multi-frequency solving
 - Dispersion correction for high-accuracy
+
+### schwarz_pml
+
+Optimized Schwarz domain decomposition with PML transmission conditions. Unlike
+classical Schwarz methods, using PML absorption at artificial subdomain boundaries
+achieves bounded iteration counts independent of wavenumber k. Features:
+- 1D strip decomposition with automatic PML sizing
+- Additive (parallel) and multiplicative (sequential) variants
+- Partition-of-unity blending in overlap regions
+- Auto-tuning via `SchwarzPmlConfig::for_wavenumber(k)`
+
+Called directly via `schwarz_pml::solve_schwarz_pml()` (requires mesh geometry).
 
 ### multigrid
 
@@ -147,3 +161,7 @@ Geometric multigrid solver for large systems.
 
 - T. Hagstrom, D. Appelo. "Convergence of the Semi-Discrete WaveHoltz Iteration." 2024.
   https://arxiv.org/abs/2407.06929
+
+- J. Galkowski, S. Sherwood, D. Lafontaine, E.A. Spence. "Optimised Schwarz methods
+  with PML transmission conditions for the Helmholtz equation." 2024.
+  https://arxiv.org/abs/2408.16580
