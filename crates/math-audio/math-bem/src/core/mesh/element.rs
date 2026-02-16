@@ -2,7 +2,7 @@
 //!
 //! Direct port of shape function computations from NC_3dFunctions.cpp.
 
-use ndarray::{Array1, Array2, array};
+use ndarray::{array, Array1, Array2};
 
 use crate::core::types::{Element, ElementType};
 
@@ -164,24 +164,37 @@ pub fn compute_element_area(
             0.5 * cross.dot(&cross).sqrt()
         }
         ElementType::Quad4 => {
-            // Quad area via two triangles
+            // Quad area via average of both diagonal splits
+            // This handles warped quads correctly
             let p0 = nodes.row(connectivity[0]);
             let p1 = nodes.row(connectivity[1]);
             let p2 = nodes.row(connectivity[2]);
             let p3 = nodes.row(connectivity[3]);
 
-            // Triangle 0-1-2
+            // Triangle 0-1-2 (split along diagonal 0-2)
             let v1 = array![p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
             let v2 = array![p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
             let cross1 = cross_product(&v1, &v2);
             let area1 = 0.5 * cross1.dot(&cross1).sqrt();
 
-            // Triangle 0-2-3
+            // Triangle 0-2-3 (completing the quad)
             let v3 = array![p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]];
             let cross2 = cross_product(&v2, &v3);
             let area2 = 0.5 * cross2.dot(&cross2).sqrt();
 
-            area1 + area2
+            // Triangle 1-2-3 (split along diagonal 1-3)
+            let v4 = array![p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
+            let v5 = array![p3[0] - p1[0], p3[1] - p1[1], p3[2] - p1[2]];
+            let cross3 = cross_product(&v4, &v5);
+            let area3 = 0.5 * cross3.dot(&cross3).sqrt();
+
+            // Triangle 1-3-0
+            let v6 = array![p0[0] - p1[0], p0[1] - p1[1], p0[2] - p1[2]];
+            let cross4 = cross_product(&v5, &v6);
+            let area4 = 0.5 * cross4.dot(&cross4).sqrt();
+
+            // Average of both splits for better accuracy on warped quads
+            0.5 * (area1 + area2 + area3 + area4)
         }
     }
 }

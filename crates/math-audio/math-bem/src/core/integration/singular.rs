@@ -580,10 +580,15 @@ pub fn generate_subelements(
                 for j in 0..num_vertices {
                     let nsu = nsf0 + j;
                     let j1 = j + num_vertices;
-                    let j2 = if j1 > num_vertices {
-                        j1 - 1
+                    // For the second midpoint index:
+                    // - For vertex j, we need the midpoint between vertex j and vertex (j+1)%num_vertices
+                    // - This is stored at index j + num_vertices in the midpoint arrays
+                    // - The "previous" midpoint (between vertex (j-1)%num_vertices and j) is at
+                    //   index ((j + num_vertices - 1) % num_vertices) + num_vertices
+                    let j2 = if j == 0 {
+                        num_vertices + num_vertices - 1  // Last midpoint (between last vertex and vertex 0)
                     } else {
-                        j1 + num_vertices - 1
+                        j - 1 + num_vertices  // Previous midpoint
                     };
 
                     match element_type {
@@ -726,22 +731,69 @@ fn distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
     diff.dot(&diff).sqrt()
 }
 
-/// Estimate characteristic element size (average edge length)
+/// Estimate characteristic element size (square root of area for 2D elements)
+///
+/// For accuracy in quasi-singular integration, we use sqrt(area) as it
+/// provides a consistent measure regardless of element shape.
 fn estimate_element_size(element_coords: &Array2<f64>, element_type: ElementType) -> f64 {
     let num_nodes = element_type.num_nodes();
-    let mut total_length = 0.0;
-
-    for i in 0..num_nodes {
-        let j = (i + 1) % num_nodes;
-        let mut edge_length_sq = 0.0;
-        for k in 0..3 {
-            let diff = element_coords[[j, k]] - element_coords[[i, k]];
-            edge_length_sq += diff * diff;
+    
+    // Compute element area using cross product
+    match element_type {
+        ElementType::Tri3 => {
+            // Triangle area = 0.5 * |v1 × v2|
+            let v1: [f64; 3] = [
+                element_coords[[1, 0]] - element_coords[[0, 0]],
+                element_coords[[1, 1]] - element_coords[[0, 1]],
+                element_coords[[1, 2]] - element_coords[[0, 2]],
+            ];
+            let v2: [f64; 3] = [
+                element_coords[[2, 0]] - element_coords[[0, 0]],
+                element_coords[[2, 1]] - element_coords[[0, 1]],
+                element_coords[[2, 2]] - element_coords[[0, 2]],
+            ];
+            let cross = [
+                v1[1] * v2[2] - v1[2] * v2[1],
+                v1[2] * v2[0] - v1[0] * v2[2],
+                v1[0] * v2[1] - v1[1] * v2[0],
+            ];
+            let area = 0.5 * (cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]).sqrt();
+            area.sqrt().max(1e-10)
         }
-        total_length += edge_length_sq.sqrt();
+        ElementType::Quad4 => {
+            // Quad area via two triangles (split along diagonal 0-2)
+            let v1: [f64; 3] = [
+                element_coords[[1, 0]] - element_coords[[0, 0]],
+                element_coords[[1, 1]] - element_coords[[0, 1]],
+                element_coords[[1, 2]] - element_coords[[0, 2]],
+            ];
+            let v2: [f64; 3] = [
+                element_coords[[2, 0]] - element_coords[[0, 0]],
+                element_coords[[2, 1]] - element_coords[[0, 1]],
+                element_coords[[2, 2]] - element_coords[[0, 2]],
+            ];
+            let cross1 = [
+                v1[1] * v2[2] - v1[2] * v2[1],
+                v1[2] * v2[0] - v1[0] * v2[2],
+                v1[0] * v2[1] - v1[1] * v2[0],
+            ];
+            
+            let v3: [f64; 3] = [
+                element_coords[[3, 0]] - element_coords[[0, 0]],
+                element_coords[[3, 1]] - element_coords[[0, 1]],
+                element_coords[[3, 2]] - element_coords[[0, 2]],
+            ];
+            let cross2 = [
+                v2[1] * v3[2] - v2[2] * v3[1],
+                v2[2] * v3[0] - v2[0] * v3[2],
+                v2[0] * v3[1] - v2[1] * v3[0],
+            ];
+            
+            let area1 = 0.5 * (cross1[0] * cross1[0] + cross1[1] * cross1[1] + cross1[2] * cross1[2]).sqrt();
+            let area2 = 0.5 * (cross2[0] * cross2[0] + cross2[1] * cross2[1] + cross2[2] * cross2[2]).sqrt();
+            (area1 + area2).sqrt().max(1e-10)
+        }
     }
-
-    total_length / num_nodes as f64
 }
 
 #[cfg(test)]

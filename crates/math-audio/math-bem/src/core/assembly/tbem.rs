@@ -105,17 +105,25 @@ pub fn build_tbem_system_with_beta(
     let gamma = Complex64::new(physics.gamma(), 0.0);
     let tau = Complex64::new(physics.tau, 0.0);
 
-    // Calculate approximate ka based on mesh bounding box
-    let mut avg_radius = 0.0;
-    let n_calc = elements.len().min(100);
-    for element in elements.iter().take(n_calc) {
-        let r = element.center.dot(&element.center).sqrt();
-        avg_radius += r;
+    // Calculate characteristic radius from mesh bounding box
+    // This is more robust than averaging element center distances
+    let mut min_coord = [f64::MAX, f64::MAX, f64::MAX];
+    let mut max_coord = [f64::MIN, f64::MIN, f64::MIN];
+
+    for element in elements.iter() {
+        for d in 0..3 {
+            min_coord[d] = min_coord[d].min(element.center[d]);
+            max_coord[d] = max_coord[d].max(element.center[d]);
+        }
     }
-    if n_calc > 0 {
-        avg_radius /= n_calc as f64;
-    }
-    let ka = physics.wave_number * avg_radius;
+
+    // Use half the maximum extent as characteristic radius
+    let characteristic_radius = 0.5
+        * (max_coord[0] - min_coord[0])
+            .max(max_coord[1] - min_coord[1])
+            .max(max_coord[2] - min_coord[2]);
+
+    let ka = physics.wave_number * characteristic_radius;
 
     // Switch between formulations based on frequency
     // Low freq (ka < 0.5): Use Modified formulation (+K) for stability
@@ -298,7 +306,7 @@ fn add_free_terms(
             system.rhs[source_dof] += avg_bc * tau * 0.5;
         }
         _ => {
-            // Transfer admittance - more complex handling
+            unimplemented!("Transfer admittance boundary conditions are not yet supported");
         }
     }
 }
@@ -361,19 +369,23 @@ pub fn build_tbem_system_parallel(
     let tau = Complex64::new(physics.tau, 0.0);
     let beta = physics.burton_miller_beta();
 
-    // Heuristic for formulation switch
-    // Calculate approximate ka based on mesh bounding box
-    let mut avg_radius = 0.0;
-    // We can't access elements[i] easily before loop? Yes we can.
-    let n_calc = elements.len().min(100);
-    for i in 0..n_calc {
-        let r = elements[i].center.dot(&elements[i].center).sqrt();
-        avg_radius += r;
+    // Calculate characteristic radius from mesh bounding box (same as sequential)
+    let mut min_coord = [f64::MAX, f64::MAX, f64::MAX];
+    let mut max_coord = [f64::MIN, f64::MIN, f64::MIN];
+
+    for element in elements.iter() {
+        for d in 0..3 {
+            min_coord[d] = min_coord[d].min(element.center[d]);
+            max_coord[d] = max_coord[d].max(element.center[d]);
+        }
     }
-    if n_calc > 0 {
-        avg_radius /= n_calc as f64;
-    }
-    let ka = physics.wave_number * avg_radius;
+
+    let characteristic_radius = 0.5
+        * (max_coord[0] - min_coord[0])
+            .max(max_coord[1] - min_coord[1])
+            .max(max_coord[2] - min_coord[2]);
+
+    let ka = physics.wave_number * characteristic_radius;
 
     // Switch between formulations based on frequency
     let dg_dn_sign = if ka < 0.5 { 1.0 } else { -1.0 };
@@ -396,15 +408,15 @@ pub fn build_tbem_system_parallel(
             let mut local_row = Array1::<Complex64>::zeros(num_dofs);
             let mut local_rhs = Complex64::new(0.0, 0.0);
 
-            // Add free terms (c = +1/2 for exterior problem)
+            // Add free terms (c = -0.5 for exterior problem with CBIE jump condition)
             let avg_bc = bc_value.iter().sum::<Complex64>() / bc_value.len() as f64;
             match bc_type {
                 0 => {
-                    local_row[source_dof] += gamma * 0.5;
+                    local_row[source_dof] -= gamma * 0.5;
                     local_rhs += avg_bc * beta * tau * 0.5;
                 }
                 1 => {
-                    local_row[source_dof] += beta * tau * 0.5;
+                    local_row[source_dof] -= beta * tau * 0.5;
                     local_rhs += avg_bc * tau * 0.5;
                 }
                 _ => {}

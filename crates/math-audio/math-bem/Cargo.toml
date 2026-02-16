@@ -1,6 +1,6 @@
 [package]
 name = "math-bem"
-version = "0.3.2"
+version = "0.3.3"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "High-performance Boundary Element Method library for acoustic scattering"

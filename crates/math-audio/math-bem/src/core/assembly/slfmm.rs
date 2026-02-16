@@ -488,9 +488,13 @@ fn build_near_field(
         // Self-interaction
         cluster_pairs.push((i, i, true));
 
-        // Interaction with near clusters (only upper triangle)
+        // Interaction with near clusters
+        // Note: near_clusters lists must be symmetric, but we guard against asymmetry
+        // by checking both directions and avoiding duplicates
         for &j in &cluster_i.near_clusters {
-            if j > i {
+            if j != i {
+                // Add pair regardless of i < j since near-lists might be asymmetric
+                // The pair (i,j) represents computing block from cluster j to cluster i
                 cluster_pairs.push((i, j, false));
             }
         }

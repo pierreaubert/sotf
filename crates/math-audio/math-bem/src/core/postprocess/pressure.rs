@@ -162,100 +162,156 @@ fn integrate_element_field(
 ) -> Complex64 {
     let mut result = Complex64::new(0.0, 0.0);
 
-    // Use order 3 quadrature (7-point for triangles) for good accuracy
-    let gauss_order = 3;
-    let quad_points = match elem_type {
-        ElementType::Tri3 => triangle_quadrature(gauss_order),
+    match elem_type {
+        ElementType::Tri3 => {
+            // Use order 3 quadrature (7-point for triangles)
+            let gauss_order = 3;
+            let quad_points = triangle_quadrature(gauss_order);
+
+            for (xi, eta, weight) in quad_points {
+                // Triangle shape functions: N0 = 1-xi-eta, N1 = xi, N2 = eta
+                let shape_fn = [1.0 - xi - eta, xi, eta];
+                let shape_ds = [-1.0, 1.0, 0.0];
+                let shape_dt = [-1.0, 0.0, 1.0];
+
+                result += integrate_quad_point(
+                    x,
+                    elem_coords,
+                    &shape_fn,
+                    &shape_ds,
+                    &shape_dt,
+                    weight,
+                    p_surf,
+                    v_surf,
+                    wavruim,
+                    3,
+                );
+            }
+        }
         ElementType::Quad4 => {
-            // For quads, use tensor product rule (approximate)
-            triangle_quadrature(gauss_order)
-        }
-    };
+            // Use 2x2 Gauss quadrature for quads (4 points)
+            // Gauss points on [-1,1]: ±1/√3 ≈ ±0.577350269
+            let g = 0.5773502691896257_f64;
+            let gauss_pts = [(-g, -g), (g, -g), (g, g), (-g, g)];
+            let weight = 1.0; // Each point has weight 1.0 for 2x2 Gauss on [-1,1]²
 
-    for (xi, eta, weight) in quad_points {
-        // Compute shape functions and derivatives
-        let (shape_fn, shape_ds, shape_dt) = match elem_type {
-            ElementType::Tri3 => {
-                let shape_fn = vec![1.0 - xi - eta, xi, eta];
-                let shape_ds = vec![-1.0, 1.0, 0.0];
-                let shape_dt = vec![-1.0, 0.0, 1.0];
-                (shape_fn, shape_ds, shape_dt)
+            for (xi, eta) in gauss_pts {
+                // Bilinear quad shape functions on [-1,1]²
+                let shape_fn = [
+                    0.25 * (1.0 - xi) * (1.0 - eta),
+                    0.25 * (1.0 + xi) * (1.0 - eta),
+                    0.25 * (1.0 + xi) * (1.0 + eta),
+                    0.25 * (1.0 - xi) * (1.0 + eta),
+                ];
+                let shape_ds = [
+                    -0.25 * (1.0 - eta),
+                    0.25 * (1.0 - eta),
+                    0.25 * (1.0 + eta),
+                    -0.25 * (1.0 + eta),
+                ];
+                let shape_dt = [
+                    -0.25 * (1.0 - xi),
+                    -0.25 * (1.0 + xi),
+                    0.25 * (1.0 + xi),
+                    0.25 * (1.0 - xi),
+                ];
+
+                result += integrate_quad_point(
+                    x,
+                    elem_coords,
+                    &shape_fn,
+                    &shape_ds,
+                    &shape_dt,
+                    weight,
+                    p_surf,
+                    v_surf,
+                    wavruim,
+                    4,
+                );
             }
-            ElementType::Quad4 => {
-                // Use triangle approximation for quads
-                let shape_fn = vec![1.0 - xi - eta, xi, eta];
-                let shape_ds = vec![-1.0, 1.0, 0.0];
-                let shape_dt = vec![-1.0, 0.0, 1.0];
-                (shape_fn, shape_ds, shape_dt)
-            }
-        };
-
-        // Compute position at quadrature point
-        let mut crd_poi: Array1<f64> = Array1::zeros(3);
-        let mut dx_ds: Array1<f64> = Array1::zeros(3);
-        let mut dx_dt: Array1<f64> = Array1::zeros(3);
-
-        let n_nodes = elem_coords.nrows().min(3); // Limit to 3 for tri3
-        for n in 0..n_nodes {
-            for d in 0..3 {
-                crd_poi[d] += shape_fn[n] * elem_coords[[n, d]];
-                dx_ds[d] += shape_ds[n] * elem_coords[[n, d]];
-                dx_dt[d] += shape_dt[n] * elem_coords[[n, d]];
-            }
-        }
-
-        // Compute normal and Jacobian
-        let normal: Array1<f64> = Array1::from_vec(vec![
-            dx_ds[1] * dx_dt[2] - dx_ds[2] * dx_dt[1],
-            dx_ds[2] * dx_dt[0] - dx_ds[0] * dx_dt[2],
-            dx_ds[0] * dx_dt[1] - dx_ds[1] * dx_dt[0],
-        ]);
-        let jacobian = normal.dot(&normal).sqrt();
-
-        if jacobian < 1e-15 {
-            continue;
-        }
-
-        let el_norm = &normal / jacobian;
-
-        // Distance from evaluation point to quadrature point
-        let mut r_vec: Array1<f64> = Array1::zeros(3);
-        for d in 0..3 {
-            r_vec[d] = crd_poi[d] - x[d];
-        }
-        let r = r_vec.dot(&r_vec).sqrt();
-
-        if r < 1e-15 {
-            continue;
-        }
-
-        // Weight factor
-        let vjacwe = jacobian * weight;
-
-        // Green's function: G = exp(ikr) / (4πr)
-        let kr = wavruim * r;
-        let re1 = 4.0 * PI * r;
-        let zgrfu = Complex64::new(kr.cos() / re1, kr.sin() / re1);
-
-        // Derivative factor: z1 = -1/r + ik
-        let z1 = Complex64::new(-1.0 / r, wavruim);
-        let zgikr = zgrfu * z1;
-
-        // ∂r/∂n_y = (y-x)·n_y / r
-        let drdn_y = r_vec.dot(&el_norm) / r;
-
-        // Double layer contribution: p * ∂G/∂n_y * dS
-        let zdgrdn = zgikr * drdn_y;
-        result += p_surf * zdgrdn * vjacwe;
-
-        // Single layer contribution: -v * G * dS
-        // (v_surf is normally zero for rigid scatterer)
-        if v_surf.norm() > 1e-15 {
-            result -= v_surf * zgrfu * vjacwe;
         }
     }
 
     result
+}
+
+/// Helper function to integrate at a single quadrature point
+#[inline]
+fn integrate_quad_point(
+    x: &Array1<f64>,
+    elem_coords: &Array2<f64>,
+    shape_fn: &[f64],
+    shape_ds: &[f64],
+    shape_dt: &[f64],
+    weight: f64,
+    p_surf: Complex64,
+    v_surf: Complex64,
+    wavruim: f64,
+    n_nodes: usize,
+) -> Complex64 {
+    // Compute position at quadrature point
+    let mut crd_poi: Array1<f64> = Array1::zeros(3);
+    let mut dx_ds: Array1<f64> = Array1::zeros(3);
+    let mut dx_dt: Array1<f64> = Array1::zeros(3);
+
+    for n in 0..n_nodes {
+        for d in 0..3 {
+            crd_poi[d] += shape_fn[n] * elem_coords[[n, d]];
+            dx_ds[d] += shape_ds[n] * elem_coords[[n, d]];
+            dx_dt[d] += shape_dt[n] * elem_coords[[n, d]];
+        }
+    }
+
+    // Compute normal and Jacobian
+    let normal: Array1<f64> = Array1::from_vec(vec![
+        dx_ds[1] * dx_dt[2] - dx_ds[2] * dx_dt[1],
+        dx_ds[2] * dx_dt[0] - dx_ds[0] * dx_dt[2],
+        dx_ds[0] * dx_dt[1] - dx_ds[1] * dx_dt[0],
+    ]);
+    let jacobian = normal.dot(&normal).sqrt();
+
+    if jacobian < 1e-15 {
+        return Complex64::new(0.0, 0.0);
+    }
+
+    let el_norm = &normal / jacobian;
+
+    // Distance from evaluation point to quadrature point
+    let mut r_vec: Array1<f64> = Array1::zeros(3);
+    for d in 0..3 {
+        r_vec[d] = crd_poi[d] - x[d];
+    }
+    let r = r_vec.dot(&r_vec).sqrt();
+
+    if r < 1e-15 {
+        return Complex64::new(0.0, 0.0);
+    }
+
+    // Weight factor
+    let vjacwe = jacobian * weight;
+
+    // Green's function: G = exp(ikr) / (4πr)
+    let kr = wavruim * r;
+    let re1 = 4.0 * PI * r;
+    let zgrfu = Complex64::new(kr.cos() / re1, kr.sin() / re1);
+
+    // Derivative factor: z1 = -1/r + ik
+    let z1 = Complex64::new(-1.0 / r, wavruim);
+    let zgikr = zgrfu * z1;
+
+    // ∂r/∂n_y = (y-x)·n_y / r
+    let drdn_y = r_vec.dot(&el_norm) / r;
+
+    // Double layer contribution: p * ∂G/∂n_y * dS
+    let zdgrdn = zgikr * drdn_y;
+    let mut contrib = p_surf * zdgrdn * vjacwe;
+
+    // Single layer contribution: -v * G * dS
+    if v_surf.norm() > 1e-15 {
+        contrib -= v_surf * zgrfu * vjacwe;
+    }
+
+    contrib
 }
 
 /// Compute total field (incident + scattered) at evaluation points

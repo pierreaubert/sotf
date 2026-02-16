@@ -198,11 +198,17 @@ impl PhysicsParams {
     ///
     /// Returns just the scale factor without computing β.
     /// Useful when you need to know the scale for matrix assembly.
+    ///
+    /// This matches the values used in `burton_miller_beta_adaptive`:
+    /// | ka range | β scale |
+    /// |----------|---------|
+    /// | < 0.5    | 1.0     |
+    /// | 0.5-1.2  | 4.0     |
+    /// | 1.2-1.8  | 8.0     |
+    /// | > 1.8    | 16.0    |
     pub fn optimal_beta_scale(ka: f64) -> f64 {
-        if ka < 0.85 {
-            32.0
-        } else if ka < 0.92 {
-            8.0
+        if ka < 0.5 {
+            1.0
         } else if ka < 1.2 {
             4.0
         } else if ka < 1.8 {
