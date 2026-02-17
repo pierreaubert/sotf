@@ -288,19 +288,17 @@ fn wave_adr_cycle(
 
         // ADR correction
         apply_adr_correction(hierarchy, level, x, b, eikonal, config);
+    } else if level == 0 {
+        // Finest level: 1 damped Jacobi post-smoothing (mirrors pre-smoothing)
+        let omega = chebyshev::optimal_jacobi_damping(
+            hierarchy.wavenumber,
+            hierarchy.h_values[level],
+        );
+        chebyshev::jacobi_damped_smooth(operator, x, b, omega);
     } else {
-        // Other levels: Chebyshev post-smoothing
+        // Intermediate levels: Chebyshev post-smoothing
         let alpha = hierarchy.alpha_values[level];
-        let iters = if level == 0 { 1 } else { config.chebyshev_iterations };
-        if level == 0 {
-            let omega = chebyshev::optimal_jacobi_damping(
-                hierarchy.wavenumber,
-                hierarchy.h_values[level],
-            );
-            chebyshev::jacobi_damped_smooth(operator, x, b, omega);
-        } else {
-            chebyshev::chebyshev_smooth(operator, x, b, iters, alpha);
-        }
+        chebyshev::chebyshev_smooth(operator, x, b, config.chebyshev_iterations, alpha);
     }
 }
 

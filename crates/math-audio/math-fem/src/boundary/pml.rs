@@ -124,10 +124,10 @@ impl PmlRegion {
             PmlDirection::X => in_x,
             PmlDirection::Y => in_y,
             PmlDirection::Z => in_z,
-            PmlDirection::XY => in_x || in_y,
-            PmlDirection::XZ => in_x || in_z,
-            PmlDirection::YZ => in_y || in_z,
-            PmlDirection::XYZ => in_x || in_y || in_z,
+            PmlDirection::XY => in_x && in_y,
+            PmlDirection::XZ => in_x && in_z,
+            PmlDirection::YZ => in_y && in_z,
+            PmlDirection::XYZ => in_x && in_y && in_z,
         }
     }
 

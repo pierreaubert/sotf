@@ -37,6 +37,9 @@ pub struct SubdomainInfo {
     pub pml_regions: Vec<PmlRegion>,
     /// Local node indices where homogeneous Dirichlet BCs are applied (PML truncation boundary)
     pub dirichlet_local_nodes: HashSet<usize>,
+    /// Local node indices on the overlap boundary (overlap/PML interface)
+    /// These receive Dirichlet values from the current iterate during Schwarz iteration
+    pub overlap_boundary_nodes: HashSet<usize>,
     /// Y-extent of the domain (for reference)
     pub y_min: f64,
     pub y_max: f64,
@@ -164,6 +167,9 @@ pub fn decompose_domain(
         // These are nodes at the outermost PML edges
         let pml_boundary_tol = 1e-10;
         let mut dirichlet_local_nodes = HashSet::new();
+        // Mark overlap boundary nodes (overlap/PML interface)
+        // These receive Dirichlet values from the current Schwarz iterate
+        let mut overlap_boundary_nodes = HashSet::new();
         for (local_idx, &global_idx) in local_to_global.iter().enumerate() {
             let p = &mesh.nodes[global_idx];
             if is_left_artificial && (p.x - full_x_min).abs() < pml_boundary_tol {
@@ -171,6 +177,12 @@ pub fn decompose_domain(
             }
             if is_right_artificial && (p.x - full_x_max).abs() < pml_boundary_tol {
                 dirichlet_local_nodes.insert(local_idx);
+            }
+            if is_left_artificial && (p.x - overlap_x_min).abs() < pml_boundary_tol {
+                overlap_boundary_nodes.insert(local_idx);
+            }
+            if is_right_artificial && (p.x - overlap_x_max).abs() < pml_boundary_tol {
+                overlap_boundary_nodes.insert(local_idx);
             }
         }
 
@@ -189,6 +201,7 @@ pub fn decompose_domain(
             element_indices,
             pml_regions,
             dirichlet_local_nodes,
+            overlap_boundary_nodes,
             y_min,
             y_max,
         });

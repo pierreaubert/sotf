@@ -120,8 +120,10 @@ pub fn solve_schwarz_pml(
 struct LocalSubdomainData {
     /// Local CSR system matrix (K_pml - k² M_pml with Dirichlet BCs)
     system: CsrMatrix<Complex64>,
-    /// Local Dirichlet node indices (union of PML truncation + global Dirichlet)
-    dirichlet_nodes: HashSet<usize>,
+    /// Local Dirichlet node indices for PML truncation + global Dirichlet (always zero)
+    pml_dirichlet_nodes: HashSet<usize>,
+    /// Local node indices on the overlap boundary (Dirichlet from current iterate)
+    overlap_boundary_nodes: HashSet<usize>,
 }
 
 /// Prepare a subdomain: extract local mesh, assemble PML system, restrict RHS
@@ -134,26 +136,31 @@ fn prepare_subdomain(
 ) -> LocalSubdomainData {
     let local_mesh = extract_local_mesh(global_mesh, sub);
 
-    // Merge Dirichlet nodes: PML truncation + global boundary
-    let mut dirichlet_nodes = sub.dirichlet_local_nodes.clone();
+    // Merge Dirichlet nodes: PML truncation + global boundary + overlap boundary
+    let mut pml_dirichlet_nodes = sub.dirichlet_local_nodes.clone();
 
     for &(global_node, _value) in global_dirichlet_bcs {
         if let Some(&local_node) = sub.global_to_local.get(&global_node) {
-            dirichlet_nodes.insert(local_node);
+            pml_dirichlet_nodes.insert(local_node);
         }
     }
+
+    // All Dirichlet nodes: PML truncation + global + overlap boundary
+    let mut all_dirichlet = pml_dirichlet_nodes.clone();
+    all_dirichlet.extend(&sub.overlap_boundary_nodes);
 
     let system = assemble_local_pml_system(
         &local_mesh,
         degree,
         k,
         &sub.pml_regions,
-        &dirichlet_nodes,
+        &all_dirichlet,
     );
 
     LocalSubdomainData {
         system,
-        dirichlet_nodes,
+        pml_dirichlet_nodes,
+        overlap_boundary_nodes: sub.overlap_boundary_nodes.clone(),
     }
 }
 
@@ -185,7 +192,7 @@ fn schwarz_additive(
         // Solve each subdomain independently
         for (j, (sub, ld)) in subdomains.iter().zip(local_data.iter()).enumerate() {
             let local_rhs = build_local_rhs_with_overlap(
-                global_rhs, &u_global, sub, ld, mesh,
+                global_rhs, &u_global, sub, ld,
             );
 
             let u_local = solve_local_system(&ld.system, &local_rhs, &local_solver_config)?;
@@ -204,9 +211,10 @@ fn schwarz_additive(
 
         // Check convergence: relative change
         let diff_norm: f64 = u_new.iter().zip(u_global.iter())
-            .map(|(a, b)| (a - b).norm())
-            .sum::<f64>();
-        let new_norm: f64 = u_new.iter().map(|v| v.norm()).sum::<f64>().max(1e-15);
+            .map(|(a, b)| (a - b).norm().powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let new_norm: f64 = u_new.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
         let rel_change = diff_norm / new_norm;
 
         if config.verbosity > 1 {
@@ -228,7 +236,7 @@ fn schwarz_additive(
         }
     }
 
-    let final_norm: f64 = u_global.iter().map(|v| v.norm()).sum::<f64>().max(1e-15);
+    let final_norm: f64 = u_global.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
     Err(SolverError::ConvergenceFailure(config.max_iterations, final_norm))
 }
 
@@ -260,7 +268,7 @@ fn schwarz_multiplicative(
         // Solve subdomains sequentially, updating u_global after each
         for (j, (sub, ld)) in subdomains.iter().zip(local_data.iter()).enumerate() {
             let local_rhs = build_local_rhs_with_overlap(
-                global_rhs, &u_global, sub, ld, mesh,
+                global_rhs, &u_global, sub, ld,
             );
 
             let u_local = solve_local_system(&ld.system, &local_rhs, &local_solver_config)?;
@@ -282,9 +290,10 @@ fn schwarz_multiplicative(
 
         // Check convergence: relative change
         let diff_norm: f64 = u_global.iter().zip(u_prev.iter())
-            .map(|(a, b)| (a - b).norm())
-            .sum::<f64>();
-        let new_norm: f64 = u_global.iter().map(|v| v.norm()).sum::<f64>().max(1e-15);
+            .map(|(a, b)| (a - b).norm().powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let new_norm: f64 = u_global.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
         let rel_change = diff_norm / new_norm;
 
         if config.verbosity > 1 {
@@ -304,7 +313,7 @@ fn schwarz_multiplicative(
         }
     }
 
-    let final_norm: f64 = u_global.iter().map(|v| v.norm()).sum::<f64>().max(1e-15);
+    let final_norm: f64 = u_global.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
     Err(SolverError::ConvergenceFailure(config.max_iterations, final_norm))
 }
 
@@ -316,20 +325,22 @@ fn schwarz_multiplicative(
 /// - For PML truncation nodes: homogeneous Dirichlet (zero)
 fn build_local_rhs_with_overlap(
     global_rhs: &[Complex64],
-    _u_global: &Array1<Complex64>,
+    u_global: &Array1<Complex64>,
     sub: &SubdomainInfo,
     ld: &LocalSubdomainData,
-    _mesh: &Mesh,
 ) -> Vec<Complex64> {
     let n_local = sub.local_to_global.len();
     let mut rhs = vec![Complex64::new(0.0, 0.0); n_local];
 
     for (local_idx, &global_idx) in sub.local_to_global.iter().enumerate() {
-        if ld.dirichlet_nodes.contains(&local_idx) {
-            // For PML truncation boundary: homogeneous Dirichlet
+        if ld.pml_dirichlet_nodes.contains(&local_idx) {
+            // PML truncation + global Dirichlet boundary: homogeneous Dirichlet
             rhs[local_idx] = Complex64::new(0.0, 0.0);
+        } else if ld.overlap_boundary_nodes.contains(&local_idx) {
+            // Overlap boundary: Dirichlet from current iterate
+            rhs[local_idx] = u_global[global_idx];
         } else {
-            // Interior/overlap nodes: use global RHS
+            // Interior nodes: use global RHS
             rhs[local_idx] = global_rhs[global_idx];
         }
     }
