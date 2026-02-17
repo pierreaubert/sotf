@@ -3,16 +3,16 @@
   "system": {
     "model": "home_cinema",
     "speakers": {
-      "R": "right",
-      "L": "left",
-      "TFR": "top_front_right",
-      "SR": "surround_right",
-      "SL": "surround_left",
       "TFL": "top_front_left",
-      "C": "center",
+      "SR": "surround_right",
+      "L": "left",
       "TRL": "top_rear_left",
       "TRR": "top_rear_right",
-      "LFE": "lfe"
+      "C": "center",
+      "LFE": "lfe",
+      "R": "right",
+      "TFR": "top_front_right",
+      "SL": "surround_left"
     },
     "subwoofers": {
       "config": "single",
@@ -21,16 +21,16 @@
     }
   },
   "speakers": {
-    "center": "center_lp0.csv",
     "top_front_right": "top_front_right_lp0.csv",
-    "top_rear_left": "top_rear_left_lp0.csv",
-    "surround_left": "surround_left_lp0.csv",
-    "right": "right_lp0.csv",
     "top_front_left": "top_front_left_lp0.csv",
-    "lfe": "subwoofer_lp0.csv",
+    "surround_left": "surround_left_lp0.csv",
+    "left": "left_lp0.csv",
+    "right": "right_lp0.csv",
+    "center": "center_lp0.csv",
     "surround_right": "surround_right_lp0.csv",
     "top_rear_right": "top_rear_right_lp0.csv",
-    "left": "left_lp0.csv"
+    "top_rear_left": "top_rear_left_lp0.csv",
+    "lfe": "subwoofer_lp0.csv"
   },
   "crossovers": {
     "first": {

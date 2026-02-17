@@ -1,0 +1,62 @@
+{
+  "version": "1.2.0",
+  "system": {
+    "model": "home_cinema",
+    "speakers": {
+      "C": "center",
+      "SL": "surround_left",
+      "SR": "surround_right",
+      "TFL": "top_front_left",
+      "TRR": "top_rear_right",
+      "LFE": "lfe",
+      "R": "right",
+      "L": "left",
+      "TFR": "top_front_right",
+      "TRL": "top_rear_left"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "first",
+      "lfe": "L"
+    }
+  },
+  "speakers": {
+    "top_rear_left": "top_rear_left_lp0.csv",
+    "lfe": "subwoofer_lp0.csv",
+    "top_front_right": "top_front_right_lp0.csv",
+    "top_front_left": "top_front_left_lp0.csv",
+    "surround_right": "surround_right_lp0.csv",
+    "top_rear_right": "top_rear_right_lp0.csv",
+    "center": "center_lp0.csv",
+    "left": "left_lp0.csv",
+    "surround_left": "surround_left_lp0.csv",
+    "right": "right_lp0.csv"
+  },
+  "crossovers": {
+    "first": {
+      "type": "LR24",
+      "frequency": 80.0
+    }
+  },
+  "optimizer": {
+    "mode": "iir",
+    "processing_mode": "low_latency",
+    "loss_type": "flat",
+    "algorithm": "autoeq:de",
+    "num_filters": 7,
+    "min_q": 0.5,
+    "max_q": 6.0,
+    "min_db": -12.0,
+    "max_db": 4.0,
+    "min_freq": 20.0,
+    "max_freq": 500.0,
+    "max_iter": 5000,
+    "population": 50,
+    "peq_model": "pk",
+    "seed": 42,
+    "refine": true,
+    "local_algo": "cobyla",
+    "psychoacoustic": true,
+    "asymmetric_loss": true
+  }
+}

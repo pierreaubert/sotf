@@ -1,23 +1,43 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "R": "right",
+      "L": "left",
+      "LFE": "lfe"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "first",
+      "lfe": "L"
+    }
+  },
   "speakers": {
     "left": "left_lp0.csv",
     "lfe": "subwoofer_lp0.csv",
     "right": "right_lp0.csv"
   },
+  "crossovers": {
+    "first": {
+      "type": "LR24",
+      "frequency": 80.0
+    }
+  },
   "optimizer": {
     "mode": "iir",
+    "processing_mode": "low_latency",
     "loss_type": "flat",
     "algorithm": "autoeq:de",
     "num_filters": 7,
     "min_q": 0.5,
-    "max_q": 10.0,
+    "max_q": 6.0,
     "min_db": -12.0,
-    "max_db": 12.0,
+    "max_db": 4.0,
     "min_freq": 20.0,
     "max_freq": 500.0,
     "max_iter": 5000,
-    "population": 300,
+    "population": 50,
     "peq_model": "pk",
     "seed": 42,
     "refine": true,

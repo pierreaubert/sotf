@@ -40,12 +40,12 @@ convert-sofa-to-sqlite:
 generate-audio-tests: prod-generate-audio-tests
 	cargo run --bin generate-audio-tests -p tools --release --no-default-features
 
-generate-roomeq-tests: generate-roomeq-tests-bem generate-roomeq-fem
+generate-roomeq-tests: generate-roomeq-tests-bem generate-roomeq-tests-fem
 
-generate-roomeq-bem:
+generate-roomeq-tests-bem:
 	cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir data_tests/roomeq/generated
 
-generate-roomeq-fem:
+generate-roomeq-tests-fem:
 	cargo run --bin generate-roomeq-data --release -- --solver fem --output-dir data_tests/roomeq/generated
 
 # ----------------------------------------------------------------------

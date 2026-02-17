@@ -3,9 +3,9 @@
   "system": {
     "model": "stereo",
     "speakers": {
+      "L": "left",
       "LFE": "lfe",
-      "R": "right",
-      "L": "left"
+      "R": "right"
     },
     "subwoofers": {
       "config": "single",
@@ -14,14 +14,14 @@
     }
   },
   "speakers": {
+    "left": "left_lp0.csv",
     "right": "right_lp0.csv",
     "lfe": {
       "name": "Cardioid Stack",
       "front": "sub_bottom_lp0.csv",
       "rear": "sub_top_lp0.csv",
       "separation_meters": 0.5
-    },
-    "left": "left_lp0.csv"
+    }
   },
   "crossovers": {
     "first": {

@@ -3,9 +3,9 @@
   "system": {
     "model": "stereo",
     "speakers": {
-      "LFE": "lfe",
       "R": "right",
-      "L": "left"
+      "L": "left",
+      "LFE": "lfe"
     },
     "subwoofers": {
       "config": "single",

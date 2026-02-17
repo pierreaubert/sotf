@@ -3,9 +3,9 @@
   "system": {
     "model": "stereo",
     "speakers": {
-      "L": "left",
+      "LFE": "lfe",
       "R": "right",
-      "LFE": "lfe"
+      "L": "left"
     },
     "subwoofers": {
       "config": "single",
@@ -14,8 +14,8 @@
     }
   },
   "speakers": {
-    "right": "right_lp0.csv",
     "lfe": "subwoofer_lp0.csv",
+    "right": "right_lp0.csv",
     "left": "left_lp0.csv"
   },
   "crossovers": {

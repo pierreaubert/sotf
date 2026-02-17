@@ -4,11 +4,11 @@
     "model": "home_cinema",
     "speakers": {
       "SL": "surround_left",
-      "LFE": "lfe",
       "SR": "surround_right",
       "R": "right",
       "L": "left",
-      "C": "center"
+      "C": "center",
+      "LFE": "lfe"
     },
     "subwoofers": {
       "config": "single",
@@ -17,12 +17,12 @@
     }
   },
   "speakers": {
-    "center": "center_lp0.csv",
     "left": "left_lp0.csv",
-    "surround_left": "surround_left_lp0.csv",
     "right": "right_lp0.csv",
     "surround_right": "surround_right_lp0.csv",
-    "lfe": "subwoofer_lp0.csv"
+    "lfe": "subwoofer_lp0.csv",
+    "surround_left": "surround_left_lp0.csv",
+    "center": "center_lp0.csv"
   },
   "crossovers": {
     "first": {

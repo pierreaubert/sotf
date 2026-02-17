@@ -8,8 +8,8 @@
     }
   },
   "speakers": {
-    "right": "right_lp0.csv",
-    "left": "left_lp0.csv"
+    "left": "left_lp0.csv",
+    "right": "right_lp0.csv"
   },
   "optimizer": {
     "mode": "iir",

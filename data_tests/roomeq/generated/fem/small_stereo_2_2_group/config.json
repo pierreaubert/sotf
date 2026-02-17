@@ -3,8 +3,8 @@
   "system": {
     "model": "stereo",
     "speakers": {
-      "L": "left",
-      "R": "right"
+      "R": "right",
+      "L": "left"
     }
   },
   "speakers": {
