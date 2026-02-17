@@ -3,6 +3,12 @@
 //! Tests all roomeq scenarios with BEM/FEM solvers × IIR/FIR/Mixed modes.
 //! Validates both the library and CLI binary output.
 //!
+//! Checks performed per test case:
+//! 1. Minimum improvement threshold (varies by room size)
+//! 2. Per-channel regression (no individual channel may get worse)
+//! 3. Output sanity (filters exist, frequencies/gains valid)
+//! 4. Absolute score ceiling (post_score below maximum for room size)
+//!
 //! Usage:
 //!   cargo run --bin roomeq-qa-full --release              # run all tests
 //!   cargo run --bin roomeq-qa-full --release -- --quick    # fast subset
@@ -14,12 +20,13 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
 use clap::Parser;
 
 use autoeq::roomeq::{
-    load_config, merge_json_objects, optimize_room, CallbackAction, ProcessingMode, RoomConfig,
+    merge_json_objects, optimize_room, CallbackAction, ProcessingMode, RoomConfig,
     RoomOptimizationResult,
 };
 
@@ -35,6 +42,53 @@ const QA_MAXEVAL: usize = 500; // Fast mode for QA
 const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
 const BEM_DIR: &str = "data_tests/roomeq/generated/bem";
 const OPTIM_CONFIG_DIR: &str = "data_tests/roomeq/generated/optimiser-config";
+
+// ---------------------------------------------------------------------------
+// Room Size Classification & Thresholds
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RoomSize {
+    Small,
+    Medium,
+    Large,
+}
+
+impl RoomSize {
+    /// Determine room size from scenario name prefix.
+    fn from_scenario(scenario: &str) -> RoomSize {
+        if scenario.starts_with("small_") {
+            RoomSize::Small
+        } else if scenario.starts_with("medium_") {
+            RoomSize::Medium
+        } else if scenario.starts_with("large_") {
+            RoomSize::Large
+        } else {
+            panic!("Unknown room size prefix in scenario: {}", scenario);
+        }
+    }
+
+    /// Minimum improvement percentage required for this room size.
+    /// Small rooms have severe room modes so EQ should help substantially.
+    /// Large rooms are dominated by direct sound, so less improvement is expected.
+    fn min_improvement_pct(&self) -> f64 {
+        match self {
+            RoomSize::Small => 15.0,
+            RoomSize::Medium => 12.0,
+            RoomSize::Large => 8.0,
+        }
+    }
+
+    /// Maximum acceptable post-optimization score.
+    /// Ensures the system achieves a usable level of correction, not just "better than before".
+    fn max_post_score(&self) -> f64 {
+        match self {
+            RoomSize::Small => 8.0,
+            RoomSize::Medium => 10.0,
+            RoomSize::Large => 12.0,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -182,6 +236,10 @@ impl TestCase {
         optim_dir
             .join(&self.scenario)
             .join(self.method.config_file())
+    }
+
+    fn room_size(&self) -> RoomSize {
+        RoomSize::from_scenario(&self.scenario)
     }
 }
 
@@ -381,6 +439,109 @@ fn run_optimization(config: &RoomConfig) -> Result<RoomOptimizationResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Result Validation
+// ---------------------------------------------------------------------------
+
+/// Validate the optimization result beyond just "post < pre".
+/// Returns a list of failure reasons (empty = all checks passed).
+fn validate_result(
+    result: &RoomOptimizationResult,
+    room_size: RoomSize,
+    method: ProcessingMethod,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+
+    let pre = result.combined_pre_score;
+    let post = result.combined_post_score;
+
+    // Check 1: post must be better than pre
+    if post >= pre {
+        failures.push(format!(
+            "no improvement: post {:.4} >= pre {:.4}",
+            post, pre
+        ));
+        return failures; // remaining checks meaningless if no improvement at all
+    }
+
+    // Check 2: minimum improvement threshold
+    let improvement_pct = (1.0 - post / pre) * 100.0;
+    let min_improvement = room_size.min_improvement_pct();
+    if improvement_pct < min_improvement {
+        failures.push(format!(
+            "insufficient improvement: {:.1}% < {:.1}% minimum for {:?} room",
+            improvement_pct, min_improvement, room_size
+        ));
+    }
+
+    // Check 3: absolute score ceiling
+    let max_post = room_size.max_post_score();
+    if post > max_post {
+        failures.push(format!(
+            "post_score {:.4} exceeds maximum {:.1} for {:?} room",
+            post, max_post, room_size
+        ));
+    }
+
+    // Check 4: per-channel regression
+    for (name, ch_result) in &result.channel_results {
+        if ch_result.post_score >= ch_result.pre_score {
+            failures.push(format!(
+                "channel '{}' regressed: {:.4} -> {:.4}",
+                name, ch_result.pre_score, ch_result.post_score
+            ));
+        }
+    }
+
+    // Check 5: output sanity — filters must exist and be valid
+    for (name, ch_result) in &result.channel_results {
+        let has_biquads = !ch_result.biquads.is_empty();
+        let has_fir = ch_result
+            .fir_coeffs
+            .as_ref()
+            .is_some_and(|c| !c.is_empty());
+
+        match method {
+            ProcessingMethod::Iir => {
+                if !has_biquads {
+                    failures.push(format!("channel '{}': IIR mode but no biquad filters", name));
+                }
+            }
+            ProcessingMethod::Fir => {
+                if !has_fir {
+                    failures.push(format!("channel '{}': FIR mode but no FIR coefficients", name));
+                }
+            }
+            ProcessingMethod::Mixed => {
+                if !has_biquads && !has_fir {
+                    failures.push(format!(
+                        "channel '{}': Mixed mode but no filters at all",
+                        name
+                    ));
+                }
+            }
+        }
+
+        // Validate biquad filter parameters
+        for (i, bq) in ch_result.biquads.iter().enumerate() {
+            if bq.freq < 10.0 || bq.freq > 24000.0 {
+                failures.push(format!(
+                    "channel '{}' filter {}: frequency {:.1} Hz out of range [10, 24000]",
+                    name, i, bq.freq
+                ));
+            }
+            if bq.db_gain.abs() < 0.05 {
+                failures.push(format!(
+                    "channel '{}' filter {}: near-zero gain {:.3} dB (useless filter)",
+                    name, i, bq.db_gain
+                ));
+            }
+        }
+    }
+
+    failures
+}
+
+// ---------------------------------------------------------------------------
 // Test Result
 // ---------------------------------------------------------------------------
 
@@ -405,8 +566,15 @@ impl TestResult {
         method: &str,
         pre: f64,
         post: f64,
+        validation_failures: Vec<String>,
         dur: u64,
     ) -> Self {
+        let passed = validation_failures.is_empty();
+        let error = if validation_failures.is_empty() {
+            None
+        } else {
+            Some(validation_failures.join("; "))
+        };
         Self {
             name: name.to_string(),
             scenario: scenario.to_string(),
@@ -414,8 +582,8 @@ impl TestResult {
             method: method.to_string(),
             pre_score: pre,
             post_score: post,
-            passed: post < pre,
-            error: None,
+            passed,
+            error,
             duration_ms: dur,
         }
     }
@@ -534,7 +702,9 @@ fn run_test_case(tc: &TestCase, maxeval: usize) -> TestResult {
     let post = result.combined_post_score;
     let dur = start.elapsed().as_millis() as u64;
 
-    TestResult::success(&name, &scenario, &solver, &method, pre, post, dur)
+    let validation_failures = validate_result(&result, tc.room_size(), tc.method);
+
+    TestResult::success(&name, &scenario, &solver, &method, pre, post, validation_failures, dur)
 }
 
 // ---------------------------------------------------------------------------
@@ -547,17 +717,47 @@ fn num_cpus() -> usize {
         .unwrap_or(1)
 }
 
-fn run_parallel(test_cases: Vec<TestCase>, maxeval: usize, _num_jobs: usize) -> Vec<TestResult> {
+struct CountingSemaphore {
+    state: Mutex<usize>,
+    cvar: Condvar,
+}
+
+impl CountingSemaphore {
+    fn new(permits: usize) -> Self {
+        Self {
+            state: Mutex::new(permits),
+            cvar: Condvar::new(),
+        }
+    }
+
+    fn acquire(&self) {
+        let mut count = self.state.lock().unwrap();
+        while *count == 0 {
+            count = self.cvar.wait(count).unwrap();
+        }
+        *count -= 1;
+    }
+
+    fn release(&self) {
+        let mut count = self.state.lock().unwrap();
+        *count += 1;
+        self.cvar.notify_one();
+    }
+}
+
+fn run_parallel(test_cases: Vec<TestCase>, maxeval: usize, num_jobs: usize) -> Vec<TestResult> {
     let (tx, rx) = channel::<TestResult>();
+    let semaphore = Arc::new(CountingSemaphore::new(num_jobs));
     let mut handles: Vec<std::thread::JoinHandle<()>> = Vec::new();
 
-    // Create thread pool - spawn all at once for simplicity
     for tc in test_cases {
         let tx = tx.clone();
-        let maxeval = maxeval;
+        let sem = Arc::clone(&semaphore);
 
         let handle = thread::spawn(move || {
+            sem.acquire();
             let result = run_test_case(&tc, maxeval);
+            sem.release();
             let _ = tx.send(result);
         });
         handles.push(handle);
@@ -570,7 +770,6 @@ fn run_parallel(test_cases: Vec<TestCase>, maxeval: usize, _num_jobs: usize) -> 
         results.push(result);
     }
 
-    // Wait for remaining threads
     for handle in handles {
         let _ = handle.join();
     }

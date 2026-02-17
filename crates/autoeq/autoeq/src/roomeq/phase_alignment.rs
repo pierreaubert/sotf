@@ -254,10 +254,12 @@ fn a_weighting(f: f64) -> f64 {
     }
 
     // A-weighting formula (IEC 61672-1)
+    // Poles: 2nd order at 20.6 Hz and 12200 Hz, 1st order at 107.7 Hz and 737.9 Hz
+    // Magnitude: f⁴ / ((f²+f₁²)(f²+f₄²)√(f²+f₂²)√(f²+f₃²))
     let f_sq = f * f;
     let num = 12200.0_f64.powi(2) * f_sq.powi(2);
     let denom = (f_sq + 20.6 * 20.6)
-        * (f_sq + 12200.0_f64.powi(2)).sqrt()
+        * (f_sq + 12200.0_f64.powi(2))
         * (f_sq + 107.7 * 107.7).sqrt()
         * (f_sq + 737.9 * 737.9).sqrt();
 
@@ -275,9 +277,10 @@ fn c_weighting(f: f64) -> f64 {
         return 0.1;
     }
 
+    // C-weighting: 2nd order poles at 20.6 Hz and 12200 Hz, zeros at origin
     let f_sq = f * f;
     let num = 12200.0_f64.powi(2) * f_sq;
-    let denom = (f_sq + 20.6 * 20.6) * (f_sq + 12200.0_f64.powi(2)).sqrt();
+    let denom = (f_sq + 20.6 * 20.6) * (f_sq + 12200.0_f64.powi(2));
 
     let weighting_db = 0.0619 + 20.0 * (num / denom).log10();
 
@@ -382,24 +385,6 @@ fn find_bracket_indices(freqs: &Array1<f64>, target: f64) -> (usize, usize) {
         let last = freqs.len() - 1;
         (last, last)
     }
-}
-
-/// Compute combined energy of sub + speaker with delay and polarity (unweighted, for compatibility)
-fn compute_combined_energy(
-    sub: &[Complex64],
-    speaker: &[Complex64],
-    freqs: &Array1<f64>,
-    delay_ms: f64,
-    invert: bool,
-) -> f64 {
-    compute_weighted_energy(
-        sub,
-        speaker,
-        freqs,
-        &vec![1.0; freqs.len()],
-        delay_ms,
-        invert,
-    )
 }
 
 /// Batch phase alignment for multiple speakers with a common subwoofer

@@ -6,9 +6,10 @@
 //!   **low-shelf + high-shelf + flat gain**
 //! fitted via weighted linear least squares.
 //!
-//! The shelf response in dB is nonlinear in `db_gain`, but for corrections up to
-//! ~4–6 dB the linear approximation (response ≈ gain × basis_at_1dB) is accurate
-//! enough. The inter-channel difference is typically 1–4 dB.
+//! The shelf response in dB is nonlinear in `db_gain` (the transition band shape
+//! changes with gain). The fitting uses Gauss-Newton iteration to handle this:
+//! a linear solve provides the initial estimate, then 3 iterations refine it
+//! using the actual shelf response and a finite-difference Jacobian.
 
 use crate::Curve;
 use log::info;
@@ -91,14 +92,10 @@ pub fn compute_spectral_alignment(
     // Compute reference curve (pointwise average of all channels' SPL, masked)
     let reference_spl = compute_reference_curve(curves, &mask, n_active);
 
-    // Build basis vectors evaluated at active frequencies
-    let (ls_basis, hs_basis) = build_basis_vectors(&active_freq, sample_rate);
-    let flat_basis = Array1::ones(n_active);
-
     // Compute octave-spaced weights
     let weights = compute_octave_weights(&active_freq);
 
-    // Fit each channel
+    // Fit each channel using iterative Gauss-Newton solver
     let mut results: HashMap<String, SpectralAlignmentResult> = HashMap::new();
 
     for (name, curve) in curves {
@@ -116,10 +113,10 @@ pub fn compute_spectral_alignment(
         // diff = channel - reference
         let diff = &channel_spl - &reference_spl;
 
-        // Solve 3×3 weighted least squares — the fit tells us what the channel
-        // IS relative to reference. The correction is the negative (bring it back).
+        // Iteratively fit shelf + gain to the difference. The fit tells us what
+        // the channel IS relative to reference; the correction is the negative.
         let (ls_fit, hs_fit, flat_fit, residual_rms) =
-            solve_3x3_wls(&diff, &ls_basis, &hs_basis, &flat_basis, &weights);
+            fit_shelf_gain_iterative(&diff, &active_freq, sample_rate, &weights);
 
         // Negate to get corrections, then clamp shelf gains
         let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
@@ -266,17 +263,13 @@ pub fn compute_target_alignment(
     // diff = channel - target (positive diff means channel is too loud)
     let diff = &channel_spl - &target_spl;
 
-    // Build basis vectors
-    let (ls_basis, hs_basis) = build_basis_vectors(&active_freq, sample_rate);
-    let flat_basis = Array1::ones(n_active);
-
     // Compute weights
     let weights = compute_octave_weights(&active_freq);
 
-    // Solve for best fit of filters to the difference
-    // results are what the channel *has* relative to target
+    // Iteratively fit shelf + gain to the difference
+    // Results are what the channel *has* relative to target
     let (ls_fit, hs_fit, flat_fit, residual_rms) =
-        solve_3x3_wls(&diff, &ls_basis, &hs_basis, &flat_basis, &weights);
+        fit_shelf_gain_iterative(&diff, &active_freq, sample_rate, &weights);
 
     // Determine corrections (negative of fit)
     let ls_gain = (-ls_fit).clamp(-MAX_SHELF_GAIN_DB, MAX_SHELF_GAIN_DB);
@@ -376,6 +369,150 @@ fn compute_octave_weights(freq: &Array1<f64>) -> Array1<f64> {
     }
 
     weights
+}
+
+/// Number of Gauss-Newton iterations for shelf fitting.
+///
+/// 3 iterations are sufficient: the shelf nonlinearity is mild (smooth, monotonic)
+/// so the linear initial guess is already close, and each iteration roughly squares
+/// the error.
+const SHELF_FIT_ITERATIONS: usize = 3;
+
+/// Finite-difference step for Jacobian approximation (dB).
+const JACOBIAN_EPSILON_DB: f64 = 0.1;
+
+/// Evaluate the actual dB response of low-shelf + high-shelf + flat gain.
+fn evaluate_shelf_response(
+    freq: &Array1<f64>,
+    sample_rate: f64,
+    ls_gain: f64,
+    hs_gain: f64,
+    flat_gain: f64,
+) -> Array1<f64> {
+    let n = freq.len();
+    let mut response = Array1::from_elem(n, flat_gain);
+
+    if ls_gain.abs() > 1e-12 {
+        let ls = Biquad::new(
+            BiquadFilterType::Lowshelf,
+            LOWSHELF_FREQ,
+            sample_rate,
+            DEFAULT_Q_HIGH_LOW_SHELF,
+            ls_gain,
+        );
+        response += &ls.np_log_result(freq);
+    }
+
+    if hs_gain.abs() > 1e-12 {
+        let hs = Biquad::new(
+            BiquadFilterType::Highshelf,
+            HIGHSHELF_FREQ,
+            sample_rate,
+            DEFAULT_Q_HIGH_LOW_SHELF,
+            hs_gain,
+        );
+        response += &hs.np_log_result(freq);
+    }
+
+    response
+}
+
+/// Build finite-difference Jacobian columns ∂response/∂ls_gain and ∂response/∂hs_gain
+/// at the current operating point.
+fn build_jacobian_basis(
+    freq: &Array1<f64>,
+    sample_rate: f64,
+    ls_gain: f64,
+    hs_gain: f64,
+) -> (Array1<f64>, Array1<f64>) {
+    let eps = JACOBIAN_EPSILON_DB;
+
+    // ∂/∂ls_gain via central differences
+    let ls_plus = Biquad::new(
+        BiquadFilterType::Lowshelf,
+        LOWSHELF_FREQ,
+        sample_rate,
+        DEFAULT_Q_HIGH_LOW_SHELF,
+        ls_gain + eps,
+    );
+    let ls_minus = Biquad::new(
+        BiquadFilterType::Lowshelf,
+        LOWSHELF_FREQ,
+        sample_rate,
+        DEFAULT_Q_HIGH_LOW_SHELF,
+        ls_gain - eps,
+    );
+    let j_ls = (&ls_plus.np_log_result(freq) - &ls_minus.np_log_result(freq)) / (2.0 * eps);
+
+    // ∂/∂hs_gain via central differences
+    let hs_plus = Biquad::new(
+        BiquadFilterType::Highshelf,
+        HIGHSHELF_FREQ,
+        sample_rate,
+        DEFAULT_Q_HIGH_LOW_SHELF,
+        hs_gain + eps,
+    );
+    let hs_minus = Biquad::new(
+        BiquadFilterType::Highshelf,
+        HIGHSHELF_FREQ,
+        sample_rate,
+        DEFAULT_Q_HIGH_LOW_SHELF,
+        hs_gain - eps,
+    );
+    let j_hs = (&hs_plus.np_log_result(freq) - &hs_minus.np_log_result(freq)) / (2.0 * eps);
+
+    (j_ls, j_hs)
+}
+
+/// Iteratively fit low-shelf + high-shelf + flat gain to a target difference curve.
+///
+/// Uses Gauss-Newton iteration to handle the nonlinear relationship between
+/// shelf gain (dB) and shelf frequency response shape. The linear solve (1 dB
+/// basis) provides the initial estimate; each iteration evaluates the actual
+/// shelf response, computes the residual, and solves a linearized correction.
+fn fit_shelf_gain_iterative(
+    diff: &Array1<f64>,
+    freq: &Array1<f64>,
+    sample_rate: f64,
+    weights: &Array1<f64>,
+) -> (f64, f64, f64, f64) {
+    let n = freq.len();
+    let flat_basis = Array1::ones(n);
+
+    // Initial linear estimate using 1 dB basis
+    let (ls_basis, hs_basis) = build_basis_vectors(freq, sample_rate);
+    let (mut ls_gain, mut hs_gain, mut flat_gain, _) =
+        solve_3x3_wls(diff, &ls_basis, &hs_basis, &flat_basis, weights);
+
+    // Gauss-Newton refinement
+    for _ in 0..SHELF_FIT_ITERATIONS {
+        // Evaluate actual nonlinear shelf response at current gains
+        let actual = evaluate_shelf_response(freq, sample_rate, ls_gain, hs_gain, flat_gain);
+        let residual = diff - &actual;
+
+        // Build Jacobian at current operating point
+        let (j_ls, j_hs) = build_jacobian_basis(freq, sample_rate, ls_gain, hs_gain);
+
+        // Solve for corrections (flat basis Jacobian is trivially 1.0)
+        let (d_ls, d_hs, d_flat, _) =
+            solve_3x3_wls(&residual, &j_ls, &j_hs, &flat_basis, weights);
+
+        ls_gain += d_ls;
+        hs_gain += d_hs;
+        flat_gain += d_flat;
+    }
+
+    // Final residual RMS
+    let actual = evaluate_shelf_response(freq, sample_rate, ls_gain, hs_gain, flat_gain);
+    let residual = diff - &actual;
+    let weighted_sq: f64 = residual
+        .iter()
+        .zip(weights.iter())
+        .map(|(&r, &w)| w * r * r)
+        .sum();
+    let residual_rms = (weighted_sq / n as f64).sqrt();
+
+    (ls_gain, hs_gain, flat_gain, residual_rms)
 }
 
 /// Solve the 3×3 weighted least squares problem:
@@ -735,6 +872,88 @@ mod tests {
 
         assert!(eq.is_none());
         assert!(gain.is_none());
+    }
+
+    #[test]
+    fn test_iterative_improves_large_gain_accuracy() {
+        // At 5-6 dB shelf gains, the nonlinear shelf shape diverges from the
+        // linear 1 dB basis. The iterative solver should produce a lower residual
+        // than a single linear solve.
+        //
+        // We construct a difference curve that IS exactly the shelf response at
+        // 5 dB, then verify the iterative solver recovers it accurately.
+        let n = 200;
+        let log_start = 20f64.log10();
+        let log_end = 20000f64.log10();
+        let freq: Array1<f64> = Array1::from(
+            (0..n)
+                .map(|i| {
+                    10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64)
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        // Ground truth: lowshelf at +5 dB, highshelf at -4 dB, flat +1 dB
+        let true_ls = 5.0;
+        let true_hs = -4.0;
+        let true_flat = 1.0;
+        let diff = evaluate_shelf_response(&freq, SAMPLE_RATE, true_ls, true_hs, true_flat);
+
+        let weights = compute_octave_weights(&freq);
+
+        // Iterative solver
+        let (ls, hs, flat, residual) =
+            fit_shelf_gain_iterative(&diff, &freq, SAMPLE_RATE, &weights);
+
+        assert!(
+            (ls - true_ls).abs() < 0.05,
+            "LS should be {}, got {} (error {})",
+            true_ls,
+            ls,
+            (ls - true_ls).abs()
+        );
+        assert!(
+            (hs - true_hs).abs() < 0.05,
+            "HS should be {}, got {} (error {})",
+            true_hs,
+            hs,
+            (hs - true_hs).abs()
+        );
+        assert!(
+            (flat - true_flat).abs() < 0.05,
+            "flat should be {}, got {} (error {})",
+            true_flat,
+            flat,
+            (flat - true_flat).abs()
+        );
+        assert!(
+            residual < 0.01,
+            "residual should be ~0, got {}",
+            residual
+        );
+
+        // Compare: linear-only solve should have higher residual
+        let flat_basis = Array1::ones(n);
+        let (ls_basis, hs_basis) = build_basis_vectors(&freq, SAMPLE_RATE);
+        let (lin_ls, lin_hs, lin_flat, _) =
+            solve_3x3_wls(&diff, &ls_basis, &hs_basis, &flat_basis, &weights);
+        let lin_response =
+            evaluate_shelf_response(&freq, SAMPLE_RATE, lin_ls, lin_hs, lin_flat);
+        let lin_residual_vec = &diff - &lin_response;
+        let lin_rms = (lin_residual_vec
+            .iter()
+            .zip(weights.iter())
+            .map(|(&r, &w)| w * r * r)
+            .sum::<f64>()
+            / n as f64)
+            .sqrt();
+
+        assert!(
+            residual < lin_rms,
+            "Iterative residual ({:.4}) should be less than linear-only ({:.4})",
+            residual,
+            lin_rms
+        );
     }
 
     #[test]

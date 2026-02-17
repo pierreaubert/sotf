@@ -531,16 +531,6 @@ pub fn build_dba_dsp_chain_with_curves(
     }
 }
 
-/// Build a DSP chain for a Gradient Cardioid subwoofer system
-pub fn build_cardioid_dsp_chain(
-    channel_name: &str,
-    gains: &[f64],
-    delays: &[f64],
-    eq_filters: &[Biquad],
-) -> ChannelDspChain {
-    build_cardioid_dsp_chain_with_curves(channel_name, gains, delays, eq_filters, None, None, None)
-}
-
 /// Build a DSP chain for a Gradient Cardioid subwoofer system with curves
 ///
 /// # Arguments

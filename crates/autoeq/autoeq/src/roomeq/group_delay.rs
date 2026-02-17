@@ -723,19 +723,17 @@ fn unwrap_phase(phase: &[f64]) -> Vec<f64> {
         return unwrapped;
     }
 
-    let mut prev = phase[0];
-    unwrapped.push(prev);
+    unwrapped.push(phase[0]);
     let mut offset = 0.0;
 
-    for &p in phase.iter().skip(1) {
-        let diff = p - prev;
-        if diff > PI {
-            offset -= 2.0 * PI;
-        } else if diff < -PI {
-            offset += 2.0 * PI;
-        }
-        unwrapped.push(p + offset);
-        prev = p;
+    for i in 1..phase.len() {
+        let diff = phase[i] - phase[i - 1];
+        // Handle jumps of arbitrary multiples of 2π (not just single wraps).
+        // This is equivalent to NumPy's np.unwrap: round the jump to the
+        // nearest multiple of 2π and subtract it.
+        let wraps = (diff / (2.0 * PI)).round();
+        offset -= wraps * 2.0 * PI;
+        unwrapped.push(phase[i] + offset);
     }
     unwrapped
 }
@@ -831,6 +829,36 @@ mod tests {
                 "Got {}, expected {}",
                 u.to_degrees(),
                 e
+            );
+        }
+    }
+
+    #[test]
+    fn test_unwrap_phase_multi_wrap() {
+        // Phase values with jumps exceeding 2π between adjacent samples.
+        // This can happen when phase data comes from sources other than .arg()
+        // (e.g., accumulated computation, interpolated data, or scaled values).
+        //
+        // The old single-wrap code only corrected by ±2π, leaving a residual
+        // jump of ~3π after correction. The round()-based code correctly
+        // identifies the nearest multiple and eliminates the jump.
+        let phase = vec![
+            0.0,
+            0.1,
+            0.1 + 5.0 * PI, // raw jump of 5π (~15.7 rad), needs 2×2π correction
+            0.2 + 5.0 * PI, // smooth continuation
+        ];
+        let unwrapped = unwrap_phase(&phase);
+
+        // After unwrapping, no adjacent pair should have a jump > π
+        for i in 1..unwrapped.len() {
+            let jump = (unwrapped[i] - unwrapped[i - 1]).abs();
+            assert!(
+                jump < PI + 0.01,
+                "Jump between samples {} and {} is {:.3} rad (> π), unwrapping failed",
+                i - 1,
+                i,
+                jump
             );
         }
     }
