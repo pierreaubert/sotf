@@ -1670,6 +1670,10 @@ pub fn peq_butterworth_highpass(order: usize, freq: f64, srate: f64) -> Peq {
 /// # Returns
 /// * Vector of Q values for each biquad section
 pub fn peq_linkwitzriley_q(order: usize) -> Vec<f64> {
+    assert!(
+        order >= 2 && order.is_multiple_of(2),
+        "Linkwitz-Riley order must be even and >= 2, got {order}"
+    );
     let q_bw = peq_butterworth_q(order / 2);
     let mut q_values = Vec::new();
 
@@ -1861,21 +1865,96 @@ mod peq_tests {
     }
 
     #[test]
-    fn test_linkwitzriley_filters() {
-        let lp = peq_linkwitzriley_lowpass(4, 1000.0, 48000.0);
-        let hp = peq_linkwitzriley_highpass(4, 1000.0, 48000.0);
+    fn test_linkwitzriley_lr12() {
+        let srate = 48000.0;
+        let freq = 1000.0;
+        let lp = peq_linkwitzriley_lowpass(2, freq, srate);
+        let hp = peq_linkwitzriley_highpass(2, freq, srate);
 
-        // 4th order LR should have 2 sections (each with Q = 0.7071...)
+        // LR12 = 2nd order = 1 biquad section with Q=0.5
+        assert_eq!(lp.len(), 1);
+        assert_eq!(hp.len(), 1);
+        assert!((lp[0].1.q - 0.5).abs() < 1e-10);
+        assert!((hp[0].1.q - 0.5).abs() < 1e-10);
+
+        // At crossover: each should be -6 dB
+        let lp_resp = lp[0].1.complex_response(freq).norm().log10() * 20.0;
+        let hp_resp = hp[0].1.complex_response(freq).norm().log10() * 20.0;
+        assert!((lp_resp - (-6.0)).abs() < 0.1, "LR12 LP at crossover: {lp_resp} dB");
+        assert!((hp_resp - (-6.0)).abs() < 0.1, "LR12 HP at crossover: {hp_resp} dB");
+
+        // LR2 needs polarity inversion on HP for flat sum (order/2 is odd)
+        let sum = lp[0].1.complex_response(freq) - hp[0].1.complex_response(freq);
+        let sum_db = sum.norm().log10() * 20.0;
+        assert!(sum_db.abs() < 0.1, "LR12 sum at crossover (HP inverted): {sum_db} dB");
+    }
+
+    #[test]
+    fn test_linkwitzriley_lr24() {
+        let srate = 48000.0;
+        let freq = 1000.0;
+        let lp = peq_linkwitzriley_lowpass(4, freq, srate);
+        let hp = peq_linkwitzriley_highpass(4, freq, srate);
+
+        // LR24 = 4th order = 2 biquad sections with Q ≈ 0.7071
         assert_eq!(lp.len(), 2);
         assert_eq!(hp.len(), 2);
+        for (weight, bq) in &lp {
+            assert_eq!(*weight, 1.0);
+            assert!((bq.q - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-10);
+        }
 
-        // All should be unit weight
+        // At crossover: combined response should be -6 dB
+        let lp_mag: f64 = lp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
+        let hp_mag: f64 = hp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
+        let lp_db = lp_mag.log10() * 20.0;
+        let hp_db = hp_mag.log10() * 20.0;
+        assert!((lp_db - (-6.0)).abs() < 0.1, "LR24 LP at crossover: {lp_db} dB");
+        assert!((hp_db - (-6.0)).abs() < 0.1, "LR24 HP at crossover: {hp_db} dB");
+    }
+
+    #[test]
+    fn test_linkwitzriley_lr48() {
+        let srate = 48000.0;
+        let freq = 1000.0;
+        let lp = peq_linkwitzriley_lowpass(8, freq, srate);
+        let hp = peq_linkwitzriley_highpass(8, freq, srate);
+
+        // LR48 = 8th order = 4 biquad sections
+        assert_eq!(lp.len(), 4);
+        assert_eq!(hp.len(), 4);
+
         for (weight, _) in &lp {
             assert_eq!(*weight, 1.0);
         }
         for (weight, _) in &hp {
             assert_eq!(*weight, 1.0);
         }
+
+        // At crossover: combined response should be -6 dB
+        let lp_mag: f64 = lp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
+        let hp_mag: f64 = hp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
+        let lp_db = lp_mag.log10() * 20.0;
+        let hp_db = hp_mag.log10() * 20.0;
+        assert!((lp_db - (-6.0)).abs() < 0.1, "LR48 LP at crossover: {lp_db} dB");
+        assert!((hp_db - (-6.0)).abs() < 0.1, "LR48 HP at crossover: {hp_db} dB");
+
+        // Verify steep rolloff: at 2x crossover freq, LP should be well below -40 dB
+        let lp_2x: f64 = lp.iter().map(|(_, bq)| bq.complex_response(freq * 2.0).norm()).product();
+        let lp_2x_db = lp_2x.log10() * 20.0;
+        assert!(lp_2x_db < -40.0, "LR48 LP at 2x crossover: {lp_2x_db} dB (expected < -40)");
+    }
+
+    #[test]
+    #[should_panic(expected = "Linkwitz-Riley order must be even and >= 2")]
+    fn test_linkwitzriley_rejects_odd_order() {
+        peq_linkwitzriley_q(3);
+    }
+
+    #[test]
+    #[should_panic(expected = "Linkwitz-Riley order must be even and >= 2")]
+    fn test_linkwitzriley_rejects_order_zero() {
+        peq_linkwitzriley_q(0);
     }
 }
 
