@@ -3,18 +3,26 @@
 //! Provides optimized versions of transcendental functions (log, exp, pow)
 //! that are significantly faster than standard library versions at the cost
 //! of some precision, which is usually acceptable for audio gain/dynamics.
+//!
+//! Accuracy targets (chosen to keep roundtrip drift negligible over long sessions):
+//! - `fast_log2`: max error ~0.001, mean bias ~1e-4
+//! - `fast_exp2`: max relative error ~0.08%, mean bias ~1e-4
+//! - `fast_sin`/`fast_cos`: max error ~0.001
 
 /// Fast approximation of base-2 logarithm
 ///
-/// Accuracy is approx 1e-3, significantly faster than `f32::log2`.
+/// Uses IEEE 754 bit extraction with a cubic mantissa correction.
+/// Minimax-fitted on [0, 1] with constraint poly(0)=0, poly(1)=1.
+/// Max error ~0.001 across the full f32 positive range.
 #[inline]
 pub fn fast_log2(x: f32) -> f32 {
     let x_bits = x.to_bits();
     let exponent = (x_bits >> 23) as i32 - 127;
-    let mantissa = (x_bits & 0x7FFFFF) as f32 / 8388608.0;
+    let m = (x_bits & 0x7FFFFF) as f32 / 8388608.0;
 
-    // Linear approximation of the mantissa part
-    exponent as f32 + mantissa
+    // Cubic minimax: log2(1+m) ≈ a*m + b*m² + c*m³, a+b+c=1
+    // Grid-searched to minimize max error on [0,1]
+    exponent as f32 + m * (1.4230 + m * (-0.5825 + m * 0.1595))
 }
 
 /// Fast approximation of base-10 logarithm
@@ -22,31 +30,48 @@ pub fn fast_log2(x: f32) -> f32 {
 /// Useful for dB calculations: `20.0 * fast_log10(x)`
 #[inline]
 pub fn fast_log10(x: f32) -> f32 {
-    fast_log2(x) * 0.30102999566 // 1.0 / log2(10)
+    fast_log2(x) * std::f32::consts::LOG10_2
 }
 
 /// Fast approximation of base-2 exponential
 ///
-/// Accuracy is approx 1%, significantly faster than `f32::exp2`.
+/// Splits x into integer and fractional parts, uses bit manipulation for the
+/// integer part and a degree-4 Taylor polynomial for the fractional part.
+/// Max relative error ~0.08%.
 #[inline]
 pub fn fast_exp2(x: f32) -> f32 {
-    if x == 0.0 {
-        return 1.0;
-    }
     // Clamp to avoid overflow/underflow
     let x = x.clamp(-126.0, 126.0);
-    // 2^x \approx f32::from_bits(((x + 127.0) * 8388608.0) as u32)
-    // Using 126.94269504 as an offset for better average accuracy
-    f32::from_bits(((x + 126.94269504f32) * 8388608.0f32) as u32)
+
+    // Split into integer and fractional parts
+    let xi = x.floor();
+    let xf = x - xi;
+
+    // 2^integer via bit manipulation
+    let int_part = f32::from_bits(((xi as i32 + 127) as u32) << 23);
+
+    // 2^fraction via degree-4 Taylor polynomial on [0, 1)
+    // Coefficients: ln(2)^k / k! for k=1..4
+    let frac_part =
+        1.0 + xf * (0.693_147_2 + xf * (0.240_226_5 + xf * (0.055_504_1 + xf * 0.009_618_1)));
+
+    int_part * frac_part
 }
 
 /// Fast approximation of sine
 ///
-/// Accuracy is approx 0.001, for x in [-PI, PI].
+/// Uses a parabolic approximation with a precision step.
+/// Input is reduced to [-π, π] so any value is accepted.
+/// Max error ~0.001.
 #[inline]
 pub fn fast_sin(x: f32) -> f32 {
-    const B: f32 = 4.0 / std::f32::consts::PI;
-    const C: f32 = -4.0 / (std::f32::consts::PI * std::f32::consts::PI);
+    use std::f32::consts::PI;
+
+    // Range reduction to [-π, π]
+    let x = x - (2.0 * PI) * ((x + PI) / (2.0 * PI)).floor();
+
+    const B: f32 = 4.0 / PI;
+    const C: f32 = -4.0 / (PI * PI);
 
     let y = B * x + C * x * x.abs();
 
@@ -58,12 +83,7 @@ pub fn fast_sin(x: f32) -> f32 {
 /// Fast approximation of cosine
 #[inline]
 pub fn fast_cos(x: f32) -> f32 {
-    // cos(x) = sin(x + PI/2)
-    let mut x = x + std::f32::consts::FRAC_PI_2;
-    if x > std::f32::consts::PI {
-        x -= 2.0 * std::f32::consts::PI;
-    }
-    fast_sin(x)
+    fast_sin(x + std::f32::consts::FRAC_PI_2)
 }
 
 /// Fast approximation of base-10 exponential
@@ -71,19 +91,19 @@ pub fn fast_cos(x: f32) -> f32 {
 /// Useful for linear gain from dB: `fast_pow10(db / 20.0)`
 #[inline]
 pub fn fast_pow10(x: f32) -> f32 {
-    fast_exp2(x * 3.32192809489) // log2(10)
+    fast_exp2(x * std::f32::consts::LOG2_10)
 }
 
 /// Fast approximation of natural logarithm
 #[inline]
 pub fn fast_ln(x: f32) -> f32 {
-    fast_log2(x) * 0.69314718056 // ln(2)
+    fast_log2(x) * std::f32::consts::LN_2
 }
 
 /// Fast approximation of natural exponential
 #[inline]
 pub fn fast_exp(x: f32) -> f32 {
-    fast_exp2(x * 1.44269504089) // 1.0 / ln(2)
+    fast_exp2(x * std::f32::consts::LOG2_E)
 }
 
 #[cfg(test)]
@@ -98,7 +118,7 @@ mod tests {
             let approx = fast_log2(x);
             let error = (actual - approx).abs();
             assert!(
-                error < 0.1,
+                error < 0.002,
                 "log2 error at {}: {} vs {} (err: {})",
                 x,
                 actual,
@@ -116,7 +136,7 @@ mod tests {
             let approx = fast_exp2(x);
             let rel_error = (actual - approx).abs() / actual;
             assert!(
-                rel_error < 0.1,
+                rel_error < 0.001,
                 "exp2 error at {}: {} vs {} (rel err: {})",
                 x,
                 actual,
@@ -134,7 +154,7 @@ mod tests {
             let approx = fast_pow10(x);
             let rel_error = (actual - approx).abs() / actual;
             assert!(
-                rel_error < 0.1,
+                rel_error < 0.003,
                 "pow10 error at {}dB: {} vs {} (rel err: {})",
                 db,
                 actual,
@@ -146,7 +166,8 @@ mod tests {
 
     #[test]
     fn test_fast_sin() {
-        for i in -314..314 {
+        // Test well beyond [-PI, PI] to verify range reduction
+        for i in -1000..1000 {
             let x = i as f32 * 0.01;
             let actual = x.sin();
             let approx = fast_sin(x);
@@ -164,7 +185,8 @@ mod tests {
 
     #[test]
     fn test_fast_cos() {
-        for i in -314..314 {
+        // Test well beyond [-PI, PI] to verify range reduction
+        for i in -1000..1000 {
             let x = i as f32 * 0.01;
             let actual = x.cos();
             let approx = fast_cos(x);

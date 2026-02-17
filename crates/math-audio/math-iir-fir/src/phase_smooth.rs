@@ -141,22 +141,15 @@ pub fn unwrap_phase(phase_rad: &[f64]) -> Vec<f64> {
         return Vec::new();
     }
 
+    let two_pi = 2.0 * PI;
     let mut unwrapped = Vec::with_capacity(phase_rad.len());
     unwrapped.push(phase_rad[0]);
 
-    let mut offset = 0.0;
-
     for i in 1..phase_rad.len() {
         let diff = phase_rad[i] - phase_rad[i - 1];
-
-        // Detect wrapping: if jump > π, subtract 2π; if jump < -π, add 2π
-        if diff > PI {
-            offset -= 2.0 * PI;
-        } else if diff < -PI {
-            offset += 2.0 * PI;
-        }
-
-        unwrapped.push(phase_rad[i] + offset);
+        // Wrap diff to [-π, π], handling arbitrarily large jumps
+        let wrapped_diff = diff - two_pi * (diff / two_pi).round();
+        unwrapped.push(unwrapped[i - 1] + wrapped_diff);
     }
 
     unwrapped

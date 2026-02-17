@@ -405,7 +405,7 @@ pub fn analyze_wav_buffer(
 
     // Interpolate magnitude and phase at log frequencies
     let mut interp_mag = interpolate_log(&freqs, &magnitudes_db, &log_freqs);
-    let interp_phase = interpolate_log(&freqs, &phases_deg, &log_freqs);
+    let interp_phase = interpolate_log_phase(&freqs, &phases_deg, &log_freqs);
 
     // Apply pink compensation if requested (for log sweeps)
     if config.pink_compensation {
@@ -699,6 +699,38 @@ fn interpolate_log(x: &[f32], y: &[f32], x_new: &[f32]) -> Vec<f32> {
 
             let t = (freq - x0) / (x1 - x0);
             y0 + t * (y1 - y0)
+        })
+        .collect()
+}
+
+/// Logarithmic interpolation for phase data (degrees).
+/// Uses circular interpolation to correctly handle ±180° wrap boundaries.
+fn interpolate_log_phase(x: &[f32], phase_deg: &[f32], x_new: &[f32]) -> Vec<f32> {
+    x_new
+        .iter()
+        .map(|&freq| {
+            let idx = x.partition_point(|&f| f < freq).min(x.len() - 1);
+
+            if idx == 0 {
+                return phase_deg[0];
+            }
+
+            let x0 = x[idx - 1];
+            let x1 = x[idx];
+
+            if x1 <= x0 {
+                return phase_deg[idx - 1];
+            }
+
+            let t = (freq - x0) / (x1 - x0);
+
+            // Circular interpolation: find shortest arc between the two angles
+            let p0 = phase_deg[idx - 1];
+            let p1 = phase_deg[idx];
+            let mut diff = p1 - p0;
+            // Wrap diff to [-180, 180]
+            diff -= 360.0 * (diff / 360.0).round();
+            p0 + t * diff
         })
         .collect()
 }
@@ -1225,8 +1257,9 @@ fn compute_thd_from_ir(
                 let bin = (f / freq_resolution).round() as usize;
                 // Only access positive frequency bins (0 to nyquist)
                 if bin < nyquist_bin && bin < spectrum.len() {
-                    // Undo 1/N normalization from compute_fft_padded to get proper IR frequency response magnitude
-                    let mag = spectrum[bin].norm() * fft_size as f32;
+                    // compute_fft_padded already applies 1/N normalization, matching
+                    // the scale of fundamental_db (derived from transfer function ratios)
+                    let mag = spectrum[bin].norm();
                     // Convert to dB (threshold at -120 dB to avoid log of tiny values)
                     if mag > 1e-6 {
                         harmonics_db[k_idx][i] = 20.0 * mag.log10();
@@ -1797,10 +1830,16 @@ pub fn smooth_response_f32(frequencies: &[f32], values: &[f32], octaves: f32) ->
 
 /// Compute group delay from phase data
 /// Group delay = -d(phase)/d(frequency) / (2*pi)
+///
+/// Phase is unwrapped before differentiation to avoid spurious spikes
+/// at ±180° wrap boundaries.
 pub fn compute_group_delay(frequencies: &[f32], phase_deg: &[f32]) -> Vec<f32> {
     if frequencies.len() < 2 {
         return vec![0.0; frequencies.len()];
     }
+
+    // Unwrap phase to remove ±180° discontinuities before differentiation
+    let unwrapped = unwrap_phase_deg(phase_deg);
 
     let mut group_delay_ms = Vec::with_capacity(frequencies.len());
 
@@ -1808,7 +1847,7 @@ pub fn compute_group_delay(frequencies: &[f32], phase_deg: &[f32]) -> Vec<f32> {
         let delay = if i == 0 {
             // Forward difference at start
             let df = frequencies[1] - frequencies[0];
-            let dp = phase_deg[1] - phase_deg[0];
+            let dp = unwrapped[1] - unwrapped[0];
             if df.abs() > 1e-6 {
                 -dp / df / 360.0 * 1000.0 // Convert to ms
             } else {
@@ -1817,7 +1856,7 @@ pub fn compute_group_delay(frequencies: &[f32], phase_deg: &[f32]) -> Vec<f32> {
         } else if i == frequencies.len() - 1 {
             // Backward difference at end
             let df = frequencies[i] - frequencies[i - 1];
-            let dp = phase_deg[i] - phase_deg[i - 1];
+            let dp = unwrapped[i] - unwrapped[i - 1];
             if df.abs() > 1e-6 {
                 -dp / df / 360.0 * 1000.0
             } else {
@@ -1826,7 +1865,7 @@ pub fn compute_group_delay(frequencies: &[f32], phase_deg: &[f32]) -> Vec<f32> {
         } else {
             // Central difference
             let df = frequencies[i + 1] - frequencies[i - 1];
-            let dp = phase_deg[i + 1] - phase_deg[i - 1];
+            let dp = unwrapped[i + 1] - unwrapped[i - 1];
             if df.abs() > 1e-6 {
                 -dp / df / 360.0 * 1000.0
             } else {
@@ -1839,37 +1878,75 @@ pub fn compute_group_delay(frequencies: &[f32], phase_deg: &[f32]) -> Vec<f32> {
     group_delay_ms
 }
 
-/// Compute impulse response from frequency response using approximated inverse FFT
+/// Unwrap phase in degrees to produce a continuous phase curve.
+/// Wraps each inter-sample difference to [-180, 180] and accumulates,
+/// handling arbitrarily large jumps (not just single ±360° wraps).
+fn unwrap_phase_deg(phase_deg: &[f32]) -> Vec<f32> {
+    if phase_deg.is_empty() {
+        return Vec::new();
+    }
+
+    let mut unwrapped = Vec::with_capacity(phase_deg.len());
+    unwrapped.push(phase_deg[0]);
+
+    for i in 1..phase_deg.len() {
+        let diff = phase_deg[i] - phase_deg[i - 1];
+        let wrapped_diff = diff - 360.0 * (diff / 360.0).round();
+        unwrapped.push(unwrapped[i - 1] + wrapped_diff);
+    }
+
+    unwrapped
+}
+
+/// Compute impulse response from frequency response via inverse FFT.
+///
+/// The input frequency/magnitude/phase data (possibly irregularly spaced) is
+/// interpolated onto a uniform FFT frequency grid, assembled into a complex
+/// spectrum with Hermitian symmetry, and transformed with an inverse FFT.
+///
+/// Returns (times_ms, impulse) where impulse is peak-normalized to [-1, 1].
 pub fn compute_impulse_response_from_fr(
     frequencies: &[f32],
     magnitude_db: &[f32],
     phase_deg: &[f32],
     sample_rate: f32,
 ) -> (Vec<f32>, Vec<f32>) {
-    // For a simple approximation, we'll create a synthetic impulse response
-    // In a real implementation, this would use inverse FFT
-    let num_samples = 512;
-    let time_step = 1.0 / sample_rate;
+    let fft_size = 1024;
+    let half = fft_size / 2; // Number of positive-frequency bins (excluding DC)
+    let freq_bin = sample_rate / fft_size as f32;
 
-    let mut impulse = vec![0.0_f32; num_samples];
-    let times: Vec<f32> = (0..num_samples)
-        .map(|i| i as f32 * time_step * 1000.0) // Convert to ms
-        .collect();
+    // Unwrap phase before interpolation to avoid discontinuities
+    let unwrapped_phase = unwrap_phase_deg(phase_deg);
 
-    // Simple approximation: sum of sinusoids weighted by magnitude
-    // This is not a true inverse FFT but gives a reasonable visualization
-    for (i, time) in times.iter().enumerate() {
-        let t_sec = time / 1000.0;
-        for (j, (&freq, &mag_db)) in frequencies.iter().zip(magnitude_db.iter()).enumerate() {
-            if freq > 0.0 && freq < sample_rate / 2.0 {
-                let mag_linear = 10.0_f32.powf(mag_db / 20.0);
-                let phase_rad = phase_deg[j] * PI / 180.0;
-                impulse[i] += mag_linear * (2.0 * PI * freq * t_sec + phase_rad).cos();
-            }
-        }
+    // Build complex spectrum on uniform FFT grid via linear interpolation
+    let mut spectrum = vec![Complex::new(0.0_f32, 0.0); fft_size];
+
+    for k in 0..=half {
+        let f = k as f32 * freq_bin;
+
+        // Interpolate magnitude (dB) and phase (deg) at this bin frequency
+        let (mag_db, phase_d) = interpolate_fr(frequencies, magnitude_db, &unwrapped_phase, f);
+
+        let mag_linear = 10.0_f32.powf(mag_db / 20.0);
+        let phase_rad = phase_d * PI / 180.0;
+
+        spectrum[k] = Complex::new(mag_linear * phase_rad.cos(), mag_linear * phase_rad.sin());
     }
 
-    // Normalize
+    // Enforce Hermitian symmetry: X[N-k] = conj(X[k])
+    for k in 1..half {
+        spectrum[fft_size - k] = spectrum[k].conj();
+    }
+
+    // Inverse FFT (uses thread-local cached planner)
+    let ifft = plan_fft_inverse(fft_size);
+    ifft.process(&mut spectrum);
+
+    // Extract real part and scale by 1/N (rustfft doesn't normalize)
+    let scale = 1.0 / fft_size as f32;
+    let mut impulse: Vec<f32> = spectrum.iter().map(|c| c.re * scale).collect();
+
+    // Normalize to [-1, 1]
     let max_val = impulse.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
     if max_val > 0.0 {
         for v in &mut impulse {
@@ -1877,7 +1954,49 @@ pub fn compute_impulse_response_from_fr(
         }
     }
 
+    let time_step = 1.0 / sample_rate;
+    let times: Vec<f32> = (0..fft_size)
+        .map(|i| i as f32 * time_step * 1000.0)
+        .collect();
+
     (times, impulse)
+}
+
+/// Linearly interpolate magnitude and phase at a target frequency.
+/// Clamps to the nearest endpoint if `target_freq` is outside the data range.
+///
+/// Phase must be pre-unwrapped (continuous) for correct interpolation.
+fn interpolate_fr(
+    frequencies: &[f32],
+    magnitude_db: &[f32],
+    unwrapped_phase_deg: &[f32],
+    target_freq: f32,
+) -> (f32, f32) {
+    if frequencies.is_empty() {
+        return (0.0, 0.0);
+    }
+    if target_freq <= frequencies[0] {
+        return (magnitude_db[0], unwrapped_phase_deg[0]);
+    }
+    let last = frequencies.len() - 1;
+    if target_freq >= frequencies[last] {
+        return (magnitude_db[last], unwrapped_phase_deg[last]);
+    }
+
+    // Binary search for the interval containing target_freq
+    let idx = match frequencies.binary_search_by(|f| f.partial_cmp(&target_freq).unwrap()) {
+        Ok(i) => return (magnitude_db[i], unwrapped_phase_deg[i]),
+        Err(i) => i, // target_freq is between frequencies[i-1] and frequencies[i]
+    };
+
+    let f0 = frequencies[idx - 1];
+    let f1 = frequencies[idx];
+    let t = (target_freq - f0) / (f1 - f0);
+
+    let mag = magnitude_db[idx - 1] + t * (magnitude_db[idx] - magnitude_db[idx - 1]);
+    let phase = unwrapped_phase_deg[idx - 1]
+        + t * (unwrapped_phase_deg[idx] - unwrapped_phase_deg[idx - 1]);
+    (mag, phase)
 }
 
 /// Compute Schroeder energy decay curve

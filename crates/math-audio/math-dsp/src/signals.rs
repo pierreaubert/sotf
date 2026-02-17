@@ -120,13 +120,16 @@ pub fn gen_log_sweep(
     let n_frames = frames_for(duration, sample_rate);
     let mut signal = Vec::with_capacity(n_frames);
 
-    let k = (f_end / f_start).ln() / duration;
-    let coefficient = 2.0 * PI * f_start / k;
+    // Use f64 for phase computation to avoid precision loss at high frequencies.
+    // The phase reaches tens of thousands of radians by the end of the sweep;
+    // f32 sin() of such large values loses significant precision.
+    let k = (f_end as f64 / f_start as f64).ln() / duration as f64;
+    let coefficient = 2.0 * std::f64::consts::PI * f_start as f64 / k;
 
     for n in 0..n_frames {
-        let t = n as f32 / sample_rate as f32;
+        let t = n as f64 / sample_rate as f64;
         let phase = coefficient * ((k * t).exp() - 1.0);
-        signal.push(clip(amp * phase.sin()));
+        signal.push(clip(amp * phase.sin() as f32));
     }
 
     signal
@@ -185,6 +188,17 @@ pub fn gen_pink_noise(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
     let mut b5 = 0.0f32;
     let mut b6 = 0.0f32;
 
+    // Normalization factor derived from the filter coefficients.
+    // Each filter is y_i[n] = a_i*y_i[n-1] + b_i*w[n] driven by the same white
+    // noise w[n] (uniform [-1,1], variance 1/3). The total output variance is:
+    //   Var = Σ_ij b_i*b_j/(3*(1 - a_i*a_j))        (IIR cross-covariances)
+    //       + Σ_i 2*d*b_i/3                           (direct-IIR cross-terms)
+    //       + (d² + e²)/3                              (direct + delayed terms)
+    // where d=0.5362 (direct white gain) and e=0.115926 (delayed white gain).
+    // This gives RMS ≈ 1.744. Dividing by this matches the white noise RMS
+    // behavior: amp=1.0 produces output in [-1,1] with comparable RMS (~0.58).
+    const PINK_NORM: f32 = 1.0 / 1.744;
+
     for _ in 0..n_frames {
         // Generate white noise
         seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -203,8 +217,7 @@ pub fn gen_pink_noise(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
         let pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
         b6 = white * 0.115926;
 
-        // Normalize and scale (pink noise is ~3dB louder than white)
-        signal.push(clip(amp * pink * 0.11));
+        signal.push(clip(amp * pink * PINK_NORM));
     }
 
     signal
@@ -517,13 +530,23 @@ mod tests {
     fn test_gen_log_sweep_constant_amplitude() {
         // Test that log sweep maintains constant amplitude across frequency range
         let amp = 0.7;
-        let signal = gen_log_sweep(20.0, 20000.0, amp, 48000, 2.0); // Start at 20Hz instead of 1Hz
+        let sample_rate = 48000_u32;
+        let duration = 2.0;
+        let f_start = 20.0_f32;
+        let f_end = 20000.0_f32;
+        let signal = gen_log_sweep(f_start, f_end, amp, sample_rate, duration);
 
-        // Find peak values throughout the sweep
+        // Find peak values throughout the sweep using 10ms windows.
+        // Skip the low-frequency region where the window (10ms = 100Hz period)
+        // is shorter than one cycle and can't capture the true peak.
+        let window_size = 480; // 10ms at 48kHz
+        let min_freq_for_window = sample_rate as f32 / window_size as f32; // 100 Hz
+        let k = (f_end / f_start).ln() / duration;
+        let safe_start_t = (min_freq_for_window / f_start).ln() / k;
+        let safe_start_sample = (safe_start_t * sample_rate as f32) as usize;
+
         let mut peaks = Vec::new();
-        let window_size = 480; // 10ms windows at 48kHz
-
-        for i in (0..signal.len()).step_by(window_size / 4) {
+        for i in (safe_start_sample..signal.len()).step_by(window_size / 4) {
             let end = (i + window_size).min(signal.len());
             if end > i {
                 let window_peak = signal[i..end].iter().map(|&x| x.abs()).fold(0.0, f32::max);
@@ -531,34 +554,27 @@ mod tests {
             }
         }
 
-        // Additional checks
         assert!(!peaks.is_empty(), "Should have found peaks");
 
-        // Check that we have good coverage across the sweep
-        // Skip first few windows where frequency might still be ramping up
-        let peaks_to_check: Vec<_> = peaks.iter().skip(2).copied().collect();
-        let min_peak = peaks_to_check.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-        let max_peak = peaks_to_check.iter().fold(0.0_f32, |a, &b| a.max(b));
+        let min_peak = peaks.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+        let max_peak = peaks.iter().fold(0.0_f32, |a, &b| a.max(b));
         let variation = max_peak - min_peak;
 
         let target_peak = amp;
 
-        // For log sweeps, we expect some amplitude variation due to frequency changes
-        // and the exponential nature of the sweep. Check that variation is reasonable.
-        // A 30% variation is acceptable for log sweeps.
+        // With f64 phase computation, amplitude is near-constant (< 0.1% variation)
+        // once the measurement window captures a full cycle.
         assert!(
-            variation < 0.30 * target_peak,
-            "Peak variation {:.6} exceeds 30% of target amplitude {:.6}",
+            variation < 0.01 * target_peak,
+            "Peak variation {:.6} exceeds 1% of target amplitude {:.6}",
             variation,
             target_peak
         );
 
-        // Check that average peak is reasonably close to target (within 15%)
-        // Log sweeps don't maintain perfect constant amplitude
-        let avg_peak = peaks_to_check.iter().sum::<f32>() / peaks_to_check.len() as f32;
+        let avg_peak = peaks.iter().sum::<f32>() / peaks.len() as f32;
         assert!(
-            (avg_peak - target_peak).abs() < 0.15 * target_peak,
-            "Average peak {:.6} differs from target {:.6} by more than 15%",
+            (avg_peak - target_peak).abs() < 0.01 * target_peak,
+            "Average peak {:.6} differs from target {:.6} by more than 1%",
             avg_peak,
             target_peak
         );
