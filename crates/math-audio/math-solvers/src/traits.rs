@@ -12,6 +12,10 @@ use num_traits::{FromPrimitive, ToPrimitive};
 use std::fmt::Debug;
 use std::ops::Neg;
 
+// Note: `Array1` is used in the BLAS-dispatch default methods on `ComplexField`.
+// The f64/f32 overrides use ndarray's `.dot()` and `.scaled_add()` which route
+// through BLAS when the `native` feature (ndarray/blas) is enabled.
+
 /// Trait for scalar types that can be used in linear algebra operations.
 ///
 /// This trait abstracts over real and complex number types, providing
@@ -56,6 +60,46 @@ pub trait ComplexField:
 
     /// Square root
     fn sqrt(&self) -> Self;
+
+    // ------------------------------------------------------------------
+    // BLAS-dispatch methods
+    //
+    // Default implementations use generic Rust loops. The f64/f32 impls
+    // override these to use ndarray operations backed by BLAS (when the
+    // `native` feature is enabled).
+    // ------------------------------------------------------------------
+
+    /// Inner product: Σ conj(x_i) * y_i
+    fn vec_dot(x: &Array1<Self>, y: &Array1<Self>) -> Self {
+        let mut sum = Self::zero();
+        for (xi, yi) in x.iter().zip(y.iter()) {
+            sum += xi.conj() * *yi;
+        }
+        sum
+    }
+
+    /// Squared vector norm: Σ |x_i|²
+    fn vec_norm_sqr(x: &Array1<Self>) -> Self::Real {
+        let mut sum = Self::Real::zero();
+        for xi in x.iter() {
+            sum += xi.norm_sqr();
+        }
+        sum
+    }
+
+    /// AXPY: y += α * x
+    fn vec_axpy(alpha: Self, x: &Array1<Self>, y: &mut Array1<Self>) {
+        for (xi, yi) in x.iter().zip(y.iter_mut()) {
+            *yi += alpha * *xi;
+        }
+    }
+
+    /// In-place scale: x *= α
+    fn vec_scale(x: &mut Array1<Self>, alpha: Self) {
+        for xi in x.iter_mut() {
+            *xi *= alpha;
+        }
+    }
 }
 
 impl ComplexField for Complex64 {
@@ -190,6 +234,28 @@ impl ComplexField for f64 {
     fn sqrt(&self) -> Self {
         f64::sqrt(*self)
     }
+
+    // BLAS-accelerated overrides via ndarray (uses DDOT/DNRM2/DAXPY)
+
+    #[inline]
+    fn vec_dot(x: &Array1<Self>, y: &Array1<Self>) -> Self {
+        x.dot(y)
+    }
+
+    #[inline]
+    fn vec_norm_sqr(x: &Array1<Self>) -> Self {
+        x.dot(x)
+    }
+
+    #[inline]
+    fn vec_axpy(alpha: Self, x: &Array1<Self>, y: &mut Array1<Self>) {
+        y.scaled_add(alpha, x);
+    }
+
+    #[inline]
+    fn vec_scale(x: &mut Array1<Self>, alpha: Self) {
+        x.mapv_inplace(|v| v * alpha);
+    }
 }
 
 impl ComplexField for f32 {
@@ -233,6 +299,28 @@ impl ComplexField for f32 {
     #[inline]
     fn sqrt(&self) -> Self {
         f32::sqrt(*self)
+    }
+
+    // BLAS-accelerated overrides via ndarray (uses SDOT/SNRM2/SAXPY)
+
+    #[inline]
+    fn vec_dot(x: &Array1<Self>, y: &Array1<Self>) -> Self {
+        x.dot(y)
+    }
+
+    #[inline]
+    fn vec_norm_sqr(x: &Array1<Self>) -> Self {
+        x.dot(x)
+    }
+
+    #[inline]
+    fn vec_axpy(alpha: Self, x: &Array1<Self>, y: &mut Array1<Self>) {
+        y.scaled_add(alpha, x);
+    }
+
+    #[inline]
+    fn vec_scale(x: &mut Array1<Self>, alpha: Self) {
+        x.mapv_inplace(|v| v * alpha);
     }
 }
 

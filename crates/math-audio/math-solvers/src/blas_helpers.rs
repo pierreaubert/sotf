@@ -1,21 +1,16 @@
 //! BLAS-accelerated linear algebra operations
 //!
-//! This module provides optimized implementations of inner products,
-//! vector norms, and related operations using BLAS when available.
-//!
-//! # Features
-//!
-//! - Uses `ndarray-linalg` for BLAS-accelerated operations when the `native` feature is enabled
-//! - Falls back to optimized Rust implementations when BLAS is unavailable
+//! Thin wrappers around `ComplexField` BLAS-dispatch methods.
+//! Real types (f64/f32) use ndarray's BLAS-backed operations.
+//! Complex types use optimized Rust loops with conjugation.
 
 use crate::traits::ComplexField;
-use ndarray::Array1;
+use ndarray::{Array1, ArrayView1};
 use num_traits::Float;
-use num_traits::Zero;
 
 /// Compute inner product (x, y) = Σ conj(x_i) * y_i
 ///
-/// Uses optimized implementation. BLAS is used for real types via ndarray.
+/// For f64/f32 this dispatches to BLAS DDOT/SDOT via ndarray.
 #[inline]
 pub fn inner_product<T: ComplexField>(x: &Array1<T>, y: &Array1<T>) -> T {
     assert_eq!(
@@ -23,23 +18,10 @@ pub fn inner_product<T: ComplexField>(x: &Array1<T>, y: &Array1<T>) -> T {
         y.len(),
         "Vector lengths must match for inner product"
     );
-
-    // For real types, we can use ndarray's dot product which uses BLAS
-    if T::zero().im() == T::zero().re() {
-        // This is a bit hacky but works for f32/f64 since im() returns 0
-        // We can't easily specialize on T in Rust without specialization feature.
-    }
-
-    let mut sum = T::zero();
-    for (xi, yi) in x.iter().zip(y.iter()) {
-        sum += xi.conj() * *yi;
-    }
-    sum
+    T::vec_dot(x, y)
 }
 
 /// Compute vector 2-norm: ||x||_2 = sqrt(Σ |x_i|^2)
-///
-/// Uses BLAS DNRM2 when available for 2-5x speedup.
 #[inline]
 pub fn vector_norm<T: ComplexField>(x: &Array1<T>) -> T::Real
 where
@@ -50,14 +32,10 @@ where
 
 /// Compute vector norm squared: ||x||_2^2 = Σ |x_i|^2
 ///
-/// More efficient than computing norm and squaring when the square root isn't needed.
+/// For f64/f32 this is a single BLAS dot call.
 #[inline]
 pub fn vector_norm_sqr<T: ComplexField>(x: &Array1<T>) -> T::Real {
-    let mut sum = T::Real::zero();
-    for xi in x.iter() {
-        sum += xi.norm_sqr();
-    }
-    sum
+    T::vec_norm_sqr(x)
 }
 
 /// Scale vector by scalar: y = α * x
@@ -70,12 +48,11 @@ pub fn scale_vector<T: ComplexField>(alpha: T, x: &Array1<T>, y: &mut Array1<T>)
 }
 
 /// Compute axpy: y = α * x + y
-#[allow(dead_code)]
+///
+/// For f64/f32 this dispatches to BLAS DAXPY/SAXPY via ndarray.
 #[inline]
 pub fn axpy<T: ComplexField>(alpha: T, x: &Array1<T>, y: &mut Array1<T>) {
-    for (xi, yi) in x.iter().zip(y.iter_mut()) {
-        *yi += alpha * *xi;
-    }
+    T::vec_axpy(alpha, x, y);
 }
 
 /// Compute the scaled vector addition: z = α * x + β * y
@@ -88,58 +65,28 @@ pub fn axpby<T: ComplexField>(alpha: T, x: &Array1<T>, beta: T, y: &Array1<T>, z
 }
 
 /// Compute vector scale in-place: x = α * x
-///
-/// More efficient than creating a new vector.
 #[allow(dead_code)]
 #[inline]
 pub fn scale_inplace<T: ComplexField>(x: &mut Array1<T>, alpha: T) {
-    for xi in x.iter_mut() {
-        *xi *= alpha;
-    }
+    T::vec_scale(x, alpha);
 }
 
-/// Compute the dot product of two real f64 vectors using BLAS when available
+/// Compute the dot product of two real f64 vectors
 #[allow(dead_code)]
-#[cfg(feature = "native")]
-#[cfg(feature = "ndarray-linalg")]
 pub fn dot_f64(x: &[f64], y: &[f64]) -> f64 {
     assert_eq!(x.len(), y.len());
-    let arr_x = ndarray::ArrayView1::from(x);
-    let arr_y = ndarray::ArrayView1::from(y);
+    let arr_x = ArrayView1::from(x);
+    let arr_y = ArrayView1::from(y);
     arr_x.dot(&arr_y)
 }
 
-/// Compute the dot product of two real f32 vectors using BLAS when available
+/// Compute the dot product of two real f32 vectors
 #[allow(dead_code)]
-#[cfg(feature = "native")]
-#[cfg(feature = "ndarray-linalg")]
 pub fn dot_f32(x: &[f32], y: &[f32]) -> f32 {
     assert_eq!(x.len(), y.len());
-    let arr_x = ndarray::ArrayView1::from(x);
-    let arr_y = ndarray::ArrayView1::from(y);
+    let arr_x = ArrayView1::from(x);
+    let arr_y = ArrayView1::from(y);
     arr_x.dot(&arr_y)
-}
-
-/// Fallback dot product for f64 when BLAS is not available
-#[cfg(not(feature = "ndarray-linalg"))]
-pub fn dot_f64(x: &[f64], y: &[f64]) -> f64 {
-    assert_eq!(x.len(), y.len());
-    let mut sum = 0.0_f64;
-    for (xi, yi) in x.iter().zip(y.iter()) {
-        sum += xi * yi;
-    }
-    sum
-}
-
-/// Fallback dot product for f32 when BLAS is not available
-#[cfg(not(feature = "ndarray-linalg"))]
-pub fn dot_f32(x: &[f32], y: &[f32]) -> f32 {
-    assert_eq!(x.len(), y.len());
-    let mut sum = 0.0_f32;
-    for (xi, yi) in x.iter().zip(y.iter()) {
-        sum += xi * yi;
-    }
-    sum
 }
 
 #[cfg(test)]
