@@ -255,8 +255,12 @@ pub fn optimize_channel_eq(
     // x2peq returns Vec<(f64, Biquad)> where f64 is the weight
     let peq = crate::x2peq::x2peq(&x, sample_rate, args.peq_model);
 
-    // Extract just the Biquad filters (ignore weights)
-    let filters: Vec<Biquad> = peq.into_iter().map(|(_weight, biquad)| biquad).collect();
+    // Extract just the Biquad filters (ignore weights), pruning near-zero gain filters
+    let filters: Vec<Biquad> = peq
+        .into_iter()
+        .map(|(_weight, biquad)| biquad)
+        .filter(|b| b.db_gain.abs() >= 0.05)
+        .collect();
 
     eprintln!(
         "  EQ optimization: {} filters, final loss={:.6}",

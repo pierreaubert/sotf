@@ -37,7 +37,7 @@ use super::types::{
 // ============================================================================
 
 /// Internal result type for speaker processing to reduce type complexity
-/// Returns: (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+/// Returns: (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms, fir_coeffs)
 type SpeakerProcessResult = std::result::Result<
     (
         String,
@@ -49,12 +49,13 @@ type SpeakerProcessResult = std::result::Result<
         Vec<crate::iir::Biquad>,
         f64,
         Option<f64>,
+        Option<Vec<f64>>,
     ),
     AutoeqError,
 >;
 
 /// Result type for mixed mode processing
-/// Returns: (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+/// Returns: (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms, fir_coeffs)
 type MixedModeResult = (
     ChannelDspChain,
     f64,
@@ -64,6 +65,7 @@ type MixedModeResult = (
     Vec<Biquad>,
     f64,
     Option<f64>,
+    Option<Vec<f64>>,
 );
 
 /// Detect passband and compute mean SPL for normalization
@@ -86,6 +88,45 @@ fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
     let mean = compute_average_response(&freqs_f32, &spl_f32, norm_range_f32) as f64;
 
     (Some((f_low as f64, f_high as f64)), mean)
+}
+
+/// Post-generate FIR coefficients for a channel that only has IIR results.
+///
+/// For Hybrid mode, uses the IIR-corrected curve as FIR input;
+/// for PhaseLinear (FIR-only) mode, uses the raw measurement.
+fn post_generate_fir(
+    name: &str,
+    initial_curve: &Curve,
+    final_curve: &Curve,
+    config: &super::types::OptimizerConfig,
+    target_curve: Option<&super::types::TargetCurveConfig>,
+    sample_rate: f64,
+    output_dir: Option<&Path>,
+) -> Option<Vec<f64>> {
+    let fir_input = match config.processing_mode {
+        ProcessingMode::Hybrid => final_curve,
+        _ => initial_curve,
+    };
+    match fir::generate_fir_correction(fir_input, config, target_curve, sample_rate) {
+        Ok(coeffs) => {
+            if let Some(out_dir) = output_dir {
+                let filename = format!("{}_fir.wav", name);
+                let wav_path = out_dir.join(&filename);
+                if let Err(e) =
+                    crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
+                {
+                    warn!("Failed to save FIR WAV for {}: {}", name, e);
+                } else {
+                    info!("  Saved FIR filter to {}", wav_path.display());
+                }
+            }
+            Some(coeffs)
+        }
+        Err(e) => {
+            warn!("FIR generation failed for {}: {}", name, e);
+            None
+        }
+    }
 }
 
 /// Threshold in dB above which to warn about channel level differences
@@ -240,33 +281,57 @@ pub fn optimize_room(
             .values()
             .any(|key| matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_))));
         if !has_group {
-            match sys.model {
+            let workflow_result = match sys.model {
                 SystemModel::Stereo => {
                     if sys.subwoofers.is_some() {
-                        return super::workflows::optimize_stereo_2_1(
+                        Some(super::workflows::optimize_stereo_2_1(
                             config,
                             sys,
                             sample_rate,
                             output_dir.unwrap_or(Path::new(".")),
-                        );
+                        ))
                     } else {
-                        return super::workflows::optimize_stereo_2_0(
+                        Some(super::workflows::optimize_stereo_2_0(
                             config,
                             sys,
                             sample_rate,
                             output_dir.unwrap_or(Path::new(".")),
-                        );
+                        ))
                     }
                 }
                 SystemModel::HomeCinema => {
-                    return super::workflows::optimize_home_cinema(
+                    Some(super::workflows::optimize_home_cinema(
                         config,
                         sys,
                         sample_rate,
                         output_dir.unwrap_or(Path::new(".")),
-                    );
+                    ))
                 }
-                SystemModel::Custom => {} // Fall through to generic path
+                SystemModel::Custom => None, // Fall through to generic path
+            };
+
+            if let Some(result) = workflow_result {
+                let mut result = result?;
+                // Workflows only do IIR. If FIR/mixed mode is requested, post-generate
+                // FIR coefficients for each channel from its initial measurement curve.
+                if config.optimizer.processing_mode != ProcessingMode::LowLatency {
+                    let out_dir = output_dir.unwrap_or(Path::new("."));
+                    for (name, ch) in result.channel_results.iter_mut() {
+                        if ch.fir_coeffs.is_some() {
+                            continue;
+                        }
+                        ch.fir_coeffs = post_generate_fir(
+                            name,
+                            &ch.initial_curve,
+                            &ch.final_curve,
+                            &config.optimizer,
+                            config.target_curve.as_ref(),
+                            sample_rate,
+                            Some(out_dir),
+                        );
+                    }
+                }
+                return Ok(result);
             }
         }
     }
@@ -313,6 +378,7 @@ pub fn optimize_room(
                 biquads,
                 mean_spl,
                 arrival_time_ms,
+                fir_coeffs,
             ) = process_speaker_internal(
                 &channel_name,
                 &speaker_config,
@@ -331,6 +397,7 @@ pub fn optimize_room(
                 biquads,
                 mean_spl,
                 arrival_time_ms,
+                fir_coeffs,
             ))
         })
         .collect();
@@ -355,6 +422,7 @@ pub fn optimize_room(
             biquads,
             mean_spl,
             arrival_time_ms,
+            fir_coeffs,
         ) = res?;
 
         channel_chains.insert(channel_name.clone(), chain);
@@ -366,6 +434,24 @@ pub fn optimize_room(
             channel_arrivals.insert(channel_name.clone(), arrival_ms);
         }
 
+        // Post-generate FIR coefficients for channels that need them but don't have them
+        // (e.g., speaker groups that only support IIR internally)
+        let fir_coeffs = if fir_coeffs.is_none()
+            && config.optimizer.processing_mode != ProcessingMode::LowLatency
+        {
+            post_generate_fir(
+                &channel_name,
+                &initial_curve,
+                &final_curve,
+                &config.optimizer,
+                config.target_curve.as_ref(),
+                sample_rate,
+                output_dir,
+            )
+        } else {
+            fir_coeffs
+        };
+
         channel_results.insert(
             channel_name.clone(),
             ChannelOptimizationResult {
@@ -375,7 +461,7 @@ pub fn optimize_room(
                 initial_curve,
                 final_curve,
                 biquads,
-                fir_coeffs: None,
+                fir_coeffs,
             },
         );
     }
@@ -908,6 +994,7 @@ pub fn optimize_speaker(
         biquads,
         _mean_spl,
         _arrival_time_ms,
+        fir_coeffs,
     ) = process_speaker_internal(
         channel_name,
         speaker_config,
@@ -923,7 +1010,7 @@ pub fn optimize_speaker(
         initial_curve,
         final_curve,
         biquads,
-        fir_coeffs: None,
+        fir_coeffs,
     })
 }
 
@@ -1339,6 +1426,7 @@ fn process_single_speaker(
                 vec![],
                 mean_spl,
                 arrival_time_ms,
+                Some(coeffs),
             ))
         }
         ProcessingMode::Hybrid => {
@@ -1490,6 +1578,7 @@ fn process_single_speaker(
                 eq_filters,
                 mean_spl,
                 arrival_time_ms,
+                Some(coeffs),
             ))
         }
         ProcessingMode::LowLatency => {
@@ -1655,6 +1744,7 @@ fn process_single_speaker(
                 eq_filters,
                 mean_spl,
                 arrival_time_ms,
+                None,
             ))
         }
     }
@@ -2078,6 +2168,7 @@ fn process_speaker_group(
         global_eq_filters,
         mean_spl,
         None, // No single WAV for speaker groups
+        None, // IIR-only for speaker groups
     ))
 }
 
@@ -2188,6 +2279,7 @@ fn process_multisub_group(
         eq_filters,
         mean_spl,
         None, // No single WAV for multi-sub groups
+        None, // IIR-only for multi-sub groups
     ))
 }
 
@@ -2295,6 +2387,7 @@ fn process_dba(
         eq_filters,
         mean_spl,
         None, // No single WAV for DBA
+        None, // IIR-only for DBA
     ))
 }
 
@@ -2504,6 +2597,7 @@ fn process_mixed_mode_crossover(
         eq_filters,
         mean,
         arrival_time_ms,
+        Some(fir_coeffs),
     ))
 }
 
@@ -2837,5 +2931,6 @@ fn process_cardioid(
         eq_filters,
         mean_spl,
         None,
+        None, // IIR-only for cardioid
     ))
 }

@@ -829,6 +829,7 @@ pub fn optimize_stereo_2_1(
     {
         let mut opt_config = config.optimizer.clone();
         opt_config.max_freq = final_xo_freq - 20.0;
+        let sub_min_score = config.optimizer.min_freq.max(20.0);
         let (filters, _) = eq::optimize_channel_eq(
             &sub_post,
             &opt_config,
@@ -838,7 +839,22 @@ pub fn optimize_stereo_2_1(
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: e.to_string(),
         })?;
-        post_eq_filters.insert(sub_role.to_string(), filters);
+
+        // "Do no harm" guard: discard Post-EQ if it makes the sub worse
+        // (e.g., cardioid subs with steep low-frequency rolloff)
+        let pre = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
+        let eq_resp =
+            response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
+        let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
+        let post = compute_flat_score(&sub_after_eq, sub_min_score, final_xo_freq);
+        if post < pre {
+            post_eq_filters.insert(sub_role.to_string(), filters);
+        } else {
+            log::warn!(
+                "  Sub Post-EQ discarded: score regressed from {:.4} to {:.4}",
+                pre, post
+            );
+        }
     }
 
     // 8. Construct Output Chains
@@ -1486,6 +1502,7 @@ fn optimize_home_cinema_with_sub(
     {
         let mut opt_config = config.optimizer.clone();
         opt_config.max_freq = final_xo_freq - 20.0;
+        let sub_min_score = config.optimizer.min_freq.max(20.0);
         let (filters, _) = eq::optimize_channel_eq(
             &sub_post,
             &opt_config,
@@ -1495,7 +1512,21 @@ fn optimize_home_cinema_with_sub(
         .map_err(|e| AutoeqError::OptimizationFailed {
             message: e.to_string(),
         })?;
-        post_eq_filters.insert(sub_role.to_string(), filters);
+
+        // "Do no harm" guard: discard Post-EQ if it makes the sub worse
+        let pre = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
+        let eq_resp =
+            response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
+        let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
+        let post = compute_flat_score(&sub_after_eq, sub_min_score, final_xo_freq);
+        if post < pre {
+            post_eq_filters.insert(sub_role.to_string(), filters);
+        } else {
+            log::warn!(
+                "  Sub Post-EQ discarded: score regressed from {:.4} to {:.4}",
+                pre, post
+            );
+        }
     }
 
     // 7. Build output chains
