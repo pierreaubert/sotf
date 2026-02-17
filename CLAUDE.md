@@ -7,6 +7,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Verify Compilation**: Always ensure the code compiles (`cargo check` or `cargo build`) before submitting an answer or marking a task as complete.
 - **Engine & Plugins crates**: When modifying `crates/engine/` or `crates/plugins/`, always create a dedicated PR (not part of a larger PR) and run a code review before merging.
 
+## Specialized Agents
+
+Use these agents proactively via the Task tool in the appropriate situations:
+
+- **audio-optimizer** (`subagent_type: "audio-optimizer"`): Use when modifying DSP code, audio processing, or performance-critical paths in `plugins/`, `engine/`, `math-iir/`, or `autoeq/`. Covers filter implementations, FFT operations, buffer management, SIMD, and hot-path optimization.
+- **pr-review-toolkit:code-reviewer** (`subagent_type: "pr-review-toolkit:code-reviewer"`): Use before committing any changes to `crates/engine/` or `crates/plugins/`. Run after completing work but before creating a commit.
+- **psychoacoustics-researcher** (`subagent_type: "psychoacoustics-researcher"`): Use when designing or modifying EQ algorithms, loudness compensation, spatial audio (upmixer), target curves, or any perceptual audio quality decisions.
+- **feature-dev:code-architect** (`subagent_type: "feature-dev:code-architect"`): Use when planning multi-crate refactors, new plugin architectures, or features that span more than 3 files.
+
+## Skills
+
+Use these skills (slash commands) proactively in the appropriate situations:
+
+- `/review-pr`: Always run before merging PRs that touch `crates/engine/` or `crates/plugins/`. Performs comprehensive PR review with specialized agents.
+- `/code-review`: Use for reviewing code changes in any other crate.
+- `/feature-dev`: Use when implementing non-trivial features that benefit from guided development with codebase understanding and architecture focus.
 
 ## Project Overview
 
