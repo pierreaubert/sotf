@@ -184,11 +184,9 @@ impl BinauralDecoderPlugin {
 
         self.sum_left.fill(Complex::new(0.0, 0.0));
         self.sum_right.fill(Complex::new(0.0, 0.0));
+        self.lfe_freq.fill(Complex::new(0.0, 0.0));
 
         for ch in 0..self.input_channels {
-            if self.lfe_channels.contains(&ch) {
-                continue;
-            }
             for i in 0..self.hop_size {
                 self.temp_time_buffer[i] = self.temp_input_block[i * self.input_channels + ch];
             }
@@ -200,17 +198,25 @@ impl BinauralDecoderPlugin {
                     &mut self.temp_fft_scratch,
                 )
                 .unwrap();
-            let hrtf = &filters[ch];
-            complex_mul_add_simd(
-                &mut self.sum_left,
-                &self.temp_freq_buffer,
-                &hrtf[0..self.freq_size],
-            );
-            complex_mul_add_simd(
-                &mut self.sum_right,
-                &self.temp_freq_buffer,
-                &hrtf[self.freq_size..],
-            );
+            if self.lfe_channels.contains(&ch) {
+                complex_mul_add_simd(
+                    &mut self.lfe_freq,
+                    &self.temp_freq_buffer,
+                    &self.lfe_lowpass_filter,
+                );
+            } else {
+                let hrtf = &filters[ch];
+                complex_mul_add_simd(
+                    &mut self.sum_left,
+                    &self.temp_freq_buffer,
+                    &hrtf[0..self.freq_size],
+                );
+                complex_mul_add_simd(
+                    &mut self.sum_right,
+                    &self.temp_freq_buffer,
+                    &hrtf[self.freq_size..],
+                );
+            }
         }
 
         if let Some(eq) = df_eq {
@@ -239,11 +245,28 @@ impl BinauralDecoderPlugin {
                 &mut self.temp_fft_scratch,
             )
             .unwrap();
+        let has_lfe = !self.lfe_channels.is_empty();
+        if has_lfe {
+            self.fft_c2r
+                .process_with_scratch(
+                    &mut self.lfe_freq,
+                    &mut self.lfe_output,
+                    &mut self.temp_fft_scratch,
+                )
+                .unwrap();
+        }
 
         let scale = 1.0 / self.fft_size as f32;
         for i in 0..self.fft_size {
-            self.temp_output_block[i * 2] = self.left_output[i] * scale;
-            self.temp_output_block[i * 2 + 1] = self.right_output[i] * scale;
+            let mut left = self.left_output[i] * scale;
+            let mut right = self.right_output[i] * scale;
+            if has_lfe {
+                let lfe_sample = self.lfe_output[i] * scale * self.lfe_gain;
+                left += lfe_sample;
+                right += lfe_sample;
+            }
+            self.temp_output_block[i * 2] = left;
+            self.temp_output_block[i * 2 + 1] = right;
         }
 
         let ext = self.externalization.next();
@@ -342,6 +365,83 @@ impl Plugin for BinauralDecoderPlugin {
         );
         self.lfe_lowpass_filter = f;
         self.lfe_gain = g;
+        self.cached_reflections.clear();
+        if self.externalization.target() > 0.0 {
+            let reflections_per_channel = room::calculate_reflections(
+                &self.room_model,
+                self.speaker_config,
+                sr,
+            );
+            for (ch, channel_reflections) in reflections_per_channel.into_iter().enumerate() {
+                if self.lfe_channels.contains(&ch) {
+                    continue;
+                }
+                self.cached_reflections.extend(channel_reflections);
+            }
+        }
+        if let Some(path) = &self.hrtf_path {
+            let sofa = SofaFile::load(path)?;
+            let mut hrtf_filters_freq = vec![
+                vec![Complex::new(0.0, 0.0); self.freq_size * 2];
+                self.input_channels
+            ];
+            for speaker in self.speaker_config.speakers {
+                let ch = speaker.channel;
+                if ch >= self.input_channels {
+                    continue;
+                }
+                if self.lfe_channels.contains(&ch) {
+                    continue;
+                }
+                let target = room::speaker_to_source_position(speaker);
+                let nearest = self
+                    .state
+                    .load()
+                    .hrtf_data
+                    .as_ref()
+                    .unwrap_or(&sofa)
+                    .find_three_nearest(&target);
+                let gains = hrtf::calculate_vbap_gains(&target, &nearest, &sofa);
+                let (left_fft, right_fft) = hrtf::interpolate_hrtf_frequency_domain(
+                    &nearest,
+                    &gains,
+                    &sofa,
+                    self.fft_size,
+                    sr,
+                    &self.fft_r2c,
+                    self.near_field_strength,
+                    target.azimuth,
+                    target.elevation,
+                );
+                let hrtf_channel = &mut hrtf_filters_freq[ch];
+                hrtf_channel[..self.freq_size].copy_from_slice(&left_fft[..self.freq_size]);
+                hrtf_channel[self.freq_size..]
+                    .copy_from_slice(&right_fft[..self.freq_size]);
+            }
+            hrtf::normalize_hrtf_gains(
+                &mut hrtf_filters_freq,
+                &self.lfe_channels,
+                self.freq_size,
+                self.input_channels,
+            );
+            let diffuse_field_eq_filter = if self.diffuse_field_eq {
+                match filter::compute_diffuse_field_eq(&sofa, self.fft_size, sr, &self.fft_r2c) {
+                    Ok(eq) => Some(eq),
+                    Err(e) => {
+                        log::warn!("[BinauralDecoder] Diffuse-field EQ disabled: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            let new_state = BinauralState {
+                hrtf_filters_freq,
+                diffuse_field_eq_filter,
+                hrtf_data: Some(sofa),
+            };
+            self.state.store(Arc::new(new_state));
+        }
         Ok(())
     }
     fn reset(&mut self) {
@@ -363,9 +463,7 @@ impl Plugin for BinauralDecoderPlugin {
             let drained = self.drain_output_accumulator(output, output_pos);
             output_pos += drained * 2;
             let needed = self.hop_size * self.input_channels;
-            if self.input_buffer_fill >= needed
-                && self.next_add_position + self.fft_size <= self.output_accumulator[0].len()
-            {
+            if self.input_buffer_fill >= needed {
                 self.process_audio_block();
                 continue;
             }

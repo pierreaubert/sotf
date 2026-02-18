@@ -219,11 +219,28 @@ impl SofaFile {
     /// # Returns
     /// * `Ok(SofaFile)` - Successfully loaded SOFA data
     /// * `Err(String)` - Error message if loading failed
-    #[cfg(feature = "sofa_support")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
         let path_ref = path.as_ref();
-        let file = netcdf::open(path_ref)
-            .map_err(|e| format!("Failed to open SOFA file '{}': {}", path_ref.display(), e))?;
+        let ext = path_ref
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        match ext {
+            "hrtfdb" | "sqlite" | "db" => Self::load_sqlite(path_ref),
+            #[cfg(feature = "sofa_support")]
+            _ => Self::load_sofa(path_ref),
+            #[cfg(not(feature = "sofa_support"))]
+            _ => Err(format!(
+                "SOFA file format not supported (sofa_support feature disabled): {}",
+                path_ref.display()
+            )),
+        }
+    }
+
+    #[cfg(feature = "sofa_support")]
+    fn load_sofa(path: &Path) -> Result<Self, String> {
+        let file = netcdf::open(path)
+            .map_err(|e| format!("Failed to open SOFA file '{}': {}", path.display(), e))?;
 
         // Read global attributes
         let convention = Self::read_string_attr(&file, "SOFAConventions")?;
