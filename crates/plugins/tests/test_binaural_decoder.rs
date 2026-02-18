@@ -164,24 +164,96 @@ fn test_binaural_denormal_flushing() {
         .process(&input_denormal, &mut output_denormal, &context)
         .unwrap();
 
-    // Count non-zero samples — denormals should be flushed to zero
-    let non_zero_count = output_denormal.iter().filter(|&&x| x.abs() > 0.0).count();
+    // Check that no output sample is a denormal (below the flush threshold of 1e-30).
+    // Note: Non-zero output above the threshold is expected due to STFT overlap-add
+    // residual energy from Step 1.
+    const DENORM_THRESHOLD: f32 = 1e-30;
+    let denormal_count = output_denormal
+        .iter()
+        .filter(|&&x| x != 0.0 && x.abs() < DENORM_THRESHOLD)
+        .count();
 
-    if non_zero_count > 0 {
-        let first_non_zero = output_denormal.iter().find(|&&x| x.abs() > 0.0).unwrap();
+    if denormal_count > 0 {
+        let first_denormal = output_denormal
+            .iter()
+            .find(|&&x| x != 0.0 && x.abs() < DENORM_THRESHOLD)
+            .unwrap();
         println!(
-            "Found {} non-zero samples. First one: {:e}",
-            non_zero_count, first_non_zero
+            "Found {} denormal samples. First one: {:e}",
+            denormal_count, first_denormal
         );
-        println!("Input was 1e-35. Expected flush to 0.0.");
     }
 
-    // With proper denormal flushing, ALL samples should be zero
     assert_eq!(
-        non_zero_count, 0,
+        denormal_count, 0,
         "Found {} denormal samples (not flushed). Denormal flushing is not working correctly.",
-        non_zero_count
+        denormal_count
     );
 
-    println!("✓ Binaural denormal flushing test passed: all denormals flushed to zero");
+    println!("✓ Binaural denormal flushing test passed: no denormals in output");
+}
+
+#[test]
+fn test_binaural_silence_after_draining_stft_tail() {
+    // After feeding silence for enough blocks, the STFT overlap-add tail should
+    // fully drain and output should converge to all zeros.
+
+    let fft_size = 2048;
+    let sample_rate = 44100;
+    let input_channels = 6;
+
+    let mut plugin = BinauralDecoderPlugin::new(
+        input_channels,
+        fft_size,
+        None,
+        true,
+        0.0,
+        0.0,
+        false,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
+    plugin.initialize(sample_rate).unwrap();
+
+    let num_samples = 1024;
+    let context = sotf_plugins::ProcessContext {
+        sample_rate,
+        num_frames: num_samples,
+    };
+
+    // Step 1: Feed normal signal to prime the STFT pipeline
+    let input_normal = vec![0.5; num_samples * input_channels];
+    let mut output = vec![0.0; num_samples * 2];
+    plugin
+        .process(&input_normal, &mut output, &context)
+        .unwrap();
+
+    // Step 2: Feed several blocks of silence to drain the overlap-add tail.
+    // With fft_size=2048 and hop_size=1024, the tail should drain within
+    // a few blocks (overlap is 1 hop).
+    let input_silence = vec![0.0; num_samples * input_channels];
+    let drain_blocks = 4;
+    for _ in 0..drain_blocks {
+        output.fill(0.0);
+        plugin
+            .process(&input_silence, &mut output, &context)
+            .unwrap();
+    }
+
+    // After draining, output should be all zeros
+    let non_zero_count = output.iter().filter(|&&x| x != 0.0).count();
+    assert_eq!(
+        non_zero_count, 0,
+        "Expected all-zero output after {} blocks of silence, but found {} non-zero samples (max abs: {:e})",
+        drain_blocks,
+        non_zero_count,
+        output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max)
+    );
+
+    println!(
+        "✓ Binaural STFT tail drain test passed: output is all zeros after {} silence blocks",
+        drain_blocks
+    );
 }

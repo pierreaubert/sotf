@@ -37,8 +37,9 @@ convert-sofa-to-sqlite:
 		fi \
 	done
 
-generate-audio-tests: prod-generate-audio-tests
+generate-audio-tests:
 	cargo run --bin generate-audio-tests -p tools --release --no-default-features
+	cargo run --bin generate-upmixer-golden -p tools --release --no-default-features
 
 generate-roomeq-tests: generate-roomeq-tests-bem generate-roomeq-tests-fem
 
