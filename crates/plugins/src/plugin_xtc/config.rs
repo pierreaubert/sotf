@@ -73,6 +73,30 @@ pub struct XtcPluginParams {
     /// Enable plugin (default: true)
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+
+    /// Enable room reflection compensation (default: false)
+    #[serde(default)]
+    pub room_reflections_enabled: bool,
+
+    /// Path to room IR WAV file. When set, overrides image source model.
+    #[serde(default)]
+    pub room_ir_file: Option<String>,
+
+    /// Room width in meters (X axis) — image source model (default: 4.0)
+    #[serde(default = "default_room_width")]
+    pub room_width_m: f32,
+
+    /// Room depth in meters (Z axis, listening axis) — image source model (default: 5.0)
+    #[serde(default = "default_room_depth")]
+    pub room_depth_m: f32,
+
+    /// Wall absorption coefficient, 0.0=reflective, 1.0=absorptive — image source model (default: 0.3)
+    #[serde(default = "default_wall_absorption")]
+    pub wall_absorption: f32,
+
+    /// Beta boost multiplier at comb-filter null frequencies (default: 3.0)
+    #[serde(default = "default_reflection_beta_boost")]
+    pub reflection_beta_boost: f32,
 }
 
 fn default_distance() -> f32 {
@@ -111,6 +135,18 @@ fn default_head_tracking_smooth() -> f32 {
 fn default_enabled() -> bool {
     true
 }
+fn default_room_width() -> f32 {
+    4.0
+}
+fn default_room_depth() -> f32 {
+    5.0
+}
+fn default_wall_absorption() -> f32 {
+    0.3
+}
+fn default_reflection_beta_boost() -> f32 {
+    3.0
+}
 
 impl Default for XtcPluginParams {
     fn default() -> Self {
@@ -131,6 +167,12 @@ impl Default for XtcPluginParams {
             head_tracking_smooth_s: default_head_tracking_smooth(),
             spectral_normalization: false,
             enabled: default_enabled(),
+            room_reflections_enabled: false,
+            room_ir_file: None,
+            room_width_m: default_room_width(),
+            room_depth_m: default_room_depth(),
+            wall_absorption: default_wall_absorption(),
+            reflection_beta_boost: default_reflection_beta_boost(),
         }
     }
 }

@@ -1,8 +1,10 @@
 use super::*;
 use filters::{
-    compute_beta, compute_beta_smooth, compute_xtc_filters_full, head_shadowing_filter,
-    head_shadowing_woodworth,
+    compute_beta, compute_beta_smooth, compute_xtc_filters_full,
+    frequency_dependent_diffraction_delay, head_shadowing_filter, head_shadowing_woodworth,
+    woodworth_diffraction_path,
 };
+use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
 #[test]
 fn test_xtc_creation() {
@@ -444,6 +446,74 @@ fn test_woodworth_head_shadowing() {
     );
 }
 
+/// Test frequency-dependent ITD: low freq matches Woodworth, high freq is shorter,
+/// monotonically decreasing with frequency.
+#[test]
+fn test_frequency_dependent_itd() {
+    let head_radius = 0.0875;
+    let angle = std::f32::consts::FRAC_PI_2 + 0.5; // ~120° contralateral angle
+
+    // DC should match full Woodworth diffraction delay
+    let dc_delay = frequency_dependent_diffraction_delay(0.0, angle, head_radius);
+    let woodworth_delay =
+        woodworth_diffraction_path(angle.abs(), head_radius) / 343.0;
+    assert!(
+        (dc_delay - woodworth_delay).abs() < 1e-8,
+        "DC delay {} should match Woodworth {}",
+        dc_delay,
+        woodworth_delay
+    );
+
+    // Low frequency (ka < 0.5) should also match Woodworth
+    let low_freq_delay = frequency_dependent_diffraction_delay(100.0, angle, head_radius);
+    assert!(
+        (low_freq_delay - woodworth_delay).abs() < 1e-6,
+        "Low freq delay {} should match Woodworth {}",
+        low_freq_delay,
+        woodworth_delay
+    );
+
+    // High frequency should be shorter than low frequency
+    let high_freq_delay = frequency_dependent_diffraction_delay(10000.0, angle, head_radius);
+    assert!(
+        high_freq_delay < low_freq_delay,
+        "High freq delay {} should be shorter than low freq {}",
+        high_freq_delay,
+        low_freq_delay
+    );
+
+    // Monotonically decreasing with frequency
+    let freqs = [100.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0];
+    for i in 1..freqs.len() {
+        let d_prev = frequency_dependent_diffraction_delay(freqs[i - 1], angle, head_radius);
+        let d_curr = frequency_dependent_diffraction_delay(freqs[i], angle, head_radius);
+        assert!(
+            d_curr <= d_prev + 1e-8,
+            "Delay should be non-increasing: {} Hz -> {}, {} Hz -> {}",
+            freqs[i - 1],
+            d_prev,
+            freqs[i],
+            d_curr
+        );
+    }
+}
+
+/// Test that zero angle gives zero diffraction delay at all frequencies.
+#[test]
+fn test_frequency_dependent_itd_zero_angle() {
+    let head_radius = 0.0875;
+
+    for &freq in &[0.0, 100.0, 1000.0, 5000.0, 10000.0, 20000.0] {
+        let delay = frequency_dependent_diffraction_delay(freq, 0.0, head_radius);
+        assert!(
+            delay.abs() < 1e-8,
+            "Zero angle should give zero delay at {} Hz, got {}",
+            freq,
+            delay
+        );
+    }
+}
+
 /// Test smooth beta transitions
 #[test]
 fn test_smooth_beta_transitions() {
@@ -470,5 +540,234 @@ fn test_smooth_beta_transitions() {
     assert!(
         (ratio_1 - ratio_2).abs() < 2.0,
         "Beta transition should be smooth around 100Hz"
+    );
+}
+
+// ============================================================================
+// Room reflection tests
+// ============================================================================
+
+/// Test that image source model produces 6 reflection paths for a known geometry
+#[test]
+fn test_image_source_positions() {
+    // Simple geometry: speaker at (0, 1.2, 2.0), ear at (0.0875, 1.2, 0.0)
+    // Room: 4m wide, 5m deep, 2.5m tall
+    let speaker_pos = [0.0_f32, 1.2, 2.0];
+    let ear_pos = [0.0875_f32, 1.2, 0.0];
+    let direct_dist = {
+        let dx = speaker_pos[0] - ear_pos[0];
+        let dy = speaker_pos[1] - ear_pos[1];
+        let dz = speaker_pos[2] - ear_pos[2];
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    };
+
+    // We need to use the actual RoomGeometry struct from reflections
+    // but it's private. Use the public function with XtcPluginParams instead.
+    // Test via build_reflection_data_image_source which calls compute_image_sources.
+
+    // Instead, test that compute_image_sources returns 6 paths
+    // We create a minimal RoomGeometry by calling the function directly
+    let room = reflections::tests_support::make_room(4.0, 5.0, 2.5, 0.3);
+    let paths = compute_image_sources(speaker_pos, ear_pos, direct_dist, &room);
+
+    assert_eq!(paths.len(), 6, "Should have 6 first-order reflections");
+
+    // All delays should be positive and amplitudes in (0, 1)
+    for (i, path) in paths.iter().enumerate() {
+        assert!(
+            path.delay_s > 0.0,
+            "Reflection {} delay should be positive, got {}",
+            i,
+            path.delay_s
+        );
+        assert!(
+            path.amplitude > 0.0 && path.amplitude < 1.0,
+            "Reflection {} amplitude should be in (0, 1), got {}",
+            i,
+            path.amplitude
+        );
+    }
+}
+
+/// Test that full absorption (1.0) produces zero-amplitude reflections
+#[test]
+fn test_reflection_zero_amplitude_full_absorption() {
+    let mut params = XtcPluginParams::default();
+    params.room_reflections_enabled = true;
+    params.wall_absorption = 1.0; // Fully absorptive
+
+    let num_bins = 513; // 1024-point FFT
+    let data = reflections::build_reflection_data_image_source(&params, 48000, num_bins);
+
+    // All reflection contributions should be zero (or very near zero)
+    for bin in 0..num_bins {
+        assert!(
+            data.h_room_ipsi[bin].norm() < 1e-6,
+            "Ipsi reflection at bin {} should be ~0 with full absorption, got {}",
+            bin,
+            data.h_room_ipsi[bin].norm()
+        );
+        assert!(
+            data.h_room_contra[bin].norm() < 1e-6,
+            "Contra reflection at bin {} should be ~0 with full absorption, got {}",
+            bin,
+            data.h_room_contra[bin].norm()
+        );
+    }
+
+    // Beta boost should be all 1.0 (no boost needed with no reflections)
+    for bin in 0..num_bins {
+        assert!(
+            (data.beta_boost[bin] - 1.0).abs() < 0.1,
+            "Beta boost at bin {} should be ~1.0 with full absorption, got {}",
+            bin,
+            data.beta_boost[bin]
+        );
+    }
+}
+
+/// Test that comb filter beta boost detects deep nulls
+#[test]
+fn test_comb_filter_beta_boost() {
+    let num_bins = 513;
+
+    // Create a magnitude spectrum with a known deep null at bin 100
+    let mut magnitude = vec![1.0_f32; num_bins];
+    magnitude[100] = 0.01; // -40 dB null
+    magnitude[101] = 0.05; // -26 dB null
+    magnitude[200] = 0.02; // -34 dB null
+
+    let boost = compute_reflection_beta_boost(&magnitude, num_bins, 3.0);
+
+    // Bins near nulls should have boost > 1.0
+    assert!(
+        boost[100] > 1.0,
+        "Boost at null bin 100 should be > 1.0, got {}",
+        boost[100]
+    );
+    assert!(
+        boost[200] > 1.0,
+        "Boost at null bin 200 should be > 1.0, got {}",
+        boost[200]
+    );
+
+    // Bins away from nulls should be ~1.0
+    assert!(
+        (boost[50] - 1.0).abs() < 0.2,
+        "Boost at non-null bin 50 should be ~1.0, got {}",
+        boost[50]
+    );
+}
+
+/// Test that enabling reflections changes filter magnitudes compared to disabled
+#[test]
+fn test_reflections_change_filters() {
+    let fft_size = 1024;
+    let num_bins = fft_size / 2 + 1;
+
+    // Without reflections
+    let mut params_off = XtcPluginParams::default();
+    params_off.fft_size = fft_size;
+    params_off.room_reflections_enabled = false;
+    let filters_off = compute_xtc_filters_full(&params_off, 48000, num_bins);
+
+    // With reflections
+    let mut params_on = XtcPluginParams::default();
+    params_on.fft_size = fft_size;
+    params_on.room_reflections_enabled = true;
+    params_on.wall_absorption = 0.3;
+    let filters_on = compute_xtc_filters_full(&params_on, 48000, num_bins);
+
+    // Filters should differ at mid frequencies
+    let bin_1khz = (1000.0 * fft_size as f32 / 48000.0) as usize;
+    let diff_ll = (filters_on.filter_ll[bin_1khz] - filters_off.filter_ll[bin_1khz]).norm();
+    let diff_lr = (filters_on.filter_lr[bin_1khz] - filters_off.filter_lr[bin_1khz]).norm();
+
+    assert!(
+        diff_ll > 1e-4 || diff_lr > 1e-4,
+        "Enabling reflections should change filters. diff_ll={}, diff_lr={}",
+        diff_ll,
+        diff_lr
+    );
+}
+
+/// Test that energy stays in acceptable range with reflections enabled
+#[test]
+fn test_energy_preservation_with_reflections() {
+    let mut params = XtcPluginParams::default();
+    params.room_reflections_enabled = true;
+    params.wall_absorption = 0.3;
+
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let num_frames = 8192;
+    let mut input = vec![0.0_f32; num_frames * 2];
+    for i in 0..num_frames {
+        let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0;
+        input[i * 2] = phase.sin() * 0.5;
+        input[i * 2 + 1] = phase.cos() * 0.5;
+    }
+    let mut output = vec![0.0_f32; num_frames * 2];
+
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    let skip_samples = 2048;
+    let input_energy: f32 = input[skip_samples * 2..].iter().map(|x| x * x).sum();
+    let output_energy: f32 = output[skip_samples * 2..].iter().map(|x| x * x).sum();
+
+    let energy_ratio = output_energy / input_energy;
+    assert!(
+        energy_ratio > 0.1 && energy_ratio < 5.0,
+        "Energy ratio {} with reflections is outside acceptable range [0.1, 5.0]",
+        energy_ratio
+    );
+}
+
+/// Test air absorption: unity at DC, increases with frequency and distance
+#[test]
+fn test_air_absorption() {
+    // At DC, no absorption regardless of distance
+    assert!((air_absorption(0.0, 10.0) - 1.0).abs() < 1e-6);
+
+    // At 1kHz and 2m, absorption should be very small
+    let atten_1k_2m = air_absorption(1000.0, 2.0);
+    assert!(
+        atten_1k_2m > 0.99,
+        "1kHz at 2m should have negligible absorption, got {}",
+        atten_1k_2m
+    );
+
+    // Absorption increases with frequency
+    let atten_10k_5m = air_absorption(10000.0, 5.0);
+    let atten_1k_5m = air_absorption(1000.0, 5.0);
+    assert!(
+        atten_10k_5m < atten_1k_5m,
+        "10kHz should have more absorption than 1kHz: {} vs {}",
+        atten_10k_5m,
+        atten_1k_5m
+    );
+
+    // Absorption increases with distance
+    let atten_5k_2m = air_absorption(5000.0, 2.0);
+    let atten_5k_10m = air_absorption(5000.0, 10.0);
+    assert!(
+        atten_5k_10m < atten_5k_2m,
+        "10m should have more absorption than 2m: {} vs {}",
+        atten_5k_10m,
+        atten_5k_2m
+    );
+
+    // At 10kHz and 10m, absorption should be noticeable but not extreme
+    let atten_10k_10m = air_absorption(10000.0, 10.0);
+    assert!(
+        atten_10k_10m > 0.5 && atten_10k_10m < 1.0,
+        "10kHz at 10m absorption {} should be moderate",
+        atten_10k_10m
     );
 }

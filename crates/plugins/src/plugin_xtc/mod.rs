@@ -26,6 +26,7 @@
 
 mod config;
 mod filters;
+mod reflections;
 #[cfg(test)]
 mod tests;
 
@@ -130,6 +131,7 @@ pub struct XtcPlugin {
     param_head_offset_z: ParameterId,
     param_head_yaw: ParameterId,
     param_spectral_normalization: ParameterId,
+    param_room_reflections: ParameterId,
 }
 
 // ============================================================================
@@ -193,6 +195,11 @@ impl XtcPlugin {
             ));
         }
 
+        // Validate IR file path if provided
+        if let Some(ref ir_path) = params.room_ir_file.as_ref().filter(|p| !std::path::Path::new(p.as_str()).exists()) {
+            return Err(format!("Room IR file not found: {}", ir_path));
+        }
+
         let fft_size = params.fft_size;
         let hop_size = fft_size / 4; // 75% overlap
 
@@ -254,6 +261,7 @@ impl XtcPlugin {
             param_head_offset_z: ParameterId::from("head_offset_z"),
             param_head_yaw: ParameterId::from("head_yaw_deg"),
             param_spectral_normalization: ParameterId::from("spectral_normalization"),
+            param_room_reflections: ParameterId::from("room_reflections_enabled"),
         })
     }
 
@@ -545,6 +553,13 @@ impl Plugin for XtcPlugin {
             )
             .with_group("Advanced")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "room_reflections_enabled",
+                "Room Reflections",
+                self.params.room_reflections_enabled,
+            )
+            .with_group("Room")
+            .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -599,6 +614,13 @@ impl Plugin for XtcPlugin {
             } else {
                 return Err("spectral_normalization parameter must be bool".to_string());
             }
+        } else if id == self.param_room_reflections {
+            if let ParameterValue::Bool(v) = value {
+                self.params.room_reflections_enabled = v;
+                needs_filter_update = true;
+            } else {
+                return Err("room_reflections_enabled parameter must be bool".to_string());
+            }
         } else {
             return Err(format!("Unknown parameter: {:?}", id));
         }
@@ -625,6 +647,8 @@ impl Plugin for XtcPlugin {
             Some(ParameterValue::Float(self.params.head_yaw_deg))
         } else if id == &self.param_spectral_normalization {
             Some(ParameterValue::Bool(self.params.spectral_normalization))
+        } else if id == &self.param_room_reflections {
+            Some(ParameterValue::Bool(self.params.room_reflections_enabled))
         } else {
             None
         }
