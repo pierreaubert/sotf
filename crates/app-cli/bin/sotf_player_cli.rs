@@ -2238,6 +2238,7 @@ fn build_rack_mode_plugins(
                         release_ms: plugins.denoiser.release_ms as f64,
                         low_latency: plugins.denoiser.low_latency,
                         polyphonic_detection: false,
+                        transparency: 0.0,
                         dd_enabled: false,
                         dd_alpha: 0.98,
                         psychoacoustic_masking: true,

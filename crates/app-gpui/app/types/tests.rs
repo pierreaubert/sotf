@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn test_room_eq_optimizer_config_default() {
         let config = RoomEqOptimizerConfig::default();
-        assert_eq!(config.algorithm, RoomEqAlgorithm::DifferentialEvolution);
+        assert_eq!(config.algorithm, "autoeq:de");
         assert_eq!(config.num_filters, 5);
         assert!((config.min_q - 0.5).abs() < 0.001);
         assert!((config.max_q - 6.0).abs() < 0.001);

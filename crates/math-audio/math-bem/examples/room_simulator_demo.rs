@@ -24,8 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create an omnidirectional source at front center
     let source_position = Point3D::new(2.5, 0.5, 1.2); // Center front, ear height
-    let directivity = DirectivityPattern::omnidirectional();
-    let source = Source::new(source_position, directivity, 1.0);
+    let source = Source::omnidirectional(source_position, 1.0);
     println!(
         "Source position: ({:.1}, {:.1}, {:.1})",
         source.position.x, source.position.y, source.position.z

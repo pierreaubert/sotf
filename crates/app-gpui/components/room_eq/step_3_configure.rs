@@ -1,4 +1,3 @@
-use crate::app::types::RoomEqAlgorithm;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -22,7 +21,8 @@ impl PlayerView {
             fir_taps: config.fir.taps,
             fir_phase: config.fir.phase.clone(),
             num_filters: config.num_filters,
-            sample_rate: config.sample_rate,
+            // sample_rate removed from RoomEqOptimizerConfig (CLI-specific)
+            sample_rate: 48000,
             min_db: config.min_db,
             max_db: config.max_db,
             min_q: config.min_q,
@@ -30,30 +30,42 @@ impl PlayerView {
             min_freq: config.min_freq,
             max_freq: config.max_freq,
             peq_model: config.peq_model.clone(),
-            algo: match config.algorithm {
-                RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
-                RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
-                RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
-            }
-            .to_string(),
+            algo: config.algorithm.clone(),
             population: config.population,
             maxeval: config.max_iter,
-            de_f: config.de_f,
-            de_cr: config.de_cr,
-            strategy: config.strategy.clone(),
+            // DE-specific params use defaults (hidden in room EQ form)
+            de_f: 0.8,
+            de_cr: 0.9,
+            strategy: "currenttobest1bin".to_string(),
             refine: config.refine,
             local_algo: config.local_algo.clone(),
-            smooth: config.smooth,
-            smooth_n: config.smooth_n,
-            spacing_weight: config.spacing_weight,
-            min_spacing_oct: config.min_spacing_oct,
-            tolerance: config.tolerance,
-            atolerance: config.atolerance,
+            // Smoothing uses defaults (hidden in room EQ form, uses psychoacoustic instead)
+            smooth: false,
+            smooth_n: 6,
+            // Spacing uses defaults (hidden in room EQ form)
+            spacing_weight: 1.0,
+            min_spacing_oct: 0.08,
+            // Tolerance uses defaults (hidden in room EQ form)
+            tolerance: 0.00001,
+            atolerance: 0.00001,
             psychoacoustic: config.psychoacoustic,
             asymmetric_loss: config.asymmetric_loss,
             loss_type: config.loss_type.clone(),
             target_curve: config.target_curve.clone(),
             system_type: config.system_type.clone(),
+
+            // v2 fields
+            allow_delay: config.allow_delay,
+            seed_enabled: config.seed.is_some(),
+            seed: config.seed.unwrap_or(42),
+            gd_opt_enabled: config.gd_opt.enabled,
+            gd_opt_target_ms: config.gd_opt.target_ms,
+            vog_enabled: config.vog.enabled,
+            vog_reference_channel: config.vog.reference_channel.clone(),
+            broadband_target_matching: config.broadband_target_matching.enabled,
+            mixed_crossover_freq: config.mixed_config.crossover_freq,
+            mixed_crossover_type: config.mixed_config.crossover_type.clone(),
+            mixed_fir_band: config.mixed_config.fir_band.clone(),
 
             // Scenario B
             use_target_tilt: config.target_tilt.enabled,
@@ -104,6 +116,9 @@ impl PlayerView {
             tilt_type_open: room_eq.dropdowns.tilt_type_open,
             excursion_filter_type_open: room_eq.dropdowns.excursion_filter_type_open,
             multi_seat_strategy_open: room_eq.dropdowns.multi_seat_strategy_open,
+            mixed_crossover_type_open: room_eq.dropdowns.mixed_crossover_type_open,
+            mixed_fir_band_open: room_eq.dropdowns.mixed_fir_band_open,
+            vog_reference_channel_open: room_eq.dropdowns.vog_reference_channel_open,
         };
 
         // Build the AutoEQ form with handlers
@@ -111,6 +126,11 @@ impl PlayerView {
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
             .show_optimization_tuning(true) // Show Optimization Fine Tuning section
+            .hide_de_params(true) // DE strategy/F/CR not in roomeq OptimizerConfig
+            .hide_smoothing(true) // roomeq uses psychoacoustic instead
+            .hide_spacing(true) // Spacing constraints not in roomeq OptimizerConfig
+            .hide_tolerance(true) // Tolerance not in roomeq OptimizerConfig
+            .hide_sample_rate(true) // Sample rate is CLI-specific
             .on_opt_mode_change({
                 let state = self.state.clone();
                 move |mode, _window, cx| {
@@ -202,12 +222,7 @@ impl PlayerView {
                             .measurement_state
                             .room_eq_state
                             .optimizer_config
-                            .algorithm = match algo {
-                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
-                            "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
-                            "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
-                            _ => RoomEqAlgorithm::Cobyla,
-                        };
+                            .algorithm = algo.to_string();
                         state
                             .app
                             .measurement_state
@@ -274,19 +289,6 @@ impl PlayerView {
                             .room_eq_state
                             .optimizer_config
                             .num_filters = value;
-                    });
-                }
-            })
-            .on_sample_rate_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .sample_rate = value as u32;
                     });
                 }
             })
@@ -394,65 +396,6 @@ impl PlayerView {
                     });
                 }
             })
-            .on_de_f_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .de_f = value;
-                    });
-                }
-            })
-            .on_de_cr_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .de_cr = value;
-                    });
-                }
-            })
-            .on_strategy_change({
-                let state = self.state.clone();
-                move |strategy, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .strategy = strategy.to_string();
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .dropdowns
-                            .strategy_open = false;
-                    });
-                }
-            })
-            .on_strategy_toggle({
-                let state = self.state.clone();
-                move |open, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .dropdowns
-                            .strategy_open = open;
-                        cx.notify();
-                    });
-                }
-            })
             .on_refine_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
@@ -499,32 +442,6 @@ impl PlayerView {
                     });
                 }
             })
-            .on_smooth_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .smooth = value;
-                    });
-                }
-            })
-            .on_smooth_n_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .smooth_n = value;
-                    });
-                }
-            })
             .on_psychoacoustic_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
@@ -548,58 +465,6 @@ impl PlayerView {
                             .room_eq_state
                             .optimizer_config
                             .asymmetric_loss = value;
-                    });
-                }
-            })
-            .on_spacing_weight_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .spacing_weight = value;
-                    });
-                }
-            })
-            .on_min_spacing_oct_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .min_spacing_oct = value;
-                    });
-                }
-            })
-            .on_tolerance_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .tolerance = value;
-                    });
-                }
-            })
-            .on_atolerance_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .atolerance = value;
                     });
                 }
             })
@@ -1155,6 +1020,222 @@ impl PlayerView {
                             .max_deviation_db = v;
                     });
                 }
+            })
+            // v2 features
+            .on_allow_delay_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .allow_delay = v;
+                    });
+                }
+            })
+            .on_seed_enabled_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        let config = &mut state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config;
+                        if v {
+                            config.seed = Some(config.seed.unwrap_or(42));
+                        } else {
+                            config.seed = None;
+                        }
+                    });
+                }
+            })
+            .on_seed_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .seed = Some(v as u64);
+                    });
+                }
+            })
+            .on_gd_opt_enabled_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .gd_opt
+                            .enabled = v;
+                    });
+                }
+            })
+            .on_gd_opt_target_ms_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .gd_opt
+                            .target_ms = v;
+                    });
+                }
+            })
+            .on_vog_enabled_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .vog
+                            .enabled = v;
+                    });
+                }
+            })
+            .on_vog_reference_channel_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .vog
+                            .reference_channel = v.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .vog_reference_channel_open = false;
+                    });
+                }
+            })
+            .on_vog_reference_channel_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .vog_reference_channel_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_broadband_target_matching_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .broadband_target_matching
+                            .enabled = v;
+                    });
+                }
+            })
+            .on_mixed_crossover_freq_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .mixed_config
+                            .crossover_freq = v;
+                    });
+                }
+            })
+            .on_mixed_crossover_type_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .mixed_config
+                            .crossover_type = v.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .mixed_crossover_type_open = false;
+                    });
+                }
+            })
+            .on_mixed_crossover_type_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .mixed_crossover_type_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_mixed_fir_band_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .mixed_config
+                            .fir_band = v.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .mixed_fir_band_open = false;
+                    });
+                }
+            })
+            .on_mixed_fir_band_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .mixed_fir_band_open = open;
+                        cx.notify();
+                    });
+                }
             });
 
         VStack::new()
@@ -1170,11 +1251,14 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             // Wrap in div to capture key events and prevent global shortcuts
-            // from firing while typing in input fields
+            // from firing while typing in input fields, but allow
+            // meta/Cmd key combos (Cmd+Q, Cmd+C, etc.) to pass through
             .child(
                 div()
-                    .on_key_down(|_event, _window, cx| {
-                        cx.stop_propagation();
+                    .on_key_down(|event, _window, cx| {
+                        if !event.keystroke.modifiers.platform {
+                            cx.stop_propagation();
+                        }
                     })
                     .child(autoeq_form),
             )

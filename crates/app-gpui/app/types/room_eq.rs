@@ -709,6 +709,58 @@ impl Default for MultiSeatConfig {
     }
 }
 
+/// Group Delay Optimization configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GroupDelayOptConfig {
+    pub enabled: bool,
+    /// Target group delay at crossover (ms)
+    pub target_ms: f64,
+}
+
+/// Voice of God (timbre matching) configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoGConfig {
+    pub enabled: bool,
+    /// Reference channel name (e.g., "C" or "L")
+    pub reference_channel: String,
+}
+
+impl Default for VoGConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            reference_channel: "C".to_string(),
+        }
+    }
+}
+
+/// Broadband target matching configuration
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BroadbandTargetMatchingConfig {
+    pub enabled: bool,
+}
+
+/// Mixed mode (IIR+FIR) configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MixedModeUiConfig {
+    /// Crossover frequency dividing IIR and FIR bands (Hz)
+    pub crossover_freq: f64,
+    /// Crossover filter type: "LR24", "LR48"
+    pub crossover_type: String,
+    /// Which band uses FIR: "low" or "high"
+    pub fir_band: String,
+}
+
+impl Default for MixedModeUiConfig {
+    fn default() -> Self {
+        Self {
+            crossover_freq: 300.0,
+            crossover_type: "LR24".to_string(),
+            fir_band: "low".to_string(),
+        }
+    }
+}
+
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqOptimizerConfig {
@@ -720,10 +772,8 @@ pub struct RoomEqOptimizerConfig {
     pub fir: RoomEqFirConfig,
     /// Multi-speaker optimization mode
     pub multi_speaker_mode: MultiSpeakerMode,
-    /// Optimization algorithm
-    pub algorithm: RoomEqAlgorithm,
-    /// Sample rate in Hz
-    pub sample_rate: u32,
+    /// Optimization algorithm (e.g., "autoeq:de", "nlopt:cobyla", "nlopt:neldermead")
+    pub algorithm: String,
     /// Number of PEQ filters per channel
     pub num_filters: usize,
     /// Minimum Q factor
@@ -744,28 +794,10 @@ pub struct RoomEqOptimizerConfig {
     pub peq_model: String,
     /// Population size for evolutionary algorithms
     pub population: usize,
-    /// Mutation factor (F) for DE
-    pub de_f: f64,
-    /// Crossover rate (CR) for DE
-    pub de_cr: f64,
-    /// DE strategy (e.g., "currenttobest1bin")
-    pub strategy: String,
     /// Enable local refinement after global optimization
     pub refine: bool,
     /// Local algorithm for refinement
     pub local_algo: String,
-    /// Enable smoothing
-    pub smooth: bool,
-    /// Smoothing window size (1-24)
-    pub smooth_n: usize,
-    /// Spacing constraint weight (0-1000)
-    pub spacing_weight: f64,
-    /// Minimum spacing between filters in octaves (0.01-1.0)
-    pub min_spacing_oct: f64,
-    /// Relative tolerance for convergence
-    pub tolerance: f64,
-    /// Absolute tolerance for convergence
-    pub atolerance: f64,
     /// Loss function type (e.g., "flat", "score")
     pub loss_type: String,
     /// Enable psychoacoustic smoothing
@@ -776,6 +808,26 @@ pub struct RoomEqOptimizerConfig {
     pub target_curve: String,
     /// System type (e.g., "stereo", "multichannel")
     pub system_type: String,
+
+    // --- v2 fields ---
+    /// Allow inter-speaker delay optimization
+    #[serde(default)]
+    pub allow_delay: bool,
+    /// Random seed for reproducible results (None for random)
+    #[serde(default)]
+    pub seed: Option<u64>,
+    /// Group delay optimization
+    #[serde(default)]
+    pub gd_opt: GroupDelayOptConfig,
+    /// Voice of God (timbre matching)
+    #[serde(default)]
+    pub vog: VoGConfig,
+    /// Broadband target matching
+    #[serde(default)]
+    pub broadband_target_matching: BroadbandTargetMatchingConfig,
+    /// Mixed mode configuration (when mode == Mixed)
+    #[serde(default)]
+    pub mixed_config: MixedModeUiConfig,
 
     // --- Advanced Room Correction (Scenario B) ---
     #[serde(default)]
@@ -798,8 +850,7 @@ impl Default for RoomEqOptimizerConfig {
             mode: RoomEqOptimizationMode::default(),
             fir: RoomEqFirConfig::default(),
             multi_speaker_mode: MultiSpeakerMode::Combined,
-            algorithm: RoomEqAlgorithm::DifferentialEvolution,
-            sample_rate: 48000,
+            algorithm: "autoeq:de".to_string(),
             num_filters: 5,
             min_q: 0.5,
             max_q: 6.0,
@@ -810,22 +861,19 @@ impl Default for RoomEqOptimizerConfig {
             max_iter: 10000,
             peq_model: "pk".to_string(),
             population: 40,
-            de_f: 0.8,
-            de_cr: 0.9,
-            strategy: "currenttobest1bin".to_string(),
             refine: false,
             local_algo: "cobyla".to_string(),
-            smooth: false,
-            smooth_n: 6,
-            spacing_weight: 1.0,
-            min_spacing_oct: 0.08,
-            tolerance: 0.00001,
-            atolerance: 0.00001,
             loss_type: "flat".to_string(),
             psychoacoustic: true,
             asymmetric_loss: true,
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
+            allow_delay: false,
+            seed: None,
+            gd_opt: GroupDelayOptConfig::default(),
+            vog: VoGConfig::default(),
+            broadband_target_matching: BroadbandTargetMatchingConfig::default(),
+            mixed_config: MixedModeUiConfig::default(),
             target_tilt: TargetTiltConfig::default(),
             excursion_protection: ExcursionProtectionConfig::default(),
             schroeder_split: SchroederSplitConfig::default(),
@@ -1141,6 +1189,11 @@ pub struct RoomEqDropdowns {
     pub excursion_filter_type_open: bool,
     pub multi_seat_strategy_open: bool,
 
+    // v2 dropdowns
+    pub mixed_crossover_type_open: bool,
+    pub mixed_fir_band_open: bool,
+    pub vog_reference_channel_open: bool,
+
     /// Review step smoothing dropdown
     pub review_smoothing_open: bool,
     /// AutoEQ form editing state
@@ -1262,6 +1315,35 @@ impl RoomEqState {
     /// Get the number of channels
     pub fn channel_count(&self) -> usize {
         self.channel_measurements.len()
+    }
+
+    /// Check if any channel is a subwoofer (LFE, Sub, SW)
+    pub fn has_subwoofer(&self) -> bool {
+        self.channel_names().iter().any(|name| {
+            let upper = name.to_uppercase();
+            upper == "LFE" || upper == "SUB" || upper == "SW" || upper.starts_with("SUB")
+        })
+    }
+
+    /// Check if the setup is surround (3+ channels, excluding subs)
+    pub fn is_surround(&self) -> bool {
+        let non_sub_count = self
+            .channel_names()
+            .iter()
+            .filter(|name| {
+                let upper = name.to_uppercase();
+                upper != "LFE" && upper != "SUB" && upper != "SW" && !upper.starts_with("SUB")
+            })
+            .count();
+        non_sub_count >= 3
+    }
+
+    /// Get channel names from speaker configs
+    pub fn channel_names(&self) -> Vec<String> {
+        self.speaker_configs
+            .iter()
+            .map(|c| c.channel_name.clone())
+            .collect()
     }
 
     /// Check if optimization is complete
@@ -1459,11 +1541,7 @@ impl RoomEqState {
             }
         }
 
-        let algorithm = self
-            .optimizer_config
-            .algorithm
-            .to_autoeq_string()
-            .to_string();
+        let algorithm = self.optimizer_config.algorithm.clone();
 
         let processing_mode = match self.optimizer_config.mode {
             RoomEqOptimizationMode::Iir => BackendProcessingMode::LowLatency,
@@ -1492,13 +1570,21 @@ impl RoomEqState {
                 correct_excess_phase: false,
                 phase_smoothing: 0.167,
             }),
-            seed: None,
-            mixed_config: None,
+            seed: self.optimizer_config.seed,
+            mixed_config: if self.optimizer_config.mode == RoomEqOptimizationMode::Mixed {
+                Some(autoeq::roomeq::MixedModeConfig {
+                    crossover_freq: self.optimizer_config.mixed_config.crossover_freq,
+                    crossover_type: self.optimizer_config.mixed_config.crossover_type.clone(),
+                    fir_band: self.optimizer_config.mixed_config.fir_band.clone(),
+                })
+            } else {
+                None
+            },
             refine: self.optimizer_config.refine,
             local_algo: self.optimizer_config.local_algo.clone(),
             psychoacoustic: self.optimizer_config.psychoacoustic,
             asymmetric_loss: self.optimizer_config.asymmetric_loss,
-            allow_delay: None,
+            allow_delay: Some(self.optimizer_config.allow_delay),
             target_tilt: if self.optimizer_config.target_tilt.enabled {
                 let tilt_type = match self.optimizer_config.target_tilt.tilt_type.as_str() {
                     "harman" => TiltType::Harman,
@@ -1580,9 +1666,27 @@ impl RoomEqState {
             } else {
                 None
             },
-            gd_opt: None,
-            vog: None,
-            broadband_target_matching: None,
+            gd_opt: if self.optimizer_config.gd_opt.enabled {
+                Some(autoeq::roomeq::GroupDelayOptimizationConfig {
+                    enabled: true,
+                    target_ms: self.optimizer_config.gd_opt.target_ms,
+                })
+            } else {
+                None
+            },
+            vog: if self.optimizer_config.vog.enabled {
+                Some(autoeq::roomeq::VoiceOfGodConfig {
+                    enabled: true,
+                    reference_channel: self.optimizer_config.vog.reference_channel.clone(),
+                })
+            } else {
+                None
+            },
+            broadband_target_matching: if self.optimizer_config.broadband_target_matching.enabled {
+                Some(autoeq::roomeq::BroadbandTargetMatchingConfig { enabled: true })
+            } else {
+                None
+            },
         };
 
         RoomConfig {

@@ -28,6 +28,7 @@ pub struct DenoiserRenderState {
     pub release_ms: f64,
     pub low_latency: bool,
     pub polyphonic_detection: bool,
+    pub transparency: f64,
     pub dd_enabled: bool,
     pub dd_alpha: f64,
     pub psychoacoustic_masking: bool,
@@ -168,6 +169,21 @@ pub fn render_denoiser_plugin(
                                     Some('s'),
                                     theme,
                                 ))
+                                // Transparency knob
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Transparency",
+                                    state.transparency * 100.0,
+                                    TRANSPARENCY_MIN as f64 * 100.0,
+                                    TRANSPARENCY_MAX as f64 * 100.0,
+                                    "%",
+                                    7,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('t'),
+                                    theme,
+                                ))
                                 // DD Alpha knob (only visible when DD enabled)
                                 .when(state.dd_enabled, |d| {
                                     d.child(render_knob(
@@ -178,7 +194,7 @@ pub fn render_denoiser_plugin(
                                         DD_ALPHA_MIN as f64 * 1000.0,
                                         DD_ALPHA_MAX as f64 * 1000.0,
                                         "",
-                                        8,
+                                        9,
                                         state.selected_param,
                                         state.is_editing,
                                         None,
@@ -254,7 +270,7 @@ pub fn render_denoiser_plugin(
                                             entity.clone(),
                                             plugin_idx,
                                             state.dd_enabled,
-                                            7,
+                                            8,
                                             state.selected_param,
                                             state.is_editing,
                                             theme,
@@ -277,7 +293,7 @@ pub fn render_denoiser_plugin(
                                             entity.clone(),
                                             plugin_idx,
                                             state.psychoacoustic_masking,
-                                            9,
+                                            10,
                                             state.selected_param,
                                             state.is_editing,
                                             theme,
@@ -297,7 +313,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             false, // Trigger — always shows as off
-                            10,
+                            11,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -320,7 +336,7 @@ pub fn render_denoiser_plugin(
                                     entity.clone(),
                                     plugin_idx,
                                     state.use_captured_profile,
-                                    11,
+                                    12,
                                     state.selected_param,
                                     state.is_editing,
                                     theme,
@@ -331,7 +347,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             false, // Trigger — always shows as off
-                            12,
+                            13,
                             state.selected_param,
                             state.is_editing,
                             theme,

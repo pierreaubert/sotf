@@ -480,11 +480,14 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             // Wrap in div to capture key events and prevent global shortcuts
-            // from firing while typing in input fields
+            // from firing while typing in input fields, but allow
+            // meta/Cmd key combos (Cmd+Q, Cmd+C, etc.) to pass through
             .child(
                 div()
-                    .on_key_down(|_event, _window, cx| {
-                        cx.stop_propagation();
+                    .on_key_down(|event, _window, cx| {
+                        if !event.keystroke.modifiers.platform {
+                            cx.stop_propagation();
+                        }
                     })
                     .child(autoeq_form),
             )

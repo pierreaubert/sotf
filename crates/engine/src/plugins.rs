@@ -780,10 +780,10 @@ fn default_denoiser_reduction_db() -> f64 {
     12.0
 }
 fn default_denoiser_floor_db() -> f64 {
-    -30.0
+    -20.0
 }
 fn default_denoiser_smoothing() -> f64 {
-    0.8
+    0.3
 }
 fn default_denoiser_attack_ms() -> f64 {
     5.0
@@ -803,6 +803,9 @@ fn default_denoiser_psychoacoustic_masking() -> bool {
 }
 fn default_denoiser_use_captured_profile() -> bool {
     false
+}
+fn default_denoiser_transparency() -> f64 {
+    0.0
 }
 fn default_denoiser_dd_enabled() -> bool {
     false
@@ -1285,6 +1288,8 @@ pub enum PluginSettings {
         low_latency: bool,
         #[serde(default = "default_denoiser_polyphonic_detection")]
         polyphonic_detection: bool,
+        #[serde(default = "default_denoiser_transparency")]
+        transparency: f64,
         #[serde(default = "default_denoiser_dd_enabled")]
         dd_enabled: bool,
         #[serde(default = "default_denoiser_dd_alpha")]
@@ -1925,6 +1930,7 @@ impl PluginSettings {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
+                transparency,
                 dd_enabled,
                 dd_alpha,
                 psychoacoustic_masking,
@@ -1939,6 +1945,7 @@ impl PluginSettings {
                     "release_ms": release_ms,
                     "low_latency": low_latency,
                     "polyphonic_detection": polyphonic_detection,
+                    "transparency": transparency,
                     "dd_enabled": dd_enabled,
                     "dd_alpha": dd_alpha,
                     "psychoacoustic_masking": psychoacoustic_masking,
@@ -2284,6 +2291,7 @@ impl PluginSettings {
                 release_ms: default_denoiser_release_ms(),
                 low_latency: default_denoiser_low_latency(),
                 polyphonic_detection: default_denoiser_polyphonic_detection(),
+                transparency: default_denoiser_transparency(),
                 dd_enabled: default_denoiser_dd_enabled(),
                 dd_alpha: default_denoiser_dd_alpha(),
                 psychoacoustic_masking: default_denoiser_psychoacoustic_masking(),

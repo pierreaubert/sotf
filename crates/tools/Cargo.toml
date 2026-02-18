@@ -12,6 +12,10 @@ name = "generate-audio-tests"
 path = "bin/generate_audio_tests.rs"
 
 [[bin]]
+name = "generate-upmixer-golden"
+path = "bin/generate_upmixer_golden.rs"
+
+[[bin]]
 name = "sofa-to-sqlite"
 path = "bin/sofa_to_sqlite.rs"
 required-features = ["sofa_support"]

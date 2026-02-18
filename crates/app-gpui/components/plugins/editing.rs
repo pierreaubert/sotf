@@ -1088,6 +1088,7 @@ impl PluginEditingManager for App {
                     release_ms,
                     low_latency,
                     polyphonic_detection,
+                    transparency,
                     dd_enabled,
                     dd_alpha,
                     psychoacoustic_masking,
@@ -1129,24 +1130,29 @@ impl PluginEditingManager for App {
                             true
                         }
                         7 => {
-                            *dd_enabled = !*dd_enabled;
+                            *transparency = (*transparency + delta * 0.05)
+                                .clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64);
                             true
                         }
                         8 => {
+                            *dd_enabled = !*dd_enabled;
+                            true
+                        }
+                        9 => {
                             *dd_alpha = (*dd_alpha + delta * 0.01)
                                 .clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
                             true
                         }
-                        9 => {
+                        10 => {
                             *psychoacoustic_masking = !*psychoacoustic_masking;
                             true
                         }
-                        10 => true, // learn_noise trigger — handled by set_parameter_value
-                        11 => {
+                        11 => true, // learn_noise trigger — handled by set_parameter_value
+                        12 => {
                             *use_captured_profile = !*use_captured_profile;
                             true
                         }
-                        12 => true, // clear_profile trigger — handled by set_parameter_value
+                        13 => true, // clear_profile trigger — handled by set_parameter_value
                         _ => false,
                     }
                 }
@@ -2317,6 +2323,7 @@ impl PluginEditingManager for App {
                     release_ms,
                     low_latency,
                     polyphonic_detection,
+                    transparency,
                     dd_enabled,
                     dd_alpha,
                     psychoacoustic_masking,
@@ -2356,26 +2363,31 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         7 => {
-                            *dd_enabled = value > 0.5;
+                            *transparency =
+                                value.clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64);
                             update_needed = true;
                         }
                         8 => {
-                            *dd_alpha = value.clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
+                            *dd_enabled = value > 0.5;
                             update_needed = true;
                         }
                         9 => {
-                            *psychoacoustic_masking = value > 0.5;
+                            *dd_alpha = value.clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
                             update_needed = true;
                         }
                         10 => {
-                            // learn_noise trigger: value > 0.5 starts learning
+                            *psychoacoustic_masking = value > 0.5;
                             update_needed = true;
                         }
                         11 => {
-                            *use_captured_profile = value > 0.5;
+                            // learn_noise trigger: value > 0.5 starts learning
                             update_needed = true;
                         }
                         12 => {
+                            *use_captured_profile = value > 0.5;
+                            update_needed = true;
+                        }
+                        13 => {
                             // clear_profile trigger: value > 0.5 clears
                             update_needed = true;
                         }
@@ -2919,6 +2931,7 @@ impl PluginEditingManager for App {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
+                transparency,
                 dd_enabled,
                 dd_alpha,
                 psychoacoustic_masking,
@@ -2943,30 +2956,31 @@ impl PluginEditingManager for App {
                         0.0
                     }
                 }
-                7 => {
+                7 => *transparency,
+                8 => {
                     if *dd_enabled {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                8 => *dd_alpha,
-                9 => {
+                9 => *dd_alpha,
+                10 => {
                     if *psychoacoustic_masking {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                10 => 0.0, // learn_noise trigger — always reads as 0
-                11 => {
+                11 => 0.0, // learn_noise trigger — always reads as 0
+                12 => {
                     if *use_captured_profile {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                12 => 0.0, // clear_profile trigger — always reads as 0
+                13 => 0.0, // clear_profile trigger — always reads as 0
                 _ => return,
             },
             PluginSettings::Pnd {
@@ -3718,7 +3732,7 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::MultibandCompressor { .. } => 13, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope
-        PluginSettings::Denoiser { .. } => 13, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection, dd_enabled, dd_alpha, psychoacoustic_masking, learn_noise, use_captured_profile, clear_profile
+        PluginSettings::Denoiser { .. } => 14, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection, transparency, dd_enabled, dd_alpha, psychoacoustic_masking, learn_noise, use_captured_profile, clear_profile
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 9, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms
         PluginSettings::FletcherMunson { .. } => 22, // reference_level, smoothing, 4 bands x 4 params each, + 4 auto-gain params

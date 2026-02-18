@@ -113,7 +113,7 @@ fn main() {
     let audio = AudioSettingsForm::new("audio-settings")
         .master_volume(0.5)
         .mute_on_minimize(false)
-        .output_device("Headphones".into())
+        .output_device("Headphones")
         .sample_rate(44100);
     
     println!("   ID:            {:?}", audio.id);

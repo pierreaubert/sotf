@@ -148,6 +148,16 @@ pub const PEQ_MODEL_OPTIONS: &[(&str, &str)] = &[
     ("free", "Free - All filters flexible"),
 ];
 
+/// Mixed mode crossover type options
+pub const MIXED_CROSSOVER_TYPE_OPTIONS: &[(&str, &str)] =
+    &[("LR24", "Linkwitz-Riley 24dB"), ("LR48", "Linkwitz-Riley 48dB")];
+
+/// Mixed mode FIR band options
+pub const MIXED_FIR_BAND_OPTIONS: &[(&str, &str)] = &[
+    ("low", "Low Frequencies (Bass)"),
+    ("high", "High Frequencies"),
+];
+
 /// Local algorithm options for refinement
 pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[
     ("cobyla", "COBYLA"),
@@ -257,6 +267,21 @@ impl ParamLimits {
         min: 0.0,
         max: 100.0,
         step: 0.1,
+    };
+    pub const SEED: Self = Self {
+        min: 0.0,
+        max: 999999.0,
+        step: 1.0,
+    };
+    pub const GD_TARGET_MS: Self = Self {
+        min: 0.0,
+        max: 50.0,
+        step: 0.1,
+    };
+    pub const MIXED_CROSSOVER_FREQ: Self = Self {
+        min: 50.0,
+        max: 2000.0,
+        step: 10.0,
     };
 }
 
@@ -382,6 +407,30 @@ pub struct AutoEqConfig {
     /// High freq shelving only
     pub schroeder_high_shelving_only: bool,
 
+    // --- v2 fields ---
+    /// Allow inter-speaker delay optimization
+    pub allow_delay: bool,
+    /// Enable seed for reproducible results
+    pub seed_enabled: bool,
+    /// Random seed value
+    pub seed: u64,
+    /// Enable group delay optimization
+    pub gd_opt_enabled: bool,
+    /// Group delay target in ms
+    pub gd_opt_target_ms: f64,
+    /// Enable Voice of God (timbre matching)
+    pub vog_enabled: bool,
+    /// VoG reference channel name
+    pub vog_reference_channel: String,
+    /// Enable broadband target matching
+    pub broadband_target_matching: bool,
+    /// Mixed mode crossover frequency
+    pub mixed_crossover_freq: f64,
+    /// Mixed mode crossover type ("LR24", "LR48")
+    pub mixed_crossover_type: String,
+    /// Mixed mode FIR band ("low" or "high")
+    pub mixed_fir_band: String,
+
     // --- Advanced System Optimization (Scenario A) ---
     /// Enable phase alignment
     pub use_phase_alignment: bool,
@@ -461,6 +510,19 @@ impl Default for AutoEqConfig {
             schroeder_high_max_q: 1.0,
             schroeder_high_shelving_only: false,
 
+            // v2 defaults
+            allow_delay: false,
+            seed_enabled: false,
+            seed: 42,
+            gd_opt_enabled: false,
+            gd_opt_target_ms: 0.0,
+            vog_enabled: false,
+            vog_reference_channel: "C".to_string(),
+            broadband_target_matching: false,
+            mixed_crossover_freq: 300.0,
+            mixed_crossover_type: "LR24".to_string(),
+            mixed_fir_band: "low".to_string(),
+
             // Scenario A defaults
             use_phase_alignment: false,
             phase_min_freq: 60.0,
@@ -504,6 +566,14 @@ pub struct AutoEqFormUiState {
     pub excursion_filter_type_open: bool,
     /// Multi-seat strategy dropdown open state
     pub multi_seat_strategy_open: bool,
+
+    // v2 dropdown states
+    /// Mixed crossover type dropdown open state
+    pub mixed_crossover_type_open: bool,
+    /// Mixed FIR band dropdown open state
+    pub mixed_fir_band_open: bool,
+    /// VoG reference channel dropdown open state
+    pub vog_reference_channel_open: bool,
 }
 
 // ============================================================================
@@ -596,6 +666,18 @@ pub struct AutoEqForm {
     /// Available spinorama curves for speaker mode (e.g., ["ON", "LW", "PIR"])
     available_spinorama_curves: Vec<String>,
 
+    // Visibility flags for hiding fields not relevant to certain contexts
+    /// Hide DE-specific parameters (strategy, mutation F, crossover CR)
+    hide_de_params: bool,
+    /// Hide smoothing toggle and window size
+    hide_smoothing: bool,
+    /// Hide spacing weight and min spacing octaves
+    hide_spacing: bool,
+    /// Hide tolerance and absolute tolerance
+    hide_tolerance: bool,
+    /// Hide sample rate input
+    hide_sample_rate: bool,
+
     // EQ Design callbacks
     on_opt_mode_change: Option<StringCallback>,
     on_opt_mode_toggle: Option<ToggleCallback>,
@@ -677,6 +759,22 @@ pub struct AutoEqForm {
     on_multi_seat_strategy_toggle: Option<ToggleCallback>,
     on_multi_seat_primary_seat_change: Option<UsizeCallback>,
     on_multi_seat_max_deviation_db_change: Option<F64Callback>,
+
+    // v2 callbacks
+    on_allow_delay_change: Option<BoolCallback>,
+    on_seed_enabled_change: Option<BoolCallback>,
+    on_seed_change: Option<UsizeCallback>,
+    on_gd_opt_enabled_change: Option<BoolCallback>,
+    on_gd_opt_target_ms_change: Option<F64Callback>,
+    on_vog_enabled_change: Option<BoolCallback>,
+    on_vog_reference_channel_change: Option<StringCallback>,
+    on_vog_reference_channel_toggle: Option<ToggleCallback>,
+    on_broadband_target_matching_change: Option<BoolCallback>,
+    on_mixed_crossover_freq_change: Option<F64Callback>,
+    on_mixed_crossover_type_change: Option<StringCallback>,
+    on_mixed_crossover_type_toggle: Option<ToggleCallback>,
+    on_mixed_fir_band_change: Option<StringCallback>,
+    on_mixed_fir_band_toggle: Option<ToggleCallback>,
 }
 
 impl AutoEqForm {
@@ -694,6 +792,11 @@ impl AutoEqForm {
             allowed_opt_modes: None,
             optimization_type: OptimizationType::default(),
             available_spinorama_curves: Vec::new(),
+            hide_de_params: false,
+            hide_smoothing: false,
+            hide_spacing: false,
+            hide_tolerance: false,
+            hide_sample_rate: false,
             on_opt_mode_change: None,
             on_opt_mode_toggle: None,
             on_fir_taps_change: None,
@@ -764,6 +867,20 @@ impl AutoEqForm {
             on_multi_seat_strategy_toggle: None,
             on_multi_seat_primary_seat_change: None,
             on_multi_seat_max_deviation_db_change: None,
+            on_allow_delay_change: None,
+            on_seed_enabled_change: None,
+            on_seed_change: None,
+            on_gd_opt_enabled_change: None,
+            on_gd_opt_target_ms_change: None,
+            on_vog_enabled_change: None,
+            on_vog_reference_channel_change: None,
+            on_vog_reference_channel_toggle: None,
+            on_broadband_target_matching_change: None,
+            on_mixed_crossover_freq_change: None,
+            on_mixed_crossover_type_change: None,
+            on_mixed_crossover_type_toggle: None,
+            on_mixed_fir_band_change: None,
+            on_mixed_fir_band_toggle: None,
         }
     }
 
@@ -831,6 +948,36 @@ impl AutoEqForm {
     /// Common values: "ON", "LW", "ER", "SP", "PIR"
     pub fn available_spinorama_curves(mut self, curves: Vec<String>) -> Self {
         self.available_spinorama_curves = curves;
+        self
+    }
+
+    /// Hide DE-specific parameters (strategy, mutation F, crossover CR)
+    pub fn hide_de_params(mut self, hide: bool) -> Self {
+        self.hide_de_params = hide;
+        self
+    }
+
+    /// Hide smoothing toggle and window size
+    pub fn hide_smoothing(mut self, hide: bool) -> Self {
+        self.hide_smoothing = hide;
+        self
+    }
+
+    /// Hide spacing weight and min spacing octaves
+    pub fn hide_spacing(mut self, hide: bool) -> Self {
+        self.hide_spacing = hide;
+        self
+    }
+
+    /// Hide tolerance and absolute tolerance
+    pub fn hide_tolerance(mut self, hide: bool) -> Self {
+        self.hide_tolerance = hide;
+        self
+    }
+
+    /// Hide sample rate input
+    pub fn hide_sample_rate(mut self, hide: bool) -> Self {
+        self.hide_sample_rate = hide;
         self
     }
 
@@ -1443,6 +1590,120 @@ impl AutoEqForm {
         self.on_multi_seat_max_deviation_db_change = Some(Box::new(handler));
         self
     }
+
+    // v2 callbacks
+
+    pub fn on_allow_delay_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_allow_delay_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_seed_enabled_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_seed_enabled_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_seed_change(
+        mut self,
+        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_seed_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_gd_opt_enabled_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_gd_opt_enabled_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_gd_opt_target_ms_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_gd_opt_target_ms_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_vog_enabled_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_vog_enabled_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_vog_reference_channel_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_vog_reference_channel_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_vog_reference_channel_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_vog_reference_channel_toggle = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_broadband_target_matching_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_broadband_target_matching_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_mixed_crossover_freq_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_mixed_crossover_freq_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_mixed_crossover_type_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_mixed_crossover_type_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_mixed_crossover_type_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_mixed_crossover_type_toggle = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_mixed_fir_band_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_mixed_fir_band_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_mixed_fir_band_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_mixed_fir_band_toggle = Some(Box::new(handler));
+        self
+    }
 }
 
 impl RenderOnce for AutoEqForm {
@@ -1462,6 +1723,11 @@ impl RenderOnce for AutoEqForm {
         let show_optimization_tuning = self.show_optimization_tuning;
         let optimization_type = self.optimization_type;
         let available_spinorama_curves = self.available_spinorama_curves;
+        let hide_de_params = self.hide_de_params;
+        let hide_smoothing = self.hide_smoothing;
+        let hide_spacing = self.hide_spacing;
+        let hide_tolerance = self.hide_tolerance;
+        let hide_sample_rate = self.hide_sample_rate;
 
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.on_opt_mode_change.map(std::rc::Rc::new);
@@ -1564,6 +1830,29 @@ impl RenderOnce for AutoEqForm {
         let on_multi_seat_max_deviation_db_change_rc = self
             .on_multi_seat_max_deviation_db_change
             .map(std::rc::Rc::new);
+
+        // v2 callbacks Rc
+        let on_allow_delay_change_rc = self.on_allow_delay_change.map(std::rc::Rc::new);
+        let on_seed_enabled_change_rc = self.on_seed_enabled_change.map(std::rc::Rc::new);
+        let on_seed_change_rc = self.on_seed_change.map(std::rc::Rc::new);
+        let on_gd_opt_enabled_change_rc = self.on_gd_opt_enabled_change.map(std::rc::Rc::new);
+        let on_gd_opt_target_ms_change_rc = self.on_gd_opt_target_ms_change.map(std::rc::Rc::new);
+        let on_vog_enabled_change_rc = self.on_vog_enabled_change.map(std::rc::Rc::new);
+        let on_vog_reference_channel_change_rc =
+            self.on_vog_reference_channel_change.map(std::rc::Rc::new);
+        let on_vog_reference_channel_toggle_rc =
+            self.on_vog_reference_channel_toggle.map(std::rc::Rc::new);
+        let on_broadband_target_matching_change_rc = self
+            .on_broadband_target_matching_change
+            .map(std::rc::Rc::new);
+        let on_mixed_crossover_freq_change_rc =
+            self.on_mixed_crossover_freq_change.map(std::rc::Rc::new);
+        let on_mixed_crossover_type_change_rc =
+            self.on_mixed_crossover_type_change.map(std::rc::Rc::new);
+        let on_mixed_crossover_type_toggle_rc =
+            self.on_mixed_crossover_type_toggle.map(std::rc::Rc::new);
+        let on_mixed_fir_band_change_rc = self.on_mixed_fir_band_change.map(std::rc::Rc::new);
+        let on_mixed_fir_band_toggle_rc = self.on_mixed_fir_band_toggle.map(std::rc::Rc::new);
 
         let mut form = VStack::new().spacing(StackSpacing::Lg);
         let base_id = id.clone();
@@ -1815,25 +2104,84 @@ impl RenderOnce for AutoEqForm {
                 );
             }
 
-            // Common params (Sample Rate) + Filters (if IIR)
-            let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
-                .value(config.sample_rate as f64)
-                .min(ParamLimits::SAMPLE_RATE.min)
-                .max(ParamLimits::SAMPLE_RATE.max)
-                .step(ParamLimits::SAMPLE_RATE.step)
-                .decimals(0)
-                .label("Sample Rate")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
+            // Mixed mode config (only when mode is "mixed")
+            if config.opt_mode == "mixed" {
+                let mut mixed_freq_input =
+                    NumberInput::new((base_id.clone(), "mixed-crossover-freq"))
+                        .value(config.mixed_crossover_freq)
+                        .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
+                        .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
+                        .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
+                        .decimals(0)
+                        .label("Crossover Freq (Hz)")
+                        .size(NumberInputSize::Sm)
+                        .width(140.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
 
-            if let Some(ref handler) = on_sample_rate_change_rc {
-                let h = handler.clone();
-                sample_rate_input =
-                    sample_rate_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                if let Some(ref handler) = on_mixed_crossover_freq_change_rc {
+                    let h = handler.clone();
+                    mixed_freq_input = mixed_freq_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                let mixed_type_options: Vec<SelectOption> = MIXED_CROSSOVER_TYPE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut mixed_type_select =
+                    Select::new((base_id.clone(), "mixed-crossover-type"))
+                        .label("Crossover Type")
+                        .options(mixed_type_options)
+                        .selected(&config.mixed_crossover_type)
+                        .is_open(ui_state.mixed_crossover_type_open)
+                        .disabled(disabled)
+                        .theme(theme.select_theme.clone());
+
+                if let Some(ref handler) = on_mixed_crossover_type_toggle_rc {
+                    let h = handler.clone();
+                    mixed_type_select =
+                        mixed_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_mixed_crossover_type_change_rc {
+                    let h = handler.clone();
+                    mixed_type_select =
+                        mixed_type_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                let mixed_band_options: Vec<SelectOption> = MIXED_FIR_BAND_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut mixed_band_select = Select::new((base_id.clone(), "mixed-fir-band"))
+                    .label("FIR Band")
+                    .options(mixed_band_options)
+                    .selected(&config.mixed_fir_band)
+                    .is_open(ui_state.mixed_fir_band_open)
+                    .disabled(disabled)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref handler) = on_mixed_fir_band_toggle_rc {
+                    let h = handler.clone();
+                    mixed_band_select =
+                        mixed_band_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_mixed_fir_band_change_rc {
+                    let h = handler.clone();
+                    mixed_band_select =
+                        mixed_band_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                eq_design_content = eq_design_content
+                    .child(mixed_freq_input)
+                    .child(mixed_type_select)
+                    .child(mixed_band_select);
             }
 
+            // Common params (Sample Rate) + Filters (if IIR)
             if is_iir {
                 let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
                     .value(config.num_filters as f64)
@@ -1853,14 +2201,55 @@ impl RenderOnce for AutoEqForm {
                         num_filters_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                 }
 
-                eq_design_content = eq_design_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(num_filters_input)
-                        .child(sample_rate_input),
-                );
-            } else {
+                if hide_sample_rate {
+                    eq_design_content = eq_design_content.child(num_filters_input);
+                } else {
+                    let mut sample_rate_input =
+                        NumberInput::new((base_id.clone(), "sample-rate"))
+                            .value(config.sample_rate as f64)
+                            .min(ParamLimits::SAMPLE_RATE.min)
+                            .max(ParamLimits::SAMPLE_RATE.max)
+                            .step(ParamLimits::SAMPLE_RATE.step)
+                            .decimals(0)
+                            .label("Sample Rate")
+                            .size(NumberInputSize::Sm)
+                            .width(100.0)
+                            .disabled(disabled)
+                            .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref handler) = on_sample_rate_change_rc {
+                        let h = handler.clone();
+                        sample_rate_input = sample_rate_input
+                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                    }
+
+                    eq_design_content = eq_design_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(num_filters_input)
+                            .child(sample_rate_input),
+                    );
+                }
+            } else if !hide_sample_rate {
                 // FIR only - just show sample rate
+                let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
+                    .value(config.sample_rate as f64)
+                    .min(ParamLimits::SAMPLE_RATE.min)
+                    .max(ParamLimits::SAMPLE_RATE.max)
+                    .step(ParamLimits::SAMPLE_RATE.step)
+                    .decimals(0)
+                    .label("Sample Rate")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_sample_rate_change_rc {
+                    let h = handler.clone();
+                    sample_rate_input =
+                        sample_rate_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
                 eq_design_content = eq_design_content.child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
@@ -2025,51 +2414,53 @@ impl RenderOnce for AutoEqForm {
 
                 eq_design_content = eq_design_content.child(peq_model_select);
 
-                // Spacing constraint row
-                let mut spacing_weight_input =
-                    NumberInput::new((base_id.clone(), "spacing-weight"))
-                        .value(config.spacing_weight)
-                        .min(ParamLimits::SPACING_WEIGHT.min)
-                        .max(ParamLimits::SPACING_WEIGHT.max)
-                        .step(ParamLimits::SPACING_WEIGHT.step)
-                        .decimals(1)
-                        .label("Spacing Weight")
-                        .size(NumberInputSize::Sm)
-                        .width(100.0)
-                        .disabled(disabled)
-                        .theme(theme.number_input_theme.clone());
+                // Spacing constraint row (hidden in some contexts)
+                if !hide_spacing {
+                    let mut spacing_weight_input =
+                        NumberInput::new((base_id.clone(), "spacing-weight"))
+                            .value(config.spacing_weight)
+                            .min(ParamLimits::SPACING_WEIGHT.min)
+                            .max(ParamLimits::SPACING_WEIGHT.max)
+                            .step(ParamLimits::SPACING_WEIGHT.step)
+                            .decimals(1)
+                            .label("Spacing Weight")
+                            .size(NumberInputSize::Sm)
+                            .width(100.0)
+                            .disabled(disabled)
+                            .theme(theme.number_input_theme.clone());
 
-                if let Some(ref handler) = on_spacing_weight_change_rc {
-                    let h = handler.clone();
-                    spacing_weight_input =
-                        spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
+                    if let Some(ref handler) = on_spacing_weight_change_rc {
+                        let h = handler.clone();
+                        spacing_weight_input =
+                            spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    let mut min_spacing_oct_input =
+                        NumberInput::new((base_id.clone(), "min-spacing-oct"))
+                            .value(config.min_spacing_oct)
+                            .min(ParamLimits::MIN_SPACING_OCT.min)
+                            .max(ParamLimits::MIN_SPACING_OCT.max)
+                            .step(ParamLimits::MIN_SPACING_OCT.step)
+                            .decimals(2)
+                            .label("Min Spacing (oct)")
+                            .size(NumberInputSize::Sm)
+                            .width(120.0)
+                            .disabled(disabled)
+                            .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref handler) = on_min_spacing_oct_change_rc {
+                        let h = handler.clone();
+                        min_spacing_oct_input =
+                            min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    eq_design_content = eq_design_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(spacing_weight_input)
+                            .child(min_spacing_oct_input),
+                    );
                 }
-
-                let mut min_spacing_oct_input =
-                    NumberInput::new((base_id.clone(), "min-spacing-oct"))
-                        .value(config.min_spacing_oct)
-                        .min(ParamLimits::MIN_SPACING_OCT.min)
-                        .max(ParamLimits::MIN_SPACING_OCT.max)
-                        .step(ParamLimits::MIN_SPACING_OCT.step)
-                        .decimals(2)
-                        .label("Min Spacing (oct)")
-                        .size(NumberInputSize::Sm)
-                        .width(120.0)
-                        .disabled(disabled)
-                        .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_min_spacing_oct_change_rc {
-                    let h = handler.clone();
-                    min_spacing_oct_input =
-                        min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                eq_design_content = eq_design_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(spacing_weight_input)
-                        .child(min_spacing_oct_input),
-                );
             }
 
             form = form.child(Card::new().content(eq_design_content));
@@ -2168,50 +2559,52 @@ impl RenderOnce for AutoEqForm {
                     .child(maxeval_input),
             );
 
-            // Tolerance row
-            let mut tolerance_input = NumberInput::new((base_id.clone(), "tolerance"))
-                .value(config.tolerance)
-                .min(ParamLimits::TOLERANCE.min)
-                .max(ParamLimits::TOLERANCE.max)
-                .step(ParamLimits::TOLERANCE.step)
-                .decimals(6)
-                .label("Tolerance")
-                .size(NumberInputSize::Sm)
-                .width(120.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
+            // Tolerance row (hidden in some contexts)
+            if !hide_tolerance {
+                let mut tolerance_input = NumberInput::new((base_id.clone(), "tolerance"))
+                    .value(config.tolerance)
+                    .min(ParamLimits::TOLERANCE.min)
+                    .max(ParamLimits::TOLERANCE.max)
+                    .step(ParamLimits::TOLERANCE.step)
+                    .decimals(6)
+                    .label("Tolerance")
+                    .size(NumberInputSize::Sm)
+                    .width(120.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
 
-            if let Some(ref handler) = on_tolerance_change_rc {
-                let h = handler.clone();
-                tolerance_input = tolerance_input.on_change(move |v, w, cx| h(v, w, cx));
+                if let Some(ref handler) = on_tolerance_change_rc {
+                    let h = handler.clone();
+                    tolerance_input = tolerance_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                let mut atolerance_input = NumberInput::new((base_id.clone(), "atolerance"))
+                    .value(config.atolerance)
+                    .min(ParamLimits::TOLERANCE.min)
+                    .max(ParamLimits::TOLERANCE.max)
+                    .step(ParamLimits::TOLERANCE.step)
+                    .decimals(6)
+                    .label("Abs Tolerance")
+                    .size(NumberInputSize::Sm)
+                    .width(120.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_atolerance_change_rc {
+                    let h = handler.clone();
+                    atolerance_input = atolerance_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                opt_tuning_content = opt_tuning_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(tolerance_input)
+                        .child(atolerance_input),
+                );
             }
 
-            let mut atolerance_input = NumberInput::new((base_id.clone(), "atolerance"))
-                .value(config.atolerance)
-                .min(ParamLimits::TOLERANCE.min)
-                .max(ParamLimits::TOLERANCE.max)
-                .step(ParamLimits::TOLERANCE.step)
-                .decimals(6)
-                .label("Abs Tolerance")
-                .size(NumberInputSize::Sm)
-                .width(120.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_atolerance_change_rc {
-                let h = handler.clone();
-                atolerance_input = atolerance_input.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            opt_tuning_content = opt_tuning_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(tolerance_input)
-                    .child(atolerance_input),
-            );
-
-            // DE-specific settings (only show when DE algorithm selected)
-            if config.algo.contains("de") || config.algo.contains("mh:") {
+            // DE-specific settings (only show when DE algorithm selected and not hidden)
+            if !hide_de_params && (config.algo.contains("de") || config.algo.contains("mh:")) {
                 // Show params for DE and Metaheuristics
                 // Note: Not all MH algos use DE params but usually population/maxeval are common.
                 // DE strategy is specific to DE.
@@ -2360,50 +2753,52 @@ impl RenderOnce for AutoEqForm {
                 opt_tuning_content = opt_tuning_content.child(local_algo_select);
             }
 
-            // Smoothing toggle
-            let mut smooth_toggle = Toggle::new((base_id.clone(), "smooth"))
-                .size(ToggleSize::Sm)
-                .checked(config.smooth)
-                .theme(toggle_theme.clone());
+            // Smoothing toggle (hidden in some contexts)
+            if !hide_smoothing {
+                let mut smooth_toggle = Toggle::new((base_id.clone(), "smooth"))
+                    .size(ToggleSize::Sm)
+                    .checked(config.smooth)
+                    .theme(toggle_theme.clone());
 
-            if let Some(ref handler) = on_smooth_change_rc {
-                let h = handler.clone();
-                smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            opt_tuning_content = opt_tuning_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        Text::new("Smoothing")
-                            .size(TextSize::Xs)
-                            .color(theme.label_color),
-                    )
-                    .child(smooth_toggle),
-            );
-
-            // Smoothing window size (only when smooth is enabled)
-            if config.smooth {
-                let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
-                    .value(config.smooth_n as f64)
-                    .min(ParamLimits::SMOOTH_N.min)
-                    .max(ParamLimits::SMOOTH_N.max)
-                    .step(ParamLimits::SMOOTH_N.step)
-                    .decimals(0)
-                    .label("Smooth Window")
-                    .size(NumberInputSize::Sm)
-                    .width(120.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_smooth_n_change_rc {
+                if let Some(ref handler) = on_smooth_change_rc {
                     let h = handler.clone();
-                    smooth_n_input =
-                        smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                    smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                opt_tuning_content = opt_tuning_content.child(smooth_n_input);
+                opt_tuning_content = opt_tuning_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            Text::new("Smoothing")
+                                .size(TextSize::Xs)
+                                .color(theme.label_color),
+                        )
+                        .child(smooth_toggle),
+                );
+
+                // Smoothing window size (only when smooth is enabled)
+                if config.smooth {
+                    let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
+                        .value(config.smooth_n as f64)
+                        .min(ParamLimits::SMOOTH_N.min)
+                        .max(ParamLimits::SMOOTH_N.max)
+                        .step(ParamLimits::SMOOTH_N.step)
+                        .decimals(0)
+                        .label("Smooth Window")
+                        .size(NumberInputSize::Sm)
+                        .width(120.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref handler) = on_smooth_n_change_rc {
+                        let h = handler.clone();
+                        smooth_n_input = smooth_n_input
+                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                    }
+
+                    opt_tuning_content = opt_tuning_content.child(smooth_n_input);
+                }
             }
 
             // Psychoacoustic toggle
@@ -3078,7 +3473,7 @@ impl RenderOnce for AutoEqForm {
                     .decimals(1)
                     .label("Max Deviation (dB)")
                     .size(NumberInputSize::Sm)
-                    .theme(theme.number_input_theme);
+                    .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_multi_seat_max_deviation_db_change_rc {
                     let h = h.clone();
@@ -3088,6 +3483,277 @@ impl RenderOnce for AutoEqForm {
             }
 
             form = form.child(Card::new().content(advanced_a_content));
+        }
+
+        // ========================================
+        // v2 Features (Alpha)
+        // ========================================
+        if optimization_type == OptimizationType::Speaker {
+            let mut v2_content = VStack::new().spacing(StackSpacing::Sm);
+
+            v2_content = v2_content.child(
+                VStack::new()
+                    .spacing(StackSpacing::None)
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Text::new("Advanced Tuning")
+                                    .size(TextSize::Sm)
+                                    .weight(TextWeight::Semibold)
+                                    .color(theme.header_color),
+                            )
+                            .child(
+                                Text::new("Alpha")
+                                    .size(TextSize::Xs)
+                                    .color(theme.accent),
+                            ),
+                    )
+                    .child(
+                        Text::new("Delay, seed, group delay, timbre matching")
+                            .size(TextSize::Xs)
+                            .color(theme.description_color),
+                    ),
+            );
+
+            let toggle_theme = ToggleTheme {
+                checked_bg: theme.toggle_checked_bg,
+                unchecked_bg: theme.toggle_unchecked_bg,
+                knob: theme.toggle_knob,
+                knob_on_checked: theme.card_bg,
+                track_border: theme.border,
+                label: theme.label_color,
+                accent: theme.accent,
+                accent_muted: theme.accent,
+                success: theme.accent,
+                border: theme.border,
+                text_on_accent: theme.toggle_knob,
+                text_muted: theme.text_muted,
+                text_primary: theme.header_color,
+                surface_hover: theme.toggle_unchecked_bg,
+                background: theme.card_bg,
+            };
+
+            // --- Allow Delay ---
+            let mut delay_toggle = Toggle::new((base_id.clone(), "allow-delay"))
+                .size(ToggleSize::Sm)
+                .checked(config.allow_delay)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_allow_delay_change_rc {
+                let h = h.clone();
+                delay_toggle = delay_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            v2_content = v2_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Allow Delay")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Enable inter-speaker time alignment")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(delay_toggle),
+            );
+
+            // --- Broadband Target Matching ---
+            let mut broadband_toggle =
+                Toggle::new((base_id.clone(), "broadband-target-matching"))
+                    .size(ToggleSize::Sm)
+                    .checked(config.broadband_target_matching)
+                    .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_broadband_target_matching_change_rc {
+                let h = h.clone();
+                broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            v2_content = v2_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Broadband Target Matching")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Shelf filters for broad tonal balance")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(broadband_toggle),
+            );
+
+            // --- Seed ---
+            let mut seed_toggle = Toggle::new((base_id.clone(), "seed-enabled"))
+                .size(ToggleSize::Sm)
+                .checked(config.seed_enabled)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_seed_enabled_change_rc {
+                let h = h.clone();
+                seed_toggle = seed_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            v2_content = v2_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        Text::new("Reproducible Seed")
+                            .size(TextSize::Xs)
+                            .color(theme.label_color),
+                    )
+                    .child(seed_toggle),
+            );
+
+            if config.seed_enabled {
+                let mut seed_input = NumberInput::new((base_id.clone(), "seed-value"))
+                    .value(config.seed as f64)
+                    .min(ParamLimits::SEED.min)
+                    .max(ParamLimits::SEED.max)
+                    .step(ParamLimits::SEED.step)
+                    .decimals(0)
+                    .label("Seed")
+                    .size(NumberInputSize::Sm)
+                    .width(120.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_seed_change_rc {
+                    let h = h.clone();
+                    seed_input =
+                        seed_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                v2_content = v2_content.child(seed_input);
+            }
+
+            // --- Group Delay Optimization ---
+            let mut gd_toggle = Toggle::new((base_id.clone(), "gd-opt-enabled"))
+                .size(ToggleSize::Sm)
+                .checked(config.gd_opt_enabled)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_gd_opt_enabled_change_rc {
+                let h = h.clone();
+                gd_toggle = gd_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            v2_content = v2_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Group Delay Optimization")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Align group delay at crossover")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(gd_toggle),
+            );
+
+            if config.gd_opt_enabled {
+                let mut gd_target_input = NumberInput::new((base_id.clone(), "gd-target-ms"))
+                    .value(config.gd_opt_target_ms)
+                    .min(ParamLimits::GD_TARGET_MS.min)
+                    .max(ParamLimits::GD_TARGET_MS.max)
+                    .step(ParamLimits::GD_TARGET_MS.step)
+                    .decimals(1)
+                    .label("Target (ms)")
+                    .size(NumberInputSize::Sm)
+                    .width(120.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_gd_opt_target_ms_change_rc {
+                    let h = h.clone();
+                    gd_target_input = gd_target_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                v2_content = v2_content.child(gd_target_input);
+            }
+
+            // --- Voice of God ---
+            let mut vog_toggle = Toggle::new((base_id.clone(), "vog-enabled"))
+                .size(ToggleSize::Sm)
+                .checked(config.vog_enabled)
+                .theme(toggle_theme);
+
+            if let Some(ref h) = on_vog_enabled_change_rc {
+                let h = h.clone();
+                vog_toggle = vog_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            v2_content = v2_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Voice of God")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Timbre matching across channels")
+                                    .size(TextSize::Xs)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(vog_toggle),
+            );
+
+            if config.vog_enabled {
+                // For now, use a simple text display for reference channel
+                // A proper dropdown would need channel names from the context
+                let ref_channel_options: Vec<SelectOption> = ["C", "L", "R"]
+                    .iter()
+                    .map(|ch| SelectOption::new(*ch, *ch))
+                    .collect();
+
+                let mut ref_select = Select::new((base_id.clone(), "vog-ref-channel"))
+                    .label("Reference Channel")
+                    .options(ref_channel_options)
+                    .selected(&config.vog_reference_channel)
+                    .is_open(ui_state.vog_reference_channel_open)
+                    .disabled(disabled)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref h) = on_vog_reference_channel_toggle_rc {
+                    let h = h.clone();
+                    ref_select = ref_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref h) = on_vog_reference_channel_change_rc {
+                    let h = h.clone();
+                    ref_select = ref_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                v2_content = v2_content.child(ref_select);
+            }
+
+            form = form.child(Card::new().content(v2_content));
         }
 
         div().id(id).child(form)
