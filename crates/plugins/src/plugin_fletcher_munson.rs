@@ -4,15 +4,13 @@
 
 use super::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use super::param_specs::fletcher_munson::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
-use std::any::Any;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FletcherMunsonBand {
@@ -59,6 +57,7 @@ pub struct FletcherMunsonPlugin {
     gain_smoothers: [Smoother; NUM_BANDS],
     compensation_smoother: Smoother,
     auto_gain: Option<AutoGain>,
+    auto_gain_input_snapshot: Vec<f32>,
 }
 
 impl FletcherMunsonPlugin {
@@ -101,6 +100,7 @@ impl FletcherMunsonPlugin {
             gain_smoothers: [Smoother::new(0.0, 50.0, sr); NUM_BANDS],
             compensation_smoother: Smoother::new(1.0, 50.0, sr),
             auto_gain: None,
+            auto_gain_input_snapshot: Vec::new(),
         };
         p.rebuild_filters();
         p.update_band_targets();
@@ -148,6 +148,19 @@ impl FletcherMunsonPlugin {
         p.playback_volume_db = params.playback_volume_db;
         p.reference_level_db = params.reference_level_db;
         p.enabled = params.enabled;
+        if params.auto_gain_enabled {
+            p.auto_gain = AutoGain::new(
+                num_channels,
+                p.sample_rate,
+                AutoGainParams {
+                    enabled: true,
+                    loudness_type: AutoGainLoudnessType::Momentary,
+                    max_gain_db: AUTO_GAIN_MAX_DB_DEFAULT,
+                    smoothing_ms: AUTO_GAIN_SMOOTHING_MS_DEFAULT,
+                },
+            )
+            .ok();
+        }
         p.update_band_targets();
         p
     }
@@ -161,24 +174,54 @@ impl InPlacePlugin for FletcherMunsonPlugin {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float(
-            "playback_volume_db",
-            "Volume",
-            0.0,
-            -100.0,
-            0.0,
-        )]
+        vec![
+            Parameter::new_float(
+                "playback_volume_db",
+                "Volume",
+                PLAYBACK_VOLUME_DB_DEFAULT,
+                PLAYBACK_VOLUME_DB_MIN,
+                PLAYBACK_VOLUME_DB_MAX,
+            )
+            .with_description("Current playback volume (dB)")
+            .with_group("Volume")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "reference_level_db",
+                "Reference Level",
+                REFERENCE_LEVEL_DB_DEFAULT,
+                REFERENCE_LEVEL_DB_MIN,
+                REFERENCE_LEVEL_DB_MAX,
+            )
+            .with_description("Reference level where response is flat (dB)")
+            .with_group("Volume")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("enabled", "Enabled", ENABLED_DEFAULT)
+                .with_description("Enable/disable Fletcher-Munson compensation")
+                .with_group("Control")
+                .with_importance(ParameterImportance::Critical),
+        ]
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         if id.0 == "playback_volume_db" {
             self.playback_volume_db = value.as_float().ok_or("val")?;
             self.update_band_targets();
+        } else if id.0 == "reference_level_db" {
+            self.reference_level_db = value.as_float().ok_or("val")?;
+            self.update_band_targets();
+        } else if id.0 == "enabled" {
+            self.enabled = value.as_bool().ok_or("val")?;
+        } else {
+            return Err(format!("Unknown parameter: {}", id));
         }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id.0 == "playback_volume_db" {
             Some(ParameterValue::Float(self.playback_volume_db))
+        } else if id.0 == "reference_level_db" {
+            Some(ParameterValue::Float(self.reference_level_db))
+        } else if id.0 == "enabled" {
+            Some(ParameterValue::Bool(self.enabled))
         } else {
             None
         }
@@ -190,10 +233,16 @@ impl InPlacePlugin for FletcherMunsonPlugin {
         }
         self.compensation_smoother.set_time(50.0, sr);
         self.rebuild_filters();
+        if let Some(ag) = &mut self.auto_gain {
+            ag.set_sample_rate(sr).map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
     fn reset(&mut self) {
         self.rebuild_filters();
+        if let Some(ag) = &mut self.auto_gain {
+            ag.reset();
+        }
     }
 
     fn process_in_place(
@@ -206,6 +255,13 @@ impl InPlacePlugin for FletcherMunsonPlugin {
         }
         enable_ftz_daz();
         let nf = context.num_frames;
+
+        // Snapshot input for auto gain measurement (must happen before in-place processing)
+        if let Some(ag) = &mut self.auto_gain {
+            self.auto_gain_input_snapshot.resize(buffer.len(), 0.0);
+            self.auto_gain_input_snapshot.copy_from_slice(buffer);
+            let _ = ag.measure_input(&self.auto_gain_input_snapshot);
+        }
 
         // Update coefficients once per block
         let mut gains = [0.0f32; NUM_BANDS];
@@ -243,6 +299,13 @@ impl InPlacePlugin for FletcherMunsonPlugin {
                 buffer[idx] = (s as f32) * comp;
             }
         }
+
+        // Auto gain: measure output and apply compensation
+        if let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_output(buffer);
+            ag.apply_compensation(buffer, nf);
+        }
+
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
