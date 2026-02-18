@@ -58,7 +58,11 @@ pub(crate) fn compute_xtc_filters_full(
         if let Some(ref ir_path) = params.room_ir_file {
             build_reflection_data_ir(ir_path, sample_rate, num_bins).ok()
         } else {
-            Some(build_reflection_data_image_source(params, sample_rate, num_bins))
+            Some(build_reflection_data_image_source(
+                params,
+                sample_rate,
+                num_bins,
+            ))
         }
     } else {
         None
@@ -216,8 +220,7 @@ fn compute_xtc_filters_asymmetric(
         let delta_t_right = delta_t_right_geometric + diffraction_delay_right;
 
         // Left ear: ipsi speaker is left speaker (theta_left), contra is right speaker (theta_right)
-        let pinna_left_contra =
-            pinna_resonance_contra(freq, theta_right.abs() * 180.0 / PI);
+        let pinna_left_contra = pinna_resonance_contra(freq, theta_right.abs() * 180.0 / PI);
         let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_ll = head_shadowing_woodworth(freq, angle_left_contra, a) * amplitude_ratio_left;
         let phase_ll = -2.0 * PI * freq * delta_t_left;
@@ -225,8 +228,7 @@ fn compute_xtc_filters_asymmetric(
             Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin()) * pinna_left_contra;
 
         // Right ear: ipsi speaker is right speaker (theta_right), contra is left speaker (theta_left)
-        let pinna_right_contra =
-            pinna_resonance_contra(freq, theta_left.abs() * 180.0 / PI);
+        let pinna_right_contra = pinna_resonance_contra(freq, theta_left.abs() * 180.0 / PI);
         let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_rr = head_shadowing_woodworth(freq, angle_right_contra, a) * amplitude_ratio_right;
         let phase_rr = -2.0 * PI * freq * delta_t_right;
@@ -332,8 +334,7 @@ fn compute_xtc_filters_symmetric(
         let h_ipsi = Complex::new(1.0, 0.0);
 
         // Frequency-dependent ITD: geometric delay + diffraction delay
-        let diffraction_delay =
-            frequency_dependent_diffraction_delay(freq, contra_angle, a);
+        let diffraction_delay = frequency_dependent_diffraction_delay(freq, contra_angle, a);
         let delta_t = delta_t_geometric + diffraction_delay;
 
         // Transfer function for contralateral path using Woodworth model
@@ -518,7 +519,7 @@ pub(crate) fn frequency_dependent_diffraction_delay(
 /// -90°. The angular separation from source to contralateral ear, measured around the
 /// head surface, is approximately PI/2 + speaker_angle.
 #[inline]
-fn contralateral_shadow_angle(speaker_angle_rad: f32) -> f32 {
+pub(crate) fn contralateral_shadow_angle(speaker_angle_rad: f32) -> f32 {
     (PI / 2.0 + speaker_angle_rad).min(PI)
 }
 
@@ -571,7 +572,7 @@ pub(crate) fn head_shadowing_woodworth(freq: f32, angle_rad: f32, head_radius: f
 /// perfect crosstalk cancellation. Returns a real-valued gain (applied to both
 /// ipsilateral and contralateral transfer functions).
 #[inline]
-fn pinna_resonance(freq: f32) -> f32 {
+pub(crate) fn pinna_resonance(freq: f32) -> f32 {
     if freq <= 0.0 {
         return 1.0;
     }
@@ -610,7 +611,7 @@ fn pinna_resonance(freq: f32) -> f32 {
 ///
 /// `speaker_angle_deg` is the speaker angle from the median plane (e.g., 30°).
 #[inline]
-fn pinna_resonance_contra(freq: f32, speaker_angle_deg: f32) -> f32 {
+pub(crate) fn pinna_resonance_contra(freq: f32, speaker_angle_deg: f32) -> f32 {
     if freq <= 0.0 {
         return 1.0;
     }
@@ -687,7 +688,7 @@ fn sigmoid_smooth(x: f32, width: f32) -> f32 {
 
 /// Compute path length from speaker at angle theta to ear with offset
 #[inline]
-fn compute_path_length(distance: f32, theta: f32, ear_offset: f32) -> f32 {
+pub(crate) fn compute_path_length(distance: f32, theta: f32, ear_offset: f32) -> f32 {
     ((distance * theta.sin() + ear_offset).powi(2) + (distance * theta.cos()).powi(2)).sqrt()
 }
 

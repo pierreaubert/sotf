@@ -66,17 +66,37 @@ pub(crate) fn compute_image_sources(
     // Six image source positions: mirror speaker across each surface
     let images = [
         // Left wall (x = -half_w): reflect x across x=-half_w
-        [-half_w - (speaker_pos[0] - (-half_w)), speaker_pos[1], speaker_pos[2]],
+        [
+            -half_w - (speaker_pos[0] - (-half_w)),
+            speaker_pos[1],
+            speaker_pos[2],
+        ],
         // Right wall (x = +half_w): reflect x across x=+half_w
-        [half_w + (half_w - speaker_pos[0]), speaker_pos[1], speaker_pos[2]],
+        [
+            half_w + (half_w - speaker_pos[0]),
+            speaker_pos[1],
+            speaker_pos[2],
+        ],
         // Front wall (z = +half_d): reflect z across z=+half_d
-        [speaker_pos[0], speaker_pos[1], half_d + (half_d - speaker_pos[2])],
+        [
+            speaker_pos[0],
+            speaker_pos[1],
+            half_d + (half_d - speaker_pos[2]),
+        ],
         // Back wall (z = -half_d): reflect z across z=-half_d
-        [speaker_pos[0], speaker_pos[1], -half_d - (speaker_pos[2] - (-half_d))],
+        [
+            speaker_pos[0],
+            speaker_pos[1],
+            -half_d - (speaker_pos[2] - (-half_d)),
+        ],
         // Floor (y = 0): reflect y across y=0
         [speaker_pos[0], -speaker_pos[1], speaker_pos[2]],
         // Ceiling (y = height): reflect y across y=height
-        [speaker_pos[0], 2.0 * room.height - speaker_pos[1], speaker_pos[2]],
+        [
+            speaker_pos[0],
+            2.0 * room.height - speaker_pos[1],
+            speaker_pos[2],
+        ],
     ];
 
     let mut paths = Vec::with_capacity(6);
@@ -138,20 +158,20 @@ pub(crate) fn build_reflection_data_image_source(
     let d = params.distance_m;
     let speaker_height = LISTENER_HEIGHT_M; // speakers at ear level
 
-    let left_speaker = [
-        -d * theta_rad.sin(),
-        speaker_height,
-        d * theta_rad.cos(),
-    ];
-    let right_speaker = [
-        d * theta_rad.sin(),
-        speaker_height,
-        d * theta_rad.cos(),
-    ];
+    let left_speaker = [-d * theta_rad.sin(), speaker_height, d * theta_rad.cos()];
+    let right_speaker = [d * theta_rad.sin(), speaker_height, d * theta_rad.cos()];
 
     // Ear positions
-    let left_ear = [listener_pos[0] - head_radius, listener_pos[1], listener_pos[2]];
-    let right_ear = [listener_pos[0] + head_radius, listener_pos[1], listener_pos[2]];
+    let left_ear = [
+        listener_pos[0] - head_radius,
+        listener_pos[1],
+        listener_pos[2],
+    ];
+    let right_ear = [
+        listener_pos[0] + head_radius,
+        listener_pos[1],
+        listener_pos[2],
+    ];
 
     // Direct distances for attenuation normalization
     let direct_left_to_left_ear = euclidean_dist(&left_speaker, &left_ear);
@@ -162,10 +182,14 @@ pub(crate) fn build_reflection_data_image_source(
     // Compute reflection paths:
     // Ipsi paths: left speaker → left ear, right speaker → right ear
     // Contra paths: right speaker → left ear, left speaker → right ear
-    let ipsi_reflections_l = compute_image_sources(left_speaker, left_ear, direct_left_to_left_ear, &room);
-    let ipsi_reflections_r = compute_image_sources(right_speaker, right_ear, direct_right_to_right_ear, &room);
-    let contra_reflections_l = compute_image_sources(right_speaker, left_ear, direct_right_to_left_ear, &room);
-    let contra_reflections_r = compute_image_sources(left_speaker, right_ear, direct_left_to_right_ear, &room);
+    let ipsi_reflections_l =
+        compute_image_sources(left_speaker, left_ear, direct_left_to_left_ear, &room);
+    let ipsi_reflections_r =
+        compute_image_sources(right_speaker, right_ear, direct_right_to_right_ear, &room);
+    let contra_reflections_l =
+        compute_image_sources(right_speaker, left_ear, direct_right_to_left_ear, &room);
+    let contra_reflections_r =
+        compute_image_sources(left_speaker, right_ear, direct_left_to_right_ear, &room);
 
     let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
 
@@ -195,11 +219,8 @@ pub(crate) fn build_reflection_data_image_source(
         h_total_magnitude[bin] = total_ipsi.norm() + total_contra.norm();
     }
 
-    let beta_boost = compute_reflection_beta_boost(
-        &h_total_magnitude,
-        num_bins,
-        params.reflection_beta_boost,
-    );
+    let beta_boost =
+        compute_reflection_beta_boost(&h_total_magnitude, num_bins, params.reflection_beta_boost);
 
     RoomReflectionData {
         h_room_ipsi,
@@ -211,11 +232,7 @@ pub(crate) fn build_reflection_data_image_source(
 /// Sum frequency-domain contributions from a set of reflection paths at a given frequency.
 ///
 /// Each path's contribution includes head shadowing and air absorption attenuation.
-fn sum_reflection_paths(
-    paths: &[ReflectionPath],
-    freq: f32,
-    head_radius: f32,
-) -> Complex<f32> {
+fn sum_reflection_paths(paths: &[ReflectionPath], freq: f32, head_radius: f32) -> Complex<f32> {
     let mut sum = Complex::new(0.0, 0.0);
     for path in paths {
         let shadow = head_shadowing_woodworth(freq, path.shadow_angle, head_radius);
@@ -266,15 +283,15 @@ pub(crate) fn build_reflection_data_ir(
         .map(|c: symphonia::core::audio::Channels| c.count())
         .unwrap_or(1);
 
-    let mut decoder = symphonia_codec_pcm::PcmDecoder::try_new(
-        &track.codec_params,
-        &DecoderOptions::default(),
-    )
-    .map_err(|e| format!("Decoder: {}", e))?;
+    let mut decoder =
+        symphonia_codec_pcm::PcmDecoder::try_new(&track.codec_params, &DecoderOptions::default())
+            .map_err(|e| format!("Decoder: {}", e))?;
 
     let mut channels: Vec<Vec<f32>> = vec![Vec::new(); num_channels];
     while let Ok(packet) = reader.next_packet() {
-        let decoded = decoder.decode(&packet).map_err(|e| format!("Decode: {}", e))?;
+        let decoded = decoder
+            .decode(&packet)
+            .map_err(|e| format!("Decode: {}", e))?;
         match &decoded {
             AudioBufferRef::F32(buf) => {
                 for (ch, channel) in channels.iter_mut().enumerate() {
@@ -379,8 +396,8 @@ pub(crate) fn compute_reflection_beta_boost(
                 // Null depth in dB (positive value)
                 let null_depth_db = -20.0 * ratio.max(1e-6).log10();
                 // Proportional boost, capped at boost_factor × base
-                let boost = (1.0 + (null_depth_db / threshold_db) * (boost_factor - 1.0))
-                    .min(boost_factor);
+                let boost =
+                    (1.0 + (null_depth_db / threshold_db) * (boost_factor - 1.0)).min(boost_factor);
                 raw_boost[bin] = boost;
             }
         }

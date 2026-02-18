@@ -29,6 +29,7 @@ mod filters;
 mod reflections;
 #[cfg(test)]
 mod tests;
+pub mod validation;
 
 pub use config::*;
 use filters::{compute_xtc_filters_full, XtcFilters};
@@ -196,7 +197,11 @@ impl XtcPlugin {
         }
 
         // Validate IR file path if provided
-        if let Some(ref ir_path) = params.room_ir_file.as_ref().filter(|p| !std::path::Path::new(p.as_str()).exists()) {
+        if let Some(ref ir_path) = params
+            .room_ir_file
+            .as_ref()
+            .filter(|p| !std::path::Path::new(p.as_str()).exists())
+        {
             return Err(format!("Room IR file not found: {}", ir_path));
         }
 

@@ -455,8 +455,7 @@ fn test_frequency_dependent_itd() {
 
     // DC should match full Woodworth diffraction delay
     let dc_delay = frequency_dependent_diffraction_delay(0.0, angle, head_radius);
-    let woodworth_delay =
-        woodworth_diffraction_path(angle.abs(), head_radius) / 343.0;
+    let woodworth_delay = woodworth_diffraction_path(angle.abs(), head_radius) / 343.0;
     assert!(
         (dc_delay - woodworth_delay).abs() < 1e-8,
         "DC delay {} should match Woodworth {}",

@@ -101,7 +101,7 @@ pub use plugin_upmixer::{
     default_safety_cap_db as upmixer_default_safety_cap_db,
     default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
-pub use plugin_xtc::{XtcPlugin, XtcPluginParams};
+pub use plugin_xtc::{validation, XtcPlugin, XtcPluginParams};
 
 pub use simd::enable_ftz_daz;
 pub use sofa::{HrtfData, SofaFile, SourcePosition};

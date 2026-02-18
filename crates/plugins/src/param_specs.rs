@@ -566,8 +566,13 @@ pub mod denoiser {
     pub const USE_CAPTURED_PROFILE_DEFAULT: bool = false;
     pub const LEARN_FRAMES: usize = 50; // ~1s at typical hop rates
 
+    // Transparency: blend computed gain toward 1.0 (0 = full denoising, 1 = pass-through)
+    pub const TRANSPARENCY_DEFAULT: f32 = 0.0;
+    pub const TRANSPARENCY_MIN: f32 = 0.0;
+    pub const TRANSPARENCY_MAX: f32 = 1.0;
+
     // Decision-Directed SNR estimation
-    pub const DD_ENABLED_DEFAULT: bool = true;
+    pub const DD_ENABLED_DEFAULT: bool = false;
     pub const DD_ALPHA_DEFAULT: f32 = 0.98;
     pub const DD_ALPHA_MIN: f32 = 0.5;
     pub const DD_ALPHA_MAX: f32 = 0.999;
