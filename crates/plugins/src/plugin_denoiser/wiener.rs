@@ -25,6 +25,7 @@ impl DenoiserPlugin {
     pub(super) fn calculate_wiener_gains(&mut self) {
         let reduction_factor = self.reduction_linear;
         let floor_linear = self.floor_linear;
+        let transparency = self.transparency;
 
         let mut total_reduction = 0.0_f32;
         let mut bin_count = 0;
@@ -54,11 +55,13 @@ impl DenoiserPlugin {
                 // Store current power for next frame's DD computation
                 self.prev_power[ch][k] = signal_power;
 
-                // Apply reduction control
-                let effective_snr = snr_priori / reduction_factor;
+                // Calculate Wiener gain with reduction control in denominator
+                // This preserves gain in high-SNR (clean) regions while reducing
+                // gain in low-SNR (noisy) regions proportional to reduction_factor
+                let gain = (snr_priori / (snr_priori + reduction_factor)).max(floor_linear);
 
-                // Calculate Wiener gain with floor
-                let gain = (effective_snr / (effective_snr + 1.0)).max(floor_linear);
+                // Blend toward dry signal based on transparency (0 = full denoise, 1 = pass-through)
+                let gain = gain + transparency * (1.0 - gain);
                 self.gain[ch][k] = gain;
             }
 

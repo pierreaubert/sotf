@@ -20,7 +20,9 @@ const EPSILON: f32 = 1e-10;
 /// Number of frames to average during the bootstrap phase.
 /// During bootstrap, gains are unity (pass-through) while the noise
 /// floor estimate converges from multiple frames.
-const BOOTSTRAP_FRAMES: usize = 5;
+/// 20 frames (~213ms at 48kHz/2048-sample FFT) gives the noise floor
+/// enough time to converge before processing begins.
+const BOOTSTRAP_FRAMES: usize = 20;
 
 impl DenoiserPlugin {
     /// Orchestrate noise estimation: bootstrap phase then IMCRA.

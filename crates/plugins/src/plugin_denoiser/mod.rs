@@ -32,6 +32,7 @@ mod masking;
 mod mcra;
 mod noise_profile;
 mod polyphonic;
+mod tests;
 mod transient;
 mod wiener;
 
@@ -115,6 +116,10 @@ pub struct DenoiserPlugin {
     param_crack_sensitivity: ParameterId,
     crack_sensitivity: f32,
 
+    // Transparency: blend gain toward 1.0 (0 = full denoising, 1 = pass-through)
+    param_transparency: ParameterId,
+    transparency: f32,
+
     // Decision-Directed SNR parameters
     param_dd_enabled: ParameterId,
     dd_enabled: bool,
@@ -168,7 +173,7 @@ pub struct DenoiserPlugin {
     smoothed_gain: Vec<Vec<f32>>, // Temporally smoothed gains
 
     // Frequency smoothing scratch buffer and precomputed kernel
-    freq_smooth_temp: Vec<f32>,          // [spectrum_size] scratch for smoothing across bins
+    freq_smooth_temp: Vec<f32>, // [spectrum_size] scratch for smoothing across bins
     freq_smooth_kernel: (f32, f32, f32), // Precomputed (c0, c1, c2) Gaussian weights
 
     // Overlap-add buffers
@@ -289,6 +294,9 @@ impl DenoiserPlugin {
             param_crack_sensitivity: ParameterId::from("crack_sensitivity"),
             crack_sensitivity: 10.0,
 
+            param_transparency: ParameterId::from("transparency"),
+            transparency: TRANSPARENCY_DEFAULT,
+
             param_dd_enabled: ParameterId::from("dd_enabled"),
             dd_enabled: DD_ENABLED_DEFAULT,
             param_dd_alpha: ParameterId::from("dd_alpha"),
@@ -385,6 +393,9 @@ impl DenoiserPlugin {
         plugin.mcra_l = params.mcra_l.max(1);
         plugin.mcra_delta = params.mcra_delta;
 
+        plugin.transparency = params
+            .transparency
+            .clamp(TRANSPARENCY_MIN, TRANSPARENCY_MAX);
         plugin.dd_enabled = params.dd_enabled;
         plugin.dd_alpha = params.dd_alpha.clamp(DD_ALPHA_MIN, DD_ALPHA_MAX);
         plugin.psychoacoustic_masking = params.psychoacoustic_masking;
@@ -600,6 +611,16 @@ impl InPlacePlugin for DenoiserPlugin {
             .with_description("Skip denoising for perceptually masked noise bins")
             .with_group("Processing")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "transparency",
+                "Transparency",
+                TRANSPARENCY_DEFAULT,
+                TRANSPARENCY_MIN,
+                TRANSPARENCY_MAX,
+            )
+            .with_description("Blend toward dry signal (0 = full denoising, 1 = pass-through)")
+            .with_group("General")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("dd_enabled", "DD SNR", DD_ENABLED_DEFAULT)
                 .with_description("Enable Decision-Directed SNR estimation (Ephraim-Malah)")
                 .with_group("Processing")
@@ -679,6 +700,11 @@ impl InPlacePlugin for DenoiserPlugin {
                 .max(1.0);
             self.transient_suppressor
                 .set_sensitivity(self.crack_sensitivity);
+        } else if id == self.param_transparency {
+            self.transparency = value
+                .as_float()
+                .ok_or("Invalid transparency value")?
+                .clamp(TRANSPARENCY_MIN, TRANSPARENCY_MAX);
         } else if id == self.param_psychoacoustic_masking {
             self.psychoacoustic_masking = value
                 .as_bool()
@@ -727,6 +753,8 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Bool(self.polyphonic_detection))
         } else if id == &self.param_crack_sensitivity {
             Some(ParameterValue::Float(self.crack_sensitivity))
+        } else if id == &self.param_transparency {
+            Some(ParameterValue::Float(self.transparency))
         } else if id == &self.param_psychoacoustic_masking {
             Some(ParameterValue::Bool(self.psychoacoustic_masking))
         } else if id == &self.param_dd_enabled {
@@ -856,66 +884,5 @@ impl InPlacePlugin for DenoiserPlugin {
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         Some(self.cached_data.clone())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_denoiser_creation() {
-        let denoiser = DenoiserPlugin::new(2, false);
-        assert_eq!(denoiser.channels(), 2);
-        assert_eq!(denoiser.fft_size, 2048);
-    }
-
-    #[test]
-    fn test_denoiser_low_latency() {
-        let denoiser = DenoiserPlugin::new(2, true);
-        assert_eq!(denoiser.fft_size, 512);
-    }
-
-    #[test]
-    fn test_denoiser_from_params() {
-        let params = DenoiserPluginParams {
-            reduction_db: 20.0,
-            floor_db: -40.0,
-            ..Default::default()
-        };
-        let denoiser = DenoiserPlugin::from_params(2, params);
-        assert_eq!(denoiser.reduction_db, 20.0);
-        assert_eq!(denoiser.floor_db, -40.0);
-    }
-
-    #[test]
-    fn test_hann_window() {
-        let window = crate::stft_common::generate_hann_window(8);
-        assert_eq!(window.len(), 8);
-        // Hann window should be symmetric and peak at center
-        assert!((window[0] - 0.0).abs() < 0.01);
-        assert!((window[4] - 1.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_parameter_set_get() {
-        let mut denoiser = DenoiserPlugin::new(2, false);
-        denoiser.initialize(48000).unwrap();
-
-        denoiser
-            .set_parameter(
-                ParameterId::from("reduction_db"),
-                ParameterValue::Float(25.0),
-            )
-            .unwrap();
-        denoiser
-            .set_parameter(ParameterId::from("floor_db"), ParameterValue::Float(-35.0))
-            .unwrap();
-
-        let reduction = denoiser.get_parameter(&ParameterId::from("reduction_db"));
-        let floor = denoiser.get_parameter(&ParameterId::from("floor_db"));
-
-        assert_eq!(reduction, Some(ParameterValue::Float(25.0)));
-        assert_eq!(floor, Some(ParameterValue::Float(-35.0)));
     }
 }

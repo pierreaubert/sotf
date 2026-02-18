@@ -63,6 +63,10 @@ pub fn default_use_captured_profile() -> bool {
     USE_CAPTURED_PROFILE_DEFAULT
 }
 
+pub fn default_transparency() -> f32 {
+    TRANSPARENCY_DEFAULT
+}
+
 pub fn default_dd_enabled() -> bool {
     DD_ENABLED_DEFAULT
 }
@@ -124,6 +128,10 @@ pub struct DenoiserPluginParams {
     #[serde(default = "default_mcra_delta")]
     pub mcra_delta: f32,
 
+    /// Transparency: blend denoised signal toward dry (0 = full denoising, 1 = pass-through)
+    #[serde(default = "default_transparency")]
+    pub transparency: f32,
+
     /// Enable Decision-Directed SNR estimation (Ephraim-Malah)
     #[serde(default = "default_dd_enabled")]
     pub dd_enabled: bool,
@@ -156,6 +164,7 @@ impl Default for DenoiserPluginParams {
             mcra_alpha_p: default_mcra_alpha_p(),
             mcra_l: default_mcra_l(),
             mcra_delta: default_mcra_delta(),
+            transparency: default_transparency(),
             dd_enabled: default_dd_enabled(),
             dd_alpha: default_dd_alpha(),
             psychoacoustic_masking: default_psychoacoustic_masking(),
