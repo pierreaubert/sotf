@@ -4,7 +4,7 @@
 
 use super::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use super::param_specs::loudness_compensation::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
@@ -206,24 +206,76 @@ impl Plugin for LoudnessCompensationPlugin {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float(
-            "low_gain",
-            "Bass Boost",
-            6.0,
-            0.0,
-            20.0,
-        )]
+        vec![
+            Parameter::new_float(
+                "low_gain",
+                "Bass Boost",
+                LOW_GAIN_DEFAULT,
+                LOW_GAIN_MIN,
+                LOW_GAIN_MAX,
+            )
+            .with_description("Low-frequency shelf gain (dB)")
+            .with_group("Gain")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "high_gain",
+                "Treble Boost",
+                HIGH_GAIN_DEFAULT,
+                HIGH_GAIN_MIN,
+                HIGH_GAIN_MAX,
+            )
+            .with_description("High-frequency shelf gain (dB)")
+            .with_group("Gain")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "low_freq",
+                "Low Frequency",
+                LOW_FREQ_DEFAULT,
+                LOW_FREQ_MIN,
+                LOW_FREQ_MAX,
+            )
+            .with_description("Low shelf center frequency (Hz)")
+            .with_group("Frequency")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "high_freq",
+                "High Frequency",
+                HIGH_FREQ_DEFAULT,
+                HIGH_FREQ_MIN,
+                HIGH_FREQ_MAX,
+            )
+            .with_description("High shelf center frequency (Hz)")
+            .with_group("Frequency")
+            .with_importance(ParameterImportance::Useful),
+        ]
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         if id.0 == "low_gain" {
             self.low_gain = value.as_float().ok_or("val")?;
             self.rebuild_filters();
+        } else if id.0 == "high_gain" {
+            self.high_gain = value.as_float().ok_or("val")?;
+            self.rebuild_filters();
+        } else if id.0 == "low_freq" {
+            self.low_freq = value.as_float().ok_or("val")?;
+            self.rebuild_filters();
+        } else if id.0 == "high_freq" {
+            self.high_freq = value.as_float().ok_or("val")?;
+            self.rebuild_filters();
+        } else {
+            return Err(format!("Unknown parameter: {}", id));
         }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id.0 == "low_gain" {
             Some(ParameterValue::Float(self.low_gain))
+        } else if id.0 == "high_gain" {
+            Some(ParameterValue::Float(self.high_gain))
+        } else if id.0 == "low_freq" {
+            Some(ParameterValue::Float(self.low_freq))
+        } else if id.0 == "high_freq" {
+            Some(ParameterValue::Float(self.high_freq))
         } else {
             None
         }

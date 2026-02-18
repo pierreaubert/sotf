@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::param_specs::multiband_expander::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::{LogSmoother, Smoother};
@@ -262,24 +262,118 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float(
-            "threshold",
-            "Threshold",
-            -40.0,
-            -80.0,
-            0.0,
-        )]
+        vec![
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                THRESHOLD_DEFAULT,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            )
+            .with_description("Level below which expansion starts (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
+                .with_description("Expansion ratio (1:1 to 20:1)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
+                .with_description("Attack time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "release",
+                "Release",
+                RELEASE_DEFAULT,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_description("Release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
+                .with_description("Soft knee width (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float("range", "Range", RANGE_DEFAULT, RANGE_MIN, RANGE_MAX)
+                .with_description("Maximum attenuation depth (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "hysteresis",
+                "Hysteresis",
+                HYSTERESIS_DEFAULT,
+                HYSTERESIS_MIN,
+                HYSTERESIS_MAX,
+            )
+            .with_description("Hysteresis between open and close thresholds (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
+                .with_description("Hold time before closing (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
+                .with_description("Use linked sidechain for all channels")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
+                .with_description("Dry/wet mix (0 = dry, 1 = expanded)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+        ]
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         if id.0 == "threshold" {
             self.threshold_db = value.as_float().ok_or("val")?;
             self.threshold_smoother.set_target(self.threshold_db);
+        } else if id.0 == "ratio" {
+            self.ratio = value.as_float().ok_or("val")?.max(1.0);
+        } else if id.0 == "attack" {
+            self.attack_ms = value.as_float().ok_or("val")?;
+            self.update_coefficients();
+        } else if id.0 == "release" {
+            self.release_ms = value.as_float().ok_or("val")?;
+            self.update_coefficients();
+        } else if id.0 == "knee" {
+            self.knee_db = value.as_float().ok_or("val")?.max(0.0);
+        } else if id.0 == "range" {
+            self.range_db = value.as_float().ok_or("val")?.max(0.0);
+        } else if id.0 == "hysteresis" {
+            self.hysteresis_db = value.as_float().ok_or("val")?.max(0.0);
+        } else if id.0 == "hold" {
+            self.hold_ms = value.as_float().ok_or("val")?.max(0.0);
+        } else if id.0 == "link_channels" {
+            self.link_channels = value.as_bool().ok_or("val")?;
+        } else if id.0 == "mix" {
+            self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
+            self.mix_smoother.set_target(self.mix);
+        } else {
+            return Err(format!("Unknown parameter: {}", id));
         }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id.0 == "threshold" {
             Some(ParameterValue::Float(self.threshold_db))
+        } else if id.0 == "ratio" {
+            Some(ParameterValue::Float(self.ratio))
+        } else if id.0 == "attack" {
+            Some(ParameterValue::Float(self.attack_ms))
+        } else if id.0 == "release" {
+            Some(ParameterValue::Float(self.release_ms))
+        } else if id.0 == "knee" {
+            Some(ParameterValue::Float(self.knee_db))
+        } else if id.0 == "range" {
+            Some(ParameterValue::Float(self.range_db))
+        } else if id.0 == "hysteresis" {
+            Some(ParameterValue::Float(self.hysteresis_db))
+        } else if id.0 == "hold" {
+            Some(ParameterValue::Float(self.hold_ms))
+        } else if id.0 == "link_channels" {
+            Some(ParameterValue::Bool(self.link_channels))
+        } else if id.0 == "mix" {
+            Some(ParameterValue::Float(self.mix))
         } else {
             None
         }

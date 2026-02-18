@@ -2,7 +2,7 @@
 // Convolution Plugin - Partitioned FFT-based convolution
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, flush_denormals_inplace};
 use super::smoothing::Smoother;
@@ -39,8 +39,12 @@ pub struct ConvolutionPlugin {
     channels: usize,
     sample_rate: u32,
     ir_file: String,
+    param_mix: ParameterId,
     mix: Smoother,
+    mix_value: f32,
+    param_gain_db: ParameterId,
     gain_linear: Smoother,
+    gain_db_value: f32,
     state: Arc<ArcSwap<Option<ConvolutionState>>>,
     input_buffers: Vec<Vec<f32>>,
     input_fill: usize,
@@ -54,8 +58,12 @@ impl ConvolutionPlugin {
             channels,
             sample_rate,
             ir_file: String::new(),
+            param_mix: ParameterId::from("mix"),
             mix: Smoother::new(1.0, 20.0, sample_rate),
+            mix_value: 1.0,
+            param_gain_db: ParameterId::from("gain_db"),
             gain_linear: Smoother::new(1.0, 20.0, sample_rate),
+            gain_db_value: 0.0,
             state: Arc::new(ArcSwap::from_pointee(None)),
             input_buffers: vec![vec![0.0; PARTITION_SIZE]; channels],
             input_fill: 0,
@@ -73,7 +81,9 @@ impl ConvolutionPlugin {
         if !params.ir_file.is_empty() {
             let _ = plugin.load_ir(&params.ir_file);
         }
+        plugin.mix_value = params.mix;
         plugin.mix.set_target(params.mix);
+        plugin.gain_db_value = params.gain_db;
         plugin
             .gain_linear
             .set_target(10.0f32.powf(params.gain_db / 20.0));
@@ -157,13 +167,40 @@ impl Plugin for ConvolutionPlugin {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![]
+        use super::param_specs::convolution::*;
+        vec![
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
+                .with_description("Dry/wet mix (0 = dry, 1 = convolved)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("gain_db", "Gain", GAIN_DB_DEFAULT, GAIN_DB_MIN, GAIN_DB_MAX)
+                .with_description("Output gain (dB)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+        ]
     }
-    fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> PluginResult<()> {
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        if id == self.param_mix {
+            let val = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
+            self.mix_value = val;
+            self.mix.set_target(val);
+        } else if id == self.param_gain_db {
+            let val = value.as_float().ok_or("val")?;
+            self.gain_db_value = val;
+            self.gain_linear.set_target(10.0f32.powf(val / 20.0));
+        } else {
+            return Err(format!("Unknown parameter: {}", id));
+        }
         Ok(())
     }
-    fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        if id == &self.param_mix {
+            Some(ParameterValue::Float(self.mix_value))
+        } else if id == &self.param_gain_db {
+            Some(ParameterValue::Float(self.gain_db_value))
+        } else {
+            None
+        }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;

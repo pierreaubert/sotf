@@ -1038,6 +1038,9 @@ impl PluginFuzzer for UpmixerFuzzer {
             dialogue_weight: 0.4,
             voice_freq_min_hz: 500.0,
             voice_freq_max_hz: 3000.0,
+            dialogue_centroid_weight: 0.3,
+            dialogue_variance_weight: 0.2,
+            dialogue_coherence_weight: 0.5,
             // Diagnostic bypass parameters
             bypass_decorrelation: false,
             bypass_transient_detection: false,

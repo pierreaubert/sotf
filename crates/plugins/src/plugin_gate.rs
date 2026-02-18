@@ -199,8 +199,50 @@ impl InPlacePlugin for GatePlugin {
                 THRESHOLD_DEFAULT,
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
-            ),
-            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX),
+            )
+            .with_description("Level below which gating starts (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
+                .with_description("Gate ratio (1:1 to 100:1)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
+                .with_description("Attack time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
+                .with_description("Hold time before closing (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "release",
+                "Release",
+                RELEASE_DEFAULT,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_description("Release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
+                .with_description("Dry/wet mix (0 = dry, 1 = gated)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
+                .with_description("Use linked sidechain for all channels")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "sidechain_hpf_hz",
+                "Sidechain HPF",
+                SIDECHAIN_HPF_HZ_DEFAULT,
+                SIDECHAIN_HPF_HZ_MIN,
+                SIDECHAIN_HPF_HZ_MAX,
+            )
+            .with_description("High-pass filter frequency for sidechain (Hz)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
@@ -220,14 +262,33 @@ impl InPlacePlugin for GatePlugin {
         } else if id == self.param_mix {
             self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
             self.mix_smoother.set_target(self.mix);
+        } else if id == self.param_link_channels {
+            self.link_channels = value.as_bool().ok_or("val")?;
+        } else if id == self.param_sidechain_hpf_hz {
+            self.sidechain_hpf_hz = value.as_float().ok_or("val")?.max(0.0);
+            self.update_coefficients();
         } else {
-            return Err("unknown".into());
+            return Err(format!("Unknown parameter: {}", id));
         }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id == &self.param_threshold {
             Some(ParameterValue::Float(self.threshold_db))
+        } else if id == &self.param_ratio {
+            Some(ParameterValue::Float(self.ratio))
+        } else if id == &self.param_attack {
+            Some(ParameterValue::Float(self.attack_ms))
+        } else if id == &self.param_hold {
+            Some(ParameterValue::Float(self.hold_ms))
+        } else if id == &self.param_release {
+            Some(ParameterValue::Float(self.release_ms))
+        } else if id == &self.param_mix {
+            Some(ParameterValue::Float(self.mix))
+        } else if id == &self.param_link_channels {
+            Some(ParameterValue::Bool(self.link_channels))
+        } else if id == &self.param_sidechain_hpf_hz {
+            Some(ParameterValue::Float(self.sidechain_hpf_hz))
         } else {
             None
         }

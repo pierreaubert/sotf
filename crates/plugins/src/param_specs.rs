@@ -348,6 +348,19 @@ pub mod upmixer {
     pub const VOICE_FREQ_MAX_HZ_DEFAULT: f32 = 3000.0;
     pub const VOICE_FREQ_MAX_HZ_MIN: f32 = 2000.0;
     pub const VOICE_FREQ_MAX_HZ_MAX: f32 = 5000.0;
+
+    // Dialogue detection sub-weights (centroid, variance, coherence)
+    pub const DIALOGUE_CENTROID_WEIGHT_DEFAULT: f32 = 0.3;
+    pub const DIALOGUE_CENTROID_WEIGHT_MIN: f32 = 0.0;
+    pub const DIALOGUE_CENTROID_WEIGHT_MAX: f32 = 1.0;
+
+    pub const DIALOGUE_VARIANCE_WEIGHT_DEFAULT: f32 = 0.2;
+    pub const DIALOGUE_VARIANCE_WEIGHT_MIN: f32 = 0.0;
+    pub const DIALOGUE_VARIANCE_WEIGHT_MAX: f32 = 1.0;
+
+    pub const DIALOGUE_COHERENCE_WEIGHT_DEFAULT: f32 = 0.5;
+    pub const DIALOGUE_COHERENCE_WEIGHT_MIN: f32 = 0.0;
+    pub const DIALOGUE_COHERENCE_WEIGHT_MAX: f32 = 1.0;
 }
 
 // ============================================================================

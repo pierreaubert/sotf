@@ -133,15 +133,38 @@ impl InPlacePlugin for LimiterPlugin {
                 THRESHOLD_DEFAULT,
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
-            ),
+            )
+            .with_description("Ceiling level (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
                 RELEASE_DEFAULT,
                 RELEASE_MIN,
                 RELEASE_MAX,
-            ),
-            Parameter::new_bool("soft", "Soft", SOFT_DEFAULT),
+            )
+            .with_description("Release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_bool("soft", "Soft", SOFT_DEFAULT)
+                .with_description("Use soft clipping instead of hard limiting")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "lookahead",
+                "Lookahead",
+                LOOKAHEAD_DEFAULT,
+                LOOKAHEAD_MIN,
+                LOOKAHEAD_MAX,
+            )
+            .with_description("Lookahead time for peak detection (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
+                .with_description("Dry/wet mix (0 = dry, 1 = limited)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -161,6 +184,8 @@ impl InPlacePlugin for LimiterPlugin {
         } else if id == self.param_mix {
             self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
             self.mix_smoother.set_target(self.mix);
+        } else {
+            return Err(format!("Unknown parameter: {}", id));
         }
         Ok(())
     }
@@ -168,6 +193,12 @@ impl InPlacePlugin for LimiterPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id == &self.param_threshold {
             Some(ParameterValue::Float(self.threshold_db))
+        } else if id == &self.param_release {
+            Some(ParameterValue::Float(self.release_ms))
+        } else if id == &self.param_soft {
+            Some(ParameterValue::Bool(self.soft))
+        } else if id == &self.param_lookahead {
+            Some(ParameterValue::Float(self.lookahead_ms))
         } else if id == &self.param_mix {
             Some(ParameterValue::Float(self.mix))
         } else {
