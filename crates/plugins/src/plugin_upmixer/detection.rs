@@ -78,7 +78,17 @@ impl UpmixerPlugin {
             0.0
         };
 
-        let prob = c_score * 0.3 + v_score * 0.2 + voice_coh * 0.5;
+        let w_sum = self.dialogue_centroid_weight + self.dialogue_variance_weight + self.dialogue_coherence_weight;
+        let (w_c, w_v, w_coh) = if w_sum > 1e-9 {
+            (
+                self.dialogue_centroid_weight / w_sum,
+                self.dialogue_variance_weight / w_sum,
+                self.dialogue_coherence_weight / w_sum,
+            )
+        } else {
+            (0.333, 0.333, 0.334)
+        };
+        let prob = c_score * w_c + v_score * w_v + voice_coh * w_coh;
         let p_alpha = if prob > self.dialogue_probability {
             0.1
         } else {

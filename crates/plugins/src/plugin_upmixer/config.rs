@@ -143,8 +143,24 @@ pub fn default_bypass_all_processing() -> bool {
     false
 }
 
+pub fn default_enable_hr_direct() -> bool {
+    true
+}
+
+pub fn default_dialogue_centroid_weight() -> f32 {
+    0.3
+}
+
+pub fn default_dialogue_variance_weight() -> f32 {
+    0.2
+}
+
+pub fn default_dialogue_coherence_weight() -> f32 {
+    0.5
+}
+
 /// Configuration parameters for UpmixerPlugin
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpmixerPluginParams {
     #[serde(default = "default_fft_size")]
     pub fft_size: usize,
@@ -188,7 +204,7 @@ pub struct UpmixerPluginParams {
     pub subharmonic_gain: f32,
 
     /// Enable high-resolution direct-path enhancement (experimental)
-    #[serde(default)]
+    #[serde(default = "default_enable_hr_direct")]
     pub enable_hr_direct: bool,
 
     #[serde(default = "default_hr_sharpen")]
@@ -269,6 +285,18 @@ pub struct UpmixerPluginParams {
     /// Voice frequency range maximum in Hz (2000-5000 Hz, default 3000 Hz)
     #[serde(default = "default_voice_freq_max_hz")]
     pub voice_freq_max_hz: f32,
+
+    /// Dialogue centroid sub-weight (0.0-1.0, default 0.3)
+    #[serde(default = "default_dialogue_centroid_weight")]
+    pub dialogue_centroid_weight: f32,
+
+    /// Dialogue variance sub-weight (0.0-1.0, default 0.2)
+    #[serde(default = "default_dialogue_variance_weight")]
+    pub dialogue_variance_weight: f32,
+
+    /// Dialogue coherence sub-weight (0.0-1.0, default 0.5)
+    #[serde(default = "default_dialogue_coherence_weight")]
+    pub dialogue_coherence_weight: f32,
 
     // Diagnostic bypass parameters (for isolating audio artifacts)
     /// Bypass decorrelation filters (sets all to identity/no phase change)

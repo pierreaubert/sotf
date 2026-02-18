@@ -881,14 +881,14 @@ mod upmixer_tests {
         let nbins = plugin.lfe_low_gains.len();
         assert_eq!(nbins, plugin.mains_high_gains.len());
 
-        // Check that low^2 + high^2 ≈ 1 across spectrum
+        // Check that |low|^2 + |high|^2 ≈ 1 across spectrum
         for (idx, (&low, &high)) in plugin
             .lfe_low_gains
             .iter()
             .zip(plugin.mains_high_gains.iter())
             .enumerate()
         {
-            let power = low * low + high * high;
+            let power = low.norm_sqr() + high.norm_sqr();
             assert!(
                 (power - 1.0).abs() < 1e-3,
                 "Crossover power not normalized at bin {}: {}",
@@ -906,11 +906,11 @@ mod upmixer_tests {
         let above = (cutoff_bin * 3 / 2).min(nbins - 1);
 
         assert!(
-            plugin.lfe_low_gains[below] > plugin.lfe_low_gains[cutoff_bin],
+            plugin.lfe_low_gains[below].norm() > plugin.lfe_low_gains[cutoff_bin].norm(),
             "Low gain should decrease toward cutoff"
         );
         assert!(
-            plugin.mains_high_gains[above] > plugin.mains_high_gains[cutoff_bin],
+            plugin.mains_high_gains[above].norm() > plugin.mains_high_gains[cutoff_bin].norm(),
             "High gain should increase above cutoff"
         );
     }
@@ -1617,7 +1617,10 @@ mod upmixer_tests {
     #[test]
     fn test_transient_processing_with_hr_path() {
         // This test verifies that the high-resolution (HR) path correctly
-        // detects and processes a transient signal.
+        // detects and processes a transient signal. The detector works by
+        // comparing current spectral flux to a smoothed baseline, so we need
+        // to establish a low-energy baseline first and then introduce a big
+        // energy jump.
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
@@ -1631,20 +1634,25 @@ mod upmixer_tests {
             num_frames: buffer_size,
         };
 
-        // --- Block 1: Silence to get a baseline envelope value ---
-        let input_silent = vec![0.0_f32; buffer_size * 2];
+        // --- Phase 1: Establish a low-energy baseline ---
+        // Use a quiet signal (not silence) so the flux smoother has a real baseline.
+        let mut input_quiet = vec![0.0_f32; buffer_size * 2];
+        for i in 0..buffer_size {
+            let t = i as f32 / 44100.0;
+            let signal = (2.0 * std::f32::consts::PI * 6000.0 * t).sin() * 0.05;
+            input_quiet[i * 2] = signal;
+            input_quiet[i * 2 + 1] = signal;
+        }
         let mut output_buffer = vec![0.0_f32; buffer_size * plugin.output_channels()];
-        plugin
-            .process(&input_silent, &mut output_buffer, &context)
-            .unwrap();
-        // Process again to let internal states settle
-        plugin
-            .process(&input_silent, &mut output_buffer, &context)
-            .unwrap();
-        let env_after_silence = plugin.hr_transient_env;
+        // Process several blocks to let the baseline converge
+        for _ in 0..6 {
+            plugin
+                .process(&input_quiet, &mut output_buffer, &context)
+                .unwrap();
+        }
+        let env_after_quiet = plugin.hr_transient_env;
 
-        // --- Block 2 & 3: Transient ---
-        // Create a transient signal that fills a whole block
+        // --- Phase 2: Transient (large energy jump) ---
         let mut input_transient = vec![0.0_f32; buffer_size * 2];
         for i in 0..buffer_size {
             let t = i as f32 / 44100.0;
@@ -1653,12 +1661,10 @@ mod upmixer_tests {
             input_transient[i * 2 + 1] = signal;
         }
 
-        // Process the first transient block. This will set the baseline energy.
+        // Process the transient block — this should spike the ratio
         plugin
             .process(&input_transient, &mut output_buffer, &context)
             .unwrap();
-
-        // Process the second transient block. This should trigger the ratio logic.
         plugin
             .process(&input_transient, &mut output_buffer, &context)
             .unwrap();
@@ -1666,10 +1672,10 @@ mod upmixer_tests {
 
         // --- Assertions ---
         assert!(
-            env_after_transient > env_after_silence,
-            "hr_transient_env should be higher after a transient ({}) than after silence ({})",
+            env_after_transient > env_after_quiet,
+            "hr_transient_env should be higher after a transient ({}) than after quiet baseline ({})",
             env_after_transient,
-            env_after_silence
+            env_after_quiet
         );
         assert!(
             env_after_transient > 0.1,

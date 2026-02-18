@@ -140,6 +140,8 @@ pub struct UpmixerPlugin {
     /// Envelope for smoothing sub-harmonic synthesis on/off transitions
     /// Ranges from 0.0 (off) to 1.0 (on), with smooth attack/release
     subharmonic_envelope: f32,
+    /// Smoothed amplitude envelope for sub-harmonic modulation (prevents raw AM distortion)
+    subharmonic_amp_envelope: f32,
 
     // ERB Banding
     erb_bands: Vec<usize>, // Start bin indices for each band
@@ -201,6 +203,14 @@ pub struct UpmixerPlugin {
     param_voice_freq_max_hz: ParameterId,
     voice_freq_max_hz: f32,
 
+    // Dialogue detection sub-weights
+    param_dialogue_centroid_weight: ParameterId,
+    dialogue_centroid_weight: f32,
+    param_dialogue_variance_weight: ParameterId,
+    dialogue_variance_weight: f32,
+    param_dialogue_coherence_weight: ParameterId,
+    dialogue_coherence_weight: f32,
+
     // Diagnostic bypass parameters
     param_bypass_decorrelation: ParameterId,
     bypass_decorrelation: bool,
@@ -226,9 +236,10 @@ pub struct UpmixerPlugin {
     pca_cov_yy: Vec<f32>,
     pca_cov_xy: Vec<Complex<f32>>,
 
-    // Crossover magnitude tables (Linkwitz-Riley between mains and LFE)
-    lfe_low_gains: Vec<f32>,
-    mains_high_gains: Vec<f32>,
+    // Crossover complex gain tables (Linkwitz-Riley between mains and LFE)
+    // Complex values preserve phase information for accurate crossover behavior
+    lfe_low_gains: Vec<Complex<f32>>,
+    mains_high_gains: Vec<Complex<f32>>,
 
     // Height channel mask per positive-frequency bin (HF emphasis + coherence gating)
     height_band_gains: Vec<f32>,
@@ -579,6 +590,13 @@ impl UpmixerPlugin {
             param_voice_freq_max_hz: ParameterId::from("voice_freq_max_hz"),
             voice_freq_max_hz: default_voice_freq_max_hz(),
 
+            param_dialogue_centroid_weight: ParameterId::from("dialogue_centroid_weight"),
+            dialogue_centroid_weight: default_dialogue_centroid_weight(),
+            param_dialogue_variance_weight: ParameterId::from("dialogue_variance_weight"),
+            dialogue_variance_weight: default_dialogue_variance_weight(),
+            param_dialogue_coherence_weight: ParameterId::from("dialogue_coherence_weight"),
+            dialogue_coherence_weight: default_dialogue_coherence_weight(),
+
             // Diagnostic bypass parameters
             param_bypass_decorrelation: ParameterId::from("bypass_decorrelation"),
             bypass_decorrelation: default_bypass_decorrelation(),
@@ -589,6 +607,7 @@ impl UpmixerPlugin {
 
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
+            subharmonic_amp_envelope: 0.0,
 
             erb_bands: Vec::new(), // Will be calculated in initialize()
             steering_alphas: Vec::new(),
@@ -607,8 +626,8 @@ impl UpmixerPlugin {
             pca_cov_yy: Vec::new(),
             pca_cov_xy: Vec::new(),
 
-            lfe_low_gains: vec![1.0; spectrum_size],
-            mains_high_gains: vec![1.0; spectrum_size],
+            lfe_low_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
+            mains_high_gains: vec![Complex::new(1.0, 0.0); spectrum_size],
 
             height_band_gains: vec![0.0; spectrum_size],
             height_band_gains_prev: vec![0.0; spectrum_size],
@@ -751,6 +770,11 @@ impl UpmixerPlugin {
         plugin.dialogue_weight.set_target(params.dialogue_weight.clamp(0.0, 1.0));
         plugin.voice_freq_min_hz = params.voice_freq_min_hz.clamp(200.0, 800.0);
         plugin.voice_freq_max_hz = params.voice_freq_max_hz.clamp(2000.0, 5000.0);
+
+        // Dialogue detection sub-weights
+        plugin.dialogue_centroid_weight = params.dialogue_centroid_weight.clamp(0.0, 1.0);
+        plugin.dialogue_variance_weight = params.dialogue_variance_weight.clamp(0.0, 1.0);
+        plugin.dialogue_coherence_weight = params.dialogue_coherence_weight.clamp(0.0, 1.0);
 
         // Diagnostic bypass parameters
         plugin.bypass_decorrelation = params.bypass_decorrelation;
@@ -1247,6 +1271,48 @@ Upper bound for dialogue detection analysis.",
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "dialogue_centroid_weight",
+                "Dialogue Centroid Weight",
+                DIALOGUE_CENTROID_WEIGHT_DEFAULT,
+                DIALOGUE_CENTROID_WEIGHT_MIN,
+                DIALOGUE_CENTROID_WEIGHT_MAX,
+            )
+            .with_description(
+                "Weight of spectral centroid score in dialogue detection.
+Range: 0.0-1.0, default 0.3.
+Weights are normalized internally so they always sum to 1.0.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "dialogue_variance_weight",
+                "Dialogue Variance Weight",
+                DIALOGUE_VARIANCE_WEIGHT_DEFAULT,
+                DIALOGUE_VARIANCE_WEIGHT_MIN,
+                DIALOGUE_VARIANCE_WEIGHT_MAX,
+            )
+            .with_description(
+                "Weight of envelope variance score in dialogue detection.
+Range: 0.0-1.0, default 0.2.
+Weights are normalized internally so they always sum to 1.0.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "dialogue_coherence_weight",
+                "Dialogue Coherence Weight",
+                DIALOGUE_COHERENCE_WEIGHT_DEFAULT,
+                DIALOGUE_COHERENCE_WEIGHT_MIN,
+                DIALOGUE_COHERENCE_WEIGHT_MAX,
+            )
+            .with_description(
+                "Weight of voice-band coherence score in dialogue detection.
+Range: 0.0-1.0, default 0.5.
+Weights are normalized internally so they always sum to 1.0.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
 
@@ -1475,6 +1541,21 @@ Upper bound for dialogue detection analysis.",
         {
             self.voice_freq_max_hz = val.clamp(2000.0, 5000.0);
             return Ok(());
+        } else if id == self.param_dialogue_centroid_weight
+            && let Some(val) = value.as_float()
+        {
+            self.dialogue_centroid_weight = val.clamp(0.0, 1.0);
+            return Ok(());
+        } else if id == self.param_dialogue_variance_weight
+            && let Some(val) = value.as_float()
+        {
+            self.dialogue_variance_weight = val.clamp(0.0, 1.0);
+            return Ok(());
+        } else if id == self.param_dialogue_coherence_weight
+            && let Some(val) = value.as_float()
+        {
+            self.dialogue_coherence_weight = val.clamp(0.0, 1.0);
+            return Ok(());
         } else if id == self.param_bypass_decorrelation {
             if let Some(enable) = value.as_bool() {
                 self.bypass_decorrelation = enable;
@@ -1583,6 +1664,12 @@ Upper bound for dialogue detection analysis.",
             Some(ParameterValue::Float(self.voice_freq_min_hz))
         } else if id == &self.param_voice_freq_max_hz {
             Some(ParameterValue::Float(self.voice_freq_max_hz))
+        } else if id == &self.param_dialogue_centroid_weight {
+            Some(ParameterValue::Float(self.dialogue_centroid_weight))
+        } else if id == &self.param_dialogue_variance_weight {
+            Some(ParameterValue::Float(self.dialogue_variance_weight))
+        } else if id == &self.param_dialogue_coherence_weight {
+            Some(ParameterValue::Float(self.dialogue_coherence_weight))
         } else if id == &self.param_bypass_decorrelation {
             Some(ParameterValue::Bool(self.bypass_decorrelation))
         } else if id == &self.param_bypass_transient_detection {

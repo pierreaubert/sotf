@@ -4,6 +4,15 @@
 
 use super::UpmixerPlugin;
 
+/// One-pole smoothing alpha for spectral flux baseline
+const SPECTRAL_FLUX_SMOOTH_ALPHA: f32 = 0.05;
+/// Divisor for transient ratio normalization (flux/baseline - 1) / DIVISOR
+const TRANSIENT_RATIO_DIVISOR: f32 = 3.0;
+/// Attack alpha for HR transient envelope follower
+const HR_TRANSIENT_ATTACK_ALPHA: f32 = 0.4;
+/// Release alpha for HR transient envelope follower
+const HR_TRANSIENT_RELEASE_ALPHA: f32 = 0.15;
+
 impl UpmixerPlugin {
     /// Process one FFT block using VBAP panning
     pub fn process_fft_block(&mut self, input: &[f32], output: &mut [f32]) {
@@ -32,18 +41,23 @@ impl UpmixerPlugin {
             }
 
             flux /= spectrum_size as f32;
-            self.spectral_flux_smooth += 0.05 * (flux - self.spectral_flux_smooth);
+            // Bootstrap: on the very first frame with signal, seed the
+            // baseline so the ratio doesn't spike to infinity.
+            if self.spectral_flux_smooth < 1e-12 && flux > 0.0 {
+                self.spectral_flux_smooth = flux;
+            }
+            self.spectral_flux_smooth += SPECTRAL_FLUX_SMOOTH_ALPHA * (flux - self.spectral_flux_smooth);
 
             let transient_target = if self.spectral_flux_smooth > 1e-9 {
-                ((flux / self.spectral_flux_smooth - 1.0) / 3.0).clamp(0.0, 1.0)
+                ((flux / self.spectral_flux_smooth - 1.0) / TRANSIENT_RATIO_DIVISOR).clamp(0.0, 1.0)
             } else {
                 0.0
             };
 
             let alpha_env = if transient_target > self.hr_transient_env {
-                0.4
+                HR_TRANSIENT_ATTACK_ALPHA
             } else {
-                0.15
+                HR_TRANSIENT_RELEASE_ALPHA
             };
             self.hr_transient_env += alpha_env * (transient_target - self.hr_transient_env);
         } else {

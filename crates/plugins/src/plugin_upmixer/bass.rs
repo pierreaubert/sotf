@@ -4,6 +4,9 @@
 
 use super::UpmixerPlugin;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use rustfft::num_complex::Complex;
+
+type Complex64 = Complex<f64>;
 
 impl UpmixerPlugin {
     /// Update Linkwitz-Riley crossover gains for mains and LFE separation
@@ -14,15 +17,15 @@ impl UpmixerPlugin {
         let num_bins = self.fft_size / 2 + 1;
 
         if self.lfe_low_gains.len() != num_bins {
-            self.lfe_low_gains = vec![0.0; num_bins];
-            self.mains_high_gains = vec![1.0; num_bins];
+            self.lfe_low_gains = vec![Complex::new(0.0, 0.0); num_bins];
+            self.mains_high_gains = vec![Complex::new(1.0, 0.0); num_bins];
         }
 
         // Fallback: if we don't have a valid sample rate yet, keep all bass in mains
         if self.sample_rate == 0 || self.lfe_cutoff_hz <= 0.0 {
             for i in 0..num_bins {
-                self.lfe_low_gains[i] = 0.0;
-                self.mains_high_gains[i] = 1.0;
+                self.lfe_low_gains[i] = Complex::new(0.0, 0.0);
+                self.mains_high_gains[i] = Complex::new(1.0, 0.0);
             }
             return;
         }
@@ -57,26 +60,27 @@ impl UpmixerPlugin {
         for i in 0..num_bins {
             let f = i as f64 * freq_per_bin;
 
-            let mut low_mag = 1.0_f64;
-            let mut high_mag = 1.0_f64;
+            // Use complex response to preserve phase information
+            let mut low_h = Complex64::new(1.0, 0.0);
+            let mut high_h = Complex64::new(1.0, 0.0);
 
             for sec in &low_sections {
-                low_mag *= sec.result(f);
+                low_h *= sec.complex_response(f);
             }
             for sec in &high_sections {
-                high_mag *= sec.result(f);
+                high_h *= sec.complex_response(f);
             }
 
-            // Normalize so that low^2 + high^2 ≈ 1.0 to avoid level shifts
-            let power = low_mag * low_mag + high_mag * high_mag;
+            // Normalize so that |low|^2 + |high|^2 ≈ 1.0 to avoid level shifts
+            let power = low_h.norm_sqr() + high_h.norm_sqr();
             if power > 0.0 {
                 let norm = power.sqrt();
-                low_mag /= norm;
-                high_mag /= norm;
+                low_h /= norm;
+                high_h /= norm;
             }
 
-            self.lfe_low_gains[i] = low_mag as f32;
-            self.mains_high_gains[i] = high_mag as f32;
+            self.lfe_low_gains[i] = Complex::new(low_h.re as f32, low_h.im as f32);
+            self.mains_high_gains[i] = Complex::new(high_h.re as f32, high_h.im as f32);
         }
     }
 
@@ -111,6 +115,15 @@ impl UpmixerPlugin {
                 // Use the time-domain LFE signal as the envelope
                 let lfe_amp = self.time_out_channels[lfe_idx][i].abs();
 
+                // Smooth the amplitude envelope to prevent raw AM distortion
+                let amp_coeff = if lfe_amp > self.subharmonic_amp_envelope {
+                    attack_coeff
+                } else {
+                    release_coeff
+                };
+                self.subharmonic_amp_envelope +=
+                    (lfe_amp - self.subharmonic_amp_envelope) * amp_coeff;
+
                 // Smooth envelope using soft threshold for click-free transitions
                 // Instead of hard threshold, use continuous envelope tracking
                 // that responds proportionally to input amplitude
@@ -139,9 +152,10 @@ impl UpmixerPlugin {
                     self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
                 }
 
-                // Apply envelope to sub-harmonic for smooth transitions
+                // Use smoothed amplitude envelope instead of raw lfe_amp to prevent
+                // sub-harmonic distortion from instantaneous amplitude modulation
                 let sub = self.subharmonic_phase.sin()
-                    * lfe_amp
+                    * self.subharmonic_amp_envelope
                     * self.subharmonic_gain.current()
                     * self.subharmonic_envelope;
 

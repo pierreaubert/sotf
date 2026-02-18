@@ -10,6 +10,23 @@ use rustfft::num_complex::Complex;
 /// Minimum height mask value — prevents deep spectral notches that cause time-domain ringing
 const HEIGHT_MASK_FLOOR: f32 = 0.02;
 
+/// One-pole smoothing factor for median-filtered coherence (per-band)
+const COHERENCE_SMOOTHING_ALPHA: f32 = 0.15;
+
+/// Base steering attack alpha at lowest frequency (100 Hz)
+const STEERING_ATTACK_BASE: f32 = 0.3;
+/// Steering attack alpha range scaled by frequency norm
+const STEERING_ATTACK_RANGE: f32 = 0.4;
+/// Base steering release alpha at lowest frequency (100 Hz)
+const STEERING_RELEASE_BASE: f32 = 0.02;
+/// Steering release alpha range scaled by frequency norm
+const STEERING_RELEASE_RANGE: f32 = 0.06;
+
+/// Minimum energy correction ratio (prevents over-attenuation)
+const ENERGY_CORRECTION_MIN: f32 = 0.85;
+/// Maximum energy correction ratio (prevents over-boost)
+const ENERGY_CORRECTION_MAX: f32 = 1.15;
+
 /// 5-element median using 6 comparisons (optimal).
 /// After eliminating the global minimum via 3 compare-swaps on pairs,
 /// finds the 2nd-smallest of the remaining 4 elements (= median of 5).
@@ -89,8 +106,8 @@ impl UpmixerPlugin {
             let center_bin = (start_bin + end_bin) / 2;
             let center_freq = center_bin as f32 * freq_per_bin;
             let norm = ((center_freq - 100.0) / (8000.0 - 100.0)).clamp(0.0, 1.0);
-            let attack_alpha = 0.3 + 0.4 * norm;
-            let release_alpha = 0.02 + 0.06 * norm;
+            let attack_alpha = STEERING_ATTACK_BASE + STEERING_ATTACK_RANGE * norm;
+            let release_alpha = STEERING_RELEASE_BASE + STEERING_RELEASE_RANGE * norm;
             let alpha = if inst_energy > smooth_energy * 1.5 {
                 attack_alpha
             } else {
@@ -124,7 +141,7 @@ impl UpmixerPlugin {
                 self.coherence_history[band_idx][idx] = coherence;
                 let median = median5(self.coherence_history[band_idx]);
                 let prev = self.smoothed_coherence[band_idx];
-                self.smoothed_coherence[band_idx] = prev + 0.15 * (median - prev);
+                self.smoothed_coherence[band_idx] = prev + COHERENCE_SMOOTHING_ALPHA * (median - prev);
                 coherence = self.smoothed_coherence[band_idx];
             }
 
@@ -135,7 +152,7 @@ impl UpmixerPlugin {
                     let left = self.freq_domain_left[i];
                     let right = self.freq_domain_right[i];
                     let bin = i.min(self.lfe_low_gains.len() - 1);
-                    self.lfe[i] = (left + right) * (0.5 * self.lfe_low_gains[bin]);
+                    self.lfe[i] = (left + right) * self.lfe_low_gains[bin] * 0.5;
                     let hp = self.mains_high_gains[bin];
                     self.direct_left[i] = left * hp;
                     self.direct_right[i] = right * hp;
@@ -189,11 +206,21 @@ impl UpmixerPlugin {
                     let l = self.freq_domain_left[i];
                     let r = self.freq_domain_right[i];
                     let proj = l * ev_l.conj() + r * ev_r.conj();
-                    self.direct[i] = proj * (ev_l + ev_r) * (eff_coh * 0.5);
+                    let direct_l = proj * ev_l;
+                    let direct_r = proj * ev_r;
+                    // Phase-align left and right projections before summing to center
+                    let phase_product = direct_r * direct_l.conj();
+                    let phase_correction = if phase_product.norm_sqr() > 1e-18 {
+                        phase_product / phase_product.norm()
+                    } else {
+                        Complex::new(1.0, 0.0)
+                    };
+                    let aligned_r = direct_r * phase_correction.conj();
+                    self.direct[i] = (direct_l + aligned_r) * (eff_coh * 0.25);
                     self.ambient_left[i] =
-                        (l - proj * ev_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
+                        (l - direct_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
                     self.ambient_right[i] =
-                        (r - proj * ev_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
+                        (r - direct_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
                     self.direct_left[i] = l - self.direct[i] * self.stereo_width.current();
                     self.direct_right[i] = r - self.direct[i] * self.stereo_width.current();
                     self.lfe[i] = Complex::new(0.0, 0.0);
@@ -206,7 +233,7 @@ impl UpmixerPlugin {
                 }
 
                 let corr = if out_e > 1e-12 && in_e > 1e-12 {
-                    (in_e / out_e).sqrt().clamp(0.707, 1.414)
+                    (in_e / out_e).sqrt().clamp(ENERGY_CORRECTION_MIN, ENERGY_CORRECTION_MAX)
                 } else {
                     1.0
                 };
