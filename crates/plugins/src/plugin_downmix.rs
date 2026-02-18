@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::param_specs::downmix::*;
-use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 
@@ -525,6 +525,51 @@ impl Plugin for DownmixPlugin {
             }
         }
         Ok(num_frames)
+    }
+    fn reset(&mut self) {
+        // Clear ring buffers
+        for ring in &mut self.input_ring {
+            ring.fill(0.0);
+        }
+        self.input_ring_pos = 0;
+        self.input_fill = 0;
+
+        // Clear output accumulators
+        for acc in &mut self.output_accum {
+            acc.fill(0.0);
+        }
+        self.output_read_pos = 0;
+        self.output_write_pos = 0;
+
+        // Re-create LFE biquads to clear filter state (state fields are private)
+        self.lfe_lpf = self
+            .lfe_channels
+            .iter()
+            .map(|_| {
+                [
+                    Biquad::new(
+                        BiquadFilterType::Lowpass,
+                        120.0,
+                        self.sample_rate as f64,
+                        0.0,
+                        0.0,
+                    ),
+                    Biquad::new(
+                        BiquadFilterType::Lowpass,
+                        120.0,
+                        self.sample_rate as f64,
+                        0.0,
+                        0.0,
+                    ),
+                ]
+            })
+            .collect();
+
+        // Reset coefficient smoothers to current targets
+        for (i, c) in self.target_coeffs.iter().enumerate() {
+            self.coeff_smoothers[i * 2].reset(c.left_gain);
+            self.coeff_smoothers[i * 2 + 1].reset(c.right_gain);
+        }
     }
     fn latency_samples(&self) -> usize {
         if self.phase_coherence { FFT_SIZE } else { 0 }
