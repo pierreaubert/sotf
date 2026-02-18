@@ -5,9 +5,7 @@
 use super::param_specs::mono_to_stereo::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::window_mul_simd;
 use super::smoothing::Smoother;
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
@@ -16,6 +14,8 @@ use std::sync::Arc;
 const FFT_SIZE: usize = 2048;
 const HOP_SIZE: usize = FFT_SIZE / 2;
 const PARAM_SMOOTH_MS: f32 = 20.0;
+/// Haas buffer headroom: max delay + margin, in milliseconds
+const HAAS_BUFFER_MS: f32 = HAAS_DELAY_MS_MAX + 10.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonoToStereoPluginParams {
@@ -49,6 +49,7 @@ pub struct MonoToStereoPlugin {
     decorrelation_filter: Vec<Complex<f32>>,
     input_ring: Vec<f32>,
     input_ring_pos: usize,
+    /// accum[0] = OLA-reconstructed original, accum[1] = decorrelated signal
     output_accum: [Vec<f32>; 2],
     output_read_pos: usize,
     output_write_pos: usize,
@@ -69,7 +70,12 @@ pub struct MonoToStereoPlugin {
     param_stereo_width: ParameterId,
     param_haas_delay_ms: ParameterId,
     param_comp_eq_depth_db: ParameterId,
-    ring_scratch: Vec<f32>,
+    /// Scratch buffer to save windowed input before FFT mutates fft_input_buf
+    windowed_scratch: Vec<f32>,
+}
+
+fn haas_buffer_len(sample_rate: u32) -> usize {
+    ((HAAS_BUFFER_MS * sample_rate as f32 / 1000.0) as usize).max(256)
 }
 
 impl MonoToStereoPlugin {
@@ -101,7 +107,7 @@ impl MonoToStereoPlugin {
             ifft_input_buf: fft_inverse.make_input_vec(),
             ifft_output_buf: fft_inverse.make_output_vec(),
             input_fill: 0,
-            haas_buffer: vec![0.0; 48000 * 2], // 2 seconds
+            haas_buffer: vec![0.0; haas_buffer_len(44100)],
             haas_write_pos: 0,
             stereo_width: Smoother::new(STEREO_WIDTH_DEFAULT, PARAM_SMOOTH_MS, 44100),
             haas_delay_samples: Smoother::new(HAAS_DELAY_MS_DEFAULT * 44.1, PARAM_SMOOTH_MS, 44100),
@@ -112,7 +118,7 @@ impl MonoToStereoPlugin {
             param_stereo_width: ParameterId::from("stereo_width"),
             param_haas_delay_ms: ParameterId::from("haas_delay_ms"),
             param_comp_eq_depth_db: ParameterId::from("comp_eq_depth_db"),
-            ring_scratch: vec![0.0; FFT_SIZE],
+            windowed_scratch: vec![0.0; FFT_SIZE],
         }
     }
 
@@ -219,7 +225,7 @@ impl Plugin for MonoToStereoPlugin {
         self.haas_delay_samples
             .set_time(PARAM_SMOOTH_MS, sample_rate);
         self.comp_eq_depth.set_time(PARAM_SMOOTH_MS, sample_rate);
-        self.haas_buffer.resize(sample_rate as usize * 2, 0.0);
+        self.haas_buffer.resize(haas_buffer_len(sample_rate), 0.0);
         self.generate_decorrelation_filter();
         Ok(())
     }
@@ -263,26 +269,33 @@ impl Plugin for MonoToStereoPlugin {
 
             let haas_delay = self.haas_delay_samples.next();
             let width = self.stereo_width.next();
-            let _comp_eq = self.comp_eq_depth.next();
+            // Advance smoother to keep it converged (comp EQ not yet implemented)
+            self.comp_eq_depth.next();
 
             let delay_idx =
                 (self.haas_write_pos + self.haas_buffer.len() - haas_delay as usize - 1)
                     % self.haas_buffer.len();
             let haas_out = self.haas_buffer[delay_idx];
 
-            let decor_l = self.output_accum[0][self.output_read_pos];
-            let decor_r = self.output_accum[1][self.output_read_pos];
+            // accum[0] = OLA-reconstructed original (≈ mono with STFT latency)
+            // accum[1] = decorrelated version (different phase, same magnitude)
+            let orig = self.output_accum[0][self.output_read_pos];
+            let decor = self.output_accum[1][self.output_read_pos];
 
             self.output_accum[0][self.output_read_pos] = 0.0;
             self.output_accum[1][self.output_read_pos] = 0.0;
             self.output_read_pos = (self.output_read_pos + 1) % (FFT_SIZE * 3);
 
+            // L: blend from current mono toward OLA-reconstructed original
+            // R: blend from current mono toward decorrelated version
+            // At width=0: both = mono (pure mono). At width=1: L=orig, R=decor (max stereo).
+            // Haas delay adds subtle timing difference on R base, scaled by width.
             let mono = input[frame];
-            let side_l = (decor_l - mono) * width;
-            let side_r = (decor_r - haas_out) * width;
+            let l = mono + (orig - mono) * width;
+            let r = mono + (decor - haas_out) * width;
 
-            output[frame * 2] = mono + side_l;
-            output[frame * 2 + 1] = mono + side_r;
+            output[frame * 2] = l;
+            output[frame * 2 + 1] = r;
         }
 
         Ok(nf)
@@ -296,7 +309,19 @@ impl MonoToStereoPlugin {
             self.fft_input_buf[i] = self.input_ring[idx];
             idx = (idx + 1) % FFT_SIZE;
         }
+        // Analysis window (Hann + 50% overlap satisfies COLA for OLA)
         super::simd::window_mul_simd_inplace(&mut self.fft_input_buf, &self.window);
+
+        // Save windowed input for L channel OLA (FFT mutates fft_input_buf)
+        self.windowed_scratch.copy_from_slice(&self.fft_input_buf);
+
+        // L channel: OLA of windowed input (perfect reconstruction via Hann COLA)
+        for i in 0..FFT_SIZE {
+            let pos = (self.output_write_pos + i) % (FFT_SIZE * 3);
+            self.output_accum[0][pos] += self.windowed_scratch[i];
+        }
+
+        // R channel: FFT → decorrelation filter → IFFT
         self.fft_forward
             .process(&mut self.fft_input_buf, &mut self.fft_output_buf)
             .unwrap();
@@ -307,13 +332,13 @@ impl MonoToStereoPlugin {
         self.fft_inverse
             .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
             .unwrap();
-        let scale = 1.0 / FFT_SIZE as f32;
+        // OLA without synthesis window — analysis-only Hann + 50% overlap = COLA
+        let inv_n = 1.0 / FFT_SIZE as f32;
         for i in 0..FFT_SIZE {
-            let val = self.ifft_output_buf[i] * scale * self.window[i];
             let pos = (self.output_write_pos + i) % (FFT_SIZE * 3);
-            self.output_accum[0][pos] += val;
-            self.output_accum[1][pos] += val;
+            self.output_accum[1][pos] += self.ifft_output_buf[i] * inv_n;
         }
+
         self.output_write_pos = (self.output_write_pos + HOP_SIZE) % (FFT_SIZE * 3);
     }
 }
@@ -337,5 +362,81 @@ mod tests {
         )
         .unwrap();
         assert!(o[2047].is_finite());
+    }
+
+    #[test]
+    fn test_mono_to_stereo_width_zero_is_mono() {
+        let mut p = MonoToStereoPlugin::new();
+        p.initialize(48000).unwrap();
+        p.stereo_width.reset(0.0);
+        p.haas_delay_samples.reset(0.0);
+        // Feed enough frames to fill the STFT pipeline
+        let total_frames = FFT_SIZE * 3;
+        let input: Vec<f32> = (0..total_frames)
+            .map(|i| (i as f32 * 0.01).sin())
+            .collect();
+        let mut output = vec![0.0; total_frames * 2];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: total_frames,
+            },
+        )
+        .unwrap();
+        // After pipeline is primed, L and R should be identical at width=0
+        for frame in (FFT_SIZE * 2)..total_frames {
+            let l = output[frame * 2];
+            let r = output[frame * 2 + 1];
+            assert!(
+                (l - r).abs() < 1e-5,
+                "L/R differ at frame {frame}: L={l}, R={r}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_mono_to_stereo_width_one_differs() {
+        let mut p = MonoToStereoPlugin::new();
+        p.initialize(48000).unwrap();
+        p.stereo_width.reset(1.0);
+        p.haas_delay_samples.reset(1.5 * 48.0); // 1.5ms in samples
+        let total_frames = FFT_SIZE * 3;
+        let input: Vec<f32> = (0..total_frames)
+            .map(|i| (i as f32 * 0.01).sin())
+            .collect();
+        let mut output = vec![0.0; total_frames * 2];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: total_frames,
+            },
+        )
+        .unwrap();
+        // After pipeline is primed, L and R should differ at width=1
+        let mut any_differ = false;
+        for frame in (FFT_SIZE * 2)..total_frames {
+            let l = output[frame * 2];
+            let r = output[frame * 2 + 1];
+            if (l - r).abs() > 1e-4 {
+                any_differ = true;
+                break;
+            }
+        }
+        assert!(any_differ, "L and R should differ at width=1.0");
+    }
+
+    #[test]
+    fn test_haas_buffer_size() {
+        let p = MonoToStereoPlugin::new();
+        // Buffer should be much smaller than the old 96000
+        assert!(
+            p.haas_buffer.len() < 2000,
+            "Haas buffer too large: {}",
+            p.haas_buffer.len()
+        );
     }
 }
