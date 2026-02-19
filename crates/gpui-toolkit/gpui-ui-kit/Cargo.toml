@@ -35,7 +35,3 @@ path = "examples/showcase.rs"
 [[example]]
 name = "workflow_debug"
 path = "examples/workflow_debug.rs"
-
-[[example]]
-name = "form-macro-demo"
-path = "examples/form-macro-demo.rs"

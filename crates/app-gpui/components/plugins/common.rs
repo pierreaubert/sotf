@@ -63,10 +63,26 @@ pub fn param_index_to_engine_param(
             bandpass_hz,
             enable_subharmonic_synth,
             subharmonic_gain,
+            subharmonic_freq_hz,
+            subharmonic_attack_ms,
+            subharmonic_release_ms,
+            decorrelation_mode,
+            decorrelation_lfo_rate_hz,
+            velvet_noise_duration_ms,
+            velvet_noise_density,
             enable_hr_direct,
             hr_sharpen,
+            height_hf_cap_hz,
+            height_transient_reduction,
+            height_direct_leak,
+            surround_direct_bleed,
             safety_cap_db,
-            decorrelation_mode,
+            rear_ambient_boost,
+            rear_late_reflection,
+            ambient_boost,
+            dialogue_weight,
+            voice_freq_min_hz,
+            voice_freq_max_hz,
             ..
         } => match param_idx {
             // param 0 = speaker_config: requires Structural (changes channel count)
@@ -104,6 +120,70 @@ pub fn param_index_to_engine_param(
                 "decorrelation_mode".to_string(),
                 format!("{}", decorrelation_mode),
             )),
+            16 => Some((
+                "subharmonic_freq_hz".to_string(),
+                format!("{}", subharmonic_freq_hz),
+            )),
+            17 => Some((
+                "subharmonic_attack_ms".to_string(),
+                format!("{}", subharmonic_attack_ms),
+            )),
+            18 => Some((
+                "subharmonic_release_ms".to_string(),
+                format!("{}", subharmonic_release_ms),
+            )),
+            19 => Some((
+                "decorrelation_lfo_rate_hz".to_string(),
+                format!("{}", decorrelation_lfo_rate_hz),
+            )),
+            20 => Some((
+                "velvet_noise_duration_ms".to_string(),
+                format!("{}", velvet_noise_duration_ms),
+            )),
+            21 => Some((
+                "velvet_noise_density".to_string(),
+                format!("{}", velvet_noise_density),
+            )),
+            22 => Some((
+                "height_hf_cap_hz".to_string(),
+                format!("{}", height_hf_cap_hz),
+            )),
+            23 => Some((
+                "height_transient_reduction".to_string(),
+                format!("{}", height_transient_reduction),
+            )),
+            24 => Some((
+                "height_direct_leak".to_string(),
+                format!("{}", height_direct_leak),
+            )),
+            25 => Some((
+                "surround_direct_bleed".to_string(),
+                format!("{}", surround_direct_bleed),
+            )),
+            26 => Some((
+                "rear_ambient_boost".to_string(),
+                format!("{}", rear_ambient_boost),
+            )),
+            27 => Some((
+                "rear_late_reflection".to_string(),
+                format!("{}", rear_late_reflection),
+            )),
+            28 => Some((
+                "ambient_boost".to_string(),
+                format!("{}", ambient_boost),
+            )),
+            29 => Some((
+                "dialogue_weight".to_string(),
+                format!("{}", dialogue_weight),
+            )),
+            30 => Some((
+                "voice_freq_min_hz".to_string(),
+                format!("{}", voice_freq_min_hz),
+            )),
+            31 => Some((
+                "voice_freq_max_hz".to_string(),
+                format!("{}", voice_freq_max_hz),
+            )),
             _ => None,
         },
         PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {
@@ -122,6 +202,11 @@ pub fn param_index_to_engine_param(
             attack_ms,
             release_ms,
             polyphonic_detection,
+            transparency,
+            dd_enabled,
+            dd_alpha,
+            psychoacoustic_masking,
+            use_captured_profile,
             ..
         } => match param_idx {
             0 => Some(("reduction_db".to_string(), format!("{}", reduction_db))),
@@ -135,6 +220,19 @@ pub fn param_index_to_engine_param(
                 "polyphonic_detection".to_string(),
                 polyphonic_detection.to_string(),
             )),
+            7 => Some(("transparency".to_string(), format!("{}", transparency))),
+            8 => Some(("dd_enabled".to_string(), dd_enabled.to_string())),
+            9 => Some(("dd_alpha".to_string(), format!("{}", dd_alpha))),
+            10 => Some((
+                "psychoacoustic_masking".to_string(),
+                psychoacoustic_masking.to_string(),
+            )),
+            11 => None, // learn_noise trigger — handled by set_parameter_value
+            12 => Some((
+                "use_captured_profile".to_string(),
+                use_captured_profile.to_string(),
+            )),
+            13 => None, // clear_profile trigger — handled by set_parameter_value
             _ => None,
         },
         PluginSettings::Pnd {
@@ -212,7 +310,7 @@ pub fn param_index_to_engine_param(
                 )),
                 _ => {
                     // Band params logic
-                    if param_idx >= 8 && param_idx < 24 {
+                    if (8..24).contains(&param_idx) {
                         let rel_idx = param_idx - 8;
                         let band_idx = (rel_idx / 4) + 1;
                         let field_idx = rel_idx % 4;
@@ -432,8 +530,159 @@ pub fn param_index_to_engine_param(
             // to force a structural update (rebuild the plugin chain).
             None
         }
-        // Other plugins: use Structural for now
-        _ => None,
+        PluginSettings::Limiter {
+            threshold_db,
+            release_ms,
+            lookahead_ms,
+            soft,
+            mix,
+        } => match param_idx {
+            0 => Some(("threshold".to_string(), format!("{}", threshold_db))),
+            1 => Some(("release".to_string(), format!("{}", release_ms))),
+            2 => Some(("lookahead".to_string(), format!("{}", lookahead_ms))),
+            3 => Some(("soft".to_string(), soft.to_string())),
+            4 => Some(("mix".to_string(), format!("{}", mix))),
+            _ => None,
+        },
+        PluginSettings::Gate {
+            threshold_db,
+            ratio,
+            attack_ms,
+            hold_ms,
+            release_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
+        } => match param_idx {
+            0 => Some(("threshold".to_string(), format!("{}", threshold_db))),
+            1 => Some(("ratio".to_string(), format!("{}", ratio))),
+            2 => Some(("attack".to_string(), format!("{}", attack_ms))),
+            3 => Some(("hold".to_string(), format!("{}", hold_ms))),
+            4 => Some(("release".to_string(), format!("{}", release_ms))),
+            5 => Some(("mix".to_string(), format!("{}", mix))),
+            6 => Some(("link_channels".to_string(), link_channels.to_string())),
+            7 => Some((
+                "sidechain_hpf_hz".to_string(),
+                format!("{}", sidechain_hpf_hz),
+            )),
+            _ => None,
+        },
+        PluginSettings::Expander {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
+        } => match param_idx {
+            0 => Some(("threshold".to_string(), format!("{}", threshold_db))),
+            1 => Some(("ratio".to_string(), format!("{}", ratio))),
+            2 => Some(("attack".to_string(), format!("{}", attack_ms))),
+            3 => Some(("release".to_string(), format!("{}", release_ms))),
+            4 => Some(("range".to_string(), format!("{}", range_db))),
+            5 => Some(("knee".to_string(), format!("{}", knee_db))),
+            6 => Some(("hysteresis".to_string(), format!("{}", hysteresis_db))),
+            7 => Some(("hold".to_string(), format!("{}", hold_ms))),
+            8 => Some(("mix".to_string(), format!("{}", mix))),
+            9 => Some(("link_channels".to_string(), link_channels.to_string())),
+            10 => Some((
+                "sidechain_hpf_hz".to_string(),
+                format!("{}", sidechain_hpf_hz),
+            )),
+            _ => None,
+        },
+        PluginSettings::LoudnessCompensation {
+            low_freq,
+            low_gain,
+            high_freq,
+            high_gain,
+            ..
+        } => match param_idx {
+            0 => Some(("low_freq".to_string(), format!("{}", low_freq))),
+            1 => Some(("low_gain".to_string(), format!("{}", low_gain))),
+            2 => Some(("high_freq".to_string(), format!("{}", high_freq))),
+            3 => Some(("high_gain".to_string(), format!("{}", high_gain))),
+            // auto_gain params require structural update (not supported by plugin set_parameter)
+            4..=6 => None,
+            _ => None,
+        },
+        PluginSettings::BinauralDecoder {
+            externalization,
+            ..
+        } => match param_idx {
+            // sofa_file (0) and input_channels (1) require structural update
+            0 | 1 => None,
+            // enable_optimization (2) requires structural update (changes processing mode)
+            2 => None,
+            3 => Some((
+                "externalization".to_string(),
+                format!("{}", externalization),
+            )),
+            // near_field_strength (4) not supported by plugin set_parameter
+            4 => None,
+            _ => None,
+        },
+        PluginSettings::SpectrumAnalyzer { .. } => {
+            // SpectrumAnalyzer has no set_parameter support; all changes require structural update
+            None
+        }
+        PluginSettings::XTC {
+            distance_m,
+            speaker_angle_deg,
+            ..
+        } => match param_idx {
+            0 => Some(("distance_m".to_string(), format!("{}", distance_m))),
+            1 => Some((
+                "speaker_angle_deg".to_string(),
+                format!("{}", speaker_angle_deg),
+            )),
+            // head_radius, beta params not supported by plugin set_parameter — structural
+            _ => None,
+        },
+        PluginSettings::ABCompare {
+            mix,
+            mix_mode,
+            selected_path,
+            bypass,
+            auto_gain_enabled,
+            loudness_type,
+            max_auto_gain_db,
+            gain_smoothing_ms,
+            mix_transition_ms,
+            ..
+        } => match param_idx {
+            0 => Some(("mix".to_string(), format!("{}", mix))),
+            1 => Some(("mix_mode".to_string(), format!("{}", mix_mode))),
+            2 => Some(("selected_path".to_string(), format!("{}", selected_path))),
+            3 => Some(("bypass".to_string(), bypass.to_string())),
+            4 => Some((
+                "auto_gain_enabled".to_string(),
+                auto_gain_enabled.to_string(),
+            )),
+            5 => Some(("loudness_type".to_string(), format!("{}", loudness_type))),
+            6 => Some((
+                "max_auto_gain_db".to_string(),
+                format!("{}", max_auto_gain_db),
+            )),
+            7 => Some((
+                "gain_smoothing_ms".to_string(),
+                format!("{}", gain_smoothing_ms),
+            )),
+            8 => Some((
+                "mix_transition_ms".to_string(),
+                format!("{}", mix_transition_ms),
+            )),
+            _ => None,
+        },
+        // ChannelMuteSolo and Matrix: structural (grid-based editing)
+        PluginSettings::ChannelMuteSolo { .. } | PluginSettings::Matrix { .. } => None,
+        // LoudnessMonitor: no parameters
+        PluginSettings::LoudnessMonitor => None,
     }
 }
 

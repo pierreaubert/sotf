@@ -2421,6 +2421,24 @@ pub fn db_to_linear(db: f32) -> f32 {
 }
 
 /// Detect which preset a matrix matches, if any
+/// Returns the list of presets valid for the given channel configuration.
+/// Identity is always available. Other presets require specific channel counts.
+pub fn available_matrix_presets(in_ch: usize, out_ch: usize) -> Vec<&'static str> {
+    let mut presets = vec!["Identity"];
+    if in_ch >= 2 && out_ch >= 2 {
+        presets.push("Swap L/R");
+    }
+    // Mono Mix is only distinct from Identity when in_ch > 1
+    if in_ch > 1 {
+        presets.push("Mono Mix");
+    }
+    if in_ch >= 2 && out_ch >= 2 {
+        presets.push("M/S Encode");
+        presets.push("M/S Decode");
+    }
+    presets
+}
+
 pub fn detect_matrix_preset(in_ch: usize, out_ch: usize, matrix: &[f32]) -> &'static str {
     if is_identity_matrix(in_ch, out_ch, matrix) {
         "Identity"
@@ -2455,18 +2473,26 @@ fn is_identity_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
     true
 }
 
-/// Check if matrix swaps L/R (stereo only)
+/// Check if matrix swaps L/R (first two channels swapped, rest pass-through)
+/// Requires at least 2 input and 2 output channels.
 fn is_swap_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
-    if in_ch != 2 || out_ch != 2 || matrix.len() != 4 {
+    if in_ch < 2 || out_ch < 2 || matrix.len() != in_ch * out_ch {
         return false;
     }
 
-    // Swap matrix: [[0, 1], [1, 0]]
-    // Row-major: [0, 1, 1, 0]
-    let expected = [0.0, 1.0, 1.0, 0.0];
-    for (i, &exp) in expected.iter().enumerate() {
-        if (matrix[i] - exp).abs() > 0.001 {
-            return false;
+    // Expected pattern: out0←in1, out1←in0, remaining diagonal pass-through
+    for out in 0..out_ch {
+        for inp in 0..in_ch {
+            let value = matrix[out * in_ch + inp];
+            let expected =
+                if (out == 0 && inp == 1) || (out == 1 && inp == 0) || (out >= 2 && inp == out) {
+                    1.0
+                } else {
+                    0.0
+                };
+            if (value - expected).abs() > 0.001 {
+                return false;
+            }
         }
     }
     true
@@ -2491,35 +2517,49 @@ fn is_mono_mix_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
     true
 }
 
-/// Check if matrix is M/S Encode (stereo only)
+/// Check if matrix is M/S Encode (first two channels encoded, rest pass-through)
 /// Mid = 0.5*L + 0.5*R, Side = 0.5*L - 0.5*R
-/// Matrix: [[0.5, 0.5], [0.5, -0.5]] = [0.5, 0.5, 0.5, -0.5]
 fn is_ms_encode_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
-    if in_ch != 2 || out_ch != 2 || matrix.len() != 4 {
+    if in_ch < 2 || out_ch < 2 || matrix.len() != in_ch * out_ch {
         return false;
     }
 
-    let expected = [0.5, 0.5, 0.5, -0.5];
-    for (i, &exp) in expected.iter().enumerate() {
-        if (matrix[i] - exp).abs() > 0.001 {
-            return false;
+    for out in 0..out_ch {
+        for inp in 0..in_ch {
+            let value = matrix[out * in_ch + inp];
+            let expected = match (out, inp) {
+                (0, 0) | (0, 1) | (1, 0) => 0.5,
+                (1, 1) => -0.5,
+                (o, i) if o >= 2 && i == o => 1.0,
+                _ => 0.0,
+            };
+            if (value - expected).abs() > 0.001 {
+                return false;
+            }
         }
     }
     true
 }
 
-/// Check if matrix is M/S Decode (stereo only)
+/// Check if matrix is M/S Decode (first two channels decoded, rest pass-through)
 /// L = Mid + Side, R = Mid - Side
-/// Matrix: [[1.0, 1.0], [1.0, -1.0]] = [1.0, 1.0, 1.0, -1.0]
 fn is_ms_decode_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
-    if in_ch != 2 || out_ch != 2 || matrix.len() != 4 {
+    if in_ch < 2 || out_ch < 2 || matrix.len() != in_ch * out_ch {
         return false;
     }
 
-    let expected = [1.0, 1.0, 1.0, -1.0];
-    for (i, &exp) in expected.iter().enumerate() {
-        if (matrix[i] - exp).abs() > 0.001 {
-            return false;
+    for out in 0..out_ch {
+        for inp in 0..in_ch {
+            let value = matrix[out * in_ch + inp];
+            let expected = match (out, inp) {
+                (0, 0) | (0, 1) | (1, 0) => 1.0,
+                (1, 1) => -1.0,
+                (o, i) if o >= 2 && i == o => 1.0,
+                _ => 0.0,
+            };
+            if (value - expected).abs() > 0.001 {
+                return false;
+            }
         }
     }
     true
@@ -2832,10 +2872,29 @@ impl PluginChain {
     }
 
     pub fn move_plugin(&mut self, from: usize, to: usize) {
-        if from < self.plugins.len() && to < self.plugins.len() {
+        if from < self.plugins.len()
+            && to < self.plugins.len()
+            && !self.plugins[from].is_permanent()
+            && !self.plugins[to].is_permanent()
+        {
             let plugin = self.plugins.remove(from);
             self.plugins.insert(to, plugin);
         }
+    }
+
+    /// Check if a plugin at the given index can be moved in the given direction
+    pub fn can_move_plugin_up(&self, index: usize) -> bool {
+        index > 0
+            && index < self.plugins.len()
+            && !self.plugins[index].is_permanent()
+            && !self.plugins[index - 1].is_permanent()
+    }
+
+    /// Check if a plugin at the given index can be moved down
+    pub fn can_move_plugin_down(&self, index: usize) -> bool {
+        index < self.plugins.len().saturating_sub(1)
+            && !self.plugins[index].is_permanent()
+            && !self.plugins[index + 1].is_permanent()
     }
 
     /// Insert a plugin at a specific index
@@ -3803,5 +3862,53 @@ mod tests {
 
         assert!(chain.is_input_monitor(0));
         assert!(!chain.is_output_monitor(0));
+    }
+
+    #[test]
+    fn test_matrix_preset_roundtrip() {
+        let presets = ["Identity", "Swap L/R", "Mono Mix"];
+        // Test 2x2 (all presets should work)
+        for preset in &presets {
+            let mut matrix = vec![0.0f32; 4];
+            apply_matrix_preset(2, 2, &mut matrix, preset);
+            let detected = detect_matrix_preset(2, 2, &matrix);
+            assert_eq!(detected, *preset, "2x2 roundtrip failed for {}", preset);
+        }
+        // Test non-square: 5x2, 2x5
+        for (in_ch, out_ch) in [(5, 2), (2, 5), (1, 1), (8, 8)] {
+            let mut matrix = vec![0.0f32; in_ch * out_ch];
+            apply_matrix_preset(in_ch, out_ch, &mut matrix, "Identity");
+            let detected = detect_matrix_preset(in_ch, out_ch, &matrix);
+            assert_eq!(detected, "Identity", "{}x{} identity roundtrip failed", in_ch, out_ch);
+        }
+    }
+
+    #[test]
+    fn test_matrix_preset_cycling() {
+        // Simulate the TUI cycling logic using available_matrix_presets
+        for (in_ch, out_ch) in [(2, 2), (3, 3), (5, 2), (2, 5), (1, 1)] {
+            let presets = available_matrix_presets(in_ch, out_ch);
+            let mut matrix = vec![0.0f32; in_ch * out_ch];
+            apply_matrix_preset(in_ch, out_ch, &mut matrix, "Identity");
+
+            // Cycle forward through all presets twice
+            let mut seen = Vec::new();
+            for _ in 0..presets.len() * 2 {
+                let current = detect_matrix_preset(in_ch, out_ch, &matrix);
+                seen.push(current.to_string());
+                let current_idx = presets.iter().position(|&p| p == current).unwrap_or(0);
+                let new_idx = (current_idx + 1) % presets.len();
+                apply_matrix_preset(in_ch, out_ch, &mut matrix, presets[new_idx]);
+            }
+
+            // Every available preset should be reachable
+            for preset in &presets {
+                assert!(seen.contains(&preset.to_string()),
+                    "{} not reachable for {}x{}, cycle: {:?}", preset, in_ch, out_ch, seen);
+            }
+            // No "Custom" should appear (all valid presets should round-trip)
+            assert!(!seen.contains(&"Custom".to_string()),
+                "Custom appeared in cycle for {}x{}: {:?}", in_ch, out_ch, seen);
+        }
     }
 }

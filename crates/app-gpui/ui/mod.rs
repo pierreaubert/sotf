@@ -94,7 +94,7 @@ impl PlayerView {
                             && (state.app.spectrum_visible
                                 || state.app.ui_state.current_screen == Screen::Spectrum);
 
-                        let player = state.player.lock();
+                        let mut player = state.player.lock();
                         let playback_state = player.get_playback_state();
 
                         state.app.playback.is_playing = playback_state.is_playing;
@@ -161,11 +161,35 @@ impl PlayerView {
                             state.app.check_and_record_play();
                         }
 
-                        // Check if playback ended and auto-advance
-                        if state.app.playback.is_playing
+                        // Engine crash handling (priority: fatal > error > restarted > auto-advance)
+                        if playback_state.engine_fatal {
+                            log::error!("[GPUI] Engine crashed fatally, cannot auto-restart");
+                            state.app.playback.is_playing = false;
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(
+                                    "Audio engine crashed. Please play a new track to restart.",
+                                ));
+                        } else if let Some(ref err) = playback_state.last_error {
+                            log::error!("[GPUI] Playback error: {}", err);
+                            state.app.playback.is_playing = false;
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::error(format!(
+                                    "Playback error: {}",
+                                    err
+                                )));
+                        } else if playback_state.engine_restarted {
+                            log::info!(
+                                "[GPUI] Engine auto-restarted after crash, resuming playback"
+                            );
+                            state.app.ui_state.toast_message =
+                                Some(crate::app::ToastMessage::info(
+                                    "Engine restarted, resuming playback",
+                                ));
+                        } else if state.app.playback.is_playing
                             && !playback_state.is_playing
                             && state.app.playback.current_queue_index.is_some()
                         {
+                            // Check if playback ended and auto-advance
                             state.app.stop_track_tracking();
                             if let Some(path) = state.app.next_track() {
                                 Self::play_track(state, path);

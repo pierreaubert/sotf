@@ -413,7 +413,7 @@ fn hilbert_transform(signal: &[f64]) -> Vec<f64> {
     let mut spectrum: Vec<Complex64> = signal
         .iter()
         .map(|&x| Complex64::new(x, 0.0))
-        .chain(std::iter::repeat(Complex64::new(0.0, 0.0)).take(n_fft - n))
+        .chain(std::iter::repeat_n(Complex64::new(0.0, 0.0), n_fft - n))
         .collect();
 
     // Forward FFT
@@ -507,7 +507,7 @@ fn generate_minimum_phase_spectrum(magnitude: &[f64], fft_size: usize) -> Vec<Co
         full_log_mag[fft_size - i] = log_mag[i].conj();
     }
     // Nyquist
-    if fft_size % 2 == 0 {
+    if fft_size.is_multiple_of(2) {
         full_log_mag[n_bins - 1] = log_mag[n_bins - 1];
     }
 
@@ -554,7 +554,7 @@ fn spectrum_to_impulse_response(spectrum: &[Complex64], fft_size: usize) -> Vec<
         full_spectrum[fft_size - i] = spectrum[i].conj();
     }
     // Nyquist must be real
-    if fft_size % 2 == 0 {
+    if fft_size.is_multiple_of(2) {
         full_spectrum[n_bins - 1] = Complex64::new(spectrum[n_bins - 1].norm(), 0.0);
     }
 

@@ -52,6 +52,7 @@ pub use sotf_audio::plugins::{
     ReleaseChannel,
     // Matrix helper functions
     apply_matrix_preset,
+    available_matrix_presets,
     db_to_linear,
     detect_matrix_preset,
     get_channel_label,

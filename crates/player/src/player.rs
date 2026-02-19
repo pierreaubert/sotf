@@ -10,16 +10,42 @@ pub struct PlaybackState {
     pub is_playing: bool,
     pub sample_rate: Option<u32>,
     pub last_error: Option<String>,
+    /// Set once after the engine auto-restarted from a crash. Cleared after read.
+    pub engine_restarted: bool,
+    /// Set when the engine crashed twice — no further auto-restart will be attempted.
+    pub engine_fatal: bool,
+}
+
+/// Saved configuration for restarting after a crash.
+#[derive(Clone)]
+struct SavedPlaybackConfig {
+    path: PathBuf,
+    plugins: Vec<PluginConfig>,
+    output_channels: usize,
+    output_device: Option<String>,
+    last_position_secs: f64,
 }
 
 pub struct Player {
     manager: AudioEngineManager,
+    /// Config saved at each `load_and_play_at` for crash recovery.
+    saved_config: Option<SavedPlaybackConfig>,
+    /// How many times we've restarted for the current track (max 1).
+    restart_count: u32,
+    /// One-shot flag: engine was restarted, cleared after `get_playback_state` returns it.
+    engine_restarted_flag: bool,
+    /// Sticky flag: engine crashed fatally (second crash), cleared on next `load_and_play_at`.
+    engine_fatal_flag: bool,
 }
 
 impl Player {
     pub fn new() -> Self {
         Self {
             manager: AudioEngineManager::with_signal_watching(true),
+            saved_config: None,
+            restart_count: 0,
+            engine_restarted_flag: false,
+            engine_fatal_flag: false,
         }
     }
 
@@ -41,6 +67,18 @@ impl Player {
         output_device: Option<String>,
         position: Option<f64>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Save config for potential crash recovery
+        self.saved_config = Some(SavedPlaybackConfig {
+            path: path.clone(),
+            plugins: plugins.clone(),
+            output_channels,
+            output_device: output_device.clone(),
+            last_position_secs: position.unwrap_or(0.0),
+        });
+        self.restart_count = 0;
+        self.engine_restarted_flag = false;
+        self.engine_fatal_flag = false;
+
         // Stop current playback if any
         self.manager.stop()?;
 
@@ -103,6 +141,10 @@ impl Player {
 
     pub fn stop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.stop()?;
+        self.saved_config = None;
+        self.restart_count = 0;
+        self.engine_restarted_flag = false;
+        self.engine_fatal_flag = false;
         Ok(())
     }
 
@@ -206,12 +248,48 @@ impl Player {
 
     /// Get basic playback state in a single call.
     /// Plugin data should be queried separately via `get_cached_plugin_data`.
-    pub fn get_playback_state(&self) -> PlaybackState {
+    ///
+    /// This also drives crash detection and auto-restart: when a streaming error
+    /// is detected and we have a saved config, the engine is restarted once.
+    /// A second crash sets `engine_fatal` and gives up.
+    pub fn get_playback_state(&mut self) -> PlaybackState {
         // Drain any pending streaming events and capture the last error (if any)
         let mut last_error: Option<String> = None;
         for event in self.manager.drain_events() {
             if let StreamingEvent::Error(msg) = event {
                 last_error = Some(msg);
+            }
+        }
+
+        // Crash detection & auto-restart
+        if let Some(ref err) = last_error {
+            if self.saved_config.is_some() {
+                if self.restart_count == 0 {
+                    log::error!(
+                        "[Player] Engine crashed: {}. Attempting auto-restart...",
+                        err
+                    );
+                    self.restart_count = 1;
+                    match self.attempt_restart() {
+                        Ok(()) => {
+                            log::info!("[Player] Engine restarted successfully");
+                            self.engine_restarted_flag = true;
+                            // Clear the error — the restart succeeded
+                            last_error = None;
+                        }
+                        Err(e) => {
+                            log::error!("[Player] Restart failed: {}", e);
+                            self.engine_fatal_flag = true;
+                            last_error = Some(format!("Engine crashed and restart failed: {}", e));
+                        }
+                    }
+                } else {
+                    log::error!(
+                        "[Player] Engine crashed again: {}. Giving up.",
+                        err
+                    );
+                    self.engine_fatal_flag = true;
+                }
             }
         }
 
@@ -223,12 +301,54 @@ impl Player {
             .get_audio_info()
             .map(|info| info.spec.sample_rate);
 
+        // Read and clear one-shot flags
+        let engine_restarted = self.engine_restarted_flag;
+        self.engine_restarted_flag = false;
+        let engine_fatal = self.engine_fatal_flag;
+
         PlaybackState {
             position_secs,
             is_playing,
             sample_rate,
             last_error,
+            engine_restarted,
+            engine_fatal,
         }
+    }
+
+    /// Attempt to restart the engine from saved config.
+    fn attempt_restart(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let config = self
+            .saved_config
+            .clone()
+            .ok_or("attempt_restart called without saved config")?;
+
+        // Use the last known position so the user resumes near where they were
+        let position = self.manager.get_position();
+        let resume_pos = if position > 0.0 {
+            position
+        } else {
+            config.last_position_secs
+        };
+
+        // Stop the dead engine
+        let _ = self.manager.stop();
+
+        // Re-load and play
+        self.manager.load_file(&config.path)?;
+        self.manager.start_playback_at(
+            config.output_device,
+            config.plugins,
+            config.output_channels,
+            Some(resume_pos),
+        )?;
+
+        // Update saved position for any future restart
+        if let Some(ref mut cfg) = self.saved_config {
+            cfg.last_position_secs = resume_pos;
+        }
+
+        Ok(())
     }
 }
 
@@ -244,13 +364,15 @@ mod tests {
 
     #[test]
     fn playback_state_defaults_are_sane() {
-        let player = Player::new();
+        let mut player = Player::new();
         let state = player.get_playback_state();
 
         assert_eq!(state.position_secs, 0.0);
         assert!(!state.is_playing);
         assert!(state.sample_rate.is_none());
         assert!(state.last_error.is_none());
+        assert!(!state.engine_restarted);
+        assert!(!state.engine_fatal);
     }
 
     #[test]

@@ -89,7 +89,7 @@ impl PluginEditingManager for App {
     }
 
     fn move_plugin_up(&mut self, index: usize) {
-        if index > 0 {
+        if self.plugin_state.plugin_chain.can_move_plugin_up(index) {
             self.plugin_state.plugin_chain.move_plugin(index, index - 1);
             self.plugin_state.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
@@ -101,7 +101,7 @@ impl PluginEditingManager for App {
     }
 
     fn move_plugin_down(&mut self, index: usize) {
-        if index < self.plugin_state.plugin_chain.len() - 1 {
+        if self.plugin_state.plugin_chain.can_move_plugin_down(index) {
             self.plugin_state.plugin_chain.move_plugin(index, index + 1);
             self.plugin_state.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move

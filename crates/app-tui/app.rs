@@ -303,85 +303,85 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 gain_rear_ambient,
                 height_gain,
                 stereo_width,
+                center_spread,
+                surround_direct_bleed,
+                rear_late_reflection,
                 lfe_cutoff_hz,
                 lfe_gain,
+                bandpass_hz,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
+                decorrelation_mode,
+                decorrelation_lfo_rate_hz,
+                velvet_noise_duration_ms,
+                velvet_noise_density,
                 enable_hr_direct,
                 hr_sharpen,
+                height_hf_cap_hz,
+                height_transient_reduction,
+                height_direct_leak,
+                ambient_boost,
                 safety_cap_db,
-                ..
+                rear_ambient_boost,
+                dialogue_weight,
+                voice_freq_min_hz,
+                voice_freq_max_hz,
+                bypass_decorrelation,
+                bypass_transient_detection,
+                bypass_all_processing,
             } => vec![
-                TuiParamSpec {
-                    name: "Speaker Config".to_string(),
-                    value: speaker_config.clone(),
-                    unit: "".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Front Direct".to_string(),
-                    value: format!("{:.2}", gain_front_direct),
-                    unit: "x".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Front Ambient".to_string(),
-                    value: format!("{:.2}", gain_front_ambient),
-                    unit: "x".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Rear Ambient".to_string(),
-                    value: format!("{:.2}", gain_rear_ambient),
-                    unit: "x".to_string(),
-                },
-                TuiParamSpec {
-                    name: "LFE Cutoff".to_string(),
-                    value: format!("{:.0}", lfe_cutoff_hz),
-                    unit: "Hz".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Stereo Width".to_string(),
-                    value: format!("{:.2}", stereo_width),
-                    unit: "".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Height Gain".to_string(),
-                    value: format!("{:.2}", height_gain),
-                    unit: "x".to_string(),
-                },
-                TuiParamSpec {
-                    name: "LFE Gain".to_string(),
-                    value: format!("{:.2}", lfe_gain),
-                    unit: "x".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Subharmonic".to_string(),
-                    value: (if *enable_subharmonic_synth {
-                        "On"
-                    } else {
-                        "Off"
-                    })
-                    .to_string(),
-                    unit: "".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Subharmonic Gain".to_string(),
-                    value: format!("{:.2}", subharmonic_gain),
-                    unit: "x".to_string(),
-                },
-                TuiParamSpec {
-                    name: "HR Direct".to_string(),
-                    value: (if *enable_hr_direct { "On" } else { "Off" }).to_string(),
-                    unit: "".to_string(),
-                },
-                TuiParamSpec {
-                    name: "HR Sharpen".to_string(),
-                    value: format!("{:.2}", hr_sharpen),
-                    unit: "".to_string(),
-                },
-                TuiParamSpec {
-                    name: "Safety Cap".to_string(),
-                    value: format!("{:.1}", safety_cap_db),
-                    unit: "dB".to_string(),
-                },
+                // 0: Speaker Config (structural)
+                TuiParamSpec { name: "Speaker Config".into(), value: speaker_config.clone(), unit: "".into() },
+                // 1-4: Gain parameters
+                TuiParamSpec { name: "Front Direct".into(), value: format!("{:.2}", gain_front_direct), unit: "x".into() },
+                TuiParamSpec { name: "Front Ambient".into(), value: format!("{:.2}", gain_front_ambient), unit: "x".into() },
+                TuiParamSpec { name: "Rear Ambient".into(), value: format!("{:.2}", gain_rear_ambient), unit: "x".into() },
+                TuiParamSpec { name: "Height Gain".into(), value: format!("{:.2}", height_gain), unit: "x".into() },
+                // 5-6: LFE
+                TuiParamSpec { name: "LFE Gain".into(), value: format!("{:.2}", lfe_gain), unit: "x".into() },
+                TuiParamSpec { name: "LFE Cutoff".into(), value: format!("{:.0}", lfe_cutoff_hz), unit: "Hz".into() },
+                // 7-9: Stereo/spatial
+                TuiParamSpec { name: "Stereo Width".into(), value: format!("{:.2}", stereo_width), unit: "".into() },
+                TuiParamSpec { name: "Center Spread".into(), value: format!("{:.2}", center_spread), unit: "".into() },
+                TuiParamSpec { name: "Bandpass".into(), value: format!("{:.0}", bandpass_hz), unit: "Hz".into() },
+                // 10-11: Subharmonic
+                TuiParamSpec { name: "Subharmonic".into(), value: (if *enable_subharmonic_synth { "On" } else { "Off" }).into(), unit: "".into() },
+                TuiParamSpec { name: "Sub Gain".into(), value: format!("{:.2}", subharmonic_gain), unit: "x".into() },
+                // 12-13: Height routing
+                TuiParamSpec { name: "HR Direct".into(), value: (if *enable_hr_direct { "On" } else { "Off" }).into(), unit: "".into() },
+                TuiParamSpec { name: "HR Sharpen".into(), value: format!("{:.2}", hr_sharpen), unit: "".into() },
+                // 14: Safety
+                TuiParamSpec { name: "Safety Cap".into(), value: format!("{:.1}", safety_cap_db), unit: "dB".into() },
+                // 15: Decorrelation mode
+                TuiParamSpec { name: "Decor Mode".into(), value: format!("{}", decorrelation_mode), unit: "".into() },
+                // 16-18: Extended subharmonic
+                TuiParamSpec { name: "Sub Freq".into(), value: format!("{:.0}", subharmonic_freq_hz), unit: "Hz".into() },
+                TuiParamSpec { name: "Sub Attack".into(), value: format!("{:.1}", subharmonic_attack_ms), unit: "ms".into() },
+                TuiParamSpec { name: "Sub Release".into(), value: format!("{:.1}", subharmonic_release_ms), unit: "ms".into() },
+                // 19-21: Decorrelation details
+                TuiParamSpec { name: "Decor LFO Rate".into(), value: format!("{:.2}", decorrelation_lfo_rate_hz), unit: "Hz".into() },
+                TuiParamSpec { name: "Velvet Duration".into(), value: format!("{:.0}", velvet_noise_duration_ms), unit: "ms".into() },
+                TuiParamSpec { name: "Velvet Density".into(), value: format!("{:.0}", velvet_noise_density), unit: "".into() },
+                // 22-24: Height details
+                TuiParamSpec { name: "Height HF Cap".into(), value: format!("{:.0}", height_hf_cap_hz), unit: "Hz".into() },
+                TuiParamSpec { name: "Height Trans Red".into(), value: format!("{:.2}", height_transient_reduction), unit: "".into() },
+                TuiParamSpec { name: "Height Direct Leak".into(), value: format!("{:.2}", height_direct_leak), unit: "".into() },
+                // 25-28: Surround/ambient
+                TuiParamSpec { name: "Surr Direct Bleed".into(), value: format!("{:.2}", surround_direct_bleed), unit: "".into() },
+                TuiParamSpec { name: "Rear Amb Boost".into(), value: format!("{:.2}", rear_ambient_boost), unit: "x".into() },
+                TuiParamSpec { name: "Rear Late Refl".into(), value: format!("{:.2}", rear_late_reflection), unit: "".into() },
+                TuiParamSpec { name: "Ambient Boost".into(), value: format!("{:.2}", ambient_boost), unit: "x".into() },
+                // 29-31: Dialogue
+                TuiParamSpec { name: "Dialogue Weight".into(), value: format!("{:.2}", dialogue_weight), unit: "".into() },
+                TuiParamSpec { name: "Voice Freq Min".into(), value: format!("{:.0}", voice_freq_min_hz), unit: "Hz".into() },
+                TuiParamSpec { name: "Voice Freq Max".into(), value: format!("{:.0}", voice_freq_max_hz), unit: "Hz".into() },
+                // 32-34: Bypass diagnostics
+                TuiParamSpec { name: "Bypass Decor".into(), value: (if *bypass_decorrelation { "On" } else { "Off" }).into(), unit: "".into() },
+                TuiParamSpec { name: "Bypass Transient".into(), value: (if *bypass_transient_detection { "On" } else { "Off" }).into(), unit: "".into() },
+                TuiParamSpec { name: "Bypass All".into(), value: (if *bypass_all_processing { "On" } else { "Off" }).into(), unit: "".into() },
             ],
             sotf_audio_player::PluginSettings::BinauralDecoder {
                 sofa_file,
@@ -509,7 +509,9 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 low_gain,
                 high_freq,
                 high_gain,
-                ..
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
             } => vec![
                 TuiParamSpec {
                     name: "Low Freq".to_string(),
@@ -530,6 +532,21 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     name: "High Gain".to_string(),
                     value: format!("{:.1}", high_gain),
                     unit: "dB".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Auto Gain".to_string(),
+                    value: (if *auto_gain_enabled { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Max Auto Gain".to_string(),
+                    value: format!("{:.1}", auto_gain_max_db),
+                    unit: "dB".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Auto Gain Smooth".to_string(),
+                    value: format!("{:.1}", auto_gain_smoothing_ms),
+                    unit: "ms".to_string(),
                 },
             ],
             sotf_audio_player::PluginSettings::Downmix {
@@ -862,7 +879,11 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
-                ..
+                transparency,
+                dd_enabled,
+                dd_alpha,
+                psychoacoustic_masking,
+                use_captured_profile,
             } => vec![
                 TuiParamSpec {
                     name: "Reduction".to_string(),
@@ -897,6 +918,31 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 TuiParamSpec {
                     name: "Polyphonic".to_string(),
                     value: (if *polyphonic_detection { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Transparency".to_string(),
+                    value: format!("{:.2}", transparency),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "DD Enabled".to_string(),
+                    value: (if *dd_enabled { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "DD Alpha".to_string(),
+                    value: format!("{:.3}", dd_alpha),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Psychoacoustic".to_string(),
+                    value: (if *psychoacoustic_masking { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Use Profile".to_string(),
+                    value: (if *use_captured_profile { "On" } else { "Off" }).to_string(),
                     unit: "".to_string(),
                 },
             ],
@@ -1000,7 +1046,8 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 min_freq,
                 max_freq,
                 smoothing,
-                ..
+                tilt_correction,
+                tilt_reference,
             } => vec![
                 TuiParamSpec {
                     name: "Bins".to_string(),
@@ -1020,6 +1067,16 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 TuiParamSpec {
                     name: "Smoothing".to_string(),
                     value: format!("{:.2}", smoothing),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Tilt Correction".to_string(),
+                    value: format!("{:?}", tilt_correction),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Tilt Reference".to_string(),
+                    value: format!("{:?}", tilt_reference),
                     unit: "".to_string(),
                 },
             ],
@@ -1185,23 +1242,40 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 gain_front_direct,
                 gain_front_ambient,
                 gain_rear_ambient,
-                lfe_cutoff_hz,
-                stereo_width,
-                bandpass_hz,
                 height_gain,
+                stereo_width,
+                center_spread,
+                surround_direct_bleed,
+                rear_late_reflection,
+                lfe_cutoff_hz,
                 lfe_gain,
+                bandpass_hz,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
+                decorrelation_mode,
+                decorrelation_lfo_rate_hz,
+                velvet_noise_duration_ms,
+                velvet_noise_density,
                 enable_hr_direct,
                 hr_sharpen,
+                height_hf_cap_hz,
+                height_transient_reduction,
+                height_direct_leak,
+                ambient_boost,
                 safety_cap_db,
-                decorrelation_mode,
+                rear_ambient_boost,
+                dialogue_weight,
+                voice_freq_min_hz,
+                voice_freq_max_hz,
                 bypass_decorrelation,
                 bypass_transient_detection,
                 bypass_all_processing,
-                ..
             } => {
-                // Indices must match get_plugin_parameters order
+                use sotf_plugins::param_specs::upmixer::*;
+                // Indices must match get_params() order
                 match index {
                     0 => {
                         let configs = [
@@ -1219,23 +1293,40 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                         };
                         *speaker_config = configs[new_idx].to_string();
                     }
-                    1 => *gain_front_direct = (*gain_front_direct + delta * 0.1).clamp(0.0, 2.0),
-                    2 => *gain_front_ambient = (*gain_front_ambient + delta * 0.1).clamp(0.0, 2.0),
-                    3 => *gain_rear_ambient = (*gain_rear_ambient + delta * 0.1).clamp(0.0, 2.0),
-                    4 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(20.0, 200.0),
-                    5 => *stereo_width = (*stereo_width + delta * 0.05).clamp(0.0, 1.0),
-                    6 => *bandpass_hz = (*bandpass_hz + delta * 10.0).clamp(100.0, 5000.0),
-                    7 => *height_gain = (*height_gain + delta * 0.1).clamp(0.0, 2.0),
-                    8 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
-                    9 => *enable_subharmonic_synth = !*enable_subharmonic_synth,
-                    10 => *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(0.0, 1.0),
-                    11 => *enable_hr_direct = !*enable_hr_direct,
-                    12 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0),
-                    13 => *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0),
-                    14 => *decorrelation_mode = (*decorrelation_mode + 1) % 2,
-                    15 => *bypass_decorrelation = !*bypass_decorrelation,
-                    16 => *bypass_transient_detection = !*bypass_transient_detection,
-                    17 => *bypass_all_processing = !*bypass_all_processing,
+                    1 => *gain_front_direct = (*gain_front_direct + delta * 0.05).clamp(GAIN_FRONT_DIRECT_MIN as f64, GAIN_FRONT_DIRECT_MAX as f64),
+                    2 => *gain_front_ambient = (*gain_front_ambient + delta * 0.05).clamp(GAIN_FRONT_AMBIENT_MIN as f64, GAIN_FRONT_AMBIENT_MAX as f64),
+                    3 => *gain_rear_ambient = (*gain_rear_ambient + delta * 0.05).clamp(GAIN_REAR_AMBIENT_MIN as f64, GAIN_REAR_AMBIENT_MAX as f64),
+                    4 => *height_gain = (*height_gain + delta * 0.05).clamp(GAIN_HEIGHT_MIN as f64, GAIN_HEIGHT_MAX as f64),
+                    5 => *lfe_gain = (*lfe_gain + delta * 0.05).clamp(LFE_GAIN_MIN as f64, LFE_GAIN_MAX as f64),
+                    6 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(LFE_CUTOFF_HZ_MIN as f64, LFE_CUTOFF_HZ_MAX as f64),
+                    7 => *stereo_width = (*stereo_width + delta * 0.05).clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64),
+                    8 => *center_spread = (*center_spread + delta * 0.05).clamp(CENTER_SPREAD_MIN as f64, CENTER_SPREAD_MAX as f64),
+                    9 => *bandpass_hz = (*bandpass_hz + delta * 5.0).clamp(BANDPASS_HZ_MIN as f64, BANDPASS_HZ_MAX as f64),
+                    10 => *enable_subharmonic_synth = !*enable_subharmonic_synth,
+                    11 => *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(SUBHARMONIC_GAIN_MIN as f64, SUBHARMONIC_GAIN_MAX as f64),
+                    12 => *enable_hr_direct = !*enable_hr_direct,
+                    13 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(HR_SHARPEN_MIN as f64, HR_SHARPEN_MAX as f64),
+                    14 => *safety_cap_db = (*safety_cap_db + delta * 0.1).clamp(SAFETY_CAP_DB_MIN as f64, SAFETY_CAP_DB_MAX as f64),
+                    15 => *decorrelation_mode = (*decorrelation_mode + 1) % 2,
+                    16 => *subharmonic_freq_hz = (*subharmonic_freq_hz + delta * 2.0).clamp(SUBHARMONIC_FREQ_HZ_MIN as f64, SUBHARMONIC_FREQ_HZ_MAX as f64),
+                    17 => *subharmonic_attack_ms = (*subharmonic_attack_ms + delta * 2.0).clamp(SUBHARMONIC_ATTACK_MS_MIN as f64, SUBHARMONIC_ATTACK_MS_MAX as f64),
+                    18 => *subharmonic_release_ms = (*subharmonic_release_ms + delta * 10.0).clamp(SUBHARMONIC_RELEASE_MS_MIN as f64, SUBHARMONIC_RELEASE_MS_MAX as f64),
+                    19 => *decorrelation_lfo_rate_hz = (*decorrelation_lfo_rate_hz + delta * 0.02).clamp(DECORRELATION_LFO_RATE_HZ_MIN as f64, DECORRELATION_LFO_RATE_HZ_MAX as f64),
+                    20 => *velvet_noise_duration_ms = (*velvet_noise_duration_ms + delta * 2.0).clamp(VELVET_NOISE_DURATION_MS_MIN as f64, VELVET_NOISE_DURATION_MS_MAX as f64),
+                    21 => *velvet_noise_density = (*velvet_noise_density + delta * 100.0).clamp(VELVET_NOISE_DENSITY_MIN as f64, VELVET_NOISE_DENSITY_MAX as f64),
+                    22 => *height_hf_cap_hz = (*height_hf_cap_hz + delta * 200.0).clamp(HEIGHT_HF_CAP_HZ_MIN as f64, HEIGHT_HF_CAP_HZ_MAX as f64),
+                    23 => *height_transient_reduction = (*height_transient_reduction + delta * 0.05).clamp(HEIGHT_TRANSIENT_REDUCTION_MIN as f64, HEIGHT_TRANSIENT_REDUCTION_MAX as f64),
+                    24 => *height_direct_leak = (*height_direct_leak + delta * 0.02).clamp(HEIGHT_DIRECT_LEAK_MIN as f64, HEIGHT_DIRECT_LEAK_MAX as f64),
+                    25 => *surround_direct_bleed = (*surround_direct_bleed + delta * 0.05).clamp(SURROUND_DIRECT_BLEED_MIN as f64, SURROUND_DIRECT_BLEED_MAX as f64),
+                    26 => *rear_ambient_boost = (*rear_ambient_boost + delta * 0.05).clamp(REAR_AMBIENT_BOOST_MIN as f64, REAR_AMBIENT_BOOST_MAX as f64),
+                    27 => *rear_late_reflection = (*rear_late_reflection + delta * 0.02).clamp(REAR_LATE_REFLECTION_MIN as f64, REAR_LATE_REFLECTION_MAX as f64),
+                    28 => *ambient_boost = (*ambient_boost + delta * 0.05).clamp(AMBIENT_BOOST_MIN as f64, AMBIENT_BOOST_MAX as f64),
+                    29 => *dialogue_weight = (*dialogue_weight + delta * 0.05).clamp(DIALOGUE_WEIGHT_MIN as f64, DIALOGUE_WEIGHT_MAX as f64),
+                    30 => *voice_freq_min_hz = (*voice_freq_min_hz + delta * 20.0).clamp(VOICE_FREQ_MIN_HZ_MIN as f64, VOICE_FREQ_MIN_HZ_MAX as f64),
+                    31 => *voice_freq_max_hz = (*voice_freq_max_hz + delta * 100.0).clamp(VOICE_FREQ_MAX_HZ_MIN as f64, VOICE_FREQ_MAX_HZ_MAX as f64),
+                    32 => *bypass_decorrelation = !*bypass_decorrelation,
+                    33 => *bypass_transient_detection = !*bypass_transient_detection,
+                    34 => *bypass_all_processing = !*bypass_all_processing,
                     _ => return false,
                 }
                 return true;
@@ -1268,13 +1359,19 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 low_gain,
                 high_freq,
                 high_gain,
-                ..
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
             } => {
+                use sotf_plugins::param_specs::loudness_compensation::*;
                 match index {
-                    0 => *low_freq = (*low_freq + delta * 5.0).clamp(20.0, 500.0),
-                    1 => *low_gain = (*low_gain + delta * 0.5).clamp(0.0, 20.0),
-                    2 => *high_freq = (*high_freq + delta * 100.0).clamp(1000.0, 20000.0),
-                    3 => *high_gain = (*high_gain + delta * 0.5).clamp(0.0, 20.0),
+                    0 => *low_freq = (*low_freq + delta * 5.0).clamp(LOW_FREQ_MIN as f64, LOW_FREQ_MAX as f64),
+                    1 => *low_gain = (*low_gain + delta * 0.5).clamp(LOW_GAIN_MIN as f64, LOW_GAIN_MAX as f64),
+                    2 => *high_freq = (*high_freq + delta * 100.0).clamp(HIGH_FREQ_MIN as f64, HIGH_FREQ_MAX as f64),
+                    3 => *high_gain = (*high_gain + delta * 0.5).clamp(HIGH_GAIN_MIN as f64, HIGH_GAIN_MAX as f64),
+                    4 => *auto_gain_enabled = !*auto_gain_enabled,
+                    5 => *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0),
+                    6 => *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0).clamp(1.0, 1000.0),
                     _ => return false,
                 }
                 return true;
@@ -1396,7 +1493,11 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
-                ..
+                transparency,
+                dd_enabled,
+                dd_alpha,
+                psychoacoustic_masking,
+                use_captured_profile,
             } => {
                 use sotf_plugins::param_specs::denoiser::*;
                 match index {
@@ -1422,6 +1523,17 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     }
                     5 => *low_latency = !*low_latency,
                     6 => *polyphonic_detection = !*polyphonic_detection,
+                    7 => {
+                        *transparency = (*transparency + delta * 0.05)
+                            .clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64)
+                    }
+                    8 => *dd_enabled = !*dd_enabled,
+                    9 => {
+                        *dd_alpha = (*dd_alpha + delta * 0.01)
+                            .clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64)
+                    }
+                    10 => *psychoacoustic_masking = !*psychoacoustic_masking,
+                    11 => *use_captured_profile = !*use_captured_profile,
                     _ => return false,
                 }
                 return true;
@@ -1914,9 +2026,11 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 min_freq,
                 max_freq,
                 smoothing,
-                ..
+                tilt_correction,
+                tilt_reference,
             } => {
                 use sotf_plugins::param_specs::spectrum::*;
+                use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
                 match index {
                     0 => {
                         *num_bins = ((*num_bins as i64) + delta as i64)
@@ -1931,6 +2045,38 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     3 => {
                         *smoothing =
                             (*smoothing + delta as f32 * 0.01).clamp(SMOOTHING_MIN, SMOOTHING_MAX)
+                    }
+                    4 => {
+                        // Cycle through tilt correction modes
+                        let modes = [
+                            SpectralTiltCorrection::None,
+                            SpectralTiltCorrection::ThreeDbPerOctave,
+                            SpectralTiltCorrection::SixDbPerOctave,
+                            SpectralTiltCorrection::Pink,
+                        ];
+                        let current = modes.iter().position(|m| m == tilt_correction).unwrap_or(0);
+                        let next = if delta > 0.0 {
+                            (current + 1) % modes.len()
+                        } else {
+                            (current + modes.len() - 1) % modes.len()
+                        };
+                        *tilt_correction = modes[next];
+                    }
+                    5 => {
+                        // Cycle through tilt reference modes
+                        let modes = [
+                            TiltReferenceFreq::Standard,
+                            TiltReferenceFreq::OneKilohertz,
+                            TiltReferenceFreq::TwoKilohertz,
+                            TiltReferenceFreq::MinFreq,
+                        ];
+                        let current = modes.iter().position(|m| m == tilt_reference).unwrap_or(0);
+                        let next = if delta > 0.0 {
+                            (current + 1) % modes.len()
+                        } else {
+                            (current + modes.len() - 1) % modes.len()
+                        };
+                        *tilt_reference = modes[next];
                     }
                     _ => return false,
                 }
@@ -3402,7 +3548,7 @@ impl App {
     }
 
     pub fn move_plugin_up(&mut self, index: usize) {
-        if index > 0 {
+        if self.plugin_chain.can_move_plugin_up(index) {
             self.plugin_chain.move_plugin(index, index - 1);
             self.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
@@ -3412,7 +3558,7 @@ impl App {
     }
 
     pub fn move_plugin_down(&mut self, index: usize) {
-        if index < self.plugin_chain.len() - 1 {
+        if self.plugin_chain.can_move_plugin_down(index) {
             self.plugin_chain.move_plugin(index, index + 1);
             self.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
@@ -3489,15 +3635,15 @@ impl App {
     pub fn adjust_selected_param(&mut self, delta: f64) -> bool {
         let param_idx = self.plugin_param_selection;
 
-        let old_channels = self.plugin_chain.output_channels();
         let success = if let Some(plugin) = self.get_editing_plugin_mut() {
             plugin.settings.adjust_param(param_idx, delta)
         } else {
             false
         };
-        let channel_count_changed = success && old_channels != self.plugin_chain.output_channels();
 
-        if channel_count_changed {
+        if success {
+            // Always propagate channel counts — a parameter change (e.g., upmixer speaker config)
+            // may change intermediate channel counts that downstream plugins depend on
             self.plugin_chain.update_channel_dependent_plugins();
         }
 
@@ -3579,18 +3725,18 @@ impl App {
                     }
                 }
                 2 => {
-                    // Preset: cycle through available presets
-                    const PRESETS: [&str; 3] = ["Identity", "Swap L/R", "Mono Mix"];
+                    // Preset: cycle through presets valid for current channel config
                     let in_ch = *input_channels;
                     let out_ch = *output_channels;
+                    let presets = sotf_audio_player::available_matrix_presets(in_ch, out_ch);
                     let current = sotf_audio_player::detect_matrix_preset(in_ch, out_ch, matrix);
-                    let current_idx = PRESETS.iter().position(|&p| p == current).unwrap_or(0);
+                    let current_idx = presets.iter().position(|&p| p == current).unwrap_or(0);
                     let new_idx = if delta > 0 {
-                        (current_idx + 1) % PRESETS.len()
+                        (current_idx + 1) % presets.len()
                     } else {
-                        (current_idx + PRESETS.len() - 1) % PRESETS.len()
+                        (current_idx + presets.len() - 1) % presets.len()
                     };
-                    apply_matrix_preset(in_ch, out_ch, matrix, PRESETS[new_idx]);
+                    apply_matrix_preset(in_ch, out_ch, matrix, presets[new_idx]);
                     true
                 }
                 _ => false,
@@ -4853,22 +4999,22 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters, .. } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Gain { .. } => 1,                        // gain_db
-        PluginSettings::Upmixer { .. } => 18, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode, bypass_decorrelation, bypass_transient_detection, bypass_all_processing
+        PluginSettings::Upmixer { .. } => 35, // speaker_config, gains (4), lfe (2), stereo/spatial (3), subharm (2), hr (2), safety, decor mode, ext subharm (3), decor details (3), height details (3), surround/ambient (4), dialogue (3), bypass (3)
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 5,     // threshold, release, lookahead, soft, mix
         PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz
-        PluginSettings::LoudnessCompensation { .. } => 4, // low_freq, low_gain, high_freq, high_gain
+        PluginSettings::LoudnessCompensation { .. } => 7, // low_freq, low_gain, high_freq, high_gain, auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 3,     // ir_file, mix, gain_db
         PluginSettings::LoudnessMonitor => 0,        // No parameters
-        PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
+        PluginSettings::SpectrumAnalyzer { .. } => 6, // num_bins, min_freq, max_freq, smoothing, tilt_correction, tilt_reference
         PluginSettings::ChannelMuteSolo { .. } => 1, // enabled toggle
         PluginSettings::Matrix { .. } => 2,          // input_channels, output_channels
         PluginSettings::Expander { .. } => 11, // threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels, sidechain_hpf
         PluginSettings::MultibandCompressor { num_bands, .. } => 12 + num_bands * 8, // global + per-band (solo, bypass, threshold, ratio, attack, release, knee, makeup)
         PluginSettings::MultibandExpander { num_bands, .. } => 15 + num_bands * 10, // global + per-band (solo, bypass, threshold, ratio, attack, release, range, knee, hysteresis, hold)
         PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
-        PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
+        PluginSettings::Denoiser { .. } => 12, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection, transparency, dd_enabled, dd_alpha, psychoacoustic_masking, use_captured_profile
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 11, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms, path_a, path_b
         PluginSettings::FletcherMunson { .. } => 6, // reference_level, enabled, smoothing, auto_gain_enabled, max_auto_gain, auto_gain_smoothing
@@ -5226,10 +5372,12 @@ mod tests {
             orig_front_direct,
             orig_front_ambient,
             orig_rear_ambient,
-            orig_lfe_cutoff,
-            orig_stereo_width,
             orig_height_gain,
             orig_lfe_gain,
+            orig_lfe_cutoff,
+            orig_stereo_width,
+            orig_center_spread,
+            orig_bandpass,
             orig_enable_subharm,
             orig_subharm_gain,
             orig_enable_hr_direct,
@@ -5241,10 +5389,12 @@ mod tests {
                 gain_front_direct,
                 gain_front_ambient,
                 gain_rear_ambient,
-                lfe_cutoff_hz,
-                stereo_width,
                 height_gain,
                 lfe_gain,
+                lfe_cutoff_hz,
+                stereo_width,
+                center_spread,
+                bandpass_hz,
                 enable_subharmonic_synth,
                 subharmonic_gain,
                 enable_hr_direct,
@@ -5256,10 +5406,12 @@ mod tests {
                 *gain_front_direct,
                 *gain_front_ambient,
                 *gain_rear_ambient,
-                *lfe_cutoff_hz,
-                *stereo_width,
                 *height_gain,
                 *lfe_gain,
+                *lfe_cutoff_hz,
+                *stereo_width,
+                *center_spread,
+                *bandpass_hz,
                 *enable_subharmonic_synth,
                 *subharmonic_gain,
                 *enable_hr_direct,
@@ -5269,10 +5421,14 @@ mod tests {
             _ => panic!("Expected Upmixer plugin"),
         };
 
-        for idx in 0..13 {
+        // Indices match new get_params() order:
+        // 0: speaker_config, 1-4: gains, 5: lfe_gain, 6: lfe_cutoff, 7: stereo_width,
+        // 8: center_spread, 9: bandpass, 10: enable_subharm (toggle), 11: subharm_gain,
+        // 12: enable_hr_direct (toggle), 13: hr_sharpen, 14: safety_cap
+        for idx in 0..15 {
             app.plugin_param_selection = idx;
-            // hr_sharpen (11) defaults to 1.0 which is max, so use negative delta
-            let delta = if idx == 11 { -1.0 } else { 1.0 };
+            // hr_sharpen (13) defaults to 1.0 and safety_cap_db (14) defaults to 3.0, both at max
+            let delta = if idx == 13 || idx == 14 { -1.0 } else { 1.0 };
             assert!(app.adjust_selected_param(delta));
         }
 
@@ -5282,10 +5438,12 @@ mod tests {
             gain_front_direct,
             gain_front_ambient,
             gain_rear_ambient,
-            lfe_cutoff_hz,
-            stereo_width,
             height_gain,
             lfe_gain,
+            lfe_cutoff_hz,
+            stereo_width,
+            center_spread,
+            bandpass_hz,
             enable_subharmonic_synth,
             subharmonic_gain,
             enable_hr_direct,
@@ -5298,10 +5456,12 @@ mod tests {
             assert_ne!(*gain_front_direct, orig_front_direct);
             assert_ne!(*gain_front_ambient, orig_front_ambient);
             assert_ne!(*gain_rear_ambient, orig_rear_ambient);
-            assert_ne!(*lfe_cutoff_hz, orig_lfe_cutoff);
-            assert_ne!(*stereo_width, orig_stereo_width);
             assert_ne!(*height_gain, orig_height_gain);
             assert_ne!(*lfe_gain, orig_lfe_gain);
+            assert_ne!(*lfe_cutoff_hz, orig_lfe_cutoff);
+            assert_ne!(*stereo_width, orig_stereo_width);
+            assert_ne!(*center_spread, orig_center_spread);
+            assert_ne!(*bandpass_hz, orig_bandpass);
             assert_ne!(*enable_subharmonic_synth, orig_enable_subharm);
             assert_ne!(*subharmonic_gain, orig_subharm_gain);
             assert_ne!(*enable_hr_direct, orig_enable_hr_direct);

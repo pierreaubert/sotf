@@ -52,6 +52,7 @@ pub fn fast_exp2(x: f32) -> f32 {
 
     // 2^fraction via degree-4 Taylor polynomial on [0, 1)
     // Coefficients: ln(2)^k / k! for k=1..4
+    #[allow(clippy::approx_constant)] // Intentional: hand-tuned polynomial coefficient, not a usage of LN_2
     let frac_part =
         1.0 + xf * (0.693_147_2 + xf * (0.240_226_5 + xf * (0.055_504_1 + xf * 0.009_618_1)));
 

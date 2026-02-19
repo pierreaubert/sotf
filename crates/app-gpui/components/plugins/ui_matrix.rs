@@ -13,7 +13,8 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::{
-    apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label_from_config,
+    apply_matrix_preset, available_matrix_presets, db_to_linear, detect_matrix_preset,
+    get_channel_label_from_config,
 };
 
 // Constants for matrix cell sizing
@@ -141,18 +142,12 @@ pub fn render_matrix_plugin(
 fn render_preset_buttons(
     entity: Entity<AppState>,
     plugin_idx: usize,
-    _input_channels: usize,
-    _output_channels: usize,
+    input_channels: usize,
+    output_channels: usize,
     current_preset: &str,
     theme: &Theme,
 ) -> impl IntoElement {
-    let presets = [
-        "Identity",
-        "Swap L/R",
-        "Mono Mix",
-        "M/S Encode",
-        "M/S Decode",
-    ];
+    let presets = available_matrix_presets(input_channels, output_channels);
 
     div()
         .flex()

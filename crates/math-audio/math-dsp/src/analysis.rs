@@ -17,6 +17,9 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Spectrum result: (frequencies, magnitudes_db, phases_deg)
+type SpectrumResult = Result<(Vec<f32>, Vec<f32>, Vec<f32>), String>;
+
 thread_local! {
     static FFT_PLANNER: RefCell<FftPlanner<f32>> = RefCell::new(FftPlanner::new());
 }
@@ -506,7 +509,7 @@ fn compute_welch_spectrum_internal(
     sample_rate: u32,
     fft_size: usize,
     overlap: f32,
-) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>), String> {
+) -> SpectrumResult {
     if signal.is_empty() {
         return Err("Signal is empty".to_string());
     }
@@ -548,9 +551,7 @@ fn compute_welch_spectrum_internal(
             windowed[i] = signal[start + i] * hann_window[i];
         }
         // Zero-pad the rest if necessary
-        for i in window_len..fft_size {
-            windowed[i] = 0.0;
-        }
+        windowed[window_len..fft_size].fill(0.0);
 
         // Convert to complex
         for (i, &val) in windowed.iter().enumerate() {
@@ -598,7 +599,7 @@ fn compute_single_fft_spectrum_internal(
     sample_rate: u32,
     fft_size: usize,
     no_window: bool,
-) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>), String> {
+) -> SpectrumResult {
     if signal.is_empty() {
         return Err("Signal is empty".to_string());
     }
@@ -886,7 +887,7 @@ pub fn analyze_recording(
             return Err("Negative lag is larger than reference signal length".to_string());
         }
         // Pad reference start? No, just slice reference
-        (&reference[lag_usize..], &recorded[..])
+        (&reference[lag_usize..], recorded)
     };
 
     log::debug!(
@@ -1059,11 +1060,7 @@ pub fn analyze_recording(
 
     // Shift the IR so peak is at a small offset (e.g., 5ms for pre-ringing visibility)
     let pre_ring_samples = (0.005 * sample_rate as f32) as usize; // 5ms pre-ring buffer
-    let shift_amount = if peak_idx > pre_ring_samples {
-        peak_idx - pre_ring_samples
-    } else {
-        0
-    };
+    let shift_amount = peak_idx.saturating_sub(pre_ring_samples);
 
     if shift_amount > 0 {
         impulse_response.rotate_left(shift_amount);
@@ -1205,7 +1202,7 @@ fn compute_thd_from_ir(
     );
 
     // Compute harmonics
-    for k_idx in 0..num_harmonics {
+    for (k_idx, harmonic_db) in harmonics_db.iter_mut().enumerate().take(num_harmonics) {
         let harmonic_order = k_idx + 2; // 2nd harmonic is k=2
 
         // Calculate delay for this harmonic
@@ -1226,13 +1223,13 @@ fn compute_thd_from_ir(
         // Extract windowed harmonic IR
         let mut harmonic_ir = vec![0.0f32; win_len];
         let mut max_harmonic_sample = 0.0f32;
-        for i in 0..win_len {
+        for (i, harmonic_ir_val) in harmonic_ir.iter_mut().enumerate() {
             let src_idx =
                 (center - (win_len as isize / 2) + i as isize).rem_euclid(n as isize) as usize;
             // Apply Hann window
             let w = 0.5 * (1.0 - (2.0 * PI * i as f32 / (win_len as f32 - 1.0)).cos());
-            harmonic_ir[i] = impulse[src_idx] * w;
-            max_harmonic_sample = max_harmonic_sample.max(harmonic_ir[i].abs());
+            *harmonic_ir_val = impulse[src_idx] * w;
+            max_harmonic_sample = max_harmonic_sample.max(harmonic_ir_val.abs());
         }
 
         if k_idx == 0 {
@@ -1262,7 +1259,7 @@ fn compute_thd_from_ir(
                     let mag = spectrum[bin].norm();
                     // Convert to dB (threshold at -120 dB to avoid log of tiny values)
                     if mag > 1e-6 {
-                        harmonics_db[k_idx][i] = 20.0 * mag.log10();
+                        harmonic_db[i] = 20.0 * mag.log10();
                     }
                 }
             }
@@ -1289,8 +1286,8 @@ fn compute_thd_from_ir(
         let fundamental = 10.0f32.powf(fundamental_db[i] / 20.0);
         let mut harmonic_sum_sq = 0.0;
 
-        for k in 0..num_harmonics {
-            let h_mag = 10.0f32.powf(harmonics_db[k][i] / 20.0);
+        for harmonic_db in harmonics_db.iter().take(num_harmonics) {
+            let h_mag = 10.0f32.powf(harmonic_db[i] / 20.0);
             harmonic_sum_sq += h_mag * h_mag;
         }
 
@@ -1921,7 +1918,7 @@ pub fn compute_impulse_response_from_fr(
     // Build complex spectrum on uniform FFT grid via linear interpolation
     let mut spectrum = vec![Complex::new(0.0_f32, 0.0); fft_size];
 
-    for k in 0..=half {
+    for (k, spectrum_bin) in spectrum.iter_mut().enumerate().take(half + 1) {
         let f = k as f32 * freq_bin;
 
         // Interpolate magnitude (dB) and phase (deg) at this bin frequency
@@ -1930,7 +1927,7 @@ pub fn compute_impulse_response_from_fr(
         let mag_linear = 10.0_f32.powf(mag_db / 20.0);
         let phase_rad = phase_d * PI / 180.0;
 
-        spectrum[k] = Complex::new(mag_linear * phase_rad.cos(), mag_linear * phase_rad.sin());
+        *spectrum_bin = Complex::new(mag_linear * phase_rad.cos(), mag_linear * phase_rad.sin());
     }
 
     // Enforce Hermitian symmetry: X[N-k] = conj(X[k])
@@ -2404,7 +2401,7 @@ pub fn find_db_point(
 /// * `frequencies` - Frequency points in Hz
 /// * `magnitude_db` - Magnitude in dB
 /// * `freq_range` - Optional (start_freq, end_freq) to limit the averaging range.
-///                  If None, averages over the full bandwidth.
+///   If None, averages over the full bandwidth.
 ///
 /// # Returns
 /// The log-frequency weighted average SPL in dB.

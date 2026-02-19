@@ -293,12 +293,22 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.check_and_record_play();
                     }
 
-                    // Handle playback errors explicitly and avoid auto-advance on failure
-                    if let Some(err) = state.last_error {
+                    // Engine crash handling (priority order: fatal > error > restarted > auto-advance)
+                    if state.engine_fatal {
+                        log::error!("[TUI] Engine crashed fatally, cannot auto-restart");
+                        app.error_message = Some(
+                            "Audio engine crashed. Please play a new track to restart."
+                                .to_string(),
+                        );
+                        app.input_mode = InputMode::ShowError;
+                        app.is_playing = false;
+                    } else if let Some(err) = state.last_error {
                         log::error!("[TUI] Playback error: {}", err);
                         app.error_message = Some(err);
                         app.input_mode = InputMode::ShowError;
                         app.is_playing = false;
+                    } else if state.engine_restarted {
+                        log::info!("[TUI] Engine auto-restarted after crash, resuming playback");
                     } else if app.is_playing
                         && !state.is_playing
                         && app.current_queue_index.is_some()
