@@ -40,5 +40,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Performance issue when playing audio/plugins in the GPUI app**
+- [x] **Track: Performance issue when playing audio/plugins in the GPUI app**
 *Link: [./tracks/gpui_performance_20260219/](./tracks/gpui_performance_20260219/)*

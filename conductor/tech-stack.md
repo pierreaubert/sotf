@@ -8,7 +8,7 @@
 ## Audio Engine
 - **Audio I/O:** `cpal` for cross-platform hardware abstraction.
 - **Decoding:** `symphonia` for high-performance audio format support (FLAC, MP3, etc.).
-- **DSP Engine:** Native, multi-threaded implementation with modular plugin support.
+- **DSP Engine:** Native, multi-threaded implementation with modular plugin support. Includes a real-time safe analyzer path with lock-free status and data queries.
 - **Platform Specifics:** macOS HAL (Hardware Abstraction Layer) driver for system-wide processing.
 
 ## User Interfaces
