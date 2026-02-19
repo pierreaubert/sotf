@@ -2477,13 +2477,50 @@ impl App {
         let index = self.selected_album_index;
         let album = self.filtered_albums().get(index)?.clone();
 
+        // Remove any existing entry for the same album (by artist + title)
+        let artist = album.artist();
+        let title = &album.title;
+        let removed_was_current = self.remove_duplicate_album(&artist, title);
+
         self.queue.push(QueueEntry::new(QueueItem::new(album)));
 
-        // Auto-play if queue was empty OR if nothing was playing
-        if was_empty || was_not_playing {
+        // Auto-play if queue was empty, nothing was playing, or we removed the currently playing album
+        if was_empty || was_not_playing || removed_was_current {
             return self.start_queue();
         }
         None
+    }
+
+    /// Remove an album from the queue by artist + title match.
+    /// Returns true if the removed entry was the currently playing one.
+    fn remove_duplicate_album(&mut self, artist: &str, title: &str) -> bool {
+        if let Some(pos) = self
+            .queue
+            .iter()
+            .position(|e| e.item.album.artist() == artist && e.item.album.title == title)
+        {
+            self.queue.remove(pos);
+            let was_current = self.current_queue_index == Some(pos);
+
+            // Adjust current_queue_index after removal
+            if let Some(idx) = self.current_queue_index {
+                if pos < idx {
+                    self.current_queue_index = Some(idx - 1);
+                } else if pos == idx {
+                    // Currently playing album was removed; will be re-added at end
+                    self.current_queue_index = None;
+                }
+            }
+
+            // Adjust selected_queue_index after removal
+            if pos < self.selected_queue_index && self.selected_queue_index > 0 {
+                self.selected_queue_index -= 1;
+            }
+
+            was_current
+        } else {
+            false
+        }
     }
 
     pub fn remove_from_queue(&mut self, index: usize) {

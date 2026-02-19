@@ -723,11 +723,13 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char(c) => {
             app.search_query.push(c);
             app.selected_album_index = 0;
+            app.request_filter_update();
             None
         }
         KeyCode::Backspace => {
             app.search_query.pop();
             app.selected_album_index = 0;
+            app.request_filter_update();
             None
         }
         _ => None,
