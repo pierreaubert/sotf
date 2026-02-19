@@ -96,15 +96,22 @@ impl Render for PlayerView {
                 height: window_bounds.size.height.into(),
             };
 
-            let state = self.state.clone();
-            cx.defer(move |cx| {
-                state.update(cx, |state, cx| {
-                    let layout = state.layout.read(cx);
-                    if let Err(e) = state.app.save_config_with_geometry(&layout, Some(geometry)) {
-                        log::warn!("Failed to save window geometry: {}", e);
-                    }
+            // Debounce saving to avoid disk IO pressure during active resizing
+            self.geometry_save_task = Some(cx.spawn(async move |this, mut cx| {
+                // Wait for a period of stability (1 second) before saving
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                
+                let _ = this.update(cx, |view, cx| {
+                    view.state.update(cx, |state, cx| {
+                        let layout = state.layout.read(cx);
+                        if let Err(e) = state.app.save_config_with_geometry(&layout, Some(geometry)) {
+                            log::warn!("Failed to save window geometry: {}", e);
+                        } else {
+                            log::debug!("Debounced window geometry saved successfully");
+                        }
+                    });
                 });
-            });
+            }));
 
             self.last_saved_window_bounds = Some(window_bounds);
         }

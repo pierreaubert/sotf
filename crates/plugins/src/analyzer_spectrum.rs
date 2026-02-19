@@ -2,11 +2,10 @@
 // Spectrum Analyzer Plugin
 // ============================================================================
 
-use super::analyzer::SpectrumData;
+use super::analyzer::{RealTimeCache, SpectrumData};
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 
-use arc_swap::ArcSwap;
 use rtrb::{Consumer, RingBuffer};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
@@ -69,7 +68,7 @@ pub struct SpectrumAnalyzerPlugin {
     config: SpectrumConfig,
     producer: rtrb::Producer<f32>,
     consumer: Consumer<f32>,
-    shared_data: Arc<ArcSwap<SpectrumData>>,
+    cache: RealTimeCache<SpectrumData>,
     // Pre-allocated FFT resources (zero per-frame allocation)
     fft_r2c: Arc<dyn realfft::RealToComplex<f32>>,
     fft_output: Vec<Complex<f32>>,
@@ -94,11 +93,11 @@ impl SpectrumAnalyzerPlugin {
             freqs.push((f1 * f2).sqrt());
         }
         let initial_data = SpectrumData {
-            frequencies: freqs,
-            magnitudes: vec![-100.0; config.num_bins],
+            frequencies: freqs.into(),
+            magnitudes: vec![-100.0; config.num_bins].into(),
             peak_magnitude: -100.0,
         };
-        let shared_data = Arc::new(ArcSwap::from_pointee(initial_data));
+        let cache = RealTimeCache::new(initial_data);
         let mut planner = realfft::RealFftPlanner::<f32>::new();
         let fft_r2c = planner.plan_fft_forward(FFT_SIZE);
         let fft_output = fft_r2c.make_output_vec();
@@ -109,7 +108,7 @@ impl SpectrumAnalyzerPlugin {
             config,
             producer: p,
             consumer: c,
-            shared_data,
+            cache,
             fft_r2c,
             fft_output,
             windowed: vec![0.0; FFT_SIZE],
@@ -131,11 +130,11 @@ impl SpectrumAnalyzerPlugin {
             freqs.push((f1 * f2).sqrt());
         }
         let initial_data = SpectrumData {
-            frequencies: freqs,
-            magnitudes: vec![-100.0; config.num_bins],
+            frequencies: freqs.into(),
+            magnitudes: vec![-100.0; config.num_bins].into(),
             peak_magnitude: -100.0,
         };
-        let shared_data = Arc::new(ArcSwap::from_pointee(initial_data));
+        let cache = RealTimeCache::new(initial_data);
         let mut planner = realfft::RealFftPlanner::<f32>::new();
         let fft_r2c = planner.plan_fft_forward(FFT_SIZE);
         let fft_output = fft_r2c.make_output_vec();
@@ -146,7 +145,7 @@ impl SpectrumAnalyzerPlugin {
             config,
             producer: p,
             consumer: c,
-            shared_data,
+            cache,
             fft_r2c,
             fft_output,
             windowed: vec![0.0; FFT_SIZE],
@@ -181,11 +180,12 @@ impl Plugin for SpectrumAnalyzerPlugin {
     }
     fn reset(&mut self) {
         self.current_magnitudes.fill(-100.0);
-        let guard = self.shared_data.load();
-        let mut data = (**guard).clone();
-        data.magnitudes.fill(-100.0);
-        data.peak_magnitude = -100.0;
-        self.shared_data.store(Arc::new(data));
+        self.cache.update(|data| {
+            if let Some(mut_mags) = Arc::get_mut(&mut data.magnitudes) {
+                mut_mags.fill(-100.0);
+            }
+            data.peak_magnitude = -100.0;
+        });
     }
 
     fn process(
@@ -258,16 +258,16 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 .iter()
                 .copied()
                 .fold(-100.0, f32::max);
-            let guard = self.shared_data.load();
-            let mut data = (**guard).clone();
-            data.magnitudes.copy_from_slice(&self.current_magnitudes);
-            data.peak_magnitude = peak;
-            self.shared_data.store(Arc::new(data));
+
+            // Update cache in-place (real-time safe)
+            self.cache.update(|data| {
+                data.update_magnitudes(&self.current_magnitudes);
+                data.peak_magnitude = peak;
+            });
         }
         Ok(context.num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let data = self.shared_data.load_full();
-        Some(data as Arc<dyn Any + Send + Sync>)
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }

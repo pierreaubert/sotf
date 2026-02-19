@@ -46,8 +46,11 @@ pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&s
 
 /// High-level audio streaming manager using native AudioEngine
 pub struct AudioEngineManager {
-    /// Native audio engine
-    engine: Arc<Mutex<Option<AudioEngine>>>,
+    /// Native audio engine (wrapped in ArcSwap for lock-free status/analyzer access)
+    engine: Arc<arc_swap::ArcSwapOption<AudioEngine>>,
+    /// Mutex for serializing engine control commands (play, stop, update_plugins)
+    /// This prevents multiple threads from fighting for the single response channel.
+    cmd_mutex: Mutex<()>,
     /// Current audio file information
     current_audio_info: Arc<Mutex<Option<AudioFileInfo>>>,
     /// Current streaming state (StreamingState as u8)
@@ -135,7 +138,8 @@ impl AudioEngineManager {
     /// for GUI/Tauri applications that manage their own lifecycle.
     pub fn with_signal_watching(watch_signals: bool) -> Self {
         Self {
-            engine: Arc::new(Mutex::new(None)),
+            engine: Arc::new(arc_swap::ArcSwapOption::new(None)),
+            cmd_mutex: Mutex::new(()),
             current_audio_info: Arc::new(Mutex::new(None)),
             state: AtomicU8::new(StreamingState::Idle as u8),
             watch_signals,
@@ -201,6 +205,8 @@ impl AudioEngineManager {
         output_channels: usize,
         position: Option<f64>,
     ) -> AudioDecoderResult<()> {
+        let _guard = self.cmd_mutex.lock().unwrap();
+
         let audio_info = self
             .current_audio_info
             .lock().unwrap()
@@ -254,7 +260,7 @@ impl AudioEngineManager {
         );
 
         // Create and start engine
-        let mut engine = AudioEngine::new(config).map_err(|e| {
+        let engine = AudioEngine::new(config).map_err(|e| {
             AudioDecoderError::ConfigError(format!("Failed to create engine: {}", e))
         })?;
 
@@ -268,8 +274,8 @@ impl AudioEngineManager {
                 .map_err(AudioDecoderError::IoError)?;
         }
 
-        // Store engine
-        *self.engine.lock().unwrap() = Some(engine);
+        // Store engine handle lock-free
+        self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 
         log::debug!("[AudioEngineManager] Playback started");
@@ -278,19 +284,6 @@ impl AudioEngineManager {
     }
 
     /// Start HAL playback without a file source
-    ///
-    /// This method is specifically for HAL input plugins that act as audio sources.
-    /// Unlike `start_playback()`, this doesn't require a file to be loaded first.
-    ///
-    /// # Arguments
-    /// * `output_device` - Output device (None for default)
-    /// * `plugins` - Plugin chain (must include hal_input as first plugin)
-    /// * `output_channels` - Expected output channel count after all plugins
-    ///
-    /// # Notes
-    /// - Uses HAL default sample rate: 48000 Hz
-    /// - Input channels set to 0 (HAL input plugin is the source)
-    /// - No decoder thread is started since HAL input generates audio
     pub fn start_hal_playback(
         &mut self,
         output_device: Option<String>,
@@ -302,19 +295,6 @@ impl AudioEngineManager {
     }
 
     /// Start HAL playback with custom sample rate
-    ///
-    /// This method is specifically for HAL input plugins that act as audio sources.
-    /// Unlike `start_playback()`, this doesn't require a file to be loaded first.
-    ///
-    /// # Arguments
-    /// * `output_device` - Output device (None for default)
-    /// * `plugins` - Plugin chain (must include hal_input as first plugin)
-    /// * `output_channels` - Expected output channel count after all plugins
-    /// * `sample_rate` - Output sample rate in Hz (e.g., 44100, 48000, 96000)
-    ///
-    /// # Notes
-    /// - Input channels set to 0 (HAL input plugin is the source)
-    /// - No decoder thread is started since HAL input generates audio
     pub fn start_hal_playback_with_config(
         &mut self,
         output_device: Option<String>,
@@ -322,13 +302,12 @@ impl AudioEngineManager {
         output_channels: usize,
         sample_rate: u32,
     ) -> AudioDecoderResult<()> {
+        let _guard = self.cmd_mutex.lock().unwrap();
+
         log::debug!(
             "[AudioEngineManager] Starting HAL playback at {}Hz",
             sample_rate
         );
-
-        // No plugin validation required - decoder thread's HalInputReader is the audio source,
-        // not the hal_input plugin. Empty plugin chains are valid.
 
         // Create engine config for HAL (no file source) with preserved volume
         let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
@@ -355,13 +334,13 @@ impl AudioEngineManager {
             config.output_channels
         );
 
-        // Create engine (but don't call play() since there's no file)
+        // Create engine
         let engine = AudioEngine::new(config).map_err(|e| {
             AudioDecoderError::ConfigError(format!("Failed to create HAL engine: {}", e))
         })?;
 
-        // Store engine
-        *self.engine.lock().unwrap() = Some(engine);
+        // Store engine handle lock-free
+        self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 
         log::debug!("[AudioEngineManager] HAL playback started");
@@ -371,9 +350,10 @@ impl AudioEngineManager {
 
     /// Pause streaming
     pub fn pause(&self) -> AudioDecoderResult<()> {
+        let _guard = self.cmd_mutex.lock().unwrap();
         log::debug!("[AudioEngineManager] Pausing");
 
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.pause().map_err(AudioDecoderError::IoError)?;
             self.set_state(StreamingState::Paused);
         }
@@ -383,9 +363,10 @@ impl AudioEngineManager {
 
     /// Resume streaming
     pub fn resume(&self) -> AudioDecoderResult<()> {
+        let _guard = self.cmd_mutex.lock().unwrap();
         log::debug!("[AudioEngineManager] Resuming");
 
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.resume().map_err(AudioDecoderError::IoError)?;
             self.set_state(StreamingState::Playing);
         }
@@ -395,11 +376,20 @@ impl AudioEngineManager {
 
     /// Stop streaming and cleanup
     pub fn stop(&mut self) -> AudioDecoderResult<()> {
+        let _guard = self.cmd_mutex.lock().unwrap();
         log::debug!("[AudioEngineManager] Stopping");
 
-        if let Some(mut engine) = self.engine.lock().unwrap().take() {
-            engine.stop().map_err(AudioDecoderError::IoError)?;
-            engine.shutdown().map_err(AudioDecoderError::IoError)?;
+        if let Some(mut engine_arc) = self.engine.swap(None) {
+            // shutdown() is internally thread-safe now as it just sends a command
+            if let Some(engine) = Arc::get_mut(&mut engine_arc) {
+                engine.stop().map_err(AudioDecoderError::IoError)?;
+                engine.shutdown().map_err(AudioDecoderError::IoError)?;
+            } else {
+                // Another thread is holding a reference (e.g. status polling).
+                // Send commands via the shared Arc.
+                engine_arc.stop().map_err(AudioDecoderError::IoError)?;
+                engine_arc.shutdown().map_err(AudioDecoderError::IoError)?;
+            }
         }
 
         self.set_state(StreamingState::Idle);
@@ -409,11 +399,12 @@ impl AudioEngineManager {
 
     /// Seek to position in seconds
     pub fn seek(&self, seconds: f64) -> AudioDecoderResult<()> {
+        let _guard = self.cmd_mutex.lock().unwrap();
         log::debug!("[AudioEngineManager] Seeking to {:.2}s", seconds);
 
         self.set_state(StreamingState::Seeking);
 
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.seek(seconds).map_err(AudioDecoderError::IoError)?;
         }
 
@@ -429,7 +420,7 @@ impl AudioEngineManager {
         Ok(())
     }
 
-    /// Get current state
+    /// Get current state (lock-free)
     pub fn get_state(&self) -> StreamingState {
         StreamingState::from_u8(self.state.load(Ordering::Relaxed))
     }
@@ -439,14 +430,14 @@ impl AudioEngineManager {
         self.current_audio_info.lock().unwrap().clone()
     }
 
-    /// Get current position in seconds
+    /// Get current position in seconds (lock-free)
     pub fn get_position(&self) -> f64 {
         self.get_engine_state().position
     }
 
-    /// Get current volume (0.0 - 1.0)
+    /// Get current volume (0.0 - 1.0) (lock-free)
     pub fn get_volume(&self) -> f32 {
-        if self.engine.lock().unwrap().is_some() {
+        if self.engine.load().is_some() {
             self.get_engine_state().volume
         } else {
             f32::from_bits(self.current_volume.load(Ordering::Relaxed))
@@ -458,7 +449,7 @@ impl AudioEngineManager {
         // Store volume so it's preserved across song changes
         self.current_volume.store(volume.to_bits(), Ordering::Relaxed);
 
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine
                 .set_volume(volume)
                 .map_err(AudioDecoderError::IoError)?;
@@ -466,9 +457,9 @@ impl AudioEngineManager {
         Ok(())
     }
 
-    /// Get mute state
+    /// Get mute state (lock-free)
     pub fn is_muted(&self) -> bool {
-        if self.engine.lock().unwrap().is_some() {
+        if self.engine.load().is_some() {
             self.get_engine_state().muted
         } else {
             self.current_muted.load(Ordering::Relaxed)
@@ -480,45 +471,26 @@ impl AudioEngineManager {
         // Store mute state so it's preserved
         self.current_muted.store(muted, Ordering::Relaxed);
 
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.set_mute(muted).map_err(AudioDecoderError::IoError)?;
         }
         Ok(())
     }
 
-    /// Get underrun count
+    /// Get underrun count (lock-free)
     pub fn get_underruns(&self) -> u64 {
         self.get_engine_state().underruns
     }
 
-    // ========================================================================
-    // Monitoring Support - REMOVED
-    // Analyzers are now treated as normal plugins managed via update_plugin_chain
-    // ========================================================================
-
-    /// Enable plugin host
-    pub fn enable_plugin_host(&mut self) -> Result<(), String> {
-        Ok(())
-    }
-
-    /// Disable plugin host
-    pub fn disable_plugin_host(&mut self) {
-        // No-op - always enabled
-    }
-
-    /// Check if plugin host is enabled
-    pub fn is_plugin_host_enabled(&self) -> bool {
-        true // Always enabled in native engine
-    }
-
     /// Update plugin chain
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
+        let _guard = self.cmd_mutex.lock().unwrap();
         log::info!(
             "[AudioEngineManager] Updating plugin chain with {} plugins",
             plugins.len()
         );
 
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.update_plugin_chain(plugins)?;
             log::debug!("[AudioEngineManager] Plugin chain updated successfully");
             Ok(())
@@ -528,15 +500,13 @@ impl AudioEngineManager {
     }
 
     /// Set a plugin parameter (zero-dropout update)
-    ///
-    /// This updates a single parameter without rebuilding the plugin chain.
-    /// The value should be a string representation (JSON for complex types).
     pub fn set_plugin_parameter(
         &self,
         plugin_index: usize,
         param_id: String,
         value: String,
     ) -> Result<(), String> {
+        let _guard = self.cmd_mutex.lock().unwrap();
         log::debug!(
             "[AudioEngineManager] Setting plugin {} parameter {} = {}",
             plugin_index,
@@ -544,7 +514,7 @@ impl AudioEngineManager {
             value
         );
 
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.set_plugin_parameter(plugin_index, param_id, value)?;
             log::debug!("[AudioEngineManager] Parameter set successfully");
             Ok(())
@@ -553,13 +523,13 @@ impl AudioEngineManager {
         }
     }
 
-    /// Get plugin data (e.g. analyzer results) via synchronous command round-trip.
-    /// Prefer `get_cached_plugin_data` for UI polling to avoid blocking the audio pipeline.
+    /// Get plugin data via synchronous command round-trip (serialized via cmd_mutex)
     pub fn get_plugin_data(
         &self,
         index: usize,
     ) -> AudioDecoderResult<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
-        if let Some(ref mut engine) = *self.engine.lock().unwrap() {
+        let _guard = self.cmd_mutex.lock().unwrap();
+        if let Some(engine) = &*self.engine.load() {
             engine
                 .get_plugin_data(index)
                 .map_err(AudioDecoderError::ConfigError)
@@ -570,22 +540,19 @@ impl AudioEngineManager {
         }
     }
 
-    /// Get cached plugin data directly without blocking the audio pipeline.
-    /// The processing thread updates this cache after every frame.
+    /// Get cached plugin data directly without blocking (lock-free)
     pub fn get_cached_plugin_data(
         &self,
         index: usize,
     ) -> Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
-        if let Some(ref engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.get_cached_plugin_data(index)
         } else {
             None
         }
     }
 
-    /// Get current loudness measurements
-    ///
-    /// Returns None if loudness monitoring is not enabled or no data is available yet.
+    /// Get current loudness measurements (lock-free)
     pub fn get_loudness(&self) -> Option<crate::LoudnessInfo> {
         let raw = self.loudness_plugin_index.load(Ordering::Relaxed);
         if raw == ATOMIC_NONE {
@@ -597,7 +564,7 @@ impl AudioEngineManager {
             .and_then(|data| data.downcast_ref::<crate::LoudnessInfo>().cloned())
     }
 
-    /// Set the loudness plugin index (call this after adding loudness_monitor to plugin chain)
+    /// Set the loudness plugin index
     pub fn set_loudness_plugin_index(&mut self, index: usize) {
         self.loudness_plugin_index
             .store(index as u64, Ordering::Relaxed);
@@ -607,9 +574,7 @@ impl AudioEngineManager {
         );
     }
 
-    /// Get current spectrum measurements
-    ///
-    /// Returns None if spectrum monitoring is not enabled or no data is available yet.
+    /// Get current spectrum measurements (lock-free)
     pub fn get_spectrum(&self) -> Option<crate::SpectrumInfo> {
         let raw = self.spectrum_plugin_index.load(Ordering::Relaxed);
         if raw == ATOMIC_NONE {
@@ -621,11 +586,7 @@ impl AudioEngineManager {
             .and_then(|data| data.downcast_ref::<crate::SpectrumInfo>().cloned())
     }
 
-    // ========================================================================
-    // Event Support
-    // ========================================================================
-
-    /// Try to receive an event (non-blocking)
+    /// Try to receive an event (non-blocking, lock-free status check)
     pub fn try_recv_event(&self) -> Option<StreamingEvent> {
         // Check engine state for end-of-stream or error
         let engine_state = self.get_engine_state();
@@ -649,7 +610,7 @@ impl AudioEngineManager {
         None
     }
 
-    /// Drain all pending events
+    /// Drain all pending events (lock-free status check)
     pub fn drain_events(&self) -> Vec<StreamingEvent> {
         let mut events = Vec::new();
         while let Some(event) = self.try_recv_event() {
@@ -666,8 +627,9 @@ impl AudioEngineManager {
         self.state.store(state as u8, Ordering::Relaxed);
     }
 
+    /// Get current engine state (snapshot from ArcSwap, lock-free)
     fn get_engine_state(&self) -> AudioEngineState {
-        if let Some(ref engine) = *self.engine.lock().unwrap() {
+        if let Some(engine) = &*self.engine.load() {
             engine.get_state()
         } else {
             AudioEngineState::default()
@@ -683,10 +645,8 @@ impl Default for AudioEngineManager {
 
 impl Drop for AudioEngineManager {
     fn drop(&mut self) {
-        // Synchronous stop for drop
-        if let Some(mut engine) = self.engine.lock().unwrap().take() {
-            engine.shutdown().ok();
-        }
+        // Stop and shutdown properly
+        let _ = self.stop();
     }
 }
 

@@ -1575,7 +1575,7 @@ impl LevelMeterManager for AppState {
             .playback
             .loudness_info
             .as_ref()
-            .map(|l| l.channel_peaks.as_slice())
+            .map(|l| l.channel_peaks.as_ref())
             .unwrap_or(&[]);
 
         // Resize peak hold array if needed

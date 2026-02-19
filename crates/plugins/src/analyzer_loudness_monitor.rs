@@ -2,10 +2,9 @@
 // Loudness Monitor Analyzer Plugin
 // ============================================================================
 
-use super::analyzer::LoudnessData;
+use super::analyzer::{LoudnessData, RealTimeCache};
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use arc_swap::ArcSwap;
 use ebur128::{EbuR128, Mode};
 use rtrb::{Consumer, RingBuffer};
 use serde::{Deserialize, Serialize};
@@ -62,25 +61,38 @@ impl LoudnessMonitor {
             .map_err(|_| "EBU".into())
     }
 
-    pub fn get_loudness(&self) -> LoudnessData {
-        let nc = self.channels as usize;
-        let mut d = LoudnessData::new(nc);
+    /// Update LoudnessData in-place to avoid allocations
+    pub fn update_loudness_data(&self, d: &mut LoudnessData) {
         d.momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(-120.0);
         d.shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(-120.0);
         d.integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
-        for ch in 0..self.channels {
-            // prev_sample_peak: peak from last add_frames() call (real-time metering)
-            d.channel_peaks[ch as usize] = self.ebur128.prev_sample_peak(ch).unwrap_or(0.0);
-            // prev_true_peak: true peak from last add_frames() (accounts for inter-sample peaks)
-            let tp_linear = self.ebur128.prev_true_peak(ch).unwrap_or(0.0);
-            d.true_peaks_dbtp[ch as usize] = if tp_linear > 0.0 {
+
+        // Pre-allocate temporary slices on stack for speed
+        let mut peaks = [0.0f64; 16];
+        let mut tps = [0.0f64; 16];
+        let nc = self.channels as usize;
+        let nc_clamped = nc.min(16);
+
+        for ch in 0..nc_clamped {
+            peaks[ch] = self.ebur128.prev_sample_peak(ch as u32).unwrap_or(0.0);
+            let tp_linear = self.ebur128.prev_true_peak(ch as u32).unwrap_or(0.0);
+            tps[ch] = if tp_linear > 0.0 {
                 20.0 * tp_linear.log10()
             } else {
                 f64::NEG_INFINITY
             };
         }
+
+        d.update_peaks(&peaks[..nc_clamped]);
+        d.update_true_peaks(&tps[..nc_clamped]);
+
         d.peak = d.channel_peaks.iter().copied().fold(0.0, f64::max);
         d.correlation_lr = self.correlation_lr;
+    }
+
+    pub fn get_loudness(&self) -> LoudnessData {
+        let mut d = LoudnessData::new(self.channels as usize);
+        self.update_loudness_data(&mut d);
         d
     }
 
@@ -126,7 +138,7 @@ pub struct LoudnessMonitorPlugin {
     sample_rate: u32,
     producer: rtrb::Producer<f32>,
     consumer: Consumer<f32>,
-    shared_data: Arc<ArcSwap<LoudnessData>>,
+    cache: RealTimeCache<LoudnessData>,
     monitor: LoudnessMonitor,
 }
 
@@ -135,13 +147,13 @@ impl LoudnessMonitorPlugin {
         let sr = 48000;
         let (p, c) = RingBuffer::new(sr as usize * 2);
         let monitor = LoudnessMonitor::new(num_channels as u32, sr)?;
-        let shared_data = Arc::new(ArcSwap::from_pointee(LoudnessData::new(num_channels)));
+        let cache = RealTimeCache::new(LoudnessData::new(num_channels));
         Ok(Self {
             num_channels,
             sample_rate: sr,
             producer: p,
             consumer: c,
-            shared_data,
+            cache,
             monitor,
         })
     }
@@ -173,8 +185,9 @@ impl Plugin for LoudnessMonitorPlugin {
     }
     fn reset(&mut self) {
         let _ = self.monitor.reset();
-        self.shared_data
-            .store(Arc::new(LoudnessData::new(self.num_channels)));
+        self.cache.update(|d| {
+            *d = LoudnessData::new(self.num_channels);
+        });
     }
     fn process(
         &mut self,
@@ -192,13 +205,15 @@ impl Plugin for LoudnessMonitorPlugin {
             let _ = self.monitor.add_frames(s1);
             let _ = self.monitor.add_frames(s2);
             chunk.commit_all();
-            self.shared_data
-                .store(Arc::new(self.monitor.get_loudness()));
+
+            // Update cache in-place (real-time safe)
+            self.cache.update(|d| {
+                self.monitor.update_loudness_data(d);
+            });
         }
         Ok(context.num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let data = self.shared_data.load_full();
-        Some(data as Arc<dyn Any + Send + Sync>)
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }

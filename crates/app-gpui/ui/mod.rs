@@ -30,6 +30,8 @@ pub struct PlayerView {
     needs_initial_focus: bool,
     /// Frame counter for throttling updates (increments every 100ms)
     update_frame_count: u64,
+    /// Task for debounced window geometry saving
+    geometry_save_task: Option<Task<()>>,
 }
 
 impl PlayerView {
@@ -255,6 +257,7 @@ impl PlayerView {
             grid_scroll_handle: ScrollHandle::new(),
             needs_initial_focus: true,
             update_frame_count: 0,
+            geometry_save_task: None,
         }
     }
 
