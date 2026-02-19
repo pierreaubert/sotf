@@ -118,22 +118,22 @@ pub(crate) fn measure_itd_from_filters(_filters: &XtcFilters, _sample_rate: u32)
     0.0
 }
 
-/// Measure cancellation depth at a specific frequency.
+/// Measure cancellation depth at a specific frequency using pre-computed filters.
 ///
 /// Cancellation depth indicates how well the XTC system suppresses crosstalk.
 /// Higher values = better cancellation.
 ///
 /// This function simulates the actual signal path using the SAME transfer function
 /// model that the filters were designed for, ensuring accurate measurement.
-pub fn measure_cancellation_depth_db(
+///
+/// Optimization 2: Accepts pre-computed filters to avoid redundant computation.
+pub fn measure_cancellation_depth_db_with_filters(
+    filters: &XtcFilters,
     params: &XtcPluginParams,
     sample_rate: u32,
     freq_hz: f32,
+    num_bins: usize,
 ) -> f32 {
-    let fft_size = 2048;
-    let num_bins = fft_size / 2 + 1;
-    let filters = compute_xtc_filters_full(params, sample_rate, num_bins);
-
     let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
     let bin_idx = (freq_hz / freq_per_bin) as usize;
     let bin_idx = bin_idx.min(num_bins - 1);
@@ -215,20 +215,47 @@ pub fn measure_cancellation_depth_db(
     depth.max(0.0).min(40.0)
 }
 
+/// Measure cancellation depth at a specific frequency.
+///
+/// Convenience wrapper that computes filters internally.
+/// For batch measurements, use `measure_cancellation_depth_db_with_filters` instead.
+pub fn measure_cancellation_depth_db(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    freq_hz: f32,
+) -> f32 {
+    let fft_size = 2048;
+    let num_bins = fft_size / 2 + 1;
+    let filters = compute_xtc_filters_full(params, sample_rate, num_bins);
+    measure_cancellation_depth_db_with_filters(&filters, params, sample_rate, freq_hz, num_bins)
+}
+
 /// Measure cancellation depth across the frequency spectrum.
 ///
 /// Returns (frequency, depth_db) pairs for analysis.
+///
+/// Optimization 2: Computes filters once and reuses for all frequency points.
 pub fn measure_cancellation_depth_spectrum(
     params: &XtcPluginParams,
     sample_rate: u32,
     freq_points: &[f32],
 ) -> Vec<(f32, f32)> {
+    let fft_size = 2048;
+    let num_bins = fft_size / 2 + 1;
+    let filters = compute_xtc_filters_full(params, sample_rate, num_bins);
+
     freq_points
         .iter()
         .map(|&freq| {
             (
                 freq,
-                measure_cancellation_depth_db(params, sample_rate, freq),
+                measure_cancellation_depth_db_with_filters(
+                    &filters,
+                    params,
+                    sample_rate,
+                    freq,
+                    num_bins,
+                ),
             )
         })
         .collect()
@@ -323,8 +350,15 @@ pub const REFERENCE_ILD_POINTS: &[(f32, f32)] = &[
 /// Run full validation suite against acoustic physics formulas.
 ///
 /// Returns a validation report with pass/fail status for each metric.
+///
+/// Optimization 2: Computes filters once and reuses for all validation checks.
 pub fn run_validation(params: &XtcPluginParams, sample_rate: u32) -> ValidationReport {
     let mut results = Vec::new();
+
+    // Pre-compute filters once for all validation checks (Optimization 2)
+    let fft_size = 2048;
+    let num_bins = fft_size / 2 + 1;
+    let filters = compute_xtc_filters_full(params, sample_rate, num_bins);
 
     // 1. ITD validation - ITD is derived from geometry, so validate the setup
     // A correct XTC setup should have ITD matching the Woodworth formula
@@ -350,9 +384,15 @@ pub fn run_validation(params: &XtcPluginParams, sample_rate: u32) -> ValidationR
         ));
     }
 
-    // 3. Cancellation depth validation
+    // 3. Cancellation depth validation (using pre-computed filters)
     for &(freq, min_depth, _optimal) in CANCELLATION_DEPTH_TARGETS {
-        let measured = measure_cancellation_depth_db(params, sample_rate, freq);
+        let measured = measure_cancellation_depth_db_with_filters(
+            &filters,
+            params,
+            sample_rate,
+            freq,
+            num_bins,
+        );
         results.push(ValidationResult::check_min(
             &format!("Cancellation @ {}Hz (dB)", freq),
             min_depth,
@@ -361,7 +401,6 @@ pub fn run_validation(params: &XtcPluginParams, sample_rate: u32) -> ValidationR
     }
 
     // 4. Spatial cue preservation (symmetry check for zero yaw)
-    let filters = compute_xtc_filters_full(params, sample_rate, 1025);
     if params.head_yaw_deg.abs() < 0.1 {
         results.push(ValidationResult::check(
             "Filter Symmetry",

@@ -9,6 +9,7 @@ use super::reflections::{
 };
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
+use std::sync::Arc;
 
 /// Speed of sound at 20°C in m/s
 pub(crate) const SPEED_OF_SOUND: f32 = 343.0;
@@ -19,6 +20,140 @@ pub(crate) type XtcFilterSet = (
     Vec<Complex<f32>>,
     Vec<Complex<f32>>,
 );
+
+/// Cached geometry values to avoid repeated computation in the hot loop.
+///
+/// Optimization 3: Pre-compute all geometry-dependent values that don't change
+/// per frequency bin, avoiding redundant sqrt/trig operations.
+pub(crate) struct GeometryCache {
+    pub freq_per_bin: f32,
+    // Symmetric geometry (yaw ~= 0)
+    pub symmetric: SymmetricGeometry,
+    // Asymmetric geometry (yaw != 0), computed lazily
+    pub asymmetric: Option<AsymmetricGeometry>,
+}
+
+/// Geometry values for symmetric XTC (yaw ~= 0).
+pub(crate) struct SymmetricGeometry {
+    pub d: f32,
+    pub theta_rad: f32,
+    pub a: f32,
+    pub x_offset: f32,
+    pub l_ipsi: f32,
+    pub l_contra_geometric: f32,
+    pub l_contra_full: f32,
+    pub amplitude_ratio: f32,
+    pub delta_t_geometric: f32,
+    pub contra_angle: f32,
+}
+
+/// Geometry values for asymmetric XTC (yaw != 0).
+pub(crate) struct AsymmetricGeometry {
+    pub d: f32,
+    pub a: f32,
+    pub theta_left: f32,
+    pub theta_right: f32,
+    pub l_left_ipsi: f32,
+    pub l_left_contra_geometric: f32,
+    pub l_left_contra_full: f32,
+    pub amplitude_ratio_left: f32,
+    pub delta_t_left_geometric: f32,
+    pub angle_left_contra: f32,
+    pub l_right_ipsi: f32,
+    pub l_right_contra_geometric: f32,
+    pub l_right_contra_full: f32,
+    pub amplitude_ratio_right: f32,
+    pub delta_t_right_geometric: f32,
+    pub angle_right_contra: f32,
+}
+
+/// Compute geometry cache for the given parameters.
+///
+/// Pre-computes all path lengths, angles, and ratios that don't change per bin.
+pub(crate) fn compute_geometry_cache(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+) -> GeometryCache {
+    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
+    // Symmetric geometry
+    let d = params.distance_m + params.head_offset_z;
+    let theta_rad = params.speaker_angle_deg * PI / 180.0;
+    let a = params.head_radius_m;
+    let x_offset = params.head_offset_x;
+
+    let l_ipsi = compute_path_length(d, theta_rad, -x_offset);
+    let l_contra_geometric = compute_path_length(d, theta_rad, x_offset);
+    let diffraction_extra = woodworth_diffraction_path(theta_rad, a);
+    let l_contra_full = l_contra_geometric + diffraction_extra;
+    let amplitude_ratio = l_ipsi / l_contra_full;
+    let delta_t_geometric = (l_contra_geometric - l_ipsi) / SPEED_OF_SOUND;
+    let contra_angle = contralateral_shadow_angle(theta_rad);
+
+    let symmetric = SymmetricGeometry {
+        d,
+        theta_rad,
+        a,
+        x_offset,
+        l_ipsi,
+        l_contra_geometric,
+        l_contra_full,
+        amplitude_ratio,
+        delta_t_geometric,
+        contra_angle,
+    };
+
+    // Asymmetric geometry (only compute if yaw != 0)
+    let yaw_rad = params.head_yaw_deg * PI / 180.0;
+    let asymmetric = if yaw_rad.abs() >= 0.001 {
+        let theta_left = theta_rad + yaw_rad;
+        let theta_right = theta_rad - yaw_rad;
+
+        let l_left_ipsi = compute_path_length(d, theta_left, -x_offset);
+        let l_left_contra_geometric = compute_path_length(d, theta_right, -x_offset);
+        let diffraction_left = woodworth_diffraction_path(theta_right, a);
+        let l_left_contra_full = l_left_contra_geometric + diffraction_left;
+        let amplitude_ratio_left = l_left_ipsi / l_left_contra_full;
+        let delta_t_left_geometric = (l_left_contra_geometric - l_left_ipsi) / SPEED_OF_SOUND;
+        let angle_left_contra = contralateral_shadow_angle(theta_right.abs());
+
+        let l_right_ipsi = compute_path_length(d, theta_right, x_offset);
+        let l_right_contra_geometric = compute_path_length(d, theta_left, x_offset);
+        let diffraction_right = woodworth_diffraction_path(theta_left, a);
+        let l_right_contra_full = l_right_contra_geometric + diffraction_right;
+        let amplitude_ratio_right = l_right_ipsi / l_right_contra_full;
+        let delta_t_right_geometric = (l_right_contra_geometric - l_right_ipsi) / SPEED_OF_SOUND;
+        let angle_right_contra = contralateral_shadow_angle(theta_left.abs());
+
+        Some(AsymmetricGeometry {
+            d,
+            a,
+            theta_left,
+            theta_right,
+            l_left_ipsi,
+            l_left_contra_geometric,
+            l_left_contra_full,
+            amplitude_ratio_left,
+            delta_t_left_geometric,
+            angle_left_contra,
+            l_right_ipsi,
+            l_right_contra_geometric,
+            l_right_contra_full,
+            amplitude_ratio_right,
+            delta_t_right_geometric,
+            angle_right_contra,
+        })
+    } else {
+        None
+    };
+
+    GeometryCache {
+        freq_per_bin,
+        symmetric,
+        asymmetric,
+    }
+}
 
 /// Crosstalk cancellation filters in frequency domain
 pub(crate) struct XtcFilters {
@@ -45,33 +180,56 @@ pub(crate) struct XtcFilters {
 /// - Asymmetric case (yaw != 0): returns full 4-filter matrix
 ///
 /// Uses improved Woodworth head shadowing model for better accuracy.
+///
+/// Optimization 3: Uses pre-computed geometry cache to avoid redundant calculations.
 pub(crate) fn compute_xtc_filters_full(
     params: &XtcPluginParams,
     sample_rate: u32,
     num_bins: usize,
 ) -> XtcFilters {
-    let yaw_rad = params.head_yaw_deg * PI / 180.0;
-    let is_symmetric = yaw_rad.abs() < 0.001; // ~0.06 degrees threshold
+    // Pre-compute geometry cache (Optimization 3)
+    let cache = compute_geometry_cache(params, sample_rate, num_bins);
 
-    // Precompute room reflection data if enabled
-    let room_data: Option<RoomReflectionData> = if params.room_reflections_enabled {
+    // Compute room reflection data if enabled
+    let room_data: Option<Arc<RoomReflectionData>> = if params.room_reflections_enabled {
         if let Some(ref ir_path) = params.room_ir_file {
-            build_reflection_data_ir(ir_path, sample_rate, num_bins).ok()
+            build_reflection_data_ir(ir_path, sample_rate, num_bins)
+                .ok()
+                .map(Arc::new)
         } else {
-            Some(build_reflection_data_image_source(
+            Some(Arc::new(build_reflection_data_image_source(
                 params,
                 sample_rate,
                 num_bins,
-            ))
+            )))
         }
     } else {
         None
     };
 
+    compute_xtc_filters_full_with_cache(params, sample_rate, num_bins, &cache, room_data)
+}
+
+/// Internal filter computation with pre-computed geometry cache.
+///
+/// Optimization 4: Accepts optional pre-computed room reflection data to avoid
+/// redundant computation when parameters haven't changed.
+pub(crate) fn compute_xtc_filters_full_with_cache(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+    cache: &GeometryCache,
+    room_data: Option<Arc<RoomReflectionData>>,
+) -> XtcFilters {
+    let is_symmetric = cache.asymmetric.is_none();
+    let room_data_ref: Option<&RoomReflectionData> = room_data
+        .as_ref()
+        .map(|r: &Arc<RoomReflectionData>| r.as_ref());
+
     let mut filters = if is_symmetric {
         // Use optimized symmetric computation
         let (filter_ll, filter_lr) =
-            compute_xtc_filters_symmetric(params, sample_rate, num_bins, room_data.as_ref());
+            compute_xtc_filters_symmetric_with_cache(params, num_bins, cache, room_data_ref);
         XtcFilters {
             filter_ll,
             filter_lr,
@@ -82,7 +240,7 @@ pub(crate) fn compute_xtc_filters_full(
     } else {
         // Full asymmetric computation for yaw != 0
         let mut f =
-            compute_xtc_filters_asymmetric(params, sample_rate, num_bins, room_data.as_ref());
+            compute_xtc_filters_asymmetric_with_cache(params, num_bins, cache, room_data_ref);
         f.is_symmetric = false;
         f
     };
@@ -152,11 +310,11 @@ fn apply_spectral_normalization(filters: &mut XtcFilters, num_bins: usize) {
 // Asymmetric filters (yaw != 0)
 // ============================================================================
 
-/// Compute asymmetric filters for non-zero yaw angle
-fn compute_xtc_filters_asymmetric(
+/// Compute asymmetric filters for non-zero yaw angle using pre-computed geometry cache.
+fn compute_xtc_filters_asymmetric_with_cache(
     params: &XtcPluginParams,
-    sample_rate: u32,
     num_bins: usize,
+    cache: &GeometryCache,
     room_data: Option<&RoomReflectionData>,
 ) -> XtcFilters {
     let mut filter_ll = vec![Complex::new(0.0, 0.0); num_bins];
@@ -164,76 +322,45 @@ fn compute_xtc_filters_asymmetric(
     let mut filter_rl = vec![Complex::new(0.0, 0.0); num_bins];
     let mut filter_rr = vec![Complex::new(0.0, 0.0); num_bins];
 
-    // Geometry
-    let d = params.distance_m + params.head_offset_z;
-    let theta_rad = params.speaker_angle_deg * PI / 180.0;
-    let yaw_rad = params.head_yaw_deg * PI / 180.0;
-    let a = params.head_radius_m;
-    let x_offset = params.head_offset_x;
-
-    // Effective speaker angles relative to rotated head
-    let theta_left = theta_rad + yaw_rad; // Left speaker angle
-    let theta_right = theta_rad - yaw_rad; // Right speaker angle
-
-    // Left ear paths: geometric + diffraction separated
-    let l_left_ipsi = compute_path_length(d, theta_left, -x_offset);
-    let l_left_contra_geometric = compute_path_length(d, theta_right, -x_offset);
-    let diffraction_left = woodworth_diffraction_path(theta_right, a);
-    let l_left_contra_full = l_left_contra_geometric + diffraction_left;
-
-    // Right ear paths: geometric + diffraction separated
-    let r_right_ipsi = compute_path_length(d, theta_right, x_offset);
-    let r_right_contra_geometric = compute_path_length(d, theta_left, x_offset);
-    let diffraction_right = woodworth_diffraction_path(theta_left, a);
-    let r_right_contra_full = r_right_contra_geometric + diffraction_right;
-
-    // Distance attenuation ratios (use full path for 1/r attenuation)
-    let amplitude_ratio_left = l_left_ipsi / l_left_contra_full;
-    let amplitude_ratio_right = r_right_ipsi / r_right_contra_full;
-
-    // Geometric time differences (frequency-dependent diffraction added per-bin)
-    let delta_t_left_geometric = (l_left_contra_geometric - l_left_ipsi) / SPEED_OF_SOUND;
-    let delta_t_right_geometric = (r_right_contra_geometric - r_right_ipsi) / SPEED_OF_SOUND;
-
-    // Contralateral shadow angles (angular separation from source to far ear)
-    let angle_left_contra = contralateral_shadow_angle(theta_right.abs());
-    let angle_right_contra = contralateral_shadow_angle(theta_left.abs());
-
-    // Max gain limit (convert dB to linear)
+    let asym = cache
+        .asymmetric
+        .as_ref()
+        .expect("asymmetric geometry required");
+    let a = asym.a;
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
-
-    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
 
     // Pre-compute diffraction delay lookup tables (Optimization 1)
     let diffraction_delay_lut_left =
-        build_diffraction_delay_lut(num_bins, freq_per_bin, angle_left_contra, a);
+        build_diffraction_delay_lut(num_bins, cache.freq_per_bin, asym.angle_left_contra, a);
     let diffraction_delay_lut_right =
-        build_diffraction_delay_lut(num_bins, freq_per_bin, angle_right_contra, a);
+        build_diffraction_delay_lut(num_bins, cache.freq_per_bin, asym.angle_right_contra, a);
 
     for bin in 0..num_bins {
-        let freq = bin as f32 * freq_per_bin;
+        let freq = bin as f32 * cache.freq_per_bin;
 
         // Pinna resonance: full for ipsi paths, angle-dependent for contra paths
         let pinna_ipsi = pinna_resonance(freq);
 
-        // Use pre-computed diffraction delays from LUT (Optimization 1)
+        // Use pre-computed geometry values (Optimization 3)
         let diffraction_delay_left = diffraction_delay_lut_left[bin];
         let diffraction_delay_right = diffraction_delay_lut_right[bin];
-        let delta_t_left = delta_t_left_geometric + diffraction_delay_left;
-        let delta_t_right = delta_t_right_geometric + diffraction_delay_right;
+        let delta_t_left = asym.delta_t_left_geometric + diffraction_delay_left;
+        let delta_t_right = asym.delta_t_right_geometric + diffraction_delay_right;
 
         // Left ear: ipsi speaker is left speaker (theta_left), contra is right speaker (theta_right)
-        let pinna_left_contra = pinna_resonance_contra(freq, theta_right.abs() * 180.0 / PI);
+        let pinna_left_contra = pinna_resonance_contra(freq, asym.theta_right.abs() * 180.0 / PI);
         let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
-        let g_ll = head_shadowing_woodworth(freq, angle_left_contra, a) * amplitude_ratio_left;
+        let g_ll =
+            head_shadowing_woodworth(freq, asym.angle_left_contra, a) * asym.amplitude_ratio_left;
         let phase_ll = -2.0 * PI * freq * delta_t_left;
         let h_ll_contra =
             Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin()) * pinna_left_contra;
 
         // Right ear: ipsi speaker is right speaker (theta_right), contra is left speaker (theta_left)
-        let pinna_right_contra = pinna_resonance_contra(freq, theta_left.abs() * 180.0 / PI);
+        let pinna_right_contra = pinna_resonance_contra(freq, asym.theta_left.abs() * 180.0 / PI);
         let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
-        let g_rr = head_shadowing_woodworth(freq, angle_right_contra, a) * amplitude_ratio_right;
+        let g_rr =
+            head_shadowing_woodworth(freq, asym.angle_right_contra, a) * asym.amplitude_ratio_right;
         let phase_rr = -2.0 * PI * freq * delta_t_right;
         let h_rr_contra =
             Complex::new(g_rr * phase_rr.cos(), g_rr * phase_rr.sin()) * pinna_right_contra;
@@ -292,57 +419,38 @@ fn compute_xtc_filters_asymmetric(
 /// Returns (filter_ll, filter_lr) where:
 /// - filter_ll: diagonal filter (direct path processing)
 /// - filter_lr: cross filter (crosstalk cancellation)
-fn compute_xtc_filters_symmetric(
+///
+/// Optimization 3: Uses pre-computed geometry cache.
+fn compute_xtc_filters_symmetric_with_cache(
     params: &XtcPluginParams,
-    sample_rate: u32,
     num_bins: usize,
+    cache: &GeometryCache,
     room_data: Option<&RoomReflectionData>,
 ) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
     let mut filter_ll = vec![Complex::new(0.0, 0.0); num_bins];
     let mut filter_lr = vec![Complex::new(0.0, 0.0); num_bins];
 
-    // Geometry with head tracking offsets
-    let d = params.distance_m + params.head_offset_z;
-    let theta_rad = params.speaker_angle_deg * PI / 180.0;
-    let a = params.head_radius_m;
-    let x_offset = params.head_offset_x;
-
-    // Compute path lengths (considering head offset)
-    let l_ipsi = compute_path_length(d, theta_rad, -x_offset);
-    // Geometric contralateral path (without diffraction) for base delay
-    let l_contra_geometric = compute_path_length(d, theta_rad, x_offset);
-    // Full contralateral path with Woodworth diffraction (for 1/r amplitude attenuation)
-    let diffraction_extra = woodworth_diffraction_path(theta_rad, a);
-    let l_contra_full = l_contra_geometric + diffraction_extra;
-
-    // Distance attenuation ratio uses full path (geometric + diffraction)
-    let amplitude_ratio = l_ipsi / l_contra_full;
-
-    // Geometric time difference (frequency-dependent diffraction added per-bin)
-    let delta_t_geometric = (l_contra_geometric - l_ipsi) / SPEED_OF_SOUND;
-
-    // Contralateral shadow angle: angular separation from source to far ear
-    let contra_angle = contralateral_shadow_angle(theta_rad);
-
-    // Max gain limit (convert dB to linear)
+    let sym = &cache.symmetric;
+    let a = sym.a;
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
 
-    // Process each frequency bin
-    let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+    // Pre-compute diffraction delay lookup table (Optimization 1)
+    let diffraction_delay_lut =
+        build_diffraction_delay_lut(num_bins, cache.freq_per_bin, sym.contra_angle, a);
 
     for bin in 0..num_bins {
-        let freq = bin as f32 * freq_per_bin;
+        let freq = bin as f32 * cache.freq_per_bin;
 
         // Transfer function for ipsilateral path (reference = 1)
         let h_ipsi = Complex::new(1.0, 0.0);
 
-        // Frequency-dependent ITD: geometric delay + diffraction delay
-        let diffraction_delay = frequency_dependent_diffraction_delay(freq, contra_angle, a);
-        let delta_t = delta_t_geometric + diffraction_delay;
+        // Use pre-computed geometry values (Optimization 3)
+        let diffraction_delay = diffraction_delay_lut[bin];
+        let delta_t = sym.delta_t_geometric + diffraction_delay;
 
         // Transfer function for contralateral path using Woodworth model
         // Uses corrected shadow angle (PI/2 + theta) and distance attenuation
-        let g = head_shadowing_woodworth(freq, contra_angle, a) * amplitude_ratio;
+        let g = head_shadowing_woodworth(freq, sym.contra_angle, a) * sym.amplitude_ratio;
         let phase = -2.0 * PI * freq * delta_t;
         let h_contra = Complex::new(g * phase.cos(), g * phase.sin());
 

@@ -32,7 +32,10 @@ mod tests;
 pub mod validation;
 
 pub use config::*;
-use filters::{compute_xtc_filters_full, XtcFilters};
+use filters::{compute_geometry_cache, compute_xtc_filters_full_with_cache, XtcFilters};
+use reflections::{
+    build_reflection_data_image_source, build_reflection_data_ir, RoomReflectionData,
+};
 
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -44,7 +47,56 @@ use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
+// ============================================================================
+// Helper functions for Optimization 4: Room reflection caching
+// ============================================================================
+
+use std::collections::hash_map::DefaultHasher;
+
+/// Compute a hash of room-related parameters for cache invalidation.
+///
+/// Includes all parameters that affect room reflection computation.
+fn compute_room_params_hash(params: &XtcPluginParams) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    params.room_width_m.to_bits().hash(&mut hasher);
+    params.room_depth_m.to_bits().hash(&mut hasher);
+    params.wall_absorption.to_bits().hash(&mut hasher);
+    params.distance_m.to_bits().hash(&mut hasher);
+    params.speaker_angle_deg.to_bits().hash(&mut hasher);
+    params.head_offset_x.to_bits().hash(&mut hasher);
+    params.head_offset_z.to_bits().hash(&mut hasher);
+    params.head_radius_m.to_bits().hash(&mut hasher);
+    params.room_reflections_enabled.hash(&mut hasher);
+    params.reflection_beta_boost.to_bits().hash(&mut hasher);
+    if let Some(ref ir_path) = params.room_ir_file {
+        ir_path.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// Compute room reflection data if enabled.
+///
+/// Returns None if room reflections are disabled.
+fn compute_room_reflection_data(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+) -> Option<Arc<RoomReflectionData>> {
+    if !params.room_reflections_enabled {
+        return None;
+    }
+
+    let data = if let Some(ref ir_path) = params.room_ir_file {
+        build_reflection_data_ir(ir_path, sample_rate, num_bins).ok()?
+    } else {
+        build_reflection_data_image_source(params, sample_rate, num_bins)
+    };
+
+    Some(Arc::new(data))
+}
 
 // ============================================================================
 // Plugin Implementation
@@ -133,6 +185,12 @@ pub struct XtcPlugin {
     param_head_yaw: ParameterId,
     param_spectral_normalization: ParameterId,
     param_room_reflections: ParameterId,
+
+    /// Cached room reflection data (Optimization 4)
+    room_reflection_cache: Option<Arc<RoomReflectionData>>,
+
+    /// Hash of room-related parameters for cache invalidation (Optimization 4)
+    room_params_hash: u64,
 }
 
 // ============================================================================
@@ -228,7 +286,25 @@ impl XtcPlugin {
 
         // Compute frequency-domain filters
         let num_bins = fft_size / 2 + 1;
-        let filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
+
+        // Compute initial room reflection data if enabled (Optimization 4)
+        let room_params_hash = compute_room_params_hash(&params);
+        let room_reflection_cache = if params.room_reflections_enabled {
+            compute_room_reflection_data(&params, sample_rate, num_bins)
+        } else {
+            None
+        };
+
+        // Compute geometry cache (Optimization 3)
+        let cache = compute_geometry_cache(&params, sample_rate, num_bins);
+
+        let filters = compute_xtc_filters_full_with_cache(
+            &params,
+            sample_rate,
+            num_bins,
+            &cache,
+            room_reflection_cache.clone(),
+        );
         let filters = Arc::new(ArcSwap::from_pointee(filters));
 
         Ok(Self {
@@ -267,6 +343,8 @@ impl XtcPlugin {
             param_head_yaw: ParameterId::from("head_yaw_deg"),
             param_spectral_normalization: ParameterId::from("spectral_normalization"),
             param_room_reflections: ParameterId::from("room_reflections_enabled"),
+            room_reflection_cache,
+            room_params_hash,
         })
     }
 
@@ -277,9 +355,10 @@ impl XtcPlugin {
 
     /// Recompute filters when parameters change.
     /// Stores old filters for crossfading to avoid clicks.
+    ///
+    /// Optimization 3 & 4: Uses geometry cache and room reflection cache to avoid redundant computation.
     fn update_filters(&mut self, sync: bool) {
         let num_bins = self.fft_size / 2 + 1;
-        let params = self.params.clone();
         let sample_rate = self.sample_rate;
 
         // Cache progress_per_hop (only depends on params + sample_rate + hop_size)
@@ -292,15 +371,40 @@ impl XtcPlugin {
             self.crossfade_progress = 0.0;
         }
 
+        // Check if room reflection cache needs updating (Optimization 4)
+        let new_hash = compute_room_params_hash(&self.params);
+        if new_hash != self.room_params_hash {
+            self.room_reflection_cache =
+                compute_room_reflection_data(&self.params, sample_rate, num_bins);
+            self.room_params_hash = new_hash;
+        }
+
+        // Pre-compute geometry cache (Optimization 3)
+        let cache = compute_geometry_cache(&self.params, sample_rate, num_bins);
+        let room_data = self.room_reflection_cache.clone();
+
         let shared_filters = self.filters.clone();
 
         if sync {
-            let new_filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
+            let new_filters = compute_xtc_filters_full_with_cache(
+                &self.params,
+                sample_rate,
+                num_bins,
+                &cache,
+                room_data,
+            );
             shared_filters.store(Arc::new(new_filters));
         } else {
             // Asynchronous update using rayon
+            let params = self.params.clone();
             rayon::spawn(move || {
-                let new_filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
+                let new_filters = compute_xtc_filters_full_with_cache(
+                    &params,
+                    sample_rate,
+                    num_bins,
+                    &cache,
+                    room_data,
+                );
                 shared_filters.store(Arc::new(new_filters));
             });
         }
