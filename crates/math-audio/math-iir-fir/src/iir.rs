@@ -922,6 +922,33 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_allpass_filter_response() {
+        let center = 1000.0;
+        let ap = Biquad::new(BiquadFilterType::AllPass, center, 48000.0, 1.0, 0.0);
+
+        // Magnitude should be exactly 0 dB across frequencies
+        let test_freqs = [20.0, 100.0, 1000.0, 5000.0, 20000.0];
+        for &f in &test_freqs {
+            let resp = ap.log_result(f);
+            assert!(
+                approx_eq(resp, 0.0, 1e-9),
+                "All-Pass magnitude at {}Hz should be 0 dB, got {}",
+                f,
+                resp
+            );
+        }
+
+        // Phase at center frequency should be 180 degrees (PI radians)
+        let resp = ap.complex_response(center);
+        let phase = resp.arg();
+        assert!(
+            approx_eq(phase.abs(), PI, 1e-9),
+            "All-Pass phase at center freq should be PI, got {}",
+            phase
+        );
+    }
+
     // ========================================================================
     // Biquad try_new Validation Tests
     // ========================================================================
@@ -1733,6 +1760,19 @@ pub fn peq_linkwitzriley_highpass(order: usize, freq: f64, srate: f64) -> Peq {
             )
         })
         .collect()
+}
+
+/// Create All-Pass filter
+///
+/// # Arguments
+/// * `freq` - Center frequency in Hz
+/// * `srate` - Sample rate in Hz
+/// * `q` - Q factor
+///
+/// # Returns
+/// * PEQ containing the All-Pass filter section
+pub fn peq_allpass(freq: f64, srate: f64, q: f64) -> Peq {
+    vec![(1.0, Biquad::new(BiquadFilterType::AllPass, freq, srate, q, 0.0))]
 }
 
 /// Print a formatted table of the parametric EQ filters from a Peq.
@@ -2804,9 +2844,9 @@ mod format_tests {
         assert!((result[0].1.freq - 1000.0).abs() < 1.0);
         assert!((result[1].1.freq - 2000.0).abs() < 1.0);
         // Rest should be zero-gain PK filters
-        for i in 2..9 {
-            assert_eq!(result[i].1.filter_type, BiquadFilterType::Peak);
-            assert_eq!(result[i].1.db_gain, 0.0);
+        for item in result.iter().take(9).skip(2) {
+            assert_eq!(item.1.filter_type, BiquadFilterType::Peak);
+            assert_eq!(item.1.db_gain, 0.0);
         }
     }
 
@@ -2823,8 +2863,8 @@ mod format_tests {
         assert_eq!(result[0].1.filter_type, BiquadFilterType::Lowshelf);
         assert!((result[0].1.freq - 100.0).abs() < 1.0);
         // PK filters in positions 2-9
-        for i in 1..9 {
-            assert_eq!(result[i].1.filter_type, BiquadFilterType::Peak);
+        for item in result.iter().take(9).skip(1) {
+            assert_eq!(item.1.filter_type, BiquadFilterType::Peak);
         }
     }
 
@@ -2879,8 +2919,8 @@ mod format_tests {
         assert_eq!(result[8].1.filter_type, BiquadFilterType::Highshelf);
         assert!((result[8].1.freq - 8000.0).abs() < 1.0);
         // Positions 2-8 should be PK filters
-        for i in 1..8 {
-            assert_eq!(result[i].1.filter_type, BiquadFilterType::Peak);
+        for item in result.iter().take(8).skip(1) {
+            assert_eq!(item.1.filter_type, BiquadFilterType::Peak);
         }
     }
 
