@@ -895,10 +895,12 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     };
 
     let mut items: Vec<ListItem> = Vec::new();
+    let mut selected_visual_index: Option<usize> = None;
 
     for (i, entry) in app.queue.iter().enumerate() {
         let is_current = app.current_queue_index == Some(i);
         let is_selected = i == app.selected_queue_index;
+        let is_album_header_selected = is_selected && app.selected_queue_track_index.is_none();
         let is_expanded = entry.expanded;
 
         // Album header
@@ -917,7 +919,7 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
             content.push_str(&track_info);
         }
 
-        let style = if is_selected {
+        let style = if is_album_header_selected {
             Style::default()
                 .fg(app.theme.fg_selected)
                 .bg(app.theme.bg_selected)
@@ -930,12 +932,17 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
             Style::default().fg(app.theme.fg_primary)
         };
 
+        if is_album_header_selected {
+            selected_visual_index = Some(items.len());
+        }
         items.push(ListItem::new(content).style(style));
 
         // Show individual tracks if expanded
         if is_expanded {
             for (track_idx, track) in entry.item.album.tracks.iter().enumerate() {
                 let is_current_track = is_current && track_idx == entry.item.current_track_index;
+                let is_track_selected =
+                    is_selected && app.selected_queue_track_index == Some(track_idx);
                 let raw_track_name = track
                     .title
                     .as_deref()
@@ -960,7 +967,12 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
                     format!("    {}.{}{}", track_idx + 1, track_name, duration_str)
                 };
 
-                let track_style = if is_current_track {
+                let track_style = if is_track_selected {
+                    Style::default()
+                        .fg(app.theme.fg_selected)
+                        .bg(app.theme.bg_selected)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_current_track {
                     Style::default()
                         .fg(app.theme.current_track)
                         .add_modifier(Modifier::BOLD)
@@ -968,6 +980,9 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
                     Style::default().fg(app.theme.fg_secondary)
                 };
 
+                if is_track_selected {
+                    selected_visual_index = Some(items.len());
+                }
                 items.push(ListItem::new(track_content).style(track_style));
             }
         }
@@ -990,6 +1005,7 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
 
     let list = List::new(items)
         .style(Style::default().fg(app.theme.fg_primary))
+        .highlight_style(Style::default()) // we handle highlighting manually per item
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -997,7 +1013,9 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
                 .title(title),
         );
 
-    f.render_widget(list, queue_area);
+    let mut list_state = ListState::default();
+    list_state.select(selected_visual_index);
+    f.render_stateful_widget(list, queue_area, &mut list_state);
 
     // Render album art if available
     if let Some(image_area) = image_area {

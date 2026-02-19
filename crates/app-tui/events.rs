@@ -590,9 +590,14 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Jump to selected album and play its first track
             app.jump_to_selected_album().map(PlayerCommand::Play)
         }
-        KeyCode::Right | KeyCode::Char('l') | KeyCode::Left | KeyCode::Char('h') => {
-            // Toggle expansion of the selected queue item
-            app.toggle_queue_item_expansion();
+        KeyCode::Right | KeyCode::Char('l') => {
+            // Expand the selected queue item
+            app.expand_queue_item();
+            None
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            // Collapse the selected queue item (or move to album header if on a track)
+            app.collapse_queue_item();
             None
         }
         KeyCode::Char('d') | KeyCode::Delete => {

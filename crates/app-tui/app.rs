@@ -2171,6 +2171,7 @@ pub struct App {
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
+    pub selected_queue_track_index: Option<usize>, // None = album header, Some(i) = track i
     pub selected_plugin_index: usize,
     pub add_plugin_selected_index: usize, // For plugin add dialog
     pub album_list_offset: usize,
@@ -2305,6 +2306,7 @@ impl App {
             selected_album_index: 0,
             selected_directory_index: 0,
             selected_queue_index: 0,
+            selected_queue_track_index: None,
             selected_plugin_index: 0,
             add_plugin_selected_index: 0,
             album_list_offset: 0,
@@ -2560,6 +2562,7 @@ impl App {
             if self.selected_queue_index >= self.queue.len() && self.selected_queue_index > 0 {
                 self.selected_queue_index = self.queue.len() - 1;
             }
+            self.selected_queue_track_index = None;
         }
     }
 
@@ -2567,12 +2570,31 @@ impl App {
         self.queue.clear();
         self.current_queue_index = None;
         self.selected_queue_index = 0;
+        self.selected_queue_track_index = None;
         self.is_playing = false;
     }
 
     pub fn toggle_queue_item_expansion(&mut self) {
         if let Some(entry) = self.queue.get_mut(self.selected_queue_index) {
             entry.expanded = !entry.expanded;
+            if !entry.expanded {
+                self.selected_queue_track_index = None;
+            }
+        }
+    }
+
+    pub fn expand_queue_item(&mut self) {
+        if let Some(entry) = self.queue.get_mut(self.selected_queue_index) {
+            entry.expanded = true;
+        }
+    }
+
+    pub fn collapse_queue_item(&mut self) {
+        if self.selected_queue_track_index.is_some() {
+            // On a track: move back to album header
+            self.selected_queue_track_index = None;
+        } else if let Some(entry) = self.queue.get_mut(self.selected_queue_index) {
+            entry.expanded = false;
         }
     }
 
@@ -2665,17 +2687,64 @@ impl App {
     }
 
     pub fn select_next_queue_item(&mut self) {
-        if !self.queue.is_empty() {
+        if self.queue.is_empty() {
+            return;
+        }
+
+        let entry = &self.queue[self.selected_queue_index];
+        if entry.expanded {
+            match self.selected_queue_track_index {
+                None => {
+                    // On album header of expanded album → move to first track
+                    self.selected_queue_track_index = Some(0);
+                }
+                Some(ti) if ti + 1 < entry.item.album.tracks.len() => {
+                    // Move to next track within album
+                    self.selected_queue_track_index = Some(ti + 1);
+                }
+                Some(_) => {
+                    // Past last track → move to next album header
+                    self.selected_queue_track_index = None;
+                    self.selected_queue_index =
+                        (self.selected_queue_index + 1) % self.queue.len();
+                }
+            }
+        } else {
+            // Collapsed album → move to next album
+            self.selected_queue_track_index = None;
             self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
         }
     }
 
     pub fn select_previous_queue_item(&mut self) {
-        if !self.queue.is_empty() {
-            if self.selected_queue_index == 0 {
-                self.selected_queue_index = self.queue.len() - 1;
-            } else {
-                self.selected_queue_index -= 1;
+        if self.queue.is_empty() {
+            return;
+        }
+
+        match self.selected_queue_track_index {
+            Some(0) => {
+                // First track → move back to album header
+                self.selected_queue_track_index = None;
+            }
+            Some(ti) => {
+                // Move to previous track
+                self.selected_queue_track_index = Some(ti - 1);
+            }
+            None => {
+                // On album header → move to previous album
+                if self.selected_queue_index == 0 {
+                    self.selected_queue_index = self.queue.len() - 1;
+                } else {
+                    self.selected_queue_index -= 1;
+                }
+                // If the previous album is expanded, land on its last track
+                let prev = &self.queue[self.selected_queue_index];
+                if prev.expanded && !prev.item.album.tracks.is_empty() {
+                    self.selected_queue_track_index =
+                        Some(prev.item.album.tracks.len() - 1);
+                } else {
+                    self.selected_queue_track_index = None;
+                }
             }
         }
     }
@@ -3527,13 +3596,14 @@ impl App {
         }
     }
 
-    /// Jump to the selected album in queue and start playing its first track
+    /// Jump to the selected album/track in queue and start playing
     pub fn jump_to_selected_album(&mut self) -> Option<PathBuf> {
         if self.selected_queue_index < self.queue.len() {
             self.current_queue_index = Some(self.selected_queue_index);
+            let track_idx = self.selected_queue_track_index.unwrap_or(0);
             self.queue[self.selected_queue_index]
                 .item
-                .current_track_index = 0;
+                .current_track_index = track_idx;
             self.is_playing = true;
             self.current_track_path()
         } else {
@@ -6071,6 +6141,105 @@ mod tests {
 
         app.select_previous_queue_item();
         assert_eq!(app.selected_queue_index, 0);
+    }
+
+    #[test]
+    fn test_queue_navigation_into_expanded_tracks() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 3);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue = vec![
+            QueueEntry::new(QueueItem::new(album1)),
+            QueueEntry::new(QueueItem::new(album2)),
+        ];
+        app.selected_queue_index = 0;
+        app.queue[0].expanded = true;
+
+        // Start on album header
+        assert_eq!(app.selected_queue_track_index, None);
+
+        // Down → first track
+        app.select_next_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+        assert_eq!(app.selected_queue_track_index, Some(0));
+
+        // Down → second track
+        app.select_next_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+        assert_eq!(app.selected_queue_track_index, Some(1));
+
+        // Down → third track
+        app.select_next_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+        assert_eq!(app.selected_queue_track_index, Some(2));
+
+        // Down → next album header
+        app.select_next_queue_item();
+        assert_eq!(app.selected_queue_index, 1);
+        assert_eq!(app.selected_queue_track_index, None);
+    }
+
+    #[test]
+    fn test_queue_navigation_previous_into_expanded_tracks() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue = vec![
+            QueueEntry::new(QueueItem::new(album1)),
+            QueueEntry::new(QueueItem::new(album2)),
+        ];
+        app.queue[0].expanded = true;
+        app.selected_queue_index = 1;
+
+        // Up from album2 header → last track of expanded album1
+        app.select_previous_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+        assert_eq!(app.selected_queue_track_index, Some(1));
+
+        // Up → first track
+        app.select_previous_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+        assert_eq!(app.selected_queue_track_index, Some(0));
+
+        // Up → album1 header
+        app.select_previous_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+        assert_eq!(app.selected_queue_track_index, None);
+    }
+
+    #[test]
+    fn test_collapse_resets_track_selection() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 3);
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1))];
+        app.queue[0].expanded = true;
+        app.selected_queue_index = 0;
+        app.selected_queue_track_index = Some(1);
+
+        // Left on a track → moves to album header
+        app.collapse_queue_item();
+        assert!(app.queue[0].expanded); // still expanded
+        assert_eq!(app.selected_queue_track_index, None);
+
+        // Left on album header → collapses
+        app.collapse_queue_item();
+        assert!(!app.queue[0].expanded);
+    }
+
+    #[test]
+    fn test_jump_to_selected_track() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 3);
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1))];
+        app.selected_queue_index = 0;
+        app.selected_queue_track_index = Some(2);
+
+        app.jump_to_selected_album();
+        assert_eq!(app.queue[0].item.current_track_index, 2);
     }
 
     // ============================================================================
