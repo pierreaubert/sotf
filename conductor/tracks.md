@@ -37,3 +37,8 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [x] **Track: RoomEQ Docs & Schema Update**
 *Link: [./tracks/roomeq_docs_update_20260209/](./tracks/roomeq_docs_update_20260209/)*
+
+---
+
+- [ ] **Track: Add AllPass filter to math-iir-fir**
+*Link: [./tracks/iir_allpass_20260219/](./tracks/iir_allpass_20260219/)*
