@@ -105,7 +105,6 @@ pub(crate) fn compute_xtc_filters_full(
 /// This normalizes the average energy per bin to keep tonal balance close to the original signal.
 /// Uses a gentle smoothed approach to avoid introducing artifacts.
 fn apply_spectral_normalization(filters: &mut XtcFilters, num_bins: usize) {
-    // First pass: compute per-bin correction gains
     let mut gains = vec![1.0_f32; num_bins];
     let is_asymmetric = filters.filter_rl.is_some();
 
@@ -160,10 +159,10 @@ fn compute_xtc_filters_asymmetric(
     num_bins: usize,
     room_data: Option<&RoomReflectionData>,
 ) -> XtcFilters {
-    let mut filter_ll = Vec::with_capacity(num_bins);
-    let mut filter_lr = Vec::with_capacity(num_bins);
-    let mut filter_rl = Vec::with_capacity(num_bins);
-    let mut filter_rr = Vec::with_capacity(num_bins);
+    let mut filter_ll = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut filter_lr = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut filter_rl = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut filter_rr = vec![Complex::new(0.0, 0.0); num_bins];
 
     // Geometry
     let d = params.distance_m + params.head_offset_z;
@@ -205,17 +204,21 @@ fn compute_xtc_filters_asymmetric(
 
     let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
 
+    // Pre-compute diffraction delay lookup tables (Optimization 1)
+    let diffraction_delay_lut_left =
+        build_diffraction_delay_lut(num_bins, freq_per_bin, angle_left_contra, a);
+    let diffraction_delay_lut_right =
+        build_diffraction_delay_lut(num_bins, freq_per_bin, angle_right_contra, a);
+
     for bin in 0..num_bins {
         let freq = bin as f32 * freq_per_bin;
 
         // Pinna resonance: full for ipsi paths, angle-dependent for contra paths
         let pinna_ipsi = pinna_resonance(freq);
 
-        // Frequency-dependent diffraction delays
-        let diffraction_delay_left =
-            frequency_dependent_diffraction_delay(freq, angle_left_contra, a);
-        let diffraction_delay_right =
-            frequency_dependent_diffraction_delay(freq, angle_right_contra, a);
+        // Use pre-computed diffraction delays from LUT (Optimization 1)
+        let diffraction_delay_left = diffraction_delay_lut_left[bin];
+        let diffraction_delay_right = diffraction_delay_lut_right[bin];
         let delta_t_left = delta_t_left_geometric + diffraction_delay_left;
         let delta_t_right = delta_t_right_geometric + diffraction_delay_right;
 
@@ -262,10 +265,10 @@ fn compute_xtc_filters_asymmetric(
         let (w_rr, w_rl) =
             compute_2x2_inverse(h_rr_ipsi_final, h_rr_contra_final, beta, max_gain_linear);
 
-        filter_ll.push(w_ll);
-        filter_lr.push(w_lr);
-        filter_rl.push(w_rl);
-        filter_rr.push(w_rr);
+        filter_ll[bin] = w_ll;
+        filter_lr[bin] = w_lr;
+        filter_rl[bin] = w_rl;
+        filter_rr[bin] = w_rr;
     }
 
     XtcFilters {
@@ -295,8 +298,8 @@ fn compute_xtc_filters_symmetric(
     num_bins: usize,
     room_data: Option<&RoomReflectionData>,
 ) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
-    let mut filter_ll = Vec::with_capacity(num_bins);
-    let mut filter_lr = Vec::with_capacity(num_bins);
+    let mut filter_ll = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut filter_lr = vec![Complex::new(0.0, 0.0); num_bins];
 
     // Geometry with head tracking offsets
     let d = params.distance_m + params.head_offset_z;
@@ -371,8 +374,8 @@ fn compute_xtc_filters_symmetric(
         // Use shared 2x2 inverse computation with gain clamping
         let (w_ll, w_lr) = compute_2x2_inverse(h_ipsi_final, h_contra_final, beta, max_gain_linear);
 
-        filter_ll.push(w_ll);
-        filter_lr.push(w_lr);
+        filter_ll[bin] = w_ll;
+        filter_lr[bin] = w_lr;
     }
 
     (filter_ll, filter_lr)
@@ -510,6 +513,23 @@ pub(crate) fn frequency_dependent_diffraction_delay(
     } else {
         high_freq_delay
     }
+}
+
+/// Pre-compute diffraction delay lookup table for all frequency bins.
+///
+/// Avoids repeated transcendental function calls in the hot loop.
+pub(crate) fn build_diffraction_delay_lut(
+    num_bins: usize,
+    freq_per_bin: f32,
+    angle_rad: f32,
+    head_radius: f32,
+) -> Vec<f32> {
+    (0..num_bins)
+        .map(|bin| {
+            let freq = bin as f32 * freq_per_bin;
+            frequency_dependent_diffraction_delay(freq, angle_rad, head_radius)
+        })
+        .collect()
 }
 
 /// Compute the angular separation between a sound source and the contralateral ear.
@@ -703,10 +723,10 @@ pub(crate) fn compute_xtc_filters(
     sample_rate: u32,
     num_bins: usize,
 ) -> XtcFilterSet {
-    let mut filter_ll = Vec::with_capacity(num_bins);
-    let mut filter_lr = Vec::with_capacity(num_bins);
-    let mut filter_rl = Vec::with_capacity(num_bins);
-    let mut filter_rr = Vec::with_capacity(num_bins);
+    let mut filter_ll = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut filter_lr = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut filter_rl = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut filter_rr = vec![Complex::new(0.0, 0.0); num_bins];
 
     // Constants
     let speed_of_sound = 343.0; // m/s at 20°C
@@ -772,10 +792,10 @@ pub(crate) fn compute_xtc_filters(
 
         if det.abs() < 1e-10 {
             // Singular matrix - use identity (bypass)
-            filter_ll.push(Complex::new(1.0, 0.0));
-            filter_lr.push(Complex::new(0.0, 0.0));
-            filter_rl.push(Complex::new(0.0, 0.0));
-            filter_rr.push(Complex::new(1.0, 0.0));
+            filter_ll[bin] = Complex::new(1.0, 0.0);
+            filter_lr[bin] = Complex::new(0.0, 0.0);
+            filter_rl[bin] = Complex::new(0.0, 0.0);
+            filter_rr[bin] = Complex::new(1.0, 0.0);
             continue;
         }
 
@@ -798,13 +818,11 @@ pub(crate) fn compute_xtc_filters(
 
         let w_ll = h_ipsi_conj * inv_diag + h_contra_conj * inv_off_diag;
         let w_lr = h_ipsi_conj * inv_off_diag + h_contra_conj * inv_diag;
-        let w_rl = w_lr; // Symmetric
-        let w_rr = w_ll; // Symmetric
 
-        filter_ll.push(w_ll);
-        filter_lr.push(w_lr);
-        filter_rl.push(w_rl);
-        filter_rr.push(w_rr);
+        filter_ll[bin] = w_ll;
+        filter_lr[bin] = w_lr;
+        filter_rl[bin] = w_lr;
+        filter_rr[bin] = w_ll;
     }
 
     (filter_ll, filter_lr, filter_rl, filter_rr)
