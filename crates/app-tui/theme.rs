@@ -51,65 +51,65 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Create a dark theme (default)
+    /// Create a high-contrast dark theme (default)
     pub fn dark() -> Self {
         Self {
-            // Backgrounds
-            bg_primary: Color::Black,
-            bg_secondary: Color::DarkGray,
-            bg_selected: Color::White,
-            bg_highlight: Color::DarkGray,
+            // Backgrounds — true black for maximum contrast
+            bg_primary: Color::Rgb(0, 0, 0),
+            bg_secondary: Color::Rgb(30, 30, 30),
+            bg_selected: Color::Rgb(255, 255, 255),
+            bg_highlight: Color::Rgb(40, 40, 45),
 
-            // Foregrounds
-            fg_primary: Color::White,
-            fg_secondary: Color::Gray,
-            fg_selected: Color::Black,
-            fg_muted: Color::DarkGray,
+            // Foregrounds — bright white text on black
+            fg_primary: Color::Rgb(255, 255, 255),
+            fg_secondary: Color::Rgb(180, 180, 180),
+            fg_selected: Color::Rgb(0, 0, 0),
+            fg_muted: Color::Rgb(170, 170, 170),
 
-            // Accent colors
-            accent_primary: Color::Cyan,
-            accent_secondary: Color::Magenta,
-            accent_success: Color::Green,
-            accent_warning: Color::Yellow,
-            accent_error: Color::Red,
-            accent_info: Color::Cyan,
+            // Accent colors — vivid, saturated for dark backgrounds
+            accent_primary: Color::Rgb(0, 220, 255),
+            accent_secondary: Color::Rgb(220, 80, 220),
+            accent_success: Color::Rgb(0, 230, 80),
+            accent_warning: Color::Rgb(255, 210, 0),
+            accent_error: Color::Rgb(255, 60, 60),
+            accent_info: Color::Rgb(0, 220, 255),
 
             // UI elements
-            border_color: Color::Green,
-            title_color: Color::Yellow,
-            playing_indicator: Color::Green,
-            current_track: Color::Cyan,
+            border_color: Color::Rgb(0, 200, 80),
+            title_color: Color::Rgb(255, 220, 0),
+            playing_indicator: Color::Rgb(0, 230, 80),
+            current_track: Color::Rgb(0, 220, 255),
         }
     }
 
-    /// Create a light theme
+    /// Create a high-contrast light theme
     pub fn light() -> Self {
         Self {
-            // Backgrounds — use subtle warm grays instead of light blue/cyan
-            bg_primary: Color::White,
-            bg_secondary: Color::Rgb(230, 230, 230),
-            bg_selected: Color::Rgb(185, 205, 235),
-            bg_highlight: Color::Rgb(220, 225, 235),
+            // Backgrounds — true white for maximum contrast
+            bg_primary: Color::Rgb(255, 255, 255),
+            bg_secondary: Color::Rgb(235, 235, 235),
+            bg_selected: Color::Rgb(0, 0, 0),
+            bg_highlight: Color::Rgb(225, 225, 230),
 
-            // Foregrounds
-            fg_primary: Color::Black,
-            fg_secondary: Color::Rgb(80, 80, 80),
-            fg_selected: Color::Black,
-            fg_muted: Color::Rgb(140, 140, 140),
+            // Foregrounds — true black text on white
+            fg_primary: Color::Rgb(0, 0, 0),
+            fg_secondary: Color::Rgb(60, 60, 60),
+            fg_selected: Color::Rgb(255, 255, 255),
+            fg_muted: Color::Rgb(110, 110, 110),
 
-            // Accent colors — darker shades for white-background readability
-            accent_primary: Color::Rgb(0, 60, 180),
-            accent_secondary: Color::Rgb(140, 30, 120),
-            accent_success: Color::Rgb(0, 130, 50),
-            accent_warning: Color::Rgb(180, 120, 0),
-            accent_error: Color::Rgb(190, 20, 20),
-            accent_info: Color::Rgb(0, 60, 180),
+            // Accent colors — deep, saturated for white backgrounds
+            accent_primary: Color::Rgb(0, 40, 200),
+            accent_secondary: Color::Rgb(150, 0, 130),
+            accent_success: Color::Rgb(0, 120, 30),
+            accent_warning: Color::Rgb(180, 100, 0),
+            accent_error: Color::Rgb(200, 0, 0),
+            accent_info: Color::Rgb(0, 40, 200),
 
             // UI elements
-            border_color: Color::Rgb(100, 100, 120),
-            title_color: Color::Rgb(140, 30, 120),
-            playing_indicator: Color::Rgb(0, 130, 50),
-            current_track: Color::Rgb(0, 60, 180),
+            border_color: Color::Rgb(60, 60, 80),
+            title_color: Color::Rgb(150, 0, 130),
+            playing_indicator: Color::Rgb(0, 120, 30),
+            current_track: Color::Rgb(0, 40, 200),
         }
     }
 
@@ -149,27 +149,27 @@ mod tests {
     #[test]
     fn test_dark_theme() {
         let theme = Theme::dark();
-        assert_eq!(theme.bg_primary, Color::Black);
-        assert_eq!(theme.fg_primary, Color::White);
-        assert_eq!(theme.border_color, Color::Green);
+        assert_eq!(theme.bg_primary, Color::Rgb(0, 0, 0));
+        assert_eq!(theme.fg_primary, Color::Rgb(255, 255, 255));
+        assert_eq!(theme.border_color, Color::Rgb(0, 200, 80));
     }
 
     #[test]
     fn test_light_theme() {
         let theme = Theme::light();
-        assert_eq!(theme.bg_primary, Color::White);
-        assert_eq!(theme.fg_primary, Color::Black);
-        assert_eq!(theme.fg_selected, Color::Black);
-        assert_eq!(theme.border_color, Color::Rgb(100, 100, 120));
+        assert_eq!(theme.bg_primary, Color::Rgb(255, 255, 255));
+        assert_eq!(theme.fg_primary, Color::Rgb(0, 0, 0));
+        assert_eq!(theme.fg_selected, Color::Rgb(255, 255, 255));
+        assert_eq!(theme.border_color, Color::Rgb(60, 60, 80));
     }
 
     #[test]
     fn test_theme_from_type() {
         let dark = Theme::from_type(ThemeType::Dark);
-        assert_eq!(dark.bg_primary, Color::Black);
+        assert_eq!(dark.bg_primary, Color::Rgb(0, 0, 0));
 
         let light = Theme::from_type(ThemeType::Light);
-        assert_eq!(light.bg_primary, Color::White);
+        assert_eq!(light.bg_primary, Color::Rgb(255, 255, 255));
     }
 
     #[test]

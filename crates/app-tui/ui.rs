@@ -161,6 +161,14 @@ mod tests {
 const DUAL_VIEW_HEIGHT_THRESHOLD: u16 = 40;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // Paint the entire frame with theme colors so all widgets inherit them
+    let bg_block = Block::default().style(
+        Style::default()
+            .bg(app.theme.bg_primary)
+            .fg(app.theme.fg_primary),
+    );
+    f.render_widget(bg_block, f.area());
+
     // Ensure filtered albums cache is updated
     app.filtered_albums();
 
@@ -330,7 +338,11 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
                 .add_modifier(Modifier::BOLD),
         )
         .alignment(Alignment::Left)
-        .block(Block::default().borders(Borders::ALL));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().fg(app.theme.fg_primary)),
+        );
 
     f.render_widget(sotf_title, title_chunks[0]);
 
@@ -400,6 +412,7 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
     }
 
     let boxes = Paragraph::new(Line::from(spans))
+        .style(Style::default().fg(app.theme.fg_primary))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
 
@@ -429,7 +442,7 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     let input_style = if app.input_mode == InputMode::Search {
         Style::default().fg(app.theme.title_color)
     } else {
-        Style::default()
+        Style::default().fg(app.theme.fg_primary)
     };
 
     let search_text = if app.input_mode == InputMode::Search {
@@ -479,13 +492,14 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     };
 
     // Build title with colored sorting and filtering
+    let base_title_style = Style::default().fg(app.theme.fg_secondary);
     let suffix = format!(" [c/5-9]{})", counts_str);
     let title_spans = vec![
-        Span::raw("Search Albums ('/' search | Sort: "),
+        Span::styled("Search Albums ('/' search | Sort: ", base_title_style),
         Span::styled(sort_order_str, Style::default().fg(app.theme.border_color)),
-        Span::raw(" [s/1-4] | Filter: "),
+        Span::styled(" [s/1-4] | Filter: ", base_title_style),
         Span::styled(&filter_str, Style::default().fg(app.theme.border_color)),
-        Span::raw(suffix),
+        Span::styled(suffix, base_title_style),
     ];
     let title = Line::from(title_spans);
 
@@ -536,7 +550,7 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
                             .bg(app.theme.bg_selected)
                             .add_modifier(Modifier::BOLD)
                     } else {
-                        Style::default()
+                        Style::default().fg(app.theme.fg_primary)
                     };
                     ListItem::new(display_text).style(style)
                 })
@@ -606,16 +620,17 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
                                     format!("  └─ {}", truncated)
                                 };
 
-                                let mut style = Style::default();
-                                if i == app.selected_tree_index {
-                                    style = Style::default()
+                                let style = if i == app.selected_tree_index {
+                                    Style::default()
                                         .fg(app.theme.fg_selected)
                                         .bg(app.theme.bg_selected)
-                                        .add_modifier(Modifier::BOLD);
-                                }
+                                        .add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default().fg(app.theme.fg_primary)
+                                };
                                 (content, style)
                             } else {
-                                ("  └─ <unknown>".to_string(), Style::default())
+                                ("  └─ <unknown>".to_string(), Style::default().fg(app.theme.fg_muted))
                             }
                         }
                     };
@@ -674,7 +689,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     let input_style = if app.input_mode == InputMode::AddDirectory {
         Style::default().fg(app.theme.title_color)
     } else {
-        Style::default()
+        Style::default().fg(app.theme.fg_primary)
     };
 
     let input_text = if app.input_mode == InputMode::AddDirectory {
@@ -818,7 +833,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
                     .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
+                Style::default().fg(app.theme.fg_primary)
             };
 
             ListItem::new(content).style(style)
@@ -902,17 +917,18 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
             content.push_str(&track_info);
         }
 
-        let mut style = Style::default();
-        if is_selected {
-            style = style
+        let style = if is_selected {
+            Style::default()
                 .fg(app.theme.fg_selected)
                 .bg(app.theme.bg_selected)
-                .add_modifier(Modifier::BOLD);
+                .add_modifier(Modifier::BOLD)
         } else if is_current {
-            style = style
+            Style::default()
                 .fg(app.theme.playing_indicator)
-                .add_modifier(Modifier::BOLD);
-        }
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(app.theme.fg_primary)
+        };
 
         items.push(ListItem::new(content).style(style));
 
@@ -949,7 +965,7 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
                         .fg(app.theme.current_track)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(app.theme.fg_muted)
+                    Style::default().fg(app.theme.fg_secondary)
                 };
 
                 items.push(ListItem::new(track_content).style(track_style));
@@ -972,12 +988,14 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
         BorderType::Plain
     };
 
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(border_type)
-            .title(title),
-    );
+    let list = List::new(items)
+        .style(Style::default().fg(app.theme.fg_primary))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(border_type)
+                .title(title),
+        );
 
     f.render_widget(list, queue_area);
 
@@ -1003,7 +1021,10 @@ fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
         "Album Art".to_string()
     };
 
-    let block = Block::default().borders(Borders::ALL).title(title);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .style(Style::default().fg(app.theme.fg_primary));
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
@@ -1039,7 +1060,8 @@ fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
         }
     } else {
         // No image available
-        let no_image_text = Paragraph::new("No album art found");
+        let no_image_text = Paragraph::new("No album art found")
+            .style(Style::default().fg(app.theme.fg_muted));
         f.render_widget(no_image_text, image_area);
     }
 
@@ -1119,7 +1141,9 @@ fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from("No track playing"));
     }
 
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary))
+        .wrap(Wrap { trim: false });
     f.render_widget(paragraph, area);
 }
 
@@ -1223,7 +1247,7 @@ fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
     let border_style = if is_selecting {
         Style::default().fg(app.theme.accent_primary)
     } else {
-        Style::default()
+        Style::default().fg(app.theme.fg_secondary)
     };
 
     let list = List::new(items)
@@ -1300,7 +1324,7 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
             } else if device.is_default {
                 Style::default().fg(app.theme.accent_success)
             } else {
-                Style::default()
+                Style::default().fg(app.theme.fg_primary)
             };
 
             ListItem::new(content).style(style)
@@ -1361,7 +1385,10 @@ fn draw_loudness_and_volume_column(f: &mut Frame, area: Rect, app: &mut App) {
 }
 
 fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
-    let block = Block::default().borders(Borders::ALL).title("Loudness");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Loudness")
+        .style(Style::default().fg(app.theme.fg_primary));
     f.render_widget(block, area);
 
     // Inner area for content (excluding borders)
@@ -1700,6 +1727,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     let has_loudness = app.loudness_info.is_some();
     if !has_loudness {
         let paragraph = Paragraph::new("No audio")
+            .style(Style::default().fg(app.theme.fg_muted))
             .block(Block::default().borders(Borders::ALL).title("Levels"))
             .alignment(Alignment::Center);
         f.render_widget(paragraph, area);
@@ -1713,6 +1741,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         .unwrap_or(0);
     if num_channels == 0 {
         let paragraph = Paragraph::new("No channels")
+            .style(Style::default().fg(app.theme.fg_muted))
             .block(Block::default().borders(Borders::ALL).title("Levels"));
         f.render_widget(paragraph, area);
         return;
@@ -1737,14 +1766,17 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
                 .add_modifier(Modifier::BOLD),
         )
     } else {
-        Block::default().borders(Borders::ALL)
+        Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(app.theme.fg_primary))
     };
     f.render_widget(block, area);
 
     // Render title lines at the top inside the border
     for (i, line) in title_lines.iter().enumerate() {
         f.render_widget(
-            Paragraph::new(line.clone()),
+            Paragraph::new(line.clone())
+                .style(Style::default().fg(app.theme.fg_primary)),
             Rect {
                 x: area.x + 1,
                 y: area.y + 1 + i as u16,
@@ -2237,6 +2269,7 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     let status_text = Line::from(status_spans);
 
     let status = Paragraph::new(status_text)
+        .style(Style::default().fg(app.theme.fg_primary))
         .block(Block::default().borders(Borders::ALL))
         .wrap(Wrap { trim: true });
 
@@ -2373,6 +2406,7 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         };
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.fg_primary))
             .block(Block::default())
             .style(base_style)
             .scroll((scroll_offset, 0));
@@ -2419,7 +2453,11 @@ fn draw_matrix_editor_modal(f: &mut Frame, app: &App) {
     // Outer block
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(
+            Style::default()
+                .bg(app.theme.bg_primary)
+                .fg(app.theme.fg_primary),
+        )
         .title(format!(" Matrix Mixer - {} (ESC to close) ", preset_name));
     f.render_widget(block, modal_area);
 
@@ -2480,6 +2518,8 @@ fn draw_matrix_header(
 
     let mut lines = Vec::new();
 
+    let base_style = Style::default().fg(app.theme.fg_primary);
+
     // Input channels line
     let input_style = if in_header && app.matrix_header_selection == 0 {
         Style::default()
@@ -2487,10 +2527,10 @@ fn draw_matrix_header(
             .bg(app.theme.bg_selected)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
+        base_style
     };
     lines.push(Line::from(vec![
-        Span::styled("  Input Channels:  ", Style::default()),
+        Span::styled("  Input Channels:  ", base_style),
         Span::styled(
             format!("[{}]", input_channels),
             input_style.fg(app.theme.accent_primary),
@@ -2508,10 +2548,10 @@ fn draw_matrix_header(
             .bg(app.theme.bg_selected)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
+        base_style
     };
     lines.push(Line::from(vec![
-        Span::styled("  Output Channels: ", Style::default()),
+        Span::styled("  Output Channels: ", base_style),
         Span::styled(
             format!("[{}]", output_channels),
             output_style.fg(app.theme.accent_primary),
@@ -2529,10 +2569,10 @@ fn draw_matrix_header(
             .bg(app.theme.bg_selected)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
+        base_style
     };
     lines.push(Line::from(vec![
-        Span::styled("  Preset:          ", Style::default()),
+        Span::styled("  Preset:          ", base_style),
         Span::styled(
             format!("[{}]", preset_name),
             preset_style.fg(app.theme.title_color),
@@ -2541,7 +2581,8 @@ fn draw_matrix_header(
 
     lines.push(Line::from(""));
 
-    let paragraph = Paragraph::new(lines);
+    let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary));
     f.render_widget(paragraph, area);
 }
 
@@ -2627,7 +2668,7 @@ fn draw_matrix_grid(
                 // Silent - dim
                 Style::default().fg(app.theme.fg_secondary)
             } else {
-                Style::default()
+                Style::default().fg(app.theme.fg_primary)
             };
 
             cells.push(Cell::from(db_str).style(style));
@@ -3481,7 +3522,7 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Save Plugin Preset");
 
     f.render_widget(block, dialog_area);
@@ -3523,6 +3564,7 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         ];
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.fg_primary))
             .block(Block::default())
             .wrap(Wrap { trim: false });
 
@@ -3543,9 +3585,9 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         ];
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.title_color))
             .block(Block::default())
-            .wrap(Wrap { trim: false })
-            .style(Style::default().fg(app.theme.title_color));
+            .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, inner);
     } else {
@@ -3586,6 +3628,7 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         ]));
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.fg_primary))
             .block(Block::default())
             .wrap(Wrap { trim: false });
 
@@ -3611,7 +3654,7 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Load Plugin Preset");
 
     f.render_widget(block, dialog_area);
@@ -3640,6 +3683,7 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         ];
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.fg_primary))
             .block(Block::default())
             .wrap(Wrap { trim: false });
 
@@ -3656,9 +3700,9 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         ];
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.title_color))
             .block(Block::default())
-            .wrap(Wrap { trim: false })
-            .style(Style::default().fg(app.theme.title_color));
+            .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, inner);
     } else {
@@ -3699,6 +3743,7 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         ));
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.fg_primary))
             .block(Block::default())
             .wrap(Wrap { trim: false });
 
@@ -3724,7 +3769,7 @@ fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Load APO EQ File");
 
     f.render_widget(block, dialog_area);
@@ -3757,6 +3802,7 @@ fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
     ];
 
     let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary))
         .block(Block::default())
         .wrap(Wrap { trim: false });
 
@@ -3781,7 +3827,7 @@ fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Load SOFA HRTF File");
 
     f.render_widget(block, dialog_area);
@@ -3808,6 +3854,7 @@ fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
     ];
 
     let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary))
         .block(Block::default())
         .wrap(Wrap { trim: false });
 
@@ -3833,7 +3880,7 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Scanning Library");
 
     f.render_widget(Clear, dialog_area);
@@ -3882,6 +3929,7 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
     ];
 
     let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary))
         .block(Block::default())
         .alignment(Alignment::Left);
 
@@ -3907,7 +3955,7 @@ fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Database Maintenance");
 
     f.render_widget(Clear, dialog_area);
@@ -3957,6 +4005,7 @@ fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
     ];
 
     let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary))
         .block(Block::default())
         .alignment(Alignment::Left);
 
@@ -3982,7 +4031,7 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("ReplayGain Analysis");
 
     f.render_widget(Clear, dialog_area);
@@ -4049,6 +4098,7 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
     ];
 
     let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary))
         .block(Block::default())
         .alignment(Alignment::Left);
 
@@ -4074,7 +4124,7 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title(format!(
             "Help - {} Screen (Press ESC or ? to close)",
             match app.current_screen {
@@ -4240,6 +4290,7 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
     }
 
     let paragraph = Paragraph::new(lines)
+        .style(Style::default().fg(app.theme.fg_primary))
         .block(Block::default())
         .wrap(Wrap { trim: false });
 
@@ -4365,7 +4416,7 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
             .borders(Borders::ALL)
             .border_type(BorderType::Double)
             .border_style(Style::default().fg(Color::Red))
-            .style(Style::default().bg(app.theme.bg_primary))
+            .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
             .title(" Error ");
 
         f.render_widget(Clear, modal_area);
@@ -4431,6 +4482,7 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
         ]));
 
         let paragraph = Paragraph::new(lines)
+            .style(Style::default().fg(app.theme.fg_primary))
             .block(Block::default())
             .style(text_style)
             .alignment(Alignment::Center)
@@ -4463,7 +4515,7 @@ fn draw_file_browser_modal(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(app.theme.bg_primary))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title(title);
 
     f.render_widget(Clear, modal_area);
@@ -4510,7 +4562,7 @@ fn draw_file_browser_modal(f: &mut Frame, app: &App) {
                     .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
+                Style::default().fg(app.theme.fg_primary)
             };
 
             ListItem::new(content).style(style)
