@@ -205,6 +205,16 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             } else {
                 Err("channel_states must be string".to_string())
             }
+        } else if id == self.param_full_state {
+            if let Some(json_str) = value.as_string() {
+                let params: ChannelMuteSoloParams =
+                    serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+                self.set_enabled(params.enabled);
+                self.set_channel_states(params.channel_states);
+                Ok(())
+            } else {
+                Err("full_state must be string".to_string())
+            }
         } else {
             Err(format!("Unknown parameter: {}", id))
         }
@@ -489,5 +499,40 @@ mod tests {
         // Should be less than 1.0 but not yet 0.0 (fading)
         assert!(buffer[0] < 1.0, "Should start fading");
         assert!(buffer[0] > 0.0, "Should not jump to 0.0 instantly");
+    }
+
+    #[test]
+    fn test_set_full_state_parameter() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, false);
+
+        let full_state = serde_json::json!({
+            "enabled": true,
+            "channel_states": [
+                {"muted": true, "soloed": false, "dimmed": false},
+                {"muted": false, "soloed": false, "dimmed": false}
+            ]
+        });
+
+        plugin
+            .set_parameter(
+                ParameterId::from("full_state"),
+                ParameterValue::String(full_state.to_string()),
+            )
+            .expect("full_state parameter should be accepted");
+
+        assert!(plugin.is_enabled());
+        assert!(plugin.get_channel_state(0).unwrap().muted);
+        assert!(!plugin.get_channel_state(1).unwrap().muted);
+
+        // Verify it actually mutes audio after convergence
+        let last_frame = process_converged(&mut plugin, 2);
+        assert!(
+            (last_frame[0] - 0.0).abs() < TOLERANCE,
+            "Ch0 should be muted"
+        );
+        assert!(
+            (last_frame[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should be unchanged"
+        );
     }
 }

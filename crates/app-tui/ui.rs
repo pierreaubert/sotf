@@ -1829,12 +1829,20 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
 
-    // Reserve space for vertical scale legend on the left (4 chars: "-60 ")
+    // Reserve space for vertical scale legend (4 chars: "-60 ")
     let scale_width = 4usize;
-    let mut x_offset = scale_width; // Start after the scale
     let available_width = inner.width as usize;
 
-    // Draw vertical scale legend on the left
+    // Check if we should show right-side scale (only for single stereo group with enough space)
+    let is_single_stereo_group = app.level_meter_groups.len() == 1
+        && app.level_meter_groups[0].channels.len() == 2;
+    let right_scale_width = if is_single_stereo_group && available_width >= scale_width * 2 + 8 {
+        scale_width
+    } else {
+        0
+    };
+    let mut x_offset = scale_width; // Start after the left scale
+
     // Non-linear scale: -60 dB (0%), -40 dB (20%), -20 dB (50%), 0 dB (100%)
     let scale_markers = [
         (1.0, " 0 "), // 100% fill -> top
@@ -1843,10 +1851,9 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         (0.0, "-60"), // 0% fill -> bottom
     ];
 
+    // Draw vertical scale legend on the left
     for (ratio, label) in scale_markers.iter() {
-        // Convert fill ratio to row index from bottom
         let row_idx = (ratio * meter_height as f64).round() as usize;
-        // Convert to y coordinate (inverted: top of screen = higher rows)
         let y = inner.y + (meter_height - 1).saturating_sub(row_idx.min(meter_height - 1)) as u16;
 
         f.render_widget(
@@ -1858,6 +1865,26 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
                 height: 1,
             },
         );
+    }
+
+    // Draw vertical scale legend on the right (if applicable)
+    if right_scale_width > 0 {
+        let right_x = inner.x + inner.width - right_scale_width as u16;
+        for (ratio, label) in scale_markers.iter() {
+            let row_idx = (ratio * meter_height as f64).round() as usize;
+            let y =
+                inner.y + (meter_height - 1).saturating_sub(row_idx.min(meter_height - 1)) as u16;
+
+            f.render_widget(
+                Paragraph::new(*label).style(Style::default().fg(app.theme.fg_muted)),
+                Rect {
+                    x: right_x,
+                    y,
+                    width: right_scale_width as u16,
+                    height: 1,
+                },
+            );
+        }
     }
 
     // Draw each group
@@ -1875,11 +1902,14 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
         if is_stereo {
             // Special stereo rendering: 3-char wide meters with 2-char spacing
-            // Center the group in available space
-            let group_start_x = if available_width > group_width + x_offset {
-                x_offset + (available_width - x_offset - group_width) / 2
+            // Center the group in the meter area (between left and right scales)
+            let meter_area_start = x_offset;
+            let meter_area_end = available_width.saturating_sub(right_scale_width);
+            let meter_area_width = meter_area_end.saturating_sub(meter_area_start);
+            let group_start_x = if meter_area_width > group_width {
+                meter_area_start + (meter_area_width - group_width) / 2
             } else {
-                x_offset
+                meter_area_start
             };
 
             // Skip rendering if there's not enough space
@@ -2062,14 +2092,17 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         let show_controls =
             is_stereo || (app.level_meter_groups.len() > 1 && x_offset + 3 <= available_width);
         if show_controls {
-            // For stereo, center controls under the meters
+            // Center [M][S][D] (3 chars) under the group
             let controls_x = if is_stereo {
-                let group_start_x = if available_width > group_width + x_offset {
-                    x_offset + (available_width - x_offset - group_width) / 2
+                let meter_area_start = scale_width;
+                let meter_area_end = available_width.saturating_sub(right_scale_width);
+                let meter_area_width = meter_area_end.saturating_sub(meter_area_start);
+                let group_start_x = if meter_area_width > group_width {
+                    meter_area_start + (meter_area_width - group_width) / 2
                 } else {
-                    x_offset
+                    meter_area_start
                 };
-                // Bounds check - ensure controls fit
+                // Center [M][S][D] under the 8-char stereo group
                 let ctrl_offset = group_start_x + (group_width - 3) / 2;
                 if ctrl_offset + 3 > available_width {
                     x_offset += group_width + 1;
@@ -2077,11 +2110,13 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
                 }
                 inner.x + ctrl_offset as u16
             } else {
-                if x_offset + 3 > available_width {
+                // Center [M][S][D] (3 chars) under the group_width
+                let ctrl_offset = x_offset + group_width.saturating_sub(3) / 2;
+                if ctrl_offset + 3 > available_width {
                     x_offset += group_width + 1;
                     continue;
                 }
-                inner.x + x_offset as u16
+                inner.x + ctrl_offset as u16
             };
 
             // Position controls below the label/channel names

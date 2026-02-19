@@ -68,41 +68,37 @@ pub struct MeterGroupSpec {
 
 // Meter group definitions for each configuration
 
-const METER_GROUPS_2_0: &[MeterGroupSpec] = &[
-    MeterGroupSpec {
-        name: "Left",
-        channels: &[MeterChannelSpec {
+const METER_GROUPS_2_0: &[MeterGroupSpec] = &[MeterGroupSpec {
+    name: "L/R",
+    channels: &[
+        MeterChannelSpec {
             index: 0,
             label: "L",
             display_chars: &["L"],
-        }],
-    },
-    MeterGroupSpec {
-        name: "Right",
-        channels: &[MeterChannelSpec {
+        },
+        MeterChannelSpec {
             index: 1,
             label: "R",
             display_chars: &["R"],
-        }],
-    },
-];
+        },
+    ],
+}];
 
 const METER_GROUPS_2_1: &[MeterGroupSpec] = &[
     MeterGroupSpec {
-        name: "Left",
-        channels: &[MeterChannelSpec {
-            index: 0,
-            label: "L",
-            display_chars: &["L"],
-        }],
-    },
-    MeterGroupSpec {
-        name: "Right",
-        channels: &[MeterChannelSpec {
-            index: 1,
-            label: "R",
-            display_chars: &["R"],
-        }],
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
+        ],
     },
     MeterGroupSpec {
         name: "LFE",
@@ -237,7 +233,7 @@ const METER_GROUPS_7_1: &[MeterGroupSpec] = &[
         }],
     },
     MeterGroupSpec {
-        name: "Surrounds",
+        name: "Side",
         channels: &[
             MeterChannelSpec {
                 index: 4,
@@ -249,6 +245,11 @@ const METER_GROUPS_7_1: &[MeterGroupSpec] = &[
                 label: "SR",
                 display_chars: &["S", "R"],
             },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Rear",
+        channels: &[
             MeterChannelSpec {
                 index: 6,
                 label: "BL",

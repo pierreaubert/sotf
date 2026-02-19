@@ -7,7 +7,7 @@ use crate::param_specs::crossfeed::*;
 use crate::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use crate::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use crate::simd::{apply_gain_simd, deinterleave_stereo, enable_ftz_daz, interleave_stereo};
-use crate::smoothing::{LinearSmoother, LogSmoother, Smoother};
+use crate::smoothing::{LinearSmoother, Smoother};
 
 use math_audio_dsp::fast_math::fast_pow10;
 use math_audio_iir_fir::Biquad;
@@ -432,20 +432,20 @@ impl CrossfeedPlugin {
             &mut self.temp_r[..num_frames],
         );
 
-                // Process crossfeed: L += feed * HPF(R), R += feed * HPF(L)
-                let feed = self.bauer_feed;
-        
-                // Apply HPF to opposite channel and mix
-                for i in 0..num_frames {
-                    let x_l = self.temp_l[i];
-                    let x_r = self.temp_r[i];
-                    
-                    let cross_r = self.bauer_hpf_r.process(x_r as f64) as f32;
-                    let cross_l = self.bauer_hpf_l.process(x_l as f64) as f32;
-        
-                    self.temp_l[i] = x_l + feed * cross_r;
-                    self.temp_r[i] = x_r + feed * cross_l;
-                }
+        // Process crossfeed: L += feed * HPF(R), R += feed * HPF(L)
+        let feed = self.bauer_feed;
+
+        // Apply HPF to opposite channel and mix
+        for i in 0..num_frames {
+            let x_l = self.temp_l[i];
+            let x_r = self.temp_r[i];
+
+            let cross_r = self.bauer_hpf_r.process(x_r as f64) as f32;
+            let cross_l = self.bauer_hpf_l.process(x_l as f64) as f32;
+
+            self.temp_l[i] = x_l + feed * cross_r;
+            self.temp_r[i] = x_r + feed * cross_l;
+        }
         // Interleave back
         interleave_stereo(
             &self.temp_l[..num_frames],
