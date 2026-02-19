@@ -39,7 +39,7 @@ repository = "https://github.com/pierreaubert/sotf"
 [workspace.dependencies]
 
 # Serialization and data
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 schemars = "1.2"

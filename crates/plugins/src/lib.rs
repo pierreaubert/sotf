@@ -20,6 +20,7 @@ pub mod plugin_binaural;
 pub mod plugin_channel_mute_solo;
 pub mod plugin_compressor;
 pub mod plugin_convolution;
+pub mod plugin_crossfeed;
 pub mod plugin_crossover;
 pub mod plugin_delay;
 pub mod plugin_denoiser;
@@ -74,6 +75,7 @@ pub use plugin_compressor::{
 };
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
+pub use plugin_crossfeed::{CrossfeedPlugin, CrossfeedPluginParams, CrossfeedMode, CrossfeedPreset};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};

@@ -902,3 +902,62 @@ pub mod ab_compare {
     pub const LOUDNESS_TYPE_MIN: i32 = 0;
     pub const LOUDNESS_TYPE_MAX: i32 = 1;
 }
+
+// ============================================================================
+// Crossfeed Plugin
+// ============================================================================
+
+pub mod crossfeed {
+    // Bauer mode
+    pub const BAUER_FCUT_DEFAULT: f32 = 700.0;
+    pub const BAUER_FCUT_MIN: f32 = 400.0;
+    pub const BAUER_FCUT_MAX: f32 = 1000.0;
+
+    pub const BAUER_FEED_DEFAULT: f32 = 4.5;
+    pub const BAUER_FEED_MIN: f32 = 0.0;
+    pub const BAUER_FEED_MAX: f32 = 15.0;
+
+    // Meier mode
+    pub const MEIER_LEVEL_DEFAULT: f32 = 30.0;
+    pub const MEIER_LEVEL_MIN: f32 = 0.0;
+    pub const MEIER_LEVEL_MAX: f32 = 100.0;
+
+    // Multiband mode
+    pub const MB_LOW_FREQ_DEFAULT: f32 = 150.0;
+    pub const MB_LOW_FREQ_MIN: f32 = 50.0;
+    pub const MB_LOW_FREQ_MAX: f32 = 500.0;
+
+    pub const MB_MID_HIGH_FREQ_DEFAULT: f32 = 5700.0;
+    pub const MB_MID_HIGH_FREQ_MIN: f32 = 2000.0;
+    pub const MB_MID_HIGH_FREQ_MAX: f32 = 15000.0;
+
+    pub const MB_LOW_FEED_DEFAULT: f32 = 0.0;
+    pub const MB_LOW_FEED_MIN: f32 = -20.0;
+    pub const MB_LOW_FEED_MAX: f32 = 0.0;
+
+    pub const MB_MID_FEED_DEFAULT: f32 = 6.0;
+    pub const MB_MID_FEED_MIN: f32 = 0.0;
+    pub const MB_MID_FEED_MAX: f32 = 15.0;
+
+    pub const MB_HIGH_FEED_DEFAULT: f32 = 3.0;
+    pub const MB_HIGH_FEED_MIN: f32 = 0.0;
+    pub const MB_HIGH_FEED_MAX: f32 = 15.0;
+
+    // Auto gain
+    pub const AUTOGAIN_TARGET_DEFAULT: f32 = -18.0;
+    pub const AUTOGAIN_TARGET_MIN: f32 = -40.0;
+    pub const AUTOGAIN_TARGET_MAX: f32 = -12.0;
+
+    pub const AUTOGAIN_MAX_GAIN_DEFAULT: f32 = 12.0;
+    pub const AUTOGAIN_MAX_GAIN_MIN: f32 = 0.0;
+    pub const AUTOGAIN_MAX_GAIN_MAX: f32 = 24.0;
+
+    pub const AUTOGAIN_SMOOTHING_DEFAULT: f32 = 100.0;
+    pub const AUTOGAIN_SMOOTHING_MIN: f32 = 10.0;
+    pub const AUTOGAIN_SMOOTHING_MAX: f32 = 5000.0;
+
+    // Global
+    pub const MIX_DEFAULT: f32 = 1.0;
+    pub const MIX_MIN: f32 = 0.0;
+    pub const MIX_MAX: f32 = 1.0;
+}

@@ -140,10 +140,10 @@ pub struct LoudnessData {
     /// Current sample peak (0.0 to 1.0+)
     pub peak: f64,
     /// Per-channel sample peaks (0.0 to 1.0+)
-    pub channel_peaks: Arc<[f64]>,
+    pub channel_peaks: Arc<Vec<f64>>,
     /// Per-channel true peaks in dBTP (dB True Peak)
     /// True peaks account for inter-sample peaks via oversampling
-    pub true_peaks_dbtp: Arc<[f64]>,
+    pub true_peaks_dbtp: Arc<Vec<f64>>,
     /// L/R correlation coefficient (ICC - Inter-Channel Correlation)
     /// Only valid for stereo signals (2 channels)
     /// Range: -1.0 (anti-correlated) to +1.0 (fully correlated)
@@ -158,8 +158,8 @@ impl LoudnessData {
             shortterm_lufs: f64::NEG_INFINITY,
             integrated_lufs: f64::NEG_INFINITY,
             peak: 0.0,
-            channel_peaks: vec![0.0; channels].into(),
-            true_peaks_dbtp: vec![f64::NEG_INFINITY; channels].into(),
+            channel_peaks: Arc::new(vec![0.0; channels]),
+            true_peaks_dbtp: Arc::new(vec![f64::NEG_INFINITY; channels]),
             correlation_lr: None,
         }
     }
@@ -186,7 +186,7 @@ impl LoudnessData {
                 return;
             }
         }
-        self.channel_peaks = Arc::from(new_peaks.to_vec());
+        self.channel_peaks = Arc::new(new_peaks.to_vec());
     }
 
     /// Update true peaks efficiently
@@ -197,7 +197,7 @@ impl LoudnessData {
                 return;
             }
         }
-        self.true_peaks_dbtp = Arc::from(new_tps.to_vec());
+        self.true_peaks_dbtp = Arc::new(new_tps.to_vec());
     }
 }
 
@@ -208,8 +208,8 @@ impl Default for LoudnessData {
             shortterm_lufs: f64::NEG_INFINITY,
             integrated_lufs: f64::NEG_INFINITY,
             peak: 0.0,
-            channel_peaks: Vec::new().into(),
-            true_peaks_dbtp: Vec::new().into(),
+            channel_peaks: Arc::new(Vec::new()),
+            true_peaks_dbtp: Arc::new(Vec::new()),
             correlation_lr: None,
         }
     }
@@ -219,9 +219,9 @@ impl Default for LoudnessData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpectrumData {
     /// Frequency bin centers in Hz
-    pub frequencies: Arc<[f32]>,
+    pub frequencies: Arc<Vec<f32>>,
     /// Magnitude values in dB
-    pub magnitudes: Arc<[f32]>,
+    pub magnitudes: Arc<Vec<f32>>,
     /// Peak magnitude across all bins
     pub peak_magnitude: f32,
 }
@@ -243,7 +243,7 @@ impl SpectrumData {
                 return;
             }
         }
-        self.frequencies = Arc::from(new_freqs.to_vec());
+        self.frequencies = Arc::new(new_freqs.to_vec());
     }
 
     /// Update magnitudes efficiently
@@ -254,15 +254,15 @@ impl SpectrumData {
                 return;
             }
         }
-        self.magnitudes = Arc::from(new_mags.to_vec());
+        self.magnitudes = Arc::new(new_mags.to_vec());
     }
 }
 
 impl Default for SpectrumData {
     fn default() -> Self {
         Self {
-            frequencies: Vec::new().into(),
-            magnitudes: Vec::new().into(),
+            frequencies: Arc::new(Vec::new()),
+            magnitudes: Arc::new(Vec::new()),
             peak_magnitude: -100.0,
         }
     }
