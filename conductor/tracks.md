@@ -40,5 +40,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [~] **Track: Sync TUI Plugin Parameters and Add Crossfeed**
+- [x] **Track: Sync TUI Plugin Parameters and Add Crossfeed**
 *Link: [./tracks/sync_tui_plugins_crossfeed_20260219/](./tracks/sync_tui_plugins_crossfeed_20260219/)*

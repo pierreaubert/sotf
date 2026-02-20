@@ -30,10 +30,10 @@
 - [x] Task: Add Crossfeed to the "Add Plugin" list in the TUI. [f79eb0df]
 - [x] Task: Conductor - User Manual Verification 'Phase 3: TUI Integration' (Protocol in workflow.md) [f79eb0df]
 
-## Phase 4: Validation & Parity
+## Phase 4: Validation & Parity [checkpoint: 9b78daa]
 - [x] Task: Verify parameter synchronization [a9a5f07b]
     - [x] Audit Upmixer in TUI: ensure all parameters update the correct values.
     - [x] Audit Crossfeed in TUI: verify all modes and auto-gain settings.
 - [x] Task: Implement EQ filter limit control (Max Filters) [a9a5f07b]
 - [x] Task: Run full regression tests for `plugins`, `engine`, and `app-tui`. [a9a5f07b]
-- [~] Task: Conductor - User Manual Verification 'Phase 4: Validation' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 4: Validation' (Protocol in workflow.md) [9b78daa]
