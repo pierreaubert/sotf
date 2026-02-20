@@ -573,7 +573,7 @@ pub fn render_spectrum_analyzer_plugin(
                                 .p_2()
                                 .child(if let Some(data) = state.data {
                                     // Use real spectrum data
-                                    let magnitudes: Arc<[f32]> = data.magnitudes.clone().into();
+                                    let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
                                     SpectrumElement::new(magnitudes)
                                         .height(px(200.0))
                                         .frequency_range(state.min_freq, state.max_freq)
@@ -809,7 +809,7 @@ impl PlayerView {
 
         let content = if let Some(info) = &state.app.playback.spectrum_info {
             // Convert magnitudes to Arc for the GPU element
-            let magnitudes: Arc<[f32]> = info.magnitudes.clone().into();
+            let magnitudes: Arc<[f32]> = Arc::from(info.magnitudes.as_ref().as_slice());
 
             div()
                 .flex()

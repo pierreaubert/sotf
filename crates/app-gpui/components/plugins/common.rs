@@ -634,6 +634,12 @@ pub fn param_index_to_engine_param(
         PluginSettings::XTC {
             distance_m,
             speaker_angle_deg,
+            bypass_xtc_filters,
+            bypass_spectral_normalization,
+            bypass_neumann_refinement,
+            auto_gain_enabled,
+            auto_gain_max_db,
+            auto_gain_smoothing_ms,
             ..
         } => match param_idx {
             0 => Some(("distance_m".to_string(), format!("{}", distance_m))),
@@ -642,6 +648,12 @@ pub fn param_index_to_engine_param(
                 format!("{}", speaker_angle_deg),
             )),
             // head_radius, beta params not supported by plugin set_parameter — structural
+            9 => Some(("bypass_xtc_filters".to_string(), format!("{}", bypass_xtc_filters))),
+            10 => Some(("bypass_spectral_normalization".to_string(), format!("{}", bypass_spectral_normalization))),
+            11 => Some(("bypass_neumann_refinement".to_string(), format!("{}", bypass_neumann_refinement))),
+            12 => Some(("auto_gain_enabled".to_string(), format!("{}", auto_gain_enabled))),
+            13 => Some(("auto_gain_max_db".to_string(), format!("{}", auto_gain_max_db))),
+            14 => Some(("auto_gain_smoothing_ms".to_string(), format!("{}", auto_gain_smoothing_ms))),
             _ => None,
         },
         PluginSettings::ABCompare {
@@ -683,6 +695,8 @@ pub fn param_index_to_engine_param(
         PluginSettings::ChannelMuteSolo { .. } | PluginSettings::Matrix { .. } => None,
         // LoudnessMonitor: no parameters
         PluginSettings::LoudnessMonitor => None,
+        // Crossfeed: structural updates for now (mode/preset changes)
+        PluginSettings::Crossfeed { .. } => None,
     }
 }
 

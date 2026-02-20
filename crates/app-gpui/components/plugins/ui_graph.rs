@@ -516,6 +516,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::BandSplit | PluginType::BandMerge => theme.accent, // Band processing - use accent
         PluginType::Downmix => theme.accent,
         PluginType::MonoToStereo => theme.accent,
+        PluginType::Crossfeed => theme.accent,
     }
 }
 
@@ -557,6 +558,8 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::Downmix => (6, 2),
         // Mono to Stereo: mono in, stereo out
         PluginType::MonoToStereo => (1, 2),
+        // Crossfeed: stereo in/out
+        PluginType::Crossfeed => (2, 2),
     }
 }
 
@@ -1158,6 +1161,7 @@ impl PlayerView {
                 filters,
                 channel_filters,
                 per_channel_mode,
+                ..
             } => render_eq_plugin(
                 entity,
                 plugin_idx,

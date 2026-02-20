@@ -786,7 +786,8 @@ fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 }
 
 fn handle_add_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    let plugin_types = PluginType::all();
+    let mut plugin_types = PluginType::all();
+    plugin_types.sort_by_key(|p| p.name());
     let num_plugins = plugin_types.len();
 
     match key.code {

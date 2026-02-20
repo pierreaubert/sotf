@@ -108,6 +108,7 @@ pub fn render_plugin_content(
             filters,
             channel_filters,
             per_channel_mode,
+            ..
         } => {
             let selected_band_idx = selected_band_idx.min(filters.len().saturating_sub(1));
             render_eq_plugin(
@@ -634,6 +635,13 @@ pub fn render_plugin_content(
             beta_high_freq_boost,
             head_shadow_cutoff_hz,
             head_shadow_slope_db_per_octave,
+            max_gain_db,
+            bypass_xtc_filters,
+            bypass_spectral_normalization,
+            bypass_neumann_refinement,
+            auto_gain_enabled,
+            auto_gain_max_db,
+            auto_gain_smoothing_ms,
         } => render_xtc_plugin(
             entity.clone(),
             plugin_idx,
@@ -646,6 +654,13 @@ pub fn render_plugin_content(
                 beta_high_freq_boost: *beta_high_freq_boost,
                 head_shadow_cutoff_hz: *head_shadow_cutoff_hz,
                 head_shadow_slope_db_per_octave: *head_shadow_slope_db_per_octave,
+                max_gain_db: *max_gain_db,
+                bypass_xtc_filters: *bypass_xtc_filters,
+                bypass_spectral_normalization: *bypass_spectral_normalization,
+                bypass_neumann_refinement: *bypass_neumann_refinement,
+                auto_gain_enabled: *auto_gain_enabled,
+                auto_gain_max_db: *auto_gain_max_db,
+                auto_gain_smoothing_ms: *auto_gain_smoothing_ms,
                 is_editing,
                 selected_param,
             },
@@ -822,5 +837,21 @@ pub fn render_plugin_content(
             theme,
         )
         .into_any_element(),
+
+        PluginSettings::Crossfeed { .. } => {
+            // Crossfeed plugin - show simple description for now
+            let name = settings.plugin_type().name().to_string();
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.text_muted)
+                        .child(name),
+                )
+                .into_any_element()
+        }
     }
 }

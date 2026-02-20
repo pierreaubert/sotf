@@ -1038,6 +1038,13 @@ impl PluginEditingManager for App {
                     beta_high_freq_boost,
                     head_shadow_cutoff_hz,
                     head_shadow_slope_db_per_octave,
+                    max_gain_db,
+                    bypass_xtc_filters,
+                    bypass_spectral_normalization,
+                    bypass_neumann_refinement,
+                    auto_gain_enabled,
+                    auto_gain_max_db,
+                    auto_gain_smoothing_ms,
                 } => {
                     match param_idx {
                         0 => {
@@ -1075,6 +1082,35 @@ impl PluginEditingManager for App {
                         7 => {
                             *head_shadow_slope_db_per_octave =
                                 (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0);
+                            true
+                        }
+                        8 => {
+                            *max_gain_db = (*max_gain_db + delta).clamp(3.0, 30.0);
+                            true
+                        }
+                        9 => {
+                            *bypass_xtc_filters = !*bypass_xtc_filters;
+                            true
+                        }
+                        10 => {
+                            *bypass_spectral_normalization = !*bypass_spectral_normalization;
+                            true
+                        }
+                        11 => {
+                            *bypass_neumann_refinement = !*bypass_neumann_refinement;
+                            true
+                        }
+                        12 => {
+                            *auto_gain_enabled = !*auto_gain_enabled;
+                            true
+                        }
+                        13 => {
+                            *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0);
+                            true
+                        }
+                        14 => {
+                            *auto_gain_smoothing_ms =
+                                (*auto_gain_smoothing_ms + delta * 5.0).clamp(10.0, 500.0);
                             true
                         }
                         _ => false,
@@ -1478,6 +1514,10 @@ impl PluginEditingManager for App {
                         }
                         _ => false,
                     }
+                }
+                PluginSettings::Crossfeed { .. } => {
+                    // Crossfeed parameters not yet implemented in GPUI editor
+                    false
                 }
             }
         } else {
@@ -2278,6 +2318,13 @@ impl PluginEditingManager for App {
                     beta_high_freq_boost,
                     head_shadow_cutoff_hz,
                     head_shadow_slope_db_per_octave,
+                    max_gain_db,
+                    bypass_xtc_filters,
+                    bypass_spectral_normalization,
+                    bypass_neumann_refinement,
+                    auto_gain_enabled,
+                    auto_gain_max_db,
+                    auto_gain_smoothing_ms,
                 } => match param_idx {
                     0 => {
                         *distance_m = value.clamp(0.5, 5.0);
@@ -2311,6 +2358,34 @@ impl PluginEditingManager for App {
                     }
                     7 => {
                         *head_shadow_slope_db_per_octave = value.clamp(0.0, 12.0);
+                        update_needed = true;
+                    }
+                    8 => {
+                        *max_gain_db = value.clamp(3.0, 30.0);
+                        update_needed = true;
+                    }
+                    9 => {
+                        *bypass_xtc_filters = value > 0.5;
+                        update_needed = true;
+                    }
+                    10 => {
+                        *bypass_spectral_normalization = value > 0.5;
+                        update_needed = true;
+                    }
+                    11 => {
+                        *bypass_neumann_refinement = value > 0.5;
+                        update_needed = true;
+                    }
+                    12 => {
+                        *auto_gain_enabled = value > 0.5;
+                        update_needed = true;
+                    }
+                    13 => {
+                        *auto_gain_max_db = value.clamp(0.0, 24.0);
+                        update_needed = true;
+                    }
+                    14 => {
+                        *auto_gain_smoothing_ms = value.clamp(10.0, 500.0);
                         update_needed = true;
                     }
                     _ => {}
@@ -3209,6 +3284,7 @@ impl PluginEditingManager for App {
                     filters,
                     channel_filters,
                     per_channel_mode,
+                    max_filters: 10,
                 };
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
@@ -3273,6 +3349,7 @@ impl PluginEditingManager for App {
                 filters,
                 channel_filters,
                 per_channel_mode,
+                ..
             } = &mut plugin.settings
             {
                 // Create a new default peak filter at 1kHz
@@ -3289,6 +3366,7 @@ impl PluginEditingManager for App {
                     filters,
                     channel_filters,
                     per_channel_mode,
+                    max_filters: 10,
                 };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
@@ -3320,6 +3398,7 @@ impl PluginEditingManager for App {
                 filters,
                 channel_filters,
                 per_channel_mode,
+                ..
             } = &mut plugin.settings
             {
                 if band_idx >= filters.len() {
@@ -3338,6 +3417,7 @@ impl PluginEditingManager for App {
                     filters,
                     channel_filters,
                     per_channel_mode,
+                    max_filters: 10,
                 };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
@@ -3366,6 +3446,7 @@ impl PluginEditingManager for App {
                 filters,
                 channel_filters,
                 per_channel_mode,
+                ..
             } = &mut plugin.settings
             {
                 if band_idx >= filters.len() {
@@ -3383,6 +3464,7 @@ impl PluginEditingManager for App {
                     filters,
                     channel_filters,
                     per_channel_mode,
+                    max_filters: 10,
                 };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
@@ -3412,6 +3494,7 @@ impl PluginEditingManager for App {
                 filters,
                 channel_filters,
                 per_channel_mode,
+                ..
             } = &mut plugin.settings
             {
                 if band_idx >= filters.len() {
@@ -3429,6 +3512,7 @@ impl PluginEditingManager for App {
                     filters,
                     channel_filters,
                     per_channel_mode,
+                    max_filters: 10,
                 };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
@@ -3449,6 +3533,7 @@ impl PluginEditingManager for App {
                 filters,
                 channel_filters,
                 per_channel_mode,
+                ..
             } = &mut plugin.settings
             {
                 // When switching to per-channel mode, initialize channel_filters if needed
@@ -3731,7 +3816,7 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Expander { .. } => 11, // threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels, sidechain_hpf_hz
         PluginSettings::MultibandCompressor { .. } => 13, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
-        PluginSettings::XTC { .. } => 8, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope
+        PluginSettings::XTC { .. } => 15, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope, max_gain_db, bypass_xtc_filters, bypass_spectral_normalization, bypass_neumann_refinement, auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms
         PluginSettings::Denoiser { .. } => 14, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection, transparency, dd_enabled, dd_alpha, psychoacoustic_masking, learn_noise, use_captured_profile, clear_profile
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 9, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms
@@ -3740,5 +3825,6 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::BandMerge { .. } => 1,       // bands
         PluginSettings::Downmix { .. } => 7, // center, surround, height, lfe, phase_coherence, blend_low, blend_high
         PluginSettings::MonoToStereo { .. } => 6, // width, haas, comp_eq, depth, decor_low, decor_high
+        PluginSettings::Crossfeed { .. } => 0,     // Not yet implemented in GPUI editor
     }
 }

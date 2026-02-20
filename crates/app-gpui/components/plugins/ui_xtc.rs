@@ -7,7 +7,7 @@
 //! - Beta (cancellation strength) with frequency-dependent boosts
 //! - Head shadow modeling
 
-use super::common::{render_knob, render_section_title};
+use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -39,6 +39,13 @@ pub struct XtcRenderState {
     pub beta_high_freq_boost: f64,
     pub head_shadow_cutoff_hz: f64,
     pub head_shadow_slope_db_per_octave: f64,
+    pub max_gain_db: f64,
+    pub bypass_xtc_filters: bool,
+    pub bypass_spectral_normalization: bool,
+    pub bypass_neumann_refinement: bool,
+    pub auto_gain_enabled: bool,
+    pub auto_gain_max_db: f64,
+    pub auto_gain_smoothing_ms: f64,
     pub is_editing: bool,
     pub selected_param: usize,
 }
@@ -201,6 +208,104 @@ pub fn render_xtc_plugin(
                             state.selected_param,
                             state.is_editing,
                             Some('s'),
+                            theme,
+                        )),
+                )
+                // Column 4: Filter & Auto Gain
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("FILTER / AUTO GAIN", theme))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Max Gain",
+                            state.max_gain_db,
+                            3.0,
+                            30.0,
+                            "dB",
+                            8,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Auto Gain",
+                            state.auto_gain_enabled,
+                            12,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "AG Max",
+                            state.auto_gain_max_db,
+                            0.0,
+                            24.0,
+                            "dB",
+                            13,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "AG Smooth",
+                            state.auto_gain_smoothing_ms,
+                            10.0,
+                            500.0,
+                            "ms",
+                            14,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                // Column 5: Diagnostic bypasses
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("DIAGNOSTIC", theme))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Bypass Filters",
+                            state.bypass_xtc_filters,
+                            9,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Bypass Spectral Norm",
+                            state.bypass_spectral_normalization,
+                            10,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Bypass Neumann",
+                            state.bypass_neumann_refinement,
+                            11,
+                            state.selected_param,
+                            state.is_editing,
                             theme,
                         )),
                 ),

@@ -1169,8 +1169,8 @@ fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(70), // Plugin list
-            Constraint::Percentage(30), // Available plugins
+            Constraint::Percentage(30), // Plugin chain
+            Constraint::Percentage(70), // Available plugins
         ])
         .split(area);
 
@@ -1245,13 +1245,14 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
-    let plugins = PluginType::all();
+    let mut plugins = PluginType::all();
+    plugins.sort_by_key(|p| p.name());
     let is_selecting = app.input_mode == InputMode::AddPlugin;
 
     let items: Vec<ListItem> = plugins
         .iter()
         .map(|plugin_type| {
-            let content = format!("{}\n  {}", plugin_type.name(), plugin_type.description());
+            let content = format!("{} - {}", plugin_type.name(), plugin_type.description());
             ListItem::new(content).style(Style::default().fg(app.theme.accent_primary))
         })
         .collect();
@@ -1829,8 +1830,10 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
 
-    // Reserve space for vertical scale legend (4 chars: "-60 ")
-    let scale_width = 4usize;
+    // Scale legend width (3 chars: "-60", "-20", " 0 ") + 2-char gap to meters
+    let scale_text_width = 3usize;
+    let scale_gap = 2usize;
+    let scale_width = scale_text_width + scale_gap; // 5 total before meters
     let available_width = inner.width as usize;
 
     // Check if we should show right-side scale (only for single stereo group with enough space)
@@ -1841,7 +1844,30 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     } else {
         0
     };
-    let mut x_offset = scale_width; // Start after the left scale
+
+    // Calculate total width for multi-group layout
+    let total_groups_width: usize = app
+        .level_meter_groups
+        .iter()
+        .map(|g| g.channels.len().max(3))
+        .sum::<usize>()
+        + app.level_meter_groups.len().saturating_sub(1); // 1-char gaps between groups
+
+    // Right-align: legend + gap + meters flush against the right edge
+    // Right-align: meters flush against the right edge
+    // For stereo, the stereo branch handles its own centering
+    let mut x_offset = if is_single_stereo_group {
+        scale_width // stereo branch handles its own centering
+    } else {
+        available_width.saturating_sub(total_groups_width)
+    };
+
+    // Position the dB scale legend just before the meters (2 chars gap)
+    let scale_x = if is_single_stereo_group {
+        0 // stereo: legend at left edge
+    } else {
+        x_offset.saturating_sub(scale_width)
+    };
 
     // Non-linear scale: -60 dB (0%), -40 dB (20%), -20 dB (50%), 0 dB (100%)
     let scale_markers = [
@@ -1859,17 +1885,17 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         f.render_widget(
             Paragraph::new(*label).style(Style::default().fg(app.theme.fg_muted)),
             Rect {
-                x: inner.x,
+                x: inner.x + scale_x as u16,
                 y,
-                width: scale_width as u16,
+                width: scale_text_width as u16,
                 height: 1,
             },
         );
     }
 
-    // Draw vertical scale legend on the right (if applicable)
+    // Draw vertical scale legend on the right (if applicable, stereo only)
     if right_scale_width > 0 {
-        let right_x = inner.x + inner.width - right_scale_width as u16;
+        let right_x = inner.x + inner.width - scale_text_width as u16;
         for (ratio, label) in scale_markers.iter() {
             let row_idx = (ratio * meter_height as f64).round() as usize;
             let y =
@@ -1880,7 +1906,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
                 Rect {
                     x: right_x,
                     y,
-                    width: right_scale_width as u16,
+                    width: scale_text_width as u16,
                     height: 1,
                 },
             );
@@ -1893,7 +1919,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
         // Calculate width for this group
         let num_channels = group.channels.len();
-        let is_stereo = num_channels == 2;
+        let is_stereo = is_single_stereo_group;
         let group_width = if is_stereo {
             8 // 3 + 2 + 3 for stereo
         } else {
@@ -1903,7 +1929,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         if is_stereo {
             // Special stereo rendering: 3-char wide meters with 2-char spacing
             // Center the group in the meter area (between left and right scales)
-            let meter_area_start = x_offset;
+            let meter_area_start = scale_width;
             let meter_area_end = available_width.saturating_sub(right_scale_width);
             let meter_area_width = meter_area_end.saturating_sub(meter_area_start);
             let group_start_x = if meter_area_width > group_width {

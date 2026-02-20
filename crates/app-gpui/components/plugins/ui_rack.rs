@@ -97,6 +97,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::BandMerge => theme.plugin_colors.upmixer, // Reuse upmixer color for band merge
         PluginType::Downmix => theme.plugin_colors.upmixer,   // Reuse upmixer color for downmix
         PluginType::MonoToStereo => theme.plugin_colors.binaural, // Reuse binaural color for mono to stereo
+        PluginType::Crossfeed => theme.plugin_colors.binaural, // Reuse binaural color for crossfeed
     }
 }
 
@@ -135,6 +136,7 @@ fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool
         PluginType::BandMerge => "⊤", // Merge - inverted T-junction
         PluginType::Downmix => "▼",   // Downmix - downward triangle
         PluginType::MonoToStereo => "⊕", // Mono to Stereo - circular plus
+        PluginType::Crossfeed => "⊞",   // Crossfeed - boxed plus
     }
 }
 
@@ -173,6 +175,7 @@ fn short_name(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool)
         PluginType::BandMerge => "Merge",
         PluginType::Downmix => "Downmix",
         PluginType::MonoToStereo => "Mono->2.0",
+        PluginType::Crossfeed => "Crossfeed",
     }
 }
 

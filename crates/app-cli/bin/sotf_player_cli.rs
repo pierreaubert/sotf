@@ -2223,6 +2223,13 @@ fn build_rack_mode_plugins(
                         beta_high_freq_boost: 10.0,
                         head_shadow_cutoff_hz: plugins.xtc.head_shadow_cutoff_hz as f64,
                         head_shadow_slope_db_per_octave: plugins.xtc.head_shadow_slope as f64,
+                        max_gain_db: 12.0,
+                        bypass_xtc_filters: false,
+                        bypass_spectral_normalization: false,
+                        bypass_neumann_refinement: false,
+                        auto_gain_enabled: true,
+                        auto_gain_max_db: 12.0,
+                        auto_gain_smoothing_ms: 100.0,
                     };
                 }
                 log::info!("Rack: Added XTC plugin");

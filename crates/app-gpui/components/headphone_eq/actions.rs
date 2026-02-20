@@ -242,6 +242,7 @@ impl PlayerView {
                     filters,
                     channel_filters: None,
                     per_channel_mode: false,
+                    max_filters: 10,
                 };
 
                 // Add to chain (insert before Matrix for proper ordering)
