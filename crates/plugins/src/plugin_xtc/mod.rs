@@ -192,6 +192,7 @@ pub struct XtcPlugin {
     param_auto_gain_enabled: ParameterId,
     param_auto_gain_max_db: ParameterId,
     param_auto_gain_smoothing_ms: ParameterId,
+    param_pinna_model_enabled: ParameterId,
 
     /// Cached room reflection data (Optimization 4)
     room_reflection_cache: Option<Arc<RoomReflectionData>>,
@@ -201,6 +202,13 @@ pub struct XtcPlugin {
 
     /// Auto-gain compensation to match output loudness to input
     auto_gain: Option<AutoGain>,
+
+    /// Per-sample limiter envelope (0.0..=1.0). Instant attack, smooth release.
+    /// Prevents output from exceeding ±0.95 after XTC filter summation + auto-gain.
+    limiter_envelope: f32,
+
+    /// Per-sample release coefficient for the limiter (~50ms release).
+    limiter_release_coeff: f32,
 }
 
 // ============================================================================
@@ -377,9 +385,12 @@ impl XtcPlugin {
             param_auto_gain_enabled: ParameterId::from("auto_gain_enabled"),
             param_auto_gain_max_db: ParameterId::from("auto_gain_max_db"),
             param_auto_gain_smoothing_ms: ParameterId::from("auto_gain_smoothing_ms"),
+            param_pinna_model_enabled: ParameterId::from("pinna_model_enabled"),
             room_reflection_cache,
             room_params_hash,
             auto_gain,
+            limiter_envelope: 1.0,
+            limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
         })
     }
 
@@ -727,6 +738,13 @@ impl Plugin for XtcPlugin {
             .with_group("Head Tracking")
             .with_importance(ParameterImportance::Useful),
             Parameter::new_bool(
+                "pinna_model_enabled",
+                "Pinna Model",
+                self.params.pinna_model_enabled,
+            )
+            .with_group("Advanced")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
                 "spectral_normalization",
                 "Spectral Normalization",
                 self.params.spectral_normalization,
@@ -833,6 +851,13 @@ impl Plugin for XtcPlugin {
             } else {
                 return Err("head_yaw_deg parameter must be float".to_string());
             }
+        } else if id == self.param_pinna_model_enabled {
+            if let ParameterValue::Bool(v) = value {
+                self.params.pinna_model_enabled = v;
+                needs_filter_update = true;
+            } else {
+                return Err("pinna_model_enabled parameter must be bool".to_string());
+            }
         } else if id == self.param_spectral_normalization {
             if let ParameterValue::Bool(v) = value {
                 self.params.spectral_normalization = v;
@@ -850,6 +875,7 @@ impl Plugin for XtcPlugin {
         } else if id == self.param_bypass_xtc_filters {
             if let ParameterValue::Bool(v) = value {
                 self.params.bypass_xtc_filters = v;
+                self.limiter_envelope = 1.0; // Reset stale limiter state on bypass toggle
             } else {
                 return Err("bypass_xtc_filters parameter must be bool".to_string());
             }
@@ -930,6 +956,8 @@ impl Plugin for XtcPlugin {
             Some(ParameterValue::Float(self.params.head_offset_z))
         } else if id == &self.param_head_yaw {
             Some(ParameterValue::Float(self.params.head_yaw_deg))
+        } else if id == &self.param_pinna_model_enabled {
+            Some(ParameterValue::Bool(self.params.pinna_model_enabled))
         } else if id == &self.param_spectral_normalization {
             Some(ParameterValue::Bool(self.params.spectral_normalization))
         } else if id == &self.param_room_reflections {
@@ -953,6 +981,7 @@ impl Plugin for XtcPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        self.limiter_release_coeff = (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp();
         self.update_filters(true); // Synchronous for initialization
 
         // Pre-allocate temp buffers to max expected frame count.
@@ -986,6 +1015,7 @@ impl Plugin for XtcPlugin {
         if let Some(ag) = &mut self.auto_gain {
             ag.reset();
         }
+        self.limiter_envelope = 1.0;
     }
 
     fn process(
@@ -1112,6 +1142,27 @@ impl Plugin for XtcPlugin {
         if let Some(ag) = &mut self.auto_gain {
             let _ = ag.measure_output(&output[..out_pos * 2]);
             ag.apply_compensation(&mut output[..out_pos * 2], out_pos);
+        }
+
+        // Per-sample peak limiter: prevent clipping after XTC filter summation + AutoGain.
+        // Instant attack, smooth release (~50ms) to avoid pumping artifacts.
+        // Skip when filters are bypassed — no amplification occurs.
+        if !self.params.bypass_xtc_filters {
+            let threshold = 0.95_f32;
+            for frame in 0..out_pos {
+                let idx_l = frame * 2;
+                let idx_r = frame * 2 + 1;
+                let peak = output[idx_l].abs().max(output[idx_r].abs());
+                let target_gr = if peak > threshold { threshold / peak } else { 1.0 };
+                if target_gr < self.limiter_envelope {
+                    self.limiter_envelope = target_gr; // instant attack
+                } else {
+                    self.limiter_envelope = target_gr
+                        + self.limiter_release_coeff * (self.limiter_envelope - target_gr);
+                }
+                output[idx_l] *= self.limiter_envelope;
+                output[idx_r] *= self.limiter_envelope;
+            }
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.

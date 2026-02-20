@@ -1166,19 +1166,54 @@ fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
+    // Split vertically: command bar on top, plugin panels below
+    let vchunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Command bar
+            Constraint::Min(0),   // Plugin panels
+        ])
+        .split(area);
+
+    // Draw command bar
+    draw_plugin_command_bar(f, vchunks[0], app);
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(30), // Plugin chain
             Constraint::Percentage(70), // Available plugins
         ])
-        .split(area);
+        .split(vchunks[1]);
 
     // Plugin chain list
     draw_plugin_chain(f, chunks[0], app);
 
     // Available plugins list
     draw_available_plugins(f, chunks[1], app);
+}
+
+fn draw_plugin_command_bar(f: &mut Frame, area: Rect, app: &App) {
+    let help_text = if app.input_mode == InputMode::AddPlugin {
+        " ↑/↓=navigate  Enter=add  Esc=cancel"
+    } else if app.plugin_chain.is_empty() {
+        " 'a'=add plugins  's'=save  'l'=load"
+    } else {
+        " 'e'=edit  't'=toggle  'd'=remove  '↑/↓'=move  'a'=add  's'=save  'l'=load"
+    };
+
+    let bar = Paragraph::new(Line::from(vec![
+        Span::styled(
+            "Commands:",
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(help_text, Style::default().fg(app.theme.fg_secondary)),
+    ]))
+    .alignment(ratatui::layout::Alignment::Center);
+
+    f.render_widget(bar, area);
 }
 
 fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
@@ -1207,26 +1242,20 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let title = if app.plugin_chain.is_empty() {
-        "Plugin Chain (empty)".to_string()
+        "0 plugins".to_string()
     } else {
         format!(
-            "Plugin Chain ({}) - Output: {}ch",
+            "{} plugins ({} ch)",
             app.plugin_chain.len(),
             app.plugin_chain.output_channels()
         )
-    };
-
-    let help_text = if app.plugin_chain.is_empty() {
-        " | Press 'a' to add plugins | 's'=save, 'l'=load"
-    } else {
-        " | 'e'=edit, 't'=toggle, 'd'=remove, '↑/↓'=move, 'a'=add, 's'=save, 'l'=load"
     };
 
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!("{}{}", title, help_text)),
+                .title(title),
         )
         .highlight_style(
             Style::default()

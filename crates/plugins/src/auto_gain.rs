@@ -31,7 +31,7 @@ fn default_enabled() -> bool {
     false
 }
 fn default_max_gain_db() -> f32 {
-    12.0
+    6.0
 }
 fn default_smoothing_ms() -> f32 {
     100.0
@@ -42,7 +42,7 @@ impl Default for AutoGainParams {
         Self {
             enabled: false,
             loudness_type: AutoGainLoudnessType::Momentary,
-            max_gain_db: 12.0,
+            max_gain_db: 6.0,
             smoothing_ms: 100.0,
         }
     }
@@ -63,6 +63,10 @@ pub struct AutoGain {
     loudness_type: AutoGainLoudnessType,
     max_gain_db: f32,
     smoothing_ms: f32,
+    /// Fast attack coefficient (~20ms) for gain decreases (output too loud)
+    attack_coeff: f32,
+    /// Slow release coefficient (~300ms) for gain increases (output recovered)
+    release_coeff: f32,
 }
 
 impl std::fmt::Debug for AutoGain {
@@ -95,6 +99,8 @@ impl AutoGain {
             loudness_type: params.loudness_type,
             max_gain_db: params.max_gain_db,
             smoothing_ms: params.smoothing_ms,
+            attack_coeff: (-1.0 / (20.0 * 0.001 * sample_rate as f32)).exp(),
+            release_coeff: (-1.0 / (300.0 * 0.001 * sample_rate as f32)).exp(),
         })
     }
 
@@ -107,6 +113,8 @@ impl AutoGain {
         self.input_monitor = LoudnessMonitor::new(self.num_channels as u32, sr)?;
         self.output_monitor = LoudnessMonitor::new(self.num_channels as u32, sr)?;
         self.gain_smoother.set_time(self.smoothing_ms, sr);
+        self.attack_coeff = (-1.0 / (20.0 * 0.001 * sr as f32)).exp();
+        self.release_coeff = (-1.0 / (300.0 * 0.001 * sr as f32)).exp();
         Ok(())
     }
 
@@ -210,8 +218,16 @@ impl AutoGain {
             return;
         }
         enable_ftz_daz();
+        let target_db = self.gain_smoother.target();
         for frame in 0..num_frames {
-            let gain = self.next_gain_linear();
+            // Asymmetric smoothing: fast attack (gain decrease), slow release (gain increase)
+            let coeff = if target_db < self.current_gain_db {
+                self.attack_coeff  // reducing gain: fast (~20ms)
+            } else {
+                self.release_coeff // increasing gain: slow (~300ms)
+            };
+            self.current_gain_db = target_db + coeff * (self.current_gain_db - target_db);
+            let gain = 10.0_f32.powf(self.current_gain_db / 20.0);
             for ch in 0..self.num_channels {
                 output[frame * self.num_channels + ch] *= gain;
             }

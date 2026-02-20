@@ -110,7 +110,8 @@ pub fn reference_ild_db(freq_hz: f32, source_angle_deg: f32, head_radius_m: f32)
 ///
 /// The ITD is estimated from the geometry of the XTC setup, not from the filter phase.
 /// This function validates that the computed ITD matches the Woodworth formula.
-pub(crate) fn measure_itd_from_filters(_filters: &XtcFilters, _sample_rate: u32) -> f32 {
+#[cfg(test)]
+fn measure_itd_from_filters(_filters: &XtcFilters, _sample_rate: u32) -> f32 {
     // Note: ITD is a geometric property computed from speaker angle and head radius.
     // The filter phase slope method was inaccurate.
     // This function is kept for API compatibility but returns 0 to indicate
@@ -127,7 +128,7 @@ pub(crate) fn measure_itd_from_filters(_filters: &XtcFilters, _sample_rate: u32)
 /// model that the filters were designed for, ensuring accurate measurement.
 ///
 /// Optimization 2: Accepts pre-computed filters to avoid redundant computation.
-pub fn measure_cancellation_depth_db_with_filters(
+pub(crate) fn measure_cancellation_depth_db_with_filters(
     filters: &XtcFilters,
     params: &XtcPluginParams,
     sample_rate: u32,
@@ -175,8 +176,8 @@ pub fn measure_cancellation_depth_db_with_filters(
     let h_contra_imag = g * phase.sin();
 
     // Pinna effects (same as filter design)
-    let pinna_ipsi = pinna_resonance(freq_hz);
-    let pinna_contra = pinna_resonance_contra(freq_hz, params.speaker_angle_deg);
+    let pinna_ipsi = if params.pinna_model_enabled { pinna_resonance(freq_hz) } else { 1.0 };
+    let pinna_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq_hz, params.speaker_angle_deg) } else { 1.0 };
 
     // Apply pinna to get the final transfer functions
     // H_ipsi_shaped = 1.0 * pinna_ipsi

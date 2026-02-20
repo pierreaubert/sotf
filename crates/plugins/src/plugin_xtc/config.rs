@@ -34,7 +34,7 @@ pub struct XtcPluginParams {
     #[serde(default = "default_beta_high_freq_boost")]
     pub beta_high_freq_boost: f32,
 
-    /// Maximum filter gain in dB (default: 12.0)
+    /// Maximum filter gain in dB (default: 3.0)
     /// Limits how much the cancellation filter can boost any frequency bin.
     /// Lower values are safer but reduce cancellation depth.
     #[serde(default = "default_max_gain_db")]
@@ -120,9 +120,16 @@ pub struct XtcPluginParams {
     #[serde(default = "default_auto_gain_enabled")]
     pub auto_gain_enabled: bool,
 
-    /// Maximum auto-gain compensation in dB (default: 12.0)
+    /// Maximum auto-gain compensation in dB (default: 6.0)
     #[serde(default = "default_auto_gain_max_db")]
     pub auto_gain_max_db: f32,
+
+    /// Enable pinna resonance model (default: false).
+    /// When enabled, applies ear canal, concha, and pinna notch resonances
+    /// to the transfer functions. Adds +10-12 dB at 2.7-4.5 kHz which can
+    /// cause aggressive spectral reshaping. Disable for cleaner output.
+    #[serde(default)]
+    pub pinna_model_enabled: bool,
 
     /// Smoothing time for auto-gain transitions in ms (default: 100.0)
     #[serde(default = "default_auto_gain_smoothing_ms")]
@@ -145,7 +152,7 @@ fn default_beta_base() -> f32 {
     0.0003
 }
 fn default_max_gain_db() -> f32 {
-    12.0
+    3.0
 }
 fn default_beta_low_freq_boost() -> f32 {
     10.0
@@ -181,7 +188,7 @@ fn default_auto_gain_enabled() -> bool {
     true
 }
 fn default_auto_gain_max_db() -> f32 {
-    12.0
+    6.0
 }
 fn default_auto_gain_smoothing_ms() -> f32 {
     100.0
@@ -218,6 +225,7 @@ impl Default for XtcPluginParams {
             auto_gain_enabled: default_auto_gain_enabled(),
             auto_gain_max_db: default_auto_gain_max_db(),
             auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
+            pinna_model_enabled: false,
         }
     }
 }

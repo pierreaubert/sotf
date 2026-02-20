@@ -35,13 +35,7 @@ pub(crate) struct GeometryCache {
 
 /// Geometry values for symmetric XTC (yaw ~= 0).
 pub(crate) struct SymmetricGeometry {
-    pub d: f32,
-    pub theta_rad: f32,
     pub a: f32,
-    pub x_offset: f32,
-    pub l_ipsi: f32,
-    pub l_contra_geometric: f32,
-    pub l_contra_full: f32,
     pub amplitude_ratio: f32,
     pub delta_t_geometric: f32,
     pub contra_angle: f32,
@@ -49,19 +43,12 @@ pub(crate) struct SymmetricGeometry {
 
 /// Geometry values for asymmetric XTC (yaw != 0).
 pub(crate) struct AsymmetricGeometry {
-    pub d: f32,
     pub a: f32,
     pub theta_left: f32,
     pub theta_right: f32,
-    pub l_left_ipsi: f32,
-    pub l_left_contra_geometric: f32,
-    pub l_left_contra_full: f32,
     pub amplitude_ratio_left: f32,
     pub delta_t_left_geometric: f32,
     pub angle_left_contra: f32,
-    pub l_right_ipsi: f32,
-    pub l_right_contra_geometric: f32,
-    pub l_right_contra_full: f32,
     pub amplitude_ratio_right: f32,
     pub delta_t_right_geometric: f32,
     pub angle_right_contra: f32,
@@ -92,13 +79,7 @@ pub(crate) fn compute_geometry_cache(
     let contra_angle = contralateral_shadow_angle(theta_rad);
 
     let symmetric = SymmetricGeometry {
-        d,
-        theta_rad,
         a,
-        x_offset,
-        l_ipsi,
-        l_contra_geometric,
-        l_contra_full,
         amplitude_ratio,
         delta_t_geometric,
         contra_angle,
@@ -127,19 +108,12 @@ pub(crate) fn compute_geometry_cache(
         let angle_right_contra = contralateral_shadow_angle(theta_left.abs());
 
         Some(AsymmetricGeometry {
-            d,
             a,
             theta_left,
             theta_right,
-            l_left_ipsi,
-            l_left_contra_geometric,
-            l_left_contra_full,
             amplitude_ratio_left,
             delta_t_left_geometric,
             angle_left_contra,
-            l_right_ipsi,
-            l_right_contra_geometric,
-            l_right_contra_full,
             amplitude_ratio_right,
             delta_t_right_geometric,
             angle_right_contra,
@@ -216,7 +190,7 @@ pub(crate) fn compute_xtc_filters_full(
 /// redundant computation when parameters haven't changed.
 pub(crate) fn compute_xtc_filters_full_with_cache(
     params: &XtcPluginParams,
-    sample_rate: u32,
+    _sample_rate: u32,
     num_bins: usize,
     cache: &GeometryCache,
     room_data: Option<Arc<RoomReflectionData>>,
@@ -366,7 +340,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let freq = bin as f32 * cache.freq_per_bin;
 
         // Pinna resonance: full for ipsi paths, angle-dependent for contra paths
-        let pinna_ipsi = pinna_resonance(freq);
+        let pinna_ipsi = if params.pinna_model_enabled { pinna_resonance(freq) } else { 1.0 };
 
         // Use pre-computed geometry values (Optimization 3)
         let diffraction_delay_left = diffraction_delay_lut_left[bin];
@@ -375,7 +349,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let delta_t_right = asym.delta_t_right_geometric + diffraction_delay_right;
 
         // Left ear: ipsi speaker is left speaker (theta_left), contra is right speaker (theta_right)
-        let pinna_left_contra = pinna_resonance_contra(freq, asym.theta_right.abs() * 180.0 / PI);
+        let pinna_left_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq, asym.theta_right.abs() * 180.0 / PI) } else { 1.0 };
         let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_ll =
             head_shadowing_woodworth(freq, asym.angle_left_contra, a) * asym.amplitude_ratio_left;
@@ -384,7 +358,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
             Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin()) * pinna_left_contra;
 
         // Right ear: ipsi speaker is right speaker (theta_right), contra is left speaker (theta_left)
-        let pinna_right_contra = pinna_resonance_contra(freq, asym.theta_left.abs() * 180.0 / PI);
+        let pinna_right_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq, asym.theta_left.abs() * 180.0 / PI) } else { 1.0 };
         let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_rr =
             head_shadowing_woodworth(freq, asym.angle_right_contra, a) * asym.amplitude_ratio_right;
@@ -485,8 +459,8 @@ fn compute_xtc_filters_symmetric_with_cache(
         let beta = compute_beta_smooth(freq, params);
 
         // Pinna resonance shaping: full effect for ipsi, angle-dependent for contra
-        let pinna_ipsi = pinna_resonance(freq);
-        let pinna_contra = pinna_resonance_contra(freq, params.speaker_angle_deg);
+        let pinna_ipsi = if params.pinna_model_enabled { pinna_resonance(freq) } else { 1.0 };
+        let pinna_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq, params.speaker_angle_deg) } else { 1.0 };
         let h_ipsi_shaped = h_ipsi * pinna_ipsi;
         let h_contra_shaped = h_contra * pinna_contra;
 
