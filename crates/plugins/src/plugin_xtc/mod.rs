@@ -37,6 +37,7 @@ use reflections::{
     build_reflection_data_image_source, build_reflection_data_ir, RoomReflectionData,
 };
 
+use super::auto_gain::{AutoGain, AutoGainParams};
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
@@ -185,12 +186,21 @@ pub struct XtcPlugin {
     param_head_yaw: ParameterId,
     param_spectral_normalization: ParameterId,
     param_room_reflections: ParameterId,
+    param_bypass_xtc_filters: ParameterId,
+    param_bypass_spectral_normalization: ParameterId,
+    param_bypass_neumann_refinement: ParameterId,
+    param_auto_gain_enabled: ParameterId,
+    param_auto_gain_max_db: ParameterId,
+    param_auto_gain_smoothing_ms: ParameterId,
 
     /// Cached room reflection data (Optimization 4)
     room_reflection_cache: Option<Arc<RoomReflectionData>>,
 
     /// Hash of room-related parameters for cache invalidation (Optimization 4)
     room_params_hash: u64,
+
+    /// Auto-gain compensation to match output loudness to input
+    auto_gain: Option<AutoGain>,
 }
 
 // ============================================================================
@@ -307,6 +317,24 @@ impl XtcPlugin {
         );
         let filters = Arc::new(ArcSwap::from_pointee(filters));
 
+        let auto_gain = if params.auto_gain_enabled {
+            Some(
+                AutoGain::new(
+                    2, // stereo
+                    sample_rate,
+                    AutoGainParams {
+                        enabled: true,
+                        loudness_type: Default::default(),
+                        max_gain_db: params.auto_gain_max_db,
+                        smoothing_ms: params.auto_gain_smoothing_ms,
+                    },
+                )
+                .map_err(|e| format!("AutoGain init failed: {}", e))?,
+            )
+        } else {
+            None
+        };
+
         Ok(Self {
             fft_size,
             hop_size,
@@ -343,8 +371,15 @@ impl XtcPlugin {
             param_head_yaw: ParameterId::from("head_yaw_deg"),
             param_spectral_normalization: ParameterId::from("spectral_normalization"),
             param_room_reflections: ParameterId::from("room_reflections_enabled"),
+            param_bypass_xtc_filters: ParameterId::from("bypass_xtc_filters"),
+            param_bypass_spectral_normalization: ParameterId::from("bypass_spectral_normalization"),
+            param_bypass_neumann_refinement: ParameterId::from("bypass_neumann_refinement"),
+            param_auto_gain_enabled: ParameterId::from("auto_gain_enabled"),
+            param_auto_gain_max_db: ParameterId::from("auto_gain_max_db"),
+            param_auto_gain_smoothing_ms: ParameterId::from("auto_gain_smoothing_ms"),
             room_reflection_cache,
             room_params_hash,
+            auto_gain,
         })
     }
 
@@ -439,6 +474,42 @@ impl XtcPlugin {
 
         let scale = self.output_scale;
         let fft_size = self.fft_size;
+
+        // Diagnostic bypass: skip all XTC filter math, just IFFT the windowed input.
+        // This tests whether the STFT framework (windowing + OLA) itself is clean.
+        if self.params.bypass_xtc_filters {
+            // Left channel: IFFT the FFT output directly (identity in freq domain)
+            self.ifft_input.copy_from_slice(&self.fft_output_l);
+            let n = self.ifft_input.len();
+            self.ifft_input[0].im = 0.0;
+            self.ifft_input[n - 1].im = 0.0;
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.ifft_output)
+                .expect("IFFT processing failed");
+            scale_add_simd(
+                &mut self.output_accum_l[..fft_size],
+                &self.ifft_output,
+                scale,
+            );
+
+            // Right channel
+            self.ifft_input.copy_from_slice(&self.fft_output_r);
+            self.ifft_input[0].im = 0.0;
+            self.ifft_input[n - 1].im = 0.0;
+            self.fft_inverse
+                .process(&mut self.ifft_input, &mut self.ifft_output)
+                .expect("IFFT processing failed");
+            scale_add_simd(
+                &mut self.output_accum_r[..fft_size],
+                &self.ifft_output,
+                scale,
+            );
+
+            // Mark hop_size more samples as available
+            self.output_available += self.hop_size;
+            return;
+        }
+
         let is_crossfading = self.crossfade_progress < 1.0 && self.prev_filters.is_some();
 
         if is_crossfading {
@@ -669,6 +740,52 @@ impl Plugin for XtcPlugin {
             )
             .with_group("Room")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "bypass_xtc_filters",
+                "Bypass XTC Filters",
+                self.params.bypass_xtc_filters,
+            )
+            .with_group("Diagnostic")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "bypass_spectral_normalization",
+                "Bypass Spectral Normalization",
+                self.params.bypass_spectral_normalization,
+            )
+            .with_group("Diagnostic")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "bypass_neumann_refinement",
+                "Bypass Neumann Refinement",
+                self.params.bypass_neumann_refinement,
+            )
+            .with_group("Diagnostic")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "auto_gain_enabled",
+                "Auto Gain",
+                self.params.auto_gain_enabled,
+            )
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "auto_gain_max_db",
+                "Auto Gain Max (dB)",
+                self.params.auto_gain_max_db,
+                0.0,
+                24.0,
+            )
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "auto_gain_smoothing_ms",
+                "Auto Gain Smoothing (ms)",
+                self.params.auto_gain_smoothing_ms,
+                10.0,
+                500.0,
+            )
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -730,6 +847,65 @@ impl Plugin for XtcPlugin {
             } else {
                 return Err("room_reflections_enabled parameter must be bool".to_string());
             }
+        } else if id == self.param_bypass_xtc_filters {
+            if let ParameterValue::Bool(v) = value {
+                self.params.bypass_xtc_filters = v;
+            } else {
+                return Err("bypass_xtc_filters parameter must be bool".to_string());
+            }
+        } else if id == self.param_bypass_spectral_normalization {
+            if let ParameterValue::Bool(v) = value {
+                self.params.bypass_spectral_normalization = v;
+                needs_filter_update = true;
+            } else {
+                return Err("bypass_spectral_normalization parameter must be bool".to_string());
+            }
+        } else if id == self.param_bypass_neumann_refinement {
+            if let ParameterValue::Bool(v) = value {
+                self.params.bypass_neumann_refinement = v;
+                needs_filter_update = true;
+            } else {
+                return Err("bypass_neumann_refinement parameter must be bool".to_string());
+            }
+        } else if id == self.param_auto_gain_enabled {
+            if let ParameterValue::Bool(v) = value {
+                self.params.auto_gain_enabled = v;
+                if v && self.auto_gain.is_none() {
+                    self.auto_gain = AutoGain::new(
+                        2,
+                        self.sample_rate,
+                        AutoGainParams {
+                            enabled: true,
+                            loudness_type: Default::default(),
+                            max_gain_db: self.params.auto_gain_max_db,
+                            smoothing_ms: self.params.auto_gain_smoothing_ms,
+                        },
+                    )
+                    .ok();
+                } else if !v {
+                    self.auto_gain = None;
+                }
+            } else {
+                return Err("auto_gain_enabled parameter must be bool".to_string());
+            }
+        } else if id == self.param_auto_gain_max_db {
+            if let ParameterValue::Float(v) = value {
+                self.params.auto_gain_max_db = v.clamp(0.0, 24.0);
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_max_gain_db(self.params.auto_gain_max_db);
+                }
+            } else {
+                return Err("auto_gain_max_db parameter must be float".to_string());
+            }
+        } else if id == self.param_auto_gain_smoothing_ms {
+            if let ParameterValue::Float(v) = value {
+                self.params.auto_gain_smoothing_ms = v.clamp(10.0, 500.0);
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_smoothing_ms(self.params.auto_gain_smoothing_ms);
+                }
+            } else {
+                return Err("auto_gain_smoothing_ms parameter must be float".to_string());
+            }
         } else {
             return Err(format!("Unknown parameter: {:?}", id));
         }
@@ -758,6 +934,18 @@ impl Plugin for XtcPlugin {
             Some(ParameterValue::Bool(self.params.spectral_normalization))
         } else if id == &self.param_room_reflections {
             Some(ParameterValue::Bool(self.params.room_reflections_enabled))
+        } else if id == &self.param_bypass_xtc_filters {
+            Some(ParameterValue::Bool(self.params.bypass_xtc_filters))
+        } else if id == &self.param_bypass_spectral_normalization {
+            Some(ParameterValue::Bool(self.params.bypass_spectral_normalization))
+        } else if id == &self.param_bypass_neumann_refinement {
+            Some(ParameterValue::Bool(self.params.bypass_neumann_refinement))
+        } else if id == &self.param_auto_gain_enabled {
+            Some(ParameterValue::Bool(self.params.auto_gain_enabled))
+        } else if id == &self.param_auto_gain_max_db {
+            Some(ParameterValue::Float(self.params.auto_gain_max_db))
+        } else if id == &self.param_auto_gain_smoothing_ms {
+            Some(ParameterValue::Float(self.params.auto_gain_smoothing_ms))
         } else {
             None
         }
@@ -772,6 +960,11 @@ impl Plugin for XtcPlugin {
         let max_frames = 4096;
         self.temp_input_l.resize(max_frames, 0.0);
         self.temp_input_r.resize(max_frames, 0.0);
+
+        if let Some(ag) = &mut self.auto_gain {
+            ag.set_sample_rate(sample_rate)
+                .map_err(|e| e.to_string())?;
+        }
 
         Ok(())
     }
@@ -789,6 +982,10 @@ impl Plugin for XtcPlugin {
         // Reset crossfade state
         self.prev_filters = None;
         self.crossfade_progress = 1.0;
+
+        if let Some(ag) = &mut self.auto_gain {
+            ag.reset();
+        }
     }
 
     fn process(
@@ -819,6 +1016,11 @@ impl Plugin for XtcPlugin {
         if !self.params.enabled {
             output.copy_from_slice(input);
             return Ok(context.num_frames);
+        }
+
+        // Measure input loudness for auto-gain (before any processing)
+        if let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_input(input);
         }
 
         // Temp buffers are pre-allocated in initialize() to 4096 frames.
@@ -904,6 +1106,12 @@ impl Plugin for XtcPlugin {
                 }
                 break;
             }
+        }
+
+        // Auto-gain: measure output loudness and apply compensation
+        if let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_output(&output[..out_pos * 2]);
+            ag.apply_compensation(&mut output[..out_pos * 2], out_pos);
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.

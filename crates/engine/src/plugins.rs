@@ -792,6 +792,18 @@ fn default_xtc_head_shadow_cutoff_hz() -> f64 {
 fn default_xtc_head_shadow_slope() -> f64 {
     6.0
 }
+fn default_xtc_max_gain_db() -> f64 {
+    12.0
+}
+fn default_xtc_auto_gain_enabled() -> bool {
+    true
+}
+fn default_xtc_auto_gain_max_db() -> f64 {
+    12.0
+}
+fn default_xtc_auto_gain_smoothing_ms() -> f64 {
+    100.0
+}
 
 // Denoiser defaults
 fn default_denoiser_reduction_db() -> f64 {
@@ -1350,6 +1362,20 @@ pub enum PluginSettings {
         head_shadow_cutoff_hz: f64,
         #[serde(default = "default_xtc_head_shadow_slope")]
         head_shadow_slope_db_per_octave: f64,
+        #[serde(default = "default_xtc_max_gain_db")]
+        max_gain_db: f64,
+        #[serde(default)]
+        bypass_xtc_filters: bool,
+        #[serde(default)]
+        bypass_spectral_normalization: bool,
+        #[serde(default)]
+        bypass_neumann_refinement: bool,
+        #[serde(default = "default_xtc_auto_gain_enabled")]
+        auto_gain_enabled: bool,
+        #[serde(default = "default_xtc_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        #[serde(default = "default_xtc_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
     },
     Denoiser {
         #[serde(default = "default_denoiser_reduction_db")]
@@ -2071,6 +2097,13 @@ impl PluginSettings {
                 beta_high_freq_boost,
                 head_shadow_cutoff_hz,
                 head_shadow_slope_db_per_octave,
+                max_gain_db,
+                bypass_xtc_filters,
+                bypass_spectral_normalization,
+                bypass_neumann_refinement,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
             } => PluginConfig::new(
                 "xtc",
                 json!({
@@ -2082,6 +2115,13 @@ impl PluginSettings {
                     "beta_high_freq_boost": beta_high_freq_boost,
                     "head_shadow_cutoff_hz": head_shadow_cutoff_hz,
                     "head_shadow_slope_db_per_octave": head_shadow_slope_db_per_octave,
+                    "max_gain_db": max_gain_db,
+                    "bypass_xtc_filters": bypass_xtc_filters,
+                    "bypass_spectral_normalization": bypass_spectral_normalization,
+                    "bypass_neumann_refinement": bypass_neumann_refinement,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
                 }),
             ),
             Self::Denoiser {
@@ -2448,6 +2488,13 @@ impl PluginSettings {
                 beta_high_freq_boost: default_xtc_beta_high_freq_boost(),
                 head_shadow_cutoff_hz: default_xtc_head_shadow_cutoff_hz(),
                 head_shadow_slope_db_per_octave: default_xtc_head_shadow_slope(),
+                max_gain_db: default_xtc_max_gain_db(),
+                bypass_xtc_filters: false,
+                bypass_spectral_normalization: false,
+                bypass_neumann_refinement: false,
+                auto_gain_enabled: default_xtc_auto_gain_enabled(),
+                auto_gain_max_db: default_xtc_auto_gain_max_db(),
+                auto_gain_smoothing_ms: default_xtc_auto_gain_smoothing_ms(),
             },
             PluginType::Denoiser => Self::Denoiser {
                 reduction_db: default_denoiser_reduction_db(),

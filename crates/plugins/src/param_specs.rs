@@ -867,6 +867,18 @@ pub mod xtc {
     pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_DEFAULT: f64 = 6.0;
     pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MIN: f64 = 0.0;
     pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MAX: f64 = 12.0;
+
+    pub const MAX_GAIN_DB_DEFAULT: f64 = 12.0;
+    pub const MAX_GAIN_DB_MIN: f64 = 3.0;
+    pub const MAX_GAIN_DB_MAX: f64 = 30.0;
+
+    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = true;
+    pub const AUTO_GAIN_MAX_DB_DEFAULT: f32 = 12.0;
+    pub const AUTO_GAIN_MAX_DB_MIN: f32 = 0.0;
+    pub const AUTO_GAIN_MAX_DB_MAX: f32 = 24.0;
+    pub const AUTO_GAIN_SMOOTHING_MS_DEFAULT: f32 = 100.0;
+    pub const AUTO_GAIN_SMOOTHING_MS_MIN: f32 = 10.0;
+    pub const AUTO_GAIN_SMOOTHING_MS_MAX: f32 = 500.0;
 }
 
 // ============================================================================

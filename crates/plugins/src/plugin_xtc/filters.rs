@@ -246,11 +246,38 @@ pub(crate) fn compute_xtc_filters_full_with_cache(
     };
 
     // Post-processing: spectral energy normalization to prevent tonal imbalance
-    if params.spectral_normalization {
+    if params.spectral_normalization && !params.bypass_spectral_normalization {
         apply_spectral_normalization(&mut filters, num_bins);
     }
 
+    // Sanitize filter coefficients (NaN/Inf guard)
+    sanitize_filter(&mut filters.filter_ll);
+    sanitize_filter(&mut filters.filter_lr);
+    if let Some(ref mut rl) = filters.filter_rl {
+        sanitize_filter(rl);
+    }
+    if let Some(ref mut rr) = filters.filter_rr {
+        sanitize_filter(rr);
+    }
+
     filters
+}
+
+// ============================================================================
+// Filter sanitization (NaN/Inf guard)
+// ============================================================================
+
+/// Replace any NaN or Inf values in filter coefficients with zero.
+/// Prevents corrupted filter bins from producing distorted output.
+pub(crate) fn sanitize_filter(filter: &mut [Complex<f32>]) {
+    for c in filter.iter_mut() {
+        if !c.re.is_finite() {
+            c.re = 0.0;
+        }
+        if !c.im.is_finite() {
+            c.im = 0.0;
+        }
+    }
 }
 
 // ============================================================================
@@ -387,10 +414,10 @@ fn compute_xtc_filters_asymmetric_with_cache(
         // Compute 2x2 filter matrices for each ear independently
         // Left ear: L_out = w_ll * L_in + w_lr * R_in
         let (w_ll, w_lr) =
-            compute_2x2_inverse(h_ll_ipsi_final, h_ll_contra_final, beta, max_gain_linear);
+            compute_2x2_inverse(h_ll_ipsi_final, h_ll_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
         // Right ear: R_out = w_rl * L_in + w_rr * R_in
         let (w_rr, w_rl) =
-            compute_2x2_inverse(h_rr_ipsi_final, h_rr_contra_final, beta, max_gain_linear);
+            compute_2x2_inverse(h_rr_ipsi_final, h_rr_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
 
         filter_ll[bin] = w_ll;
         filter_lr[bin] = w_lr;
@@ -480,7 +507,7 @@ fn compute_xtc_filters_symmetric_with_cache(
         };
 
         // Use shared 2x2 inverse computation with gain clamping
-        let (w_ll, w_lr) = compute_2x2_inverse(h_ipsi_final, h_contra_final, beta, max_gain_linear);
+        let (w_ll, w_lr) = compute_2x2_inverse(h_ipsi_final, h_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
 
         filter_ll[bin] = w_ll;
         filter_lr[bin] = w_lr;
@@ -508,6 +535,7 @@ fn compute_2x2_inverse(
     h_contra: Complex<f32>,
     beta: f32,
     max_gain_linear: f32,
+    bypass_neumann: bool,
 ) -> (Complex<f32>, Complex<f32>) {
     let h_ipsi_mag_sq = h_ipsi.norm_sqr();
     let h_contra_mag_sq = h_contra.norm_sqr();
@@ -530,6 +558,13 @@ fn compute_2x2_inverse(
 
     let w1_ipsi = h_ipsi_conj * inv_diag + h_contra_conj * inv_off_diag;
     let w1_contra = h_ipsi_conj * inv_off_diag + h_contra_conj * inv_diag;
+
+    // Diagnostic bypass: skip Neumann refinement, return first-order inverse only
+    if bypass_neumann {
+        let w1_ipsi = clamp_complex_magnitude(w1_ipsi, max_gain_linear);
+        let w1_contra = clamp_complex_magnitude(w1_contra, max_gain_linear);
+        return (w1_ipsi, w1_contra);
+    }
 
     // Neumann series refinement: W₂ = W₁ * (2I - C*W₁)
     // Compute the product C*W₁ for the 2x2 symmetric matrix C = [[h_ipsi, h_contra], [h_contra, h_ipsi]]

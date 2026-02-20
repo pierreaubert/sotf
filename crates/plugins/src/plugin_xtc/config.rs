@@ -34,7 +34,7 @@ pub struct XtcPluginParams {
     #[serde(default = "default_beta_high_freq_boost")]
     pub beta_high_freq_boost: f32,
 
-    /// Maximum filter gain in dB (default: 25.0)
+    /// Maximum filter gain in dB (default: 12.0)
     /// Limits how much the cancellation filter can boost any frequency bin.
     /// Lower values are safer but reduce cancellation depth.
     #[serde(default = "default_max_gain_db")]
@@ -97,6 +97,36 @@ pub struct XtcPluginParams {
     /// Beta boost multiplier at comb-filter null frequencies (default: 3.0)
     #[serde(default = "default_reflection_beta_boost")]
     pub reflection_beta_boost: f32,
+
+    // Diagnostic bypass parameters (for isolating audio artifacts)
+    /// Bypass XTC filters (use identity: output = input in freq domain).
+    /// Tests if STFT framework (windowing + OLA) is causing distortion.
+    #[serde(default)]
+    pub bypass_xtc_filters: bool,
+
+    /// Bypass spectral normalization only.
+    /// Tests if normalization is over-correcting.
+    #[serde(default)]
+    pub bypass_spectral_normalization: bool,
+
+    /// Bypass Neumann series refinement (use first-order inverse only).
+    /// Tests if the refinement step is diverging at ill-conditioned frequencies.
+    #[serde(default)]
+    pub bypass_neumann_refinement: bool,
+
+    /// Enable automatic gain compensation (default: true).
+    /// Matches output loudness to input loudness, preventing distortion from
+    /// filter gain accumulation.
+    #[serde(default = "default_auto_gain_enabled")]
+    pub auto_gain_enabled: bool,
+
+    /// Maximum auto-gain compensation in dB (default: 12.0)
+    #[serde(default = "default_auto_gain_max_db")]
+    pub auto_gain_max_db: f32,
+
+    /// Smoothing time for auto-gain transitions in ms (default: 100.0)
+    #[serde(default = "default_auto_gain_smoothing_ms")]
+    pub auto_gain_smoothing_ms: f32,
 }
 
 fn default_distance() -> f32 {
@@ -115,7 +145,7 @@ fn default_beta_base() -> f32 {
     0.0003
 }
 fn default_max_gain_db() -> f32 {
-    25.0
+    12.0
 }
 fn default_beta_low_freq_boost() -> f32 {
     10.0
@@ -147,6 +177,15 @@ fn default_wall_absorption() -> f32 {
 fn default_reflection_beta_boost() -> f32 {
     3.0
 }
+fn default_auto_gain_enabled() -> bool {
+    true
+}
+fn default_auto_gain_max_db() -> f32 {
+    12.0
+}
+fn default_auto_gain_smoothing_ms() -> f32 {
+    100.0
+}
 
 impl Default for XtcPluginParams {
     fn default() -> Self {
@@ -173,6 +212,12 @@ impl Default for XtcPluginParams {
             room_depth_m: default_room_depth(),
             wall_absorption: default_wall_absorption(),
             reflection_beta_boost: default_reflection_beta_boost(),
+            bypass_xtc_filters: false,
+            bypass_spectral_normalization: false,
+            bypass_neumann_refinement: false,
+            auto_gain_enabled: default_auto_gain_enabled(),
+            auto_gain_max_db: default_auto_gain_max_db(),
+            auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
         }
     }
 }

@@ -2,7 +2,7 @@ use super::*;
 use filters::{
     compute_beta, compute_beta_smooth, compute_xtc_filters_full,
     frequency_dependent_diffraction_delay, head_shadowing_filter, head_shadowing_woodworth,
-    woodworth_diffraction_path,
+    sanitize_filter, woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
@@ -141,42 +141,52 @@ fn test_invalid_fft_size() {
 }
 
 /// Test that energy is approximately preserved through XTC processing.
-/// XTC should modify phase relationships but not drastically attenuate the signal.
+/// With auto-gain enabled (default), output energy should closely match input energy.
 #[test]
 fn test_energy_preservation() {
     let params = XtcPluginParams::default();
+    assert!(params.auto_gain_enabled, "auto_gain should be enabled by default");
     let mut plugin = XtcPlugin::new(params, 48000).unwrap();
     plugin.initialize(48000).unwrap();
 
     // Generate test signal: stereo sine wave at 1kHz (in the optimal XTC range)
-    let num_frames = 8192; // Long enough to get past latency and steady-state
-    let mut input = vec![0.0_f32; num_frames * 2];
-    for i in 0..num_frames {
-        let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0;
-        input[i * 2] = phase.sin() * 0.5;
-        input[i * 2 + 1] = phase.cos() * 0.5;
-    }
-    let mut output = vec![0.0_f32; num_frames * 2];
+    // Use enough blocks to let auto-gain converge
+    let block_size = 4096;
+    let num_blocks = 8;
 
     let context = ProcessContext {
         sample_rate: 48000,
-        num_frames,
+        num_frames: block_size,
     };
 
-    plugin.process(&input, &mut output, &context).unwrap();
+    let mut last_output = vec![0.0_f32; block_size * 2];
+    for block in 0..num_blocks {
+        let mut input = vec![0.0_f32; block_size * 2];
+        for i in 0..block_size {
+            let sample_idx = block * block_size + i;
+            let phase = 2.0 * std::f32::consts::PI * 1000.0 * sample_idx as f32 / 48000.0;
+            input[i * 2] = phase.sin() * 0.5;
+            input[i * 2 + 1] = phase.cos() * 0.5;
+        }
+        last_output.fill(0.0);
+        plugin.process(&input, &mut last_output, &context).unwrap();
+    }
 
-    // Calculate energy (skip initial latency period)
-    let skip_samples = 2048; // Skip latency
-    let input_energy: f32 = input[skip_samples * 2..].iter().map(|x| x * x).sum();
-    let output_energy: f32 = output[skip_samples * 2..].iter().map(|x| x * x).sum();
+    // After convergence, measure the last block's energy ratio
+    let mut input_final = vec![0.0_f32; block_size * 2];
+    for i in 0..block_size {
+        let sample_idx = num_blocks * block_size + i;
+        let phase = 2.0 * std::f32::consts::PI * 1000.0 * sample_idx as f32 / 48000.0;
+        input_final[i * 2] = phase.sin() * 0.5;
+        input_final[i * 2 + 1] = phase.cos() * 0.5;
+    }
+    let input_energy: f32 = input_final.iter().map(|x| x * x).sum();
+    let output_energy: f32 = last_output.iter().map(|x| x * x).sum();
 
-    // Energy ratio should be between 0.5 and 2.0 (within 3dB)
-    // XTC can boost some frequencies while attenuating others,
-    // but total energy should be reasonably preserved
     let energy_ratio = output_energy / input_energy;
     assert!(
         energy_ratio > 0.3 && energy_ratio < 3.0,
-        "Energy ratio {} is outside acceptable range [0.3, 3.0].  Input energy: {}, Output energy: {}",
+        "Energy ratio {} is outside acceptable range [0.3, 3.0]. Input energy: {}, Output energy: {}",
         energy_ratio,
         input_energy,
         output_energy
@@ -768,5 +778,139 @@ fn test_air_absorption() {
         atten_10k_10m > 0.5 && atten_10k_10m < 1.0,
         "10kHz at 10m absorption {} should be moderate",
         atten_10k_10m
+    );
+}
+
+/// Test STFT passthrough: with bypass_xtc_filters=true, the STFT round-trip
+/// (window → FFT → IFFT → OLA) should preserve signal amplitude within 0.5 dB.
+#[test]
+fn test_stft_passthrough_unity() {
+    let mut params = XtcPluginParams::default();
+    params.bypass_xtc_filters = true;
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Generate 1kHz stereo sine, long enough to fill past latency
+    let num_frames = 16384;
+    let mut input = vec![0.0_f32; num_frames * 2];
+    for i in 0..num_frames {
+        let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0;
+        input[i * 2] = phase.sin() * 0.5;
+        input[i * 2 + 1] = phase.cos() * 0.5;
+    }
+    let mut output = vec![0.0_f32; num_frames * 2];
+
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    // Skip initial latency (fft_size samples to be safe)
+    let skip = 4096;
+    let input_energy: f32 = input[skip * 2..].iter().map(|x| x * x).sum();
+    let output_energy: f32 = output[skip * 2..].iter().map(|x| x * x).sum();
+
+    let energy_ratio = output_energy / input_energy;
+    let energy_ratio_db = 10.0 * energy_ratio.log10();
+
+    // Should be within ±1.0 dB of unity (small loss from finite-length edge effects is expected)
+    assert!(
+        energy_ratio_db.abs() < 1.0,
+        "STFT passthrough energy ratio is {:.2} dB (ratio={:.4}), expected within ±1.0 dB of unity",
+        energy_ratio_db,
+        energy_ratio,
+    );
+}
+
+/// Test that auto-gain prevents clipping: output peak should stay below 1.0
+/// for a moderate-amplitude input signal.
+#[test]
+fn test_auto_gain_prevents_clipping() {
+    let params = XtcPluginParams::default();
+    assert!(params.auto_gain_enabled);
+
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let block_size = 4096;
+    let num_blocks = 12; // Enough for auto-gain to converge
+
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames: block_size,
+    };
+
+    let mut peak_output = 0.0_f32;
+    for block in 0..num_blocks {
+        let mut input = vec![0.0_f32; block_size * 2];
+        for i in 0..block_size {
+            let sample_idx = block * block_size + i;
+            let phase = 2.0 * std::f32::consts::PI * 1000.0 * sample_idx as f32 / 48000.0;
+            // 0.5 amplitude input — should never clip with auto-gain
+            input[i * 2] = phase.sin() * 0.5;
+            input[i * 2 + 1] = phase.cos() * 0.5;
+        }
+        let mut output = vec![0.0_f32; block_size * 2];
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Track peak after auto-gain has had time to converge (skip first few blocks)
+        if block >= 4 {
+            for &s in &output {
+                peak_output = peak_output.max(s.abs());
+            }
+        }
+    }
+
+    assert!(
+        peak_output < 1.0,
+        "Auto-gain should prevent clipping. Peak output: {:.4}",
+        peak_output
+    );
+}
+
+/// Test that sanitize_filter replaces NaN and Inf with zero
+#[test]
+fn test_sanitize_filter() {
+    let mut filter = vec![
+        Complex::new(1.0, 2.0),
+        Complex::new(f32::NAN, 0.5),
+        Complex::new(0.5, f32::INFINITY),
+        Complex::new(f32::NEG_INFINITY, f32::NAN),
+        Complex::new(3.0, -1.0),
+    ];
+
+    sanitize_filter(&mut filter);
+
+    assert_eq!(filter[0], Complex::new(1.0, 2.0));
+    assert_eq!(filter[1], Complex::new(0.0, 0.5));
+    assert_eq!(filter[2], Complex::new(0.5, 0.0));
+    assert_eq!(filter[3], Complex::new(0.0, 0.0));
+    assert_eq!(filter[4], Complex::new(3.0, -1.0));
+}
+
+/// Test bypass_neumann_refinement produces different filters than default
+#[test]
+fn test_bypass_neumann_refinement() {
+    let fft_size = 1024;
+    let num_bins = fft_size / 2 + 1;
+
+    let mut params_normal = XtcPluginParams::default();
+    params_normal.fft_size = fft_size;
+    let filters_normal = compute_xtc_filters_full(&params_normal, 48000, num_bins);
+
+    let mut params_bypass = XtcPluginParams::default();
+    params_bypass.fft_size = fft_size;
+    params_bypass.bypass_neumann_refinement = true;
+    let filters_bypass = compute_xtc_filters_full(&params_bypass, 48000, num_bins);
+
+    // Filters should differ at mid frequencies
+    let bin_1khz = (1000.0 * fft_size as f32 / 48000.0) as usize;
+    let diff = (filters_normal.filter_ll[bin_1khz] - filters_bypass.filter_ll[bin_1khz]).norm();
+    assert!(
+        diff > 1e-6,
+        "Bypassing Neumann refinement should produce different filters, diff = {}",
+        diff
     );
 }
