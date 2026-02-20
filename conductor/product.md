@@ -10,7 +10,7 @@ SotF (Sound of the Future) is an automatic EQ and audio processing engine for sp
 
 ## Core Features
 - **Integrated Playback Engine:** A native, multi-threaded audio engine supporting various formats (FLAC, MP3, etc.) accessible via both Terminal (TUI) and Graphical (GPUI) interfaces.
-- **Modular DSP Plugin System:** Real-time audio processing chain featuring high-quality plugins: PEQ, Upmixing, Binaural rendering, Dynamics (Compressor/Limiter), and Denoising.
+- **Modular DSP Plugin System:** Real-time audio processing chain featuring high-quality plugins: PEQ, Upmixing, Binaural rendering, Crossfeed, Dynamics (Compressor/Limiter), and Denoising.
 - **Advanced Optimization (AutoEQ):** Automated frequency response correction for headphones and speakers using Spinorama data, measurement inputs, and target curve matching. Includes advanced room correction with Group Delay Optimization, explicit System Topology (2.1, 5.1, DBA), Bass Management (MSO/DBA), multiple processing modes (IIR/FIR/Hybrid), and **Automated Workflow Recipes (Stereo 2.0/2.1)**.
 - **Platform Integration:** System-wide audio processing capabilities, including a dedicated macOS HAL driver and background daemon.
 
