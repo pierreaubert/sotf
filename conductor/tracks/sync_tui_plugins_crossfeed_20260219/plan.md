@@ -37,3 +37,11 @@
 - [x] Task: Implement EQ filter limit control (Max Filters) [a9a5f07b]
 - [x] Task: Run full regression tests for `plugins`, `engine`, and `app-tui`. [a9a5f07b]
 - [x] Task: Conductor - User Manual Verification 'Phase 4: Validation' (Protocol in workflow.md) [9b78daa]
+
+## Phase: Review Fixes
+- [x] Task: Apply review suggestions [99870ee]
+    - [x] Fix Upmixer test initializers in engine.
+    - [x] Update Upmixer integration test expected parameter count.
+    - [x] Add 'crossfeed' to recognized plugin types in manager thread validation.
+    - [x] Clean up unused variables and functions in app-tui.
+
