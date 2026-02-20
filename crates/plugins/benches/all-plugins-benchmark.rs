@@ -612,7 +612,7 @@ fn benchmark_loudness(c: &mut Criterion) {
             ..Default::default()
         };
         let mut plugin = FletcherMunsonPlugin::from_params(CHANNELS, params);
-        plugin.initialize(SAMPLE_RATE).unwrap();
+        Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
         let mut output = vec![0.0f32; BUFFER_SIZE * CHANNELS];

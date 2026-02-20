@@ -299,7 +299,7 @@ fn test_fletcher_munson_zero_alloc() {
         ..Default::default()
     };
     let mut plugin = FletcherMunsonPlugin::from_params(2, params);
-    plugin.initialize(SAMPLE_RATE).unwrap();
+    Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
     let mut output = vec![0.0f32; BUFFER_SIZE * 2];
