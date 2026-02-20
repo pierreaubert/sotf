@@ -908,6 +908,9 @@ pub mod ab_compare {
 // ============================================================================
 
 pub mod crossfeed {
+    pub const CROSSFEED_MODE_DEFAULT: i32 = 0; // Bauer
+    pub const CROSSFEED_PRESET_DEFAULT: i32 = 0; // Default
+
     // Bauer mode
     pub const BAUER_FCUT_DEFAULT: f32 = 700.0;
     pub const BAUER_FCUT_MIN: f32 = 400.0;
@@ -944,6 +947,7 @@ pub mod crossfeed {
     pub const MB_HIGH_FEED_MAX: f32 = 15.0;
 
     // Auto gain
+    pub const AUTOGAIN_ENABLED_DEFAULT: bool = false;
     pub const AUTOGAIN_TARGET_DEFAULT: f32 = -18.0;
     pub const AUTOGAIN_TARGET_MIN: f32 = -40.0;
     pub const AUTOGAIN_TARGET_MAX: f32 = -12.0;

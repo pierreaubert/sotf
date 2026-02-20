@@ -675,9 +675,10 @@ fn create_plugin(
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
     use sotf_plugins::{
-        BinauralDecoderPlugin, CompressorPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin,
-        InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
-        MultibandCompressorPlugin, MultibandExpanderPlugin, UpmixerPlugin,
+        BinauralDecoderPlugin, CompressorPlugin, CrossfeedPlugin, CrossfeedPluginParams, EqPlugin,
+        ExpanderPlugin, GainPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin,
+        LoudnessCompensationPlugin, MatrixPlugin, MultibandCompressorPlugin,
+        MultibandExpanderPlugin, UpmixerPlugin,
     };
 
     match plugin_type {
@@ -1062,6 +1063,23 @@ fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        "crossfeed" => {
+            // Crossfeed requires exactly 2 channels (stereo)
+            if channels != 2 {
+                return Err(format!(
+                    "Crossfeed plugin requires 2 input channels (stereo), got {}",
+                    channels
+                ));
+            }
+
+            let params: CrossfeedPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse crossfeed plugin parameters: {}", e))?;
+
+            let plugin = CrossfeedPlugin::from_params(params)
+                .map_err(|e| format!("Failed to create crossfeed plugin: {}", e))?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }
@@ -1076,6 +1094,7 @@ mod tests {
         match plugin_type {
             PluginType::Upmixer => 2,
             PluginType::XTC => 2,
+            PluginType::Crossfeed => 2,
             PluginType::MonoToStereo => 1,
             // BandMerge default is 2 bands, so input = output_channels * bands = 2 * 2 = 4
             PluginType::BandMerge => 4,

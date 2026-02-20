@@ -6,6 +6,7 @@ use super::ChannelState;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::smoothing::Smoother;
+use serde_json;
 
 /// Smoothing time in ms for gain coefficient transitions (~5ms to avoid clicks)
 const GAIN_SMOOTH_MS: f32 = 5.0;
@@ -287,6 +288,14 @@ impl Plugin for MatrixPlugin {
                 return Ok(());
             }
         }
+        if id_str == "channel_states" {
+            let json_str = value.as_string().ok_or("channel_states must be string")?;
+            let states: Vec<ChannelState> =
+                serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+            self.channel_states = states;
+            self.ensure_channel_state_smoothers();
+            return Ok(());
+        }
         Ok(())
     }
 
@@ -311,6 +320,11 @@ impl Plugin for MatrixPlugin {
                 .channel_states
                 .get(ch)
                 .map(|s| ParameterValue::Bool(s.dimmed));
+        }
+        if id_str == "channel_states" {
+            return serde_json::to_string(&self.channel_states)
+                .ok()
+                .map(ParameterValue::String);
         }
         None
     }
@@ -421,5 +435,104 @@ mod tests {
         plugin.process(&input, &mut output, &context).unwrap();
         assert_eq!(output[15], 10.0);
         assert_eq!(output[16], 20.0);
+    }
+
+    /// Number of frames to process for smoother convergence in tests
+    const CONVERGE_FRAMES: usize = 2048;
+    const TOLERANCE: f32 = 0.001;
+
+    /// Helper: process enough frames for smoothers to converge, return last frame
+    fn process_converged(plugin: &mut MatrixPlugin, channels: usize) -> Vec<f32> {
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: CONVERGE_FRAMES,
+        };
+        let input = vec![1.0; CONVERGE_FRAMES * channels];
+        let mut output = vec![0.0; CONVERGE_FRAMES * channels];
+        plugin.process(&input, &mut output, &context).unwrap();
+        output[output.len() - channels..].to_vec()
+    }
+
+    #[test]
+    fn test_channel_states_mute_via_parameter() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let states = vec![
+            ChannelState { muted: true, soloed: false, dimmed: false },
+            ChannelState { muted: false, soloed: false, dimmed: false },
+        ];
+        let json = serde_json::to_string(&states).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("channel_states"),
+                ParameterValue::String(json),
+            )
+            .unwrap();
+
+        let last = process_converged(&mut plugin, 2);
+        assert!(last[0].abs() < TOLERANCE, "Ch0 should be muted, got {}", last[0]);
+        assert!((last[1] - 1.0).abs() < TOLERANCE, "Ch1 should pass through, got {}", last[1]);
+    }
+
+    #[test]
+    fn test_channel_states_solo_via_parameter() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let states = vec![
+            ChannelState { muted: false, soloed: true, dimmed: false },
+            ChannelState { muted: false, soloed: false, dimmed: false },
+        ];
+        let json = serde_json::to_string(&states).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("channel_states"),
+                ParameterValue::String(json),
+            )
+            .unwrap();
+
+        let last = process_converged(&mut plugin, 2);
+        assert!((last[0] - 1.0).abs() < TOLERANCE, "Ch0 (soloed) should pass through");
+        assert!(last[1].abs() < TOLERANCE, "Ch1 (not soloed) should be silent");
+    }
+
+    #[test]
+    fn test_channel_states_dim_via_parameter() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let states = vec![
+            ChannelState { muted: false, soloed: false, dimmed: true },
+            ChannelState { muted: false, soloed: false, dimmed: false },
+        ];
+        let json = serde_json::to_string(&states).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("channel_states"),
+                ParameterValue::String(json),
+            )
+            .unwrap();
+
+        let last = process_converged(&mut plugin, 2);
+        assert!((last[0] - 0.1).abs() < TOLERANCE, "Ch0 should be dimmed to 0.1");
+        assert!((last[1] - 1.0).abs() < TOLERANCE, "Ch1 should pass through");
+    }
+
+    #[test]
+    fn test_channel_states_get_parameter() {
+        let mut plugin = MatrixPlugin::new(2, 2);
+        let states = vec![
+            ChannelState { muted: true, soloed: false, dimmed: false },
+            ChannelState { muted: false, soloed: false, dimmed: true },
+        ];
+        let json = serde_json::to_string(&states).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("channel_states"),
+                ParameterValue::String(json),
+            )
+            .unwrap();
+
+        let got = plugin.get_parameter(&ParameterId::from("channel_states")).unwrap();
+        let got_str = got.as_string().unwrap();
+        let got_states: Vec<ChannelState> = serde_json::from_str(got_str).unwrap();
+        assert_eq!(got_states.len(), 2);
+        assert!(got_states[0].muted);
+        assert!(got_states[1].dimmed);
     }
 }
