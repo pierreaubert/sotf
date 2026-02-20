@@ -3,7 +3,8 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sotf_plugins::{
-    BandCompressorParams, BandExpanderParams, SpectralTiltCorrection, TiltReferenceFreq,
+    BandCompressorParams, BandExpanderParams, CrossfeedMode, CrossfeedPreset,
+    SpectralTiltCorrection, TiltReferenceFreq,
 };
 
 /// Feature maturity classification for gating experimental features.
@@ -79,6 +80,7 @@ pub enum PluginType {
     BandMerge,
     Downmix,
     MonoToStereo,
+    Crossfeed,
 }
 
 impl PluginType {
@@ -109,6 +111,7 @@ impl PluginType {
             Self::BandMerge => "Band Merge",
             Self::Downmix => "Downmix",
             Self::MonoToStereo => "Mono to Stereo",
+            Self::Crossfeed => "Crossfeed",
         }
     }
 
@@ -139,6 +142,7 @@ impl PluginType {
             Self::BandMerge => "Merge frequency bands back together",
             Self::Downmix => "Phase-coherent surround to stereo downmix",
             Self::MonoToStereo => "Convert mono signal to pseudo-stereo",
+            Self::Crossfeed => "Headphone crossfeed for speaker-like listening",
         }
     }
 
@@ -169,6 +173,7 @@ impl PluginType {
             Self::BandMerge,
             Self::Downmix,
             Self::MonoToStereo,
+            Self::Crossfeed,
         ]
     }
 
@@ -202,6 +207,7 @@ impl PluginType {
             | Self::BandSplit
             | Self::BandMerge
             | Self::MonoToStereo
+            | Self::Crossfeed
             | Self::LoudnessCompensation => ReleaseChannel::Beta,
 
             Self::BinauralDecoder
@@ -436,6 +442,18 @@ fn default_upmixer_ambient_boost() -> f64 {
 
 fn default_upmixer_dialogue_weight() -> f64 {
     upmixer_specs::DIALOGUE_WEIGHT_DEFAULT as f64
+}
+
+fn default_upmixer_dialogue_centroid_weight() -> f64 {
+    upmixer_specs::DIALOGUE_CENTROID_WEIGHT_DEFAULT as f64
+}
+
+fn default_upmixer_dialogue_variance_weight() -> f64 {
+    upmixer_specs::DIALOGUE_VARIANCE_WEIGHT_DEFAULT as f64
+}
+
+fn default_upmixer_dialogue_coherence_weight() -> f64 {
+    upmixer_specs::DIALOGUE_COHERENCE_WEIGHT_DEFAULT as f64
 }
 
 fn default_upmixer_voice_freq_min_hz() -> f64 {
@@ -920,6 +938,57 @@ fn default_channels() -> usize {
     2
 }
 
+fn default_max_filters() -> usize {
+    10
+}
+
+// Crossfeed defaults
+use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
+
+fn default_crossfeed_bauer_fcut_hz() -> f64 {
+    crossfeed_specs::BAUER_FCUT_DEFAULT as f64
+}
+
+fn default_crossfeed_bauer_feed_db() -> f64 {
+    crossfeed_specs::BAUER_FEED_DEFAULT as f64
+}
+
+fn default_crossfeed_meier_level() -> f64 {
+    crossfeed_specs::MEIER_LEVEL_DEFAULT as f64
+}
+
+fn default_crossfeed_mb_low_freq_hz() -> f64 {
+    crossfeed_specs::MB_LOW_FREQ_DEFAULT as f64
+}
+
+fn default_crossfeed_mb_mid_high_freq_hz() -> f64 {
+    crossfeed_specs::MB_MID_HIGH_FREQ_DEFAULT as f64
+}
+
+fn default_crossfeed_mb_low_feed_db() -> f64 {
+    crossfeed_specs::MB_LOW_FEED_DEFAULT as f64
+}
+
+fn default_crossfeed_mb_mid_feed_db() -> f64 {
+    crossfeed_specs::MB_MID_FEED_DEFAULT as f64
+}
+
+fn default_crossfeed_mb_high_feed_db() -> f64 {
+    crossfeed_specs::MB_HIGH_FEED_DEFAULT as f64
+}
+
+fn default_crossfeed_autogain_target_lufs() -> f64 {
+    crossfeed_specs::AUTOGAIN_TARGET_DEFAULT as f64
+}
+
+fn default_crossfeed_autogain_max_gain_db() -> f64 {
+    crossfeed_specs::AUTOGAIN_MAX_GAIN_DEFAULT as f64
+}
+
+fn default_crossfeed_autogain_smoothing_ms() -> f64 {
+    crossfeed_specs::AUTOGAIN_SMOOTHING_DEFAULT as f64
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
@@ -934,6 +1003,9 @@ pub enum PluginSettings {
         /// Whether to use per-channel mode (default: false = all channels share same EQ)
         #[serde(default)]
         per_channel_mode: bool,
+        /// Maximum number of filters to display/use in the UI
+        #[serde(default = "default_max_filters")]
+        max_filters: usize,
     },
     Gain {
         #[serde(default = "default_channels")]
@@ -1003,6 +1075,12 @@ pub enum PluginSettings {
         voice_freq_min_hz: f64,
         #[serde(default = "default_upmixer_voice_freq_max_hz")]
         voice_freq_max_hz: f64,
+        #[serde(default = "default_upmixer_dialogue_centroid_weight")]
+        dialogue_centroid_weight: f64,
+        #[serde(default = "default_upmixer_dialogue_variance_weight")]
+        dialogue_variance_weight: f64,
+        #[serde(default = "default_upmixer_dialogue_coherence_weight")]
+        dialogue_coherence_weight: f64,
         // Diagnostic bypass parameters
         #[serde(default)] // false
         bypass_decorrelation: bool,
@@ -1393,6 +1471,44 @@ pub enum PluginSettings {
         #[serde(default = "default_mono_to_stereo_decor_high_hz")]
         decor_high_hz: f64,
     },
+    Crossfeed {
+        #[serde(default)]
+        mode: CrossfeedMode,
+        #[serde(default)]
+        preset: CrossfeedPreset,
+        #[serde(default)]
+        enabled: bool,
+        #[serde(default)]
+        mix: f64,
+        // Bauer
+        #[serde(default = "default_crossfeed_bauer_fcut_hz")]
+        bauer_fcut_hz: f64,
+        #[serde(default = "default_crossfeed_bauer_feed_db")]
+        bauer_feed_db: f64,
+        // Meier
+        #[serde(default = "default_crossfeed_meier_level")]
+        meier_level: f64,
+        // Multiband
+        #[serde(default = "default_crossfeed_mb_low_freq_hz")]
+        mb_low_freq_hz: f64,
+        #[serde(default = "default_crossfeed_mb_mid_high_freq_hz")]
+        mb_mid_high_freq_hz: f64,
+        #[serde(default = "default_crossfeed_mb_low_feed_db")]
+        mb_low_feed_db: f64,
+        #[serde(default = "default_crossfeed_mb_mid_feed_db")]
+        mb_mid_feed_db: f64,
+        #[serde(default = "default_crossfeed_mb_high_feed_db")]
+        mb_high_feed_db: f64,
+        // Auto gain
+        #[serde(default)]
+        autogain_enabled: bool,
+        #[serde(default = "default_crossfeed_autogain_target_lufs")]
+        autogain_target_lufs: f64,
+        #[serde(default = "default_crossfeed_autogain_max_gain_db")]
+        autogain_max_gain_db: f64,
+        #[serde(default = "default_crossfeed_autogain_smoothing_ms")]
+        autogain_smoothing_ms: f64,
+    },
 }
 
 impl PluginSettings {
@@ -1423,16 +1539,56 @@ impl PluginSettings {
             Self::BandMerge { .. } => PluginType::BandMerge,
             Self::Downmix { .. } => PluginType::Downmix,
             Self::MonoToStereo { .. } => PluginType::MonoToStereo,
+            Self::Crossfeed { .. } => PluginType::Crossfeed,
         }
     }
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
         match self {
+            Self::Crossfeed {
+                mode,
+                preset,
+                enabled,
+                mix,
+                bauer_fcut_hz,
+                bauer_feed_db,
+                meier_level,
+                mb_low_freq_hz,
+                mb_mid_high_freq_hz,
+                mb_low_feed_db,
+                mb_mid_feed_db,
+                mb_high_feed_db,
+                autogain_enabled,
+                autogain_target_lufs,
+                autogain_max_gain_db,
+                autogain_smoothing_ms,
+            } => PluginConfig::new(
+                "crossfeed",
+                json!({
+                    "mode": mode,
+                    "preset": preset,
+                    "enabled": enabled,
+                    "mix": mix,
+                    "bauer_fcut_hz": bauer_fcut_hz,
+                    "bauer_feed_db": bauer_feed_db,
+                    "meier_level": meier_level,
+                    "mb_low_freq_hz": mb_low_freq_hz,
+                    "mb_mid_high_freq_hz": mb_mid_high_freq_hz,
+                    "mb_low_feed_db": mb_low_feed_db,
+                    "mb_mid_feed_db": mb_mid_feed_db,
+                    "mb_high_feed_db": mb_high_feed_db,
+                    "autogain_enabled": autogain_enabled,
+                    "autogain_target_lufs": autogain_target_lufs,
+                    "autogain_max_gain_db": autogain_max_gain_db,
+                    "autogain_smoothing_ms": autogain_smoothing_ms,
+                }),
+            ),
             Self::EQ {
                 channels,
                 filters,
                 channel_filters,
                 per_channel_mode,
+                max_filters: _,
             } => {
                 // Helper to convert filters with mute/solo logic
                 let convert_filters = |filters: &[EQFilter]| -> Vec<serde_json::Value> {
@@ -1536,6 +1692,9 @@ impl PluginSettings {
                 dialogue_weight,
                 voice_freq_min_hz,
                 voice_freq_max_hz,
+                dialogue_centroid_weight,
+                dialogue_variance_weight,
+                dialogue_coherence_weight,
                 bypass_decorrelation,
                 bypass_transient_detection,
                 bypass_all_processing,
@@ -1574,6 +1733,9 @@ impl PluginSettings {
                     "dialogue_weight": dialogue_weight,
                     "voice_freq_min_hz": voice_freq_min_hz,
                     "voice_freq_max_hz": voice_freq_max_hz,
+                    "dialogue_centroid_weight": dialogue_centroid_weight,
+                    "dialogue_variance_weight": dialogue_variance_weight,
+                    "dialogue_coherence_weight": dialogue_coherence_weight,
                     "bypass_decorrelation": bypass_decorrelation,
                     "bypass_transient_detection": bypass_transient_detection,
                     "bypass_all_processing": bypass_all_processing,
@@ -2079,6 +2241,7 @@ impl PluginSettings {
                 ],
                 channel_filters: None,
                 per_channel_mode: false,
+                max_filters: 5,
             },
             PluginType::Gain => Self::Gain {
                 channels: default_channels(),
@@ -2125,6 +2288,9 @@ impl PluginSettings {
                 dialogue_weight: upmixer_specs::DIALOGUE_WEIGHT_DEFAULT as f64,
                 voice_freq_min_hz: upmixer_specs::VOICE_FREQ_MIN_HZ_DEFAULT as f64,
                 voice_freq_max_hz: upmixer_specs::VOICE_FREQ_MAX_HZ_DEFAULT as f64,
+                dialogue_centroid_weight: upmixer_specs::DIALOGUE_CENTROID_WEIGHT_DEFAULT as f64,
+                dialogue_variance_weight: upmixer_specs::DIALOGUE_VARIANCE_WEIGHT_DEFAULT as f64,
+                dialogue_coherence_weight: upmixer_specs::DIALOGUE_COHERENCE_WEIGHT_DEFAULT as f64,
                 // Diagnostic bypass
                 bypass_decorrelation: false,
                 bypass_transient_detection: false,
@@ -2341,6 +2507,24 @@ impl PluginSettings {
                 comp_eq_depth_db: default_mono_to_stereo_comp_eq_depth_db(),
                 decor_low_hz: default_mono_to_stereo_decor_low_hz(),
                 decor_high_hz: default_mono_to_stereo_decor_high_hz(),
+            },
+            PluginType::Crossfeed => Self::Crossfeed {
+                mode: CrossfeedMode::Bauer,
+                preset: CrossfeedPreset::Default,
+                enabled: true,
+                mix: crossfeed_specs::MIX_DEFAULT as f64,
+                bauer_fcut_hz: crossfeed_specs::BAUER_FCUT_DEFAULT as f64,
+                bauer_feed_db: crossfeed_specs::BAUER_FEED_DEFAULT as f64,
+                meier_level: crossfeed_specs::MEIER_LEVEL_DEFAULT as f64,
+                mb_low_freq_hz: crossfeed_specs::MB_LOW_FREQ_DEFAULT as f64,
+                mb_mid_high_freq_hz: crossfeed_specs::MB_MID_HIGH_FREQ_DEFAULT as f64,
+                mb_low_feed_db: crossfeed_specs::MB_LOW_FEED_DEFAULT as f64,
+                mb_mid_feed_db: crossfeed_specs::MB_MID_FEED_DEFAULT as f64,
+                mb_high_feed_db: crossfeed_specs::MB_HIGH_FEED_DEFAULT as f64,
+                autogain_enabled: crossfeed_specs::AUTOGAIN_ENABLED_DEFAULT,
+                autogain_target_lufs: crossfeed_specs::AUTOGAIN_TARGET_DEFAULT as f64,
+                autogain_max_gain_db: crossfeed_specs::AUTOGAIN_MAX_GAIN_DEFAULT as f64,
+                autogain_smoothing_ms: crossfeed_specs::AUTOGAIN_SMOOTHING_DEFAULT as f64,
             },
         }
     }
@@ -3068,6 +3252,15 @@ impl PluginChain {
         self.get_engine_index(ui_idx)
     }
 
+    /// Get the engine index of the permanent Matrix plugin.
+    pub fn matrix_engine_index(&self) -> Option<usize> {
+        let ui_idx = self
+            .plugins
+            .iter()
+            .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::Matrix))?;
+        self.get_engine_index(ui_idx)
+    }
+
     /// Get the engine index of the first enabled spectrum analyzer.
     pub fn spectrum_engine_index(&self) -> Option<usize> {
         let ui_idx = self
@@ -3427,6 +3620,7 @@ impl PluginChain {
                     filters,
                     channel_filters,
                     per_channel_mode,
+                    max_filters,
                 } => {
                     if *channels != current_channels {
                         updated_settings = Some(PluginSettings::EQ {
@@ -3434,6 +3628,7 @@ impl PluginChain {
                             filters: filters.clone(),
                             channel_filters: channel_filters.clone(),
                             per_channel_mode: *per_channel_mode,
+                            max_filters: *max_filters,
                         });
                     }
                 }
