@@ -2063,10 +2063,8 @@ impl TuiEditablePlugin for PluginSettings {
             PluginSettings::FletcherMunson {
                 reference_level_db,
                 enabled,
-                smoothing_ms,
                 auto_gain_enabled,
                 auto_gain_max_db,
-                auto_gain_smoothing_ms,
                 ..
             } => {
                 use sotf_plugins::param_specs::fletcher_munson::*;
@@ -2076,20 +2074,10 @@ impl TuiEditablePlugin for PluginSettings {
                             .clamp(REFERENCE_LEVEL_DB_MIN as f64, REFERENCE_LEVEL_DB_MAX as f64)
                     }
                     1 => *enabled = !*enabled,
-                    2 => {
-                        *smoothing_ms = (*smoothing_ms + delta)
-                            .clamp(SMOOTHING_MS_MIN as f64, SMOOTHING_MS_MAX as f64)
-                    }
-                    3 => *auto_gain_enabled = !*auto_gain_enabled,
-                    4 => {
+                    2 => *auto_gain_enabled = !*auto_gain_enabled,
+                    3 => {
                         *auto_gain_max_db = (*auto_gain_max_db + delta)
                             .clamp(AUTO_GAIN_MAX_DB_MIN as f64, AUTO_GAIN_MAX_DB_MAX as f64)
-                    }
-                    5 => {
-                        *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0).clamp(
-                            AUTO_GAIN_SMOOTHING_MS_MIN as f64,
-                            AUTO_GAIN_SMOOTHING_MS_MAX as f64,
-                        )
                     }
                     _ => return false,
                 }
