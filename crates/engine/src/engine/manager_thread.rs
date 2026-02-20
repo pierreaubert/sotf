@@ -1025,6 +1025,7 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "band_merge",
             "downmix",
             "mono_to_stereo",
+            "crossfeed",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();

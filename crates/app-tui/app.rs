@@ -5205,6 +5205,24 @@ impl App {
 
 /// Helper function to cycle through path config presets for A/B Compare plugin
 /// Returns JSON string for the selected path config
+fn cycle_path_config(current: &str, forward: bool) -> String {
+    // List of available path configs (None + common plugins)
+    let presets = [
+        (r#"{"type":"None"}"#, "None"),
+        (
+            r#"{"type":"Plugin","plugin_type":"EQ","parameters":{"filters":[]}}"#,
+            "EQ",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":0.0}}"#,
+            "Gain",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"compressor","parameters":{"threshold_db":-20.0,"ratio":4.0,"attack_ms":10.0,"release_ms":100.0,"knee_db":3.0,"makeup_gain_db":0.0,"mix":1.0}}"#,
+            "Compressor",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"limiter","parameters":{"threshold_db":-1.0,"release_ms":100.0,"lookahead_ms":5.0,"soft":false,"mix":1.0}}"#,
             "Limiter",
         ),
         (

@@ -106,7 +106,7 @@ fn test_upmixer_parameter_adjustment() {
 
     // Test parameter queries
     let params = plugin.parameters();
-    assert_eq!(params.len(), 32); // includes all upmixer parameters
+    assert_eq!(params.len(), 35); // includes all upmixer parameters
 
     // Modify gains
     plugin
