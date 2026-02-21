@@ -34,7 +34,7 @@ pub struct XtcPluginParams {
     #[serde(default = "default_beta_high_freq_boost")]
     pub beta_high_freq_boost: f32,
 
-    /// Maximum filter gain in dB (default: 3.0)
+    /// Maximum filter gain in dB (default: 6.0)
     /// Limits how much the cancellation filter can boost any frequency bin.
     /// Lower values are safer but reduce cancellation depth.
     #[serde(default = "default_max_gain_db")]
@@ -152,7 +152,7 @@ fn default_beta_base() -> f32 {
     0.0003
 }
 fn default_max_gain_db() -> f32 {
-    3.0
+    6.0
 }
 fn default_beta_low_freq_boost() -> f32 {
     10.0

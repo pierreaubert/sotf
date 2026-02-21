@@ -207,9 +207,12 @@ pub struct XtcPlugin {
     /// Auto-gain compensation to match output loudness to input
     auto_gain: Option<AutoGain>,
 
-    /// Per-sample limiter envelope (0.0..=1.0). Instant attack, smooth release.
+    /// Per-sample limiter envelope (0.0..=1.0). Smooth attack and release.
     /// Prevents output from exceeding ±0.95 after XTC filter summation + auto-gain.
     limiter_envelope: f32,
+
+    /// Per-sample attack coefficient for the limiter (~0.2ms time constant).
+    limiter_attack_coeff: f32,
 
     /// Per-sample release coefficient for the limiter (~50ms release).
     limiter_release_coeff: f32,
@@ -395,6 +398,7 @@ impl XtcPlugin {
             room_params_hash,
             auto_gain,
             limiter_envelope: 1.0,
+            limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
             limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
         })
     }
@@ -991,6 +995,7 @@ impl Plugin for XtcPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        self.limiter_attack_coeff = (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp();
         self.limiter_release_coeff = (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp();
         self.update_filters(true); // Synchronous for initialization
 
@@ -1148,14 +1153,15 @@ impl Plugin for XtcPlugin {
             }
         }
 
-        // Auto-gain: measure output loudness and apply compensation
+        // Auto-gain: apply compensation first, then limit, then measure.
+        // This order ensures auto-gain sees the true output level after limiting,
+        // breaking the pumping feedback loop (auto-gain boosts → limiter clips → repeat).
         if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_output(&output[..out_pos * 2]);
             ag.apply_compensation(&mut output[..out_pos * 2], out_pos);
         }
 
         // Per-sample peak limiter: prevent clipping after XTC filter summation + AutoGain.
-        // Instant attack, smooth release (~50ms) to avoid pumping artifacts.
+        // Smooth attack (~0.2ms) and release (~50ms) to avoid gain modulation artifacts.
         // Skip when filters are bypassed — no amplification occurs.
         if !self.params.bypass_xtc_filters {
             let threshold = 0.95_f32;
@@ -1165,7 +1171,9 @@ impl Plugin for XtcPlugin {
                 let peak = output[idx_l].abs().max(output[idx_r].abs());
                 let target_gr = if peak > threshold { threshold / peak } else { 1.0 };
                 if target_gr < self.limiter_envelope {
-                    self.limiter_envelope = target_gr; // instant attack
+                    // Smooth attack (~0.2ms) to avoid per-sample gain jumps
+                    self.limiter_envelope = target_gr
+                        + self.limiter_attack_coeff * (self.limiter_envelope - target_gr);
                 } else {
                     self.limiter_envelope = target_gr
                         + self.limiter_release_coeff * (self.limiter_envelope - target_gr);
@@ -1173,6 +1181,11 @@ impl Plugin for XtcPlugin {
                 output[idx_l] *= self.limiter_envelope;
                 output[idx_r] *= self.limiter_envelope;
             }
+        }
+
+        // Measure output loudness after limiting — auto-gain now sees the true final level
+        if let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_output(&output[..out_pos * 2]);
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.

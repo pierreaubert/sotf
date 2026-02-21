@@ -588,8 +588,8 @@ fn compute_2x2_inverse(
 
     // Diagnostic bypass: skip Neumann refinement, return first-order inverse only
     if bypass_neumann {
-        let w1_ipsi = clamp_complex_magnitude(w1_ipsi, max_gain_linear);
-        let w1_contra = clamp_complex_magnitude(w1_contra, max_gain_linear);
+        let w1_ipsi = soft_limit_complex_magnitude(w1_ipsi, max_gain_linear);
+        let w1_contra = soft_limit_complex_magnitude(w1_contra, max_gain_linear);
         return (w1_ipsi, w1_contra);
     }
 
@@ -609,25 +609,43 @@ fn compute_2x2_inverse(
     // W₂[0,0] = w1_ipsi * r_00 + w1_contra * r_01  (but r is column-matched)
     // For the one-ear case, the "matrix" is really [w_ipsi, w_contra] (row vector)
     // times the 2x2 correction matrix R = [[r_00, r_01], [r_01, r_00]] (also symmetric)
-    let w2_ipsi = w1_ipsi * r_00 + w1_contra * r_01;
-    let w2_contra = w1_contra * r_00 + w1_ipsi * r_01;
+    let w2_ipsi_full = w1_ipsi * r_00 + w1_contra * r_01;
+    let w2_contra_full = w1_contra * r_00 + w1_ipsi * r_01;
 
-    // Clamp magnitudes to prevent excessive boost
-    let w2_ipsi = clamp_complex_magnitude(w2_ipsi, max_gain_linear);
-    let w2_contra = clamp_complex_magnitude(w2_contra, max_gain_linear);
+    // Dampen refinement: blend 70% between first-order (w1) and full refinement (w2).
+    // Prevents over-amplification at ill-conditioned bins where refinement diverges.
+    let w2_ipsi = w1_ipsi + (w2_ipsi_full - w1_ipsi) * 0.7;
+    let w2_contra = w1_contra + (w2_contra_full - w1_contra) * 0.7;
+
+    // Soft-limit magnitudes to prevent excessive boost
+    let w2_ipsi = soft_limit_complex_magnitude(w2_ipsi, max_gain_linear);
+    let w2_contra = soft_limit_complex_magnitude(w2_contra, max_gain_linear);
 
     (w2_ipsi, w2_contra)
 }
 
-/// Clamp a complex number's magnitude while preserving its phase
+/// Soft-limit a complex number's magnitude using tanh saturation.
+///
+/// Below 50% of max_mag: passthrough (no change).
+/// Above 50%: smooth tanh curve approaching max_mag asymptotically.
+/// Phase is always preserved — only magnitude is affected.
 #[inline]
-fn clamp_complex_magnitude(c: Complex<f32>, max_mag: f32) -> Complex<f32> {
+pub(crate) fn soft_limit_complex_magnitude(c: Complex<f32>, max_mag: f32) -> Complex<f32> {
     let mag = c.norm();
-    if mag > max_mag {
-        c * (max_mag / mag)
-    } else {
-        c
+    let knee_start = max_mag * 0.5;
+
+    if mag <= knee_start {
+        return c;
     }
+
+    // Map the excess above knee_start through tanh for smooth saturation.
+    // tanh(x) approaches 1.0 asymptotically, so:
+    //   new_mag = knee_start + (max_mag - knee_start) * tanh((mag - knee_start) / (max_mag - knee_start))
+    let headroom = max_mag - knee_start;
+    let excess = mag - knee_start;
+    let new_mag = knee_start + headroom * (excess / headroom).tanh();
+
+    c * (new_mag / mag)
 }
 
 // ============================================================================

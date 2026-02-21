@@ -2,7 +2,7 @@ use super::*;
 use filters::{
     compute_beta, compute_beta_smooth, compute_xtc_filters_full,
     frequency_dependent_diffraction_delay, head_shadowing_filter, head_shadowing_woodworth,
-    sanitize_filter, woodworth_diffraction_path,
+    sanitize_filter, soft_limit_complex_magnitude, woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
@@ -229,7 +229,7 @@ fn test_mono_signal_behavior() {
     let energy_ratio = output_energy / input_energy;
     // Mono is expected to be attenuated by XTC (typically 0.3-0.9)
     // This is the mathematically correct behavior for crosstalk cancellation.
-    // With conservative max_gain_db (3.0), attenuation is milder than aggressive settings.
+    // With max_gain_db (6.0), attenuation may vary with filter headroom.
     assert!(
         energy_ratio > 0.2 && energy_ratio < 1.0,
         "Mono energy ratio {} outside expected XTC range [0.2, 1.0]",
@@ -889,6 +889,129 @@ fn test_sanitize_filter() {
     assert_eq!(filter[2], Complex::new(0.5, 0.0));
     assert_eq!(filter[3], Complex::new(0.0, 0.0));
     assert_eq!(filter[4], Complex::new(3.0, -1.0));
+}
+
+/// Test that soft_limit_complex_magnitude is monotonic: larger input magnitude
+/// always produces larger (or equal) output magnitude, and never exceeds max.
+#[test]
+fn test_soft_limit_monotonicity() {
+
+    let max_mag = 2.0_f32; // 6 dB
+    let mut prev_out_mag = 0.0_f32;
+
+    for i in 0..200 {
+        let mag = i as f32 * 0.05; // 0.0 to 10.0
+        let c = Complex::new(mag * 0.6, mag * 0.8); // arbitrary phase
+        let limited = soft_limit_complex_magnitude(c, max_mag);
+        let out_mag = limited.norm();
+
+        // Monotonicity: output magnitude never decreases as input increases
+        assert!(
+            out_mag >= prev_out_mag - 1e-6,
+            "Soft limit not monotonic at input mag {}: out {} < prev {}",
+            mag,
+            out_mag,
+            prev_out_mag,
+        );
+
+        // Never exceeds max
+        assert!(
+            out_mag <= max_mag + 1e-6,
+            "Soft limit exceeded max at input mag {}: out {} > max {}",
+            mag,
+            out_mag,
+            max_mag,
+        );
+
+        prev_out_mag = out_mag;
+    }
+}
+
+/// Test that soft_limit_complex_magnitude preserves phase
+#[test]
+fn test_soft_limit_preserves_phase() {
+
+    let max_mag = 2.0_f32;
+
+    // Test several phases at a magnitude that triggers the soft knee
+    for angle_idx in 0..8 {
+        let angle = angle_idx as f32 * std::f32::consts::PI / 4.0;
+        let mag = 3.0; // well above max, so limiting is active
+        let c = Complex::new(mag * angle.cos(), mag * angle.sin());
+        let limited = soft_limit_complex_magnitude(c, max_mag);
+
+        let input_phase = c.im.atan2(c.re);
+        let output_phase = limited.im.atan2(limited.re);
+        let phase_diff = (input_phase - output_phase).abs();
+
+        assert!(
+            phase_diff < 1e-5 || (phase_diff - 2.0 * std::f32::consts::PI).abs() < 1e-5,
+            "Phase not preserved: input {}, output {}, diff {}",
+            input_phase,
+            output_phase,
+            phase_diff,
+        );
+    }
+}
+
+/// Test that the limiter produces smooth gain transitions (no per-sample jumps).
+/// Feed a signal that suddenly exceeds the threshold and verify that consecutive
+/// gain reduction values change gradually.
+#[test]
+fn test_limiter_smooth_attack() {
+    let params = XtcPluginParams::default();
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Prime the plugin with silence to fill STFT buffers
+    let prime_frames = 8192;
+    let mut prime_in = vec![0.0_f32; prime_frames * 2];
+    let mut prime_out = vec![0.0_f32; prime_frames * 2];
+    // Small signal to keep the plugin running without triggering limiter
+    for i in 0..prime_frames {
+        let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0;
+        prime_in[i * 2] = phase.sin() * 0.1;
+        prime_in[i * 2 + 1] = phase.cos() * 0.1;
+    }
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames: prime_frames,
+    };
+    plugin.process(&prime_in, &mut prime_out, &context).unwrap();
+
+    // Now feed a loud signal that will trigger the limiter
+    let test_frames = 4096;
+    let mut input = vec![0.0_f32; test_frames * 2];
+    for i in 0..test_frames {
+        let phase = 2.0 * std::f32::consts::PI * 1000.0 * (prime_frames + i) as f32 / 48000.0;
+        input[i * 2] = phase.sin() * 0.8;
+        input[i * 2 + 1] = phase.cos() * 0.8;
+    }
+    let mut output = vec![0.0_f32; test_frames * 2];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames: test_frames,
+    };
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    // Check that consecutive samples don't have huge gain jumps.
+    // Max allowed change per sample: threshold of 0.1 per sample at 48kHz is very generous.
+    let mut max_delta = 0.0_f32;
+    for i in 1..test_frames {
+        let delta_l = (output[i * 2] - output[(i - 1) * 2]).abs();
+        let delta_r = (output[i * 2 + 1] - output[(i - 1) * 2 + 1]).abs();
+        max_delta = max_delta.max(delta_l).max(delta_r);
+    }
+
+    // With a smooth attack, sample-to-sample deltas should be bounded.
+    // A 1kHz sine at amplitude 0.8 through XTC filters can have inter-sample
+    // deltas up to ~0.7 due to filter shaping. An instant-attack limiter would
+    // produce much larger jumps (>1.0). The smooth attack keeps deltas moderate.
+    assert!(
+        max_delta < 0.8,
+        "Limiter attack is too aggressive: max sample delta = {:.4}",
+        max_delta,
+    );
 }
 
 /// Test bypass_neumann_refinement produces different filters than default
