@@ -1,0 +1,65 @@
+---
+const features = [
+  {
+    icon: '/icons/music.svg',
+    title: 'Music Player',
+    description: 'FLAC, MP3, AAC, ALAC, Vorbis — full-featured library and playback.',
+  },
+  {
+    icon: '/icons/sliders-horizontal.svg',
+    title: '30+ Audio Plugins',
+    description: 'EQ, compressor, limiter, upmixer, binaural, XTC, convolution, denoiser...',
+  },
+  {
+    icon: '/icons/speaker.svg',
+    title: 'Room EQ',
+    description: 'Measure, optimize, apply live. Stereo to 9.1.6 Atmos.',
+  },
+  {
+    icon: '/icons/audio-waveform.svg',
+    title: 'Headphone EQ',
+    description: 'Harman target optimization with live preview.',
+  },
+  {
+    icon: '/icons/disc.svg',
+    title: 'Spinorama EQ',
+    description: '1000s of speakers from spinorama.org — no mic needed.',
+  },
+  {
+    icon: '/icons/plug.svg',
+    title: 'Plugin Rack',
+    description: 'Visual rack + DAG editor. A/B compare built in.',
+  },
+  {
+    icon: '/icons/volume-2.svg',
+    title: 'System-Wide (macOS)',
+    description: 'HAL driver routes all system audio through your plugin chain.',
+  },
+  {
+    icon: '/icons/settings.svg',
+    title: 'Export Everywhere',
+    description: 'APO, RME, macOS Audio Units, JSON.',
+  },
+];
+---
+
+<section id="features" class="py-24 px-4 sm:px-6 fade-section">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-3xl sm:text-4xl font-bold text-white text-center mb-4">Features</h2>
+    <p class="text-gray-400 text-center max-w-xl mx-auto mb-16">
+      Everything you need to take control of your sound.
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      {features.map((feature) => (
+        <div class="group p-6 bg-card border border-border rounded-xl hover:border-accent/30 transition-colors">
+          <div class="w-10 h-10 mb-4 flex items-center justify-center rounded-lg bg-accent/10 text-accent">
+            <img src={feature.icon} alt="" class="w-5 h-5 [filter:invert(85%)_sepia(40%)_saturate(2000%)_hue-rotate(155deg)_brightness(100%)]" />
+          </div>
+          <h3 class="text-white font-semibold mb-2">{feature.title}</h3>
+          <p class="text-sm text-gray-400 leading-relaxed">{feature.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

@@ -22,8 +22,8 @@ __pycache__
 /todos.md
 
 # node
-/node_modules
-/dist
+/site/node_modules
+/site/dist
 .sass-cache
 
 # docs

@@ -18,6 +18,6 @@ pub mod ui_state;
 // Re-export all public types
 pub use config::{AutoEqConfig, ParamLimits};
 pub use constants::*;
-pub use form::AutoEqForm;
+pub use form::{AutoEqForm, AutoEqLayoutMode};
 pub use theme::AutoEqFormTheme;
 pub use ui_state::AutoEqFormUiState;

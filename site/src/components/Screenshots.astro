@@ -1,0 +1,39 @@
+---
+const screenshots = [
+  {
+    src: '/images/sotf-player.png',
+    alt: 'SotF music player and library view',
+    caption: 'Full-featured music player with library management',
+  },
+  {
+    src: '/images/upmixer.png',
+    alt: 'SotF upmixer plugin rack',
+    caption: 'Upmixer plugin in the visual rack editor',
+  },
+];
+---
+
+<section id="screenshots" class="py-24 px-4 sm:px-6 fade-section">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-3xl sm:text-4xl font-bold text-white text-center mb-4">Screenshots</h2>
+    <p class="text-gray-400 text-center max-w-xl mx-auto mb-16">
+      See SotF in action.
+    </p>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {screenshots.map((shot) => (
+        <figure class="group">
+          <div class="overflow-hidden rounded-xl border border-border group-hover:border-accent/30 transition-all group-hover:shadow-[0_0_30px_rgba(34,211,238,0.08)]">
+            <img
+              src={shot.src}
+              alt={shot.alt}
+              class="w-full h-auto"
+              loading="lazy"
+            />
+          </div>
+          <figcaption class="mt-3 text-sm text-gray-500 text-center">{shot.caption}</figcaption>
+        </figure>
+      ))}
+    </div>
+  </div>
+</section>

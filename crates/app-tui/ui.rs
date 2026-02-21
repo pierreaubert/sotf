@@ -2860,6 +2860,7 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Save Plugin Preset");
 
+    f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
 
     // Inner area for content
@@ -2992,6 +2993,7 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Load Plugin Preset");
 
+    f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
 
     // Inner area for content
@@ -3107,6 +3109,7 @@ fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
         .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Load APO EQ File");
 
+    f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
 
     // Inner area for text
@@ -3165,6 +3168,7 @@ fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
         .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
         .title("Load SOFA HRTF File");
 
+    f.render_widget(Clear, dialog_area);
     f.render_widget(block, dialog_area);
 
     // Inner area for text

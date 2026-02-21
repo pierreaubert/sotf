@@ -2,7 +2,7 @@ use crate::app::types::RoomEqOptimizationMode;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
+use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
     TextWeight, VStack,
@@ -139,6 +139,7 @@ impl PlayerView {
 
         // Build the AutoEQ form with handlers
         let autoeq_form = AutoEqForm::new("room-eq-optimizer-form")
+            .layout_mode(AutoEqLayoutMode::RoomEq)
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
             .show_goals(false) // Goals hidden: loss is always flat, system type is auto-detected

@@ -1,0 +1,52 @@
+---
+const links = [
+  { label: 'Features', href: '#features' },
+  { label: 'Screenshots', href: '#screenshots' },
+  { label: 'Download', href: '#download' },
+  { label: 'Community', href: '#community' },
+];
+---
+
+<nav class="fixed top-0 left-0 right-0 z-50 bg-bg/80 backdrop-blur-md border-b border-border">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2">
+      <img src="/images/sotf-icon.png" alt="SotF" class="w-8 h-8 rounded" />
+      <span class="font-semibold text-white text-lg">SotF</span>
+    </a>
+
+    <!-- Desktop links -->
+    <div class="hidden md:flex items-center gap-8">
+      {links.map((link) => (
+        <a href={link.href} class="text-sm text-gray-400 hover:text-white transition-colors">
+          {link.label}
+        </a>
+      ))}
+      <a
+        href="#download"
+        class="text-sm font-medium px-4 py-2 rounded-lg bg-accent text-gray-900 hover:bg-accent-hover transition-colors"
+      >
+        Download
+      </a>
+    </div>
+
+    <!-- Mobile hamburger (no JS) -->
+    <details class="md:hidden relative">
+      <summary class="list-none cursor-pointer p-2">
+        <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </summary>
+      <div class="absolute right-0 top-full mt-2 w-48 bg-card border border-border rounded-lg shadow-xl py-2">
+        {links.map((link) => (
+          <a href={link.href} class="block px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-border/50">
+            {link.label}
+          </a>
+        ))}
+        <hr class="border-border my-2" />
+        <a href="#download" class="block px-4 py-2 text-sm font-medium text-accent">
+          Download
+        </a>
+      </div>
+    </details>
+  </div>
+</nav>

@@ -18,6 +18,16 @@ pub(crate) type BoolCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'static
 /// Callback type for dropdown toggle
 pub(crate) type ToggleCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'static>;
 
+/// Layout mode for the AutoEQ form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AutoEqLayoutMode {
+    /// Original card-based layout (headphone EQ, spinorama EQ)
+    #[default]
+    Default,
+    /// Room EQ layout: 3 sections (Optimisation Mode, Room Configuration, Optimiser Configuration)
+    RoomEq,
+}
+
 /// A reusable form for AutoEQ optimization parameters.
 ///
 /// Renders three sections:
@@ -30,6 +40,7 @@ pub(crate) type ToggleCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'stat
 /// - **Headphone**: Hides system type, target curves include Harman curves
 #[derive(IntoElement)]
 pub struct AutoEqForm {
+    pub(crate) layout_mode: AutoEqLayoutMode,
     pub(crate) id: ElementId,
     pub(crate) config: AutoEqConfig,
     pub(crate) ui_state: AutoEqFormUiState,
@@ -168,6 +179,7 @@ impl AutoEqForm {
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             id: id.into(),
+            layout_mode: AutoEqLayoutMode::Default,
             config: AutoEqConfig::default(),
             ui_state: AutoEqFormUiState::default(),
             disabled: false,
@@ -385,6 +397,12 @@ impl AutoEqForm {
     /// Hide room-specific sections (Advanced Room Correction, System Optimization, Advanced Tuning)
     pub fn hide_room_sections(mut self, hide: bool) -> Self {
         self.hide_room_sections = hide;
+        self
+    }
+
+    /// Set the layout mode (Default or RoomEq)
+    pub fn layout_mode(mut self, mode: AutoEqLayoutMode) -> Self {
+        self.layout_mode = mode;
         self
     }
 

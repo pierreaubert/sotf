@@ -20,7 +20,7 @@ use gpui_ui_kit::toggle::{Toggle, ToggleSize, ToggleTheme};
 
 use crate::config::ParamLimits;
 use crate::constants::*;
-use crate::form::AutoEqForm;
+use crate::form::{AutoEqForm, AutoEqLayoutMode};
 use crate::theme::AutoEqFormTheme;
 
 impl RenderOnce for AutoEqForm {
@@ -51,6 +51,7 @@ impl RenderOnce for AutoEqForm {
         let hide_multi_seat = self.hide_multi_seat;
         let hide_scenario_a_text = self.hide_scenario_a_text;
         let hide_room_sections = self.hide_room_sections;
+        let layout_mode = self.layout_mode;
 
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.on_opt_mode_change.map(std::rc::Rc::new);
@@ -178,6 +179,13 @@ impl RenderOnce for AutoEqForm {
         let on_mixed_fir_band_toggle_rc = self.on_mixed_fir_band_toggle.map(std::rc::Rc::new);
 
         // Include the render body from the separate file
-        include!("render_body.rs")
+        match layout_mode {
+            AutoEqLayoutMode::Default => {
+                include!("render_body.rs")
+            }
+            AutoEqLayoutMode::RoomEq => {
+                include!("render_body_room_eq.rs")
+            }
+        }
     }
 }
