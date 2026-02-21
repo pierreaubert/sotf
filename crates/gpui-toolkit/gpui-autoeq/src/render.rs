@@ -51,6 +51,7 @@ impl RenderOnce for AutoEqForm {
         let hide_multi_seat = self.hide_multi_seat;
         let hide_scenario_a_text = self.hide_scenario_a_text;
         let hide_room_sections = self.hide_room_sections;
+        let available_width = self.available_width;
         let layout_mode = self.layout_mode;
 
         // Wrap callbacks in Rc for sharing

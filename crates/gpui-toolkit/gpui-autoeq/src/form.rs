@@ -74,6 +74,8 @@ pub struct AutoEqForm {
     pub(crate) hide_scenario_a_text: bool,
     /// Hide room-specific sections (Advanced Room Correction, System Optimization, Advanced Tuning)
     pub(crate) hide_room_sections: bool,
+    /// Available width in pixels for responsive layout
+    pub(crate) available_width: f32,
 
     // EQ Design callbacks
     pub(crate) on_opt_mode_change: Option<StringCallback>,
@@ -199,6 +201,7 @@ impl AutoEqForm {
             hide_multi_seat: false,
             hide_scenario_a_text: false,
             hide_room_sections: false,
+            available_width: 0.0,
             on_opt_mode_change: None,
             on_opt_mode_toggle: None,
             on_fir_taps_change: None,
@@ -397,6 +400,12 @@ impl AutoEqForm {
     /// Hide room-specific sections (Advanced Room Correction, System Optimization, Advanced Tuning)
     pub fn hide_room_sections(mut self, hide: bool) -> Self {
         self.hide_room_sections = hide;
+        self
+    }
+
+    /// Set available width for responsive layout
+    pub fn available_width(mut self, width: f32) -> Self {
+        self.available_width = width;
         self
     }
 

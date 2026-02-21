@@ -1,0 +1,211 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+---
+
+<BaseLayout
+  title="TUI App Tutorial — SotF"
+  description="Learn how to use the SotF terminal UI app — keyboard-driven audio optimization for power users."
+>
+  <Nav />
+  <main class="pt-24 pb-16 px-4 sm:px-6">
+    <article class="max-w-3xl mx-auto">
+
+      <!-- Hero -->
+      <section id="intro" class="mb-16">
+        <a href="/" class="text-sm text-gray-500 hover:text-accent transition-colors mb-4 inline-block">&larr; Back to homepage</a>
+        <h1 class="text-4xl sm:text-5xl font-bold text-white mb-6">TUI App Tutorial</h1>
+        <p class="text-lg text-gray-400 leading-relaxed">
+          The SotF TUI (Terminal User Interface) is a keyboard-driven music player and audio optimizer
+          that runs entirely in your terminal. It's perfect for SSH sessions, headless servers,
+          and anyone who prefers a fast, distraction-free workflow.
+        </p>
+      </section>
+
+      <!-- Installation -->
+      <section id="installation" class="mb-16">
+        <h2 class="text-2xl font-bold text-white mb-6">Installation</h2>
+        <p class="text-gray-400 mb-4">Build from source:</p>
+        <div class="font-mono bg-card border border-border rounded-lg p-4 mb-4 overflow-x-auto">
+          <code class="text-sm text-gray-300">cargo build --release --bin sotf-tui</code>
+        </div>
+        <p class="text-gray-400">
+          Or download the latest binary from the
+          <a href="https://github.com/pierreaubert/sotf/releases" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-accent-hover transition-colors">GitHub releases</a> page.
+        </p>
+      </section>
+
+      <!-- Quick Start -->
+      <section id="quick-start" class="mb-16">
+        <h2 class="text-2xl font-bold text-white mb-6">Quick Start</h2>
+        <p class="text-gray-400 mb-4">Launch the TUI with a music directory:</p>
+        <div class="font-mono bg-card border border-border rounded-lg p-4 mb-4 overflow-x-auto">
+          <code class="text-sm text-gray-300">sotf-tui --directories ~/Music --scan</code>
+        </div>
+        <p class="text-gray-400">
+          The <code class="text-gray-300 font-mono bg-card px-1.5 py-0.5 rounded">--scan</code> flag
+          triggers an initial scan of your music library. After the first scan, SotF remembers your
+          directories and indexes them automatically on startup.
+        </p>
+      </section>
+
+      <!-- Navigation -->
+      <section id="screens" class="mb-16">
+        <h2 class="text-2xl font-bold text-white mb-6">Screens Overview</h2>
+        <p class="text-gray-400 mb-6">The TUI is organized into several screens, each accessible via keyboard shortcuts:</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+            <thead>
+              <tr class="bg-card">
+                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Screen</th>
+                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-border">
+                <td class="px-4 py-3 text-white font-mono">Library</td>
+                <td class="px-4 py-3 text-gray-400">Browse and search your music collection by artist, album, or track</td>
+              </tr>
+              <tr class="border-b border-border bg-card/50">
+                <td class="px-4 py-3 text-white font-mono">Queue</td>
+                <td class="px-4 py-3 text-gray-400">View and manage the current playback queue</td>
+              </tr>
+              <tr class="border-b border-border">
+                <td class="px-4 py-3 text-white font-mono">Plugins</td>
+                <td class="px-4 py-3 text-gray-400">Add, configure, and reorder audio processing plugins</td>
+              </tr>
+              <tr class="border-b border-border bg-card/50">
+                <td class="px-4 py-3 text-white font-mono">Devices</td>
+                <td class="px-4 py-3 text-gray-400">Select and configure audio output devices</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 text-white font-mono">Directory Manager</td>
+                <td class="px-4 py-3 text-gray-400">Add or remove music directories and trigger rescans</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Keyboard Shortcuts -->
+      <section id="keyboard-shortcuts" class="mb-16">
+        <h2 class="text-2xl font-bold text-white mb-6">Keyboard Shortcuts</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border border-border rounded-lg overflow-hidden">
+            <thead>
+              <tr class="bg-card">
+                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Key</th>
+                <th class="text-left px-4 py-3 text-gray-300 font-semibold border-b border-border">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="border-b border-border">
+                <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">h</kbd></td>
+                <td class="px-4 py-3 text-gray-400">Show help overlay</td>
+              </tr>
+              <tr class="border-b border-border bg-card/50">
+                <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">q</kbd></td>
+                <td class="px-4 py-3 text-gray-400">Quit the application</td>
+              </tr>
+              <tr class="border-b border-border">
+                <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">Space</kbd></td>
+                <td class="px-4 py-3 text-gray-400">Play / Pause</td>
+              </tr>
+              <tr class="border-b border-border bg-card/50">
+                <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">n</kbd></td>
+                <td class="px-4 py-3 text-gray-400">Next track</td>
+              </tr>
+              <tr class="border-b border-border">
+                <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">p</kbd></td>
+                <td class="px-4 py-3 text-gray-400">Previous track</td>
+              </tr>
+              <tr class="border-b border-border bg-card/50">
+                <td class="px-4 py-3">
+                  <kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">&lt;</kbd>
+                  <kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs ml-1">&gt;</kbd>
+                </td>
+                <td class="px-4 py-3 text-gray-400">Volume down / up</td>
+              </tr>
+              <tr class="border-b border-border">
+                <td class="px-4 py-3">
+                  <kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">h j k l</kbd> /
+                  <kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs ml-1">arrows</kbd>
+                </td>
+                <td class="px-4 py-3 text-gray-400">Navigate (vim-style or arrow keys)</td>
+              </tr>
+              <tr class="border-b border-border bg-card/50">
+                <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">/</kbd></td>
+                <td class="px-4 py-3 text-gray-400">Search</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3"><kbd class="px-2 py-1 bg-card border border-border rounded text-accent font-mono text-xs">Enter</kbd></td>
+                <td class="px-4 py-3 text-gray-400">Select / confirm</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Adding Plugins -->
+      <section id="plugins" class="mb-16">
+        <h2 class="text-2xl font-bold text-white mb-6">Adding Plugins</h2>
+        <ol class="space-y-4 text-gray-400">
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">1</span>
+            <span>Navigate to the <strong class="text-white">Plugins</strong> screen.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">2</span>
+            <span>Press <kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">a</kbd> to open the plugin browser.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">3</span>
+            <span>Browse or search for a plugin (EQ, compressor, limiter, convolution, etc.).</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-7 h-7 rounded-full bg-accent/10 text-accent text-sm font-semibold flex items-center justify-center">4</span>
+            <span>Press <kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">Enter</kbd> to add it to your chain. Use <kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">j</kbd> / <kbd class="px-2 py-0.5 bg-card border border-border rounded text-accent font-mono text-xs">k</kbd> to reorder.</span>
+          </li>
+        </ol>
+      </section>
+
+      <!-- Saving & Loading -->
+      <section id="presets" class="mb-16">
+        <h2 class="text-2xl font-bold text-white mb-6">Saving & Loading Presets</h2>
+        <p class="text-gray-400 mb-4">
+          Your plugin chain configuration can be saved as a preset for quick recall.
+        </p>
+        <ul class="space-y-3 text-gray-400">
+          <li class="flex items-start gap-3">
+            <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5" />
+            </svg>
+            <span><strong class="text-white">Save</strong> — export your current plugin chain as a JSON preset file.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5" />
+            </svg>
+            <span><strong class="text-white">Load</strong> — import a preset or an APO EQ configuration file to instantly apply a plugin chain.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <svg class="w-5 h-5 text-accent mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5" />
+            </svg>
+            <span><strong class="text-white">APO EQ files</strong> — SotF natively reads EqualizerAPO configuration files, making it easy to import EQ settings from other tools.</span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Back link -->
+      <div class="pt-8 border-t border-border">
+        <a href="/tutorial/gpui" class="text-accent hover:text-accent-hover transition-colors font-medium">
+          GPUI App Tutorial &rarr;
+        </a>
+      </div>
+
+    </article>
+  </main>
+  <Footer />
+</BaseLayout>

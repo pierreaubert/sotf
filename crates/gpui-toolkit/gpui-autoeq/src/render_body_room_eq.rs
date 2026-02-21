@@ -24,257 +24,14 @@
         let is_iir = config.opt_mode == "iir" || config.opt_mode == "mixed";
 
         // ========================================
-        // Section 1: Optimisation Mode
-        // ========================================
-        {
-            let mut section = VStack::new().spacing(StackSpacing::Sm);
-
-            // Header
-            section = section.child(
-                VStack::new()
-                    .spacing(StackSpacing::None)
-                    .child(
-                        Text::new("Optimisation Mode")
-                            .size(TextSize::Sm)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.header_color),
-                    )
-                    .child(
-                        Text::new("Mode-specific filter parameters")
-                            .size(TextSize::Xs)
-                            .color(theme.description_color),
-                    ),
-            );
-
-            // FIR Taps and Phase (when FIR or mixed)
-            if is_fir {
-                let mut fir_taps_input = NumberInput::new((base_id.clone(), "fir-taps"))
-                    .value(config.fir_taps as f64)
-                    .min(ParamLimits::FIR_TAPS.min)
-                    .max(ParamLimits::FIR_TAPS.max)
-                    .step(ParamLimits::FIR_TAPS.step)
-                    .decimals(0)
-                    .label("FIR Taps")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_fir_taps_change_rc {
-                    let h = handler.clone();
-                    fir_taps_input =
-                        fir_taps_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                }
-
-                let fir_phase_options: Vec<SelectOption> = FIR_PHASE_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut fir_phase_select = Select::new((base_id.clone(), "fir-phase"))
-                    .label("Phase")
-                    .options(fir_phase_options)
-                    .selected(&config.fir_phase)
-                    .is_open(ui_state.fir_phase_open)
-                    .disabled(disabled)
-                    .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_fir_phase_toggle_rc {
-                    let h = handler.clone();
-                    fir_phase_select =
-                        fir_phase_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_fir_phase_change_rc {
-                    let h = handler.clone();
-                    fir_phase_select =
-                        fir_phase_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-                }
-
-                section = section.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(fir_taps_input)
-                        .child(fir_phase_select),
-                );
-            }
-
-            // Mixed mode config
-            if config.opt_mode == "mixed" {
-                let mut mixed_freq_input =
-                    NumberInput::new((base_id.clone(), "mixed-crossover-freq"))
-                        .value(config.mixed_crossover_freq)
-                        .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
-                        .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
-                        .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
-                        .decimals(0)
-                        .label("Crossover Freq (Hz)")
-                        .size(NumberInputSize::Sm)
-                        .width(140.0)
-                        .disabled(disabled)
-                        .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_mixed_crossover_freq_change_rc {
-                    let h = handler.clone();
-                    mixed_freq_input = mixed_freq_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                let mixed_type_options: Vec<SelectOption> = MIXED_CROSSOVER_TYPE_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut mixed_type_select =
-                    Select::new((base_id.clone(), "mixed-crossover-type"))
-                        .label("Crossover Type")
-                        .options(mixed_type_options)
-                        .selected(&config.mixed_crossover_type)
-                        .is_open(ui_state.mixed_crossover_type_open)
-                        .disabled(disabled)
-                        .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_mixed_crossover_type_toggle_rc {
-                    let h = handler.clone();
-                    mixed_type_select =
-                        mixed_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_mixed_crossover_type_change_rc {
-                    let h = handler.clone();
-                    mixed_type_select =
-                        mixed_type_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
-                }
-
-                let mixed_band_options: Vec<SelectOption> = MIXED_FIR_BAND_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut mixed_band_select = Select::new((base_id.clone(), "mixed-fir-band"))
-                    .label("FIR Band")
-                    .options(mixed_band_options)
-                    .selected(&config.mixed_fir_band)
-                    .is_open(ui_state.mixed_fir_band_open)
-                    .disabled(disabled)
-                    .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_mixed_fir_band_toggle_rc {
-                    let h = handler.clone();
-                    mixed_band_select =
-                        mixed_band_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_mixed_fir_band_change_rc {
-                    let h = handler.clone();
-                    mixed_band_select =
-                        mixed_band_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
-                }
-
-                section = section
-                    .child(mixed_freq_input)
-                    .child(mixed_type_select)
-                    .child(mixed_band_select);
-            }
-
-            // Filters (IIR)
-            if is_iir {
-                let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
-                    .value(config.num_filters as f64)
-                    .min(ParamLimits::NUM_FILTERS.min)
-                    .max(ParamLimits::NUM_FILTERS.max)
-                    .step(ParamLimits::NUM_FILTERS.step)
-                    .decimals(0)
-                    .label("Filters")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_num_filters_change_rc {
-                    let h = handler.clone();
-                    num_filters_input =
-                        num_filters_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                }
-
-                if !hide_sample_rate {
-                    let mut sample_rate_input =
-                        NumberInput::new((base_id.clone(), "sample-rate"))
-                            .value(config.sample_rate as f64)
-                            .min(ParamLimits::SAMPLE_RATE.min)
-                            .max(ParamLimits::SAMPLE_RATE.max)
-                            .step(ParamLimits::SAMPLE_RATE.step)
-                            .decimals(0)
-                            .label("Sample Rate")
-                            .size(NumberInputSize::Sm)
-                            .width(100.0)
-                            .disabled(disabled)
-                            .theme(theme.number_input_theme.clone());
-
-                    if let Some(ref handler) = on_sample_rate_change_rc {
-                        let h = handler.clone();
-                        sample_rate_input = sample_rate_input
-                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                    }
-
-                    section = section.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(num_filters_input)
-                            .child(sample_rate_input),
-                    );
-                } else {
-                    section = section.child(num_filters_input);
-                }
-            } else if !hide_sample_rate {
-                let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
-                    .value(config.sample_rate as f64)
-                    .min(ParamLimits::SAMPLE_RATE.min)
-                    .max(ParamLimits::SAMPLE_RATE.max)
-                    .step(ParamLimits::SAMPLE_RATE.step)
-                    .decimals(0)
-                    .label("Sample Rate")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_sample_rate_change_rc {
-                    let h = handler.clone();
-                    sample_rate_input =
-                        sample_rate_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                }
-
-                section = section.child(sample_rate_input);
-            }
-
-            form = form.child(Card::new().content(section));
-        }
-
-        // ========================================
         // Section 2: Room Configuration
         // ========================================
         {
-            let mut section = VStack::new().spacing(StackSpacing::Sm);
-
-            // Header
-            section = section.child(
-                VStack::new()
-                    .spacing(StackSpacing::None)
-                    .child(
-                        Text::new("Room Configuration")
-                            .size(TextSize::Sm)
-                            .weight(TextWeight::Semibold)
-                            .color(theme.header_color),
-                    )
-                    .child(
-                        Text::new("Target curve and room correction options")
-                            .size(TextSize::Xs)
-                            .color(theme.description_color),
-                    ),
-            );
+            let mut target_col = VStack::new().spacing(StackSpacing::Sm);
+            let mut options_col = VStack::new().spacing(StackSpacing::Sm);
 
             // --- Target sub-section ---
-            section = section.child(
+            target_col = target_col.child(
                 Text::new("TARGET")
                     .size(TextSize::Xs)
                     .weight(TextWeight::Semibold)
@@ -292,7 +49,7 @@
                 tilt_toggle = tilt_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            target_col = target_col.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
@@ -325,7 +82,7 @@
                     tilt_select = tilt_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                 }
 
-                section = section.child(tilt_select);
+                target_col = target_col.child(tilt_select);
 
                 if config.tilt_type == "custom" || config.tilt_type == "harman" {
                     let mut slope_input = NumberInput::new((base_id.clone(), "tilt-slope"))
@@ -358,7 +115,7 @@
                         ref_freq_input = ref_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    section = section.child(
+                    target_col = target_col.child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child(slope_input)
@@ -396,7 +153,7 @@
                         shelf_freq_input = shelf_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    section = section.child(
+                    target_col = target_col.child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child(shelf_db_input)
@@ -406,7 +163,7 @@
             }
 
             // --- Options sub-section ---
-            section = section.child(
+            options_col = options_col.child(
                 Text::new("OPTIONS")
                     .size(TextSize::Xs)
                     .weight(TextWeight::Semibold)
@@ -1117,6 +874,207 @@
                     .weight(TextWeight::Semibold)
                     .color(theme.accent),
             );
+
+            // Filters (IIR)
+            if is_iir {
+                let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
+                    .value(config.num_filters as f64)
+                    .min(ParamLimits::NUM_FILTERS.min)
+                    .max(ParamLimits::NUM_FILTERS.max)
+                    .step(ParamLimits::NUM_FILTERS.step)
+                    .decimals(0)
+                    .label("Filters")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_num_filters_change_rc {
+                    let h = handler.clone();
+                    num_filters_input =
+                        num_filters_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                if !hide_sample_rate {
+                    let mut sample_rate_input =
+                        NumberInput::new((base_id.clone(), "sample-rate"))
+                            .value(config.sample_rate as f64)
+                            .min(ParamLimits::SAMPLE_RATE.min)
+                            .max(ParamLimits::SAMPLE_RATE.max)
+                            .step(ParamLimits::SAMPLE_RATE.step)
+                            .decimals(0)
+                            .label("Sample Rate")
+                            .size(NumberInputSize::Sm)
+                            .width(100.0)
+                            .disabled(disabled)
+                            .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref handler) = on_sample_rate_change_rc {
+                        let h = handler.clone();
+                        sample_rate_input = sample_rate_input
+                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                    }
+
+                    left_col = left_col.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(num_filters_input)
+                            .child(sample_rate_input),
+                    );
+                } else {
+                    left_col = left_col.child(num_filters_input);
+                }
+            } else if !hide_sample_rate {
+                let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
+                    .value(config.sample_rate as f64)
+                    .min(ParamLimits::SAMPLE_RATE.min)
+                    .max(ParamLimits::SAMPLE_RATE.max)
+                    .step(ParamLimits::SAMPLE_RATE.step)
+                    .decimals(0)
+                    .label("Sample Rate")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_sample_rate_change_rc {
+                    let h = handler.clone();
+                    sample_rate_input =
+                        sample_rate_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                left_col = left_col.child(sample_rate_input);
+            }
+
+            // FIR Taps and Phase (when FIR or mixed)
+            if is_fir {
+                let mut fir_taps_input = NumberInput::new((base_id.clone(), "fir-taps"))
+                    .value(config.fir_taps as f64)
+                    .min(ParamLimits::FIR_TAPS.min)
+                    .max(ParamLimits::FIR_TAPS.max)
+                    .step(ParamLimits::FIR_TAPS.step)
+                    .decimals(0)
+                    .label("FIR Taps")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_fir_taps_change_rc {
+                    let h = handler.clone();
+                    fir_taps_input =
+                        fir_taps_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                let fir_phase_options: Vec<SelectOption> = FIR_PHASE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut fir_phase_select = Select::new((base_id.clone(), "fir-phase"))
+                    .label("Phase")
+                    .options(fir_phase_options)
+                    .selected(&config.fir_phase)
+                    .is_open(ui_state.fir_phase_open)
+                    .disabled(disabled)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref handler) = on_fir_phase_toggle_rc {
+                    let h = handler.clone();
+                    fir_phase_select =
+                        fir_phase_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_fir_phase_change_rc {
+                    let h = handler.clone();
+                    fir_phase_select =
+                        fir_phase_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+                }
+
+                left_col = left_col.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(fir_taps_input)
+                        .child(fir_phase_select),
+                );
+            }
+
+            // Mixed mode config
+            if config.opt_mode == "mixed" {
+                let mut mixed_freq_input =
+                    NumberInput::new((base_id.clone(), "mixed-crossover-freq"))
+                        .value(config.mixed_crossover_freq)
+                        .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
+                        .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
+                        .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
+                        .decimals(0)
+                        .label("Crossover Freq (Hz)")
+                        .size(NumberInputSize::Sm)
+                        .width(140.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_mixed_crossover_freq_change_rc {
+                    let h = handler.clone();
+                    mixed_freq_input = mixed_freq_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                let mixed_type_options: Vec<SelectOption> = MIXED_CROSSOVER_TYPE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut mixed_type_select =
+                    Select::new((base_id.clone(), "mixed-crossover-type"))
+                        .label("Crossover Type")
+                        .options(mixed_type_options)
+                        .selected(&config.mixed_crossover_type)
+                        .is_open(ui_state.mixed_crossover_type_open)
+                        .disabled(disabled)
+                        .theme(theme.select_theme.clone());
+
+                if let Some(ref handler) = on_mixed_crossover_type_toggle_rc {
+                    let h = handler.clone();
+                    mixed_type_select =
+                        mixed_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_mixed_crossover_type_change_rc {
+                    let h = handler.clone();
+                    mixed_type_select =
+                        mixed_type_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                let mixed_band_options: Vec<SelectOption> = MIXED_FIR_BAND_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut mixed_band_select = Select::new((base_id.clone(), "mixed-fir-band"))
+                    .label("FIR Band")
+                    .options(mixed_band_options)
+                    .selected(&config.mixed_fir_band)
+                    .is_open(ui_state.mixed_fir_band_open)
+                    .disabled(disabled)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref handler) = on_mixed_fir_band_toggle_rc {
+                    let h = handler.clone();
+                    mixed_band_select =
+                        mixed_band_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_mixed_fir_band_change_rc {
+                    let h = handler.clone();
+                    mixed_band_select =
+                        mixed_band_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                left_col = left_col
+                    .child(mixed_freq_input)
+                    .child(mixed_type_select)
+                    .child(mixed_band_select);
+            }
 
             // dB Range
             let mut min_db_input = NumberInput::new((base_id.clone(), "min-db"))

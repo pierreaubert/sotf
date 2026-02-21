@@ -1,0 +1,43 @@
+---
+const tutorials = [
+  {
+    title: 'TUI App Tutorial',
+    description: 'Learn the terminal UI — keyboard-driven, SSH-friendly, and lightning fast. Perfect for headless servers and power users.',
+    href: '/tutorial/tui',
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3M3.75 4.5h16.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5H3.75a1.5 1.5 0 0 1-1.5-1.5V6a1.5 1.5 0 0 1 1.5-1.5Z" /></svg>`,
+  },
+  {
+    title: 'GPUI App Tutorial',
+    description: 'Explore the desktop GUI — visual plugin rack, spectrum analyzer, room EQ wizard, and more.',
+    href: '/tutorial/gpui',
+    icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25A2.25 2.25 0 0 1 5.25 3h13.5A2.25 2.25 0 0 1 21 5.25Z" /></svg>`,
+  },
+];
+---
+
+<section id="tutorials" class="py-24 px-4 sm:px-6 fade-section">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-3xl sm:text-4xl font-bold text-white text-center mb-4">Tutorials</h2>
+    <p class="text-gray-400 text-center max-w-xl mx-auto mb-16">
+      Get started with SotF in minutes.
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
+      {tutorials.map((t) => (
+        <a
+          href={t.href}
+          class="group p-8 bg-card border border-border rounded-xl hover:border-accent/30 transition-all hover:shadow-[0_0_30px_rgba(34,211,238,0.08)]"
+        >
+          <div class="w-12 h-12 mb-5 flex items-center justify-center rounded-lg bg-accent/10 text-accent">
+            <Fragment set:html={t.icon} />
+          </div>
+          <h3 class="text-white font-semibold text-lg mb-2 group-hover:text-accent transition-colors">{t.title}</h3>
+          <p class="text-sm text-gray-400 leading-relaxed mb-4">{t.description}</p>
+          <span class="text-sm text-accent font-medium">
+            Read tutorial &rarr;
+          </span>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>

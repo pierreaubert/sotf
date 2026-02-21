@@ -173,7 +173,17 @@ async fn fetch_json<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T
         let err = io::Error::other(format!("HTTP {} for {}", resp.status(), url));
         return Err(Box::new(err));
     }
-    let val = resp.json::<T>().await?;
+    let text = resp.text().await?;
+    // The API sometimes returns {"error":"..."} with HTTP 200
+    if let Ok(obj) = serde_json::from_str::<serde_json::Map<String, Value>>(&text) {
+        if let Some(Value::String(msg)) = obj.get("error") {
+            return Err(Box::new(io::Error::other(format!(
+                "API error for {}: {}",
+                url, msg
+            ))));
+        }
+    }
+    let val = serde_json::from_str::<T>(&text)?;
     Ok(val)
 }
 
