@@ -304,11 +304,17 @@ impl Plugin for MonoToStereoPlugin {
 
 impl MonoToStereoPlugin {
     fn process_stft(&mut self) {
-        let mut idx = (self.input_ring_pos + FFT_SIZE - HOP_SIZE) % FFT_SIZE;
-        for i in 0..FFT_SIZE {
-            self.fft_input_buf[i] = self.input_ring[idx];
-            idx = (idx + 1) % FFT_SIZE;
-        }
+        // Copy the oldest FFT_SIZE samples from the ring buffer in chronological
+        // order using two contiguous copies instead of per-element modulo.
+        // The oldest sample sits at `input_ring_pos` (next write position wraps
+        // around, so the sample written HOP_SIZE steps ago is at
+        // (input_ring_pos + FFT_SIZE - HOP_SIZE) % FFT_SIZE, but the full
+        // window starting point is simply `input_ring_pos` after the ring is
+        // full — which is guaranteed by the HOP_SIZE gate in `process`).
+        let start = (self.input_ring_pos + FFT_SIZE - HOP_SIZE) % FFT_SIZE;
+        let first_len = FFT_SIZE - start;
+        self.fft_input_buf[..first_len].copy_from_slice(&self.input_ring[start..]);
+        self.fft_input_buf[first_len..].copy_from_slice(&self.input_ring[..start]);
         // Analysis window (Hann + 50% overlap satisfies COLA for OLA)
         super::simd::window_mul_simd_inplace(&mut self.fft_input_buf, &self.window);
 

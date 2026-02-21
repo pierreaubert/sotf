@@ -94,17 +94,12 @@ impl UpmixerPlugin {
         }
 
         if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
-            // Generate subharmonics based on LFE amplitude
-            // Use configurable frequency (default 40Hz rumble) modulated by the LFE envelope
-            let phase_inc =
-                2.0 * std::f32::consts::PI * self.subharmonic_freq_hz / self.sample_rate as f32;
-
-            // Envelope smoothing parameters (time constants in samples)
-            // Convert attack/release times from ms to seconds for coefficient calculation
-            let attack_time_sec = self.subharmonic_attack_ms / 1000.0;
-            let release_time_sec = self.subharmonic_release_ms / 1000.0;
-            let attack_coeff = 1.0 - (-1.0 / (attack_time_sec * self.sample_rate as f32)).exp();
-            let release_coeff = 1.0 - (-1.0 / (release_time_sec * self.sample_rate as f32)).exp();
+            // Generate subharmonics based on LFE amplitude.
+            // Phase increment and envelope coefficients are pre-computed in
+            // initialize() / set_parameter() to avoid per-block transcendental calls.
+            let phase_inc = self.cached_subharmonic_phase_inc;
+            let attack_coeff = self.cached_subharmonic_attack_coeff;
+            let release_coeff = self.cached_subharmonic_release_coeff;
 
             // Soft threshold for envelope detection - prevents clicks at threshold crossing
             // Using a sigmoid-like transition instead of hard threshold

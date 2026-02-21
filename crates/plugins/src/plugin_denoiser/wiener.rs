@@ -10,6 +10,8 @@
 //
 // The gain is bounded by a floor to prevent musical noise artifacts.
 
+use math_audio_dsp::fast_math::fast_log10;
+
 use super::DenoiserPlugin;
 
 /// Small constant to prevent division by zero
@@ -99,7 +101,7 @@ impl DenoiserPlugin {
         if bin_count > 0 {
             let avg_gain = 1.0 - (total_reduction / bin_count as f32);
             self.avg_reduction_db = if avg_gain > EPSILON {
-                -20.0 * avg_gain.log10()
+                -20.0 * fast_log10(avg_gain)
             } else {
                 60.0 // Max reduction
             };
@@ -138,13 +140,36 @@ impl DenoiserPlugin {
         let src = &self.freq_smooth_temp;
         let dst = &mut self.gain[channel];
 
-        // Apply 5-tap kernel with replicate boundary conditions
-        for k in 0..n {
+        // Apply 5-tap Gaussian kernel split into three segments to enable autovectorization.
+        // The main body (k=2..n-2) uses direct index arithmetic with no boundary checks,
+        // allowing the compiler to vectorize the inner loop. Edges use replicate conditions.
+
+        // Edge-left: k = 0..2 (boundary: clamp to 0)
+        for k in 0..2.min(n) {
             let km2 = k.saturating_sub(2);
             let km1 = k.saturating_sub(1);
             let kp1 = (k + 1).min(n - 1);
             let kp2 = (k + 2).min(n - 1);
+            dst[k] = c2 * src[km2] + c1 * src[km1] + c0 * src[k] + c1 * src[kp1] + c2 * src[kp2];
+        }
 
+        // Main body: k = 2..n-2 (no boundary checks — compiler can autovectorize)
+        if n > 4 {
+            for k in 2..n - 2 {
+                dst[k] = c2 * src[k - 2]
+                    + c1 * src[k - 1]
+                    + c0 * src[k]
+                    + c1 * src[k + 1]
+                    + c2 * src[k + 2];
+            }
+        }
+
+        // Edge-right: k = n-2..n (boundary: clamp to n-1)
+        for k in (n - 2).max(2)..n {
+            let km2 = k.saturating_sub(2);
+            let km1 = k.saturating_sub(1);
+            let kp1 = (k + 1).min(n - 1);
+            let kp2 = (k + 2).min(n - 1);
             dst[k] = c2 * src[km2] + c1 * src[km1] + c0 * src[k] + c1 * src[kp1] + c2 * src[kp2];
         }
     }
@@ -193,7 +218,7 @@ impl DenoiserPlugin {
 
             self.cached_noise_floor_buf[band] = if count > 0 {
                 let avg_power = sum / count as f32;
-                10.0 * avg_power.log10()
+                10.0 * fast_log10(avg_power)
             } else {
                 -100.0
             };
@@ -225,7 +250,7 @@ impl DenoiserPlugin {
 
             self.cached_snr_buf[band] = if count > 0 {
                 let avg_snr = sum_snr / count as f32;
-                10.0 * avg_snr.log10()
+                10.0 * fast_log10(avg_snr)
             } else {
                 0.0
             };

@@ -49,7 +49,12 @@ pub struct ConvolutionPlugin {
     input_buffers: Vec<Vec<f32>>,
     input_fill: usize,
     fdl: Vec<Vec<Vec<Complex<f32>>>>, // [channel][partition][bin]
+    fdl_head: usize,                  // ring buffer head for FDL (avoids rotate_right)
     output_accum: Vec<Vec<f32>>,
+    // Pre-allocated scratch buffers (avoid heap allocs in audio callback)
+    fft_spectrum: Vec<Complex<f32>>,
+    fft_sum: Vec<Complex<f32>>,
+    fft_scratch: Vec<Complex<f32>>,
 }
 
 impl ConvolutionPlugin {
@@ -68,7 +73,11 @@ impl ConvolutionPlugin {
             input_buffers: vec![vec![0.0; PARTITION_SIZE]; channels],
             input_fill: 0,
             fdl: vec![vec![vec![Complex::new(0.0, 0.0); FFT_SIZE]; 0]; channels],
+            fdl_head: 0,
             output_accum: vec![vec![0.0; FFT_SIZE]; channels],
+            fft_spectrum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
+            fft_sum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
+            fft_scratch: Vec::new(),
         }
     }
 
@@ -115,6 +124,9 @@ impl ConvolutionPlugin {
         }
 
         let num_partitions = partitions[0].len();
+        let fft_scratch_len = fft_forward
+            .get_inplace_scratch_len()
+            .max(fft_inverse.get_inplace_scratch_len());
         self.state.store(Arc::new(Some(ConvolutionState {
             partitions,
             num_partitions,
@@ -124,6 +136,8 @@ impl ConvolutionPlugin {
         })));
         self.fdl =
             vec![vec![vec![Complex::new(0.0, 0.0); FFT_SIZE]; num_partitions]; self.channels];
+        self.fdl_head = 0;
+        self.fft_scratch = vec![Complex::new(0.0, 0.0); fft_scratch_len];
         self.ir_file = path.to_string();
         Ok(())
     }
@@ -213,6 +227,7 @@ impl Plugin for ConvolutionPlugin {
                 self.fdl[ch][p].fill(Complex::new(0.0, 0.0));
             }
         }
+        self.fdl_head = 0;
     }
 
     fn process(
@@ -230,6 +245,8 @@ impl Plugin for ConvolutionPlugin {
                 return Ok(nf);
             }
         };
+
+        let num_partitions = state.num_partitions;
 
         let mut in_pos = 0;
         while in_pos < nf {
@@ -249,43 +266,65 @@ impl Plugin for ConvolutionPlugin {
                 let dry_g = 1.0 - m;
                 let inv_n = 1.0 / FFT_SIZE as f32;
 
-                for ch in 0..self.channels {
-                    self.fdl[ch].rotate_right(1);
-                    let mut spectrum = vec![Complex::new(0.0, 0.0); FFT_SIZE];
-                    for i in 0..PARTITION_SIZE {
-                        spectrum[i] = Complex::new(self.input_buffers[ch][i], 0.0);
-                    }
-                    state.fft_forward.process(&mut spectrum);
-                    self.fdl[ch][0] = spectrum;
+                // Advance FDL ring buffer head (replaces rotate_right)
+                self.fdl_head = if self.fdl_head == 0 {
+                    num_partitions - 1
+                } else {
+                    self.fdl_head - 1
+                };
 
-                    let mut sum = vec![Complex::new(0.0, 0.0); FFT_SIZE];
+                for ch in 0..self.channels {
+                    // Fill pre-allocated spectrum buffer (zero-padded)
+                    for i in 0..PARTITION_SIZE {
+                        self.fft_spectrum[i] =
+                            Complex::new(self.input_buffers[ch][i], 0.0);
+                    }
+                    for i in PARTITION_SIZE..FFT_SIZE {
+                        self.fft_spectrum[i] = Complex::new(0.0, 0.0);
+                    }
+                    state
+                        .fft_forward
+                        .process_with_scratch(&mut self.fft_spectrum, &mut self.fft_scratch);
+
+                    // Store into FDL at ring head
+                    self.fdl[ch][self.fdl_head].copy_from_slice(&self.fft_spectrum);
+
+                    // Accumulate convolution sum using pre-allocated buffer
+                    self.fft_sum.fill(Complex::new(0.0, 0.0));
                     let ir_ch = if state.ir_channels == 1 {
                         0
                     } else {
                         ch.min(state.ir_channels - 1)
                     };
-                    for p in 0..state.num_partitions {
+                    for p in 0..num_partitions {
+                        let fdl_idx = (self.fdl_head + p) % num_partitions;
                         complex_mul_add_simd(
-                            &mut sum,
-                            &self.fdl[ch][p],
+                            &mut self.fft_sum,
+                            &self.fdl[ch][fdl_idx],
                             &state.partitions[ir_ch][p],
                         );
                     }
-                    state.fft_inverse.process(&mut sum);
+                    state
+                        .fft_inverse
+                        .process_with_scratch(&mut self.fft_sum, &mut self.fft_scratch);
                     for i in 0..FFT_SIZE {
-                        self.output_accum[ch][i] += sum[i].re * inv_n;
+                        self.output_accum[ch][i] += self.fft_sum[i].re * inv_n;
                     }
                 }
 
-                for i in 0..PARTITION_SIZE {
-                    for ch in 0..self.channels {
-                        let out_idx =
-                            (in_pos - (PARTITION_SIZE - to_copy) + i) * self.channels + ch;
+                // Drain output accumulator using copy_within + fill
+                for ch in 0..self.channels {
+                    let out_base =
+                        (in_pos - (PARTITION_SIZE - to_copy)) * self.channels;
+                    for i in 0..PARTITION_SIZE {
+                        let out_idx = out_base + i * self.channels + ch;
                         let dry = input[out_idx];
-                        output[out_idx] = dry * dry_g + self.output_accum[ch][i] * wet_g;
-                        self.output_accum[ch][i] = self.output_accum[ch][PARTITION_SIZE + i];
-                        self.output_accum[ch][PARTITION_SIZE + i] = 0.0;
+                        output[out_idx] =
+                            dry * dry_g + self.output_accum[ch][i] * wet_g;
                     }
+                    self.output_accum[ch]
+                        .copy_within(PARTITION_SIZE..FFT_SIZE, 0);
+                    self.output_accum[ch][PARTITION_SIZE..].fill(0.0);
                 }
                 self.input_fill = 0;
             }

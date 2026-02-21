@@ -144,12 +144,14 @@ impl RingAccumulator {
 
     /// Copy the current window (oldest-first) into `dest`.
     /// `dest` must be at least `window_size` long.
+    /// Uses two contiguous copies instead of per-element modulo.
     pub fn read_window(&self, dest: &mut [f32]) {
         debug_assert!(dest.len() >= self.window_size);
         let start = self.write_pos; // oldest sample
-        for (i, sample) in dest.iter_mut().enumerate().take(self.window_size) {
-            let idx = (start + i) % self.window_size;
-            *sample = self.buffer[idx];
+        let first_len = self.window_size - start;
+        dest[..first_len].copy_from_slice(&self.buffer[start..]);
+        if start > 0 {
+            dest[first_len..self.window_size].copy_from_slice(&self.buffer[..start]);
         }
     }
 

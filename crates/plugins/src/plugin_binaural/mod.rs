@@ -4,7 +4,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::{complex_mul_add_simd, enable_ftz_daz, flush_denormals_inplace};
+use super::simd::{complex_mul_add_simd, enable_ftz_daz};
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use crate::sofa::SofaFile;
@@ -286,10 +286,16 @@ impl BinauralDecoderPlugin {
         }
 
         let buf_size = self.output_accumulator[0].len();
-        for i in 0..self.fft_size {
-            let wi = (self.next_add_position + i) % buf_size;
+        let first_len = (buf_size - self.next_add_position).min(self.fft_size);
+        let second_len = self.fft_size - first_len;
+        for i in 0..first_len {
+            let wi = self.next_add_position + i;
             self.output_accumulator[0][wi] += self.temp_output_block[i * 2];
             self.output_accumulator[1][wi] += self.temp_output_block[i * 2 + 1];
+        }
+        for i in 0..second_len {
+            self.output_accumulator[0][i] += self.temp_output_block[(first_len + i) * 2];
+            self.output_accumulator[1][i] += self.temp_output_block[(first_len + i) * 2 + 1];
         }
         self.next_add_position = (self.next_add_position + self.hop_size) % buf_size;
         self.output_accumulator_fill = (self.output_accumulator_fill + self.hop_size).min(buf_size);
@@ -354,6 +360,7 @@ impl Plugin for BinauralDecoderPlugin {
         }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
+        enable_ftz_daz();
         self.sample_rate = sr;
         self.externalization.set_time(50.0, sr);
         let (f, g) = filter::compute_lfe_filter(
@@ -456,7 +463,6 @@ impl Plugin for BinauralDecoderPlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        enable_ftz_daz();
         let mut input_pos = 0;
         let mut output_pos = 0;
         loop {
@@ -477,7 +483,6 @@ impl Plugin for BinauralDecoderPlugin {
             }
             break;
         }
-        flush_denormals_inplace(output);
         Ok(output_pos / 2)
     }
 }

@@ -18,9 +18,6 @@ pub struct PndAnalyzer {
     fft: RealFftProcessor,
     ring: RingAccumulator,
 
-    // Pre-allocated windowed time-domain buffer for FFT input
-    windowed_buffer: Vec<f32>,
-
     // Partial tracking state
     prev_peaks: Vec<(f32, f32)>, // (frequency_hz, magnitude)
 
@@ -36,6 +33,10 @@ pub struct PndAnalyzer {
 
     // Pre-allocated sort buffer for median computation
     median_scratch: Vec<f32>,
+
+    // Cached drift estimate — recomputed only when drift_history changes.
+    cached_drift_estimate: f32,
+    drift_dirty: bool,
 
     // Confidence tracking
     last_confidence: f32,
@@ -59,8 +60,6 @@ impl PndAnalyzer {
             window,
             fft,
             ring,
-            windowed_buffer: vec![0.0; fft_size],
-
             prev_peaks: Vec::new(),
             peak_scratch: Vec::new(),
             ratio_scratch: Vec::new(),
@@ -71,6 +70,9 @@ impl PndAnalyzer {
             drift_history_capacity,
 
             median_scratch: vec![0.0; drift_history_capacity],
+
+            cached_drift_estimate: 1.0,
+            drift_dirty: false,
 
             last_confidence: 0.0,
             last_matched_partials: 0,
@@ -92,10 +94,11 @@ impl PndAnalyzer {
     }
 
     fn process_fft_frame(&mut self) {
-        // Read windowed samples from ring buffer
-        self.ring.read_window(&mut self.windowed_buffer);
+        // Read ring buffer directly into fft.time_buffer, then apply the window
+        // in-place — fusing what was two passes (read_window + multiply) into one.
+        self.ring.read_window(&mut self.fft.time_buffer);
         for i in 0..self.fft_size {
-            self.fft.time_buffer[i] = self.windowed_buffer[i] * self.window[i];
+            self.fft.time_buffer[i] *= self.window[i];
         }
 
         self.fft.forward();
@@ -189,6 +192,7 @@ impl PndAnalyzer {
             if self.drift_count < self.drift_history_capacity {
                 self.drift_count += 1;
             }
+            self.drift_dirty = true;
         }
     }
 
@@ -197,7 +201,13 @@ impl PndAnalyzer {
             return 1.0;
         }
 
-        // Compute median of drift_history[..drift_count] using O(n) selection
+        // Skip the O(n) median if drift_history has not changed since last call.
+        if !self.drift_dirty {
+            return self.cached_drift_estimate;
+        }
+        self.drift_dirty = false;
+
+        // Compute median of drift_history[..drift_count] using O(n) selection.
         let len = self.drift_count.min(self.drift_history_capacity);
         self.median_scratch[..len].copy_from_slice(&self.drift_history[..len]);
 
@@ -205,7 +215,8 @@ impl PndAnalyzer {
         self.median_scratch[..len].select_nth_unstable_by(mid, |a, b| {
             a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
         });
-        self.median_scratch[mid]
+        self.cached_drift_estimate = self.median_scratch[mid];
+        self.cached_drift_estimate
     }
 
     pub fn update_analysis_window(&mut self, analysis_window_ms: f32) {
@@ -218,6 +229,8 @@ impl PndAnalyzer {
             self.drift_write_pos = 0;
             self.drift_count = 0;
             self.drift_history_capacity = new_capacity;
+            self.cached_drift_estimate = 1.0;
+            self.drift_dirty = false;
         }
     }
 
@@ -249,6 +262,8 @@ impl PndAnalyzer {
         self.drift_write_pos = 0;
         self.drift_count = 0;
         self.median_scratch.clear();
+        self.cached_drift_estimate = 1.0;
+        self.drift_dirty = false;
 
         // Reset confidence
         self.last_confidence = 0.0;

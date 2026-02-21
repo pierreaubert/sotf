@@ -82,6 +82,10 @@ impl DenoiserPlugin {
         let half_l = l / 2;
         let frame = self.frame_counter[channel];
 
+        // Hoist loop-invariant frame boundary checks out of the per-bin loop
+        let reset_window_a = frame.is_multiple_of(l);
+        let reset_window_b = frame % l == half_l;
+
         // Track whether we're learning (quiet moment detected)
         let mut quiet_bins = 0;
 
@@ -94,14 +98,14 @@ impl DenoiserPlugin {
 
             // Step 2: IMCRA dual-window minimum tracking
             // Window A: resets at frames 0, L, 2L, ...
-            if frame.is_multiple_of(l) {
+            if reset_window_a {
                 self.min_psd[channel][k] = s_tmp;
             } else {
                 self.min_psd[channel][k] = self.min_psd[channel][k].min(s_tmp);
             }
 
             // Window B: resets at frames L/2, 3L/2, 5L/2, ...
-            if frame % l == half_l {
+            if reset_window_b {
                 self.min_psd_b[channel][k] = s_tmp;
             } else {
                 self.min_psd_b[channel][k] = self.min_psd_b[channel][k].min(s_tmp);

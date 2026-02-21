@@ -77,11 +77,9 @@ impl UpmixerPlugin {
             self.update_lfo_decorrelation();
         }
 
-        let lfe_cutoff_bin =
-            ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
-        let bandpass_bin =
-            ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
-        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        let lfe_cutoff_bin = self.cached_lfe_cutoff_bin;
+        let bandpass_bin = self.cached_bandpass_bin;
+        let freq_per_bin = self.cached_freq_per_bin;
 
         for band_idx in 0..self.erb_bands.len() {
             let start_bin = self.erb_bands[band_idx];
@@ -113,7 +111,11 @@ impl UpmixerPlugin {
             } else {
                 release_alpha
             };
-            self.steering_alphas[band_idx] = alpha;
+            // Only written for test inspection; not read in the processing path.
+            #[cfg(test)]
+            {
+                self.steering_alphas[band_idx] = alpha;
+            }
 
             self.pca_cov_xx[band_idx] = (1.0 - alpha) * self.pca_cov_xx[band_idx] + alpha * cov_xx;
             self.pca_cov_yy[band_idx] = (1.0 - alpha) * self.pca_cov_yy[band_idx] + alpha * cov_yy;

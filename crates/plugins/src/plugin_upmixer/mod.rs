@@ -18,7 +18,7 @@
 use super::param_specs::upmixer::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::{enable_ftz_daz, flush_denormals_inplace};
+use super::simd::enable_ftz_daz;
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -277,6 +277,34 @@ pub struct UpmixerPlugin {
     cached_is_center: Vec<bool>,
     /// Indices of channels that the HR path processes (front, non-LFE, non-height)
     cached_hr_active_channels: Vec<usize>,
+
+    // Cached bin indices for ERB-band and dialogue processing (recomputed in initialize()
+    // and when lfe_cutoff_hz, bandpass_hz, voice_freq_min/max_hz, or sample_rate changes).
+    /// Hz per FFT bin: sample_rate / fft_size
+    cached_freq_per_bin: f32,
+    /// Bin index of the LFE crossover cutoff
+    cached_lfe_cutoff_bin: usize,
+    /// Bin index of the bandpass upper bound
+    cached_bandpass_bin: usize,
+    /// First bin of the voice frequency range for dialogue detection
+    cached_voice_start_bin: usize,
+    /// Last bin of the voice frequency range for dialogue detection
+    cached_voice_end_bin: usize,
+    /// Normalized dialogue centroid weight (w_c in the weighted sum)
+    cached_dialogue_w_c: f32,
+    /// Normalized dialogue variance weight (w_v in the weighted sum)
+    cached_dialogue_w_v: f32,
+    /// Normalized dialogue coherence weight (w_coh in the weighted sum)
+    cached_dialogue_w_coh: f32,
+
+    // Cached sub-harmonic envelope coefficients (recomputed in initialize() and when
+    // subharmonic_freq_hz, subharmonic_attack_ms, subharmonic_release_ms change).
+    /// Phase increment per sample: 2π * subharmonic_freq_hz / sample_rate
+    cached_subharmonic_phase_inc: f32,
+    /// One-pole attack coefficient for envelope follower
+    cached_subharmonic_attack_coeff: f32,
+    /// One-pole release coefficient for envelope follower
+    cached_subharmonic_release_coeff: f32,
 
     // Processing buffers (allocated once, reused)
     /// Time domain buffer for left channel
@@ -657,6 +685,21 @@ impl UpmixerPlugin {
             cached_is_height: Vec::new(),
             cached_is_center: Vec::new(),
             cached_hr_active_channels: Vec::new(),
+
+            // Bin-index caches — will be populated in initialize() once sample_rate is known
+            cached_freq_per_bin: 0.0,
+            cached_lfe_cutoff_bin: 0,
+            cached_bandpass_bin: 0,
+            cached_voice_start_bin: 0,
+            cached_voice_end_bin: 0,
+            cached_dialogue_w_c: 0.333,
+            cached_dialogue_w_v: 0.333,
+            cached_dialogue_w_coh: 0.334,
+
+            // Sub-harmonic coefficient caches — will be populated in initialize()
+            cached_subharmonic_phase_inc: 0.0,
+            cached_subharmonic_attack_coeff: 0.0,
+            cached_subharmonic_release_coeff: 0.0,
 
             // Allocate all buffers
             time_domain_left: vec![0.0; fft_size],
@@ -1371,6 +1414,7 @@ Weights are normalized internally so they always sum to 1.0.",
             if (20.0..=180.0).contains(&cutoff) && cutoff < self.bandpass_hz {
                 self.lfe_cutoff_hz = cutoff;
                 self.update_crossover_gains();
+                self.recache_bin_indices();
                 return Ok(());
             }
             return Err(
@@ -1392,6 +1436,7 @@ Weights are normalized internally so they always sum to 1.0.",
             if freq > self.lfe_cutoff_hz {
                 self.bandpass_hz = freq;
                 self.precompute_height_freq_weights();
+                self.recache_bin_indices();
                 return Ok(());
             }
             return Err("Bandpass frequency must be greater than LFE cutoff".to_string());
@@ -1446,16 +1491,19 @@ Weights are normalized internally so they always sum to 1.0.",
             && let Some(val) = value.as_float()
         {
             self.subharmonic_freq_hz = val.clamp(20.0, 80.0);
+            self.recache_subharmonic_coeffs();
             return Ok(());
         } else if id == self.param_subharmonic_attack_ms
             && let Some(val) = value.as_float()
         {
             self.subharmonic_attack_ms = val.clamp(1.0, 100.0);
+            self.recache_subharmonic_coeffs();
             return Ok(());
         } else if id == self.param_subharmonic_release_ms
             && let Some(val) = value.as_float()
         {
             self.subharmonic_release_ms = val.clamp(10.0, 500.0);
+            self.recache_subharmonic_coeffs();
             return Ok(());
         }
         // Decorrelation parameters
@@ -1535,26 +1583,31 @@ Weights are normalized internally so they always sum to 1.0.",
             && let Some(val) = value.as_float()
         {
             self.voice_freq_min_hz = val.clamp(200.0, 800.0);
+            self.recache_bin_indices();
             return Ok(());
         } else if id == self.param_voice_freq_max_hz
             && let Some(val) = value.as_float()
         {
             self.voice_freq_max_hz = val.clamp(2000.0, 5000.0);
+            self.recache_bin_indices();
             return Ok(());
         } else if id == self.param_dialogue_centroid_weight
             && let Some(val) = value.as_float()
         {
             self.dialogue_centroid_weight = val.clamp(0.0, 1.0);
+            self.recache_dialogue_weights();
             return Ok(());
         } else if id == self.param_dialogue_variance_weight
             && let Some(val) = value.as_float()
         {
             self.dialogue_variance_weight = val.clamp(0.0, 1.0);
+            self.recache_dialogue_weights();
             return Ok(());
         } else if id == self.param_dialogue_coherence_weight
             && let Some(val) = value.as_float()
         {
             self.dialogue_coherence_weight = val.clamp(0.0, 1.0);
+            self.recache_dialogue_weights();
             return Ok(());
         } else if id == self.param_bypass_decorrelation {
             if let Some(enable) = value.as_bool() {
@@ -1746,6 +1799,17 @@ Weights are normalized internally so they always sum to 1.0.",
         self.height_direct_leak.set_time(time_ms, sample_rate);
         self.height_transient_reduction.set_time(time_ms, sample_rate);
 
+        // Set FTZ/DAZ CPU flags once at initialization so the processing thread inherits
+        // them for all subsequent process() calls. This avoids calling enable_ftz_daz()
+        // on every block in the hot path.
+        enable_ftz_daz();
+
+        // Cache bin indices that depend on sample_rate and fft_size
+        self.recache_bin_indices();
+
+        // Cache sub-harmonic envelope coefficients that depend on sample_rate
+        self.recache_subharmonic_coeffs();
+
         Ok(())
     }
 
@@ -1836,8 +1900,6 @@ Weights are normalized internally so they always sum to 1.0.",
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        enable_ftz_daz();
-
         // Update smoothers once per block
         self.gain_front_direct.next();
         self.gain_front_ambient.next();
@@ -2012,8 +2074,6 @@ Weights are normalized internally so they always sum to 1.0.",
 
             break;
         }
-
-        flush_denormals_inplace(output);
 
         // Return actual number of frames produced. DawHost handles silence padding.
         Ok(output_pos)

@@ -81,17 +81,21 @@ fn compute_room_params_hash(params: &XtcPluginParams) -> u64 {
 /// Compute room reflection data if enabled.
 ///
 /// Returns None if room reflections are disabled.
+///
+/// `fft_forward` is passed to `build_reflection_data_ir` to reuse the pre-planned
+/// FFT instead of creating a fresh planner on every call (Optimization 4).
 fn compute_room_reflection_data(
     params: &XtcPluginParams,
     sample_rate: u32,
     num_bins: usize,
+    fft_forward: Option<Arc<dyn RealToComplex<f32>>>,
 ) -> Option<Arc<RoomReflectionData>> {
     if !params.room_reflections_enabled {
         return None;
     }
 
     let data = if let Some(ref ir_path) = params.room_ir_file {
-        build_reflection_data_ir(ir_path, sample_rate, num_bins).ok()?
+        build_reflection_data_ir(ir_path, sample_rate, num_bins, fft_forward).ok()?
     } else {
         build_reflection_data_image_source(params, sample_rate, num_bins)
     };
@@ -308,7 +312,8 @@ impl XtcPlugin {
         // Compute initial room reflection data if enabled (Optimization 4)
         let room_params_hash = compute_room_params_hash(&params);
         let room_reflection_cache = if params.room_reflections_enabled {
-            compute_room_reflection_data(&params, sample_rate, num_bins)
+            // Pass the pre-planned FFT to avoid re-creating the planner (Optimization 4)
+            compute_room_reflection_data(&params, sample_rate, num_bins, Some(fft_forward.clone()))
         } else {
             None
         };
@@ -420,8 +425,13 @@ impl XtcPlugin {
         // Check if room reflection cache needs updating (Optimization 4)
         let new_hash = compute_room_params_hash(&self.params);
         if new_hash != self.room_params_hash {
-            self.room_reflection_cache =
-                compute_room_reflection_data(&self.params, sample_rate, num_bins);
+            // Reuse the pre-planned FFT to avoid re-creating the planner (Optimization 4)
+            self.room_reflection_cache = compute_room_reflection_data(
+                &self.params,
+                sample_rate,
+                num_bins,
+                Some(self.fft_forward.clone()),
+            );
             self.room_params_hash = new_hash;
         }
 

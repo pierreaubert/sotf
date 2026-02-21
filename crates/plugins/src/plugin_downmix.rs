@@ -76,6 +76,10 @@ pub struct DownmixPlugin {
     target_coeffs: Vec<DownmixCoeffs>,
     coeff_smoothers: Vec<Smoother>,
     lfe_channels: Vec<usize>,
+    /// O(1) lookup: `lfe_lpf_idx[ch]` holds the LFE lpf slot index for channel
+    /// `ch`, or `None` if the channel is not an LFE channel.  Eliminates the
+    /// per-sample linear scan over `lfe_channels` in the hot paths.
+    lfe_lpf_idx: Vec<Option<usize>>,
     fft_forward: Arc<dyn RealToComplex<f32>>,
     fft_inverse: Arc<dyn ComplexToReal<f32>>,
     channel_freq: Vec<Vec<Complex<f32>>>,
@@ -126,6 +130,7 @@ impl DownmixPlugin {
             target_coeffs: Vec::new(),
             coeff_smoothers: Vec::new(),
             lfe_channels: Vec::new(),
+            lfe_lpf_idx: Vec::new(),
             fft_forward: fft_forward.clone(),
             fft_inverse: fft_inverse.clone(),
             channel_freq: vec![vec![Complex::new(0.0, 0.0); freq_len]; input_channels],
@@ -235,6 +240,17 @@ impl DownmixPlugin {
                 c.right_gain /= max_sum;
             }
         }
+        // Build O(1) LFE lpf-slot lookup to avoid linear scan per sample.
+        // `lfe_channels` is built in order above, so the i-th entry corresponds
+        // to lfe_lpf[i].  Map each channel index directly to its lpf slot.
+        self.lfe_lpf_idx.clear();
+        self.lfe_lpf_idx.resize(self.input_ch, None);
+        for (slot, &ch) in self.lfe_channels.iter().enumerate() {
+            if ch < self.input_ch {
+                self.lfe_lpf_idx[ch] = Some(slot);
+            }
+        }
+
         self.target_coeffs = new_coeffs;
         if self.coeff_smoothers.is_empty() {
             for c in &self.target_coeffs {
@@ -268,13 +284,12 @@ impl DownmixPlugin {
             let mut r = 0.0;
             for ch in 0..self.input_ch {
                 let mut s = input[frame * self.input_ch + ch];
-                if let Some(l_idx) = self.lfe_channels.iter().position(|&c| c == ch) {
-                    if l_idx < self.lfe_lpf.len() {
-                        let mut val = s as f64;
-                        val = self.lfe_lpf[l_idx][0].process(val);
-                        val = self.lfe_lpf[l_idx][1].process(val);
-                        s = val as f32;
-                    }
+                // O(1) lookup: no linear scan over lfe_channels.
+                if let Some(l_idx) = self.lfe_lpf_idx[ch].filter(|&i| i < self.lfe_lpf.len()) {
+                    let mut val = s as f64;
+                    val = self.lfe_lpf[l_idx][0].process(val);
+                    val = self.lfe_lpf[l_idx][1].process(val);
+                    s = val as f32;
                 }
                 l += s * self.coeff_smoothers[ch * 2].next();
                 r += s * self.coeff_smoothers[ch * 2 + 1].next();
@@ -498,13 +513,12 @@ impl Plugin for DownmixPlugin {
         for frame in 0..num_frames {
             for ch in 0..self.input_ch {
                 let mut s = input[frame * self.input_ch + ch];
-                if let Some(li) = self.lfe_channels.iter().position(|&c| c == ch) {
-                    if li < self.lfe_lpf.len() {
-                        let mut v = s as f64;
-                        v = self.lfe_lpf[li][0].process(v);
-                        v = self.lfe_lpf[li][1].process(v);
-                        s = v as f32;
-                    }
+                // O(1) lookup: no linear scan over lfe_channels.
+                if let Some(li) = self.lfe_lpf_idx[ch].filter(|&i| i < self.lfe_lpf.len()) {
+                    let mut v = s as f64;
+                    v = self.lfe_lpf[li][0].process(v);
+                    v = self.lfe_lpf[li][1].process(v);
+                    s = v as f32;
                 }
                 self.input_ring[ch][self.input_ring_pos] = s;
             }

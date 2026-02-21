@@ -201,4 +201,64 @@ impl UpmixerPlugin {
             self.erb_bands.push(self.fft_size / 2);
         }
     }
+
+    /// Recompute all cached bin indices that depend on sample_rate, fft_size,
+    /// lfe_cutoff_hz, bandpass_hz, voice_freq_min_hz, or voice_freq_max_hz.
+    ///
+    /// Call this in `initialize()` and whenever any of those parameters change.
+    pub(super) fn recache_bin_indices(&mut self) {
+        if self.sample_rate == 0 || self.fft_size == 0 {
+            return;
+        }
+        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        self.cached_freq_per_bin = freq_per_bin;
+
+        self.cached_lfe_cutoff_bin =
+            ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
+        self.cached_bandpass_bin =
+            ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
+
+        let spectrum_size = self.fft_size / 2 + 1;
+        self.cached_voice_start_bin = (self.voice_freq_min_hz / freq_per_bin) as usize;
+        self.cached_voice_end_bin =
+            (self.voice_freq_max_hz / freq_per_bin).min(spectrum_size as f32 - 1.0) as usize;
+
+        self.recache_dialogue_weights();
+    }
+
+    /// Recompute the normalized dialogue sub-weights from the raw weight parameters.
+    ///
+    /// Call this whenever `dialogue_centroid_weight`, `dialogue_variance_weight`, or
+    /// `dialogue_coherence_weight` changes.
+    pub(super) fn recache_dialogue_weights(&mut self) {
+        let w_sum = self.dialogue_centroid_weight
+            + self.dialogue_variance_weight
+            + self.dialogue_coherence_weight;
+        if w_sum > 1e-9 {
+            self.cached_dialogue_w_c = self.dialogue_centroid_weight / w_sum;
+            self.cached_dialogue_w_v = self.dialogue_variance_weight / w_sum;
+            self.cached_dialogue_w_coh = self.dialogue_coherence_weight / w_sum;
+        } else {
+            self.cached_dialogue_w_c = 0.333;
+            self.cached_dialogue_w_v = 0.333;
+            self.cached_dialogue_w_coh = 0.334;
+        }
+    }
+
+    /// Recompute the cached sub-harmonic envelope coefficients from the current parameters.
+    ///
+    /// Call this in `initialize()` and whenever `subharmonic_freq_hz`,
+    /// `subharmonic_attack_ms`, or `subharmonic_release_ms` changes.
+    pub(super) fn recache_subharmonic_coeffs(&mut self) {
+        if self.sample_rate == 0 {
+            return;
+        }
+        let sr = self.sample_rate as f32;
+        self.cached_subharmonic_phase_inc =
+            2.0 * std::f32::consts::PI * self.subharmonic_freq_hz / sr;
+        let attack_sec = self.subharmonic_attack_ms / 1000.0;
+        let release_sec = self.subharmonic_release_ms / 1000.0;
+        self.cached_subharmonic_attack_coeff = 1.0 - (-1.0 / (attack_sec * sr)).exp();
+        self.cached_subharmonic_release_coeff = 1.0 - (-1.0 / (release_sec * sr)).exp();
+    }
 }

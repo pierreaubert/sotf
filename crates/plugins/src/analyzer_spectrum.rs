@@ -76,12 +76,55 @@ pub struct SpectrumAnalyzerPlugin {
     new_mags: Vec<f32>,
     // Mutable copy of magnitudes for smoothing (avoids cloning shared_data each frame)
     current_magnitudes: Vec<f32>,
+    // Pre-computed window coefficients (avoid cos() per sample in hot path)
+    window: Vec<f32>,
+    // Pre-computed FFT bin → display bin mapping (avoid log10() per bin in hot path)
+    bin_to_display: Vec<Option<usize>>,
+    // Cached constants derived from config and sample_rate
+    fft_bin_hz: f32,
 }
 
 impl SpectrumAnalyzerPlugin {
-    pub fn new(num_channels: usize) -> Result<Self, String> {
+    fn generate_window() -> Vec<f32> {
+        (0..FFT_SIZE)
+            .map(|i| {
+                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / FFT_SIZE as f32).cos())
+            })
+            .collect()
+    }
+
+    fn build_bin_to_display(
+        config: &SpectrumConfig,
+        sample_rate: u32,
+    ) -> Vec<Option<usize>> {
+        let fft_bin_hz = sample_rate as f32 / FFT_SIZE as f32;
+        let log_min = config.min_freq.log10();
+        let log_max = config.max_freq.log10();
+        let log_range = log_max - log_min;
+        let spectrum_size = FFT_SIZE / 2 + 1;
+        (0..spectrum_size)
+            .map(|i| {
+                let freq = i as f32 * fft_bin_hz;
+                if freq < config.min_freq || freq > config.max_freq {
+                    return None;
+                }
+                let bin_idx = (((freq.log10() - log_min) / log_range)
+                    * config.num_bins as f32)
+                    .floor() as usize;
+                if bin_idx < config.num_bins {
+                    Some(bin_idx)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn build_common(
+        num_channels: usize,
+        config: SpectrumConfig,
+    ) -> Result<Self, String> {
         let (p, c) = RingBuffer::new(FFT_SIZE * 4);
-        let config = SpectrumConfig::default();
         let log_min = config.min_freq.log10();
         let log_max = config.max_freq.log10();
         let mut freqs = Vec::with_capacity(config.num_bins);
@@ -102,9 +145,12 @@ impl SpectrumAnalyzerPlugin {
         let fft_r2c = planner.plan_fft_forward(FFT_SIZE);
         let fft_output = fft_r2c.make_output_vec();
         let num_bins = config.num_bins;
+        let sample_rate = 48000u32;
+        let bin_to_display = Self::build_bin_to_display(&config, sample_rate);
+        let fft_bin_hz = sample_rate as f32 / FFT_SIZE as f32;
         Ok(Self {
             num_channels,
-            sample_rate: 48000,
+            sample_rate,
             config,
             producer: p,
             consumer: c,
@@ -114,44 +160,18 @@ impl SpectrumAnalyzerPlugin {
             windowed: vec![0.0; FFT_SIZE],
             new_mags: vec![-100.0; num_bins],
             current_magnitudes: vec![-100.0; num_bins],
+            window: Self::generate_window(),
+            bin_to_display,
+            fft_bin_hz,
         })
     }
 
+    pub fn new(num_channels: usize) -> Result<Self, String> {
+        Self::build_common(num_channels, SpectrumConfig::default())
+    }
+
     pub fn with_config(num_channels: usize, config: SpectrumConfig) -> Result<Self, String> {
-        let (p, c) = RingBuffer::new(FFT_SIZE * 4);
-        let log_min = config.min_freq.log10();
-        let log_max = config.max_freq.log10();
-        let mut freqs = Vec::with_capacity(config.num_bins);
-        for i in 0..config.num_bins {
-            let f1 =
-                10.0f32.powf(log_min + (log_max - log_min) * (i as f32 / config.num_bins as f32));
-            let f2 = 10.0f32
-                .powf(log_min + (log_max - log_min) * ((i + 1) as f32 / config.num_bins as f32));
-            freqs.push((f1 * f2).sqrt());
-        }
-        let initial_data = SpectrumData {
-            frequencies: freqs.into(),
-            magnitudes: vec![-100.0; config.num_bins].into(),
-            peak_magnitude: -100.0,
-        };
-        let cache = RealTimeCache::new(initial_data);
-        let mut planner = realfft::RealFftPlanner::<f32>::new();
-        let fft_r2c = planner.plan_fft_forward(FFT_SIZE);
-        let fft_output = fft_r2c.make_output_vec();
-        let num_bins = config.num_bins;
-        Ok(Self {
-            num_channels,
-            sample_rate: 48000,
-            config,
-            producer: p,
-            consumer: c,
-            cache,
-            fft_r2c,
-            fft_output,
-            windowed: vec![0.0; FFT_SIZE],
-            new_mags: vec![-100.0; num_bins],
-            current_magnitudes: vec![-100.0; num_bins],
-        })
+        Self::build_common(num_channels, config)
     }
 }
 
@@ -176,6 +196,9 @@ impl Plugin for SpectrumAnalyzerPlugin {
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
+        self.fft_bin_hz = sr as f32 / FFT_SIZE as f32;
+        self.bin_to_display =
+            Self::build_bin_to_display(&self.config, sr);
         Ok(())
     }
     fn reset(&mut self) {
@@ -208,19 +231,11 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 let (s1, s2) = chunk.as_slices();
                 let mut idx = 0;
                 for &s in s1 {
-                    self.windowed[idx] = s
-                        * (0.5
-                            * (1.0
-                                - (2.0 * std::f32::consts::PI * idx as f32 / FFT_SIZE as f32)
-                                    .cos()));
+                    self.windowed[idx] = s * self.window[idx];
                     idx += 1;
                 }
                 for &s in s2 {
-                    self.windowed[idx] = s
-                        * (0.5
-                            * (1.0
-                                - (2.0 * std::f32::consts::PI * idx as f32 / FFT_SIZE as f32)
-                                    .cos()));
+                    self.windowed[idx] = s * self.window[idx];
                     idx += 1;
                 }
                 chunk.commit_all();
@@ -228,25 +243,14 @@ impl Plugin for SpectrumAnalyzerPlugin {
             self.fft_r2c
                 .process(&mut self.windowed, &mut self.fft_output)
                 .unwrap();
-            let log_min = self.config.min_freq.log10();
-            let log_max = self.config.max_freq.log10();
-            let fft_bin_hz = self.sample_rate as f32 / FFT_SIZE as f32;
+            let scale = 2.0 / FFT_SIZE as f32;
             self.new_mags.fill(-100.0);
             for (i, bin) in self.fft_output.iter().enumerate().skip(1) {
-                let freq = i as f32 * fft_bin_hz;
-                if freq < self.config.min_freq {
-                    continue;
-                }
-                if freq > self.config.max_freq {
-                    break;
-                }
-                let amp = bin.norm() * 2.0 / FFT_SIZE as f32;
-                let db = 20.0 * amp.max(1e-5).log10();
-                let bin_idx = (((freq.log10() - log_min) / (log_max - log_min))
-                    * self.config.num_bins as f32)
-                    .floor() as usize;
-                if bin_idx < self.config.num_bins {
-                    self.new_mags[bin_idx] = self.new_mags[bin_idx].max(db);
+                if let Some(display_bin) = self.bin_to_display[i] {
+                    // Use norm_sqr to avoid sqrt; convert with 10*log10 instead of 20*log10
+                    let norm_sq = bin.norm_sqr() * scale * scale;
+                    let db = 10.0 * norm_sq.max(1e-10).log10();
+                    self.new_mags[display_bin] = self.new_mags[display_bin].max(db);
                 }
             }
             for i in 0..self.config.num_bins {

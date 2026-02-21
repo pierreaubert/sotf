@@ -11,9 +11,10 @@
 
 use super::config::XtcPluginParams;
 use super::filters::{head_shadowing_woodworth, SPEED_OF_SOUND};
-use realfft::RealFftPlanner;
+use realfft::{RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
+use std::sync::Arc;
 
 /// Room height fixed at 2.5m (floor/ceiling reflections are less critical)
 const ROOM_HEIGHT_M: f32 = 2.5;
@@ -250,10 +251,14 @@ fn sum_reflection_paths(paths: &[ReflectionPath], freq: f32, head_radius: f32) -
 ///
 /// Mono IR: same data for both ipsi and contra paths.
 /// Stereo IR: ch0 = ipsi, ch1 = contra.
+///
+/// `fft_forward` is an optional pre-planned FFT for `(num_bins - 1) * 2` samples.
+/// When provided, it is reused instead of creating a fresh planner (Optimization 4).
 pub(crate) fn build_reflection_data_ir(
     ir_path: &str,
     sample_rate: u32,
     num_bins: usize,
+    fft_forward: Option<Arc<dyn RealToComplex<f32>>>,
 ) -> Result<RoomReflectionData, String> {
     use symphonia::core::audio::{AudioBufferRef, Signal};
     use symphonia::core::codecs::{Decoder, DecoderOptions};
@@ -308,7 +313,18 @@ pub(crate) fn build_reflection_data_ir(
 
     let fft_size = (num_bins - 1) * 2;
 
-    // Process each channel: truncate and window
+    // Reuse caller-supplied FFT plan when the size matches; otherwise plan a new one.
+    // This avoids allocating a planner for every IR load (Optimization 4).
+    let fft_plan: Arc<dyn RealToComplex<f32>> =
+        if let Some(plan) = fft_forward.filter(|p| p.len() == fft_size) {
+            plan
+        } else {
+            let mut planner = RealFftPlanner::new();
+            planner.plan_fft_forward(fft_size)
+        };
+
+    // Process each channel: truncate, window, and FFT.
+    // The closure borrows fft_plan by reference so it can be called twice.
     let process_channel = |samples: &[f32]| -> Vec<Complex<f32>> {
         let len = samples.len().min(fft_size);
         let mut padded = vec![0.0_f32; fft_size];
@@ -325,11 +341,9 @@ pub(crate) fn build_reflection_data_ir(
             }
         }
 
-        // FFT
-        let mut planner = RealFftPlanner::new();
-        let fft = planner.plan_fft_forward(fft_size);
         let mut spectrum = vec![Complex::new(0.0, 0.0); num_bins];
-        fft.process(&mut padded, &mut spectrum)
+        fft_plan
+            .process(&mut padded, &mut spectrum)
             .expect("FFT processing failed");
         spectrum
     };

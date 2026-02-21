@@ -167,7 +167,8 @@ pub(crate) fn compute_xtc_filters_full(
     // Compute room reflection data if enabled
     let room_data: Option<Arc<RoomReflectionData>> = if params.room_reflections_enabled {
         if let Some(ref ir_path) = params.room_ir_file {
-            build_reflection_data_ir(ir_path, sample_rate, num_bins)
+            // No pre-planned FFT available here; build_reflection_data_ir will create one.
+            build_reflection_data_ir(ir_path, sample_rate, num_bins, None)
                 .ok()
                 .map(Arc::new)
         } else {
@@ -312,6 +313,8 @@ fn apply_spectral_normalization(filters: &mut XtcFilters, num_bins: usize) {
 // ============================================================================
 
 /// Compute asymmetric filters for non-zero yaw angle using pre-computed geometry cache.
+///
+/// Optimization 5: Uses pre-computed beta and pinna LUTs to avoid per-bin exp()/powf().
 fn compute_xtc_filters_asymmetric_with_cache(
     params: &XtcPluginParams,
     num_bins: usize,
@@ -336,11 +339,40 @@ fn compute_xtc_filters_asymmetric_with_cache(
     let diffraction_delay_lut_right =
         build_diffraction_delay_lut(num_bins, cache.freq_per_bin, asym.angle_right_contra, a);
 
+    // Pre-compute beta LUT: avoids 2× exp() per bin (Optimization 5)
+    let beta_lut = build_beta_lut(num_bins, cache.freq_per_bin, params);
+
+    // Pre-compute pinna LUTs: avoids 3× powf() per bin (Optimization 5)
+    // Angles are in degrees here: theta_right and theta_left are in radians, convert.
+    let pinna_ipsi_lut = if params.pinna_model_enabled {
+        Some(build_pinna_ipsi_lut(num_bins, cache.freq_per_bin))
+    } else {
+        None
+    };
+    let pinna_left_contra_lut = if params.pinna_model_enabled {
+        Some(build_pinna_contra_lut(
+            num_bins,
+            cache.freq_per_bin,
+            asym.theta_right.abs() * 180.0 / PI,
+        ))
+    } else {
+        None
+    };
+    let pinna_right_contra_lut = if params.pinna_model_enabled {
+        Some(build_pinna_contra_lut(
+            num_bins,
+            cache.freq_per_bin,
+            asym.theta_left.abs() * 180.0 / PI,
+        ))
+    } else {
+        None
+    };
+
     for bin in 0..num_bins {
         let freq = bin as f32 * cache.freq_per_bin;
 
-        // Pinna resonance: full for ipsi paths, angle-dependent for contra paths
-        let pinna_ipsi = if params.pinna_model_enabled { pinna_resonance(freq) } else { 1.0 };
+        // Pinna resonance: use pre-computed LUTs (Optimization 5)
+        let pinna_ipsi = pinna_ipsi_lut.as_deref().map_or(1.0, |lut| lut[bin]);
 
         // Use pre-computed geometry values (Optimization 3)
         let diffraction_delay_left = diffraction_delay_lut_left[bin];
@@ -349,7 +381,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let delta_t_right = asym.delta_t_right_geometric + diffraction_delay_right;
 
         // Left ear: ipsi speaker is left speaker (theta_left), contra is right speaker (theta_right)
-        let pinna_left_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq, asym.theta_right.abs() * 180.0 / PI) } else { 1.0 };
+        let pinna_left_contra = pinna_left_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
         let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_ll =
             head_shadowing_woodworth(freq, asym.angle_left_contra, a) * asym.amplitude_ratio_left;
@@ -358,7 +390,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
             Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin()) * pinna_left_contra;
 
         // Right ear: ipsi speaker is right speaker (theta_right), contra is left speaker (theta_left)
-        let pinna_right_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq, asym.theta_left.abs() * 180.0 / PI) } else { 1.0 };
+        let pinna_right_contra = pinna_right_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
         let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let g_rr =
             head_shadowing_woodworth(freq, asym.angle_right_contra, a) * asym.amplitude_ratio_right;
@@ -379,10 +411,11 @@ fn compute_xtc_filters_asymmetric_with_cache(
                 (h_ll_ipsi, h_ll_contra, h_rr_ipsi, h_rr_contra)
             };
 
+        // Use pre-computed beta LUT (Optimization 5)
         let beta = if let Some(room) = room_data {
-            compute_beta_smooth(freq, params) * room.beta_boost[bin]
+            beta_lut[bin] * room.beta_boost[bin]
         } else {
-            compute_beta_smooth(freq, params)
+            beta_lut[bin]
         };
 
         // Compute 2x2 filter matrices for each ear independently
@@ -422,6 +455,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
 /// - filter_lr: cross filter (crosstalk cancellation)
 ///
 /// Optimization 3: Uses pre-computed geometry cache.
+/// Optimization 5: Uses pre-computed beta and pinna LUTs to avoid per-bin exp()/powf().
 fn compute_xtc_filters_symmetric_with_cache(
     params: &XtcPluginParams,
     num_bins: usize,
@@ -439,6 +473,25 @@ fn compute_xtc_filters_symmetric_with_cache(
     let diffraction_delay_lut =
         build_diffraction_delay_lut(num_bins, cache.freq_per_bin, sym.contra_angle, a);
 
+    // Pre-compute beta LUT: avoids 2× exp() per bin (Optimization 5)
+    let beta_lut = build_beta_lut(num_bins, cache.freq_per_bin, params);
+
+    // Pre-compute pinna LUTs: avoids 3× powf() per bin (Optimization 5)
+    let pinna_ipsi_lut = if params.pinna_model_enabled {
+        Some(build_pinna_ipsi_lut(num_bins, cache.freq_per_bin))
+    } else {
+        None
+    };
+    let pinna_contra_lut = if params.pinna_model_enabled {
+        Some(build_pinna_contra_lut(
+            num_bins,
+            cache.freq_per_bin,
+            params.speaker_angle_deg,
+        ))
+    } else {
+        None
+    };
+
     for bin in 0..num_bins {
         let freq = bin as f32 * cache.freq_per_bin;
 
@@ -455,12 +508,12 @@ fn compute_xtc_filters_symmetric_with_cache(
         let phase = -2.0 * PI * freq * delta_t;
         let h_contra = Complex::new(g * phase.cos(), g * phase.sin());
 
-        // Frequency-dependent regularization with smooth transitions
-        let beta = compute_beta_smooth(freq, params);
+        // Frequency-dependent regularization: use pre-computed LUT (Optimization 5)
+        let beta = beta_lut[bin];
 
-        // Pinna resonance shaping: full effect for ipsi, angle-dependent for contra
-        let pinna_ipsi = if params.pinna_model_enabled { pinna_resonance(freq) } else { 1.0 };
-        let pinna_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq, params.speaker_angle_deg) } else { 1.0 };
+        // Pinna resonance shaping: use pre-computed LUTs (Optimization 5)
+        let pinna_ipsi = pinna_ipsi_lut.as_deref().map_or(1.0, |lut| lut[bin]);
+        let pinna_contra = pinna_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
         let h_ipsi_shaped = h_ipsi * pinna_ipsi;
         let h_contra_shaped = h_contra * pinna_contra;
 
@@ -777,8 +830,11 @@ pub(crate) fn pinna_resonance_contra(freq: f32, speaker_angle_deg: f32) -> f32 {
 ///
 /// Models a 2nd-order bandpass/notch with given center frequency, Q, and peak gain in dB.
 /// Returns linear gain at the specified frequency.
+///
+/// `peak_linear` must be `10.0_f32.powf(gain_db / 20.0)` — pass it pre-computed to
+/// avoid a `powf` call in hot loops.
 #[inline]
-fn resonance_peak(freq: f32, center_freq: f32, q: f32, gain_db: f32) -> f32 {
+fn resonance_peak_precomputed(freq: f32, center_freq: f32, q: f32, peak_linear: f32) -> f32 {
     // Normalized frequency ratio
     let f_ratio = freq / center_freq;
     // 2nd-order magnitude response: |H(f)|^2 = 1 / ((1 - f^2/f0^2)^2 + (f/(Q*f0))^2)
@@ -786,10 +842,72 @@ fn resonance_peak(freq: f32, center_freq: f32, q: f32, gain_db: f32) -> f32 {
     let denom = (1.0 - x).powi(2) + (f_ratio / q).powi(2);
     // Normalized shape: 1.0 at center, falls off away from center
     let shape = (f_ratio / q).powi(2) / denom;
-    // Convert peak gain from dB to linear and scale by shape
-    let peak_linear = 10.0_f32.powf(gain_db / 20.0);
     // Blend: at center freq shape=1.0 → full gain; far away shape→0 → unity gain
     1.0 + (peak_linear - 1.0) * shape
+}
+
+/// Compute the magnitude response of a resonance peak/notch at a given frequency.
+///
+/// Models a 2nd-order bandpass/notch with given center frequency, Q, and peak gain in dB.
+/// Returns linear gain at the specified frequency.
+#[inline]
+fn resonance_peak(freq: f32, center_freq: f32, q: f32, gain_db: f32) -> f32 {
+    // Convert peak gain from dB to linear
+    let peak_linear = 10.0_f32.powf(gain_db / 20.0);
+    resonance_peak_precomputed(freq, center_freq, q, peak_linear)
+}
+
+/// Pre-compute pinna resonance LUT for ipsilateral paths (angle-independent).
+///
+/// Avoids 3× `powf` + trig per bin in the filter hot loop.
+pub(crate) fn build_pinna_ipsi_lut(num_bins: usize, freq_per_bin: f32) -> Vec<f32> {
+    // Pre-compute all peak_linear constants — each is a single powf at init time.
+    let peak_ear = 10.0_f32.powf(10.0_f32 / 20.0); // +10 dB
+    let peak_concha = 10.0_f32.powf(5.0_f32 / 20.0); // +5 dB
+    let peak_pinna = 10.0_f32.powf(-6.0_f32 / 20.0); // -6 dB
+
+    (0..num_bins)
+        .map(|bin| {
+            let freq = bin as f32 * freq_per_bin;
+            if freq <= 0.0 {
+                return 1.0;
+            }
+            let ear = resonance_peak_precomputed(freq, 2700.0, 1.2, peak_ear);
+            let concha = resonance_peak_precomputed(freq, 4500.0, 1.5, peak_concha);
+            let pinna = resonance_peak_precomputed(freq, 9000.0, 3.0, peak_pinna);
+            ear * concha * pinna
+        })
+        .collect()
+}
+
+/// Pre-compute pinna resonance LUT for a contralateral path at a given speaker angle.
+///
+/// Avoids 3× `powf` + trig per bin in the filter hot loop.
+pub(crate) fn build_pinna_contra_lut(
+    num_bins: usize,
+    freq_per_bin: f32,
+    speaker_angle_deg: f32,
+) -> Vec<f32> {
+    let angle_factor =
+        1.0 - ((90.0 + speaker_angle_deg) / 180.0).clamp(0.0, 1.0);
+
+    // Pre-compute all peak_linear constants
+    let peak_ear = 10.0_f32.powf(10.0_f32 / 20.0); // +10 dB (angle-independent)
+    let peak_concha = 10.0_f32.powf(5.0_f32 * angle_factor / 20.0);
+    let peak_pinna = 10.0_f32.powf(-6.0_f32 * angle_factor / 20.0);
+
+    (0..num_bins)
+        .map(|bin| {
+            let freq = bin as f32 * freq_per_bin;
+            if freq <= 0.0 {
+                return 1.0;
+            }
+            let ear = resonance_peak_precomputed(freq, 2700.0, 1.2, peak_ear);
+            let concha = resonance_peak_precomputed(freq, 4500.0, 1.5, peak_concha);
+            let pinna = resonance_peak_precomputed(freq, 9000.0, 3.0, peak_pinna);
+            ear * concha * pinna
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -811,6 +929,23 @@ pub(crate) fn compute_beta_smooth(freq: f32, params: &XtcPluginParams) -> f32 {
     let high_freq_factor = 1.0 + (high_boost - 1.0) * sigmoid_smooth(freq - 12000.0, 1500.0);
 
     base * low_freq_factor * high_freq_factor
+}
+
+/// Pre-compute beta regularization LUT for all frequency bins.
+///
+/// Avoids 2× `exp()` calls per bin via `sigmoid_smooth` in the filter hot loop.
+/// Beta depends only on params and bin frequency, not on per-frame data.
+pub(crate) fn build_beta_lut(
+    num_bins: usize,
+    freq_per_bin: f32,
+    params: &XtcPluginParams,
+) -> Vec<f32> {
+    (0..num_bins)
+        .map(|bin| {
+            let freq = bin as f32 * freq_per_bin;
+            compute_beta_smooth(freq, params)
+        })
+        .collect()
 }
 
 /// Smooth sigmoid function for gradual transitions
