@@ -143,7 +143,7 @@ impl DownmixPlugin {
             input_fill: 0,
             output_accum: [vec![0.0; FFT_SIZE * 3], vec![0.0; FFT_SIZE * 3]],
             output_read_pos: 0,
-            output_write_pos: 0,
+            output_write_pos: FFT_SIZE,
             window,
             fft_input_buf: fft_forward.make_input_vec(),
             fft_output_buf: fft_forward.make_output_vec(),
@@ -553,7 +553,7 @@ impl Plugin for DownmixPlugin {
             acc.fill(0.0);
         }
         self.output_read_pos = 0;
-        self.output_write_pos = 0;
+        self.output_write_pos = FFT_SIZE;
 
         // Re-create LFE biquads to clear filter state (state fields are private)
         self.lfe_lpf = self
