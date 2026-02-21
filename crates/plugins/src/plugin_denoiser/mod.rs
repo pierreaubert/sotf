@@ -153,8 +153,10 @@ pub struct DenoiserPlugin {
     reduction_linear: f32,
     floor_linear: f32,
 
-    // Hann window
+    // sqrt(Hann) analysis window
     window: Vec<f32>,
+    // Precomputed synthesis window: sqrt(Hann)[i] / fft_size
+    synthesis_window: Vec<f32>,
 
     // Processing buffers (per-channel)
     time_domain: Vec<Vec<f32>>,          // [channels][fft_size]
@@ -222,8 +224,11 @@ impl DenoiserPlugin {
         let fft_forward = planner.plan_fft_forward(fft_size);
         let fft_inverse = planner.plan_fft_inverse(fft_size);
 
-        // Generate Hann window
-        let window = crate::stft_common::generate_hann_window(fft_size);
+        // Generate sqrt(Hann) window for WOLA processing
+        // Analysis: sqrt(Hann), Synthesis: sqrt(Hann), Product = Hann → perfect COLA at 50% overlap
+        let window = crate::stft_common::generate_sqrt_hann_window(fft_size);
+        let inv_fft_size = 1.0 / fft_size as f32;
+        let synthesis_window: Vec<f32> = window.iter().map(|w| w * inv_fft_size).collect();
 
         // Allocate buffers
         let time_domain = vec![vec![0.0_f32; fft_size]; channels];
@@ -323,10 +328,11 @@ impl DenoiserPlugin {
 
             attack_coeff: Self::time_to_coeff(ATTACK_MS_DEFAULT, 44100, hop_size),
             release_coeff: Self::time_to_coeff(RELEASE_MS_DEFAULT, 44100, hop_size),
-            reduction_linear: 10.0_f32.powf(REDUCTION_DB_DEFAULT / 20.0),
+            reduction_linear: 10.0_f32.powf(REDUCTION_DB_DEFAULT / 10.0),
             floor_linear: 10.0_f32.powf(FLOOR_DB_DEFAULT / 20.0),
 
             window,
+            synthesis_window,
 
             time_domain,
             freq_domain,
@@ -401,7 +407,7 @@ impl DenoiserPlugin {
         plugin.psychoacoustic_masking = params.psychoacoustic_masking;
         plugin.use_captured_profile = params.use_captured_profile;
 
-        plugin.reduction_linear = 10.0_f32.powf(plugin.reduction_db / 20.0);
+        plugin.reduction_linear = 10.0_f32.powf(plugin.reduction_db / 10.0);
         plugin.floor_linear = 10.0_f32.powf(plugin.floor_db / 20.0);
         plugin.freq_smooth_kernel = Self::compute_smoothing_kernel(plugin.smoothing);
 
@@ -477,9 +483,8 @@ impl DenoiserPlugin {
     /// Add processed block to output ring-buffer accumulator using overlap-add.
     /// Uses modular indexing (& mask) — no bulk shifts.
     fn overlap_add_to_accumulator(&mut self) {
-        // FFT scaling: 1/fft_size
-        // Hann window at 50% overlap has COLA sum = 1.0, no extra compensation needed
-        let combined_scale = 1.0 / self.fft_size as f32;
+        // WOLA: apply synthesis window (sqrt(Hann) / fft_size) before overlap-add.
+        // Analysis sqrt(Hann) * synthesis sqrt(Hann) = Hann → perfect COLA at 50% overlap.
         let mask = self.output_ring_mask;
 
         for ch in 0..self.channels {
@@ -488,7 +493,7 @@ impl DenoiserPlugin {
 
             for i in 0..self.fft_size {
                 let idx = (self.output_write_pos + i) & mask;
-                accum[idx] += time_out[i] * combined_scale;
+                accum[idx] += time_out[i] * self.synthesis_window[i];
             }
         }
 
@@ -660,7 +665,7 @@ impl InPlacePlugin for DenoiserPlugin {
                 .as_float()
                 .ok_or("Invalid reduction_db value")?
                 .clamp(REDUCTION_DB_MIN, REDUCTION_DB_MAX);
-            self.reduction_linear = 10.0_f32.powf(self.reduction_db / 20.0);
+            self.reduction_linear = 10.0_f32.powf(self.reduction_db / 10.0);
         } else if id == self.param_floor_db {
             self.floor_db = value
                 .as_float()

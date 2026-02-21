@@ -542,7 +542,7 @@ pub mod pnd {
 // ============================================================================
 
 pub mod denoiser {
-    pub const REDUCTION_DB_DEFAULT: f32 = 12.0;
+    pub const REDUCTION_DB_DEFAULT: f32 = 10.0;
     pub const REDUCTION_DB_MIN: f32 = 0.0;
     pub const REDUCTION_DB_MAX: f32 = 40.0;
 
@@ -585,7 +585,7 @@ pub mod denoiser {
     pub const TRANSPARENCY_MAX: f32 = 1.0;
 
     // Decision-Directed SNR estimation
-    pub const DD_ENABLED_DEFAULT: bool = false;
+    pub const DD_ENABLED_DEFAULT: bool = true;
     pub const DD_ALPHA_DEFAULT: f32 = 0.98;
     pub const DD_ALPHA_MIN: f32 = 0.5;
     pub const DD_ALPHA_MAX: f32 = 0.999;

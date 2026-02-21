@@ -23,6 +23,18 @@ pub fn generate_hann_window(size: usize) -> Vec<f32> {
         .collect()
 }
 
+/// Generate a sqrt(Hann) window for WOLA (Weighted Overlap-Add) processing.
+/// When used as both analysis and synthesis window, the product is Hann,
+/// which has perfect COLA at 50% overlap.
+pub fn generate_sqrt_hann_window(size: usize) -> Vec<f32> {
+    (0..size)
+        .map(|i| {
+            let hann = 0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / size as f32).cos());
+            hann.sqrt()
+        })
+        .collect()
+}
+
 // ============================================================================
 // RealFftProcessor
 // ============================================================================
@@ -188,6 +200,28 @@ mod tests {
                 i,
                 window[i],
                 window[8 - i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_sqrt_hann_cola_property() {
+        // sqrt(Hann) analysis * sqrt(Hann) synthesis = Hann
+        // Hann has perfect COLA at 50% overlap: w[i] + w[i+N/2] = 1.0
+        let n = 256;
+        let sqrt_window = generate_sqrt_hann_window(n);
+        let hop = n / 2;
+
+        for i in 0..hop {
+            // Product of analysis and synthesis = Hann
+            let hann_i = sqrt_window[i] * sqrt_window[i];
+            let hann_shifted = sqrt_window[i + hop] * sqrt_window[i + hop];
+            let sum = hann_i + hann_shifted;
+            assert!(
+                (sum - 1.0).abs() < 1e-5,
+                "sqrt(Hann) COLA violated at i={}: sum={}, expected 1.0",
+                i,
+                sum
             );
         }
     }
