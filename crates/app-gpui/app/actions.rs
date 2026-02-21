@@ -101,6 +101,7 @@ actions!(
         QuickAddMonoToStereo,
         QuickAddBandSplit,
         QuickAddBandMerge,
+        QuickAddCrossfeed,
         // Level meter actions
         SelectNextMeterGroup,
         SelectPrevMeterGroup,

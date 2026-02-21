@@ -7,7 +7,7 @@
 //! - Disabled state
 
 use gpui::*;
-use gpui_ui_kit::autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
+use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;

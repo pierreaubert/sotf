@@ -1141,6 +1141,7 @@ impl PlayerView {
             PluginType::BinauralDecoder,
             PluginType::Convolution,
             PluginType::XTC,
+            PluginType::Crossfeed,
             PluginType::LoudnessCompensation,
             PluginType::FletcherMunson,
             PluginType::LoudnessMonitor,

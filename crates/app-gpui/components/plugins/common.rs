@@ -695,8 +695,60 @@ pub fn param_index_to_engine_param(
         PluginSettings::ChannelMuteSolo { .. } | PluginSettings::Matrix { .. } => None,
         // LoudnessMonitor: no parameters
         PluginSettings::LoudnessMonitor => None,
-        // Crossfeed: structural updates for now (mode/preset changes)
-        PluginSettings::Crossfeed { .. } => None,
+        PluginSettings::Crossfeed {
+            mode: _,
+            preset: _,
+            enabled,
+            mix,
+            bauer_fcut_hz,
+            bauer_feed_db,
+            meier_level,
+            mb_low_freq_hz,
+            mb_mid_high_freq_hz,
+            mb_low_feed_db,
+            mb_mid_feed_db,
+            mb_high_feed_db,
+            autogain_enabled,
+            autogain_target_lufs,
+            autogain_max_gain_db,
+            autogain_smoothing_ms,
+        } => match param_idx {
+            // mode (0) and preset (1) require structural update (changes processing mode)
+            0 | 1 => None,
+            2 => Some(("enabled".to_string(), format!("{}", enabled))),
+            3 => Some(("mix".to_string(), format!("{}", mix))),
+            4 => Some(("bauer_fcut_hz".to_string(), format!("{}", bauer_fcut_hz))),
+            5 => Some(("bauer_feed_db".to_string(), format!("{}", bauer_feed_db))),
+            6 => Some(("meier_level".to_string(), format!("{}", meier_level))),
+            7 => Some(("mb_low_freq_hz".to_string(), format!("{}", mb_low_freq_hz))),
+            8 => Some((
+                "mb_mid_high_freq_hz".to_string(),
+                format!("{}", mb_mid_high_freq_hz),
+            )),
+            9 => Some(("mb_low_feed_db".to_string(), format!("{}", mb_low_feed_db))),
+            10 => Some(("mb_mid_feed_db".to_string(), format!("{}", mb_mid_feed_db))),
+            11 => Some((
+                "mb_high_feed_db".to_string(),
+                format!("{}", mb_high_feed_db),
+            )),
+            12 => Some((
+                "autogain_enabled".to_string(),
+                format!("{}", autogain_enabled),
+            )),
+            13 => Some((
+                "autogain_target_lufs".to_string(),
+                format!("{}", autogain_target_lufs),
+            )),
+            14 => Some((
+                "autogain_max_gain_db".to_string(),
+                format!("{}", autogain_max_gain_db),
+            )),
+            15 => Some((
+                "autogain_smoothing_ms".to_string(),
+                format!("{}", autogain_smoothing_ms),
+            )),
+            _ => None,
+        },
     }
 }
 

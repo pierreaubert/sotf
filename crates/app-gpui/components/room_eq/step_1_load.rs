@@ -1,3 +1,4 @@
+use crate::app::types::RoomEqStep;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -49,25 +50,6 @@ impl PlayerView {
                 .size(TextSize::Sm)
                 .color(theme.text_secondary),
             )
-            // Success message display (simple inline)
-            .when(has_measurements && !status_message.is_empty(), |div| {
-                div.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .align(StackAlign::Center)
-                        .child(
-                            Text::new("✓")
-                                .weight(TextWeight::Bold)
-                                .size(TextSize::Sm)
-                                .color(theme.success),
-                        )
-                        .child(
-                            Text::new(status_message.clone())
-                                .size(TextSize::Sm)
-                                .color(theme.text_primary),
-                        ),
-                )
-            })
             // Error message display
             .when(error_message.is_some(), |div| {
                 div.child(
@@ -115,6 +97,7 @@ impl PlayerView {
                         .into_any(),
                 )
             })
+            // Two source cards side by side
             .child(
                 HStack::new()
                     .spacing(StackSpacing::Lg)
@@ -205,5 +188,50 @@ impl PlayerView {
                         ),
                     ),
             )
+            // Success status message below cards with Next button
+            .when(has_measurements && !status_message.is_empty(), |vstack| {
+                vstack
+                    .child(
+                        Card::new()
+                            .background(theme.surface)
+                            .header_background(theme.background_secondary)
+                            .border(theme.border)
+                            .content(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .align(StackAlign::Center)
+                                    .child(
+                                        Text::new("✓")
+                                            .weight(TextWeight::Bold)
+                                            .size(TextSize::Sm)
+                                            .color(theme.success),
+                                    )
+                                    .child(
+                                        Text::new(status_message.clone())
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_primary),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        gpui::div().flex().justify_center().child(
+                            Button::new("next-from-load", "Next: Configure")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Lg)
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _, _, cx| {
+                                        view.state.update(cx, |state, _| {
+                                            state.app.measurement_state.room_eq_state.step =
+                                                RoomEqStep::Configure;
+                                        });
+                                        cx.notify();
+                                    }),
+                                ),
+                        ),
+                    )
+            })
     }
 }

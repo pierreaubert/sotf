@@ -4,10 +4,10 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::line;
+use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
 use gpui_ui_kit::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Badge, BadgeVariant, Button, ButtonSize,
-    ButtonVariant, Card, HStack, Progress, ProgressSize, ProgressVariant, StackSpacing, Text,
-    TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Card, HStack, Progress, ProgressSize,
+    ProgressVariant, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -88,7 +88,8 @@ impl PlayerView {
             .ui_state(autoeq_ui_state)
             .allowed_opt_modes(allowed_modes)
             .show_goals(false) // Hide Goals section (System Type, Loss Type, Target Curve)
-            .show_optimization_tuning(true) // Show Optimization Fine Tuning section
+            .show_optimization_tuning(true)
+            .hide_room_sections(true) // No room-specific params for spinorama EQ
             .on_opt_mode_change({
                 let state = self.state.clone();
                 move |mode, _window, cx| {

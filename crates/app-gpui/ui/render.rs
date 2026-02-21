@@ -268,6 +268,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_mono_to_stereo))
             .on_action(cx.listener(Self::quick_add_band_split))
             .on_action(cx.listener(Self::quick_add_band_merge))
+            .on_action(cx.listener(Self::quick_add_crossfeed))
             // Plugin parameter actions
             .on_action(cx.listener(Self::on_update_plugin_param))
             .on_action(cx.listener(Self::on_select_plugin_param))

@@ -34,7 +34,6 @@ pub mod scale;
 pub mod size;
 
 // Form components
-pub mod autoeq;
 pub mod checkbox;
 pub mod color;
 pub mod color_picker;
@@ -105,11 +104,6 @@ pub use audio::vertical_slider::{
     VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme,
 };
 pub use audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
-pub use autoeq::{
-    ALGORITHM_OPTIONS, AutoEqConfig, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState,
-    DE_STRATEGY_OPTIONS, HEADPHONE_TARGET_CURVE_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationType,
-    PEQ_MODEL_OPTIONS, ParamLimits, SPEAKER_TARGET_CURVE_OPTIONS, SPINORAMA_CURVE_OPTIONS,
-};
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};

@@ -28,6 +28,38 @@ impl PlayerView {
         let current_iteration = room_eq.current_iteration;
         let current_loss = room_eq.current_loss;
 
+        // Build the actual RoomConfig that will be sent to the optimizer
+        let room_config = room_eq.to_room_config();
+        let room_config_json = serde_json::to_string_pretty(&room_config).unwrap_or_default();
+
+        // Extract optimizer config for parameter summary
+        let opt_config = &room_eq.optimizer_config;
+        let channel_names: Vec<String> = room_eq
+            .channel_measurements
+            .iter()
+            .map(|m| m.channel_name.clone())
+            .collect();
+        let param_mode = opt_config.mode.to_code().to_string();
+        let param_algorithm = opt_config.algorithm.clone();
+        let param_num_filters = opt_config.num_filters;
+        let param_min_q = opt_config.min_q;
+        let param_max_q = opt_config.max_q;
+        let param_min_db = opt_config.min_db;
+        let param_max_db = opt_config.max_db;
+        let param_min_freq = opt_config.min_freq;
+        let param_max_freq = opt_config.max_freq;
+        let param_max_iter = opt_config.max_iter;
+        let param_population = opt_config.population;
+        let param_peq_model = opt_config.peq_model.clone();
+        let param_refine = opt_config.refine;
+        let param_local_algo = opt_config.local_algo.clone();
+        let param_psychoacoustic = opt_config.psychoacoustic;
+        let param_asymmetric_loss = opt_config.asymmetric_loss;
+        let param_target_tilt = opt_config.target_tilt.enabled;
+        let param_excursion = opt_config.excursion_protection.enabled;
+        let param_schroeder = opt_config.schroeder_split.enabled;
+        let param_phase_alignment = opt_config.phase_alignment.enabled;
+
         VStack::new()
             .spacing(StackSpacing::Lg)
             .child(
@@ -196,6 +228,164 @@ impl PlayerView {
                                 vstack.child(Text::new(err).size(TextSize::Sm).color(theme.error))
                             }),
                     ),
+            )
+            // Parameter summary card
+            .child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(
+                        Text::new("Configuration Summary")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content({
+                        let label_color = theme.text_secondary;
+                        let value_color = theme.text_primary;
+                        let accent = theme.accent;
+
+                        // Helper: build a label: value row
+                        let row = |label: &str, value: String| {
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .child(
+                                    Text::new(format!("{}:", label))
+                                        .size(TextSize::Xs)
+                                        .color(label_color),
+                                )
+                                .child(
+                                    Text::new(value)
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(value_color),
+                                )
+                        };
+
+                        let bool_badge = |label: &str, enabled: bool| {
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .child(
+                                    Text::new(format!("{}:", label))
+                                        .size(TextSize::Xs)
+                                        .color(label_color),
+                                )
+                                .child(
+                                    Text::new(if enabled { "ON" } else { "OFF" })
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(if enabled { accent } else { label_color }),
+                                )
+                        };
+
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            // Channels
+                            .child(row(
+                                "Channels",
+                                if channel_names.is_empty() {
+                                    "None".to_string()
+                                } else {
+                                    format!("{} ({})", channel_names.len(), channel_names.join(", "))
+                                },
+                            ))
+                            // Mode & Algorithm
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Lg)
+                                    .child(row("Mode", param_mode))
+                                    .child(row("Algorithm", param_algorithm))
+                                    .child(row("PEQ Model", param_peq_model)),
+                            )
+                            // Filters & Iterations
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Lg)
+                                    .child(row("Filters", param_num_filters.to_string()))
+                                    .child(row("Max Iter", param_max_iter.to_string()))
+                                    .child(row("Population", param_population.to_string())),
+                            )
+                            // Frequency range
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Lg)
+                                    .child(row(
+                                        "Freq Range",
+                                        format!("{:.0} - {:.0} Hz", param_min_freq, param_max_freq),
+                                    ))
+                                    .child(row(
+                                        "Q Range",
+                                        format!("{:.1} - {:.1}", param_min_q, param_max_q),
+                                    ))
+                                    .child(row(
+                                        "dB Range",
+                                        format!("{:.1} - {:.1}", param_min_db, param_max_db),
+                                    )),
+                            )
+                            // Toggles
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Lg)
+                                    .child(bool_badge("Refine", param_refine))
+                                    .when(param_refine, |h| {
+                                        h.child(row("Local Algo", param_local_algo))
+                                    })
+                                    .child(bool_badge("Psychoacoustic", param_psychoacoustic))
+                                    .child(bool_badge("Asymmetric Loss", param_asymmetric_loss)),
+                            )
+                            // Advanced features (only show enabled ones)
+                            .when(
+                                param_target_tilt
+                                    || param_excursion
+                                    || param_schroeder
+                                    || param_phase_alignment,
+                                |vstack| {
+                                    vstack.child(
+                                        HStack::new()
+                                            .spacing(StackSpacing::Lg)
+                                            .when(param_target_tilt, |h| {
+                                                h.child(bool_badge("Target Tilt", true))
+                                            })
+                                            .when(param_excursion, |h| {
+                                                h.child(bool_badge("Excursion Protection", true))
+                                            })
+                                            .when(param_schroeder, |h| {
+                                                h.child(bool_badge("Schroeder Split", true))
+                                            })
+                                            .when(param_phase_alignment, |h| {
+                                                h.child(bool_badge("Phase Alignment", true))
+                                            }),
+                                    )
+                                },
+                            )
+                    }),
+            )
+            // Full RoomConfig dump (for debugging parameter mismatches)
+            .child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(
+                        Text::new("Full Parameters (RoomConfig)")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content({
+                        let mut lines_vstack = VStack::new().spacing(StackSpacing::None);
+                        for line in room_config_json.lines() {
+                            lines_vstack = lines_vstack.child(
+                                Text::new(line.to_string())
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
+                            );
+                        }
+                        div()
+                            .id("room-config-json")
+                            .overflow_y_scroll()
+                            .max_h(px(400.0))
+                            .child(lines_vstack)
+                    }),
             )
             // Optimization Process graph (shown when progress history is available)
             .when(!progress_history.is_empty(), |vstack| {

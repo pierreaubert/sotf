@@ -121,6 +121,7 @@ autoeq-roomsim = { version = "0.3", path = "crates/autoeq/autoeq-roomsim" }
 gpui-d3rs = { version = "0.6", path = "crates/gpui-toolkit/gpui-d3rs" }
 gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px" }
 gpui-themes = { version = "0.6", path = "crates/gpui-toolkit/gpui-themes" }
+gpui-autoeq = { version = "0.6", path = "crates/gpui-toolkit/gpui-autoeq" }
 gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 

@@ -130,6 +130,7 @@ impl PlayerView {
     quick_add_plugin_handler!(quick_add_mono_to_stereo, QuickAddMonoToStereo, sotf_audio_player::PluginType::MonoToStereo);
     quick_add_plugin_handler!(quick_add_band_split, QuickAddBandSplit, sotf_audio_player::PluginType::BandSplit);
     quick_add_plugin_handler!(quick_add_band_merge, QuickAddBandMerge, sotf_audio_player::PluginType::BandMerge);
+    quick_add_plugin_handler!(quick_add_crossfeed, QuickAddCrossfeed, sotf_audio_player::PluginType::Crossfeed);
 
     fn increment_plugin_param(&mut self, _: &IncrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {

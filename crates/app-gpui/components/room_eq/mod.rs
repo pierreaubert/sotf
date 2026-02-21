@@ -2,7 +2,7 @@
 //!
 //! Multi-step wizard for room EQ optimization:
 //! 1. Load Data - Load/import measurement data
-//! 2. Configure - Configure channels and optimizer settings
+//! 2. Configure - Select mode, configure channels and optimizer settings
 //! 3. Optimize - Run optimization (per-channel, then combined)
 //! 4. Review - Review results and visualizations
 //! 5. Export - Export DSP chain and apply
@@ -21,7 +21,6 @@ mod actions;
 mod custom_target_modal;
 mod render;
 mod step_1_load;
-mod step_2_select_mode;
 mod step_3_configure;
 mod step_4_optimise;
 mod step_5_review;
@@ -37,7 +36,6 @@ impl PlayerView {
         // Content for current step
         let content = match current_step {
             RoomEqStep::LoadData => self.render_room_eq_load_data(cx).into_any_element(),
-            RoomEqStep::SelectMode => self.render_room_eq_select_mode(cx).into_any_element(),
             RoomEqStep::Configure => self.render_room_eq_configure(cx).into_any_element(),
             RoomEqStep::Optimize => self.render_room_eq_optimize(cx).into_any_element(),
             RoomEqStep::Review => self.render_room_eq_review(cx).into_any_element(),
@@ -76,7 +74,6 @@ impl PlayerView {
         // Build wizard steps
         let steps = vec![
             WizardStep::new("load-data", "Load Data"),
-            WizardStep::new("select-mode", "Mode"),
             WizardStep::new("configure", "Configure"),
             WizardStep::new("optimize", "Optimize"),
             WizardStep::new("review", "Review"),
@@ -228,7 +225,6 @@ impl PlayerView {
 
         match room_eq.step {
             RoomEqStep::LoadData => room_eq.has_measurements(),
-            RoomEqStep::SelectMode => true,
             RoomEqStep::Configure => !room_eq.speaker_configs.is_empty(),
             RoomEqStep::Optimize => room_eq.is_optimization_complete(),
             RoomEqStep::Review => true,

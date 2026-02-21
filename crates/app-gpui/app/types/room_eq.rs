@@ -58,15 +58,13 @@ pub enum RoomEqStep {
     /// Step 1: Load/import measurement data
     #[default]
     LoadData,
-    /// Step 2: Select optimization mode (IIR/FIR)
-    SelectMode,
-    /// Step 3: Configure channels and optimizer settings
+    /// Step 2: Configure channels, mode, and optimizer settings
     Configure,
-    /// Step 4: Run optimization (per-channel, then combined)
+    /// Step 3: Run optimization (per-channel, then combined)
     Optimize,
-    /// Step 5: Review results and visualizations
+    /// Step 4: Review results and visualizations
     Review,
-    /// Step 6: Export DSP chain and apply
+    /// Step 5: Export DSP chain and apply
     Export,
 }
 
@@ -75,7 +73,6 @@ impl RoomEqStep {
     pub fn all() -> &'static [RoomEqStep] {
         &[
             RoomEqStep::LoadData,
-            RoomEqStep::SelectMode,
             RoomEqStep::Configure,
             RoomEqStep::Optimize,
             RoomEqStep::Review,
@@ -87,11 +84,10 @@ impl RoomEqStep {
     pub fn index(&self) -> usize {
         match self {
             RoomEqStep::LoadData => 0,
-            RoomEqStep::SelectMode => 1,
-            RoomEqStep::Configure => 2,
-            RoomEqStep::Optimize => 3,
-            RoomEqStep::Review => 4,
-            RoomEqStep::Export => 5,
+            RoomEqStep::Configure => 1,
+            RoomEqStep::Optimize => 2,
+            RoomEqStep::Review => 3,
+            RoomEqStep::Export => 4,
         }
     }
 
@@ -99,7 +95,6 @@ impl RoomEqStep {
     pub fn label(&self) -> &'static str {
         match self {
             RoomEqStep::LoadData => "Load Data",
-            RoomEqStep::SelectMode => "Mode",
             RoomEqStep::Configure => "Configure",
             RoomEqStep::Optimize => "Optimize",
             RoomEqStep::Review => "Review",
@@ -110,8 +105,7 @@ impl RoomEqStep {
     /// Get next step
     pub fn next(&self) -> Option<RoomEqStep> {
         match self {
-            RoomEqStep::LoadData => Some(RoomEqStep::SelectMode),
-            RoomEqStep::SelectMode => Some(RoomEqStep::Configure),
+            RoomEqStep::LoadData => Some(RoomEqStep::Configure),
             RoomEqStep::Configure => Some(RoomEqStep::Optimize),
             RoomEqStep::Optimize => Some(RoomEqStep::Review),
             RoomEqStep::Review => Some(RoomEqStep::Export),
@@ -123,8 +117,7 @@ impl RoomEqStep {
     pub fn previous(&self) -> Option<RoomEqStep> {
         match self {
             RoomEqStep::LoadData => None,
-            RoomEqStep::SelectMode => Some(RoomEqStep::LoadData),
-            RoomEqStep::Configure => Some(RoomEqStep::SelectMode),
+            RoomEqStep::Configure => Some(RoomEqStep::LoadData),
             RoomEqStep::Optimize => Some(RoomEqStep::Configure),
             RoomEqStep::Review => Some(RoomEqStep::Optimize),
             RoomEqStep::Export => Some(RoomEqStep::Review),
@@ -1336,6 +1329,100 @@ impl RoomEqState {
             })
             .count();
         non_sub_count >= 3
+    }
+
+    /// Check if any channel has phase data
+    pub fn has_phase_data(&self) -> bool {
+        self.channel_measurements
+            .iter()
+            .any(|m| !m.measurement.phase_deg.is_empty())
+    }
+
+    /// Check if any channel is a multi-driver group
+    pub fn has_multi_driver(&self) -> bool {
+        self.channel_measurements.iter().any(|m| m.is_group)
+    }
+
+    /// Height channel names used for Voice of God detection
+    const HEIGHT_CHANNELS: &[&str] = &[
+        "TFL", "TFR", "TSL", "TSR", "TBL", "TBR", "VOG", "TFC", "TBC", "TSC",
+    ];
+
+    /// Check if measurement has height channels (for VoG)
+    pub fn has_height_channels(&self) -> bool {
+        self.channel_names().iter().any(|name| {
+            let upper = name.to_uppercase();
+            Self::HEIGHT_CHANNELS
+                .iter()
+                .any(|&h| upper == h)
+        })
+    }
+
+    /// Check if the setup is home cinema (5+ non-sub channels)
+    pub fn is_home_cinema(&self) -> bool {
+        let non_sub_count = self
+            .channel_names()
+            .iter()
+            .filter(|name| {
+                let upper = name.to_uppercase();
+                upper != "LFE" && upper != "SUB" && upper != "SW" && !upper.starts_with("SUB")
+            })
+            .count();
+        non_sub_count >= 5
+    }
+
+    /// Apply smart defaults based on loaded measurement data.
+    /// Called after loading measurements to set sensible initial values.
+    pub fn apply_smart_defaults(&mut self) {
+        // Compute detection values before mutably borrowing optimizer_config
+        let is_surround = self.is_surround();
+        let has_subwoofer = self.has_subwoofer();
+        let has_height = self.has_height_channels();
+        let is_cinema = self.is_home_cinema();
+
+        let config = &mut self.optimizer_config;
+
+        // Loss type: always flat for roomeq
+        config.loss_type = "flat".to_string();
+
+        // System type: auto-detect from channel count
+        config.system_type = if is_surround {
+            "multichannel".to_string()
+        } else {
+            "stereo".to_string()
+        };
+
+        // Algorithm: local refinement with COBYLA
+        config.local_algo = "cobyla".to_string();
+        config.refine = true;
+
+        // Target tilt: harman by default
+        config.target_tilt.enabled = true;
+        config.target_tilt.tilt_type = "harman".to_string();
+
+        // Advanced Room Correction: on by default
+        config.excursion_protection.enabled = true;
+        config.schroeder_split.enabled = true;
+
+        // Allow delay: on by default
+        config.allow_delay = true;
+
+        // Broadband target matching: on by default
+        config.broadband_target_matching.enabled = true;
+
+        // Reproducible seed: off by default
+        config.seed = None;
+
+        // Group delay optimization: on if subwoofer present
+        config.gd_opt.enabled = has_subwoofer;
+
+        // Voice of God: on if height channels present
+        config.vog.enabled = has_height;
+        config.vog.reference_channel = if is_cinema {
+            "C".to_string()
+        } else {
+            "L".to_string()
+        };
     }
 
     /// Get channel names from speaker configs

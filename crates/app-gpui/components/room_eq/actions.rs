@@ -36,6 +36,11 @@ impl PlayerView {
                 .measurement_state
                 .room_eq_state
                 .init_speaker_configs();
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .apply_smart_defaults();
 
             let channel_count = state
                 .app
@@ -287,6 +292,7 @@ impl PlayerView {
                                     );
                                 }
                                 state.app.measurement_state.room_eq_state.error_message = None;
+                                state.app.measurement_state.room_eq_state.apply_smart_defaults();
                             });
                             return;
                         }
@@ -414,6 +420,7 @@ impl PlayerView {
                                         );
                                     }
                                     state.app.measurement_state.room_eq_state.error_message = None;
+                                    state.app.measurement_state.room_eq_state.apply_smart_defaults();
                                 });
                             }
                             Err(e) => {

@@ -2,10 +2,10 @@ use crate::app::types::OptimizationStatus;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, OptimizationType};
 use gpui_ui_kit::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Badge, BadgeVariant, Button, ButtonSize,
-    ButtonTheme, ButtonVariant, Card, OptimizationType, Progress, ProgressSize, ProgressVariant,
-    StackSpacing, Text, TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, Progress,
+    ProgressSize, ProgressVariant, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -72,8 +72,14 @@ impl PlayerView {
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
             .optimization_type(OptimizationType::Headphone)
+            .allowed_opt_modes(vec!["iir".to_string()])
             .show_goals(true)
             .show_optimization_tuning(true)
+            .hide_de_params(true)
+            .hide_smoothing(true)
+            .hide_spacing(true)
+            .hide_tolerance(true)
+            .hide_sample_rate(true)
             .on_loss_type_change({
                 let state = self.state.clone();
                 move |loss_type, _window, cx| {

@@ -1515,9 +1515,145 @@ impl PluginEditingManager for App {
                         _ => false,
                     }
                 }
-                PluginSettings::Crossfeed { .. } => {
-                    // Crossfeed parameters not yet implemented in GPUI editor
-                    false
+                PluginSettings::Crossfeed {
+                    mode,
+                    preset,
+                    enabled,
+                    mix,
+                    bauer_fcut_hz,
+                    bauer_feed_db,
+                    meier_level,
+                    mb_low_freq_hz,
+                    mb_mid_high_freq_hz,
+                    mb_low_feed_db,
+                    mb_mid_feed_db,
+                    mb_high_feed_db,
+                    autogain_enabled,
+                    autogain_target_lufs,
+                    autogain_max_gain_db,
+                    autogain_smoothing_ms,
+                } => {
+                    use sotf_plugins::param_specs::crossfeed::*;
+                    use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
+                    match param_idx {
+                        0 => {
+                            // Cycle mode
+                            let modes = [
+                                CrossfeedMode::Off,
+                                CrossfeedMode::Bauer,
+                                CrossfeedMode::Meier,
+                                CrossfeedMode::Mb,
+                            ];
+                            let current = modes.iter().position(|m| m == mode).unwrap_or(0);
+                            let next = if delta > 0.0 {
+                                (current + 1) % modes.len()
+                            } else {
+                                (current + modes.len() - 1) % modes.len()
+                            };
+                            *mode = modes[next];
+                            true
+                        }
+                        1 => {
+                            // Cycle preset and apply params
+                            let presets = [
+                                CrossfeedPreset::Default,
+                                CrossfeedPreset::Cmoy,
+                                CrossfeedPreset::Meier,
+                                CrossfeedPreset::Mb,
+                                CrossfeedPreset::Off,
+                            ];
+                            let current = presets.iter().position(|p| p == preset).unwrap_or(0);
+                            let next = if delta > 0.0 {
+                                (current + 1) % presets.len()
+                            } else {
+                                (current + presets.len() - 1) % presets.len()
+                            };
+                            *preset = presets[next];
+                            let p_params =
+                                sotf_plugins::CrossfeedPluginParams::from_preset(*preset);
+                            *mode = p_params.mode;
+                            *bauer_fcut_hz = p_params.bauer_fcut_hz as f64;
+                            *bauer_feed_db = p_params.bauer_feed_db as f64;
+                            *meier_level = p_params.meier_level as f64;
+                            *mb_low_freq_hz = p_params.mb_low_freq_hz as f64;
+                            *mb_mid_high_freq_hz = p_params.mb_mid_high_freq_hz as f64;
+                            *mb_low_feed_db = p_params.mb_low_feed_db as f64;
+                            *mb_mid_feed_db = p_params.mb_mid_feed_db as f64;
+                            *mb_high_feed_db = p_params.mb_high_feed_db as f64;
+                            true
+                        }
+                        2 => {
+                            *enabled = !*enabled;
+                            true
+                        }
+                        3 => {
+                            *mix = (*mix + delta * 0.05).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            true
+                        }
+                        4 => {
+                            *bauer_fcut_hz = (*bauer_fcut_hz + delta * 10.0)
+                                .clamp(BAUER_FCUT_MIN as f64, BAUER_FCUT_MAX as f64);
+                            true
+                        }
+                        5 => {
+                            *bauer_feed_db = (*bauer_feed_db + delta * 0.5)
+                                .clamp(BAUER_FEED_MIN as f64, BAUER_FEED_MAX as f64);
+                            true
+                        }
+                        6 => {
+                            *meier_level = (*meier_level + delta)
+                                .clamp(MEIER_LEVEL_MIN as f64, MEIER_LEVEL_MAX as f64);
+                            true
+                        }
+                        7 => {
+                            *mb_low_freq_hz = (*mb_low_freq_hz + delta * 5.0)
+                                .clamp(MB_LOW_FREQ_MIN as f64, MB_LOW_FREQ_MAX as f64);
+                            true
+                        }
+                        8 => {
+                            *mb_mid_high_freq_hz = (*mb_mid_high_freq_hz + delta * 50.0)
+                                .clamp(MB_MID_HIGH_FREQ_MIN as f64, MB_MID_HIGH_FREQ_MAX as f64);
+                            true
+                        }
+                        9 => {
+                            *mb_low_feed_db = (*mb_low_feed_db + delta * 0.5)
+                                .clamp(MB_LOW_FEED_MIN as f64, MB_LOW_FEED_MAX as f64);
+                            true
+                        }
+                        10 => {
+                            *mb_mid_feed_db = (*mb_mid_feed_db + delta * 0.5)
+                                .clamp(MB_MID_FEED_MIN as f64, MB_MID_FEED_MAX as f64);
+                            true
+                        }
+                        11 => {
+                            *mb_high_feed_db = (*mb_high_feed_db + delta * 0.5)
+                                .clamp(MB_HIGH_FEED_MIN as f64, MB_HIGH_FEED_MAX as f64);
+                            true
+                        }
+                        12 => {
+                            *autogain_enabled = !*autogain_enabled;
+                            true
+                        }
+                        13 => {
+                            *autogain_target_lufs = (*autogain_target_lufs + delta * 0.5)
+                                .clamp(AUTOGAIN_TARGET_MIN as f64, AUTOGAIN_TARGET_MAX as f64);
+                            true
+                        }
+                        14 => {
+                            *autogain_max_gain_db = (*autogain_max_gain_db + delta)
+                                .clamp(AUTOGAIN_MAX_GAIN_MIN as f64, AUTOGAIN_MAX_GAIN_MAX as f64);
+                            true
+                        }
+                        15 => {
+                            *autogain_smoothing_ms = (*autogain_smoothing_ms + delta * 10.0)
+                                .clamp(
+                                    AUTOGAIN_SMOOTHING_MIN as f64,
+                                    AUTOGAIN_SMOOTHING_MAX as f64,
+                                );
+                            true
+                        }
+                        _ => false,
+                    }
                 }
             }
         } else {
@@ -2791,6 +2927,133 @@ impl PluginEditingManager for App {
                         _ => {}
                     }
                 }
+                PluginSettings::Crossfeed {
+                    mode,
+                    preset,
+                    enabled,
+                    mix,
+                    bauer_fcut_hz,
+                    bauer_feed_db,
+                    meier_level,
+                    mb_low_freq_hz,
+                    mb_mid_high_freq_hz,
+                    mb_low_feed_db,
+                    mb_mid_feed_db,
+                    mb_high_feed_db,
+                    autogain_enabled,
+                    autogain_target_lufs,
+                    autogain_max_gain_db,
+                    autogain_smoothing_ms,
+                } => {
+                    use sotf_plugins::param_specs::crossfeed::*;
+                    use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
+                    match param_idx {
+                        0 => {
+                            let modes = [
+                                CrossfeedMode::Off,
+                                CrossfeedMode::Bauer,
+                                CrossfeedMode::Meier,
+                                CrossfeedMode::Mb,
+                            ];
+                            let idx = (value as usize).min(modes.len() - 1);
+                            *mode = modes[idx];
+                            update_needed = true;
+                        }
+                        1 => {
+                            let presets = [
+                                CrossfeedPreset::Default,
+                                CrossfeedPreset::Cmoy,
+                                CrossfeedPreset::Meier,
+                                CrossfeedPreset::Mb,
+                                CrossfeedPreset::Off,
+                            ];
+                            let idx = (value as usize).min(presets.len() - 1);
+                            *preset = presets[idx];
+                            let p_params =
+                                sotf_plugins::CrossfeedPluginParams::from_preset(*preset);
+                            *mode = p_params.mode;
+                            *bauer_fcut_hz = p_params.bauer_fcut_hz as f64;
+                            *bauer_feed_db = p_params.bauer_feed_db as f64;
+                            *meier_level = p_params.meier_level as f64;
+                            *mb_low_freq_hz = p_params.mb_low_freq_hz as f64;
+                            *mb_mid_high_freq_hz = p_params.mb_mid_high_freq_hz as f64;
+                            *mb_low_feed_db = p_params.mb_low_feed_db as f64;
+                            *mb_mid_feed_db = p_params.mb_mid_feed_db as f64;
+                            *mb_high_feed_db = p_params.mb_high_feed_db as f64;
+                            update_needed = true;
+                        }
+                        2 => {
+                            *enabled = value != 0.0;
+                            update_needed = true;
+                        }
+                        3 => {
+                            *mix = value.clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *bauer_fcut_hz =
+                                value.clamp(BAUER_FCUT_MIN as f64, BAUER_FCUT_MAX as f64);
+                            update_needed = true;
+                        }
+                        5 => {
+                            *bauer_feed_db =
+                                value.clamp(BAUER_FEED_MIN as f64, BAUER_FEED_MAX as f64);
+                            update_needed = true;
+                        }
+                        6 => {
+                            *meier_level =
+                                value.clamp(MEIER_LEVEL_MIN as f64, MEIER_LEVEL_MAX as f64);
+                            update_needed = true;
+                        }
+                        7 => {
+                            *mb_low_freq_hz =
+                                value.clamp(MB_LOW_FREQ_MIN as f64, MB_LOW_FREQ_MAX as f64);
+                            update_needed = true;
+                        }
+                        8 => {
+                            *mb_mid_high_freq_hz = value
+                                .clamp(MB_MID_HIGH_FREQ_MIN as f64, MB_MID_HIGH_FREQ_MAX as f64);
+                            update_needed = true;
+                        }
+                        9 => {
+                            *mb_low_feed_db =
+                                value.clamp(MB_LOW_FEED_MIN as f64, MB_LOW_FEED_MAX as f64);
+                            update_needed = true;
+                        }
+                        10 => {
+                            *mb_mid_feed_db =
+                                value.clamp(MB_MID_FEED_MIN as f64, MB_MID_FEED_MAX as f64);
+                            update_needed = true;
+                        }
+                        11 => {
+                            *mb_high_feed_db =
+                                value.clamp(MB_HIGH_FEED_MIN as f64, MB_HIGH_FEED_MAX as f64);
+                            update_needed = true;
+                        }
+                        12 => {
+                            *autogain_enabled = value != 0.0;
+                            update_needed = true;
+                        }
+                        13 => {
+                            *autogain_target_lufs =
+                                value.clamp(AUTOGAIN_TARGET_MIN as f64, AUTOGAIN_TARGET_MAX as f64);
+                            update_needed = true;
+                        }
+                        14 => {
+                            *autogain_max_gain_db = value
+                                .clamp(AUTOGAIN_MAX_GAIN_MIN as f64, AUTOGAIN_MAX_GAIN_MAX as f64);
+                            update_needed = true;
+                        }
+                        15 => {
+                            *autogain_smoothing_ms = value.clamp(
+                                AUTOGAIN_SMOOTHING_MIN as f64,
+                                AUTOGAIN_SMOOTHING_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
         }
@@ -3825,6 +4088,6 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::BandMerge { .. } => 1,       // bands
         PluginSettings::Downmix { .. } => 7, // center, surround, height, lfe, phase_coherence, blend_low, blend_high
         PluginSettings::MonoToStereo { .. } => 6, // width, haas, comp_eq, depth, decor_low, decor_high
-        PluginSettings::Crossfeed { .. } => 0,     // Not yet implemented in GPUI editor
+        PluginSettings::Crossfeed { .. } => 16, // mode, preset, enabled, mix, bauer×2, meier, mb×5, autogain×4
     }
 }

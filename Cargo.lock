@@ -3878,6 +3878,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-autoeq"
+version = "0.6.4"
+dependencies = [
+ "gpui",
+ "gpui-ui-kit",
+ "gpui-ui-kit-macros",
+]
+
+[[package]]
 name = "gpui-d3rs"
 version = "0.6.0"
 dependencies = [
@@ -9287,6 +9296,7 @@ dependencies = [
  "engine",
  "env_logger",
  "gpui",
+ "gpui-autoeq",
  "gpui-px",
  "gpui-ui-kit",
  "hound",
