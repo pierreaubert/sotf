@@ -26,6 +26,7 @@ mod badge_test;
 mod card_test;
 mod dialog_test;
 mod icon_button_test;
+mod table_test;
 
 // Navigation Components
 mod breadcrumbs_test;

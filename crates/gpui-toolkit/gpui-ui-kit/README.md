@@ -55,6 +55,7 @@ gpui-ui-kit = { version = "0.1.17", git="https://github.com/pierreaubert/sotf/gp
 | `Progress` / `CircularProgress` | Progress bars and circular indicators |
 | `Spinner` / `LoadingDots` | Loading indicators |
 | `Avatar` / `AvatarGroup` | User avatars with status indicators |
+| `Table` | Data table with sorting, selection, and pagination |
 | `Text` / `Heading` / `Code` / `Link` | Typography components |
 
 ### Feedback
@@ -370,6 +371,25 @@ AvatarGroup::new()
         Avatar::new("u3").initials("EF"),
     ])
     .max_visible(3)
+```
+
+### Table
+
+```rust
+use gpui_ui_kit::table::{Table, Column, SortDirection, SortState, SelectionMode};
+
+let table = Table::new("my-table", vec![item1, item2])
+    .column(Column::new("id", "ID").width(px(50.0)).cell_render(|item, _, _, _| item.id.to_string()))
+    .column(Column::new("name", "Name").cell_render(|item, _, _, _| item.name.clone()))
+    .sort(SortState { column_id: "name".into(), direction: SortDirection::Ascending })
+    .on_sort(|state, window, cx| {
+        // Handle sort change
+    })
+    .selection_mode(SelectionMode::Single)
+    .on_selection_change(|indices, window, cx| {
+        // Handle selection change
+    })
+    .show_footer(true);
 ```
 
 ### Tooltip

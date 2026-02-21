@@ -51,6 +51,7 @@ pub mod avatar;
 pub mod badge;
 pub mod progress;
 pub mod spinner;
+pub mod table;
 pub mod text;
 
 // Feedback
@@ -123,6 +124,9 @@ pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};
 pub use badge::{Badge, BadgeDot, BadgeSize, BadgeVariant};
 pub use progress::{CircularProgress, Progress, ProgressSize, ProgressVariant};
 pub use spinner::{LoadingDots, Spinner, SpinnerSize};
+pub use table::{
+    Column, PaginationState, SelectionMode, SortDirection, SortState, Table, TableTheme,
+};
 pub use text::{Code, Heading, Link, Text, TextSize, TextWeight};
 
 // Feedback

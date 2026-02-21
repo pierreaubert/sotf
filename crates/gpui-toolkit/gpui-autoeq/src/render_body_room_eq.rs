@@ -181,7 +181,7 @@
                 psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .spacing(StackSpacing::Md)
                     .justify(StackJustify::SpaceBetween)
@@ -213,7 +213,7 @@
                 asymmetric_toggle = asymmetric_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .spacing(StackSpacing::Md)
                     .justify(StackJustify::SpaceBetween)
@@ -245,7 +245,7 @@
                 excursion_toggle = excursion_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
@@ -267,7 +267,7 @@
                     auto_f3_toggle = auto_f3_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(
+                options_col = options_col.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
@@ -293,7 +293,7 @@
                         let h = h.clone();
                         f3_input = f3_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
-                    section = section.child(f3_input);
+                    options_col = options_col.child(f3_input);
                 }
 
                 let hp_options: Vec<SelectOption> = HIGHPASS_TYPE_OPTIONS
@@ -333,7 +333,7 @@
                         order_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                 }
 
-                section = section.child(
+                options_col = options_col.child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .child(hp_select)
@@ -355,7 +355,7 @@
                     margin_input = margin_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(margin_input);
+                options_col = options_col.child(margin_input);
             }
 
             // Schroeder Split
@@ -369,7 +369,7 @@
                 schroeder_toggle = schroeder_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
@@ -396,7 +396,7 @@
                     s_freq_input = s_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(s_freq_input);
+                options_col = options_col.child(s_freq_input);
 
                 let mut low_q_input = NumberInput::new((base_id.clone(), "schroeder-low-q"))
                     .value(config.schroeder_low_max_q)
@@ -428,7 +428,7 @@
                     high_q_input = high_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(
+                options_col = options_col.child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .child(low_q_input)
@@ -455,7 +455,7 @@
                     shelve_toggle = shelve_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(
+                options_col = options_col.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
@@ -466,7 +466,7 @@
                         .child(boost_toggle),
                 );
 
-                section = section.child(
+                options_col = options_col.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
@@ -489,7 +489,7 @@
                 delay_toggle = delay_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
@@ -521,7 +521,7 @@
                 broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
@@ -552,7 +552,7 @@
                 gd_toggle = gd_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
@@ -590,7 +590,7 @@
                     gd_target_input = gd_target_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(gd_target_input);
+                options_col = options_col.child(gd_target_input);
             }
 
             // Voice of God
@@ -604,7 +604,7 @@
                 vog_toggle = vog_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            section = section.child(
+            options_col = options_col.child(
                 HStack::new()
                     .justify(StackJustify::SpaceBetween)
                     .child(
@@ -648,7 +648,7 @@
                     ref_select = ref_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                 }
 
-                section = section.child(ref_select);
+                options_col = options_col.child(ref_select);
             }
 
             // Phase Alignment (hidden for IIR mode)
@@ -663,7 +663,7 @@
                     phase_toggle = phase_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(
+                options_col = options_col.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
@@ -705,7 +705,7 @@
                         max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    section = section.child(
+                    options_col = options_col.child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child(min_freq_input)
@@ -722,7 +722,7 @@
                         polarity_toggle = polarity_toggle.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    section = section.child(
+                    options_col = options_col.child(
                         HStack::new()
                             .justify(StackJustify::SpaceBetween)
                             .child(
@@ -747,7 +747,7 @@
                         let h = h.clone();
                         p_max_delay = p_max_delay.on_change(move |v, w, cx| h(v, w, cx));
                     }
-                    section = section.child(p_max_delay);
+                    options_col = options_col.child(p_max_delay);
                 }
             }
 
@@ -763,7 +763,7 @@
                     multi_seat_toggle = multi_seat_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                section = section.child(
+                options_col = options_col.child(
                     HStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .child(
@@ -797,7 +797,7 @@
                             strategy_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                     }
 
-                    section = section.child(strategy_select);
+                    options_col = options_col.child(strategy_select);
 
                     if config.multi_seat_strategy == "primary" {
                         let mut primary_seat_input =
@@ -816,7 +816,7 @@
                             primary_seat_input = primary_seat_input
                                 .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                         }
-                        section = section.child(primary_seat_input);
+                        options_col = options_col.child(primary_seat_input);
                     }
 
                     let mut dev_input = NumberInput::new((base_id.clone(), "multi-seat-max-dev"))
@@ -833,8 +833,39 @@
                         let h = h.clone();
                         dev_input = dev_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
-                    section = section.child(dev_input);
+                    options_col = options_col.child(dev_input);
                 }
+            }
+
+            // Assemble Room Configuration card
+            let mut section = VStack::new().spacing(StackSpacing::Sm);
+
+            // Header
+            section = section.child(
+                VStack::new()
+                    .spacing(StackSpacing::None)
+                    .child(
+                        Text::new("Room Configuration")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.header_color),
+                    )
+                    .child(
+                        Text::new("Target curve and room correction options")
+                            .size(TextSize::Xs)
+                            .color(theme.description_color),
+                    ),
+            );
+
+            if available_width > 700.0 {
+                section = section.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Lg)
+                        .child(div().flex_1().child(target_col))
+                        .child(div().flex_1().child(options_col)),
+                );
+            } else {
+                section = section.child(target_col).child(options_col);
             }
 
             form = form.child(Card::new().content(section));
