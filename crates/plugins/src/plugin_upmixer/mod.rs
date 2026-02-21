@@ -1883,9 +1883,9 @@ Weights are normalized internally so they always sum to 1.0.",
         // Force recomputation of blended decorrelation filters
         self.prev_decorrelation_strength = -1.0;
 
-        // Clear height mask; it will be recomputed in process_fft_block
-        self.height_band_gains.fill(0.0);
-        self.height_band_gains_prev.fill(0.0);
+        // Initialize height mask to floor value to avoid startup ramp artifact
+        self.height_band_gains.fill(frequency_domain::HEIGHT_MASK_FLOOR);
+        self.height_band_gains_prev.fill(frequency_domain::HEIGHT_MASK_FLOOR);
         self.height_band_gains_temp.fill(0.0);
 
         // Reset energy correction smoothing to unity

@@ -8,7 +8,7 @@ use crate::simd::compute_covariance_simd;
 use rustfft::num_complex::Complex;
 
 /// Minimum height mask value — prevents deep spectral notches that cause time-domain ringing
-const HEIGHT_MASK_FLOOR: f32 = 0.02;
+pub(super) const HEIGHT_MASK_FLOOR: f32 = 0.10;
 
 /// One-pole smoothing factor for median-filtered coherence (per-band)
 const COHERENCE_SMOOTHING_ALPHA: f32 = 0.15;
@@ -163,9 +163,14 @@ impl UpmixerPlugin {
                 }
             }
 
-            // Pass-through Band
+            // Pass-through Band (with cross-fade transition near bandpass boundary)
+            let transition_half = 4usize;
+            let transition_start = bandpass_bin.saturating_sub(transition_half);
+            let transition_end = bandpass_bin + transition_half;
+            let transition_width = (transition_end - transition_start) as f32;
+
             let pass_start = (lfe_cutoff_bin + 1).max(start_bin);
-            let pass_end = bandpass_bin.min(end_bin);
+            let pass_end = transition_start.min(end_bin);
             if pass_start < pass_end {
                 for i in pass_start..pass_end {
                     self.direct_left[i] = self.freq_domain_left[i];
@@ -176,9 +181,10 @@ impl UpmixerPlugin {
                 }
             }
 
-            // Upmixing Band
-            let upmix_start = bandpass_bin.max(start_bin);
-            if upmix_start < end_bin {
+            // Transition zone + Upmixing Band
+            // Both need PCA decomposition, so compute shared state first
+            let needs_upmix = transition_start.max(start_bin) < end_bin;
+            if needs_upmix {
                 let ambient_gain = base_ambient_gain_from_coherence(coherence, self.ambient_boost.current())
                     * (1.0 - self.dialogue_probability * self.dialogue_weight.current());
                 let eff_coh = coherence
@@ -202,15 +208,63 @@ impl UpmixerPlugin {
                     )
                 };
 
+                let stereo_w = self.stereo_width.current();
+                let upmix_start = transition_end.max(start_bin);
                 let mut in_e = 0.0f32;
                 let mut out_e = 0.0f32;
+
+                // Transition zone: cross-fade between pass-through and PCA-decomposed
+                let xfade_start = transition_start.max(start_bin).max(lfe_cutoff_bin + 1);
+                let xfade_end = transition_end.min(end_bin);
+                for i in xfade_start..xfade_end {
+                    let l = self.freq_domain_left[i];
+                    let r = self.freq_domain_right[i];
+
+                    // Blend factor: 0.0 = pure pass-through, 1.0 = pure PCA upmix
+                    let t = (i - transition_start) as f32 / transition_width;
+
+                    // PCA-decomposed values
+                    let proj = l * ev_l.conj() + r * ev_r.conj();
+                    let direct_l = proj * ev_l;
+                    let direct_r = proj * ev_r;
+                    let phase_product = direct_r * direct_l.conj();
+                    let phase_correction = if phase_product.norm_sqr() > 1e-18 {
+                        phase_product / phase_product.norm()
+                    } else {
+                        Complex::new(1.0, 0.0)
+                    };
+                    let aligned_r = direct_r * phase_correction.conj();
+                    let pca_center = (direct_l + aligned_r) * (eff_coh * 0.25);
+                    let pca_amb_l =
+                        (l - direct_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
+                    let pca_amb_r =
+                        (r - direct_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
+                    let pca_dl = l - pca_center * stereo_w;
+                    let pca_dr = r - pca_center * stereo_w;
+
+                    // Blend: pass-through has center=0, ambient=0, direct=original
+                    self.direct[i] = pca_center * t;
+                    self.direct_left[i] = l * (1.0 - t) + pca_dl * t;
+                    self.direct_right[i] = r * (1.0 - t) + pca_dr * t;
+                    self.ambient_left[i] = pca_amb_l * t;
+                    self.ambient_right[i] = pca_amb_r * t;
+                    self.lfe[i] = Complex::new(0.0, 0.0);
+
+                    in_e += l.norm_sqr() + r.norm_sqr();
+                    out_e += self.direct[i].norm_sqr()
+                        + self.direct_left[i].norm_sqr()
+                        + self.direct_right[i].norm_sqr()
+                        + self.ambient_left[i].norm_sqr()
+                        + self.ambient_right[i].norm_sqr();
+                }
+
+                // Full upmix band (after transition zone)
                 for i in upmix_start..end_bin {
                     let l = self.freq_domain_left[i];
                     let r = self.freq_domain_right[i];
                     let proj = l * ev_l.conj() + r * ev_r.conj();
                     let direct_l = proj * ev_l;
                     let direct_r = proj * ev_r;
-                    // Phase-align left and right projections before summing to center
                     let phase_product = direct_r * direct_l.conj();
                     let phase_correction = if phase_product.norm_sqr() > 1e-18 {
                         phase_product / phase_product.norm()
@@ -223,8 +277,8 @@ impl UpmixerPlugin {
                         (l - direct_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
                     self.ambient_right[i] =
                         (r - direct_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
-                    self.direct_left[i] = l - self.direct[i] * self.stereo_width.current();
-                    self.direct_right[i] = r - self.direct[i] * self.stereo_width.current();
+                    self.direct_left[i] = l - self.direct[i] * stereo_w;
+                    self.direct_right[i] = r - self.direct[i] * stereo_w;
                     self.lfe[i] = Complex::new(0.0, 0.0);
                     in_e += l.norm_sqr() + r.norm_sqr();
                     out_e += self.direct[i].norm_sqr()
@@ -242,7 +296,8 @@ impl UpmixerPlugin {
                 let tr_red = 1.0
                     - (self.hr_transient_env * self.height_transient_reduction.current())
                         .min(self.height_transient_reduction.current());
-                for i in upmix_start..end_bin {
+                let corr_start = xfade_start.min(upmix_start);
+                for i in corr_start..end_bin {
                     self.energy_correction_per_bin[i] = corr;
                     let h_suit = (self.height_freq_weights[i] * 0.5
                         + (1.0 - coherence).max(0.0) * 0.5)
@@ -306,9 +361,11 @@ impl UpmixerPlugin {
     #[inline]
     fn smooth_and_apply_energy_correction(&mut self) {
         let spec_size = self.fft_size / 2 + 1;
+        // Only apply correction to upmix bins (including transition zone)
+        let apply_start = self.cached_bandpass_bin.saturating_sub(4);
         let mut smoothed = std::mem::take(&mut self.energy_correction_temp);
-        for i in 0..spec_size {
-            let start = i.saturating_sub(1);
+        for i in apply_start..spec_size {
+            let start = i.saturating_sub(1).max(apply_start);
             let end = (i + 2).min(spec_size);
             let mut sum = 0.0f32;
             let mut count = 0;
@@ -319,7 +376,7 @@ impl UpmixerPlugin {
             smoothed[i] = sum / count as f32;
         }
 
-        for i in 0..spec_size {
+        for i in apply_start..spec_size {
             let prev = self.energy_correction_prev[i];
             let alpha = if smoothed[i] < prev { 0.3 } else { 0.1 };
             let blended = alpha * smoothed[i] + (1.0 - alpha) * prev;
