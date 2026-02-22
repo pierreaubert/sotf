@@ -34,10 +34,14 @@ pub(crate) struct ReflectionPath {
 
 /// Pre-computed per-bin room reflection data for integration into XTC filters
 pub(crate) struct RoomReflectionData {
-    /// Per-bin complex transfer function added to ipsi path
-    pub h_room_ipsi: Vec<Complex<f32>>,
-    /// Per-bin complex transfer function added to contra path
-    pub h_room_contra: Vec<Complex<f32>>,
+    /// Per-bin complex transfer function for Speaker L -> Ear L
+    pub h_ll_ipsi: Vec<Complex<f32>>,
+    /// Per-bin complex transfer function for Speaker R -> Ear L
+    pub h_lr_contra: Vec<Complex<f32>>,
+    /// Per-bin complex transfer function for Speaker L -> Ear R
+    pub h_rl_contra: Vec<Complex<f32>>,
+    /// Per-bin complex transfer function for Speaker R -> Ear R
+    pub h_rr_ipsi: Vec<Complex<f32>>,
     /// Per-bin multiplicative beta boost factor (1.0 = no boost)
     pub beta_boost: Vec<f32>,
 }
@@ -194,38 +198,40 @@ pub(crate) fn build_reflection_data_image_source(
 
     let freq_per_bin = sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
 
-    let mut h_room_ipsi = vec![Complex::new(0.0, 0.0); num_bins];
-    let mut h_room_contra = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut h_ll_ipsi = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut h_lr_contra = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut h_rl_contra = vec![Complex::new(0.0, 0.0); num_bins];
+    let mut h_rr_ipsi = vec![Complex::new(0.0, 0.0); num_bins];
 
     // Accumulate per-bin contributions from all reflection paths
     for bin in 0..num_bins {
         let freq = bin as f32 * freq_per_bin;
 
-        // Average left and right ipsi reflections (symmetric assumption for combined data)
-        let ipsi_sum = sum_reflection_paths(&ipsi_reflections_l, freq, head_radius)
-            + sum_reflection_paths(&ipsi_reflections_r, freq, head_radius);
-        h_room_ipsi[bin] = ipsi_sum * 0.5;
-
-        let contra_sum = sum_reflection_paths(&contra_reflections_l, freq, head_radius)
-            + sum_reflection_paths(&contra_reflections_r, freq, head_radius);
-        h_room_contra[bin] = contra_sum * 0.5;
+        h_ll_ipsi[bin] = sum_reflection_paths(&ipsi_reflections_l, freq, head_radius);
+        h_lr_contra[bin] = sum_reflection_paths(&contra_reflections_l, freq, head_radius);
+        h_rl_contra[bin] = sum_reflection_paths(&contra_reflections_r, freq, head_radius);
+        h_rr_ipsi[bin] = sum_reflection_paths(&ipsi_reflections_r, freq, head_radius);
     }
 
     // Compute magnitude of total transfer function (direct + reflections) for beta boost
     let mut h_total_magnitude = vec![0.0_f32; num_bins];
     for bin in 0..num_bins {
-        // Approximate total ipsi magnitude: |1 + h_room_ipsi|
-        let total_ipsi = Complex::new(1.0, 0.0) + h_room_ipsi[bin];
-        let total_contra = h_room_contra[bin]; // contra is already just reflections
-        h_total_magnitude[bin] = total_ipsi.norm() + total_contra.norm();
+        // Approximate total magnitude across all paths
+        let total = (Complex::new(1.0, 0.0) + h_ll_ipsi[bin]).norm()
+            + h_lr_contra[bin].norm()
+            + h_rl_contra[bin].norm()
+            + (Complex::new(1.0, 0.0) + h_rr_ipsi[bin]).norm();
+        h_total_magnitude[bin] = total / 2.0; // Average per ear
     }
 
     let beta_boost =
         compute_reflection_beta_boost(&h_total_magnitude, num_bins, params.reflection_beta_boost);
 
     RoomReflectionData {
-        h_room_ipsi,
-        h_room_contra,
+        h_ll_ipsi,
+        h_lr_contra,
+        h_rl_contra,
+        h_rr_ipsi,
         beta_boost,
     }
 }
@@ -348,25 +354,29 @@ pub(crate) fn build_reflection_data_ir(
         spectrum
     };
 
-    let h_room_ipsi = process_channel(&channels[0]);
-    let h_room_contra = if num_channels >= 2 {
+    let h_ll_ipsi = process_channel(&channels[0]);
+    let h_rr_ipsi = h_ll_ipsi.clone();
+    let h_lr_contra = if num_channels >= 2 {
         process_channel(&channels[1])
     } else {
-        h_room_ipsi.clone()
+        h_ll_ipsi.clone()
     };
+    let h_rl_contra = h_lr_contra.clone();
 
     // Compute beta boost from combined magnitude
     let mut h_total_magnitude = vec![0.0_f32; num_bins];
     for bin in 0..num_bins {
-        h_total_magnitude[bin] = h_room_ipsi[bin].norm() + h_room_contra[bin].norm();
+        h_total_magnitude[bin] = h_ll_ipsi[bin].norm() + h_lr_contra[bin].norm();
     }
 
     // Use a default boost factor of 3.0 for IR mode
     let beta_boost = compute_reflection_beta_boost(&h_total_magnitude, num_bins, 3.0);
 
     Ok(RoomReflectionData {
-        h_room_ipsi,
-        h_room_contra,
+        h_ll_ipsi,
+        h_lr_contra,
+        h_rl_contra,
+        h_rr_ipsi,
         beta_boost,
     })
 }

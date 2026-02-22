@@ -25,8 +25,8 @@
 use super::config::XtcPluginParams;
 use super::filters::{
     compute_path_length, compute_xtc_filters_full, contralateral_shadow_angle,
-    frequency_dependent_diffraction_delay, head_shadowing_woodworth, pinna_resonance,
-    pinna_resonance_contra, XtcFilters, SPEED_OF_SOUND,
+    head_shadowing_woodworth, pinna_resonance, pinna_resonance_contra,
+    woodworth_diffraction_path, XtcFilters, SPEED_OF_SOUND,
 };
 use std::f32::consts::PI;
 
@@ -161,7 +161,7 @@ pub(crate) fn measure_cancellation_depth_db_with_filters(
     let contra_angle = contralateral_shadow_angle(theta_rad);
 
     // Frequency-dependent diffraction delay (same as filter design)
-    let diffraction_delay = frequency_dependent_diffraction_delay(freq_hz, contra_angle, a);
+    let diffraction_delay = woodworth_diffraction_path(contra_angle, a) / SPEED_OF_SOUND;
     let delta_t = delta_t_geometric + diffraction_delay;
 
     // Head shadowing (same as filter design)

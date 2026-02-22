@@ -37,7 +37,8 @@ pub(crate) struct GeometryCache {
 pub(crate) struct SymmetricGeometry {
     pub a: f32,
     pub amplitude_ratio: f32,
-    pub delta_t_geometric: f32,
+    pub delay_ipsi: f32,
+    pub delay_contra: f32,
     pub contra_angle: f32,
 }
 
@@ -47,10 +48,12 @@ pub(crate) struct AsymmetricGeometry {
     pub theta_left: f32,
     pub theta_right: f32,
     pub amplitude_ratio_left: f32,
-    pub delta_t_left_geometric: f32,
+    pub delay_left_ipsi: f32,
+    pub delay_left_contra: f32,
     pub angle_left_contra: f32,
     pub amplitude_ratio_right: f32,
-    pub delta_t_right_geometric: f32,
+    pub delay_right_ipsi: f32,
+    pub delay_right_contra: f32,
     pub angle_right_contra: f32,
 }
 
@@ -75,13 +78,15 @@ pub(crate) fn compute_geometry_cache(
     let diffraction_extra = woodworth_diffraction_path(theta_rad, a);
     let l_contra_full = l_contra_geometric + diffraction_extra;
     let amplitude_ratio = l_ipsi / l_contra_full;
-    let delta_t_geometric = (l_contra_geometric - l_ipsi) / SPEED_OF_SOUND;
+    let delay_ipsi = l_ipsi / SPEED_OF_SOUND;
+    let delay_contra = l_contra_full / SPEED_OF_SOUND;
     let contra_angle = contralateral_shadow_angle(theta_rad);
 
     let symmetric = SymmetricGeometry {
         a,
         amplitude_ratio,
-        delta_t_geometric,
+        delay_ipsi,
+        delay_contra,
         contra_angle,
     };
 
@@ -96,7 +101,8 @@ pub(crate) fn compute_geometry_cache(
         let diffraction_left = woodworth_diffraction_path(theta_right, a);
         let l_left_contra_full = l_left_contra_geometric + diffraction_left;
         let amplitude_ratio_left = l_left_ipsi / l_left_contra_full;
-        let delta_t_left_geometric = (l_left_contra_geometric - l_left_ipsi) / SPEED_OF_SOUND;
+        let delay_left_ipsi = l_left_ipsi / SPEED_OF_SOUND;
+        let delay_left_contra = l_left_contra_full / SPEED_OF_SOUND;
         let angle_left_contra = contralateral_shadow_angle(theta_right.abs());
 
         let l_right_ipsi = compute_path_length(d, theta_right, x_offset);
@@ -104,7 +110,8 @@ pub(crate) fn compute_geometry_cache(
         let diffraction_right = woodworth_diffraction_path(theta_left, a);
         let l_right_contra_full = l_right_contra_geometric + diffraction_right;
         let amplitude_ratio_right = l_right_ipsi / l_right_contra_full;
-        let delta_t_right_geometric = (l_right_contra_geometric - l_right_ipsi) / SPEED_OF_SOUND;
+        let delay_right_ipsi = l_right_ipsi / SPEED_OF_SOUND;
+        let delay_right_contra = l_right_contra_full / SPEED_OF_SOUND;
         let angle_right_contra = contralateral_shadow_angle(theta_left.abs());
 
         Some(AsymmetricGeometry {
@@ -112,10 +119,12 @@ pub(crate) fn compute_geometry_cache(
             theta_left,
             theta_right,
             amplitude_ratio_left,
-            delta_t_left_geometric,
+            delay_left_ipsi,
+            delay_left_contra,
             angle_left_contra,
             amplitude_ratio_right,
-            delta_t_right_geometric,
+            delay_right_ipsi,
+            delay_right_contra,
             angle_right_contra,
         })
     } else {
@@ -333,12 +342,6 @@ fn compute_xtc_filters_asymmetric_with_cache(
     let a = asym.a;
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
 
-    // Pre-compute diffraction delay lookup tables (Optimization 1)
-    let diffraction_delay_lut_left =
-        build_diffraction_delay_lut(num_bins, cache.freq_per_bin, asym.angle_left_contra, a);
-    let diffraction_delay_lut_right =
-        build_diffraction_delay_lut(num_bins, cache.freq_per_bin, asym.angle_right_contra, a);
-
     // Pre-compute beta LUT: avoids 2× exp() per bin (Optimization 5)
     let beta_lut = build_beta_lut(num_bins, cache.freq_per_bin, params);
 
@@ -375,37 +378,41 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let pinna_ipsi = pinna_ipsi_lut.as_deref().map_or(1.0, |lut| lut[bin]);
 
         // Use pre-computed geometry values (Optimization 3)
-        let diffraction_delay_left = diffraction_delay_lut_left[bin];
-        let diffraction_delay_right = diffraction_delay_lut_right[bin];
-        let delta_t_left = asym.delta_t_left_geometric + diffraction_delay_left;
-        let delta_t_right = asym.delta_t_right_geometric + diffraction_delay_right;
+        let delay_left_ipsi = asym.delay_left_ipsi;
+        let delay_left_contra = asym.delay_left_contra;
+        let delay_right_ipsi = asym.delay_right_ipsi;
+        let delay_right_contra = asym.delay_right_contra;
 
-        // Left ear: ipsi speaker is left speaker (theta_left), contra is right speaker (theta_right)
+        // Left ear: ipsi speaker is left speaker, contra is right speaker
         let pinna_left_contra = pinna_left_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
-        let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
+        let phase_ll_ipsi = -2.0 * PI * freq * delay_left_ipsi;
+        let h_ll_ipsi = Complex::new(phase_ll_ipsi.cos(), phase_ll_ipsi.sin()) * pinna_ipsi;
+        
         let g_ll =
             head_shadowing_woodworth(freq, asym.angle_left_contra, a) * asym.amplitude_ratio_left;
-        let phase_ll = -2.0 * PI * freq * delta_t_left;
+        let phase_ll_contra = -2.0 * PI * freq * delay_left_contra;
         let h_ll_contra =
-            Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin()) * pinna_left_contra;
+            Complex::new(g_ll * phase_ll_contra.cos(), g_ll * phase_ll_contra.sin()) * pinna_left_contra;
 
-        // Right ear: ipsi speaker is right speaker (theta_right), contra is left speaker (theta_left)
+        // Right ear: ipsi speaker is right speaker, contra is left speaker
         let pinna_right_contra = pinna_right_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
-        let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
+        let phase_rr_ipsi = -2.0 * PI * freq * delay_right_ipsi;
+        let h_rr_ipsi = Complex::new(phase_rr_ipsi.cos(), phase_rr_ipsi.sin()) * pinna_ipsi;
+        
         let g_rr =
             head_shadowing_woodworth(freq, asym.angle_right_contra, a) * asym.amplitude_ratio_right;
-        let phase_rr = -2.0 * PI * freq * delta_t_right;
+        let phase_rr_contra = -2.0 * PI * freq * delay_right_contra;
         let h_rr_contra =
-            Complex::new(g_rr * phase_rr.cos(), g_rr * phase_rr.sin()) * pinna_right_contra;
+            Complex::new(g_rr * phase_rr_contra.cos(), g_rr * phase_rr_contra.sin()) * pinna_right_contra;
 
         // Integrate room reflections: add reflection contributions to transfer functions
         let (h_ll_ipsi_final, h_ll_contra_final, h_rr_ipsi_final, h_rr_contra_final) =
             if let Some(room) = room_data {
                 (
-                    h_ll_ipsi + room.h_room_ipsi[bin],
-                    h_ll_contra + room.h_room_contra[bin],
-                    h_rr_ipsi + room.h_room_ipsi[bin],
-                    h_rr_contra + room.h_room_contra[bin],
+                    h_ll_ipsi + room.h_ll_ipsi[bin],
+                    h_ll_contra + room.h_lr_contra[bin],
+                    h_rr_ipsi + room.h_rr_ipsi[bin],
+                    h_rr_contra + room.h_rl_contra[bin],
                 )
             } else {
                 (h_ll_ipsi, h_ll_contra, h_rr_ipsi, h_rr_contra)
@@ -418,13 +425,19 @@ fn compute_xtc_filters_asymmetric_with_cache(
             beta_lut[bin]
         };
 
-        // Compute 2x2 filter matrices for each ear independently
-        // Left ear: L_out = w_ll * L_in + w_lr * R_in
-        let (w_ll, w_lr) =
-            compute_2x2_inverse(h_ll_ipsi_final, h_ll_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
-        // Right ear: R_out = w_rl * L_in + w_rr * R_in
-        let (w_rr, w_rl) =
-            compute_2x2_inverse(h_rr_ipsi_final, h_rr_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
+        // Compute full 2x2 regularized inverse for both ears simultaneously.
+        // Speaker L -> Ear L: h_ll_ipsi_final
+        // Speaker R -> Ear L: h_ll_contra_final
+        // Speaker L -> Ear R: h_rr_contra_final
+        // Speaker R -> Ear R: h_rr_ipsi_final
+        let (w_ll, w_lr, w_rl, w_rr) = compute_full_2x2_inverse(
+            h_ll_ipsi_final,
+            h_ll_contra_final,
+            h_rr_contra_final,
+            h_rr_ipsi_final,
+            beta,
+            max_gain_linear,
+        );
 
         filter_ll[bin] = w_ll;
         filter_lr[bin] = w_lr;
@@ -469,10 +482,6 @@ fn compute_xtc_filters_symmetric_with_cache(
     let a = sym.a;
     let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
 
-    // Pre-compute diffraction delay lookup table (Optimization 1)
-    let diffraction_delay_lut =
-        build_diffraction_delay_lut(num_bins, cache.freq_per_bin, sym.contra_angle, a);
-
     // Pre-compute beta LUT: avoids 2× exp() per bin (Optimization 5)
     let beta_lut = build_beta_lut(num_bins, cache.freq_per_bin, params);
 
@@ -495,18 +504,14 @@ fn compute_xtc_filters_symmetric_with_cache(
     for bin in 0..num_bins {
         let freq = bin as f32 * cache.freq_per_bin;
 
-        // Transfer function for ipsilateral path (reference = 1)
-        let h_ipsi = Complex::new(1.0, 0.0);
-
-        // Use pre-computed geometry values (Optimization 3)
-        let diffraction_delay = diffraction_delay_lut[bin];
-        let delta_t = sym.delta_t_geometric + diffraction_delay;
+        // Transfer function for ipsilateral path
+        let phase_ipsi = -2.0 * PI * freq * sym.delay_ipsi;
+        let h_ipsi = Complex::new(phase_ipsi.cos(), phase_ipsi.sin());
 
         // Transfer function for contralateral path using Woodworth model
-        // Uses corrected shadow angle (PI/2 + theta) and distance attenuation
         let g = head_shadowing_woodworth(freq, sym.contra_angle, a) * sym.amplitude_ratio;
-        let phase = -2.0 * PI * freq * delta_t;
-        let h_contra = Complex::new(g * phase.cos(), g * phase.sin());
+        let phase_contra = -2.0 * PI * freq * sym.delay_contra;
+        let h_contra = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
 
         // Frequency-dependent regularization: use pre-computed LUT (Optimization 5)
         let beta = beta_lut[bin];
@@ -520,8 +525,8 @@ fn compute_xtc_filters_symmetric_with_cache(
         // Integrate room reflections: add reflection contributions to transfer functions
         let (h_ipsi_final, h_contra_final) = if let Some(room) = room_data {
             (
-                h_ipsi_shaped + room.h_room_ipsi[bin],
-                h_contra_shaped + room.h_room_contra[bin],
+                h_ipsi_shaped + room.h_ll_ipsi[bin],
+                h_contra_shaped + room.h_lr_contra[bin],
             )
         } else {
             (h_ipsi_shaped, h_contra_shaped)
@@ -624,6 +629,69 @@ fn compute_2x2_inverse(
     (w2_ipsi, w2_contra)
 }
 
+/// Compute full 2x2 regularized inverse for asymmetric crosstalk cancellation.
+///
+/// Matrix C = [[h_ll, h_lr],
+///             [h_rl, h_rr]]
+///
+/// Returns (w_ll, w_lr, w_rl, w_rr) such that W = (C^H * C + beta * I)^-1 * C^H.
+#[inline]
+fn compute_full_2x2_inverse(
+    h_ll: Complex<f32>,
+    h_lr: Complex<f32>,
+    h_rl: Complex<f32>,
+    h_rr: Complex<f32>,
+    beta: f32,
+    max_gain_linear: f32,
+) -> (Complex<f32>, Complex<f32>, Complex<f32>, Complex<f32>) {
+    // 1. Compute A = C^H * C + beta * I
+    // C^H = [[h_ll*, h_rl*],
+    //        [h_lr*, h_rr*]]
+    //
+    // A_00 = h_ll* * h_ll + h_rl* * h_rl + beta
+    // A_01 = h_ll* * h_lr + h_rl* * h_rr
+    // A_10 = h_lr* * h_ll + h_rr* * h_rl = A_01*
+    // A_11 = h_lr* * h_lr + h_rr* * h_rr + beta
+    
+    let a_00 = h_ll.norm_sqr() + h_rl.norm_sqr() + beta;
+    let a_01 = h_ll.conj() * h_lr + h_rl.conj() * h_rr;
+    let a_10 = a_01.conj();
+    let a_11 = h_lr.norm_sqr() + h_rr.norm_sqr() + beta;
+    
+    // 2. Compute inv(A) = (1/det) * [[a_11, -a_01], [-a_10, a_00]]
+    let det = a_00 * a_11 - a_01.norm_sqr();
+    if det.abs() < 1e-10 {
+        return (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0), Complex::new(0.0, 0.0), Complex::new(1.0, 0.0));
+    }
+    
+    let inv_a_00 = a_11 / det;
+    let inv_a_01 = -a_01 / det;
+    let inv_a_10 = -a_10 / det;
+    let inv_a_11 = a_00 / det;
+    
+    // 3. W = inv(A) * C^H
+    // C^H = [[h_ll*, h_rl*],
+    //        [h_lr*, h_rr*]]
+    //
+    // W_ll = inv_a_00 * h_ll* + inv_a_01 * h_lr*
+    // W_lr = inv_a_00 * h_rl* + inv_a_01 * h_rr*
+    // W_rl = inv_a_10 * h_ll* + inv_a_11 * h_lr*
+    // W_rr = inv_a_10 * h_rl* + inv_a_11 * h_rr*
+    
+    let w_ll = inv_a_00 * h_ll.conj() + inv_a_01 * h_lr.conj();
+    let w_lr = inv_a_00 * h_rl.conj() + inv_a_01 * h_rr.conj();
+    let w_rl = inv_a_10 * h_ll.conj() + inv_a_11 * h_lr.conj();
+    let w_rr = inv_a_10 * h_rl.conj() + inv_a_11 * h_rr.conj();
+    
+    // 4. Soft-limit magnitudes
+    let w_ll = soft_limit_complex_magnitude(w_ll, max_gain_linear);
+    let w_lr = soft_limit_complex_magnitude(w_lr, max_gain_linear);
+    let w_rl = soft_limit_complex_magnitude(w_rl, max_gain_linear);
+    let w_rr = soft_limit_complex_magnitude(w_rr, max_gain_linear);
+    
+    (w_ll, w_lr, w_rl, w_rr)
+}
+
 /// Soft-limit a complex number's magnitude using tanh saturation.
 ///
 /// Below 50% of max_mag: passthrough (no change).
@@ -661,63 +729,11 @@ pub(crate) fn soft_limit_complex_magnitude(c: Complex<f32>, max_mag: f32) -> Com
 /// For angle > PI/2:  extra_path = a * (PI - angle + sin(angle))
 #[inline]
 pub(crate) fn woodworth_diffraction_path(angle_rad: f32, head_radius: f32) -> f32 {
-    let theta = angle_rad.abs();
-    if theta <= PI / 2.0 {
-        head_radius * (theta + theta.sin())
-    } else {
-        head_radius * (PI - theta + theta.sin())
-    }
-}
-
-/// Compute frequency-dependent diffraction delay around the head.
-///
-/// At low frequencies (ka < 0.5), sound diffracts fully around the spherical head,
-/// following the Woodworth model: delay = a*(θ+sin(θ))/c.
-/// At high frequencies (ka ≥ 2.0), sound takes the geometric shadow path: delay = a*sin(θ)/c.
-/// The transition region (0.5 ≤ ka < 2.0) linearly blends between the two models.
-///
-/// These ka boundaries match `head_shadowing_woodworth()` for physical consistency.
-#[inline]
-pub(crate) fn frequency_dependent_diffraction_delay(
-    freq: f32,
-    angle_rad: f32,
-    head_radius: f32,
-) -> f32 {
-    let theta = angle_rad.abs();
-    let low_freq_delay = woodworth_diffraction_path(theta, head_radius) / SPEED_OF_SOUND;
-
-    if freq <= 0.0 {
-        return low_freq_delay;
-    }
-
-    let ka = 2.0 * PI * freq * head_radius / SPEED_OF_SOUND;
-    let high_freq_delay = head_radius * theta.sin() / SPEED_OF_SOUND;
-
-    if ka < 0.5 {
-        low_freq_delay
-    } else if ka < 2.0 {
-        let t = (ka - 0.5) / 1.5;
-        low_freq_delay * (1.0 - t) + high_freq_delay * t
-    } else {
-        high_freq_delay
-    }
-}
-
-/// Pre-compute diffraction delay lookup table for all frequency bins.
-///
-/// Avoids repeated transcendental function calls in the hot loop.
-pub(crate) fn build_diffraction_delay_lut(
-    num_bins: usize,
-    freq_per_bin: f32,
-    angle_rad: f32,
-    head_radius: f32,
-) -> Vec<f32> {
-    (0..num_bins)
-        .map(|bin| {
-            let freq = bin as f32 * freq_per_bin;
-            frequency_dependent_diffraction_delay(freq, angle_rad, head_radius)
-        })
-        .collect()
+    let theta = angle_rad.abs().min(PI);
+    // Standard Woodworth formula for spherical head diffraction:
+    // extra_path = a * (theta + sin(theta))
+    // Valid for all angles from 0 to PI.
+    head_radius * (theta + theta.sin())
 }
 
 /// Compute the angular separation between a sound source and the contralateral ear.
