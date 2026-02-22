@@ -76,6 +76,23 @@ impl MatrixPlugin {
             active_connections: Vec::new(),
         };
         plugin.update_active_connections();
+
+        let off_diag: Vec<_> = plugin
+            .active_connections
+            .iter()
+            .filter(|(i, o, _)| i != o)
+            .collect();
+        if !off_diag.is_empty() {
+            log::debug!(
+                "[MatrixPlugin::with_matrix] {}x{} created with {} active connections ({} off-diagonal): {:?}",
+                input_channels,
+                output_channels,
+                plugin.active_connections.len(),
+                off_diag.len(),
+                off_diag,
+            );
+        }
+
         Ok(plugin)
     }
 
@@ -451,6 +468,47 @@ mod tests {
         let mut output = vec![0.0; CONVERGE_FRAMES * channels];
         plugin.process(&input, &mut output, &context).unwrap();
         output[output.len() - channels..].to_vec()
+    }
+
+    #[test]
+    fn test_off_diagonal_6ch_center_to_left() {
+        // 6x6 identity matrix, then set center(2)→left(0) = 1.0
+        let mut plugin = MatrixPlugin::new(6, 6);
+        plugin.set_gain(2, 0, 1.0).unwrap(); // center→left
+
+        // Input: only center channel (index 2) has signal
+        let num_frames = CONVERGE_FRAMES;
+        let channels = 6;
+        let mut input = vec![0.0; num_frames * channels];
+        for frame in 0..num_frames {
+            input[frame * channels + 2] = 0.8; // center channel
+        }
+        let mut output = vec![0.0; num_frames * channels];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Check last frame: left (0) should have center signal, center (2) should also have it (identity)
+        let last_frame_start = (num_frames - 1) * channels;
+        let left = output[last_frame_start];
+        let center = output[last_frame_start + 2];
+        assert!(
+            (left - 0.8).abs() < TOLERANCE,
+            "Left should receive center signal via off-diagonal, got {}",
+            left
+        );
+        assert!(
+            (center - 0.8).abs() < TOLERANCE,
+            "Center should still pass through via identity diagonal, got {}",
+            center
+        );
+        // Other channels should be silent
+        assert!(output[last_frame_start + 1].abs() < TOLERANCE, "Right should be silent");
+        assert!(output[last_frame_start + 3].abs() < TOLERANCE, "LS should be silent");
+        assert!(output[last_frame_start + 4].abs() < TOLERANCE, "RS should be silent");
+        assert!(output[last_frame_start + 5].abs() < TOLERANCE, "LFE should be silent");
     }
 
     #[test]

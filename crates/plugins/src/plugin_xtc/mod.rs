@@ -1153,10 +1153,10 @@ impl Plugin for XtcPlugin {
             }
         }
 
-        // Auto-gain: apply compensation first, then limit, then measure.
-        // This order ensures auto-gain sees the true output level after limiting,
-        // breaking the pumping feedback loop (auto-gain boosts → limiter clips → repeat).
+        // Auto-gain: measure the UNCOMPENSATED output from the plugin filters.
+        // This ensures the gain calculation is stable and doesn't oscillate.
         if let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_output(&output[..out_pos * 2]);
             ag.apply_compensation(&mut output[..out_pos * 2], out_pos);
         }
 
@@ -1181,11 +1181,6 @@ impl Plugin for XtcPlugin {
                 output[idx_l] *= self.limiter_envelope;
                 output[idx_r] *= self.limiter_envelope;
             }
-        }
-
-        // Measure output loudness after limiting — auto-gain now sees the true final level
-        if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_output(&output[..out_pos * 2]);
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.
