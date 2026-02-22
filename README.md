@@ -17,11 +17,11 @@ What can you do with it?
 
 ### Native Player
 
-![sotf](./docs/images/0.5.11/sotf-gpui-v0.5.11-player.png)
+![sotf](./site/public/images/0.5.11/sotf-gpui-v0.5.11-player.png)
 
 ### Terminal Player
 
-![sotf](./docs/images/0.5.11/sotf-tui-v0.5.11-player.png)
+![sotf](./site/public/images/0.5.11/sotf-tui-v0.5.11-player.png)
 
 ## How to use?
 
@@ -273,15 +273,15 @@ Status: almost working.
 
 ### Plugins list
 
-![Upmixer 2.0->5.1.4](./docs/images/0.5.11/sotf-tui-v0.5.11-plugins.png)
+![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-tui-v0.5.11-plugins.png)
 
 ### EQ
 
-![Parametric EQ](./docs/images/0.5.11/sotf-gpui-v0.5.11-eq.png)
+![Parametric EQ](./site/public/images/0.5.11/sotf-gpui-v0.5.11-eq.png)
 
 ### Upmixer
 
-![Upmixer 2.0->5.1.4](./docs/images/0.5.11/sotf-gpui-v0.5.11-upmixer.png)
-![Upmixer 2.0->5.1.4](./docs/images/0.5.11/sotf-tui-v0.5.11-upmixer.png)
+![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-gpui-v0.5.11-upmixer.png)
+![Upmixer 2.0->5.1.4](./site/public/images/0.5.11/sotf-tui-v0.5.11-upmixer.png)
 
 
