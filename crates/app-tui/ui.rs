@@ -177,7 +177,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3), // Title bar
             Constraint::Min(0),    // Main content
-            Constraint::Length(3), // Status bar
+            Constraint::Length(1), // Status bar
         ])
         .split(f.area());
 
@@ -367,7 +367,8 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Output Device"),
+                .title("Output Device")
+                .style(Style::default().fg(app.theme.fg_primary)),
         );
 
     f.render_widget(device_widget, title_chunks[2]);
@@ -1064,25 +1065,33 @@ fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
     let info_area = chunks[1];
 
     // Render the image if available
-    // Clone the path to avoid borrow conflicts
     if let Some(image_path) = app.get_current_album_image().cloned() {
-        if let Some(picker) = &mut app.image_picker {
-            // Try to load and render the image
-            if let Ok(img) = image::open(&image_path) {
-                // Create protocol with the picker - new_resize_protocol returns StatefulProtocol
-                let mut protocol = picker.new_resize_protocol(img);
-                // Render using stateful widget
-                let image = StatefulImage::new();
-                f.render_stateful_widget(image, image_area, &mut protocol);
-            } else {
-                // Fallback if image loading fails
-                let error_text = Paragraph::new("Failed to load image")
-                    .style(Style::default().fg(ratatui::style::Color::Red));
-                f.render_widget(error_text, image_area);
+        // Create the protocol once and cache it; reuse across renders so it can resize properly
+        let needs_create = app
+            .image_protocol_path
+            .as_ref()
+            .map_or(true, |p| *p != image_path);
+        if needs_create {
+            if let Some(picker) = &mut app.image_picker {
+                if let Ok(img) = image::open(&image_path) {
+                    app.image_protocol = Some(picker.new_resize_protocol(img));
+                    app.image_protocol_path = Some(image_path.clone());
+                } else {
+                    app.image_protocol = None;
+                    app.image_protocol_path = None;
+                }
             }
         }
+
+        if let Some(protocol) = &mut app.image_protocol {
+            let image = StatefulImage::new();
+            f.render_stateful_widget(image, image_area, protocol);
+        } else {
+            let error_text = Paragraph::new("Failed to load image")
+                .style(Style::default().fg(ratatui::style::Color::Red));
+            f.render_widget(error_text, image_area);
+        }
     } else {
-        // No image available
         let no_image_text = Paragraph::new("No album art found")
             .style(Style::default().fg(app.theme.fg_muted));
         f.render_widget(no_image_text, image_area);
@@ -1261,11 +1270,20 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
         .enumerate()
         .map(|(i, plugin)| {
             let enabled_marker = if plugin.enabled { "●" } else { "○" };
+            let display_name = if app.plugin_chain.is_input_monitor(i) {
+                "Loudness Monitor Input"
+            } else if app.plugin_chain.is_output_monitor(i) {
+                "Loudness Monitor Output"
+            } else if plugin.permanent && matches!(plugin.plugin_type(), PluginType::Gain) {
+                "Replay Gain"
+            } else {
+                plugin.plugin_type().name()
+            };
             let content = format!(
                 "{} {} - {}",
                 enabled_marker,
                 i + 1,
-                plugin.plugin_type().name()
+                display_name
             );
 
             let style = if plugin.enabled {
@@ -1540,12 +1558,13 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 };
 
                 // Choose color based on level: green → orange → red when >0
+                // bg sets the label text color on the filled portion (fg/bg are swapped for labels)
                 let gauge_style = if true_peak_dbtp > 0.0 {
-                    Style::default().fg(app.theme.accent_error) // Red - clipping
+                    Style::default().fg(app.theme.accent_error).bg(Color::White)
                 } else if true_peak_dbtp > -1.0 {
-                    Style::default().fg(app.theme.accent_warning) // Orange - near clipping
+                    Style::default().fg(app.theme.accent_warning).bg(Color::Black)
                 } else {
-                    Style::default().fg(app.theme.accent_success) // Green - safe
+                    Style::default().fg(app.theme.accent_success).bg(Color::Black)
                 };
 
                 // Format label showing the dBTP value
@@ -1639,12 +1658,13 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
             };
 
             // Choose color: green → orange → red based on level
+            // bg sets the label text color on the filled portion (fg/bg are swapped for labels)
             let gauge_style = if lufs > -1.0 {
-                Style::default().fg(app.theme.accent_error) // Red - very loud
+                Style::default().fg(app.theme.accent_error).bg(Color::White)
             } else if lufs > -10.0 {
-                Style::default().fg(app.theme.accent_warning) // Orange - loud
+                Style::default().fg(app.theme.accent_warning).bg(Color::Black)
             } else {
-                Style::default().fg(app.theme.accent_success) // Green - normal
+                Style::default().fg(app.theme.accent_success).bg(Color::Black)
             };
 
             // Format label: "M -15.0"
@@ -1743,10 +1763,11 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 let ratio = stereo_width;
 
                 // Choose color based on stereo width
+                // bg sets the label text color on the filled portion (fg/bg are swapped for labels)
                 let gauge_style = if stereo_width < 0.1 {
-                    Style::default().fg(app.theme.accent_warning) // Too narrow (nearly mono)
+                    Style::default().fg(app.theme.accent_warning).bg(Color::Black)
                 } else {
-                    Style::default().fg(app.theme.accent_success) // Good stereo separation
+                    Style::default().fg(app.theme.accent_success).bg(Color::Black)
                 };
 
                 let label = format!("{:>4.2}", stereo_width);
@@ -2412,9 +2433,7 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     let status_text = Line::from(status_spans);
 
     let status = Paragraph::new(status_text)
-        .style(Style::default().fg(app.theme.fg_primary))
-        .block(Block::default().borders(Borders::ALL))
-        .wrap(Wrap { trim: true });
+        .style(Style::default().fg(app.theme.fg_primary));
 
     f.render_widget(status, area);
 }

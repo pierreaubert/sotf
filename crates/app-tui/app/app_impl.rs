@@ -16,7 +16,6 @@ use super::types::{
 };
 use super::parameters::TuiEditablePlugin;
 
-#[derive(Debug)]
 pub struct App {
     pub library: MusicLibrary,
     pub queue: Vec<QueueEntry>,
@@ -153,6 +152,8 @@ pub struct App {
     pub album_images: Vec<PathBuf>, // List of image files in current album directory
     pub selected_image_index: usize, // Current image being displayed
     pub image_picker: Option<ratatui_image::picker::Picker>, // Image protocol picker
+    pub image_protocol: Option<ratatui_image::protocol::StatefulProtocol>, // Cached protocol for current image
+    pub image_protocol_path: Option<PathBuf>, // Path the cached protocol was created from
 }
 
 impl App {
@@ -253,6 +254,8 @@ impl App {
             album_images: Vec::new(),
             selected_image_index: 0,
             image_picker: None,
+            image_protocol: None,
+            image_protocol_path: None,
         }
     }
 
@@ -2359,6 +2362,8 @@ impl App {
     pub fn load_album_images(&mut self) {
         self.album_images.clear();
         self.selected_image_index = 0;
+        self.image_protocol = None;
+        self.image_protocol_path = None;
 
         // Initialize image picker if not already done.
         // macOS Terminal.app doesn't support graphics protocols (Kitty/iTerm2)
@@ -2421,6 +2426,8 @@ impl App {
     pub fn next_album_image(&mut self) {
         if !self.album_images.is_empty() {
             self.selected_image_index = (self.selected_image_index + 1) % self.album_images.len();
+            self.image_protocol = None;
+            self.image_protocol_path = None;
         }
     }
 
@@ -2432,6 +2439,8 @@ impl App {
             } else {
                 self.selected_image_index -= 1;
             }
+            self.image_protocol = None;
+            self.image_protocol_path = None;
         }
     }
 
