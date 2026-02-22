@@ -321,49 +321,36 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         if let Some(path) = app.next_track() {
                             log::info!("[TUI] Auto-advancing to: {:?}", path);
 
-                            // Determine target sample rate based on track's native rate if known
-                            let track_sample_rate = app
+                            let track_channels = app
                                 .current_track()
-                                .and_then(|t| t.sample_rate)
-                                .unwrap_or(48000);
-                            let sample_rate = app.get_target_sample_rate(track_sample_rate);
+                                .and_then(|t| t.channels)
+                                .unwrap_or(2) as usize;
 
-                            log::info!(
-                                "[TUI] Auto-advance rate: track={}Hz, target={}Hz",
-                                track_sample_rate,
-                                sample_rate
-                            );
+                            // Check for upmixer + non-stereo conflict
+                            if track_channels != 2 {
+                                if let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
+                                    if app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled) {
+                                        log::info!(
+                                            "[TUI] Auto-advance channel conflict: {}ch file with upmixer enabled",
+                                            track_channels
+                                        );
+                                        app.channel_conflict_path = Some(path);
+                                        app.channel_conflict_selection = 0;
+                                        app.channel_conflict_track_channels = track_channels;
+                                        app.input_mode = InputMode::ChannelConflict;
+                                        update_media_controls(app, player, media_controls);
+                                        continue;
+                                    }
+                                }
+                            }
 
-                            let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
-                            let output_channels = app.plugin_chain.output_channels();
-
-                            // Validate output channels against device max
-                            if let Some(max_channels) = app.get_device_max_channels()
-                                && output_channels > max_channels
-                            {
-                                log::error!(
-                                    "[TUI] Plugin chain outputs {} channels but device only supports {}",
-                                    output_channels,
-                                    max_channels
-                                );
+                            if let Err(e) = start_playback(player, app, path, track_channels) {
+                                log::error!("[TUI] Failed to auto-advance: {}", e);
+                                app.error_message = Some(format!("Auto-advance failed: {}", e));
+                                app.input_mode = InputMode::ShowError;
                                 app.is_playing = false;
                             } else {
-                                let path_clone = path.clone();
-                                if let Err(e) = player.load_and_play(
-                                    path,
-                                    plugins,
-                                    output_channels,
-                                    app.current_output_device_name.clone(),
-                                ) {
-                                    log::error!("[TUI] Failed to auto-advance: {}", e);
-                                    app.error_message = Some(format!("Auto-advance failed: {}", e));
-                                    app.input_mode = InputMode::ShowError;
-                                    app.is_playing = false;
-                                } else {
-                                    log::info!("[TUI] Auto-advance successful");
-                                    // Start tracking the new track
-                                    app.start_track_tracking(path_clone);
-                                }
+                                log::info!("[TUI] Auto-advance successful");
                             }
                         } else {
                             log::info!("[TUI] No more tracks in queue, stopping playback");
@@ -408,6 +395,10 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                     app.plugin_update_retry_count + 1,
                                     MAX_RETRIES
                                 );
+
+                                // Recompute replay gain before building plugin configs
+                                let rg_gain = app.get_replay_gain_for_current_track();
+                                app.plugin_chain.set_replay_gain(rg_gain);
 
                                 let sample_rate = app
                                     .current_sample_rate
@@ -508,6 +499,61 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     Ok(())
 }
 
+/// Start playback for a file, handling matrix adaptation and channel clamping.
+fn start_playback(
+    player: &mut Player,
+    app: &mut App,
+    path: PathBuf,
+    track_channels: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let track_sample_rate = app
+        .current_track()
+        .and_then(|t| t.sample_rate)
+        .unwrap_or(48000);
+    let sample_rate = app.get_target_sample_rate(track_sample_rate);
+
+    log::info!(
+        "[TUI] Starting playback: track={}Hz, target={}Hz, device_default={}Hz",
+        track_sample_rate,
+        sample_rate,
+        app.get_current_sample_rate()
+    );
+
+    app.plugin_chain.adapt_matrix_to_input(track_channels);
+
+    // Apply ReplayGain correction to the permanent Gain plugin
+    let rg_gain = app.get_replay_gain_for_current_track();
+    app.plugin_chain.set_replay_gain(rg_gain);
+
+    let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
+    let mut output_channels = app.plugin_chain.output_channels_for_input(track_channels);
+
+    // Clamp output channels to device max — the playback thread will
+    // downmix automatically when the processing chain outputs more
+    // channels than the hardware supports.
+    if let Some(max_channels) = app.get_device_max_channels() {
+        if output_channels > max_channels {
+            log::info!(
+                "[TUI] Clamping output from {} to {} channels (device limit)",
+                output_channels,
+                max_channels
+            );
+            output_channels = max_channels;
+        }
+    }
+
+    let path_clone = path.clone();
+    player.load_and_play(
+        path,
+        plugins,
+        output_channels,
+        app.current_output_device_name.clone(),
+    )?;
+
+    app.start_track_tracking(path_clone);
+    Ok(())
+}
+
 fn handle_player_command(
     player: &mut Player,
     app: &mut App,
@@ -521,46 +567,30 @@ fn handle_player_command(
             // Load album images when starting playback
             app.load_album_images();
 
-            // Get plugin configs and output channels
-            // Determine target sample rate based on track's native rate if known
-            let track_sample_rate = app
+            let track_channels = app
                 .current_track()
-                .and_then(|t| t.sample_rate)
-                .unwrap_or(48000);
-            let sample_rate = app.get_target_sample_rate(track_sample_rate);
+                .and_then(|t| t.channels)
+                .unwrap_or(2) as usize;
 
-            log::info!(
-                "[TUI] Starting playback: track={}Hz, target={}Hz, device_default={}Hz",
-                track_sample_rate,
-                sample_rate,
-                app.get_current_sample_rate()
-            );
-
-            let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
-            let output_channels = app.plugin_chain.output_channels();
-
-            // Validate output channels against device max
-            if let Some(max_channels) = app.get_device_max_channels()
-                && output_channels > max_channels
-            {
-                let error_msg = format!(
-                    "Plugin chain outputs {} channels but device only supports {}",
-                    output_channels, max_channels
-                );
-                log::error!("{}", error_msg);
-                return Err(error_msg.into());
+            // Check for upmixer + non-stereo conflict before attempting playback.
+            // The upmixer only accepts stereo (2ch) input.
+            if track_channels != 2 {
+                if let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
+                    if app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled) {
+                        log::info!(
+                            "[TUI] Channel conflict: {}ch file with upmixer enabled",
+                            track_channels
+                        );
+                        app.channel_conflict_path = Some(path);
+                        app.channel_conflict_selection = 0;
+                        app.channel_conflict_track_channels = track_channels;
+                        app.input_mode = InputMode::ChannelConflict;
+                        return Ok(());
+                    }
+                }
             }
 
-            let path_clone = path.clone();
-            player.load_and_play(
-                path,
-                plugins,
-                output_channels,
-                app.current_output_device_name.clone(),
-            )?;
-
-            // Start tracking the new track
-            app.start_track_tracking(path_clone);
+            start_playback(player, app, path, track_channels)?;
         }
         PlayerCommand::Pause => {
             player.pause()?;

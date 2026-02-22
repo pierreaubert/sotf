@@ -242,6 +242,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::move_plugin_up))
             .on_action(cx.listener(Self::move_plugin_down))
             .on_action(cx.listener(Self::toggle_plugin))
+            .on_action(cx.listener(Self::toggle_simple_view))
             .on_action(cx.listener(Self::add_directory))
             .on_action(cx.listener(Self::scan_library))
             .on_action(cx.listener(Self::quick_add_eq))

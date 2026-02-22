@@ -115,6 +115,8 @@ actions!(
         DecrementPluginParamLarge,
         IncrementPluginParamSmall,
         DecrementPluginParamSmall,
+        // Plugin view mode
+        ToggleSimpleView,
         // Font size actions
         IncreaseFontSize,
         DecreaseFontSize,

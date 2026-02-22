@@ -159,6 +159,7 @@ pub struct App {
     pub upmixer_config_open: bool,
     pub spectrum_tilt_select_open: bool,
     pub spectrum_reference_select_open: bool,
+    pub crossfeed_preset_select_open: bool,
 
     // Rack panel collapse states
     pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
@@ -272,6 +273,7 @@ impl App {
             upmixer_config_open: false,
             spectrum_tilt_select_open: false,
             spectrum_reference_select_open: false,
+            crossfeed_preset_select_open: false,
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,

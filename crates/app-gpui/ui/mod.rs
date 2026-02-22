@@ -1,4 +1,4 @@
-use crate::app::types::PluginUpdateType;
+use crate::app::types::{PluginUpdateType, ReplayGainMode};
 use crate::app::{AppState, Screen};
 use crate::components::plugins::common::param_index_to_engine_param;
 
@@ -620,7 +620,47 @@ impl PlayerView {
         let sample_rate =
             sotf_audio::select_output_sample_rate(track_sample_rate, device_name.as_deref()) as f64;
 
-        let output_channels = state.app.plugin_state.plugin_chain.output_channels();
+        let track_channels = state
+            .app
+            .playback
+            .current_queue_index
+            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|item| item.current_track())
+            .and_then(|track| track.channels)
+            .unwrap_or(2) as usize;
+        state.app.plugin_state.plugin_chain.adapt_matrix_to_input(track_channels);
+        let mut output_channels = state.app.plugin_state.plugin_chain.output_channels_for_input(track_channels);
+
+        // Clamp output channels to device max — the playback thread will
+        // downmix automatically when the processing chain outputs more
+        // channels than the hardware supports.
+        if let Some(max_ch) = state.app.get_device_max_channels() {
+            if output_channels > max_ch {
+                log::info!(
+                    "[GPUI] Clamping output from {} to {} channels (device limit)",
+                    output_channels,
+                    max_ch
+                );
+                output_channels = max_ch;
+            }
+        }
+
+        // Apply ReplayGain correction to the permanent Gain plugin
+        let rg_gain = if state.app.replay_gain_enabled {
+            let track = state.app.playback.current_queue_index
+                .and_then(|idx| state.app.queue.get(idx))
+                .and_then(|item| item.current_track());
+            let gain = match state.app.replay_gain_mode {
+                ReplayGainMode::Track => track.and_then(|t| t.replay_gain),
+                ReplayGainMode::Album => track.and_then(|t| t.album_gain)
+                    .or(track.and_then(|t| t.replay_gain)),
+            };
+            gain.map(|g| g + state.app.replay_gain_preamp as f64)
+        } else {
+            None
+        };
+        state.app.plugin_state.plugin_chain.set_replay_gain(rg_gain);
+
         let plugins = state
             .app
             .plugin_state

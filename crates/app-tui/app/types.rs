@@ -25,6 +25,19 @@ pub enum InputMode {
     BrowseIrFile,
     ShowHelp,
     ShowError,
+    /// Shown when a multichannel file conflicts with the upmixer plugin
+    ChannelConflict,
+}
+
+/// Options presented in the channel conflict dialog
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelConflictChoice {
+    /// Disable the upmixer and play with native channels
+    DisableUpmixer,
+    /// Remove the upmixer from the chain entirely
+    RemoveUpmixer,
+    /// Cancel playback
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +80,13 @@ pub struct ArtistNode {
 pub enum TreeItem {
     Artist { name: String, expanded: bool },
     Album { index: usize },
+}
+
+/// ReplayGain application mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayGainMode {
+    Track,
+    Album,
 }
 
 /// Channel group for level meter display

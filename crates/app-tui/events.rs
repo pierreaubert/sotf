@@ -128,6 +128,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         InputMode::BrowseIrFile => handle_file_browser_mode(app, key, false),
         InputMode::ShowHelp => handle_help_mode(app, key),
         InputMode::ShowError => handle_error_mode(app, key),
+        InputMode::ChannelConflict => handle_channel_conflict_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
     }
 }
@@ -294,6 +295,41 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         // Help
         KeyCode::Char('?') => {
             app.input_mode = InputMode::ShowHelp;
+            None
+        }
+
+        // ReplayGain toggle
+        KeyCode::Char('g') => {
+            app.replay_gain_enabled = !app.replay_gain_enabled;
+            let mode_str = if app.replay_gain_enabled {
+                match app.replay_gain_mode {
+                    crate::app::ReplayGainMode::Track => "ON (Track mode)",
+                    crate::app::ReplayGainMode::Album => "ON (Album mode)",
+                }
+            } else {
+                "OFF"
+            };
+            app.status_message = Some(format!("ReplayGain: {}", mode_str));
+            if app.is_playing {
+                app.needs_plugin_update = true;
+            }
+            None
+        }
+        // ReplayGain mode cycle
+        KeyCode::Char('G') => {
+            use crate::app::ReplayGainMode;
+            app.replay_gain_mode = match app.replay_gain_mode {
+                ReplayGainMode::Track => ReplayGainMode::Album,
+                ReplayGainMode::Album => ReplayGainMode::Track,
+            };
+            let mode_str = match app.replay_gain_mode {
+                ReplayGainMode::Track => "Track",
+                ReplayGainMode::Album => "Album",
+            };
+            app.status_message = Some(format!("ReplayGain mode: {}", mode_str));
+            if app.is_playing && app.replay_gain_enabled {
+                app.needs_plugin_update = true;
+            }
             None
         }
 
@@ -1372,6 +1408,67 @@ fn handle_error_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('q') => {
             app.input_mode = InputMode::Normal;
             app.error_message = None;
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use crate::app::ChannelConflictChoice;
+
+    const NUM_OPTIONS: usize = 3;
+
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.channel_conflict_selection > 0 {
+                app.channel_conflict_selection -= 1;
+            }
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.channel_conflict_selection < NUM_OPTIONS - 1 {
+                app.channel_conflict_selection += 1;
+            }
+            None
+        }
+        KeyCode::Enter => {
+            let choice = match app.channel_conflict_selection {
+                0 => ChannelConflictChoice::DisableUpmixer,
+                1 => ChannelConflictChoice::RemoveUpmixer,
+                2 => ChannelConflictChoice::Cancel,
+                _ => ChannelConflictChoice::Cancel,
+            };
+
+            let path = app.channel_conflict_path.take();
+            app.input_mode = InputMode::Normal;
+
+            match choice {
+                ChannelConflictChoice::DisableUpmixer => {
+                    if let Some(idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
+                        app.plugin_chain.toggle_plugin(idx);
+                        log::info!("[TUI] Upmixer disabled by user (channel conflict)");
+                    }
+                    path.map(PlayerCommand::Play)
+                }
+                ChannelConflictChoice::RemoveUpmixer => {
+                    if let Some(idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
+                        app.plugin_chain.remove_plugin(idx);
+                        log::info!("[TUI] Upmixer removed by user (channel conflict)");
+                    }
+                    path.map(PlayerCommand::Play)
+                }
+                ChannelConflictChoice::Cancel => {
+                    log::info!("[TUI] Playback cancelled by user (channel conflict)");
+                    app.is_playing = false;
+                    None
+                }
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.channel_conflict_path = None;
+            app.input_mode = InputMode::Normal;
+            app.is_playing = false;
             None
         }
         _ => None,

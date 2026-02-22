@@ -1297,17 +1297,77 @@ impl PlayerView {
                 let is_editing = editing_idx.is_some();
                 let _plugin_enabled = plugin.enabled;
 
+                let simple_view = self.state.read(cx).app.plugin_state.simple_view;
+                let state_for_toggle = self.state.clone();
+
+                // Pre-extract theme colors for toggle buttons (Rgba is Copy)
+                let toggle_text_primary = theme.text_primary;
+                let toggle_text_muted = theme.text_muted;
+                let toggle_surface = theme.surface;
+                let toggle_surface_hover = theme.surface_hover;
+
                 d.child(
                     // Plugin header bar
-                    div()
-                        .flex()
-                        .justify_between()
-                        .items_center()
-                        .px_4()
-                        .py_3()
-                        .bg(theme.background_secondary)
-                        .border_b_1()
-                        .border_color(theme.border), /* row with infos but not useful
+                    {
+                        div()
+                            .flex()
+                            .justify_between()
+                            .items_center()
+                            .px_4()
+                            .py_3()
+                            .bg(theme.background_secondary)
+                            .border_b_1()
+                            .border_color(theme.border)
+                            .child(
+                                // View mode toggle: Detail / Simple
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child({
+                                        let is_detail = !simple_view;
+                                        let state_c = state_for_toggle.clone();
+                                        div()
+                                            .id("view-detail")
+                                            .cursor_pointer()
+                                            .px_2()
+                                            .py(px(2.0))
+                                            .rounded_md()
+                                            .text_xs()
+                                            .font_weight(if is_detail { FontWeight::BOLD } else { FontWeight::NORMAL })
+                                            .text_color(if is_detail { toggle_text_primary } else { toggle_text_muted })
+                                            .when(is_detail, |d| d.bg(toggle_surface))
+                                            .hover(move |s| s.bg(toggle_surface_hover))
+                                            .on_click(move |_, _window, cx| {
+                                                state_c.update(cx, |s, _| {
+                                                    s.app.plugin_state.simple_view = false;
+                                                });
+                                            })
+                                            .child("Detail")
+                                    })
+                                    .child({
+                                        let is_simple = simple_view;
+                                        let state_c = state_for_toggle.clone();
+                                        div()
+                                            .id("view-simple")
+                                            .cursor_pointer()
+                                            .px_2()
+                                            .py(px(2.0))
+                                            .rounded_md()
+                                            .text_xs()
+                                            .font_weight(if is_simple { FontWeight::BOLD } else { FontWeight::NORMAL })
+                                            .text_color(if is_simple { toggle_text_primary } else { toggle_text_muted })
+                                            .when(is_simple, |d| d.bg(toggle_surface))
+                                            .hover(move |s| s.bg(toggle_surface_hover))
+                                            .on_click(move |_, _window, cx| {
+                                                state_c.update(cx, |s, _| {
+                                                    s.app.plugin_state.simple_view = true;
+                                                });
+                                            })
+                                            .child("Simple")
+                                    }),
+                            )
+                    }, /* row with infos but not useful
                                                                              .child(
                                                                                  div()
                                                                                      .flex()
@@ -1508,22 +1568,34 @@ impl PlayerView {
                                     let spectrum_ref_open = app_st.app.spectrum_reference_select_open;
                                     let plugin_chain = app_st.app.plugin_state.plugin_chain.clone();
 
-                                    render_plugin_content(
-                                        self.state.clone(),
-                                        selected_idx, // Pass index
-                                        &plugin.settings,
-                                        is_editing,
-                                        param_selection,
-                                        &theme,
-                                        upmixer_config_open,
-                                        selected_eq_band,
-                                        loudness_for_plugin,
-                                        plugin_data,
-                                        spectrum_tilt_open,
-                                        spectrum_ref_open,
-                                        &plugin_chain,
-                                        cx,
-                                    )
+                                    if simple_view {
+                                        super::ui_simple::render_simple_plugin_view(
+                                            self.state.clone(),
+                                            selected_idx,
+                                            &plugin.settings,
+                                            is_editing,
+                                            param_selection,
+                                            &theme,
+                                        )
+                                        .into_any_element()
+                                    } else {
+                                        render_plugin_content(
+                                            self.state.clone(),
+                                            selected_idx,
+                                            &plugin.settings,
+                                            is_editing,
+                                            param_selection,
+                                            &theme,
+                                            upmixer_config_open,
+                                            selected_eq_band,
+                                            loudness_for_plugin,
+                                            plugin_data,
+                                            spectrum_tilt_open,
+                                            spectrum_ref_open,
+                                            &plugin_chain,
+                                            cx,
+                                        )
+                                    }
                                 }),
                         )
                         // Divider 2: Between main zone and output meter (always shown)

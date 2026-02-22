@@ -40,6 +40,7 @@ mod ui_rack;
 mod ui_spectrum;
 mod ui_upmixer;
 mod ui_crossfeed;
+mod ui_simple;
 mod ui_xtc;
 
 pub use common::*;
@@ -78,6 +79,7 @@ pub use ui_spectrum::{
 };
 pub use ui_upmixer::render_upmixer_plugin;
 pub use ui_crossfeed::render_crossfeed_plugin;
+pub use ui_simple::render_simple_plugin_view;
 pub use ui_xtc::render_xtc_plugin;
 
 use crate::app::AppState;
@@ -857,31 +859,35 @@ pub fn render_plugin_content(
             autogain_target_lufs,
             autogain_max_gain_db,
             autogain_smoothing_ms,
-        } => render_crossfeed_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_crossfeed::CrossfeedRenderState {
-                mode: *mode,
-                preset: *preset,
-                enabled: *enabled,
-                mix: *mix,
-                bauer_fcut_hz: *bauer_fcut_hz,
-                bauer_feed_db: *bauer_feed_db,
-                meier_level: *meier_level,
-                mb_low_freq_hz: *mb_low_freq_hz,
-                mb_mid_high_freq_hz: *mb_mid_high_freq_hz,
-                mb_low_feed_db: *mb_low_feed_db,
-                mb_mid_feed_db: *mb_mid_feed_db,
-                mb_high_feed_db: *mb_high_feed_db,
-                autogain_enabled: *autogain_enabled,
-                autogain_target_lufs: *autogain_target_lufs,
-                autogain_max_gain_db: *autogain_max_gain_db,
-                autogain_smoothing_ms: *autogain_smoothing_ms,
-                is_editing,
-                selected_param,
-            },
-            theme,
-        )
-        .into_any_element(),
+        } => {
+            let preset_select_open = entity.read(cx).app.crossfeed_preset_select_open;
+            render_crossfeed_plugin(
+                entity.clone(),
+                plugin_idx,
+                ui_crossfeed::CrossfeedRenderState {
+                    mode: *mode,
+                    preset: *preset,
+                    enabled: *enabled,
+                    mix: *mix,
+                    bauer_fcut_hz: *bauer_fcut_hz,
+                    bauer_feed_db: *bauer_feed_db,
+                    meier_level: *meier_level,
+                    mb_low_freq_hz: *mb_low_freq_hz,
+                    mb_mid_high_freq_hz: *mb_mid_high_freq_hz,
+                    mb_low_feed_db: *mb_low_feed_db,
+                    mb_mid_feed_db: *mb_mid_feed_db,
+                    mb_high_feed_db: *mb_high_feed_db,
+                    autogain_enabled: *autogain_enabled,
+                    autogain_target_lufs: *autogain_target_lufs,
+                    autogain_max_gain_db: *autogain_max_gain_db,
+                    autogain_smoothing_ms: *autogain_smoothing_ms,
+                    is_editing,
+                    selected_param,
+                    preset_select_open,
+                },
+                theme,
+            )
+            .into_any_element()
+        }
     }
 }

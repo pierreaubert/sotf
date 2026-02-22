@@ -1,16 +1,18 @@
 //! Crossfeed Plugin UI Component
 //!
 //! Headphone crossfeed for speaker-like listening:
-//! - Multiple modes: Off, Bauer, Meier, Multiband
-//! - Presets for quick configuration
-//! - Per-mode parameters (Bauer fcut/feed, Meier level, MB frequencies/feeds)
+//! - Mode selector: Off, Bauer, Meier, Multiband
+//! - Preset dropdown for quick configuration
+//! - Per-mode parameters shown conditionally
 //! - Auto gain compensation
 
 use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{Select, SelectOption, SelectSize};
 use sotf_plugins::param_specs::crossfeed::*;
 use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
 
@@ -39,6 +41,7 @@ pub struct CrossfeedRenderState {
     // UI state
     pub is_editing: bool,
     pub selected_param: usize,
+    pub preset_select_open: bool,
 }
 
 /// Render the Crossfeed plugin
@@ -48,50 +51,44 @@ pub fn render_crossfeed_plugin(
     state: CrossfeedRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
+    let current_mode = state.mode;
+
     div()
         .flex()
         .flex_col()
         .gap_4()
+        // Row 1: Mode selector + Preset + Enable + Mix
         .child(
             div()
                 .flex()
                 .gap_6()
                 .items_start()
-                // Column 1: General
+                // Column 1: Mode + Preset + Enabled + Mix
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_2()
+                        .gap_3()
                         .child(render_section_title("GENERAL", theme))
-                        // Mode (param 0) - displayed as text, cycled via adjust
-                        .child(render_knob(
+                        // Mode selector (param 0) - segmented buttons
+                        .child(render_mode_selector(
                             entity.clone(),
                             plugin_idx,
-                            "Mode",
-                            mode_to_display_value(&state.mode),
-                            0.0,
-                            3.0,
-                            &format!("{:?}", state.mode),
+                            current_mode,
                             0,
                             state.selected_param,
                             state.is_editing,
-                            Some('m'),
                             theme,
                         ))
-                        // Preset (param 1) - displayed as text, cycled via adjust
-                        .child(render_knob(
+                        // Preset dropdown (param 1)
+                        .child(render_preset_selector(
                             entity.clone(),
                             plugin_idx,
-                            "Preset",
-                            preset_to_display_value(&state.preset),
-                            0.0,
-                            4.0,
-                            &format!("{:?}", state.preset),
+                            state.preset,
+                            state.preset_select_open,
                             1,
                             state.selected_param,
                             state.is_editing,
-                            Some('p'),
                             theme,
                         ))
                         // Enabled (param 2)
@@ -121,158 +118,153 @@ pub fn render_crossfeed_plugin(
                             theme,
                         )),
                 )
-                // Column 2: Bauer
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("BAUER", theme))
-                        // Fcut (param 4)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Fcut",
-                            state.bauer_fcut_hz,
-                            BAUER_FCUT_MIN as f64,
-                            BAUER_FCUT_MAX as f64,
-                            "Hz",
-                            4,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('f'),
-                            theme,
-                        ))
-                        // Feed (param 5)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Feed",
-                            state.bauer_feed_db,
-                            BAUER_FEED_MIN as f64,
-                            BAUER_FEED_MAX as f64,
-                            "dB",
-                            5,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        )),
-                )
-                // Column 3: Meier
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("MEIER", theme))
-                        // Level (param 6)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Level",
-                            state.meier_level,
-                            MEIER_LEVEL_MIN as f64,
-                            MEIER_LEVEL_MAX as f64,
-                            "",
-                            6,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('l'),
-                            theme,
-                        )),
-                )
-                // Column 4: Multiband
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("MULTIBAND", theme))
-                        // Low Freq (param 7)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Low Freq",
-                            state.mb_low_freq_hz,
-                            MB_LOW_FREQ_MIN as f64,
-                            MB_LOW_FREQ_MAX as f64,
-                            "Hz",
-                            7,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        // Mid-High Freq (param 8)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mid-Hi Freq",
-                            state.mb_mid_high_freq_hz,
-                            MB_MID_HIGH_FREQ_MIN as f64,
-                            MB_MID_HIGH_FREQ_MAX as f64,
-                            "Hz",
-                            8,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        // Low Feed (param 9)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Low Feed",
-                            state.mb_low_feed_db,
-                            MB_LOW_FEED_MIN as f64,
-                            MB_LOW_FEED_MAX as f64,
-                            "dB",
-                            9,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        // Mid Feed (param 10)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mid Feed",
-                            state.mb_mid_feed_db,
-                            MB_MID_FEED_MIN as f64,
-                            MB_MID_FEED_MAX as f64,
-                            "dB",
-                            10,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        // High Feed (param 11)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "High Feed",
-                            state.mb_high_feed_db,
-                            MB_HIGH_FEED_MIN as f64,
-                            MB_HIGH_FEED_MAX as f64,
-                            "dB",
-                            11,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        )),
-                )
-                // Column 5: Auto Gain
+                // Column 2: Mode-specific parameters
+                .when(current_mode == CrossfeedMode::Bauer, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(render_section_title("BAUER", theme))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Fcut",
+                                state.bauer_fcut_hz,
+                                BAUER_FCUT_MIN as f64,
+                                BAUER_FCUT_MAX as f64,
+                                "Hz",
+                                4,
+                                state.selected_param,
+                                state.is_editing,
+                                Some('f'),
+                                theme,
+                            ))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Feed",
+                                state.bauer_feed_db,
+                                BAUER_FEED_MIN as f64,
+                                BAUER_FEED_MAX as f64,
+                                "dB",
+                                5,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            )),
+                    )
+                })
+                .when(current_mode == CrossfeedMode::Meier, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(render_section_title("MEIER", theme))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Level",
+                                state.meier_level,
+                                MEIER_LEVEL_MIN as f64,
+                                MEIER_LEVEL_MAX as f64,
+                                "%",
+                                6,
+                                state.selected_param,
+                                state.is_editing,
+                                Some('l'),
+                                theme,
+                            )),
+                    )
+                })
+                .when(current_mode == CrossfeedMode::Mb, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(render_section_title("MULTIBAND", theme))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Low Freq",
+                                state.mb_low_freq_hz,
+                                MB_LOW_FREQ_MIN as f64,
+                                MB_LOW_FREQ_MAX as f64,
+                                "Hz",
+                                7,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            ))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Mid-Hi Freq",
+                                state.mb_mid_high_freq_hz,
+                                MB_MID_HIGH_FREQ_MIN as f64,
+                                MB_MID_HIGH_FREQ_MAX as f64,
+                                "Hz",
+                                8,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            ))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Low Feed",
+                                state.mb_low_feed_db,
+                                MB_LOW_FEED_MIN as f64,
+                                MB_LOW_FEED_MAX as f64,
+                                "dB",
+                                9,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            ))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Mid Feed",
+                                state.mb_mid_feed_db,
+                                MB_MID_FEED_MIN as f64,
+                                MB_MID_FEED_MAX as f64,
+                                "dB",
+                                10,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            ))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "High Feed",
+                                state.mb_high_feed_db,
+                                MB_HIGH_FEED_MIN as f64,
+                                MB_HIGH_FEED_MAX as f64,
+                                "dB",
+                                11,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            )),
+                    )
+                })
+                // Column 3: Auto Gain (always visible)
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_2()
                         .child(render_section_title("AUTO GAIN", theme))
-                        // Auto Gain Enabled (param 12)
                         .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
@@ -283,7 +275,6 @@ pub fn render_crossfeed_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        // Target (param 13)
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -298,7 +289,6 @@ pub fn render_crossfeed_plugin(
                             None,
                             theme,
                         ))
-                        // Max Gain (param 14)
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -313,7 +303,6 @@ pub fn render_crossfeed_plugin(
                             None,
                             theme,
                         ))
-                        // Smoothing (param 15)
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -332,21 +321,184 @@ pub fn render_crossfeed_plugin(
         )
 }
 
-fn mode_to_display_value(mode: &CrossfeedMode) -> f64 {
-    match mode {
-        CrossfeedMode::Off => 0.0,
-        CrossfeedMode::Bauer => 1.0,
-        CrossfeedMode::Meier => 2.0,
-        CrossfeedMode::Mb => 3.0,
-    }
+/// Render mode selector as segmented buttons
+fn render_mode_selector(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    current_mode: CrossfeedMode,
+    param_idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    let is_selected = is_editing && selected_param == param_idx;
+    let modes = [
+        (CrossfeedMode::Off, "Off", 0usize),
+        (CrossfeedMode::Bauer, "Bauer", 1),
+        (CrossfeedMode::Meier, "Meier", 2),
+        (CrossfeedMode::Mb, "Multiband", 3),
+    ];
+
+    let border_color = if is_selected {
+        theme.accent
+    } else {
+        theme.border
+    };
+    let surface_color = theme.surface;
+    let accent_color = theme.accent;
+    let text_on_accent = theme.text_on_accent;
+    let text_primary = theme.text_primary;
+    let text_muted = theme.text_muted;
+
+    let mut row = div()
+        .id("crossfeed-mode-selector")
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(if is_selected { accent_color } else { text_muted })
+                .child("Mode"),
+        )
+        .child({
+            let mut btn_row = div()
+                .flex()
+                .rounded_lg()
+                .border_1()
+                .border_color(border_color)
+                .overflow_hidden();
+
+            for (mode, label, idx) in modes {
+                let is_active = current_mode == mode;
+                let entity_c = entity.clone();
+                btn_row = btn_row.child(
+                    div()
+                        .id(("mode-btn", idx))
+                        .cursor_pointer()
+                        .px_3()
+                        .py(px(4.0))
+                        .text_xs()
+                        .font_weight(if is_active {
+                            FontWeight::BOLD
+                        } else {
+                            FontWeight::NORMAL
+                        })
+                        .when(is_active, |d| {
+                            d.bg(accent_color).text_color(text_on_accent)
+                        })
+                        .when(!is_active, |d| {
+                            d.bg(surface_color).text_color(text_primary)
+                        })
+                        .on_click(move |_, _window, cx| {
+                            entity_c.update(cx, |state, _| {
+                                state.app.set_plugin_param(plugin_idx, param_idx, idx as f64);
+                            });
+                        })
+                        .child(label),
+                );
+            }
+
+            btn_row
+        });
+
+    // Make the whole mode selector clickable to select this param
+    let entity_for_select = entity.clone();
+    row = row.on_click(move |_, _window, cx| {
+        entity_for_select.update(cx, |state, _| {
+            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+            state.app.plugin_state.plugin_param_selection = param_idx;
+        });
+    });
+
+    row
 }
 
-fn preset_to_display_value(preset: &CrossfeedPreset) -> f64 {
-    match preset {
-        CrossfeedPreset::Default => 0.0,
-        CrossfeedPreset::Cmoy => 1.0,
-        CrossfeedPreset::Meier => 2.0,
-        CrossfeedPreset::Mb => 3.0,
-        CrossfeedPreset::Off => 4.0,
-    }
+/// Render preset selector as a dropdown
+fn render_preset_selector(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    current_preset: CrossfeedPreset,
+    is_open: bool,
+    param_idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    let is_selected = is_editing && selected_param == param_idx;
+    let accent_color = theme.accent;
+    let text_muted = theme.text_muted;
+
+    let presets = [
+        (CrossfeedPreset::Default, "Default"),
+        (CrossfeedPreset::Cmoy, "Cmoy"),
+        (CrossfeedPreset::Meier, "Meier"),
+        (CrossfeedPreset::Mb, "Multiband"),
+        (CrossfeedPreset::Off, "Off"),
+    ];
+
+    let selected_label = presets
+        .iter()
+        .find(|(p, _)| *p == current_preset)
+        .map(|(_, l)| l.to_string())
+        .unwrap_or_else(|| format!("{:?}", current_preset));
+
+    let entity_for_select = entity.clone();
+
+    div()
+        .id("crossfeed-preset-selector")
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(if is_selected { accent_color } else { text_muted })
+                .child("Preset"),
+        )
+        .child(
+            div().w(px(140.0)).child(
+                Select::new("crossfeed-preset-select")
+                    .options(
+                        presets
+                            .iter()
+                            .map(|(_, label)| SelectOption::new(label.to_string(), label.to_string()))
+                            .collect(),
+                    )
+                    .selected(selected_label)
+                    .is_open(is_open)
+                    .size(SelectSize::Sm)
+                    .theme(theme.to_select_theme())
+                    .on_toggle({
+                        let entity = entity.clone();
+                        move |is_open, _window, cx| {
+                            entity.update(cx, |state, cx| {
+                                state.app.crossfeed_preset_select_open = is_open;
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .on_change({
+                        let entity = entity.clone();
+                        move |value, _, cx| {
+                            let idx = presets
+                                .iter()
+                                .position(|(_, l)| *l == value.as_ref())
+                                .unwrap_or(0);
+                            entity.update(cx, |state, _| {
+                                state.app.set_plugin_param(plugin_idx, param_idx, idx as f64);
+                                state.app.crossfeed_preset_select_open = false;
+                            });
+                        }
+                    }),
+            ),
+        )
+        .on_click(move |_, _window, cx| {
+            entity_for_select.update(cx, |state, _| {
+                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                state.app.plugin_state.plugin_param_selection = param_idx;
+            });
+        })
 }

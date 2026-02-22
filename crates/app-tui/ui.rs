@@ -317,6 +317,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::ShowError {
         draw_error_modal(f, app);
     }
+
+    // Channel conflict modal
+    if app.input_mode == InputMode::ChannelConflict {
+        draw_channel_conflict_modal(f, app);
+    }
 }
 
 fn draw_title(f: &mut Frame, area: Rect, app: &App) {
@@ -1104,6 +1109,38 @@ fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let mut lines = Vec::new();
+
+    // ReplayGain correction status
+    let applied_gain = app.plugin_chain.replay_gain_db();
+    let mode_str = match app.replay_gain_mode {
+        crate::app::ReplayGainMode::Track => "Track",
+        crate::app::ReplayGainMode::Album => "Album",
+    };
+    let status_spans = if app.replay_gain_enabled {
+        if let Some(db) = applied_gain {
+            vec![
+                Span::styled("RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled(
+                    format!("{:+.2} dB ({})", db, mode_str),
+                    Style::default().fg(app.theme.accent_success),
+                ),
+            ]
+        } else {
+            vec![
+                Span::styled("RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled(
+                    format!("ON ({}) - no data", mode_str),
+                    Style::default().fg(app.theme.fg_muted),
+                ),
+            ]
+        }
+    } else {
+        vec![
+            Span::styled("RG: ", Style::default().fg(app.theme.title_color)),
+            Span::styled("OFF", Style::default().fg(app.theme.fg_muted)),
+        ]
+    };
+    lines.push(Line::from(status_spans));
 
     if let Some((track, _album)) = track_info {
         // Track title
@@ -3829,6 +3866,88 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
 
         f.render_widget(paragraph, inner);
     }
+}
+
+fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
+    let area = f.area();
+    let modal_width = 56u16.min(area.width.saturating_sub(4));
+    let modal_height = 14u16.min(area.height.saturating_sub(4));
+    let modal_x = (area.width - modal_width) / 2;
+    let modal_y = (area.height - modal_height) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
+        .title(" Channel Conflict ");
+
+    f.render_widget(Clear, modal_area);
+    f.render_widget(block, modal_area);
+
+    let inner = Rect {
+        x: modal_area.x + 2,
+        y: modal_area.y + 2,
+        width: modal_area.width.saturating_sub(4),
+        height: modal_area.height.saturating_sub(3),
+    };
+
+    let text_style = Style::default().fg(app.theme.fg_primary);
+    let highlight_style = Style::default()
+        .fg(app.theme.accent_primary)
+        .add_modifier(Modifier::BOLD);
+
+    let mut lines = vec![];
+
+    lines.push(Line::from(Span::styled(
+        format!(
+            "This track has {} channels but the upmixer",
+            app.channel_conflict_track_channels
+        ),
+        text_style,
+    )));
+    lines.push(Line::from(Span::styled(
+        "only supports stereo (2ch) input.",
+        text_style,
+    )));
+    lines.push(Line::from(""));
+
+    let options = [
+        "Disable upmixer and play",
+        "Remove upmixer and play",
+        "Cancel playback",
+    ];
+
+    for (i, option) in options.iter().enumerate() {
+        let selected = i == app.channel_conflict_selection;
+        let prefix = if selected { "▸ " } else { "  " };
+        let style = if selected { highlight_style } else { text_style };
+        lines.push(Line::from(Span::styled(format!("{prefix}{option}"), style)));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Use ", text_style),
+        Span::styled("↑↓", highlight_style),
+        Span::styled(" to select, ", text_style),
+        Span::styled("Enter", highlight_style),
+        Span::styled(" to confirm, ", text_style),
+        Span::styled("Esc", highlight_style),
+        Span::styled(" to cancel", text_style),
+    ]));
+
+    let paragraph = Paragraph::new(lines)
+        .style(text_style)
+        .block(Block::default());
+
+    f.render_widget(paragraph, inner);
 }
 
 fn draw_file_browser_modal(f: &mut Frame, app: &App) {

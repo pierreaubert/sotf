@@ -43,6 +43,11 @@ pub struct App {
     pub status_message: Option<String>, // For displaying save/load status
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
 
+    // Channel conflict dialog state
+    pub channel_conflict_path: Option<PathBuf>,       // File pending playback
+    pub channel_conflict_selection: usize,             // Currently highlighted option (0-2)
+    pub channel_conflict_track_channels: usize,        // File's channel count
+
     // Cached filtered results
     pub cached_filtered_albums: Vec<Album>,
     pub needs_filter_update: bool,
@@ -126,6 +131,11 @@ pub struct App {
     // ReplayGain scanner manager
     pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
 
+    // ReplayGain playback settings
+    pub replay_gain_enabled: bool,
+    pub replay_gain_mode: super::types::ReplayGainMode,
+    pub replay_gain_preamp: f32,
+
     // Waveform scanner progress
     // Waveform scanner manager
     pub waveform_manager: sotf_audio_player::WaveformScanManager,
@@ -177,6 +187,9 @@ impl App {
             album_list_offset: 0,
             status_message: None,
             error_message: None,
+            channel_conflict_path: None,
+            channel_conflict_selection: 0,
+            channel_conflict_track_channels: 2,
             cached_filtered_albums: Vec::new(),
             needs_filter_update: true,
             autocomplete_suggestions: Vec::new(),
@@ -228,6 +241,9 @@ impl App {
             maintenance_progress_checked: 0,
             maintenance_progress_total: 0,
             replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
+            replay_gain_enabled: true,
+            replay_gain_mode: super::types::ReplayGainMode::Track,
+            replay_gain_preamp: 0.0,
             waveform_manager: sotf_audio_player::WaveformScanManager::new(),
             last_loaded_preset: None,
             file_browser_items: Vec::new(),
@@ -1405,6 +1421,22 @@ impl App {
         self.current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
+    }
+
+    /// Compute the effective replay gain for the current track, considering mode + preamp + enabled.
+    /// Returns `None` if disabled or no gain value is available.
+    pub fn get_replay_gain_for_current_track(&self) -> Option<f64> {
+        use super::types::ReplayGainMode;
+
+        if !self.replay_gain_enabled {
+            return None;
+        }
+        let track = self.current_track()?;
+        let gain = match self.replay_gain_mode {
+            ReplayGainMode::Track => track.replay_gain,
+            ReplayGainMode::Album => track.album_gain.or(track.replay_gain),
+        };
+        gain.map(|g| g + self.replay_gain_preamp as f64)
     }
 
     pub fn next_track(&mut self) -> Option<PathBuf> {

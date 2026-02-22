@@ -34,6 +34,8 @@ pub struct PluginState {
     pub last_loaded_preset: Option<String>,
     /// Dropdown states for AB Compare plugin
     pub ab_compare_dropdowns: ABCompareDropdowns,
+    /// When true, show a simple text-based parameter list instead of the graphical plugin view
+    pub simple_view: bool,
 }
 
 /// Dropdown open states for AB Compare plugin UI
@@ -85,6 +87,7 @@ impl Default for PluginState {
             selected_preset_index: 0,
             last_loaded_preset: None,
             ab_compare_dropdowns: ABCompareDropdowns::default(),
+            simple_view: false,
         }
     }
 }
