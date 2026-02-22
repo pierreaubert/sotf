@@ -3010,11 +3010,23 @@ impl PluginChain {
         id
     }
 
-    /// Create a default rack with permanent Input Monitor, Matrix, and Output Monitor
+    /// Add a permanent plugin that starts disabled (passthrough)
+    pub fn add_permanent_disabled_plugin(&mut self, plugin_type: &PluginType) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut plugin = Plugin::new_permanent(id, plugin_type);
+        plugin.enabled = false;
+        self.plugins.push(plugin);
+        id
+    }
+
+    /// Create a default rack with permanent Input Monitor, ReplayGain, Matrix, and Output Monitor
     pub fn with_default_rack() -> Self {
         let mut chain = Self::new();
         // Input monitor (permanent) - monitors input signal
         chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        // ReplayGain (permanent) - applies track/album replay gain correction
+        chain.add_permanent_disabled_plugin(&PluginType::Gain);
         // Matrix (permanent) - channel routing
         chain.add_permanent_plugin(&PluginType::Matrix);
         // Output monitor (permanent) - monitors output signal
@@ -3022,7 +3034,7 @@ impl PluginChain {
         chain
     }
 
-    /// Ensure the default rack (input monitor, matrix, output monitor) is present.
+    /// Ensure the default rack (input monitor, replay gain, matrix, output monitor) is present.
     /// Adds missing permanent plugins without disturbing existing user plugins.
     /// Call this after loading a preset to guarantee the rack structure.
     pub fn ensure_default_rack(&mut self) {
@@ -3034,8 +3046,12 @@ impl PluginChain {
             .plugins
             .iter()
             .any(|p| p.permanent && matches!(p.plugin_type(), PluginType::Matrix));
+        let has_permanent_gain = self
+            .plugins
+            .iter()
+            .any(|p| p.permanent && matches!(p.plugin_type(), PluginType::Gain));
 
-        if has_permanent_lm && has_permanent_matrix {
+        if has_permanent_lm && has_permanent_matrix && has_permanent_gain {
             // Check we have at least two permanent LoudnessMonitors (input + output)
             let lm_count = self
                 .plugins
@@ -3058,7 +3074,14 @@ impl PluginChain {
             &PluginType::LoudnessMonitor,
         ));
 
-        // Insert user plugins between input monitor and matrix
+        // ReplayGain (permanent, starts disabled)
+        let gain_id = self.next_id;
+        self.next_id += 1;
+        let mut gain_plugin = Plugin::new_permanent(gain_id, &PluginType::Gain);
+        gain_plugin.enabled = false;
+        self.plugins.push(gain_plugin);
+
+        // Insert user plugins between replay gain and matrix
         self.plugins.extend(user_plugins);
 
         let matrix_id = self.next_id;
@@ -3087,6 +3110,51 @@ impl PluginChain {
         }
         // Fallback: find processing insert index
         self.find_processing_insert_index()
+    }
+
+    /// Set the replay gain value on the permanent Gain plugin.
+    /// When `gain_db` is `Some`, the plugin is enabled with the given gain.
+    /// When `None`, the plugin is disabled (passthrough).
+    pub fn set_replay_gain(&mut self, gain_db: Option<f64>) {
+        if let Some(plugin) = self
+            .plugins
+            .iter_mut()
+            .find(|p| p.permanent && matches!(p.plugin_type(), PluginType::Gain))
+        {
+            match gain_db {
+                Some(db) => {
+                    plugin.enabled = true;
+                    plugin.settings = PluginSettings::Gain {
+                        channels: match &plugin.settings {
+                            PluginSettings::Gain { channels, .. } => *channels,
+                            _ => 2,
+                        },
+                        gain_db: db,
+                    };
+                }
+                None => {
+                    plugin.enabled = false;
+                }
+            }
+        }
+    }
+
+    /// Read the current replay gain value from the permanent Gain plugin.
+    /// Returns `None` if the plugin is disabled or not found.
+    pub fn replay_gain_db(&self) -> Option<f64> {
+        self.plugins
+            .iter()
+            .find(|p| p.permanent && matches!(p.plugin_type(), PluginType::Gain))
+            .and_then(|p| {
+                if p.enabled {
+                    match &p.settings {
+                        PluginSettings::Gain { gain_db, .. } => Some(*gain_db),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn remove_plugin(&mut self, index: usize) -> Option<Plugin> {
@@ -3456,6 +3524,12 @@ impl PluginChain {
     }
 
     pub fn output_channels(&self) -> usize {
+        self.output_channels_for_input(2)
+    }
+
+    /// Returns the output channel count of the plugin chain given the input channel count.
+    /// If no channel-changing plugin is found, the input channel count passes through unchanged.
+    pub fn output_channels_for_input(&self, input_channels: usize) -> usize {
         // Walk backwards through the chain to find the last channel-count-changing plugin
         for plugin in self.plugins.iter().rev() {
             if !plugin.enabled {
@@ -3498,8 +3572,42 @@ impl PluginChain {
             }
         }
 
-        // No channel-changing plugin found, return stereo
-        2
+        // No channel-changing plugin found, input channels pass through
+        input_channels
+    }
+
+    /// Adapt the matrix plugin to match the file's channel count.
+    /// When a multichannel file is loaded but the matrix was configured for stereo
+    /// (or vice versa), this resizes the matrix and its channel states to match.
+    /// Should be called before `to_plugin_configs()` when the file channel count is known.
+    pub fn adapt_matrix_to_input(&mut self, file_channels: usize) {
+        for plugin in &mut self.plugins {
+            if !plugin.enabled {
+                continue;
+            }
+            if let PluginSettings::Matrix {
+                input_channels,
+                output_channels,
+                matrix,
+                channel_states,
+            } = &mut plugin.settings
+            {
+                if *input_channels != file_channels {
+                    log::info!(
+                        "[PluginChain] Adapting matrix from {}x{} to {}x{} for file channels",
+                        input_channels,
+                        output_channels,
+                        file_channels,
+                        file_channels
+                    );
+                    resize_matrix(matrix, *input_channels, *output_channels, file_channels, file_channels);
+                    *input_channels = file_channels;
+                    *output_channels = file_channels;
+                    channel_states.resize(file_channels, sotf_plugins::ChannelState::default());
+                }
+                break; // Only adapt the first enabled matrix
+            }
+        }
     }
 
     /// Save the plugin chain to a JSON file
@@ -4029,23 +4137,26 @@ mod tests {
     #[test]
     fn test_default_rack_structure() {
         let chain = PluginChain::with_default_rack();
-        assert_eq!(chain.len(), 3);
+        assert_eq!(chain.len(), 4);
 
-        // [InputLM, Matrix, OutputLM] - all permanent
+        // [InputLM, Gain(disabled), Matrix, OutputLM] - all permanent
         let plugins = chain.plugins();
         assert!(matches!(
             plugins[0].plugin_type(),
             PluginType::LoudnessMonitor
         ));
-        assert!(matches!(plugins[1].plugin_type(), PluginType::Matrix));
+        assert!(matches!(plugins[1].plugin_type(), PluginType::Gain));
+        assert!(!plugins[1].enabled); // ReplayGain starts disabled
+        assert!(matches!(plugins[2].plugin_type(), PluginType::Matrix));
         assert!(matches!(
-            plugins[2].plugin_type(),
+            plugins[3].plugin_type(),
             PluginType::LoudnessMonitor
         ));
 
         assert!(plugins[0].is_permanent());
         assert!(plugins[1].is_permanent());
         assert!(plugins[2].is_permanent());
+        assert!(plugins[3].is_permanent());
     }
 
     #[test]
@@ -4056,13 +4167,17 @@ mod tests {
         assert!(chain.is_input_monitor(0));
         assert!(!chain.is_output_monitor(0));
 
-        // Index 1 = Matrix (neither)
+        // Index 1 = Gain (neither)
         assert!(!chain.is_input_monitor(1));
         assert!(!chain.is_output_monitor(1));
 
-        // Index 2 = output monitor
+        // Index 2 = Matrix (neither)
         assert!(!chain.is_input_monitor(2));
-        assert!(chain.is_output_monitor(2));
+        assert!(!chain.is_output_monitor(2));
+
+        // Index 3 = output monitor
+        assert!(!chain.is_input_monitor(3));
+        assert!(chain.is_output_monitor(3));
     }
 
     #[test]
@@ -4070,8 +4185,8 @@ mod tests {
         let chain = PluginChain::with_default_rack();
         let configs = chain.to_plugin_configs(48000.0);
 
+        // Gain is disabled, so it's excluded from configs
         // Engine order: InputLM(0), Matrix(1), OutputLM(2)
-        // InputLM is a monitoring plugin moved to front, Matrix is processing, OutputLM is analyzer at end
         assert_eq!(configs.len(), 3);
         assert_eq!(configs[0].plugin_type, "loudness_monitor"); // input monitor
         assert_eq!(configs[1].plugin_type, "matrix"); // processing
@@ -4084,10 +4199,12 @@ mod tests {
 
         // UI index 0 (input LM) → engine index 0
         assert_eq!(chain.get_engine_index(0), Some(0));
-        // UI index 1 (Matrix, processing) → engine index 1 (after input monitor)
-        assert_eq!(chain.get_engine_index(1), Some(1));
-        // UI index 2 (output LM) → engine index 2 (after processing)
-        assert_eq!(chain.get_engine_index(2), Some(2));
+        // UI index 1 (Gain, disabled) → None (not in engine)
+        assert_eq!(chain.get_engine_index(1), None);
+        // UI index 2 (Matrix) → engine index 1
+        assert_eq!(chain.get_engine_index(2), Some(1));
+        // UI index 3 (output LM) → engine index 2
+        assert_eq!(chain.get_engine_index(3), Some(2));
     }
 
     #[test]
@@ -4096,38 +4213,41 @@ mod tests {
 
         // Insert a user EQ plugin at the user insert point (before Matrix)
         let insert_idx = chain.user_plugin_insert_index();
-        assert_eq!(insert_idx, 1); // Before Matrix
+        assert_eq!(insert_idx, 2); // Before Matrix (after InputLM and Gain)
         chain.insert_plugin(insert_idx, &PluginType::EQ);
 
-        // Chain should be [InputLM, EQ, Matrix, OutputLM]
-        assert_eq!(chain.len(), 4);
+        // Chain should be [InputLM, Gain(disabled), EQ, Matrix, OutputLM]
+        assert_eq!(chain.len(), 5);
         assert!(matches!(
             chain.plugins()[0].plugin_type(),
             PluginType::LoudnessMonitor
         ));
-        assert!(matches!(chain.plugins()[1].plugin_type(), PluginType::EQ));
+        assert!(matches!(chain.plugins()[1].plugin_type(), PluginType::Gain));
+        assert!(matches!(chain.plugins()[2].plugin_type(), PluginType::EQ));
         assert!(matches!(
-            chain.plugins()[2].plugin_type(),
+            chain.plugins()[3].plugin_type(),
             PluginType::Matrix
         ));
         assert!(matches!(
-            chain.plugins()[3].plugin_type(),
+            chain.plugins()[4].plugin_type(),
             PluginType::LoudnessMonitor
         ));
 
         // Monitor identification still correct
         assert!(chain.is_input_monitor(0));
-        assert!(!chain.is_input_monitor(1));
-        assert!(!chain.is_output_monitor(2));
-        assert!(chain.is_output_monitor(3));
+        assert!(!chain.is_input_monitor(2));
+        assert!(!chain.is_output_monitor(3));
+        assert!(chain.is_output_monitor(4));
 
+        // Gain is disabled, so not in engine configs
         // Engine indices: InputLM(0), EQ(1), Matrix(2), OutputLM(3)
         assert_eq!(chain.get_engine_index(0), Some(0)); // input monitor
-        assert_eq!(chain.get_engine_index(1), Some(1)); // EQ (processing)
-        assert_eq!(chain.get_engine_index(2), Some(2)); // Matrix (processing)
-        assert_eq!(chain.get_engine_index(3), Some(3)); // output monitor
+        assert_eq!(chain.get_engine_index(1), None); // Gain (disabled)
+        assert_eq!(chain.get_engine_index(2), Some(1)); // EQ (processing)
+        assert_eq!(chain.get_engine_index(3), Some(2)); // Matrix (processing)
+        assert_eq!(chain.get_engine_index(4), Some(3)); // output monitor
 
-        // to_plugin_configs order: InputLM, EQ, Matrix, OutputLM
+        // to_plugin_configs order: InputLM, EQ, Matrix, OutputLM (Gain excluded)
         let configs = chain.to_plugin_configs(48000.0);
         assert_eq!(configs.len(), 4);
         assert_eq!(configs[0].plugin_type, "loudness_monitor");

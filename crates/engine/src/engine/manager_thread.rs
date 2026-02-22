@@ -443,7 +443,7 @@ fn run_manager_thread(
     )?;
 
     // Determine actual output channel count by loading plugin chain first
-    let actual_output_channels = if !config.plugins.is_empty() {
+    let mut actual_output_channels = if !config.plugins.is_empty() {
         log::info!(
             "[Manager Thread] Loading initial plugin chain ({} plugins)...",
             config.plugins.len()
@@ -523,6 +523,18 @@ fn run_manager_thread(
     } else {
         config.output_channels
     };
+
+    // Cap playback channels to config.output_channels (validated against device max by the app).
+    // The playback thread has robust N→2 downmix code that handles the mismatch when the
+    // processing chain outputs more channels than the hardware stream supports.
+    if actual_output_channels > config.output_channels && config.output_channels > 0 {
+        log::info!(
+            "[Manager Thread] Clamping playback from {} to {} channels (config limit)",
+            actual_output_channels,
+            config.output_channels
+        );
+        actual_output_channels = config.output_channels;
+    }
 
     log::warn!(
         "[Manager Thread] CREATING playback thread with {} channels",

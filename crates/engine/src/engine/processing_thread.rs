@@ -925,9 +925,22 @@ fn create_plugin(
             } else if let (Some(in_ch), Some(out_ch)) =
                 (params.input_channels, params.output_channels)
             {
-                // Dense mapping (legacy)
-                MatrixPlugin::with_matrix(in_ch, out_ch, params.matrix)
-                    .map_err(|e| format!("Failed to create matrix plugin: {}", e))?
+                // Auto-resize matrix when file channel count differs from config
+                // (e.g., matrix was 2x2 from stereo session, now playing 5.1)
+                if in_ch != channels || out_ch != channels {
+                    log::info!(
+                        "[create_plugin:matrix] Resizing matrix from {}x{} to {}x{} to match chain",
+                        in_ch, out_ch, channels, channels
+                    );
+                    let mut matrix = params.matrix;
+                    crate::plugins::resize_matrix(&mut matrix, in_ch, out_ch, channels, channels);
+                    MatrixPlugin::with_matrix(channels, channels, matrix)
+                        .map_err(|e| format!("Failed to create resized matrix plugin: {}", e))?
+                } else {
+                    // Dense mapping (legacy)
+                    MatrixPlugin::with_matrix(in_ch, out_ch, params.matrix)
+                        .map_err(|e| format!("Failed to create matrix plugin: {}", e))?
+                }
             } else {
                 return Err(
                     "Matrix plugin requires either (input_channels, output_channels) \
@@ -936,7 +949,17 @@ fn create_plugin(
                 );
             };
 
-            if let Some(states) = params.channel_states {
+            if let Some(mut states) = params.channel_states {
+                // Resize channel_states if it doesn't match the plugin's output channels
+                let needed = plugin.output_channels();
+                if states.len() != needed {
+                    log::info!(
+                        "[Engine] Resizing channel_states from {} to {} entries",
+                        states.len(),
+                        needed
+                    );
+                    states.resize(needed, sotf_plugins::ChannelState::default());
+                }
                 log::debug!(
                     "[Engine] Matrix Plugin created with channel_states: {:?}",
                     states
