@@ -246,6 +246,8 @@ pub struct NumberInputTheme {
 /// Number input size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NumberInputSize {
+    /// Extra small size
+    Xs,
     /// Small size
     Sm,
     /// Medium size (default)
@@ -258,7 +260,8 @@ pub enum NumberInputSize {
 impl From<crate::ComponentSize> for NumberInputSize {
     fn from(size: crate::ComponentSize) -> Self {
         match size {
-            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
             crate::ComponentSize::Md => Self::Md,
             crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
         }
@@ -268,6 +271,7 @@ impl From<crate::ComponentSize> for NumberInputSize {
 impl NumberInputSize {
     fn height(&self) -> f32 {
         match self {
+            Self::Xs => 20.0,
             Self::Sm => 24.0,
             Self::Md => 32.0,
             Self::Lg => 40.0,
@@ -276,6 +280,7 @@ impl NumberInputSize {
 
     fn button_width(&self) -> f32 {
         match self {
+            Self::Xs => 16.0,
             Self::Sm => 20.0,
             Self::Md => 28.0,
             Self::Lg => 36.0,
@@ -284,6 +289,7 @@ impl NumberInputSize {
 
     fn font_size(&self) -> f32 {
         match self {
+            Self::Xs => 10.0,
             Self::Sm => 11.0,
             Self::Md => 13.0,
             Self::Lg => 15.0,
@@ -292,6 +298,7 @@ impl NumberInputSize {
 
     fn padding(&self) -> f32 {
         match self {
+            Self::Xs => 2.0,
             Self::Sm => 4.0,
             Self::Md => 8.0,
             Self::Lg => 12.0,

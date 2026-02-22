@@ -71,6 +71,8 @@ pub struct SelectTheme {
 /// Select size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectSize {
+    /// Extra small
+    Xs,
     /// Small
     Sm,
     /// Medium (default)
@@ -83,7 +85,8 @@ pub enum SelectSize {
 impl From<crate::ComponentSize> for SelectSize {
     fn from(size: crate::ComponentSize) -> Self {
         match size {
-            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
             crate::ComponentSize::Md => Self::Md,
             crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
         }
@@ -236,6 +239,7 @@ impl Select {
     /// Build into element
     fn build(self, theme: &SelectTheme) -> Div {
         let (py, _text_size_class) = match self.size {
+            SelectSize::Xs => (px(2.0), "xs"),
             SelectSize::Sm => (px(4.0), "sm"),
             SelectSize::Md => (px(8.0), "md"),
             SelectSize::Lg => (px(12.0), "lg"),
@@ -289,6 +293,7 @@ impl Select {
 
         // Apply text size
         trigger = match self.size {
+            SelectSize::Xs => trigger.text_xs(),
             SelectSize::Sm => trigger.text_xs(),
             SelectSize::Md => trigger.text_sm(),
             SelectSize::Lg => trigger,
@@ -431,6 +436,7 @@ impl Select {
 
                 // Apply text size
                 option_el = match self.size {
+                    SelectSize::Xs => option_el.text_xs(),
                     SelectSize::Sm => option_el.text_xs(),
                     SelectSize::Md => option_el.text_sm(),
                     SelectSize::Lg => option_el,

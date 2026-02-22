@@ -240,6 +240,8 @@ pub struct InputTheme {
 /// Input size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputSize {
+    /// Extra small input
+    Xs,
     /// Small input
     Sm,
     /// Medium input (default)
@@ -252,7 +254,8 @@ pub enum InputSize {
 impl From<crate::ComponentSize> for InputSize {
     fn from(size: crate::ComponentSize) -> Self {
         match size {
-            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
             crate::ComponentSize::Md => Self::Md,
             crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
         }
@@ -750,6 +753,7 @@ impl RenderOnce for Input {
         let theme = InputTheme::from(&global_theme);
 
         let (py, _text_size_class) = match self.size {
+            InputSize::Xs => (px(2.0), "text_xs"),
             InputSize::Sm => (px(4.0), "text_xs"),
             InputSize::Md => (px(8.0), "text_sm"),
             InputSize::Lg => (px(12.0), "text_base"),
@@ -1165,6 +1169,7 @@ impl RenderOnce for Input {
 
         // Apply text size
         text_el = match self.size {
+            InputSize::Xs => text_el.text_xs(),
             InputSize::Sm => text_el.text_xs(),
             InputSize::Md => text_el.text_sm(),
             InputSize::Lg => text_el,
