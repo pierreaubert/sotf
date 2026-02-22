@@ -37,3 +37,8 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [x] **Track: RoomEQ Docs & Schema Update**
 *Link: [./tracks/roomeq_docs_update_20260209/](./tracks/roomeq_docs_update_20260209/)*
+
+---
+
+- [ ] **Track: FFT plugins (Upmixer, XTC) sound quality and algorithmic correctness fix.**
+*Link: [./tracks/fft_plugins_correctness_20260222/](./tracks/fft_plugins_correctness_20260222/)*
