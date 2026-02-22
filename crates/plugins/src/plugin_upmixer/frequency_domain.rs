@@ -353,6 +353,22 @@ impl UpmixerPlugin {
             }
         }
 
+        // Cross-fade decorrelation filters during mode/bypass transitions
+        if self.decorrelation_crossfade_remaining > 0 {
+            let total = 5.0_f32;
+            let t = 1.0 - (self.decorrelation_crossfade_remaining as f32 / total);
+            for ch in 0..num_ch {
+                if ch < self.prev_blended_filters_for_crossfade.len() {
+                    let prev = &self.prev_blended_filters_for_crossfade[ch];
+                    let cur = &mut self.blended_decorrelation_filters[ch];
+                    for i in 0..spec_size {
+                        cur[i] = prev[i] * (1.0 - t) + cur[i] * t;
+                    }
+                }
+            }
+            self.decorrelation_crossfade_remaining -= 1;
+        }
+
         self.coherence_history_idx = self.coherence_history_idx.wrapping_add(1);
         // Note: FTZ/DAZ CPU flags handle denormal flushing automatically
         self.smooth_height_gains();

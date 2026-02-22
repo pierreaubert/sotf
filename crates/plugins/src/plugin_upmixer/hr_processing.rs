@@ -6,27 +6,16 @@ use super::UpmixerPlugin;
 use rustfft::num_complex::Complex;
 
 impl UpmixerPlugin {
-    /// Process one high-resolution FFT block for transient enhancement
-    ///
-    /// This function performs:
-    /// 1. Windowing and forward FFT (shorter FFT for better time resolution)
-    /// 2. High-frequency direct-path extraction (above bandpass_hz)
-    /// 3. Per-channel VBAP panning (front speakers only)
-    /// 4. Inverse FFT and scaling
-    ///
-    /// The HR path is used to enhance transient reproduction by processing
-    /// with higher time resolution (smaller FFT) than the main path.
-    pub(super) fn process_hr_block(&mut self, input: &[f32], output: &mut [f32]) {
-        // Verify sizes: stereo interleaved input, variable output channels
-        assert_eq!(input.len(), self.hr_fft_size * 2);
-        assert_eq!(output.len(), self.hr_fft_size * self.num_output_channels);
-
-        output.fill(0.0);
-
+    /// Run HR FFT processing: window, forward FFT, HF filtering, IFFT per channel.
+    /// Populates `hr_time_out_channels[ch]` with the per-channel time-domain results.
+    /// Does NOT scale or mix — the caller handles that.
+    fn process_hr_fft(&mut self, input: &[f32]) {
         // 1. Copy input to HR time-domain buffers and apply HR analysis window
+        // Apply the same -3 dB headroom scale (1/sqrt(2)) as the main path (fft.rs)
+        let headroom_scale = std::f32::consts::FRAC_1_SQRT_2;
         for i in 0..self.hr_fft_size {
             let idx = i * 2;
-            let window_val = self.hr_window[i];
+            let window_val = self.hr_window[i] * headroom_scale;
             self.hr_time_domain_left[i] = input[idx] * window_val;
             self.hr_time_domain_right[i] = input[idx + 1] * window_val;
         }
@@ -47,16 +36,7 @@ impl UpmixerPlugin {
         let hf_cut = self.bandpass_hz.max(1000.0);
         let hr_spectrum_size = self.hr_fft_size / 2 + 1;
 
-        // 4. Inverse FFT per-channel and write time-domain output
-        let fft_scale = 1.0 / self.hr_fft_size as f32;
-        let cola_scale = 2.0; // Hann with 50% overlap
-        let channel_normalization = 0.5; // Conservative mix factor for HR path
-        let combined_scale = fft_scale * cola_scale * channel_normalization;
-
         let gain_front_direct = self.gain_front_direct.current();
-        if gain_front_direct <= 0.0 {
-            return;
-        }
 
         // Only process front, non-LFE, non-height channels (cached during build)
         for &ch_idx in &self.cached_hr_active_channels {
@@ -71,10 +51,12 @@ impl UpmixerPlugin {
             }
 
             if gain_scale == 0.0 {
+                // Zero out this channel's HR output so stale data isn't mixed in
+                self.hr_time_out_channels[ch_idx].fill(0.0);
                 continue;
             }
 
-            // Optimization: Process bins only above cutoff and use gain_scale
+            // Process bins only above cutoff
             self.hr_temp_freq_out.fill(Complex::new(0.0, 0.0));
 
             for i in 0..hr_spectrum_size {
@@ -99,13 +81,54 @@ impl UpmixerPlugin {
                 )
                 .unwrap();
         }
+    }
 
-        // Re-interleave HR channels into the output block
-        // Only iterate over active HR channels (front, non-LFE, non-height)
-        for i in 0..self.hr_fft_size {
-            let out_idx = i * self.num_output_channels;
-            for &ch_idx in &self.cached_hr_active_channels {
-                output[out_idx + ch_idx] += self.hr_time_out_channels[ch_idx][i] * combined_scale;
+    /// Mix HR results into the main time_out_channels before output scaling.
+    /// This ensures the safety cap in extract_output_and_scale() accounts for
+    /// the combined main+HR energy, preventing uncontrolled peaks.
+    ///
+    /// Must be called after apply_vbap_panning_and_inverse_fft() and before
+    /// extract_output_and_scale().
+    pub(super) fn apply_hr_enhancement(&mut self, input: &[f32]) {
+        let hr_mix = (self.hr_transient_env
+            * self.hr_sharpen.current()
+            * self.hr_direct_envelope)
+            .clamp(0.0, 1.0);
+        if hr_mix < 0.01 || self.gain_front_direct.current() <= 0.0 {
+            return;
+        }
+
+        let center = (self.fft_size - self.hr_fft_size) / 2;
+        let start = center * 2;
+        let end = start + self.hr_fft_size * 2;
+        if end > input.len() {
+            return;
+        }
+
+        let hr_input = &input[start..end];
+        self.process_hr_fft(hr_input);
+
+        // Scale to match main path: (1/hr_fft_size) * 2.0 * (0.9/sqrt(2))
+        // This matches the main path's combined_scale from process.rs:70-71
+        // The result is then scaled by hr_mix to blend with the main path.
+        // Note: the main path's combined_scale is applied later in extract_output_and_scale,
+        // so we must apply the HR-equivalent scale here to get unity-matched levels.
+        let fft_scale = 1.0 / self.hr_fft_size as f32;
+        let cola_scale = 2.0;
+        let safety_headroom = 0.9 * std::f32::consts::FRAC_1_SQRT_2;
+        let hr_combined_scale = fft_scale * cola_scale * safety_headroom;
+
+        // Divide by the main path's combined_scale since extract_output_and_scale
+        // will multiply all of time_out_channels by that scale later.
+        // This ensures HR and main path have the same effective gain.
+        let main_fft_scale = 1.0 / self.fft_size as f32;
+        let main_combined_scale = main_fft_scale * 2.0 * safety_headroom;
+        let scale = (hr_combined_scale / main_combined_scale) * hr_mix;
+
+        for &ch in &self.cached_hr_active_channels {
+            for i in 0..self.hr_fft_size {
+                self.time_out_channels[ch][center + i] +=
+                    self.hr_time_out_channels[ch][i] * scale;
             }
         }
     }

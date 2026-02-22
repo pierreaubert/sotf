@@ -25,7 +25,7 @@ impl UpmixerPlugin {
 
         if self.bypass_transient_detection {
             self.hr_transient_env = 0.0;
-        } else if self.enable_hr_direct {
+        } else if self.enable_hr_direct || self.hr_direct_envelope > 0.0 {
             let spectrum_size = self.fft_size / 2 + 1;
             let mut flux = 0.0_f32;
             for i in 0..spectrum_size {
@@ -72,6 +72,13 @@ impl UpmixerPlugin {
 
         self.apply_vbap_panning_and_inverse_fft();
         self.apply_subharmonic_synthesis();
+
+        // Apply HR enhancement before output scaling so the safety cap
+        // can account for the combined main+HR energy
+        if self.hr_direct_envelope > 0.0 {
+            self.apply_hr_enhancement(input);
+        }
+
         self.extract_output_and_scale(output, combined_scale);
     }
 }

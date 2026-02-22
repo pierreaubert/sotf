@@ -89,7 +89,8 @@ impl UpmixerPlugin {
     /// Generates a configurable rumble tone modulated by the LFE envelope
     /// with smooth attack/release to prevent clicks and pops.
     pub(super) fn apply_subharmonic_synthesis(&mut self) {
-        if !self.enable_subharmonic_synth {
+        // When disabled, let the envelope release smoothly instead of hard-cutting
+        if !self.enable_subharmonic_synth && self.subharmonic_envelope < 1e-6 {
             return;
         }
 
@@ -122,7 +123,9 @@ impl UpmixerPlugin {
                 // Smooth envelope using soft threshold for click-free transitions
                 // Instead of hard threshold, use continuous envelope tracking
                 // that responds proportionally to input amplitude
-                let target_envelope = if lfe_amp < threshold - soft_knee {
+                let target_envelope = if !self.enable_subharmonic_synth {
+                    0.0 // Force release when disabled
+                } else if lfe_amp < threshold - soft_knee {
                     0.0
                 } else if lfe_amp > threshold + soft_knee {
                     1.0

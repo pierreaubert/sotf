@@ -377,33 +377,46 @@ mod upmixer_tests {
 
     #[test]
     fn test_hr_block_front_hf_direct_distribution() {
-        // Verify that the high-resolution path (process_hr_block) produces
-        // non-zero energy on front speakers for high-frequency coherent input
-        // while leaving non-front channels effectively silent.
+        // Verify that the high-resolution path produces non-zero energy
+        // on front speakers for high-frequency coherent input while leaving
+        // non-front channels effectively silent.
+        // Tests via apply_hr_enhancement which adds HR to time_out_channels.
 
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
+        plugin.enable_hr_direct = true;
+        plugin.hr_direct_envelope = 1.0;
+        plugin.hr_sharpen.set_target(1.0);
+        // Force transient envelope high so HR path is active
+        plugin.hr_transient_env = 1.0;
 
-        let hr_size = plugin.hr_fft_size;
-        let mut input = vec![0.0f32; hr_size * 2];
+        let fft_size = plugin.fft_size;
+        let mut input = vec![0.0f32; fft_size * 2];
 
         // 4 kHz coherent sine (L=R), safely above hf_cut (>= 1 kHz)
-        for i in 0..hr_size {
+        for i in 0..fft_size {
             let t = i as f32 / 44100.0;
             let s = (2.0 * std::f32::consts::PI * 4000.0 * t).sin() * 0.5;
             input[i * 2] = s;
             input[i * 2 + 1] = s;
         }
 
-        let mut output = vec![0.0f32; hr_size * plugin.num_output_channels];
-        plugin.process_hr_block(&input, &mut output);
+        // Clear time_out_channels first
+        for ch_buf in plugin.time_out_channels.iter_mut() {
+            ch_buf.fill(0.0);
+        }
 
+        // Apply HR enhancement (adds to time_out_channels)
+        plugin.apply_hr_enhancement(&input);
+
+        // Measure per-channel energy in the HR region (center 512 samples)
+        let center = (fft_size - plugin.hr_fft_size) / 2;
         let mut energies = vec![0.0f32; plugin.num_output_channels];
-        for i in 0..hr_size {
-            for ch in 0..plugin.num_output_channels {
-                energies[ch] += output[i * plugin.num_output_channels + ch].powi(2);
+        for ch in 0..plugin.num_output_channels {
+            for i in center..center + plugin.hr_fft_size {
+                energies[ch] += plugin.time_out_channels[ch][i].powi(2);
             }
         }
 
@@ -1626,7 +1639,7 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
         plugin.enable_hr_direct = true;
-        plugin.hr_sharpen = 1.0;
+        plugin.hr_sharpen.set_target(1.0);
 
         let buffer_size = 1024;
         let context = ProcessContext {

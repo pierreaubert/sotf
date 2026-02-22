@@ -127,7 +127,7 @@ pub struct UpmixerPlugin {
     param_enable_hr_direct: ParameterId,
     enable_hr_direct: bool,
     param_hr_sharpen: ParameterId,
-    hr_sharpen: f32,
+    hr_sharpen: Smoother,
 
     /// Safety cap on upmixer output peak (in dB)
     param_safety_cap_db: ParameterId,
@@ -381,10 +381,11 @@ pub struct UpmixerPlugin {
     hr_freq_domain_right: Vec<Complex<f32>>,
     /// Per-channel HR output buffers in frequency/time domain
     hr_time_out_channels: Vec<Vec<f32>>,
-    /// Temporary block buffer for HR output mixing
-    hr_output_block: Vec<f32>,
     /// Next position to add a HR block in the shared accumulator (reserved)
     hr_next_add_position: usize,
+
+    /// Smooth envelope for enable_hr_direct toggle (0.0=off, 1.0=on)
+    hr_direct_envelope: f32,
 
     hr_transient_env: f32,
     hr_energy_smooth: f32,
@@ -408,6 +409,20 @@ pub struct UpmixerPlugin {
     prev_decorrelation_strength: f32,
     /// Pre-calculated blended decorrelation filters (one per channel)
     pub(super) blended_decorrelation_filters: Vec<Vec<Complex<f32>>>,
+
+    /// Smoother for lfe_cutoff_hz to prevent clicks when changing crossover frequency
+    lfe_cutoff_hz_smoother: Smoother,
+    /// Smoother for bandpass_hz to prevent clicks when changing upmix crossover
+    bandpass_hz_smoother: Smoother,
+    /// Smoother for height_hf_cap_hz to prevent clicks when changing height HF cap
+    height_hf_cap_hz_smoother: Smoother,
+    /// Smoother for safety_cap_db to prevent clicks when changing safety cap
+    safety_cap_db_smoother: Smoother,
+
+    /// Cross-fade counter for decorrelation mode/bypass transitions (blocks remaining)
+    decorrelation_crossfade_remaining: usize,
+    /// Saved blended filters for cross-fading during decorrelation transitions
+    prev_blended_filters_for_crossfade: Vec<Vec<Complex<f32>>>,
 }
 
 impl UpmixerPlugin {
@@ -567,7 +582,7 @@ impl UpmixerPlugin {
             param_enable_hr_direct: ParameterId::from("enable_hr_direct"),
             enable_hr_direct: true, // Enable by default for multi-resolution analysis
             param_hr_sharpen: ParameterId::from("hr_sharpen"),
-            hr_sharpen: 1.0,
+            hr_sharpen: Smoother::new(1.0, 5.0, sample_rate),
             param_safety_cap_db: ParameterId::from("safety_cap_db"),
             safety_cap_db: default_safety_cap_db(),
             prev_safety_scale: 1.0, // Start with no gain reduction
@@ -740,9 +755,9 @@ impl UpmixerPlugin {
             hr_freq_domain_left: vec![zero_complex; hr_spectrum_size],
             hr_freq_domain_right: vec![zero_complex; hr_spectrum_size],
             hr_time_out_channels: vec![vec![0.0; hr_fft_size]; num_output_channels],
-            hr_output_block: vec![0.0; hr_fft_size * num_output_channels],
             hr_next_add_position: 0,
 
+            hr_direct_envelope: 1.0, // HR enabled by default
             hr_transient_env: 0.0,
             hr_energy_smooth: 0.0,
             prev_magnitude_spectrum: vec![0.0; spectrum_size],
@@ -755,6 +770,14 @@ impl UpmixerPlugin {
             decorrelation_strength: 1.0,
             prev_decorrelation_strength: -1.0, // Force initial computation
             blended_decorrelation_filters: Vec::new(),
+
+            lfe_cutoff_hz_smoother: Smoother::new(lfe_cutoff_hz, 5.0, sample_rate),
+            bandpass_hz_smoother: Smoother::new(bandpass_hz, 5.0, sample_rate),
+            height_hf_cap_hz_smoother: Smoother::new(default_height_hf_cap_hz(), 5.0, sample_rate),
+            safety_cap_db_smoother: Smoother::new(default_safety_cap_db(), 5.0, sample_rate),
+
+            decorrelation_crossfade_remaining: 0,
+            prev_blended_filters_for_crossfade: Vec::new(),
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
@@ -781,8 +804,10 @@ impl UpmixerPlugin {
         );
         plugin.center_spread.set_target(params.center_spread.clamp(0.0, 1.0));
         plugin.enable_hr_direct = params.enable_hr_direct;
-        plugin.hr_sharpen = params.hr_sharpen.clamp(0.0, 1.0);
+        plugin.hr_direct_envelope = if params.enable_hr_direct { 1.0 } else { 0.0 };
+        plugin.hr_sharpen.set_target(params.hr_sharpen.clamp(0.0, 1.0));
         plugin.safety_cap_db = params.safety_cap_db.max(0.0);
+        plugin.safety_cap_db_smoother.set_target(params.safety_cap_db.max(0.0));
         plugin.update_safety_cap_cache();
         plugin.decorrelation_mode = params.decorrelation_mode;
 
@@ -798,6 +823,7 @@ impl UpmixerPlugin {
 
         // Height channel parameters
         plugin.height_hf_cap_hz = params.height_hf_cap_hz.clamp(8000.0, 20000.0);
+        plugin.height_hf_cap_hz_smoother.set_target(params.height_hf_cap_hz.clamp(8000.0, 20000.0));
         plugin.height_transient_reduction.set_target(params.height_transient_reduction.clamp(0.0, 1.0));
         plugin.height_direct_leak.set_target(params.height_direct_leak.clamp(0.0, 0.5));
 
@@ -1412,9 +1438,7 @@ Weights are normalized internally so they always sum to 1.0.",
             && let Some(cutoff) = value.as_float()
         {
             if (20.0..=180.0).contains(&cutoff) && cutoff < self.bandpass_hz {
-                self.lfe_cutoff_hz = cutoff;
-                self.update_crossover_gains();
-                self.recache_bin_indices();
+                self.lfe_cutoff_hz_smoother.set_target(cutoff);
                 return Ok(());
             }
             return Err(
@@ -1434,9 +1458,7 @@ Weights are normalized internally so they always sum to 1.0.",
             && let Some(freq) = value.as_float()
         {
             if freq > self.lfe_cutoff_hz {
-                self.bandpass_hz = freq;
-                self.precompute_height_freq_weights();
-                self.recache_bin_indices();
+                self.bandpass_hz_smoother.set_target(freq);
                 return Ok(());
             }
             return Err("Bandpass frequency must be greater than LFE cutoff".to_string());
@@ -1462,16 +1484,22 @@ Weights are normalized internally so they always sum to 1.0.",
             && let Some(sharpen) = value.as_float()
         {
             if (0.0..=1.0).contains(&sharpen) {
-                self.hr_sharpen = sharpen;
+                self.hr_sharpen.set_target(sharpen);
                 return Ok(());
             }
             return Err("HR sharpen must be between 0.0 and 1.0".to_string());
         } else if id == self.param_decorrelation_mode {
             if let Some(mode) = value.as_int() {
                 if mode == 0 || mode == 1 {
+                    // Save current blended filters for crossfade
+                    if !self.blended_decorrelation_filters.is_empty() {
+                        self.prev_blended_filters_for_crossfade =
+                            self.blended_decorrelation_filters.clone();
+                        self.decorrelation_crossfade_remaining = 5;
+                    }
                     self.decorrelation_mode = mode as usize;
-                    // Re-generate filters when mode changes
                     self.generate_decorrelation_filters();
+                    self.prev_decorrelation_strength = -1.0; // Force reblend
                     return Ok(());
                 }
                 return Err("Invalid decorrelation mode".to_string());
@@ -1480,8 +1508,7 @@ Weights are normalized internally so they always sum to 1.0.",
             && let Some(val) = value.as_float()
         {
             if (0.0..=3.0).contains(&val) {
-                self.safety_cap_db = val;
-                self.update_safety_cap_cache();
+                self.safety_cap_db_smoother.set_target(val);
                 return Ok(());
             }
             return Err("Safety cap must be between 0.0 and 3.0 dB".to_string());
@@ -1535,8 +1562,7 @@ Weights are normalized internally so they always sum to 1.0.",
         else if id == self.param_height_hf_cap_hz
             && let Some(val) = value.as_float()
         {
-            self.height_hf_cap_hz = val.clamp(8000.0, 20000.0);
-            self.precompute_height_freq_weights();
+            self.height_hf_cap_hz_smoother.set_target(val.clamp(8000.0, 20000.0));
             return Ok(());
         } else if id == self.param_height_transient_reduction
             && let Some(val) = value.as_float()
@@ -1611,8 +1637,15 @@ Weights are normalized internally so they always sum to 1.0.",
             return Ok(());
         } else if id == self.param_bypass_decorrelation {
             if let Some(enable) = value.as_bool() {
+                // Save current blended filters for crossfade
+                if !self.blended_decorrelation_filters.is_empty() {
+                    self.prev_blended_filters_for_crossfade =
+                        self.blended_decorrelation_filters.clone();
+                    self.decorrelation_crossfade_remaining = 5;
+                }
                 self.bypass_decorrelation = enable;
                 self.generate_decorrelation_filters();
+                self.prev_decorrelation_strength = -1.0; // Force reblend
                 return Ok(());
             }
         } else if id == self.param_bypass_transient_detection {
@@ -1656,13 +1689,13 @@ Weights are normalized internally so they always sum to 1.0.",
         } else if id == &self.param_lfe_gain {
             Some(ParameterValue::Float(self.lfe_gain.target()))
         } else if id == &self.param_lfe_cutoff_hz {
-            Some(ParameterValue::Float(self.lfe_cutoff_hz))
+            Some(ParameterValue::Float(self.lfe_cutoff_hz_smoother.target()))
         } else if id == &self.param_stereo_width {
             Some(ParameterValue::Float(self.stereo_width.target()))
         } else if id == &self.param_center_spread {
             Some(ParameterValue::Float(self.center_spread.target()))
         } else if id == &self.param_bandpass_hz {
-            Some(ParameterValue::Float(self.bandpass_hz))
+            Some(ParameterValue::Float(self.bandpass_hz_smoother.target()))
         } else if id == &self.param_enable_subharmonic_synth {
             Some(ParameterValue::Bool(self.enable_subharmonic_synth))
         } else if id == &self.param_subharmonic_gain {
@@ -1670,9 +1703,9 @@ Weights are normalized internally so they always sum to 1.0.",
         } else if id == &self.param_enable_hr_direct {
             Some(ParameterValue::Bool(self.enable_hr_direct))
         } else if id == &self.param_hr_sharpen {
-            Some(ParameterValue::Float(self.hr_sharpen))
+            Some(ParameterValue::Float(self.hr_sharpen.target()))
         } else if id == &self.param_safety_cap_db {
-            Some(ParameterValue::Float(self.safety_cap_db))
+            Some(ParameterValue::Float(self.safety_cap_db_smoother.target()))
         }
         // Sub-harmonic synthesis parameters
         else if id == &self.param_subharmonic_freq_hz {
@@ -1692,7 +1725,7 @@ Weights are normalized internally so they always sum to 1.0.",
         }
         // Height channel parameters
         else if id == &self.param_height_hf_cap_hz {
-            Some(ParameterValue::Float(self.height_hf_cap_hz))
+            Some(ParameterValue::Float(self.height_hf_cap_hz_smoother.target()))
         } else if id == &self.param_height_transient_reduction {
             Some(ParameterValue::Float(self.height_transient_reduction.target()))
         } else if id == &self.param_height_direct_leak {
@@ -1798,6 +1831,11 @@ Weights are normalized internally so they always sum to 1.0.",
         self.rear_late_reflection.set_time(time_ms, sample_rate);
         self.height_direct_leak.set_time(time_ms, sample_rate);
         self.height_transient_reduction.set_time(time_ms, sample_rate);
+        self.hr_sharpen.set_time(time_ms, sample_rate);
+        self.lfe_cutoff_hz_smoother.set_time(time_ms, sample_rate);
+        self.bandpass_hz_smoother.set_time(time_ms, sample_rate);
+        self.height_hf_cap_hz_smoother.set_time(time_ms, sample_rate);
+        self.safety_cap_db_smoother.set_time(time_ms, sample_rate);
 
         // Set FTZ/DAZ CPU flags once at initialization so the processing thread inherits
         // them for all subsequent process() calls. This avoids calling enable_ftz_daz()
@@ -1916,6 +1954,53 @@ Weights are normalized internally so they always sum to 1.0.",
         self.rear_late_reflection.next();
         self.height_direct_leak.next();
         self.height_transient_reduction.next();
+        self.hr_sharpen.next();
+
+        // Update frequency/table-generating parameter smoothers and regenerate tables if changed
+        {
+            let prev_lfe = self.lfe_cutoff_hz;
+            let prev_bp = self.bandpass_hz;
+            let prev_hf = self.height_hf_cap_hz;
+            let prev_sc = self.safety_cap_db;
+
+            let new_lfe = self.lfe_cutoff_hz_smoother.next();
+            let new_bp = self.bandpass_hz_smoother.next();
+            let new_hf = self.height_hf_cap_hz_smoother.next();
+            let new_sc = self.safety_cap_db_smoother.next();
+
+            if (new_lfe - prev_lfe).abs() > 0.01 {
+                self.lfe_cutoff_hz = new_lfe;
+                self.update_crossover_gains();
+                self.recache_bin_indices();
+            }
+            if (new_bp - prev_bp).abs() > 0.01 {
+                self.bandpass_hz = new_bp;
+                self.precompute_height_freq_weights();
+                self.recache_bin_indices();
+            }
+            if (new_hf - prev_hf).abs() > 0.1 {
+                self.height_hf_cap_hz = new_hf;
+                self.precompute_height_freq_weights();
+            }
+            if (new_sc - prev_sc).abs() > 0.001 {
+                self.safety_cap_db = new_sc;
+                self.update_safety_cap_cache();
+            }
+        }
+
+        // Update HR direct envelope for smooth enable/disable transitions
+        {
+            let hr_target = if self.enable_hr_direct { 1.0 } else { 0.0 };
+            let hr_alpha = if hr_target > self.hr_direct_envelope {
+                0.1
+            } else {
+                0.05
+            };
+            self.hr_direct_envelope += hr_alpha * (hr_target - self.hr_direct_envelope);
+            if self.hr_direct_envelope < 1e-4 {
+                self.hr_direct_envelope = 0.0;
+            }
+        }
 
         // If bypass is enabled, just copy stereo input to output and return
         if self.bypass_all_processing {
@@ -2003,33 +2088,6 @@ Weights are normalized internally so they always sum to 1.0.",
                 let temp_input = std::mem::take(&mut self.temp_input_block);
                 let mut output_block = std::mem::take(&mut self.output_block);
                 self.process_fft_block(&temp_input, &mut output_block);
-
-                if self.enable_hr_direct && self.gain_front_direct.current() > 0.0 {
-                    let hr_mix = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
-                    if hr_mix > 0.01 {
-                        let center = (self.fft_size - self.hr_fft_size) / 2;
-                        let start = center * 2;
-                        let end = start + self.hr_fft_size * 2;
-
-                        if end <= temp_input.len() {
-                            let hr_input = &temp_input[start..end];
-                            let mut hr_output = std::mem::take(&mut self.hr_output_block);
-                            self.process_hr_block(hr_input, &mut hr_output);
-
-                            for i in 0..self.hr_fft_size {
-                                let dst_idx = (center + i) * self.num_output_channels;
-                                let src_idx = i * self.num_output_channels;
-                                let window_val = self.hr_window[i];
-                                let scaled_mix = hr_mix * window_val;
-                                for ch in 0..self.num_output_channels {
-                                    output_block[dst_idx + ch] +=
-                                        hr_output[src_idx + ch] * scaled_mix;
-                                }
-                            }
-                            self.hr_output_block = hr_output;
-                        }
-                    }
-                }
 
                 self.temp_input_block = temp_input;
 

@@ -8,7 +8,7 @@ impl UpmixerPlugin {
     #[inline]
     pub(super) fn apply_vbap_panning_and_inverse_fft(&mut self) {
         let spectrum_size = self.fft_size / 2 + 1;
-        let hr_mix = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
+        let hr_mix = (self.hr_transient_env * self.hr_sharpen.current() * self.hr_direct_envelope).clamp(0.0, 1.0);
 
         let gfd = self.gain_front_direct.current();
         let gfa = self.gain_front_ambient.current();
