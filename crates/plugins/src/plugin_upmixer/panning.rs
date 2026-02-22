@@ -35,7 +35,9 @@ impl UpmixerPlugin {
                     if gfd == 0.0 && gra == 0.0 {
                         0.0
                     } else {
-                        self.surround_direct_bleed.current()
+                        // Reduce bleed for coherent signals to prevent voice leakage
+                        let bleed_scale = (1.0 - self.dialogue_probability * 0.8).clamp(0.1, 1.0);
+                        self.surround_direct_bleed.current() * bleed_scale
                     }
                 };
                 let mut ag = if is_f && !is_h {
@@ -56,36 +58,44 @@ impl UpmixerPlugin {
 
                 if is_h {
                     // Pre-compute scalar products outside inner loop
-                    let pld_dl = pld * self.height_direct_leak.current();
-                    let prd_dl = prd * self.height_direct_leak.current();
+                    // Reduce height direct leak for coherent signals
+                    let h_leak_scale = (1.0 - self.dialogue_probability * 0.9).clamp(0.05, 1.0);
+                    let pld_dl = pld * self.height_direct_leak.current() * h_leak_scale;
+                    let prd_dl = prd * self.height_direct_leak.current() * h_leak_scale;
                     let dec = &self.blended_decorrelation_filters[ch];
 
-                    // Resolve ambient channel swap outside inner loop for branch-free vectorization
-                    let (amb_l_gain, amb_r_gain) = if spk.azimuth > 0.0 {
-                        (pla, pra)
-                    } else {
-                        (pra, pla)
-                    };
-
                     if !is_f {
-                        let rlr = self.rear_late_reflection.current();
+                        let rlr = self.rear_late_reflection.current() * gra; // Scale by rear gain
+                        // For non-front height: use dominant ambient side to preserve separation
+                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0 {
+                            (&self.ambient_left, &self.ambient_right, pla, pra)
+                        } else {
+                            (&self.ambient_right, &self.ambient_left, pra, pla)
+                        };
+
                         for i in 0..spectrum_size {
                             let d_comp =
                                 self.direct_left[i] * pld_dl + self.direct_right[i] * prd_dl;
-                            let a_mono = self.ambient_left[i] * amb_l_gain
-                                + self.ambient_right[i] * amb_r_gain;
-                            let a_comp = a_mono * dec[i]
+                            // Stereo-preserving ambient sum: mix primary and secondary sides
+                            let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
+                            let a_comp = a_stereo * dec[i]
                                 + (self.direct_left[i] + self.direct_right[i]) * rlr;
                             self.temp_freq_out[i] =
                                 (d_comp + a_comp) * (hg * self.height_band_gains[i]);
                         }
                     } else {
+                        // For front height: use standard L/R mapping
+                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0 {
+                            (&self.ambient_left, &self.ambient_right, pla, pra)
+                        } else {
+                            (&self.ambient_right, &self.ambient_left, pra, pla)
+                        };
+
                         for i in 0..spectrum_size {
                             let d_comp =
                                 self.direct_left[i] * pld_dl + self.direct_right[i] * prd_dl;
-                            let a_mono = self.ambient_left[i] * amb_l_gain
-                                + self.ambient_right[i] * amb_r_gain;
-                            let a_comp = a_mono * dec[i];
+                            let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
+                            let a_comp = a_stereo * dec[i];
                             self.temp_freq_out[i] =
                                 (d_comp + a_comp) * (hg * self.height_band_gains[i]);
                         }
@@ -96,21 +106,36 @@ impl UpmixerPlugin {
                     } else {
                         1.0
                     };
-                    let plds = pld * ss;
-                    let prds = prd * ss;
+                    let plds = p_l * ss;
+                    let prds = p_r * ss;
+
+                    // Extra gain for the extracted center signal in the center speaker
+                    // MUST be scaled by gain_front_direct (dg for is_f speakers)
+                    let p_direct = if is_f && is_c { 1.414 * gfd } else { 0.0 };
+
                     if !is_f {
                         let dec = &self.blended_decorrelation_filters[ch];
+                        // Preserve stereo separation in surround ambient
+                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0 {
+                            (&self.ambient_left, &self.ambient_right, pla, pra)
+                        } else {
+                            (&self.ambient_right, &self.ambient_left, pra, pla)
+                        };
+
                         for i in 0..spectrum_size {
-                            let a_mono = self.ambient_left[i] * pla + self.ambient_right[i] * pra;
+                            let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
+                            // Surrounds get direct residues + decorrelated ambient
                             self.temp_freq_out[i] = (self.direct_left[i] * plds
                                 + self.direct_right[i] * prds)
-                                + a_mono * dec[i];
+                                + a_stereo * dec[i];
                         }
                     } else {
+                        // Front speakers: use standard L/R mix + extracted center
                         for i in 0..spectrum_size {
                             self.temp_freq_out[i] = (self.direct_left[i] * plds
                                 + self.direct_right[i] * prds)
-                                + (self.ambient_left[i] * pla + self.ambient_right[i] * pra);
+                                + (self.ambient_left[i] * pla + self.ambient_right[i] * pra)
+                                + (self.direct[i] * p_direct);
                         }
                     }
                 }

@@ -113,17 +113,7 @@ impl UpmixerPlugin {
         // The result is then scaled by hr_mix to blend with the main path.
         // Note: the main path's combined_scale is applied later in extract_output_and_scale,
         // so we must apply the HR-equivalent scale here to get unity-matched levels.
-        let fft_scale = 1.0 / self.hr_fft_size as f32;
-        let cola_scale = 2.0;
-        let safety_headroom = 0.9 * std::f32::consts::FRAC_1_SQRT_2;
-        let hr_combined_scale = fft_scale * cola_scale * safety_headroom;
-
-        // Divide by the main path's combined_scale since extract_output_and_scale
-        // will multiply all of time_out_channels by that scale later.
-        // This ensures HR and main path have the same effective gain.
-        let main_fft_scale = 1.0 / self.fft_size as f32;
-        let main_combined_scale = main_fft_scale * 2.0 * safety_headroom;
-        let scale = (hr_combined_scale / main_combined_scale) * hr_mix;
+        let scale = (self.fft_size as f32 / self.hr_fft_size as f32) * hr_mix;
 
         for &ch in &self.cached_hr_active_channels {
             for i in 0..self.hr_fft_size {

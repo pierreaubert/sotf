@@ -96,16 +96,16 @@ pub fn default_height_transient_reduction() -> f32 {
 }
 
 pub fn default_height_direct_leak() -> f32 {
-    0.15
+    0.05 // Reduced from 0.15 to prevent voice leakage
 }
 
 // Surround routing defaults
 pub fn default_surround_direct_bleed() -> f32 {
-    0.50
+    0.15 // Reduced from 0.50 to prevent voice leakage
 }
 
 pub fn default_rear_ambient_boost() -> f32 {
-    1.0 // Normalized from 1.2 to prevent excessive surround levels
+    1.0
 }
 
 pub fn default_rear_late_reflection() -> f32 {
@@ -160,7 +160,7 @@ pub fn default_dialogue_coherence_weight() -> f32 {
 }
 
 /// Configuration parameters for UpmixerPlugin
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpmixerPluginParams {
     #[serde(default = "default_fft_size")]
     pub fft_size: usize,
@@ -313,4 +313,50 @@ pub struct UpmixerPluginParams {
     /// Use this to test if the FFT/IFFT or overlap-add is causing artifacts
     #[serde(default = "default_bypass_all_processing")]
     pub bypass_all_processing: bool,
+}
+
+impl Default for UpmixerPluginParams {
+    fn default() -> Self {
+        Self {
+            fft_size: default_fft_size(),
+            speaker_config: default_speaker_config(),
+            gain_front_direct: default_gain_front_direct(),
+            gain_front_ambient: default_gain_front_ambient(),
+            gain_rear_ambient: default_gain_rear_ambient(),
+            lfe_cutoff_hz: default_lfe_cutoff_hz(),
+            stereo_width: default_stereo_width(),
+            bandpass_hz: default_bandpass_hz(),
+            center_spread: default_center_spread(),
+            height_gain: default_height_gain(),
+            lfe_gain: default_lfe_gain(),
+            enable_subharmonic_synth: false,
+            subharmonic_gain: default_subharmonic_gain(),
+            enable_hr_direct: default_enable_hr_direct(),
+            hr_sharpen: default_hr_sharpen(),
+            safety_cap_db: default_safety_cap_db(),
+            decorrelation_mode: 0,
+            subharmonic_freq_hz: default_subharmonic_freq_hz(),
+            subharmonic_attack_ms: default_subharmonic_attack_ms(),
+            subharmonic_release_ms: default_subharmonic_release_ms(),
+            decorrelation_lfo_rate_hz: default_decorrelation_lfo_rate_hz(),
+            velvet_noise_duration_ms: default_velvet_noise_duration_ms(),
+            velvet_noise_density: default_velvet_noise_density(),
+            height_hf_cap_hz: default_height_hf_cap_hz(),
+            height_transient_reduction: default_height_transient_reduction(),
+            height_direct_leak: default_height_direct_leak(),
+            surround_direct_bleed: default_surround_direct_bleed(),
+            rear_ambient_boost: default_rear_ambient_boost(),
+            rear_late_reflection: default_rear_late_reflection(),
+            ambient_boost: default_ambient_boost(),
+            dialogue_weight: default_dialogue_weight(),
+            voice_freq_min_hz: default_voice_freq_min_hz(),
+            voice_freq_max_hz: default_voice_freq_max_hz(),
+            dialogue_centroid_weight: default_dialogue_centroid_weight(),
+            dialogue_variance_weight: default_dialogue_variance_weight(),
+            dialogue_coherence_weight: default_dialogue_coherence_weight(),
+            bypass_decorrelation: default_bypass_decorrelation(),
+            bypass_transient_detection: default_bypass_transient_detection(),
+            bypass_all_processing: default_bypass_all_processing(),
+        }
+    }
 }

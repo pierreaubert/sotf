@@ -67,8 +67,7 @@ impl UpmixerPlugin {
         let _dialogue_prob = self.detect_dialogue();
         self.process_frequency_domain_erb_bands();
 
-        let fft_scale = 1.0 / self.fft_size as f32;
-        let combined_scale = fft_scale * 2.0 * (0.9 / 2.0_f32.sqrt()); // 2.0 for Hann COLA
+        let combined_scale = 1.0 / self.fft_size as f32;
 
         self.apply_vbap_panning_and_inverse_fft();
         self.apply_subharmonic_synthesis();

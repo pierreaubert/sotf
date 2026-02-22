@@ -423,6 +423,13 @@ pub struct UpmixerPlugin {
     decorrelation_crossfade_remaining: usize,
     /// Saved blended filters for cross-fading during decorrelation transitions
     prev_blended_filters_for_crossfade: Vec<Vec<Complex<f32>>>,
+
+    /// Per-sample limiter envelope (0.0..=1.0). Smooth attack and release.
+    limiter_envelope: f32,
+    /// Per-sample attack coefficient for the limiter (~0.2ms time constant).
+    limiter_attack_coeff: f32,
+    /// Per-sample release coefficient for the limiter (~50ms release).
+    limiter_release_coeff: f32,
 }
 
 impl UpmixerPlugin {
@@ -778,6 +785,10 @@ impl UpmixerPlugin {
 
             decorrelation_crossfade_remaining: 0,
             prev_blended_filters_for_crossfade: Vec::new(),
+
+            limiter_envelope: 1.0,
+            limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
+            limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
@@ -1837,6 +1848,9 @@ Weights are normalized internally so they always sum to 1.0.",
         self.height_hf_cap_hz_smoother.set_time(time_ms, sample_rate);
         self.safety_cap_db_smoother.set_time(time_ms, sample_rate);
 
+        self.limiter_attack_coeff = (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp();
+        self.limiter_release_coeff = (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp();
+
         // Set FTZ/DAZ CPU flags once at initialization so the processing thread inherits
         // them for all subsequent process() calls. This avoids calling enable_ftz_daz()
         // on every block in the hot path.
@@ -1938,23 +1952,24 @@ Weights are normalized internally so they always sum to 1.0.",
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        // Update smoothers once per block
-        self.gain_front_direct.next();
-        self.gain_front_ambient.next();
-        self.gain_rear_ambient.next();
-        self.height_gain.next();
-        self.lfe_gain.next();
-        self.subharmonic_gain.next();
-        self.stereo_width.next();
-        self.center_spread.next();
-        self.ambient_boost.next();
-        self.dialogue_weight.next();
-        self.surround_direct_bleed.next();
-        self.rear_ambient_boost.next();
-        self.rear_late_reflection.next();
-        self.height_direct_leak.next();
-        self.height_transient_reduction.next();
-        self.hr_sharpen.next();
+        let n = context.num_frames;
+        // Update smoothers by the number of frames in this block
+        self.gain_front_direct.next_n(n);
+        self.gain_front_ambient.next_n(n);
+        self.gain_rear_ambient.next_n(n);
+        self.height_gain.next_n(n);
+        self.lfe_gain.next_n(n);
+        self.subharmonic_gain.next_n(n);
+        self.stereo_width.next_n(n);
+        self.center_spread.next_n(n);
+        self.ambient_boost.next_n(n);
+        self.dialogue_weight.next_n(n);
+        self.surround_direct_bleed.next_n(n);
+        self.rear_ambient_boost.next_n(n);
+        self.rear_late_reflection.next_n(n);
+        self.height_direct_leak.next_n(n);
+        self.height_transient_reduction.next_n(n);
+        self.hr_sharpen.next_n(n);
 
         // Update frequency/table-generating parameter smoothers and regenerate tables if changed
         {
@@ -1963,10 +1978,10 @@ Weights are normalized internally so they always sum to 1.0.",
             let prev_hf = self.height_hf_cap_hz;
             let prev_sc = self.safety_cap_db;
 
-            let new_lfe = self.lfe_cutoff_hz_smoother.next();
-            let new_bp = self.bandpass_hz_smoother.next();
-            let new_hf = self.height_hf_cap_hz_smoother.next();
-            let new_sc = self.safety_cap_db_smoother.next();
+            let new_lfe = self.lfe_cutoff_hz_smoother.next_n(n);
+            let new_bp = self.bandpass_hz_smoother.next_n(n);
+            let new_hf = self.height_hf_cap_hz_smoother.next_n(n);
+            let new_sc = self.safety_cap_db_smoother.next_n(n);
 
             if (new_lfe - prev_lfe).abs() > 0.01 {
                 self.lfe_cutoff_hz = new_lfe;

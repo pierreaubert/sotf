@@ -196,16 +196,20 @@ impl UpmixerPlugin {
                     if norm > 1e-9 {
                         (c_xy / norm, Complex::new(v / norm, 0.0))
                     } else {
-                        (
-                            Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
-                            Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
-                        )
+                        // Fallback for ill-conditioned case: use energy-based bias
+                        if c_xx >= c_yy {
+                            (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
+                        } else {
+                            (Complex::new(0.0, 0.0), Complex::new(1.0, 0.0))
+                        }
                     }
                 } else {
-                    (
-                        Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
-                        Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
-                    )
+                    // No cross-correlation: principal component is the stronger channel
+                    if c_xx >= c_yy {
+                        (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0))
+                    } else {
+                        (Complex::new(0.0, 0.0), Complex::new(1.0, 0.0))
+                    }
                 };
 
                 let stereo_w = self.stereo_width.current();
@@ -234,13 +238,13 @@ impl UpmixerPlugin {
                         Complex::new(1.0, 0.0)
                     };
                     let aligned_r = direct_r * phase_correction.conj();
-                    let pca_center = (direct_l + aligned_r) * (eff_coh * 0.25);
+                    let pca_center = (direct_l + aligned_r) * (eff_coh * 0.5);
                     let pca_amb_l =
                         (l - direct_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
                     let pca_amb_r =
                         (r - direct_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
                     let pca_dl = l - pca_center * stereo_w;
-                    let pca_dr = r - pca_center * stereo_w;
+                    let pca_dr = r - pca_center * phase_correction * stereo_w;
 
                     // Blend: pass-through has center=0, ambient=0, direct=original
                     self.direct[i] = pca_center * t;
@@ -272,13 +276,13 @@ impl UpmixerPlugin {
                         Complex::new(1.0, 0.0)
                     };
                     let aligned_r = direct_r * phase_correction.conj();
-                    self.direct[i] = (direct_l + aligned_r) * (eff_coh * 0.25);
+                    self.direct[i] = (direct_l + aligned_r) * (eff_coh * 0.5);
                     self.ambient_left[i] =
                         (l - direct_l) * ambient_gain + (l - r) * (0.3 * ambient_gain);
                     self.ambient_right[i] =
                         (r - direct_r) * ambient_gain - (l - r) * (0.3 * ambient_gain);
                     self.direct_left[i] = l - self.direct[i] * stereo_w;
-                    self.direct_right[i] = r - self.direct[i] * stereo_w;
+                    self.direct_right[i] = r - self.direct[i] * phase_correction * stereo_w;
                     self.lfe[i] = Complex::new(0.0, 0.0);
                     in_e += l.norm_sqr() + r.norm_sqr();
                     out_e += self.direct[i].norm_sqr()
@@ -346,8 +350,14 @@ impl UpmixerPlugin {
                     self.blended_decorrelation_filters[ch].copy_from_slice(decor);
                 } else {
                     for i in 0..spec_size {
-                        self.blended_decorrelation_filters[ch][i] =
-                            Complex::new(strength * decor[i].re + id_w, strength * decor[i].im);
+                        let blended = Complex::new(strength * decor[i].re + id_w, strength * decor[i].im);
+                        // Normalize magnitude to 1.0 to preserve spectral balance (magnitude-preserving phase blend)
+                        let mag_sq = blended.norm_sqr();
+                        if mag_sq > 1e-9 {
+                            self.blended_decorrelation_filters[ch][i] = blended / mag_sq.sqrt();
+                        } else {
+                            self.blended_decorrelation_filters[ch][i] = Complex::new(1.0, 0.0);
+                        }
                     }
                 }
             }

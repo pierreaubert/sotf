@@ -3,23 +3,19 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
+use crate::simd::flush_denormals_inplace;
 
 impl UpmixerPlugin {
     /// Phase 5: Extract real parts from time domain and apply final scaling
     #[inline]
     pub(super) fn extract_output_and_scale(&mut self, output: &mut [f32], combined_scale: f32) {
-        // Note: With Hann window at 50% hop size, COLA (Constant Overlap-Add) is achieved by:
-        // 1. Applying window ONCE during analysis (before FFT)
-        // 2. Overlap-add with hop_size = fft_size/2
-        // Applying window again here would break COLA and cause amplitude modulation artifacts
-
-        // Apply pre-computed raised cosine edge taper to height channels only.
-        // The magnitude mask applied to height bins in the frequency domain can cause
-        // frame-edge discontinuities at overlap-add boundaries. A short taper at the
-        // edges smooths these discontinuities without affecting the COLA sum for
-        // non-height channels. Uses pre-computed table to avoid cos() in hot path.
+        // ... (skipping some comments)
         let taper_len = self.edge_taper_table.len();
         for ch in 0..self.num_output_channels {
+            // Flush denormals in the time-domain buffers before scaling/limiting.
+            // This prevents performance spikes and keeps the peak detector accurate.
+            flush_denormals_inplace(&mut self.time_out_channels[ch]);
+
             let speaker = &self.speaker_config.speakers[ch];
             if speaker.elevation > 10.0 {
                 let taper_end = taper_len.min(self.fft_size / 2);
@@ -80,17 +76,41 @@ impl UpmixerPlugin {
         let start_scale = self.prev_safety_scale;
         self.prev_safety_scale = end_scale;
 
+        let threshold = 0.95_f32;
+
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
 
-            // Interpolate safety scale across the block to prevent zipper noise
+            // Step 1: Apply fixed STFT scale and block-level safety scale
             let t = i as f32 / self.fft_size as f32;
-            let current_safety_scale = start_scale + t * (end_scale - start_scale);
-            let final_scale = combined_scale * current_safety_scale;
+            let block_safety_scale = start_scale + t * (end_scale - start_scale);
+            let base_scale = combined_scale * block_safety_scale;
 
+            // Step 2: Detect peak across channels for this sample
+            let mut peak = 0.0_f32;
             for ch in 0..self.num_output_channels {
-                let sample = self.time_out_channels[ch][i] * final_scale;
-                output[idx + ch] = sample;
+                let v = (self.time_out_channels[ch][i] * base_scale).abs();
+                if v > peak {
+                    peak = v;
+                }
+            }
+
+            // Step 3: Update per-sample limiter envelope
+            let target_gr = if peak > threshold { threshold / peak } else { 1.0 };
+            if target_gr < self.limiter_envelope {
+                // Fast attack
+                self.limiter_envelope =
+                    target_gr + self.limiter_attack_coeff * (self.limiter_envelope - target_gr);
+            } else {
+                // Slow release
+                self.limiter_envelope =
+                    target_gr + self.limiter_release_coeff * (self.limiter_envelope - target_gr);
+            }
+
+            // Step 4: Apply final combined scale to all channels
+            let final_scale = base_scale * self.limiter_envelope;
+            for ch in 0..self.num_output_channels {
+                output[idx + ch] = self.time_out_channels[ch][i] * final_scale;
             }
         }
 
