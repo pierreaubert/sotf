@@ -46,15 +46,23 @@ impl Smoother {
         }
     }
 
+    /// Process N sample steps at once (updates current value)
+    #[inline]
+    pub fn next_n(&mut self, n: usize) -> f32 {
+        if self.coeff == 0.0 || (self.current - self.target).abs() < 1e-5 || n == 0 {
+            self.current = self.target;
+        } else {
+            // current = target + coeff^n * (current - target)
+            let block_coeff = self.coeff.powi(n as i32);
+            self.current = self.target + block_coeff * (self.current - self.target);
+        }
+        self.current
+    }
+
     /// Process one sample step (updates current value)
     #[inline]
     pub fn next(&mut self) -> f32 {
-        if self.coeff == 0.0 || (self.current - self.target).abs() < 1e-5 {
-            self.current = self.target;
-        } else {
-            self.current = self.target + self.coeff * (self.current - self.target);
-        }
-        self.current
+        self.next_n(1)
     }
 
     /// Get current smoothed value

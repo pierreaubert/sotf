@@ -13,8 +13,10 @@ fn test_xtc_instantiation() {
 
 #[test]
 fn test_xtc_processing() {
-    let params = XtcPluginParams::default();
+    let mut params = XtcPluginParams::default();
+    params.auto_gain_enabled = false;
     let mut plugin = XtcPlugin::new(params, 44100).unwrap();
+    plugin.initialize(44100).unwrap();
 
     // Needs enough frames to fill FFT buffer and produce output
     let num_frames = 4096;
@@ -35,10 +37,8 @@ fn test_xtc_processing() {
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Check for some energy in Right channel (cancellation signal)
-    // Skip latency (fft_size)
-    let latency = 1024;
-    let right_energy: f32 = (latency..num_frames)
-        .map(|i| output[i * 2 + 1].powi(2))
+    let right_energy: f32 = output.iter().step_by(2).skip(1)
+        .map(|&x| x.powi(2))
         .sum();
 
     assert!(

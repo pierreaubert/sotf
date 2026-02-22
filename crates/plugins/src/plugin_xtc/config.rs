@@ -149,10 +149,10 @@ fn default_fft_size() -> usize {
     2048
 }
 fn default_beta_base() -> f32 {
-    0.0003
+    0.01 // Increased from 0.0003 for better stability and less ringing
 }
 fn default_max_gain_db() -> f32 {
-    6.0
+    12.0 // Increased from 6.0 for better cancellation depth
 }
 fn default_beta_low_freq_boost() -> f32 {
     10.0
@@ -188,7 +188,7 @@ fn default_auto_gain_enabled() -> bool {
     true
 }
 fn default_auto_gain_max_db() -> f32 {
-    6.0
+    24.0 // Increased from 6.0 to prevent saturation
 }
 fn default_auto_gain_smoothing_ms() -> f32 {
     100.0
@@ -211,7 +211,7 @@ impl Default for XtcPluginParams {
             head_offset_z: 0.0,
             head_yaw_deg: 0.0,
             head_tracking_smooth_s: default_head_tracking_smooth(),
-            spectral_normalization: false,
+            spectral_normalization: true, // Enabled by default to fix tonal coloration
             enabled: default_enabled(),
             room_reflections_enabled: false,
             room_ir_file: None,

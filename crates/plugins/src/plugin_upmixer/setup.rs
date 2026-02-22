@@ -58,6 +58,12 @@ impl UpmixerPlugin {
             if speaker.is_lfe {
                 self.panning_gains_left.push(0.5);
                 self.panning_gains_right.push(0.5);
+            } else if speaker.label == "C" {
+                // Zero out center speaker in standard panning gains.
+                // The upmixer handles the center speaker explicitly using the extracted
+                // 'direct' signal and the center_spread parameter.
+                self.panning_gains_left.push(0.0);
+                self.panning_gains_right.push(0.0);
             } else {
                 // Rear speakers (|azimuth| > 90°) need wrap-around panning
                 // because they're more than 90° from both L/R source positions

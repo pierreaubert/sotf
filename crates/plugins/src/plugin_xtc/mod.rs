@@ -216,6 +216,9 @@ pub struct XtcPlugin {
 
     /// Per-sample release coefficient for the limiter (~50ms release).
     limiter_release_coeff: f32,
+
+    /// Initial latency counter to ensure OLA buffer is primed before output
+    latency_filled: usize,
 }
 
 // ============================================================================
@@ -400,6 +403,7 @@ impl XtcPlugin {
             limiter_envelope: 1.0,
             limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
             limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
+            latency_filled: 0,
         })
     }
 
@@ -653,8 +657,12 @@ impl XtcPlugin {
             }
         }
 
-        // Mark hop_size more samples as available
-        self.output_available += self.hop_size;
+        // Mark hop_size more samples as available, but only after initial latency is filled
+        if self.latency_filled >= (self.fft_size - self.hop_size) {
+            self.output_available += self.hop_size;
+        } else {
+            self.latency_filled += self.hop_size;
+        }
     }
 
     /// Shift input buffer left by hop_size and clear tail
@@ -1022,6 +1030,7 @@ impl Plugin for XtcPlugin {
         self.prev_ifft_output.fill(0.0);
         self.input_fill = 0;
         self.output_available = 0;
+        self.latency_filled = 0;
 
         // Reset crossfade state
         self.prev_filters = None;
@@ -1107,7 +1116,9 @@ impl Plugin for XtcPlugin {
             }
 
             // Copy available output to output buffer
-            let samples_to_output = self.output_available.min(num_frames - out_pos);
+            let samples_to_output = self.output_available
+                .min(num_frames - out_pos)
+                .min(self.hop_size);
             if samples_to_output > 0 {
                 // Flush denormals in-place then SIMD interleave
                 let n = samples_to_output;
@@ -1132,8 +1143,8 @@ impl Plugin for XtcPlugin {
                     self.output_accum_r[tail..].fill(0.0);
                     self.output_available -= samples_to_output;
                 }
-            } else if out_pos < num_frames && self.output_available == 0 {
-                // During initial latency, output silence
+            } else if out_pos < num_frames && in_pos >= num_frames {
+                // Only output silence if we have processed all input and still need more output
                 let remaining = num_frames - out_pos;
                 for i in 0..remaining {
                     output[(out_pos + i) * 2] = 0.0;

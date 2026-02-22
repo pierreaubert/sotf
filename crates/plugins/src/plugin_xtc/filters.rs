@@ -289,8 +289,8 @@ fn apply_spectral_normalization(filters: &mut XtcFilters, num_bins: usize) {
             // Gentle normalization: blend between unity and full correction
             // This preserves the XTC effect while reducing tonal coloration
             let correction = (1.0 / avg_energy.sqrt()).clamp(0.5, 2.0);
-            // Apply 50% of the correction (gentle approach)
-            gains[bin] = 1.0 + 0.5 * (correction - 1.0);
+            // Apply 80% of the correction (more effective for underwater artifacts)
+            gains[bin] = 1.0 + 0.8 * (correction - 1.0);
         }
     }
 
@@ -760,7 +760,8 @@ pub(crate) fn head_shadowing_woodworth(freq: f32, angle_rad: f32, head_radius: f
         // High frequency: significant head shadow
         // Shadow increases with angle from direct path
         let shadow_factor = (1.0 + theta.cos()) / 2.0; // 1 at 0°, 0 at 180°
-        let exponent = (ka / 4.0).min(3.0); // Cap exponent for stability
+        // Scaled exponent to match physical ILD measurements (~15-20dB at high ka)
+        let exponent = (ka / 1.5).min(15.0);
         shadow_factor.powf(exponent)
     }
 }

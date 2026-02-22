@@ -64,6 +64,10 @@ impl UpmixerPlugin {
                     let prd_dl = prd * self.height_direct_leak.current() * h_leak_scale;
                     let dec = &self.blended_decorrelation_filters[ch];
 
+                    let sw = self.stereo_width.current();
+                    let cs = self.center_spread.current();
+                    let sw_cs = sw * cs;
+
                     if !is_f {
                         let rlr = self.rear_late_reflection.current() * gra; // Scale by rear gain
                         // For non-front height: use dominant ambient side to preserve separation
@@ -74,8 +78,11 @@ impl UpmixerPlugin {
                         };
 
                         for i in 0..spectrum_size {
-                            let d_comp =
-                                self.direct_left[i] * pld_dl + self.direct_right[i] * prd_dl;
+                            let d_val = self.direct[i];
+                            let dl_val = self.direct_left[i] + d_val * sw_cs;
+                            let dr_val = self.direct_right[i] + d_val * sw_cs;
+
+                            let d_comp = dl_val * pld_dl + dr_val * prd_dl;
                             // Stereo-preserving ambient sum: mix primary and secondary sides
                             let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             let a_comp = a_stereo * dec[i]
@@ -92,8 +99,11 @@ impl UpmixerPlugin {
                         };
 
                         for i in 0..spectrum_size {
-                            let d_comp =
-                                self.direct_left[i] * pld_dl + self.direct_right[i] * prd_dl;
+                            let d_val = self.direct[i];
+                            let dl_val = self.direct_left[i] + d_val * sw_cs;
+                            let dr_val = self.direct_right[i] + d_val * sw_cs;
+
+                            let d_comp = dl_val * pld_dl + dr_val * prd_dl;
                             let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             let a_comp = a_stereo * dec[i];
                             self.temp_freq_out[i] =
@@ -101,17 +111,23 @@ impl UpmixerPlugin {
                         }
                     }
                 } else {
-                    let ss = if is_f && is_c {
-                        1.0 - self.center_spread.current()
-                    } else {
-                        1.0
-                    };
-                    let plds = p_l * ss;
-                    let prds = p_r * ss;
+                    let sw = self.stereo_width.current();
+                    let cs = self.center_spread.current();
+                    let sw_cs = sw * cs;
 
-                    // Extra gain for the extracted center signal in the center speaker
-                    // MUST be scaled by gain_front_direct (dg for is_f speakers)
-                    let p_direct = if is_f && is_c { 1.414 * gfd } else { 0.0 };
+                    // Correctly power-balanced gain for the extracted center signal in the physical center speaker.
+                    // If stereo_w=1.0, we need sqrt(2) to match the power of the original L+R phantom center.
+                    // If stereo_w=0.5, we only need sqrt(1.5)=1.225 because 0.5 of the energy is still in L/R.
+                    let center_power_scale = (2.0 * (1.0 - (1.0 - sw).powi(2))).max(0.0).sqrt();
+                    let p_direct_c = if is_f && is_c {
+                        center_power_scale * (1.0 - cs) * dg
+                    } else {
+                        0.0
+                    };
+
+                    // Multiply direct_left/right by dg (which is gfd for front)
+                    let plds = p_l * dg;
+                    let prds = p_r * dg;
 
                     if !is_f {
                         let dec = &self.blended_decorrelation_filters[ch];
@@ -123,19 +139,25 @@ impl UpmixerPlugin {
                         };
 
                         for i in 0..spectrum_size {
+                            let d_val = self.direct[i];
+                            let dl_val = self.direct_left[i] + d_val * sw_cs;
+                            let dr_val = self.direct_right[i] + d_val * sw_cs;
+
                             let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             // Surrounds get direct residues + decorrelated ambient
-                            self.temp_freq_out[i] = (self.direct_left[i] * plds
-                                + self.direct_right[i] * prds)
+                            self.temp_freq_out[i] = (dl_val * plds + dr_val * prds)
                                 + a_stereo * dec[i];
                         }
                     } else {
                         // Front speakers: use standard L/R mix + extracted center
                         for i in 0..spectrum_size {
-                            self.temp_freq_out[i] = (self.direct_left[i] * plds
-                                + self.direct_right[i] * prds)
+                            let d_val = self.direct[i];
+                            let dl_val = self.direct_left[i] + d_val * sw_cs;
+                            let dr_val = self.direct_right[i] + d_val * sw_cs;
+
+                            self.temp_freq_out[i] = (dl_val * plds + dr_val * prds)
                                 + (self.ambient_left[i] * pla + self.ambient_right[i] * pra)
-                                + (self.direct[i] * p_direct);
+                                + (d_val * p_direct_c);
                         }
                     }
                 }

@@ -358,7 +358,7 @@ mod tests {
         let mut gains = Vec::new();
 
         for block in 0..num_blocks {
-            let input = vec![0.0_f32; block_size * 2];
+            let mut input = vec![0.0_f32; block_size * 2];
             for i in 0..block_size {
                 let phase = 2.0 * std::f32::consts::PI * 440.0 * (block * block_size + i) as f32 / sample_rate as f32;
                 input[i * 2] = phase.sin() * 0.5;
