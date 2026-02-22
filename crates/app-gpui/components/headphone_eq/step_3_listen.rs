@@ -20,16 +20,16 @@ impl PlayerView {
         let result = headphone_eq.result.as_ref();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Listen & Preview")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Preview the optimized EQ and apply it to your playback.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .when_some(result, |vstack, result| {
@@ -57,10 +57,10 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .child(
                                         HStack::new()
-                                            .spacing(StackSpacing::Lg)
+                                            .spacing(StackSpacing::Md)
                                             .child(Text::new(format!(
                                                 "Before: {:.2}",
                                                 result.pre_score
@@ -83,7 +83,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Text::new(format!("{} filters generated", num_filters))
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     ),
                             ),
@@ -196,24 +196,24 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         Text::new(
                                             "Apply the EQ to your current playback to hear the difference.",
                                         )
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                     )
                                     .child(
                                         HStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .child(
                                                 Button::new(
                                                     "apply-to-playback",
                                                     "Apply to Playback",
                                                 )
                                                 .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Md)
+                                                .size(ButtonSize::Sm)
                                                 .theme(button_theme.clone())
                                                 .build()
                                                 .on_mouse_up(
@@ -226,7 +226,7 @@ impl PlayerView {
                                             .child(
                                                 Button::new("clear-eq", "Clear EQ")
                                                     .variant(ButtonVariant::Secondary)
-                                                    .size(ButtonSize::Md)
+                                                    .size(ButtonSize::Sm)
                                                     .theme(button_theme.clone())
                                                     .build()
                                                     .on_mouse_up(
@@ -255,7 +255,7 @@ impl PlayerView {
                         )
                         .content(
                             Text::new("Go back and run optimization to generate an EQ curve.")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),
                 )

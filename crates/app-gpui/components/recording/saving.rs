@@ -26,20 +26,20 @@ impl PlayerView {
         let recording_dir = recording_state.recording_directory.clone();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 // Header
                 VStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(
                         Text::new("Save Recordings")
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
                     )
                     .child(
                         Text::new("Save your recordings and configuration to disk. Files will be saved to the directory you selected during setup.")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     ),
             )
@@ -63,20 +63,20 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("RECORDING NAME")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
                         .child(
                             Text::new("Name:")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
                         .child(
@@ -140,31 +140,31 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("SAVE LOCATION")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
                         .child(
                             Text::new("Base Directory:")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
                         .child(
                             Text::new(base_dir_display.clone())
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_primary),
                         )
                         .child(
                             Button::new("browse_save_dir", "Browse...")
                                 .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
+                                .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
                                 .on_click({
                                     let view = view.clone();
@@ -181,7 +181,7 @@ impl PlayerView {
                             stack.child(
                                 Button::new("clear_save_dir", "Clear")
                                     .variant(ButtonVariant::Secondary)
-                                    .size(ButtonSize::Sm)
+                                    .size(ButtonSize::Xs)
                                     .theme(theme.to_button_theme())
                                     .on_click({
                                         move |_, cx| {
@@ -207,16 +207,16 @@ impl PlayerView {
                 )
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Sm)
+                        .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
                         .child(
                             Text::new("Full Path:")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
                         .child(
                             Text::new(full_path)
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .weight(TextWeight::Semibold)
                                 .color(theme.text_primary),
                         ),
@@ -251,31 +251,31 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("FILES TO SAVE")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
                 .child(
                     VStack::new()
-                        .spacing(StackSpacing::Sm)
+                        .spacing(StackSpacing::Xs)
                         // recordings.json
                         .child(
                             HStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .align(StackAlign::Center)
-                                .child(Text::new("+").size(TextSize::Sm).color(theme.success))
+                                .child(Text::new("+").size(TextSize::Xs).color(theme.success))
                                 .child(
                                     Text::new(format!("{}.json", safe_save_name))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .weight(TextWeight::Semibold)
                                         .color(theme.text_primary),
                                 )
                                 .child(
                                     Text::new("- Configuration and measurement data")
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_muted),
                                 ),
                         )
@@ -298,11 +298,11 @@ impl PlayerView {
 
                                     vec![
                                         HStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .align(StackAlign::Center)
                                             .child(
                                                 Text::new("+")
-                                                    .size(TextSize::Sm)
+                                                    .size(TextSize::Xs)
                                                     .color(theme.success),
                                             )
                                             .child(
@@ -310,7 +310,7 @@ impl PlayerView {
                                                     "{}_{}.wav",
                                                     safe_save_name, safe_channel_name
                                                 ))
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .child(
@@ -318,16 +318,16 @@ impl PlayerView {
                                                     "- {} recording",
                                                     rec.channel_name
                                                 ))
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_muted),
                                             )
                                             .into_any_element(),
                                         HStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .align(StackAlign::Center)
                                             .child(
                                                 Text::new("+")
-                                                    .size(TextSize::Sm)
+                                                    .size(TextSize::Xs)
                                                     .color(theme.success),
                                             )
                                             .child(
@@ -335,7 +335,7 @@ impl PlayerView {
                                                     "{}_{}.csv",
                                                     safe_save_name, safe_channel_name
                                                 ))
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .child(
@@ -343,7 +343,7 @@ impl PlayerView {
                                                     "- {} frequency response",
                                                     rec.channel_name
                                                 ))
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_muted),
                                             )
                                             .into_any_element(),
@@ -376,20 +376,20 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("ACTIONS")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .child(
                             Button::new("save_recordings", "Save All")
                                 .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Lg)
+                                .size(ButtonSize::Md)
                                 .disabled(!can_save)
                                 .theme(theme.to_button_theme())
                                 .on_click({
@@ -404,7 +404,7 @@ impl PlayerView {
                         .child(
                             Button::new("load_recordings", "Load Previous")
                                 .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Md)
+                                .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
                                 .on_click({
                                     let view = view.clone();
@@ -422,7 +422,7 @@ impl PlayerView {
                         || status_message.to_lowercase().contains("failed");
                     stack.child(
                         Text::new(status_message.clone())
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(if is_error { theme.error } else { theme.success }),
                     )
                 })
@@ -432,7 +432,7 @@ impl PlayerView {
                     } else {
                         "No save directory selected. Go back to setup to select a directory."
                     };
-                    stack.child(Text::new(reason).size(TextSize::Sm).color(theme.warning))
+                    stack.child(Text::new(reason).size(TextSize::Xs).color(theme.warning))
                 }),
         )
     }

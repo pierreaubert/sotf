@@ -99,6 +99,7 @@ impl PlayerView {
                         let mut player = state.player.lock();
                         let playback_state = player.get_playback_state();
 
+                        let was_playing = state.app.playback.is_playing;
                         state.app.playback.is_playing = playback_state.is_playing;
                         state.app.playback.position_secs = playback_state.position_secs;
                         state.app.playback.duration_secs = state.app.get_current_track_duration();
@@ -187,7 +188,7 @@ impl PlayerView {
                                 Some(crate::app::ToastMessage::info(
                                     "Engine restarted, resuming playback",
                                 ));
-                        } else if state.app.playback.is_playing
+                        } else if was_playing
                             && !playback_state.is_playing
                             && state.app.playback.current_queue_index.is_some()
                         {

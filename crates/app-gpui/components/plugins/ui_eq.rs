@@ -240,12 +240,10 @@ fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
 /// These MUST match gpui-px line chart margins (see gpui-px/src/line.rs)
 const CHART_LEFT_MARGIN: f32 = 50.0; // gpui-px margin_left
 const CHART_RIGHT_MARGIN: f32 = 20.0; // gpui-px margin_right (no secondary axis)
-// Note: gpui-px subtracts margin_top from plot_height but doesn't render top padding
-// so control points should use 0 for top margin offset
-// UPDATE: gpui-px renders the plot area starting at margin_top offset.
-// We must match this offset for control points to align with the rendered curve.
-const CHART_TOP_MARGIN: f32 = 5.0; // Adjusted to 5.0 for better alignment
-const CHART_BOTTOM_MARGIN: f32 = 40.0; // Increased to 40.0 to avoid legend overlap
+// gpui-px plot area starts at y=0 (no top padding), so no top margin offset needed.
+const CHART_TOP_MARGIN: f32 = 0.0;
+// Must match gpui-px margin_bottom (30.0) so plot_height matches the rendered curve.
+const CHART_BOTTOM_MARGIN: f32 = 30.0;
 const CHART_HEIGHT: f32 = 300.0;
 // gpui-px uses 10.0 for margin_top in plot_height calculation by default
 const GPUI_PX_MARGIN_TOP: f32 = 10.0;
@@ -341,7 +339,7 @@ fn render_eq_visualization(
     let (min_db, max_db) = calculate_dynamic_y_range(filters);
 
     // Generate frequency points (logarithmically spaced from 20Hz to 20kHz)
-    let num_points = 120;
+    let num_points = 240;
     let min_freq = 20.0_f64;
     let max_freq = 20000.0_f64;
 
@@ -409,8 +407,8 @@ fn render_eq_visualization(
     let mut chart_builder = line(&freq_points, &combined_response)
         .x_scale(ScaleType::Log)
         .y_scale(ScaleType::Linear)
-        .x_label("Frequency")
-        .y_label("dB")
+        .x_label("Frequency (Hz)")
+        .y_label("dB (SPL)")
         .x_range(MIN_FREQ, MAX_FREQ)
         .y_range(min_db, max_db) // Dynamic Y range based on filter gains
         .size(width, 300.0)
@@ -1225,7 +1223,7 @@ pub fn render_eq_plugin(
                                 state.selected_param,
                                 state.is_editing,
                                 None,
-                                PotentiometerSize::Sm,
+                                PotentiometerSize::Xs,
                                 theme,
                             ))
                             .child(render_knob_sized(
@@ -1240,7 +1238,7 @@ pub fn render_eq_plugin(
                                 state.selected_param,
                                 state.is_editing,
                                 None,
-                                PotentiometerSize::Sm,
+                                PotentiometerSize::Xs,
                                 theme,
                             ))
                             .child(render_knob_sized(
@@ -1255,7 +1253,7 @@ pub fn render_eq_plugin(
                                 state.selected_param,
                                 state.is_editing,
                                 None,
-                                PotentiometerSize::Sm,
+                                PotentiometerSize::Xs,
                                 theme,
                             )),
                     ),
@@ -1272,10 +1270,11 @@ pub fn render_eq_plugin(
             .child(graph_section)
             .child(controls_section)
     } else {
-        // Vertical: graph on top, controls below
+        // Vertical: graph on top, controls below (centered)
         div()
             .flex()
             .flex_col()
+            .items_center()
             .gap_8() // Increased gap between graph and controls
             .child(graph_section)
             .child(controls_section)

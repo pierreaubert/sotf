@@ -47,7 +47,7 @@ pub(crate) fn render_channel_config_row(
                 .items_center()
                 .child(
                     Text::new("Type:")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .color(theme.text_secondary),
                 )
                 .child(
@@ -57,7 +57,7 @@ pub(crate) fn render_channel_config_row(
                         } else {
                             ButtonVariant::Secondary
                         })
-                        .size(ButtonSize::Sm)
+                        .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
                         .on_click({
                             let view = view.clone();
@@ -86,7 +86,7 @@ pub(crate) fn render_channel_config_row(
                         } else {
                             ButtonVariant::Secondary
                         })
-                        .size(ButtonSize::Sm)
+                        .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
                         .on_click({
                             let view = view.clone();
@@ -118,7 +118,7 @@ pub(crate) fn render_channel_config_row(
                     .items_center()
                     .child(
                         Text::new("Crossover:")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
                     .child(render_crossover_dropdown(idx, crossover_type, view, theme)),
@@ -143,7 +143,7 @@ fn render_crossover_dropdown(
         current_label,
     )
     .variant(ButtonVariant::Secondary)
-    .size(ButtonSize::Sm)
+    .size(ButtonSize::Xs)
     .theme(theme.to_button_theme())
     .on_click({
         let view = view.clone();
@@ -212,7 +212,7 @@ pub(crate) fn render_channel_result_card(
                 .child(
                     Text::new(channel_name)
                         .weight(TextWeight::Bold)
-                        .size(TextSize::Lg)
+                        .size(TextSize::Md)
                         .color(theme.text_primary),
                 )
                 .child(
@@ -221,12 +221,12 @@ pub(crate) fn render_channel_result_card(
                         .gap_4()
                         .child(
                             Text::new(format!("Before: {:.2}", result.pre_score))
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
                         .child(
                             Text::new(format!("After: {:.2}", result.post_score))
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
                         .child(
@@ -259,11 +259,11 @@ pub(crate) fn render_channel_result_card(
         // EQ Filter details
         .child(
             VStack::new()
-                .spacing(StackSpacing::Sm)
+                .spacing(StackSpacing::Xs)
                 .child(
                     Text::new("EQ Filters")
                         .weight(TextWeight::Semibold)
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .color(theme.text_primary),
                 )
                 .child(render_filter_table(&result.eq_filters, theme)),
@@ -273,11 +273,11 @@ pub(crate) fn render_channel_result_card(
             let xover_freqs = result.crossover_freqs.as_ref().unwrap();
             el.child(
                 VStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(
                         Text::new("Crossover Frequencies")
                             .weight(TextWeight::Semibold)
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_primary),
                     )
                     .child(
@@ -292,7 +292,7 @@ pub(crate) fn render_channel_result_card(
                                     .rounded_md()
                                     .child(
                                         Text::new(format_frequency(*f))
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_primary),
                                     )
                             })),
@@ -445,7 +445,7 @@ fn render_response_comparison_graph(
         return div()
             .child(
                 Text::new("No data available")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_muted),
             )
             .into_any_element();
@@ -700,7 +700,7 @@ fn render_filter_table(
         return div()
             .child(
                 Text::new("No filters")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_muted),
             )
             .into_any_element();
@@ -752,7 +752,7 @@ fn render_filter_table(
                 .child(
                     Text::new(format_frequency(f.frequency))
                         .weight(TextWeight::Semibold)
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .color(theme.text_primary),
                 )
                 // Gain and Q
@@ -763,7 +763,7 @@ fn render_filter_table(
                         .child(
                             Text::new(format!("{:+.1}dB", f.gain_db))
                                 .weight(TextWeight::Bold)
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(gain_color),
                         )
                         .child(

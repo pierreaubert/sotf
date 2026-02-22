@@ -37,15 +37,15 @@ impl PlayerView {
         let y_axis_auto = room_eq.review_y_axis_auto;
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Review Results")
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Review the optimization results before applying.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             // Channel selection buttons
@@ -60,7 +60,7 @@ impl PlayerView {
                                 .color(theme.text_primary)
                                 .weight(TextWeight::Semibold),
                         )
-                        .content(HStack::new().spacing(StackSpacing::Sm).children(
+                        .content(HStack::new().spacing(StackSpacing::Xs).children(
                             channel_results.iter().enumerate().map(|(idx, result)| {
                                 let is_selected = idx == selected_channel_idx;
                                 let channel_name = result.channel_name.clone();
@@ -74,7 +74,7 @@ impl PlayerView {
                                 } else {
                                     ButtonVariant::Secondary
                                 })
-                                .size(ButtonSize::Md)
+                                .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
                                 .build()
                                 .on_mouse_up(
@@ -107,13 +107,13 @@ impl PlayerView {
                     )
                     .content(
                         HStack::new()
-                            .spacing(StackSpacing::Lg)
+                            .spacing(StackSpacing::Md)
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .child(
                                         Text::new("Smoothing:")
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
                                     .child(
@@ -166,10 +166,10 @@ impl PlayerView {
                             )
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .child(
                                         Text::new("Y-Axis Auto:")
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
                                     .child(
@@ -206,9 +206,9 @@ impl PlayerView {
                             .weight(TextWeight::Semibold),
                     )
                     .content(
-                        VStack::new().spacing(StackSpacing::Sm).child(
+                        VStack::new().spacing(StackSpacing::Xs).child(
                             HStack::new()
-                                .spacing(StackSpacing::Lg)
+                                .spacing(StackSpacing::Md)
                                 .child(
                                     Text::new(format!("Before: {:.2}", pre_score))
                                         .color(theme.text_primary),
@@ -276,7 +276,7 @@ impl PlayerView {
 
         if channel_results.is_empty() {
             return VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Card::new()
                         .background(theme.surface)
@@ -289,7 +289,7 @@ impl PlayerView {
                         )
                         .content(
                             Text::new("No optimization results yet. Run optimization first.")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_muted),
                         ),
                 )

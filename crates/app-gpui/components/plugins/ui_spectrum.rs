@@ -704,7 +704,7 @@ pub fn render_spectrum_analyzer_plugin(
                                         SpectralTiltCorrection::Custom(_) => "none".to_string(),
                                     })
                                     .is_open(state.tilt_select_open)
-                                    .size(SelectSize::Sm)
+                                    .size(SelectSize::Xs)
                                     .theme(theme.to_select_theme())
                                     .on_toggle({
                                         let entity = entity.clone();
@@ -766,7 +766,7 @@ pub fn render_spectrum_analyzer_plugin(
                                         TiltReferenceFreq::MinFreq => "minfreq".to_string(),
                                     })
                                     .is_open(state.reference_select_open)
-                                    .size(SelectSize::Sm)
+                                    .size(SelectSize::Xs)
                                     .theme(theme.to_select_theme())
                                     .on_toggle({
                                         let entity = entity.clone();

@@ -40,16 +40,16 @@ impl PlayerView {
             || spinorama.selected_measurement == "CEA2034 Normalized";
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Select Speaker")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Search for your speaker model from spinorama.org measurements.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(
@@ -64,12 +64,12 @@ impl PlayerView {
                     )
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new(
                                     "Type your speaker brand and model to search the database.",
                                 )
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
                             // Input handles focus and keyboard internally
@@ -80,7 +80,7 @@ impl PlayerView {
                                 Input::new("speaker-search")
                                     .placeholder("Type to search speakers...")
                                     .value(SharedString::from(search_query.clone()))
-                                    .size(InputSize::Md)
+                                    .size(InputSize::Sm)
                                     .icon_left("🔍")
                                     .bg_color(theme.surface)
                                     .text_color(theme.text_primary)
@@ -114,11 +114,11 @@ impl PlayerView {
                             })
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .child(
                                         Button::new("refresh-speakers", "⟳ Refresh")
                                             .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Sm)
+                                            .size(ButtonSize::Xs)
                                             .disabled(is_loading)
                                             .theme(button_theme.clone())
                                             .build()
@@ -132,7 +132,7 @@ impl PlayerView {
                                     .when(is_loading, |hstack| {
                                         hstack.child(
                                             Text::new("Loading...")
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_muted),
                                         )
                                     })
@@ -144,7 +144,7 @@ impl PlayerView {
                                                     "{} speakers",
                                                     spinorama.available_speakers.len()
                                                 ))
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_muted),
                                             )
                                         },
@@ -160,7 +160,7 @@ impl PlayerView {
                     .border(theme.border)
                     .header(
                         HStack::new()
-                            .spacing(StackSpacing::Sm)
+                            .spacing(StackSpacing::Xs)
                             .child(
                                 Text::new("Available Speakers")
                                     .color(theme.text_primary)
@@ -168,7 +168,7 @@ impl PlayerView {
                             )
                             .child(
                                 Text::new(format!("({} matches)", suggestions.len()))
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_muted),
                             ),
                     )
@@ -183,7 +183,7 @@ impl PlayerView {
                             .when(suggestions.is_empty() && is_loading, |d| {
                                 d.child(
                                     Text::new("Loading speakers from spinorama.org...")
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_muted),
                                 )
                             })
@@ -194,7 +194,7 @@ impl PlayerView {
                                     } else {
                                         "No matching speakers found."
                                     })
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_muted),
                                 )
                             })
@@ -261,27 +261,27 @@ impl PlayerView {
                         )
                         .content(
                             VStack::new()
-                                .spacing(StackSpacing::Md)
+                                .spacing(StackSpacing::Sm)
                                 .child(
                                     Text::new(speaker)
-                                        .size(TextSize::Lg)
+                                        .size(TextSize::Md)
                                         .weight(TextWeight::Bold)
                                         .color(theme.accent),
                                 )
                                 // Version selection
                                 .child(
                                     VStack::new()
-                                        .spacing(StackSpacing::Sm)
+                                        .spacing(StackSpacing::Xs)
                                         .child(
                                             Text::new("Origin / Version")
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .weight(TextWeight::Semibold)
                                                 .color(theme.text_primary),
                                         )
                                         .when(loading_versions, |vs| {
                                             vs.child(
                                                 Text::new("Loading versions...")
-                                                    .size(TextSize::Sm)
+                                                    .size(TextSize::Xs)
                                                     .color(theme.text_muted),
                                             )
                                         })
@@ -290,7 +290,7 @@ impl PlayerView {
                                             |vs| {
                                                 vs.child(
                                                     Text::new("No versions available")
-                                                        .size(TextSize::Sm)
+                                                        .size(TextSize::Xs)
                                                         .color(theme.text_muted),
                                                 )
                                             },
@@ -300,7 +300,7 @@ impl PlayerView {
                                             |vs| {
                                                 vs.child(
                                                     HStack::new()
-                                                        .spacing(StackSpacing::Sm)
+                                                        .spacing(StackSpacing::Xs)
                                                         .wrap(true)
                                                         .children(available_versions.iter().map(
                                                             |version| {
@@ -371,7 +371,7 @@ impl PlayerView {
                                 // Phase data indicator
                                 .child(
                                     HStack::new()
-                                        .spacing(StackSpacing::Sm)
+                                        .spacing(StackSpacing::Xs)
                                         .child(
                                             Text::new("Phase Data:")
                                                 .size(TextSize::Xs)
@@ -411,14 +411,14 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
                                     .child(
                                         Text::new("Loading spinorama curves...")
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
-                                    .child(Progress::new(0.0).size(ProgressSize::Md)),
+                                    .child(Progress::new(0.0).size(ProgressSize::Sm)),
                             )
                             .into_any_element()
                     } else if let Some(err) = spinorama_curves_error {
@@ -433,10 +433,10 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         Text::new("Failed to load spinorama data")
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.error),
                                     )
                                     .child(
@@ -476,7 +476,7 @@ impl PlayerView {
                                                     Text::new("Spinorama")
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
-                                                        .size(TextSize::Sm),
+                                                        .size(TextSize::Xs),
                                                 )
                                                 .content(render_spinorama_cea2034_graph(
                                                     &spinorama_curves,
@@ -497,7 +497,7 @@ impl PlayerView {
                                                     Text::new("PIR (In-Room)")
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
-                                                        .size(TextSize::Sm),
+                                                        .size(TextSize::Xs),
                                                 )
                                                 .content(render_spinorama_pir_graph(
                                                     &spinorama_curves,
@@ -526,7 +526,7 @@ impl PlayerView {
                                                     Text::new("Horizontal")
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
-                                                        .size(TextSize::Sm),
+                                                        .size(TextSize::Xs),
                                                 )
                                                 .content(render_spinorama_horizontal_graph(
                                                     &spinorama_curves,
@@ -547,7 +547,7 @@ impl PlayerView {
                                                     Text::new("Vertical")
                                                         .color(theme.text_primary)
                                                         .weight(TextWeight::Semibold)
-                                                        .size(TextSize::Sm),
+                                                        .size(TextSize::Xs),
                                                 )
                                                 .content(render_spinorama_vertical_graph(
                                                     &spinorama_curves,
@@ -571,7 +571,7 @@ impl PlayerView {
                             )
                             .content(
                                 Text::new("Spinorama data will appear after selecting a speaker with CEA2034 measurement")
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_muted),
                             )
                             .into_any_element()

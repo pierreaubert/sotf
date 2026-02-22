@@ -571,16 +571,16 @@ impl PlayerView {
         let progress_history = spinorama.progress_history.clone();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Configure Optimization")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Set the optimization parameters for your speaker EQ.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(
@@ -595,13 +595,13 @@ impl PlayerView {
                     )
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new("Choose what the optimizer should optimize for.")
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_secondary),
                             )
-                            .child(HStack::new().spacing(StackSpacing::Sm).children(
+                            .child(HStack::new().spacing(StackSpacing::Xs).children(
                                 SpinoramaOptimizationMode::all().iter().map(|mode| {
                                     let is_selected = current_mode == *mode;
                                     let mode_value = *mode;
@@ -615,7 +615,7 @@ impl PlayerView {
                                     } else {
                                         ButtonVariant::Secondary
                                     })
-                                    .size(ButtonSize::Md)
+                                    .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
@@ -660,13 +660,13 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         Text::new("Select which measurement curve to flatten.")
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
-                                    .child(HStack::new().spacing(StackSpacing::Sm).children(
+                                    .child(HStack::new().spacing(StackSpacing::Xs).children(
                                         crate::app::types::SpinoramaTargetCurve::all().iter().map(
                                             |curve| {
                                                 let is_selected = current_curve == *curve;
@@ -684,7 +684,7 @@ impl PlayerView {
                                                 } else {
                                                     ButtonVariant::Secondary
                                                 })
-                                                .size(ButtonSize::Md)
+                                                .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
                                                 .build()
                                                 .on_mouse_up(
@@ -733,7 +733,7 @@ impl PlayerView {
                     .border(theme.border)
                     .header(
                         HStack::new()
-                            .spacing(StackSpacing::Lg)
+                            .spacing(StackSpacing::Md)
                             .child(
                                 Text::new("Generate Speaker EQ")
                                     .color(theme.text_primary)
@@ -742,14 +742,14 @@ impl PlayerView {
                             .when(!selected_speaker.is_empty(), |hstack| {
                                 hstack.child(
                                     Text::new(selected_speaker.clone())
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.accent),
                                 )
                             }),
                     )
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Button::new(
                                     "start_spinorama_optimization",
@@ -760,7 +760,7 @@ impl PlayerView {
                                     },
                                 )
                                 .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Lg)
+                                .size(ButtonSize::Md)
                                 .full_width(true)
                                 .disabled(is_optimizing)
                                 .theme(theme.to_button_theme())
@@ -796,7 +796,7 @@ impl PlayerView {
                                                 } else {
                                                     format!("Progress: {:.0}%", display_progress)
                                                 })
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .when(is_completed, |el| {
@@ -814,7 +814,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Progress::new(display_progress)
-                                            .size(ProgressSize::Md)
+                                            .size(ProgressSize::Sm)
                                             .variant(if is_completed {
                                                 ProgressVariant::Success
                                             } else if is_failed {
@@ -823,7 +823,7 @@ impl PlayerView {
                                                 ProgressVariant::Default
                                             }),
                                     )
-                                    .child(Text::new(status_msg).size(TextSize::Sm).color(
+                                    .child(Text::new(status_msg).size(TextSize::Xs).color(
                                         if is_completed {
                                             theme.success
                                         } else if is_failed {
@@ -834,7 +834,7 @@ impl PlayerView {
                                     ))
                             })
                             .when_some(error_msg, |vstack, err| {
-                                vstack.child(Text::new(err).size(TextSize::Sm).color(theme.error))
+                                vstack.child(Text::new(err).size(TextSize::Xs).color(theme.error))
                             }),
                     ),
             )
@@ -892,7 +892,7 @@ impl PlayerView {
                         .border(theme.border)
                         .header(
                             HStack::new()
-                                .spacing(StackSpacing::Lg)
+                                .spacing(StackSpacing::Md)
                                 .child(
                                     Text::new("Optimization Process")
                                         .color(theme.text_primary)
@@ -900,12 +900,12 @@ impl PlayerView {
                                 )
                                 .child(
                                     Text::new(format!("Current: {:.4}", current_loss))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
                                 .child(
                                     Text::new(format!("Best: {:.4}", best_loss))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.success),
                                 ),
                         )

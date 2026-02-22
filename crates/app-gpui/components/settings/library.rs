@@ -109,7 +109,7 @@ impl PlayerView {
                     .child(
                         Button::new("add-directory-btn", translations.directories_add)
                             .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
+                            .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
                             .build()
                             .on_mouse_up(
@@ -185,7 +185,7 @@ impl PlayerView {
                             .child(
                                 Button::new(("remove-btn", idx), translations.settings_remove)
                                     .variant(ButtonVariant::Ghost)
-                                    .size(ButtonSize::Sm)
+                                    .size(ButtonSize::Xs)
                                     .theme(theme.to_button_theme())
                                     .build()
                                     .on_click(cx.listener(
@@ -218,7 +218,7 @@ impl PlayerView {
                     )
                     .child(
                         HStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Button::new(
                                     "scan-btn",
@@ -229,7 +229,7 @@ impl PlayerView {
                                     },
                                 )
                                 .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Md)
+                                .size(ButtonSize::Sm)
                                 .disabled(scan_in_progress)
                                 .theme(theme.to_button_theme())
                                 .build()
@@ -242,7 +242,7 @@ impl PlayerView {
                             .child(
                                 Button::new("rescan-btn", translations.settings_rescan_all)
                                     .variant(ButtonVariant::Secondary)
-                                    .size(ButtonSize::Md)
+                                    .size(ButtonSize::Sm)
                                     .disabled(scan_in_progress)
                                     .theme(theme.to_button_theme())
                                     .build()
@@ -289,7 +289,7 @@ impl PlayerView {
                             .border_color(theme.border)
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         div()
                                             .flex()
@@ -323,7 +323,7 @@ impl PlayerView {
                                         } else {
                                             ButtonVariant::Secondary
                                         })
-                                        .size(ButtonSize::Sm)
+                                        .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
                                         .build()
                                         .on_click(
@@ -340,7 +340,7 @@ impl PlayerView {
                             .child(Divider::new().color(theme.border))
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         div()
                                             .flex()
@@ -361,7 +361,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         HStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .child(
                                                 Button::new(
                                                     "rg-mode-track",
@@ -376,7 +376,7 @@ impl PlayerView {
                                                         ButtonVariant::Ghost
                                                     },
                                                 )
-                                                .size(ButtonSize::Sm)
+                                                .size(ButtonSize::Xs)
                                                 .theme(theme.to_button_theme())
                                                 .build()
                                                 .on_click(cx.listener(
@@ -403,7 +403,7 @@ impl PlayerView {
                                                         ButtonVariant::Ghost
                                                     },
                                                 )
-                                                .size(ButtonSize::Sm)
+                                                .size(ButtonSize::Xs)
                                                 .theme(theme.to_button_theme())
                                                 .build()
                                                 .on_click(cx.listener(
@@ -421,7 +421,7 @@ impl PlayerView {
                             .child(Divider::new().color(theme.border))
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         div()
                                             .flex()
@@ -451,7 +451,7 @@ impl PlayerView {
                                             translations.settings_compute,
                                         )
                                         .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Sm)
+                                        .size(ButtonSize::Xs)
                                         .disabled(scan_in_progress) // Also disable if library scan is running
                                         .theme(theme.to_button_theme())
                                         .build()
@@ -500,7 +500,7 @@ impl PlayerView {
                             .border_color(theme.border)
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         div()
                                             .flex()
@@ -527,7 +527,7 @@ impl PlayerView {
                                             translations.settings_compute,
                                         )
                                         .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Sm)
+                                        .size(ButtonSize::Xs)
                                         .disabled(scan_in_progress)
                                         .theme(theme.to_button_theme())
                                         .build()
@@ -552,7 +552,7 @@ impl PlayerView {
                             .child(Divider::new().color(theme.border))
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         div()
                                             .flex()
@@ -579,7 +579,7 @@ impl PlayerView {
                                             translations.settings_compute,
                                         )
                                         .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Sm)
+                                        .size(ButtonSize::Xs)
                                         .disabled(scan_in_progress)
                                         .theme(theme.to_button_theme())
                                         .build()
@@ -628,7 +628,7 @@ impl PlayerView {
                             .border_color(theme.border)
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         div()
                                             .flex()
@@ -652,7 +652,7 @@ impl PlayerView {
                                     .child(
                                         Button::new("clean-db-btn", translations.settings_clean)
                                             .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Sm)
+                                            .size(ButtonSize::Xs)
                                             .disabled(scan_in_progress)
                                             .theme(theme.to_button_theme())
                                             .build()

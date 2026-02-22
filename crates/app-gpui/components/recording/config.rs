@@ -53,19 +53,19 @@ impl PlayerView {
         let output_dir_content = self.render_output_directory_content(cx).into_any_element();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 // Header
                 VStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(
                         Text::new("Audio Device Configuration")
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Bold),
                     )
                     .child(
                         Text::new("Configure your playback and recording devices, set up channel routing, and load microphone calibration.")
-                            .size(TextSize::Sm),
+                            .size(TextSize::Xs),
                     ),
             )
             .child(
@@ -113,9 +113,9 @@ impl PlayerView {
 
     /// Render playback device content for accordion
     fn render_playback_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let device_label = VStack::new().spacing(StackSpacing::Sm).child(
+        let device_label = VStack::new().spacing(StackSpacing::Xs).child(
             Text::new("Output Device")
-                .size(TextSize::Sm)
+                .size(TextSize::Xs)
                 .weight(TextWeight::Semibold),
         );
 
@@ -133,7 +133,7 @@ impl PlayerView {
         let channel_mapping = self.render_playback_channel_mapping(cx).into_any_element();
 
         VStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .child(device_label.child(device_dropdown))
             .child(sample_rate_row)
             .child(speaker_config_row)
@@ -162,9 +162,9 @@ impl PlayerView {
         };
         let view = cx.entity().clone();
 
-        let device_label = VStack::new().spacing(StackSpacing::Sm).child(
+        let device_label = VStack::new().spacing(StackSpacing::Xs).child(
             Text::new("Input Device")
-                .size(TextSize::Sm)
+                .size(TextSize::Xs)
                 .weight(TextWeight::Semibold)
                 .color(theme.text_secondary),
         );
@@ -176,16 +176,16 @@ impl PlayerView {
 
         // Info badges
         let badges = HStack::new()
-            .spacing(StackSpacing::Sm)
+            .spacing(StackSpacing::Xs)
             .child(Badge::new(format!("{} ch", num_channels)).variant(BadgeVariant::Info))
             .child(Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info));
 
         let channel_count_row = HStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
                 Text::new("Number of channels:")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child({
@@ -195,7 +195,7 @@ impl PlayerView {
                     .min(1.0)
                     .max(128.0)
                     .step(1.0)
-                    .size(NumberInputSize::Sm)
+                    .size(NumberInputSize::Xs)
                     .on_change({
                         let view = view.clone();
                         move |value, _window, cx| {
@@ -223,7 +223,7 @@ impl PlayerView {
         let channel_mapping = self.render_recording_channel_mapping(cx).into_any_element();
 
         VStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .child(device_label.child(device_dropdown))
             .child(sample_rate_row)
             .child(badges)
@@ -243,22 +243,22 @@ impl PlayerView {
         let calibration_path = recording_state.mic_calibration_path.clone();
 
         VStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .child(
                 HStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .align(StackAlign::Center)
                     .child(
                         Input::new("calibration_file")
                             .placeholder("No calibration file loaded")
                             .value(calibration_path.clone().unwrap_or_default())
-                            .size(InputSize::Md)
+                            .size(InputSize::Sm)
                             .disabled(true),
                     )
                     .child(
                         Button::new("browse_calibration", "Browse...")
                             .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
                             .on_click({
                                 let view = view.clone();
@@ -275,7 +275,7 @@ impl PlayerView {
                         stack.child(
                             Button::new("clear_calibration", "Clear")
                                 .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Md)
+                                .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
                                 .on_click({
                                     move |_, cx| {
@@ -320,19 +320,19 @@ impl PlayerView {
             .unwrap_or_else(|| "No directory selected".to_string());
 
         VStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .child(
                 HStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .align(StackAlign::Center)
                     .child(
                         Text::new("Recording files will be saved to:")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
                     .child(
                         Text::new(display_path)
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .weight(TextWeight::Semibold)
                             .color(if has_directory {
                                 theme.text_primary
@@ -343,11 +343,11 @@ impl PlayerView {
             )
             .child(
                 HStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         Button::new("browse_output_dir", "Browse...")
                             .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
                             .on_click({
                                 let view = view.clone();
@@ -364,7 +364,7 @@ impl PlayerView {
                         stack.child(
                             Button::new("clear_output_dir", "Clear")
                                 .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
+                                .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
                                 .on_click({
                                     move |_, cx| {
@@ -396,12 +396,12 @@ impl PlayerView {
             .when(!has_directory, |stack| {
                 stack.child(
                     HStack::new()
-                        .spacing(StackSpacing::Sm)
+                        .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
-                        .child(Text::new("⚠").size(TextSize::Sm).color(theme.warning))
+                        .child(Text::new("⚠").size(TextSize::Xs).color(theme.warning))
                         .child(
                             Text::new("You must select an output directory before recording.")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.warning),
                         ),
                 )
@@ -592,11 +592,11 @@ impl PlayerView {
         let selected_value = recording_state.playback_config.sample_rate.to_string();
 
         HStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
                 Text::new("Sample Rate:")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(
@@ -669,11 +669,11 @@ impl PlayerView {
             .as_str();
 
         HStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
                 Text::new("Speaker Configuration:")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(
@@ -779,7 +779,7 @@ impl PlayerView {
             .child(div().w(px(20.0)))
             .child(
                 Text::new("Channels:")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(Badge::new(format!("{}", num_channels)).variant(BadgeVariant::Info))
@@ -816,7 +816,7 @@ impl PlayerView {
         const NAME_WIDTH: f32 = 140.0;
 
         VStack::new()
-            .spacing(StackSpacing::Sm)
+            .spacing(StackSpacing::Xs)
             .children(speaker_data.iter().enumerate().map(
                 |(speaker_idx, (interface_channels, group_name))| {
                     let view = view.clone();
@@ -840,16 +840,16 @@ impl PlayerView {
                     let speaker_content = if is_multi {
                         // Multi mode: show header row + channel list below
                         VStack::new()
-                            .spacing(StackSpacing::Sm)
+                            .spacing(StackSpacing::Xs)
                             .child(
                                 // Header row with speaker name, group, and mode toggle
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
                                     .child(
                                         div().w(px(LABEL_WIDTH)).child(
                                             Text::new(format!("Speaker {}:", speaker_idx + 1))
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_secondary),
                                         ),
                                     )
@@ -874,12 +874,12 @@ impl PlayerView {
                         // Single mode: inline interface channel input on same row
                         let interface_ch = interface_channels.first().copied().unwrap_or(0);
                         HStack::new()
-                            .spacing(StackSpacing::Sm)
+                            .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
                             .child(
                                 div().w(px(LABEL_WIDTH)).child(
                                     Text::new(format!("Speaker {}:", speaker_idx + 1))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 ),
                             )
@@ -889,7 +889,7 @@ impl PlayerView {
                                     .into_any_element(),
                             )
                             .child(div().w(px(70.0)))
-                            .child(Text::new("Ch").size(TextSize::Sm).color(theme.text_muted))
+                            .child(Text::new("Ch").size(TextSize::Xs).color(theme.text_muted))
                             .child(div().w(px(30.0)))
                             .child({
                                 let view = view.clone();
@@ -901,7 +901,7 @@ impl PlayerView {
                                 .min(1.0)
                                 .max(128.0)
                                 .step(1.0)
-                                .size(NumberInputSize::Lg)
+                                .size(NumberInputSize::Md)
                                 .on_change({
                                     let view = view.clone();
                                     move |value, _window, cx| {
@@ -1063,7 +1063,7 @@ impl PlayerView {
                         let theme = theme.clone();
 
                         HStack::new()
-                            .spacing(StackSpacing::Sm)
+                            .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
                             // Indent to align under the name column
                             .child(div().w(px(LABEL_WIDTH)))
@@ -1084,7 +1084,7 @@ impl PlayerView {
                                 .min(1.0)
                                 .max(128.0)
                                 .step(1.0)
-                                .size(NumberInputSize::Sm)
+                                .size(NumberInputSize::Xs)
                                 .on_change({
                                     let view = view.clone();
                                     move |value, _window, cx| {
@@ -1166,7 +1166,7 @@ impl PlayerView {
                 let view = view.clone();
                 let theme = theme.clone();
                 HStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(div().w(px(LABEL_WIDTH)))
                     .child(
                         Button::new(
@@ -1230,7 +1230,7 @@ impl PlayerView {
                 Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
                     .placeholder("Name")
                     .value(current_name)
-                    .size(InputSize::Sm)
+                    .size(InputSize::Xs)
                     .on_change({
                         let view = view.clone();
                         move |value, _window, cx| {
@@ -1470,11 +1470,11 @@ impl PlayerView {
         let selected_value = recording_state.recording_config.sample_rate.to_string();
 
         HStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .align(StackAlign::Center)
             .child(
                 Text::new("Sample Rate:")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(
@@ -1535,7 +1535,7 @@ impl PlayerView {
         let view = cx.entity().clone();
 
         VStack::new()
-            .spacing(StackSpacing::Sm)
+            .spacing(StackSpacing::Xs)
             .children(
                 recording_state
                     .recording_config
@@ -1547,16 +1547,16 @@ impl PlayerView {
                         let theme = theme.clone();
 
                         HStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .align(StackAlign::Center)
                             .child(
                                 Text::new(format!("Channel {}:", idx + 1))
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_secondary),
                             )
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
                                     .child(
                                         Text::new("Interface")
@@ -1573,7 +1573,7 @@ impl PlayerView {
                                         .min(1.0)
                                         .max(128.0)
                                         .step(1.0)
-                                        .size(NumberInputSize::Sm)
+                                        .size(NumberInputSize::Xs)
                                         .on_change({
                                             let view = view.clone();
                                             move |value, _window, cx| {

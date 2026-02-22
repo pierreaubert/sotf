@@ -30,20 +30,20 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 // Header
                 VStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(
                         Text::new("Evaluate Recordings")
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
                     )
                     .child(
                         Text::new("Review frequency response, phase, group delay, and impulse response measurements.")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     ),
             )
@@ -107,15 +107,15 @@ impl PlayerView {
 
         Card::new().content(
             HStack::new()
-                .spacing(StackSpacing::Lg)
+                .spacing(StackSpacing::Md)
                 .align(StackAlign::Center)
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Sm)
+                        .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
                         .child(
                             Text::new("Channel:")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
                         .child(
@@ -170,11 +170,11 @@ impl PlayerView {
                 )
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Sm)
+                        .spacing(StackSpacing::Xs)
                         .align(StackAlign::Center)
                         .child(
                             Text::new("Smoothing:")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         )
                         .child(
@@ -277,10 +277,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("MAGNITUDE (dB)")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -304,10 +304,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("PHASE (degrees)")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -331,10 +331,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("GROUP DELAY (ms)")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -357,10 +357,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("IMPULSE RESPONSE")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -384,10 +384,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("DISTORTION (THD+N %)")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -411,10 +411,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("RT60 DECAY (ms)")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -438,10 +438,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("CLARITY (C50/C80 dB)")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -470,10 +470,10 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("SPECTROGRAM")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
@@ -514,7 +514,7 @@ impl PlayerView {
             .justify_center()
             .child(
                 Text::new("Spectrogram not available")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_muted),
             )
             .into_any_element()
@@ -592,13 +592,13 @@ impl PlayerView {
             .gap_2()
             .child(
                 Text::new("No Recordings Available")
-                    .size(TextSize::Md)
+                    .size(TextSize::Sm)
                     .weight(TextWeight::Semibold)
                     .color(theme.text_secondary),
             )
             .child(
                 Text::new("Go back to the Capture step to record frequency responses")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_muted),
             )
     }
@@ -847,7 +847,7 @@ impl PlayerView {
                 .justify_center()
                 .child(
                     Text::new("Distortion data not available (use Sweep signal)")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .color(theme.text_muted),
                 )
                 .into_any_element();
@@ -1142,28 +1142,28 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("RECORDING SUMMARY")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Bold)
                         .color(theme.accent),
                 )
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Lg)
+                        .spacing(StackSpacing::Md)
                         .align(StackAlign::Center)
                         .child(
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
                                     Text::new("Channels Recorded")
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
                                 .child(
                                     Text::new(format!("{} / {}", recorded_count, total_count))
-                                        .size(TextSize::Lg)
+                                        .size(TextSize::Md)
                                         .weight(TextWeight::Bold)
                                         .color(theme.text_primary),
                                 ),
@@ -1174,7 +1174,7 @@ impl PlayerView {
                                 .spacing(StackSpacing::Xs)
                                 .child(
                                     Text::new("Status")
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
                                 .child(
@@ -1183,7 +1183,7 @@ impl PlayerView {
                                     } else {
                                         "Some channels missing"
                                     })
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .weight(TextWeight::Semibold)
                                     .color(
                                         if recorded_count == total_count {
@@ -1202,11 +1202,11 @@ impl PlayerView {
                         .map(|rec| {
                             let has_result = rec.result.is_some();
                             HStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .align(StackAlign::Center)
                                 .child(
                                     Text::new(if has_result { "+" } else { "-" })
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(if has_result {
                                             theme.success
                                         } else {
@@ -1215,7 +1215,7 @@ impl PlayerView {
                                 )
                                 .child(
                                     Text::new(rec.channel_name.clone())
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(if has_result {
                                             theme.text_primary
                                         } else {

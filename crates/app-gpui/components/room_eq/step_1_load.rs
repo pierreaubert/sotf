@@ -37,17 +37,17 @@ impl PlayerView {
             .any(|r| r.state == crate::app::types::ChannelRecordingState::Done);
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Load Measurement Data")
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new(
                     "Load measurement data from a previous recording session or import from a JSON file.",
                 )
-                .size(TextSize::Sm)
+                .size(TextSize::Xs)
                 .color(theme.text_secondary),
             )
             // Error message display
@@ -59,27 +59,27 @@ impl PlayerView {
                         .border(theme.border)
                         .content(
                             VStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .child(
                                     HStack::new()
-                                        .spacing(StackSpacing::Sm)
+                                        .spacing(StackSpacing::Xs)
                                         .align(StackAlign::Center)
                                         .child(
                                             Text::new("Error")
                                                 .weight(TextWeight::Bold)
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.error),
                                         )
                                         .child(
                                             Text::new(error_message.unwrap_or_default())
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                         ),
                                 )
                                 .child(
                                     Button::new("dismiss_error", "Dismiss")
                                         .variant(ButtonVariant::Secondary)
-                                        .size(ButtonSize::Sm)
+                                        .size(ButtonSize::Xs)
                                         .theme(theme.to_button_theme())
                                         .build()
                                         .on_mouse_up(
@@ -100,7 +100,7 @@ impl PlayerView {
             // Two source cards side by side
             .child(
                 HStack::new()
-                    .spacing(StackSpacing::Lg)
+                    .spacing(StackSpacing::Md)
                     .child(
                         div().flex_1().child(
                             Card::new()
@@ -114,20 +114,20 @@ impl PlayerView {
                                 )
                                 .content(
                                     VStack::new()
-                                        .spacing(StackSpacing::Md)
+                                        .spacing(StackSpacing::Sm)
                                         .child(
                                             Text::new(if has_recording_session_data {
                                                 "Use measurements from the Recording screen."
                                             } else {
                                                 "No recordings found. Go to the Recording screen to measure your speakers."
                                             })
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                         )
                                         .child(if has_recording_session_data {
                                             Button::new("load_from_recording", "Load from Recording")
                                                 .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Md)
+                                                .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
                                                 .build()
                                                 .on_mouse_up(
@@ -139,7 +139,7 @@ impl PlayerView {
                                         } else {
                                             Button::new("go_to_recording", "Go to Recording")
                                                 .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Md)
+                                                .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
                                                 .build()
                                                 .on_mouse_up(
@@ -165,16 +165,16 @@ impl PlayerView {
                                 )
                                 .content(
                                     VStack::new()
-                                        .spacing(StackSpacing::Md)
+                                        .spacing(StackSpacing::Sm)
                                         .child(
                                             Text::new("Import measurements from a previously saved JSON file.")
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_secondary),
                                         )
                                         .child(
                                             Button::new("load_from_file", "Import from File")
                                                 .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Md)
+                                                .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
                                                 .build()
                                                 .on_mouse_up(
@@ -198,17 +198,17 @@ impl PlayerView {
                             .border(theme.border)
                             .content(
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
                                     .child(
                                         Text::new("✓")
                                             .weight(TextWeight::Bold)
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.success),
                                     )
                                     .child(
                                         Text::new(status_message.clone())
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_primary),
                                     ),
                             ),
@@ -217,7 +217,7 @@ impl PlayerView {
                         gpui::div().flex().justify_center().child(
                             Button::new("next-from-load", "Next: Configure")
                                 .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Lg)
+                                .size(ButtonSize::Md)
                                 .theme(theme.to_button_theme())
                                 .build()
                                 .on_mouse_up(

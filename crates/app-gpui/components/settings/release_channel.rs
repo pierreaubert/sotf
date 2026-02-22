@@ -108,7 +108,7 @@ impl PlayerView {
                                             } else {
                                                 ButtonVariant::Secondary
                                             })
-                                            .size(ButtonSize::Sm)
+                                            .size(ButtonSize::Xs)
                                             .full_width(true)
                                             .theme(theme.to_button_theme())
                                             .build()

@@ -24,16 +24,16 @@ impl PlayerView {
         let measurement_path = headphone_eq.measurement_path.clone().unwrap_or_default();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Select Measurement")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Choose your headphone measurement file.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(
@@ -48,15 +48,15 @@ impl PlayerView {
                     )
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new("Select a CSV file with your headphone's frequency response measurement.")
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_secondary),
                             )
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .child(
                                         div()
                                             .flex_1()
@@ -79,7 +79,7 @@ impl PlayerView {
                                     .child(
                                         Button::new("browse-measurement", "Browse...")
                                             .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Md)
+                                            .size(ButtonSize::Sm)
                                             .theme(button_theme.clone())
                                             .build()
                                             .on_mouse_up(

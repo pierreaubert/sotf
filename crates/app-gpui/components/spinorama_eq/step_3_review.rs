@@ -16,16 +16,16 @@ impl PlayerView {
         let full_result = spinorama.full_result.as_ref();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Review Results")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Review the optimized EQ results and frequency response.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             // Graphs card (if full_result is available)
@@ -60,10 +60,10 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .child(
                                         HStack::new()
-                                            .spacing(StackSpacing::Lg)
+                                            .spacing(StackSpacing::Md)
                                             .child(
                                                 Text::new(format!(
                                                     "Loss Before: {:.4}",
@@ -92,7 +92,7 @@ impl PlayerView {
                                         |vstack| {
                                             vstack.child(
                                                 HStack::new()
-                                                    .spacing(StackSpacing::Lg)
+                                                    .spacing(StackSpacing::Md)
                                                     .when_some(initial_score, |hstack, score| {
                                                         hstack.child(
                                                             Text::new(format!(
@@ -135,7 +135,7 @@ impl PlayerView {
                                             "{} filters generated",
                                             full_res.biquads.len()
                                         ))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme_for_graphs.text_secondary),
                                     ),
                             ),
@@ -259,7 +259,7 @@ impl PlayerView {
                         )
                         .content(
                             Text::new("Go back and run optimization to generate an EQ curve.")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),
                 )

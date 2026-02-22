@@ -22,7 +22,7 @@ impl PlayerView {
         let translations = state.app.ui_state.translations.clone();
         let _playback_source = state.app.audio_device_state.playback_source;
 
-        let mut content = VStack::new().spacing(StackSpacing::Md);
+        let mut content = VStack::new().spacing(StackSpacing::Sm);
 
         // HAL Input Source section (macOS only with hal feature)
         #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -34,12 +34,12 @@ impl PlayerView {
             content = content
                 .child(
                     Text::new("Audio Source")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .weight(TextWeight::Semibold),
                 )
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .child({
                             // File Player option
                             let is_selected = !is_hal_mode;
@@ -65,7 +65,7 @@ impl PlayerView {
                                         .spacing(StackSpacing::Xs)
                                         .child(
                                             Text::new("File Player")
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .weight(TextWeight::Semibold)
                                                 .color(if is_selected {
                                                     theme.text_on_accent
@@ -123,7 +123,7 @@ impl PlayerView {
                                         .spacing(StackSpacing::Xs)
                                         .child(
                                             Text::new("HAL Device")
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .weight(TextWeight::Semibold)
                                                 .color(if is_selected {
                                                     theme.text_on_accent
@@ -184,12 +184,12 @@ impl PlayerView {
                 content = content
                     .child(
                         Text::new("HAL Configuration")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .weight(TextWeight::Semibold),
                     )
                     .child(
                         HStack::new()
-                            .spacing(StackSpacing::Lg)
+                            .spacing(StackSpacing::Md)
                             .child({
                                 // Sample Rate selector
                                 let state_for_change = state_entity.clone();
@@ -317,7 +317,7 @@ impl PlayerView {
 
         content = content.child(
             Text::new(translations.devices_title)
-                .size(TextSize::Sm)
+                .size(TextSize::Xs)
                 .weight(TextWeight::Semibold),
         );
 
@@ -366,7 +366,7 @@ impl PlayerView {
                             })
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
                                     .when_some(brand_image, |stack, image_path| {
                                         stack.child(
@@ -386,10 +386,10 @@ impl PlayerView {
                                     })
                                     .child(
                                         VStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .child(
                                                 Text::new(device_name)
-                                                    .size(TextSize::Sm)
+                                                    .size(TextSize::Xs)
                                                     .weight(TextWeight::Semibold)
                                                     .color(if is_selected {
                                                         theme.text_on_accent
@@ -399,7 +399,7 @@ impl PlayerView {
                                             )
                                             .child(
                                                 HStack::new()
-                                                    .spacing(StackSpacing::Md)
+                                                    .spacing(StackSpacing::Sm)
                                                     .child(
                                                         Badge::new(format!("{} ch", channels))
                                                             .variant(BadgeVariant::Info),

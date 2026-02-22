@@ -305,7 +305,7 @@ impl PlayerView {
                             .items_center()
                             .child(
                                 Text::new("Custom Target Curve Editor")
-                                    .size(TextSize::Lg)
+                                    .size(TextSize::Md)
                                     .weight(TextWeight::Semibold)
                                     .color(theme.text_primary),
                             )
@@ -315,7 +315,7 @@ impl PlayerView {
                                     .child(
                                         Button::new("presets-curve", "Presets ▾")
                                             .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Md)
+                                            .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .on_click({
                                                 let state = state_entity.clone();
@@ -388,7 +388,7 @@ impl PlayerView {
                     )
                     .child(
                         Text::new("Click on the graph to add control points. Drag points to adjust. Double-click a point to remove it.")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
                     .child(render_target_curve_graph(
@@ -404,7 +404,7 @@ impl PlayerView {
                             .child(
                                 Button::new("load-curve", "Import...")
                                     .variant(ButtonVariant::Secondary)
-                                    .size(ButtonSize::Md)
+                                    .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
                                     .on_click({
                                         let view = view_entity.clone();
@@ -418,7 +418,7 @@ impl PlayerView {
                             .child(
                                 Button::new("save-curve", "Export...")
                                     .variant(ButtonVariant::Secondary)
-                                    .size(ButtonSize::Md)
+                                    .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
                                     .on_click({
                                         let view = view_entity.clone();
@@ -432,7 +432,7 @@ impl PlayerView {
                             .child(
                                 Button::new("done-curve", "Done")
                                     .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Md)
+                                    .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
                                     .on_click({
                                         let state = state_entity.clone();
@@ -469,7 +469,7 @@ fn render_preset_option(
         .cursor_pointer()
         .child(
             Text::new(name.to_string())
-                .size(TextSize::Sm)
+                .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {

@@ -21,16 +21,16 @@ impl PlayerView {
         let export_format = headphone_eq.export_format.clone();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Save EQ")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Choose an export format and save your EQ configuration.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .when_some(result, |vstack, _result| {
@@ -43,16 +43,16 @@ impl PlayerView {
                             .header(Text::new("Export Format").color(theme.text_primary).weight(TextWeight::Semibold))
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         Text::new("Select the format for your EQ file.")
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
                                     .child({
                                         let button_theme = button_theme.clone();
                                         HStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .wrap(true)
                                             .children(
                                                 sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS.iter().map(
@@ -72,7 +72,7 @@ impl PlayerView {
                                                         } else {
                                                             ButtonVariant::Secondary
                                                         })
-                                                        .size(ButtonSize::Sm)
+                                                        .size(ButtonSize::Xs)
                                                         .theme(button_theme.clone())
                                                         .build()
                                                         .on_mouse_up(
@@ -108,11 +108,11 @@ impl PlayerView {
                             .header(Text::new("Save").color(theme.text_primary).weight(TextWeight::Semibold))
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         Button::new("save-eq", "Save EQ File")
                                             .variant(ButtonVariant::Primary)
-                                            .size(ButtonSize::Lg)
+                                            .size(ButtonSize::Md)
                                             .full_width(true)
                                             .theme(button_theme.clone())
                                             .build()
@@ -142,7 +142,7 @@ impl PlayerView {
                         .header(Text::new("No Results").color(theme.text_primary).weight(TextWeight::Semibold))
                         .content(
                             Text::new("Go back and run optimization to generate an EQ curve.")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),
                 )

@@ -124,12 +124,12 @@ pub fn render_upmixer_plugin(
 
     // Main layout: 2 rows
     VStack::new()
-        .spacing(StackSpacing::Sm)
+        .spacing(StackSpacing::Xs)
         // Top bar: Output config selector on the right
         .child(
             div().flex().justify_end().w_full().child(
                 HStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .align(StackAlign::Center)
                     .child(
                         div()
@@ -152,7 +152,7 @@ pub fn render_upmixer_plugin(
                                 )
                                 .selected(speaker_config_owned.clone())
                                 .is_open(config_open)
-                                .size(SelectSize::Sm)
+                                .size(SelectSize::Xs)
                                 .theme(theme.to_select_theme())
                                 .on_toggle({
                                     let entity = entity.clone();
@@ -193,7 +193,7 @@ pub fn render_upmixer_plugin(
         // Row 1: Crossovers, SubHarmonic, 8 Sliders
         .child(
             HStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .align(StackAlign::Stretch)
                 .child(render_crossovers_box(
                     entity.clone(),
@@ -213,7 +213,7 @@ pub fn render_upmixer_plugin(
         // Row 2: Dialogue, Ambient, Height, Decorrelation
         .child(
             HStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .align(StackAlign::Start)
                 .child(render_dialogue_box(
                     entity.clone(),
@@ -397,7 +397,7 @@ fn render_gains_row(
     theme: &Theme,
 ) -> impl IntoElement {
     HStack::new()
-        .spacing(StackSpacing::Sm)
+        .spacing(StackSpacing::Xs)
         .child(render_vertical_slider_with_ticks(
             entity.clone(),
             plugin_idx,
@@ -657,7 +657,7 @@ fn render_height_box(
         .child(render_section_header("Height", theme))
         .child(
             HStack::new()
-                .spacing(StackSpacing::Sm)
+                .spacing(StackSpacing::Xs)
                 .align(StackAlign::Center)
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
@@ -702,7 +702,7 @@ fn render_height_box(
         )
         .child(
             HStack::new()
-                .spacing(StackSpacing::Sm)
+                .spacing(StackSpacing::Xs)
                 .align(StackAlign::Center)
                 .child(render_knob(
                     entity.clone(),

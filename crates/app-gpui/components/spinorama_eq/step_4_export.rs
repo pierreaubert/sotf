@@ -21,16 +21,16 @@ impl PlayerView {
         let export_format = spinorama.export_format.clone();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Apply & Export")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Apply the EQ to playback or export to various formats.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .when_some(result, |vstack, _result| {
@@ -50,24 +50,24 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         Text::new(
                                             "Apply the EQ to your current playback to hear the difference.",
                                         )
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                     )
                                     .child(
                                         HStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .child(
                                                 Button::new(
                                                     "apply-spinorama-eq",
                                                     "Apply to Playback",
                                                 )
                                                 .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Md)
+                                                .size(ButtonSize::Sm)
                                                 .theme(button_theme.clone())
                                                 .build()
                                                 .on_mouse_up(
@@ -80,7 +80,7 @@ impl PlayerView {
                                             .child(
                                                 Button::new("clear-spinorama-eq", "Clear EQ")
                                                     .variant(ButtonVariant::Secondary)
-                                                    .size(ButtonSize::Md)
+                                                    .size(ButtonSize::Sm)
                                                     .theme(button_theme.clone())
                                                     .build()
                                                     .on_mouse_up(
@@ -105,16 +105,16 @@ impl PlayerView {
                             )
                             .content(
                                 VStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .child(
                                         Text::new("Select export format and save your EQ.")
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
                                     .child({
                                         let button_theme = button_theme.clone();
                                         HStack::new()
-                                            .spacing(StackSpacing::Sm)
+                                            .spacing(StackSpacing::Xs)
                                             .wrap(true)
                                             .children(
                                                 sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS
@@ -135,7 +135,7 @@ impl PlayerView {
                                                         } else {
                                                             ButtonVariant::Secondary
                                                         })
-                                                        .size(ButtonSize::Sm)
+                                                        .size(ButtonSize::Xs)
                                                         .theme(button_theme.clone())
                                                         .build()
                                                         .on_mouse_up(
@@ -161,7 +161,7 @@ impl PlayerView {
                                     .child(
                                         Button::new("save-spinorama-eq", "Save EQ File")
                                             .variant(ButtonVariant::Primary)
-                                            .size(ButtonSize::Md)
+                                            .size(ButtonSize::Sm)
                                             .theme(button_theme.clone())
                                             .build()
                                             .on_mouse_up(
@@ -187,7 +187,7 @@ impl PlayerView {
                         )
                         .content(
                             Text::new("Go back and run optimization to generate an EQ curve.")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                         ),
                 )

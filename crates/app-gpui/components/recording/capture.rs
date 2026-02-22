@@ -16,19 +16,19 @@ impl PlayerView {
     /// Render the capture step UI
     pub(crate) fn render_recording_capture_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 // Header
                 VStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(
                         Text::new("Signal Recording")
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Bold),
                     )
                     .child(
                         Text::new("Test each channel individually. Signals will play sequentially with a 1-second pause between channels.")
-                            .size(TextSize::Sm),
+                            .size(TextSize::Xs),
                     ),
             )
             .child(self.render_signal_config_section(cx))
@@ -49,38 +49,38 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Lg)
+                        .spacing(StackSpacing::Md)
                         .align(StackAlign::Center)
                         .child(
                             HStack::new()
-                                .spacing(StackSpacing::Md)
+                                .spacing(StackSpacing::Sm)
                                 .align(StackAlign::Center)
                                 .child(
                                     Text::new("Signal Type:")
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .weight(TextWeight::Semibold),
                                 )
                                 .child(self.render_signal_type_dropdown(cx)),
                         )
                         .child(
                             HStack::new()
-                                .spacing(StackSpacing::Md)
+                                .spacing(StackSpacing::Sm)
                                 .align(StackAlign::Center)
                                 .child(
                                     Text::new("Duration:")
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .weight(TextWeight::Semibold),
                                 )
                                 .child(self.render_duration_dropdown(cx)),
                         )
                         .child(
                             HStack::new()
-                                .spacing(StackSpacing::Md)
+                                .spacing(StackSpacing::Sm)
                                 .align(StackAlign::Center)
-                                .child(Text::new("Level:").size(TextSize::Sm))
+                                .child(Text::new("Level:").size(TextSize::Xs))
                                 .child({
                                     let view = cx.entity().clone();
                                     NumberInput::new("signal_level")
@@ -90,7 +90,7 @@ impl PlayerView {
                                         .step(1.0)
                                         .decimals(0)
                                         .unit("dB")
-                                        .size(NumberInputSize::Sm)
+                                        .size(NumberInputSize::Xs)
                                         .width(100.0)
                                         .on_change(move |val, _window, cx| {
                                             view.update(cx, |this, cx| {
@@ -112,13 +112,13 @@ impl PlayerView {
                     let view2 = cx.entity().clone();
                     stack.child(
                         HStack::new()
-                            .spacing(StackSpacing::Lg)
+                            .spacing(StackSpacing::Md)
                             .align(StackAlign::Center)
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
-                                    .child(Text::new("Start Freq:").size(TextSize::Sm))
+                                    .child(Text::new("Start Freq:").size(TextSize::Xs))
                                     .child(
                                         NumberInput::new("sweep_start_freq")
                                             .value(sweep_start_freq as f64)
@@ -127,7 +127,7 @@ impl PlayerView {
                                             .step(1.0)
                                             .decimals(0)
                                             .unit("Hz")
-                                            .size(NumberInputSize::Sm)
+                                            .size(NumberInputSize::Xs)
                                             .width(100.0)
                                             .on_change(move |val, _window, cx| {
                                                 view.update(cx, |this, cx| {
@@ -145,9 +145,9 @@ impl PlayerView {
                             )
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Md)
+                                    .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
-                                    .child(Text::new("End Freq:").size(TextSize::Sm))
+                                    .child(Text::new("End Freq:").size(TextSize::Xs))
                                     .child(
                                         NumberInput::new("sweep_end_freq")
                                             .value(sweep_end_freq as f64)
@@ -156,7 +156,7 @@ impl PlayerView {
                                             .step(100.0)
                                             .decimals(0)
                                             .unit("Hz")
-                                            .size(NumberInputSize::Sm)
+                                            .size(NumberInputSize::Xs)
                                             .width(100.0)
                                             .on_change(move |val, _window, cx| {
                                                 view2.update(cx, |this, cx| {
@@ -321,28 +321,28 @@ impl PlayerView {
 
         Card::new().content(
             VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .justify(StackJustify::SpaceBetween)
                         .align(StackAlign::Center)
                         .child(
                             Text::new("CHANNEL STATUS")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .weight(TextWeight::Bold)
                                 .color(theme.accent),
                         )
                         .child(
                             HStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .when(!is_recording, |stack| {
                                     let view = view.clone();
                                     let theme = theme.clone();
                                     stack.child(
                                         Button::new("record_all", "Record All Channels")
                                             .variant(ButtonVariant::Primary)
-                                            .size(ButtonSize::Md)
+                                            .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .on_click({
                                                 let view = view.clone();
@@ -360,7 +360,7 @@ impl PlayerView {
                                     stack.child(
                                         Button::new("stop_recording", "Stop Recording")
                                             .variant(ButtonVariant::Destructive)
-                                            .size(ButtonSize::Md)
+                                            .size(ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .on_click({
                                                 let view = view.clone();
@@ -376,7 +376,7 @@ impl PlayerView {
                 )
                 .child(self.render_channel_list(cx))
                 .when(!status_message.is_empty(), |stack| {
-                    stack.child(Text::new(status_message.clone()).size(TextSize::Sm))
+                    stack.child(Text::new(status_message.clone()).size(TextSize::Xs))
                 })
                 .when(noise_floor_warning.is_some(), |stack| {
                     let warning_msg = noise_floor_warning.clone().unwrap_or_default();
@@ -391,12 +391,12 @@ impl PlayerView {
                             .border_color(theme.warning)
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    .spacing(StackSpacing::Xs)
                                     .align(StackAlign::Center)
-                                    .child(Text::new("⚠").size(TextSize::Md).color(theme.warning))
+                                    .child(Text::new("⚠").size(TextSize::Sm).color(theme.warning))
                                     .child(
                                         Text::new(warning_msg)
-                                            .size(TextSize::Sm)
+                                            .size(TextSize::Xs)
                                             .color(theme.warning),
                                     ),
                             ),
@@ -405,7 +405,7 @@ impl PlayerView {
                 .when(is_recording, |stack| {
                     stack.child(
                         Progress::new(recording_progress)
-                            .size(ProgressSize::Md)
+                            .size(ProgressSize::Sm)
                             .variant(ProgressVariant::Default),
                     )
                 }),
@@ -422,13 +422,13 @@ impl PlayerView {
 
         if recording_state.channel_recordings.is_empty() {
             return VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     div().p_4().rounded_md().bg(theme.surface).child(
                         Text::new(
                             "No channels configured. Please go back and configure your devices.",
                         )
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .color(theme.text_muted),
                     ),
                 )
@@ -436,7 +436,7 @@ impl PlayerView {
         }
 
         VStack::new()
-            .spacing(StackSpacing::Sm)
+            .spacing(StackSpacing::Xs)
             .children(recording_state.channel_recordings.iter().enumerate().map(
                 |(idx, recording)| {
                     let theme = theme.clone();
@@ -467,17 +467,17 @@ impl PlayerView {
                         .child(
                             div().w(px(100.0)).child(
                                 Text::new(format!("{}:", channel_name))
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .weight(TextWeight::Semibold)
                                     .color(theme.text_primary),
                             ),
                         )
                         .child(
                             HStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .align(StackAlign::Center)
-                                .child(Text::new(state_icon).size(TextSize::Sm).color(state_color))
-                                .child(Text::new(state_text).size(TextSize::Sm).color(state_color)),
+                                .child(Text::new(state_icon).size(TextSize::Xs).color(state_color))
+                                .child(Text::new(state_text).size(TextSize::Xs).color(state_color)),
                         )
                         .child(div().flex_1()) // Spacer
                         .child(
@@ -486,7 +486,7 @@ impl PlayerView {
                                 button_label,
                             )
                             .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
+                            .size(ButtonSize::Xs)
                             .disabled(
                                 is_recording || channel_state == ChannelRecordingState::Recording,
                             )
@@ -520,11 +520,11 @@ impl PlayerView {
             .any(|r| r.state == ChannelRecordingState::Done);
 
         HStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .child(
                 Button::new("redo_recordings", "Redo All")
                     .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Sm)
                     .disabled(!has_recordings || is_recording)
                     .theme(theme.to_button_theme())
                     .on_click({
@@ -539,7 +539,7 @@ impl PlayerView {
             .child(
                 Button::new("load_from_file", "Load from File")
                     .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Sm)
                     .disabled(is_recording)
                     .theme(theme.to_button_theme())
                     .on_click({
@@ -1680,54 +1680,54 @@ impl PlayerView {
                     .child(
                         div().px_4().py_4().child(
                             VStack::new()
-                                .spacing(StackSpacing::Lg)
+                                .spacing(StackSpacing::Md)
                                 .child(
                                     Text::new("This recording file uses an older format.")
-                                        .size(TextSize::Md)
+                                        .size(TextSize::Sm)
                                         .color(theme.text_primary),
                                 )
                                 .child(
                                     VStack::new()
-                                        .spacing(StackSpacing::Sm)
+                                        .spacing(StackSpacing::Xs)
                                         .child(
                                             HStack::new()
-                                                .spacing(StackSpacing::Md)
+                                                .spacing(StackSpacing::Sm)
                                                 .child(
                                                     Text::new("File:")
-                                                        .size(TextSize::Sm)
+                                                        .size(TextSize::Xs)
                                                         .color(theme.text_secondary),
                                                 )
                                                 .child(
                                                     Text::new(file_name)
-                                                        .size(TextSize::Sm)
+                                                        .size(TextSize::Xs)
                                                         .color(theme.text_primary),
                                                 ),
                                         )
                                         .child(
                                             HStack::new()
-                                                .spacing(StackSpacing::Md)
+                                                .spacing(StackSpacing::Sm)
                                                 .child(
                                                     Text::new("Size:")
-                                                        .size(TextSize::Sm)
+                                                        .size(TextSize::Xs)
                                                         .color(theme.text_secondary),
                                                 )
                                                 .child(
                                                     Text::new(format!("{:.2} MB", file_size_mb))
-                                                        .size(TextSize::Sm)
+                                                        .size(TextSize::Xs)
                                                         .color(theme.warning),
                                                 ),
                                         )
                                         .child(
                                             HStack::new()
-                                                .spacing(StackSpacing::Md)
+                                                .spacing(StackSpacing::Sm)
                                                 .child(
                                                     Text::new("Channels:")
-                                                        .size(TextSize::Sm)
+                                                        .size(TextSize::Xs)
                                                         .color(theme.text_secondary),
                                                 )
                                                 .child(
                                                     Text::new(format!("{}", channel_count))
-                                                        .size(TextSize::Sm)
+                                                        .size(TextSize::Xs)
                                                         .color(theme.text_primary),
                                                 ),
                                         ),

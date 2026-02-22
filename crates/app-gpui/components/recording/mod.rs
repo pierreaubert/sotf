@@ -136,11 +136,11 @@ impl PlayerView {
         };
 
         let navigation = HStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .child(
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Sm)
                     .disabled(is_recording)
                     .theme(button_theme.clone())
                     .build()
@@ -174,7 +174,7 @@ impl PlayerView {
             .child(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
-                    .size(ButtonSize::Md)
+                    .size(ButtonSize::Sm)
                     .disabled(next_disabled)
                     .theme(button_theme.clone())
                     .build()

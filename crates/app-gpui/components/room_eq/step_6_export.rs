@@ -15,15 +15,15 @@ impl PlayerView {
             .is_some();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Export & Apply")
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Export the DSP chain or apply directly to the player.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             .child(
@@ -34,12 +34,12 @@ impl PlayerView {
                     .header(Text::new("Backup Current Rack").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new(
                                     "Save a copy of your current plugin rack before applying changes.",
                                 )
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
                             .child(
@@ -64,7 +64,7 @@ impl PlayerView {
                     .header(Text::new("Export Options").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Button::new("export_json", "Export as JSON")
                                     .variant(ButtonVariant::Secondary)
@@ -87,14 +87,14 @@ impl PlayerView {
                     .header(Text::new("Apply to Player").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Text::new(if has_eq_in_rack {
                                     "An EQ plugin exists in your rack. It will be updated with the new filters."
                                 } else {
                                     "No EQ plugin in rack. A new EQ will be added at the end of the processing chain."
                                 })
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .color(theme.text_secondary),
                             )
                             .child(

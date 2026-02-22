@@ -1282,25 +1282,25 @@ impl PlayerView {
                 )
                 .content(
                     VStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .child(if !has_phase_data {
                             Text::new(
                                 "Only IIR mode is available (no phase data in measurements).",
                             )
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_muted)
                             .into_any_element()
                         } else {
                             Text::new(
                                 "Choose the type of filters to generate for your room correction.",
                             )
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_secondary)
                             .into_any_element()
                         })
                         .child(
                             HStack::new()
-                                .spacing(StackSpacing::Md)
+                                .spacing(StackSpacing::Sm)
                                 .align(StackAlign::Stretch)
                                 .children(modes.iter().map(|mode| {
                                     let is_selected = current_mode == *mode;
@@ -1320,7 +1320,7 @@ impl PlayerView {
                                             })
                                             .content(
                                                 VStack::new()
-                                                    .spacing(StackSpacing::Sm)
+                                                    .spacing(StackSpacing::Xs)
                                                     .child(
                                                         Text::new(mode.as_str())
                                                             .weight(TextWeight::Semibold)
@@ -1332,7 +1332,7 @@ impl PlayerView {
                                                     )
                                                     .child(
                                                         Text::new(mode.description())
-                                                            .size(TextSize::Sm)
+                                                            .size(TextSize::Xs)
                                                             .color(theme.text_secondary),
                                                     )
                                                     .child(
@@ -1353,7 +1353,7 @@ impl PlayerView {
                                                             } else {
                                                                 ButtonVariant::Secondary
                                                             })
-                                                            .size(ButtonSize::Sm)
+                                                            .size(ButtonSize::Xs)
                                                             .full_width(true)
                                                             .theme(theme.to_button_theme())
                                                             .build()
@@ -1386,15 +1386,15 @@ impl PlayerView {
         };
 
         let mut content = VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Configure Optimization")
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Configure per-channel settings and optimizer parameters.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             // Mode selector inline
@@ -1441,16 +1441,16 @@ impl PlayerView {
             return div().into_any_element();
         }
 
-        let mut content = VStack::new().spacing(StackSpacing::Sm);
+        let mut content = VStack::new().spacing(StackSpacing::Xs);
 
         for error in &validation.errors {
             content = content.child(
                 HStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(Text::new("!").color(theme.error).weight(TextWeight::Bold))
                     .child(
                         Text::new(error.clone())
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.error),
                     ),
             );
@@ -1459,11 +1459,11 @@ impl PlayerView {
         for warning in &validation.warnings {
             content = content.child(
                 HStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     .child(Text::new("?").color(theme.warning).weight(TextWeight::Bold))
                     .child(
                         Text::new(warning.clone())
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.warning),
                     ),
             );
@@ -1499,10 +1499,10 @@ impl PlayerView {
 
         if speaker_configs.is_empty() {
             return VStack::new()
-                .spacing(StackSpacing::Md)
+                .spacing(StackSpacing::Sm)
                 .child(
                     Text::new("No channels configured. Load measurement data first.")
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .color(theme.text_muted),
                 )
                 .into_any_element();
@@ -1518,7 +1518,7 @@ impl PlayerView {
             .collect();
 
         VStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .children(rows)
             .into_any_element()
     }

@@ -108,7 +108,7 @@ impl PlayerView {
                                 state.app.queue.len(),
                                 translations.queue_albums
                             ))
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary)
                             .build()
@@ -558,7 +558,7 @@ impl PlayerView {
                 .child(
                     div().mb_3().child(
                         Text::new(translations.queue_now_playing)
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
                     ),
@@ -721,15 +721,15 @@ impl PlayerView {
                 .into_any_element()
         } else {
             VStack::new()
-                .spacing(StackSpacing::Sm)
+                .spacing(StackSpacing::Xs)
                 .child(
                     Text::new(translations.queue_no_track_playing)
-                        .size(TextSize::Lg)
+                        .size(TextSize::Md)
                         .color(theme.text_muted),
                 )
                 .child(
                     Text::new(translations.queue_select_album)
-                        .size(TextSize::Sm)
+                        .size(TextSize::Xs)
                         .color(theme.text_muted),
                 )
                 .build()

@@ -237,6 +237,111 @@ fn test_queue_item_empty_album() {
 }
 
 // ============================================================================
+// Auto-advance regression tests
+//
+// The UI polling loop must use the *previous* is_playing value to detect
+// end-of-track, not the engine's current state. A past bug overwrote
+// is_playing before the check, so auto-advance never triggered.
+// ============================================================================
+
+/// Simulates the auto-advance detection from ui/mod.rs polling loop.
+/// Returns the path of the next track if auto-advance triggered.
+fn simulate_auto_advance(
+    app_is_playing: bool,
+    engine_is_playing: bool,
+    current_queue_index: &mut Option<usize>,
+    queue: &mut [QueueItem],
+) -> Option<PathBuf> {
+    // Step 1: save previous state (the fix)
+    let was_playing = app_is_playing;
+    // Step 2: app_is_playing would be overwritten to engine_is_playing here
+
+    // Step 3: auto-advance check uses was_playing, NOT the overwritten value
+    if was_playing && !engine_is_playing && current_queue_index.is_some() {
+        let idx = current_queue_index.unwrap();
+        if let Some(item) = queue.get_mut(idx) {
+            // Try next track in current album
+            if let Some(track) = item.next_track() {
+                return Some(track.path.clone());
+            }
+        }
+        // Try next album
+        if idx + 1 < queue.len() {
+            *current_queue_index = Some(idx + 1);
+            queue[idx + 1].current_track_index = 0;
+            return queue[idx + 1].current_track().map(|t| t.path.clone());
+        }
+    }
+    None
+}
+
+#[test]
+fn test_auto_advance_within_album() {
+    let album = create_test_album(3);
+    let mut queue = vec![QueueItem::new(album)];
+    let mut current_idx = Some(0);
+
+    // Track ends: app was playing, engine stopped
+    let next = simulate_auto_advance(true, false, &mut current_idx, &mut queue);
+
+    assert!(next.is_some(), "Should advance to next track in album");
+    assert_eq!(queue[0].current_track_index, 1);
+}
+
+#[test]
+fn test_auto_advance_across_albums() {
+    let album1 = create_test_album(1); // single-track album
+    let album2 = create_test_album(2);
+    let mut queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+    let mut current_idx = Some(0);
+
+    // Last track of album 1 ends
+    let next = simulate_auto_advance(true, false, &mut current_idx, &mut queue);
+
+    assert!(next.is_some(), "Should advance to first track of next album");
+    assert_eq!(current_idx, Some(1), "Queue index should move to album 2");
+    assert_eq!(queue[1].current_track_index, 0);
+}
+
+#[test]
+fn test_auto_advance_stops_at_end_of_queue() {
+    let album = create_test_album(1);
+    let mut queue = vec![QueueItem::new(album)];
+    let mut current_idx = Some(0);
+
+    // Only track in only album ends
+    let next = simulate_auto_advance(true, false, &mut current_idx, &mut queue);
+
+    assert!(next.is_none(), "Should not advance — queue is finished");
+}
+
+#[test]
+fn test_no_auto_advance_when_paused() {
+    let album = create_test_album(3);
+    let mut queue = vec![QueueItem::new(album)];
+    let mut current_idx = Some(0);
+
+    // User paused: app not playing, engine not playing
+    let next = simulate_auto_advance(false, false, &mut current_idx, &mut queue);
+
+    assert!(next.is_none(), "Should not advance when user paused");
+    assert_eq!(queue[0].current_track_index, 0, "Track index should not change");
+}
+
+#[test]
+fn test_no_auto_advance_while_still_playing() {
+    let album = create_test_album(3);
+    let mut queue = vec![QueueItem::new(album)];
+    let mut current_idx = Some(0);
+
+    // Normal playback: both app and engine report playing
+    let next = simulate_auto_advance(true, true, &mut current_idx, &mut queue);
+
+    assert!(next.is_none(), "Should not advance while track is still playing");
+    assert_eq!(queue[0].current_track_index, 0);
+}
+
+// ============================================================================
 // SpeakerConfiguration Tests
 // ============================================================================
 

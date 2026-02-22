@@ -130,7 +130,7 @@ impl PlayerView {
             TabItem::new("year", translations.library_years)
                 .icon_with_color(|color| {
                     Icon::new(IconName::Disc)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -138,7 +138,7 @@ impl PlayerView {
             TabItem::new("genre", translations.library_genres)
                 .icon_with_color(|color| {
                     Icon::new(IconName::Folder)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -146,7 +146,7 @@ impl PlayerView {
             TabItem::new("artist", translations.library_artists)
                 .icon_with_color(|color| {
                     Icon::new(IconName::User)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -154,7 +154,7 @@ impl PlayerView {
             TabItem::new("album", translations.library_albums)
                 .icon_with_color(|color| {
                     Icon::new(IconName::Album)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -162,7 +162,7 @@ impl PlayerView {
             TabItem::new("tracks", translations.library_tracks)
                 .icon_with_color(|color| {
                     Icon::new(IconName::Music)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -170,7 +170,7 @@ impl PlayerView {
             TabItem::new("composer", translations.library_composers)
                 .icon_with_color(|color| {
                     Icon::new(IconName::PenTool)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -178,7 +178,7 @@ impl PlayerView {
             TabItem::new("filter", translations.library_stereo_multi)
                 .icon_with_color(|color| {
                     Icon::new(IconName::AudioWaveform)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -191,7 +191,7 @@ impl PlayerView {
             TabItem::new("search", translations.library_search)
                 .icon_with_color(|color| {
                     Icon::new(IconName::Search)
-                        .size(IconSize::Lg)
+                        .size(IconSize::Md)
                         .color(color)
                         .into_any_element()
                 })
@@ -208,7 +208,7 @@ impl PlayerView {
             .when(state.app.is_loading_initial_data, |el| {
                 el.justify_center()
                     .items_center()
-                    .child(div().child(Spinner::new().size(SpinnerSize::Xl)))
+                    .child(div().child(Spinner::new().size(SpinnerSize::Lg)))
             })
             .when(!state.app.is_loading_initial_data, |el| {
                 el.child(
@@ -327,7 +327,7 @@ impl PlayerView {
                                     .value(SharedString::from(search_query.clone()))
                                     .placeholder("Type to search albums, artists, tracks...")
                                     .icon_left("🔍")
-                                    .size(InputSize::Md)
+                                    .size(InputSize::Sm)
                                     .bg_color(theme.surface)
                                     .text_color(theme.text_primary)
                                     .placeholder_color(theme.text_muted)
@@ -1200,7 +1200,7 @@ impl PlayerView {
                         .child(
                             Button::new("back-to-selection", "← Back to Genres")
                                 .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
+                                .size(ButtonSize::Xs)
                                 .theme(theme.to_button_theme())
                                 .build()
                                 .on_mouse_up(
@@ -1325,7 +1325,7 @@ impl PlayerView {
                     .children(items.into_iter().map(|(id, label, size, action)| {
                         Button::new(SharedString::from(id), SharedString::from(label))
                             .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Md)
+                            .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
                             .build()
                             .w(px(size))

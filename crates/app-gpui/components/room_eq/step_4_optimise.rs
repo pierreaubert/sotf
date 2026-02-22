@@ -5,8 +5,9 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_px::line;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Button, ButtonVariant, Card, HStack, Progress, ProgressSize,
-    ProgressVariant, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, Button, ButtonVariant, Card, Column, HStack, Progress, ProgressSize,
+    ProgressVariant, StackAlign, StackSpacing, Table, TableTheme, Text, TextSize, TextWeight,
+    VStack,
 };
 
 impl PlayerView {
@@ -30,7 +31,10 @@ impl PlayerView {
 
         // Build the actual RoomConfig that will be sent to the optimizer
         let room_config = room_eq.to_room_config();
-        let room_config_json = serde_json::to_string_pretty(&room_config).unwrap_or_default();
+        // Serialize only the optimizer config — RoomConfig itself can't serialize
+        // because MeasurementSource::InMemory(Curve) has #[serde(skip)]
+        let room_config_json =
+            serde_json::to_string_pretty(&room_config.optimizer).unwrap_or_default();
 
         // Extract optimizer config for parameter summary
         let opt_config = &room_eq.optimizer_config;
@@ -61,15 +65,15 @@ impl PlayerView {
         let param_phase_alignment = opt_config.phase_alignment.enabled;
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Run Optimization")
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Run the optimization process for each channel.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             // Optimization completed success card
@@ -81,32 +85,32 @@ impl PlayerView {
                         .border(theme.success)
                         .content(
                             VStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .child(
                                     HStack::new()
-                                        .spacing(StackSpacing::Sm)
+                                        .spacing(StackSpacing::Xs)
                                         .align(StackAlign::Center)
                                         .child(
                                             Text::new("✓")
                                                 .weight(TextWeight::Bold)
-                                                .size(TextSize::Md)
+                                                .size(TextSize::Sm)
                                                 .color(theme.success),
                                         )
                                         .child(
                                             Text::new("Optimization Completed")
                                                 .weight(TextWeight::Bold)
-                                                .size(TextSize::Md)
+                                                .size(TextSize::Sm)
                                                 .color(theme.text_primary),
                                         ),
                                 )
                                 .child(
                                     Text::new(status_msg.clone())
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
                                 .child(
                                     Text::new("Click Next to review the results.")
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .weight(TextWeight::Semibold)
                                         .color(theme.text_secondary),
                                 ),
@@ -122,7 +126,7 @@ impl PlayerView {
                     .border(theme.border)
                     .header(
                         HStack::new()
-                            .spacing(StackSpacing::Lg)
+                            .spacing(StackSpacing::Md)
                             .child(
                                 Text::new("Optimization Progress")
                                     .color(theme.text_primary)
@@ -131,14 +135,14 @@ impl PlayerView {
                             .when_some(current_channel.clone(), |hstack, ch| {
                                 hstack.child(
                                     Text::new(format!("Channel: {}", ch))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.accent),
                                 )
                             }),
                     )
                     .content(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Button::new(
                                     "start_optimization",
@@ -187,7 +191,7 @@ impl PlayerView {
                                                 } else {
                                                     format!("Progress: {:.0}%", display_progress)
                                                 })
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .when(is_completed, |el| {
@@ -205,7 +209,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Progress::new(display_progress)
-                                            .size(ProgressSize::Md)
+                                            .size(ProgressSize::Sm)
                                             .variant(if is_completed {
                                                 ProgressVariant::Success
                                             } else if is_failed {
@@ -214,7 +218,7 @@ impl PlayerView {
                                                 ProgressVariant::Default
                                             }),
                                     )
-                                    .child(Text::new(status_msg.clone()).size(TextSize::Sm).color(
+                                    .child(Text::new(status_msg.clone()).size(TextSize::Xs).color(
                                         if is_completed {
                                             theme.success
                                         } else if is_failed {
@@ -225,7 +229,7 @@ impl PlayerView {
                                     ))
                             })
                             .when_some(error_msg, |vstack, err| {
-                                vstack.child(Text::new(err).size(TextSize::Sm).color(theme.error))
+                                vstack.child(Text::new(err).size(TextSize::Xs).color(theme.error))
                             }),
                     ),
             )
@@ -248,7 +252,7 @@ impl PlayerView {
                         // Helper: build a label: value row
                         let row = |label: &str, value: String| {
                             HStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .child(
                                     Text::new(format!("{}:", label))
                                         .size(TextSize::Xs)
@@ -264,7 +268,7 @@ impl PlayerView {
 
                         let bool_badge = |label: &str, enabled: bool| {
                             HStack::new()
-                                .spacing(StackSpacing::Sm)
+                                .spacing(StackSpacing::Xs)
                                 .child(
                                     Text::new(format!("{}:", label))
                                         .size(TextSize::Xs)
@@ -279,7 +283,7 @@ impl PlayerView {
                         };
 
                         VStack::new()
-                            .spacing(StackSpacing::Sm)
+                            .spacing(StackSpacing::Xs)
                             // Channels
                             .child(row(
                                 "Channels",
@@ -292,7 +296,7 @@ impl PlayerView {
                             // Mode & Algorithm
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Lg)
+                                    .spacing(StackSpacing::Md)
                                     .child(row("Mode", param_mode))
                                     .child(row("Algorithm", param_algorithm))
                                     .child(row("PEQ Model", param_peq_model)),
@@ -300,7 +304,7 @@ impl PlayerView {
                             // Filters & Iterations
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Lg)
+                                    .spacing(StackSpacing::Md)
                                     .child(row("Filters", param_num_filters.to_string()))
                                     .child(row("Max Iter", param_max_iter.to_string()))
                                     .child(row("Population", param_population.to_string())),
@@ -308,7 +312,7 @@ impl PlayerView {
                             // Frequency range
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Lg)
+                                    .spacing(StackSpacing::Md)
                                     .child(row(
                                         "Freq Range",
                                         format!("{:.0} - {:.0} Hz", param_min_freq, param_max_freq),
@@ -325,7 +329,7 @@ impl PlayerView {
                             // Toggles
                             .child(
                                 HStack::new()
-                                    .spacing(StackSpacing::Lg)
+                                    .spacing(StackSpacing::Md)
                                     .child(bool_badge("Refine", param_refine))
                                     .when(param_refine, |h| {
                                         h.child(row("Local Algo", param_local_algo))
@@ -342,7 +346,7 @@ impl PlayerView {
                                 |vstack| {
                                     vstack.child(
                                         HStack::new()
-                                            .spacing(StackSpacing::Lg)
+                                            .spacing(StackSpacing::Md)
                                             .when(param_target_tilt, |h| {
                                                 h.child(bool_badge("Target Tilt", true))
                                             })
@@ -360,31 +364,74 @@ impl PlayerView {
                             )
                     }),
             )
-            // Full RoomConfig dump (for debugging parameter mismatches)
+            // Full RoomConfig key-value table
             .child(
                 Card::new()
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Full Parameters (RoomConfig)")
+                        Text::new("Full Parameters (Optimizer)")
                             .color(theme.text_primary)
                             .weight(TextWeight::Semibold),
                     )
                     .content({
-                        let mut lines_vstack = VStack::new().spacing(StackSpacing::None);
-                        for line in room_config_json.lines() {
-                            lines_vstack = lines_vstack.child(
-                                Text::new(line.to_string())
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                            );
+                        let mut pairs: Vec<(String, String)> = Vec::new();
+                        match serde_json::from_str::<serde_json::Value>(&room_config_json) {
+                            Ok(json_val) => flatten_json(&json_val, String::new(), &mut pairs),
+                            Err(e) => log::error!("Failed to parse optimizer config JSON: {}", e),
                         }
+
+                        let label_color = theme.text_secondary;
+                        let value_color = theme.text_primary;
+
+                        let table_theme = TableTheme {
+                            header_bg: theme.background_secondary,
+                            header_text: theme.text_primary,
+                            header_border: theme.border,
+                            row_bg: theme.surface,
+                            row_alt_bg: theme.background_secondary,
+                            row_hover_bg: theme.surface_hover,
+                            row_selected_bg: theme.accent_muted,
+                            cell_text: theme.text_secondary,
+                            cell_border: theme.border,
+                            sort_icon_color: theme.accent,
+                            pagination_text: theme.text_muted,
+                            footer_bg: theme.background_secondary,
+                            footer_text: theme.text_secondary,
+                        };
+
                         div()
-                            .id("room-config-json")
+                            .id("room-config-params")
                             .overflow_y_scroll()
                             .max_h(px(400.0))
-                            .child(lines_vstack)
+                            .child(
+                                Table::new("optimizer-params-table", pairs)
+                                    .column(
+                                        Column::new("key", "Parameter")
+                                            .width(px(250.0))
+                                            .sortable(false)
+                                            .resizable(false)
+                                            .cell_render(move |pair: &(String, String), _, _, _| {
+                                                Text::new(pair.0.clone())
+                                                    .size(TextSize::Xs)
+                                                    .color(label_color)
+                                            }),
+                                    )
+                                    .column(
+                                        Column::new("value", "Value")
+                                            .sortable(false)
+                                            .resizable(false)
+                                            .cell_render(move |pair: &(String, String), _, _, _| {
+                                                Text::new(pair.1.clone())
+                                                    .size(TextSize::Xs)
+                                                    .weight(TextWeight::Semibold)
+                                                    .color(value_color)
+                                            }),
+                                    )
+                                    .alternating_rows(true)
+                                    .theme(table_theme),
+                            )
                     }),
             )
             // Optimization Process graph (shown when progress history is available)
@@ -503,7 +550,7 @@ impl PlayerView {
                         .border(theme.border)
                         .header(
                             HStack::new()
-                                .spacing(StackSpacing::Lg)
+                                .spacing(StackSpacing::Md)
                                 .child(
                                     Text::new("Optimization Process")
                                         .color(theme.text_primary)
@@ -511,12 +558,12 @@ impl PlayerView {
                                 )
                                 .child(
                                     Text::new(format!("Current: {:.4}", current_loss_val))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
                                 .child(
                                     Text::new(format!("Best: {:.4}", best_loss))
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.success),
                                 ),
                         )
@@ -833,5 +880,43 @@ impl PlayerView {
             }
         })
         .detach();
+    }
+}
+
+/// Recursively flatten a JSON value into dotted key-value pairs.
+/// Skips large arrays (e.g. measurement data) — only includes scalars and small objects.
+fn flatten_json(value: &serde_json::Value, prefix: String, pairs: &mut Vec<(String, String)>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                let key = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{}.{}", prefix, k)
+                };
+                flatten_json(v, key, pairs);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            // Skip large arrays (measurement data, etc.)
+            if arr.len() <= 8 {
+                for (i, v) in arr.iter().enumerate() {
+                    let key = format!("{}[{}]", prefix, i);
+                    flatten_json(v, key, pairs);
+                }
+            }
+        }
+        serde_json::Value::String(s) => {
+            pairs.push((prefix, s.clone()));
+        }
+        serde_json::Value::Number(n) => {
+            pairs.push((prefix, n.to_string()));
+        }
+        serde_json::Value::Bool(b) => {
+            pairs.push((prefix, b.to_string()));
+        }
+        serde_json::Value::Null => {
+            pairs.push((prefix, "null".to_string()));
+        }
     }
 }

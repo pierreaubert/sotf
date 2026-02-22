@@ -35,11 +35,11 @@ impl PlayerView {
             .size(DialogSize::Full)
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Sm)
+                    .spacing(StackSpacing::Xs)
                     // Global keybindings section
                     .child(
                         Text::new("GLOBAL KEYBINDINGS")
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Semibold)
                             .color(theme.accent),
                     )
@@ -56,7 +56,7 @@ impl PlayerView {
                     // Screen-specific keybindings section
                     .child(
                         Text::new(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Semibold)
                             .color(theme.accent),
                     )
@@ -78,7 +78,7 @@ impl PlayerView {
 
         Dialog::new("about-dialog")
             .title("About SotF Player")
-            .size(DialogSize::Md)
+            .size(DialogSize::Sm)
             .on_close({
                 let state = self.state.clone();
                 move |_window, cx| {
@@ -93,7 +93,7 @@ impl PlayerView {
             })
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Lg)
+                    .spacing(StackSpacing::Md)
                     .align(StackAlign::Center)
                     .child(
                         div()
@@ -110,29 +110,29 @@ impl PlayerView {
                     )
                     .child(
                         VStack::new()
-                            .spacing(StackSpacing::Sm)
+                            .spacing(StackSpacing::Xs)
                             .align(StackAlign::Center)
                             .child(
                                 Text::new("SotF Player")
-                                    .size(TextSize::Xl)
+                                    .size(TextSize::Lg)
                                     .weight(TextWeight::Bold)
                                     .color(theme.text_primary),
                             )
                             .child(
                                 Text::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_secondary),
                             )
                             .child(
                                 Text::new("© 2026 Spinorama")
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_muted),
                             ),
                     )
                     .child(div().w_full().h(px(1.0)).bg(theme.border))
                     .child(
                         VStack::new()
-                            .spacing(StackSpacing::Sm)
+                            .spacing(StackSpacing::Xs)
                             .width(StackSize::Full)
                             .child(self.render_external_link(
                                 "📦",
@@ -183,7 +183,7 @@ impl PlayerView {
                     .child(
                         gpui_ui_kit::Button::new("about-close", "Close")
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
-                            .size(gpui_ui_kit::ButtonSize::Sm)
+                            .size(gpui_ui_kit::ButtonSize::Xs)
                             .theme(theme.to_button_theme())
                             .build()
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
@@ -224,13 +224,13 @@ impl PlayerView {
             .bg(theme.surface_hover)
             .cursor_pointer()
             .hover(move |s| s.bg(theme.accent_muted))
-            .child(Text::new(icon.to_string()).size(TextSize::Lg))
+            .child(Text::new(icon.to_string()).size(TextSize::Md))
             .child(
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(
                         Text::new(title.to_string())
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .weight(TextWeight::Semibold)
                             .color(theme.text_primary),
                     )
@@ -251,15 +251,15 @@ impl PlayerView {
 
         Dialog::new("help-support-dialog")
             .title("Help & Support")
-            .size(DialogSize::Md)
+            .size(DialogSize::Sm)
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Lg)
+                    .spacing(StackSpacing::Md)
                     .align(StackAlign::Center)
                     // Links section
                     .child(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .align(StackAlign::Start)
                             .child(
                                 div()
@@ -273,19 +273,19 @@ impl PlayerView {
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("🚀").size(TextSize::Xl))
+                                    .child(Text::new("🚀").size(TextSize::Lg))
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)
                                             .child(
                                                 Text::new("Request New Features")
-                                                    .size(TextSize::Md)
+                                                    .size(TextSize::Sm)
                                                     .weight(TextWeight::Semibold)
                                                     .color(theme.text_primary),
                                             )
                                             .child(
                                                 Text::new("Share your ideas for new features")
-                                                    .size(TextSize::Sm)
+                                                    .size(TextSize::Xs)
                                                     .color(theme.text_secondary),
                                             ),
                                     )
@@ -307,19 +307,19 @@ impl PlayerView {
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("🐛").size(TextSize::Xl))
+                                    .child(Text::new("🐛").size(TextSize::Lg))
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)
                                             .child(
                                                 Text::new("Report Bugs")
-                                                    .size(TextSize::Md)
+                                                    .size(TextSize::Sm)
                                                     .weight(TextWeight::Semibold)
                                                     .color(theme.text_primary),
                                             )
                                             .child(
                                                 Text::new("Help us fix issues you encounter")
-                                                    .size(TextSize::Sm)
+                                                    .size(TextSize::Xs)
                                                     .color(theme.text_secondary),
                                             ),
                                     )
@@ -341,19 +341,19 @@ impl PlayerView {
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child(Text::new("📦").size(TextSize::Xl))
+                                    .child(Text::new("📦").size(TextSize::Lg))
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)
                                             .child(
                                                 Text::new("GitHub Repository")
-                                                    .size(TextSize::Md)
+                                                    .size(TextSize::Sm)
                                                     .weight(TextWeight::Semibold)
                                                     .color(theme.text_primary),
                                             )
                                             .child(
                                                 Text::new("View source code and documentation")
-                                                    .size(TextSize::Sm)
+                                                    .size(TextSize::Xs)
                                                     .color(theme.text_secondary),
                                             ),
                                     )
@@ -377,10 +377,10 @@ impl PlayerView {
 
         Dialog::new("empty-library-prompt")
             .title("Welcome to SotF Player")
-            .size(DialogSize::Md)
+            .size(DialogSize::Sm)
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Lg)
+                    .spacing(StackSpacing::Md)
                     .align(StackAlign::Center)
                     .child(
                         div()
@@ -397,23 +397,23 @@ impl PlayerView {
                     )
                     .child(
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .align(StackAlign::Center)
                             .child(
                                 Text::new("Your music library is empty")
-                                    .size(TextSize::Lg)
+                                    .size(TextSize::Md)
                                     .weight(TextWeight::Semibold)
                                     .color(theme.text_primary),
                             )
                             .child(
                                 Text::new("Would you like to add some music folders to scan?")
-                                    .size(TextSize::Md)
+                                    .size(TextSize::Sm)
                                     .color(theme.text_secondary),
                             ),
                     )
                     .child(
                         HStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .justify(StackJustify::Center)
                             .child(
                                 div()
@@ -426,7 +426,7 @@ impl PlayerView {
                                     .hover(|s| s.bg(theme.border))
                                     .child(
                                         Text::new("Not Now")
-                                            .size(TextSize::Md)
+                                            .size(TextSize::Sm)
                                             .color(theme.text_secondary),
                                     )
                                     .on_click({
@@ -450,7 +450,7 @@ impl PlayerView {
                                     .hover(|s| s.bg(theme.accent_muted))
                                     .child(
                                         Text::new("Add Music Folders")
-                                            .size(TextSize::Md)
+                                            .size(TextSize::Sm)
                                             .weight(TextWeight::Semibold)
                                             .color(theme.text_on_accent),
                                     )
@@ -485,7 +485,7 @@ impl PlayerView {
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
         HStack::new()
-            .spacing(StackSpacing::Md)
+            .spacing(StackSpacing::Sm)
             .child(
                 div()
                     .w(Rems(12.0))
@@ -493,7 +493,7 @@ impl PlayerView {
             )
             .child(
                 Text::new(description.to_string())
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
     }
@@ -551,18 +551,18 @@ impl PlayerView {
                 .p_3()
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
                         .child(
                             Text::new(icon)
-                                .size(TextSize::Lg)
+                                .size(TextSize::Md)
                                 .weight(TextWeight::Bold)
                                 .color(border_color),
                         )
                         .child(
                             div().flex_1().child(
                                 Text::new(toast.message.clone())
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(theme.text_primary),
                             ),
                         )
@@ -723,7 +723,7 @@ impl PlayerView {
                                 .align(StackAlign::Center)
                                 .child(
                                     Text::new(label)
-                                        .size(TextSize::Sm)
+                                        .size(TextSize::Xs)
                                         .color(theme.text_primary),
                                 )
                                 .child(
@@ -744,13 +744,13 @@ impl PlayerView {
 
         Dialog::new("apo-file-dialog")
             .title("Load APO File for EQ Plugin")
-            .size(DialogSize::Lg)
+            .size(DialogSize::Md)
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         Text::new("Enter path to APO file:")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .muted(true),
                     )
                     .child(
@@ -762,7 +762,7 @@ impl PlayerView {
                             .border_color(theme.accent)
                             .child(
                                 Text::new(format!("{}█", state.app.input_state.apo_file_input))
-                                    .size(TextSize::Sm),
+                                    .size(TextSize::Xs),
                             ),
                     ),
             )
@@ -779,13 +779,13 @@ impl PlayerView {
 
         Dialog::new("sofa-file-dialog")
             .title("Load SOFA File for Binaural Decoder")
-            .size(DialogSize::Lg)
+            .size(DialogSize::Md)
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         Text::new("Enter path to SOFA file:")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .muted(true),
                     )
                     .child(
@@ -797,7 +797,7 @@ impl PlayerView {
                             .border_color(theme.accent)
                             .child(
                                 Text::new(format!("{}█", state.app.input_state.sofa_file_input))
-                                    .size(TextSize::Sm),
+                                    .size(TextSize::Xs),
                             ),
                     ),
             )
@@ -817,13 +817,13 @@ impl PlayerView {
 
         Dialog::new("save-plugins-dialog")
             .title("Save Plugin Preset")
-            .size(DialogSize::Xl)
+            .size(DialogSize::Lg)
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         Text::new("Enter preset name (or select existing to overwrite):")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .muted(true),
                     )
                     .child(
@@ -833,13 +833,13 @@ impl PlayerView {
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.accent)
-                            .child(Text::new(format!("{}█", input)).size(TextSize::Sm)),
+                            .child(Text::new(format!("{}█", input)).size(TextSize::Xs)),
                     )
                     // Show existing presets if available
                     .when(!presets.is_empty(), |el| {
                         el.child(
                             Text::new("Existing presets (↑/↓ to select):")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .muted(true),
                         )
                         .child(
@@ -882,13 +882,13 @@ impl PlayerView {
 
         Dialog::new("load-plugins-dialog")
             .title("Load Plugin Preset")
-            .size(DialogSize::Xl)
+            .size(DialogSize::Lg)
             .content(
                 VStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         Text::new("Enter preset name or select from list:")
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .muted(true),
                     )
                     .child(
@@ -898,13 +898,13 @@ impl PlayerView {
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.success)
-                            .child(Text::new(format!("{}█", input)).size(TextSize::Sm)),
+                            .child(Text::new(format!("{}█", input)).size(TextSize::Xs)),
                     )
                     // Show existing presets
                     .when(!presets.is_empty(), |el| {
                         el.child(
                             Text::new("Available presets (↑/↓ to select):")
-                                .size(TextSize::Sm)
+                                .size(TextSize::Xs)
                                 .muted(true),
                         )
                         .child(
@@ -934,7 +934,7 @@ impl PlayerView {
                         el.child(
                             div().p_4().text_center().child(
                                 Text::new("No presets found. Save a preset first with 's'.")
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .muted(true),
                             ),
                         )
@@ -1090,7 +1090,7 @@ impl PlayerView {
                     .child(
                         gpui_ui_kit::Button::new("shortcuts-close", "Close")
                             .variant(gpui_ui_kit::ButtonVariant::Primary)
-                            .size(gpui_ui_kit::ButtonSize::Sm)
+                            .size(gpui_ui_kit::ButtonSize::Xs)
                             .theme(theme.to_button_theme())
                             .build()
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
@@ -1113,13 +1113,13 @@ impl PlayerView {
             .spacing(StackSpacing::Xs)
             .child(
                 Text::new(title.to_string())
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .weight(TextWeight::Semibold)
                     .color(theme.accent),
             )
             .children(shortcuts.iter().map(|(key, desc)| {
                 HStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         div()
                             .w(Rems(8.0))
@@ -1248,14 +1248,14 @@ impl PlayerView {
                     // Title
                     .child(
                         Text::new(scan_type.title())
-                            .size(TextSize::Lg)
+                            .size(TextSize::Md)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
                     )
                     // Description
                     .child(
                         Text::new(scan_type.description())
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_secondary),
                     )
                     // Progress bar
@@ -1279,20 +1279,20 @@ impl PlayerView {
                     // Status text
                     .child(
                         Text::new(status_text)
-                            .size(TextSize::Sm)
+                            .size(TextSize::Xs)
                             .color(theme.text_muted),
                     )
                     // Buttons
                     .child(
                         HStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .justify(StackJustify::End)
                             .when(!is_complete, |stack| {
                                 stack
                                     .child(
                                         gpui_ui_kit::Button::new("scan-cancel", "Cancel")
                                             .variant(gpui_ui_kit::ButtonVariant::Secondary)
-                                            .size(gpui_ui_kit::ButtonSize::Md)
+                                            .size(gpui_ui_kit::ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .build()
                                             .on_click(cx.listener(
@@ -1304,7 +1304,7 @@ impl PlayerView {
                                     .child(
                                         gpui_ui_kit::Button::new("scan-background", "Background")
                                             .variant(gpui_ui_kit::ButtonVariant::Secondary)
-                                            .size(gpui_ui_kit::ButtonSize::Md)
+                                            .size(gpui_ui_kit::ButtonSize::Sm)
                                             .theme(theme.to_button_theme())
                                             .build()
                                             .on_click(cx.listener(
@@ -1317,7 +1317,7 @@ impl PlayerView {
                             .child(
                                 gpui_ui_kit::Button::new("scan-done", "Done")
                                     .variant(gpui_ui_kit::ButtonVariant::Primary)
-                                    .size(gpui_ui_kit::ButtonSize::Md)
+                                    .size(gpui_ui_kit::ButtonSize::Sm)
                                     .disabled(!is_complete)
                                     .theme(theme.to_button_theme())
                                     .build()

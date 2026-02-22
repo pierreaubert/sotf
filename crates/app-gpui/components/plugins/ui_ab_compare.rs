@@ -178,7 +178,7 @@ pub fn render_ab_compare_plugin(
                                         ButtonSetOption::new("Choice", "Choice"),
                                     ])
                                     .selected(mode_selected)
-                                    .size(ButtonSetSize::Sm)
+                                    .size(ButtonSetSize::Xs)
                                     .theme(theme.to_button_set_theme())
                                     .on_change({
                                         let entity = entity.clone();
@@ -324,7 +324,7 @@ pub fn render_ab_compare_plugin(
                                         ButtonSetOption::new("OFF", "OFF"),
                                     ])
                                     .selected(auto_gain_selected)
-                                    .size(ButtonSetSize::Sm)
+                                    .size(ButtonSetSize::Xs)
                                     .theme(theme.to_button_set_theme())
                                     .on_change({
                                         let entity = entity.clone();
@@ -385,7 +385,7 @@ pub fn render_ab_compare_plugin(
                                                 ButtonSetOption::new("Slow", "Slow"),
                                             ])
                                             .selected(time_selected)
-                                            .size(ButtonSetSize::Sm)
+                                            .size(ButtonSetSize::Xs)
                                             .theme(theme.to_button_set_theme())
                                             .on_change({
                                                 let entity = entity.clone();
@@ -506,7 +506,7 @@ fn render_path_selector(
     Select::new(("path-select", select_id))
         .options(options)
         .selected(selected)
-        .size(SelectSize::Sm)
+        .size(SelectSize::Xs)
         .placeholder("Select config...")
         .is_open(is_open)
         .theme(theme.to_select_theme())
@@ -563,7 +563,7 @@ fn render_anb_buttons(
             ButtonSetOption::new("B", "B"),
         ])
         .selected(selected)
-        .size(ButtonSetSize::Sm)
+        .size(ButtonSetSize::Xs)
         .disabled(disabled)
         .theme(theme.to_button_set_theme())
         .on_change({

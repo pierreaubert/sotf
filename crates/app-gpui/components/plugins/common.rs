@@ -1083,7 +1083,46 @@ pub fn render_vertical_slider_sized(
         .unit(unit.to_string())
         .label(label.to_string())
         .selected(is_selected)
-        .theme(theme_to_vertical_slider_theme(theme));
+        .theme(theme_to_vertical_slider_theme(theme))
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                });
+            }
+        })
+        .on_drag_start({
+            let entity = entity.clone();
+            move |start_y, start_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.is_dragging_knob = true;
+                    state.app.knob_drag_plugin_idx = plugin_idx;
+                    state.app.knob_drag_param_idx = idx;
+                    state.app.knob_drag_start_y = Some(start_y);
+                    state.app.knob_drag_start_value = start_value;
+                    state.app.knob_drag_min = min;
+                    state.app.knob_drag_max = max;
+                });
+            }
+        })
+        .on_select({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = idx;
+                });
+            }
+        })
+        .on_reset({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.reset_plugin_param(plugin_idx, idx);
+                });
+            }
+        });
 
     if let Some(key) = shortcut_key {
         slider = slider.shortcut_key(key);
@@ -1297,7 +1336,7 @@ pub fn render_knob(
         selected_param,
         is_editing,
         shortcut_key,
-        PotentiometerSize::Md,
+        PotentiometerSize::Sm,
         theme,
     )
 }

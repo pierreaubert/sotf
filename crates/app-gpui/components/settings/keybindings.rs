@@ -65,7 +65,7 @@ impl PlayerView {
                                 } else {
                                     ButtonVariant::Secondary
                                 })
-                                .size(ButtonSize::Sm)
+                                .size(ButtonSize::Xs)
                                 .selected(is_selected)
                                 .theme(btn_theme)
                                 .build()

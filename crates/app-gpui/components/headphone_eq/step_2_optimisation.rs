@@ -473,16 +473,16 @@ impl PlayerView {
             });
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
+            .spacing(StackSpacing::Md)
             .child(
                 Text::new("Configure Optimization")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
+                    .size(TextSize::Md),
             )
             .child(
                 Text::new("Set the optimization parameters for your headphone EQ.")
-                    .size(TextSize::Sm)
+                    .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
             // Wrap in div to capture key events and prevent global shortcuts
@@ -518,7 +518,7 @@ impl PlayerView {
                         let show_progress = is_optimizing || is_completed || is_failed;
 
                         VStack::new()
-                            .spacing(StackSpacing::Md)
+                            .spacing(StackSpacing::Sm)
                             .child(
                                 Button::new(
                                     "start_optimization",
@@ -529,7 +529,7 @@ impl PlayerView {
                                     },
                                 )
                                 .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Lg)
+                                .size(ButtonSize::Md)
                                 .full_width(true)
                                 .disabled(is_optimizing)
                                 .theme(button_theme.clone())
@@ -567,7 +567,7 @@ impl PlayerView {
                                                 } else {
                                                     format!("Progress: {:.0}%", display_progress)
                                                 })
-                                                .size(TextSize::Sm)
+                                                .size(TextSize::Xs)
                                                 .color(theme.text_primary),
                                             )
                                             .when(is_completed, |el| {
@@ -585,7 +585,7 @@ impl PlayerView {
                                     )
                                     .child(
                                         Progress::new(display_progress)
-                                            .size(ProgressSize::Md)
+                                            .size(ProgressSize::Sm)
                                             .variant(if is_completed {
                                                 ProgressVariant::Success
                                             } else if is_failed {
@@ -594,7 +594,7 @@ impl PlayerView {
                                                 ProgressVariant::Default
                                             }),
                                     )
-                                    .child(Text::new(status_msg).size(TextSize::Sm).color(
+                                    .child(Text::new(status_msg).size(TextSize::Xs).color(
                                         if is_completed {
                                             theme.success
                                         } else if is_failed {
