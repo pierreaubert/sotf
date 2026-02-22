@@ -430,6 +430,9 @@ pub struct UpmixerPlugin {
     limiter_attack_coeff: f32,
     /// Per-sample release coefficient for the limiter (~50ms release).
     limiter_release_coeff: f32,
+
+    /// Initial latency counter to ensure OLA buffer is primed before output
+    latency_filled: usize,
 }
 
 impl UpmixerPlugin {
@@ -789,6 +792,7 @@ impl UpmixerPlugin {
             limiter_envelope: 1.0,
             limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
             limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
+            latency_filled: 0,
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
@@ -1910,6 +1914,7 @@ Weights are normalized internally so they always sum to 1.0.",
         self.output_block.fill(0.0);
         self.next_add_position = 0;
         self.output_read_position = 0;
+        self.latency_filled = 0;
 
         // Clear HR input and temp blocks
         self.hr_input_buffer.fill(0.0);
@@ -2065,37 +2070,23 @@ Weights are normalized internally so they always sum to 1.0.",
         let mask = self.output_accumulator_mask;
         let nch = self.num_output_channels;
 
-        let mut iteration = 0;
-        loop {
-            iteration += 1;
-            if iteration > 1000 {
-                break;
-            }
+        while output_pos < context.num_frames {
+            // Step 1: Fill input buffer if we have more input
+            if input_pos < context.num_frames {
+                let samples_to_copy =
+                    (input_samples - input_pos * 2).min(self.fft_size * 2 - self.input_buffer_fill);
 
-            // Step 1: Drain available output from ring buffer (flat interleaved)
-            let frames_to_drain = self
-                .output_accumulator_fill
-                .min(context.num_frames - output_pos);
+                if samples_to_copy > 0 {
+                    self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
+                        .copy_from_slice(&input[input_pos * 2..input_pos * 2 + samples_to_copy]);
 
-            if frames_to_drain > 0 {
-                for i in 0..frames_to_drain {
-                    let read_idx = (self.output_read_position + i) & mask;
-                    let acc_base = read_idx * nch;
-                    let out_base = (output_pos + i) * nch;
-                    for ch in 0..nch {
-                        output[out_base + ch] = self.output_accumulator[acc_base + ch];
-                        // Clear after reading for next overlap-add cycle
-                        self.output_accumulator[acc_base + ch] = 0.0;
-                    }
+                    self.input_buffer_fill += samples_to_copy;
+                    input_pos += samples_to_copy / 2;
                 }
-                self.output_read_position = (self.output_read_position + frames_to_drain) & mask;
-                self.output_accumulator_fill -= frames_to_drain;
-                output_pos += frames_to_drain;
             }
 
             // Step 2: Process FFT block if we have enough input
-            let can_process_input = self.input_buffer_fill >= self.fft_size * 2;
-            if can_process_input {
+            if self.input_buffer_fill >= self.fft_size * 2 {
                 // Copy to temp buffer
                 self.temp_input_block[..self.fft_size * 2]
                     .copy_from_slice(&self.input_buffer[..self.fft_size * 2]);
@@ -2120,32 +2111,57 @@ Weights are normalized internally so they always sum to 1.0.",
 
                 // Advance positions
                 self.next_add_position = (self.next_add_position + self.hop_size) & mask;
-                self.output_accumulator_fill += self.hop_size;
+                
+                if self.latency_filled >= self.fft_size {
+                    self.output_accumulator_fill += self.hop_size;
+                } else {
+                    self.latency_filled += self.hop_size;
+                }
 
                 // Shift input buffer
                 let shift_amount = self.hop_size * 2;
                 self.input_buffer
                     .copy_within(shift_amount..self.fft_size * 2, 0);
                 self.input_buffer_fill -= shift_amount;
-
+                
+                // Continue to check if we can process another block or drain output
                 continue;
             }
 
-            // Step 3: Fill input buffer if we have more input
-            if input_pos < context.num_frames {
-                let samples_to_copy =
-                    (input_samples - input_pos * 2).min(self.fft_size * 2 - self.input_buffer_fill);
+            // Step 3: Drain available output from ring buffer (flat interleaved)
+            let frames_to_drain = self
+                .output_accumulator_fill
+                .min(context.num_frames - output_pos);
 
-                self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
-                    .copy_from_slice(&input[input_pos * 2..input_pos * 2 + samples_to_copy]);
-
-                self.input_buffer_fill += samples_to_copy;
-                input_pos += samples_to_copy / 2;
-
-                continue;
+            if frames_to_drain > 0 {
+                for i in 0..frames_to_drain {
+                    let read_idx = (self.output_read_position + i) & mask;
+                    let acc_base = read_idx * nch;
+                    let out_base = (output_pos + i) * nch;
+                    for ch in 0..nch {
+                        output[out_base + ch] = self.output_accumulator[acc_base + ch];
+                        // Clear after reading for next overlap-add cycle
+                        self.output_accumulator[acc_base + ch] = 0.0;
+                    }
+                }
+                self.output_read_position = (self.output_read_position + frames_to_drain) & mask;
+                self.output_accumulator_fill -= frames_to_drain;
+                output_pos += frames_to_drain;
+            } else {
+                // If we can't process more input AND we have no more input to read (input_pos == num_frames),
+                // then we must pad with silence to satisfy the requested num_frames.
+                if input_pos >= context.num_frames {
+                    let remaining = context.num_frames - output_pos;
+                    for i in 0..remaining {
+                        let out_base = (output_pos + i) * nch;
+                        for ch in 0..nch {
+                            output[out_base + ch] = 0.0;
+                        }
+                    }
+                    output_pos = context.num_frames;
+                }
+                break;
             }
-
-            break;
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.

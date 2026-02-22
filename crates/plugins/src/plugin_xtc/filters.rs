@@ -278,28 +278,21 @@ fn apply_spectral_normalization(filters: &mut XtcFilters, num_bins: usize) {
     let is_asymmetric = filters.filter_rl.is_some();
 
     for bin in 1..num_bins - 1 {
-        // Left output energy from unit-energy input
-        let energy_l = filters.filter_ll[bin].norm_sqr() + filters.filter_lr[bin].norm_sqr();
+        // Target unity gain for the diagonal (ipsilateral) filters.
+        // This ensures the main signal level is preserved while XTC adds/subtracts.
+        let mag_l = filters.filter_ll[bin].norm();
 
-        // Right output energy (use symmetric equivalents if not available)
-        let energy_r = if is_asymmetric {
-            let rl = filters.filter_rl.as_ref().unwrap();
-            let rr = filters.filter_rr.as_ref().unwrap();
-            rl[bin].norm_sqr() + rr[bin].norm_sqr()
+        let mag_r = if is_asymmetric {
+            filters.filter_rr.as_ref().unwrap()[bin].norm()
         } else {
-            // Symmetric: filter_rr = filter_ll, filter_rl = filter_lr
-            energy_l
+            mag_l
         };
 
-        // Average energy across both channels
-        let avg_energy = (energy_l + energy_r) / 2.0;
+        let avg_mag = (mag_l + mag_r) / 2.0;
 
-        if avg_energy > 0.01 {
-            // Gentle normalization: blend between unity and full correction
-            // This preserves the XTC effect while reducing tonal coloration
-            let correction = (1.0 / avg_energy.sqrt()).clamp(0.5, 2.0);
-            // Apply 80% of the correction (more effective for underwater artifacts)
-            gains[bin] = 1.0 + 0.8 * (correction - 1.0);
+        if avg_mag > 0.01 {
+            let correction = (1.0 / avg_mag).clamp(0.5, 4.0);
+            gains[bin] = 1.0 + 0.9 * (correction - 1.0);
         }
     }
 

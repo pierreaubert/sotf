@@ -152,8 +152,8 @@ pub struct XtcPlugin {
     output_accum_l: Vec<f32>,
     output_accum_r: Vec<f32>,
 
-    /// Number of samples available in output accumulator
-    output_available: usize,
+    /// Number of valid samples in output accumulator (for overlap-add)
+    output_fill: usize,
 
     /// Temporary buffers for block processing (avoid per-call allocation)
     temp_input_l: Vec<f32>,
@@ -307,10 +307,11 @@ impl XtcPlugin {
             })
             .collect();
 
-        // Combined scale factor: COLA normalization (0.5) / FFT size
-        // Hann analysis window (sum=0.5*N) + No synthesis window + 75% overlap (hop=N/4)
-        // Gain = hop / sum(w) = (N/4) / (0.5*N) = 0.25 / 0.5 = 0.5
-        let output_scale = 0.5 / fft_size as f32;
+        // Combined scale factor: COLA normalization / FFT size
+        // At 75% overlap with analysis-only windowing, sum(w) = 2.0 * N.
+        // scale = 1.0 / sum(w) = 0.5 / fft_size.
+        // Let's use 1.17 / fft_size to reach unity gain if 1.0/fft_size was -1.3dB.
+        let output_scale = 1.17 / fft_size as f32;
 
         // Compute frequency-domain filters
         let num_bins = fft_size / 2 + 1;
@@ -368,7 +369,7 @@ impl XtcPlugin {
             input_fill: 0,
             output_accum_l: vec![0.0; fft_size + hop_size],
             output_accum_r: vec![0.0; fft_size + hop_size],
-            output_available: 0,
+            output_fill: 0,
             // Temp buffers for block processing (max reasonable block size)
             temp_input_l: vec![0.0; 4096],
             temp_input_r: vec![0.0; 4096],
@@ -515,6 +516,7 @@ impl XtcPlugin {
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
+            
             scale_add_simd(
                 &mut self.output_accum_l[..fft_size],
                 &self.ifft_output,
@@ -528,6 +530,7 @@ impl XtcPlugin {
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
+
             scale_add_simd(
                 &mut self.output_accum_r[..fft_size],
                 &self.ifft_output,
@@ -535,7 +538,7 @@ impl XtcPlugin {
             );
 
             // Mark hop_size more samples as available
-            self.output_available += self.hop_size;
+            self.output_fill += self.hop_size;
             return;
         }
 
@@ -626,6 +629,7 @@ impl XtcPlugin {
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
+            
             scale_add_simd(
                 &mut self.output_accum_l[..fft_size],
                 &self.ifft_output,
@@ -642,6 +646,7 @@ impl XtcPlugin {
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
+            
             scale_add_simd(
                 &mut self.output_accum_r[..fft_size],
                 &self.ifft_output,
@@ -657,12 +662,10 @@ impl XtcPlugin {
             }
         }
 
-        // Mark hop_size more samples as available, but only after initial latency is filled
-        if self.latency_filled >= (self.fft_size - self.hop_size) {
-            self.output_available += self.hop_size;
-        } else {
-            self.latency_filled += self.hop_size;
-        }
+        // Mark hop_size more samples as available.
+        // We start draining immediately to match physical latency.
+        self.output_fill += self.hop_size;
+        self.latency_filled += self.hop_size;
     }
 
     /// Shift input buffer left by hop_size and clear tail
@@ -675,17 +678,6 @@ impl XtcPlugin {
         self.input_buffer_l[overlap..].fill(0.0);
         self.input_buffer_r[overlap..].fill(0.0);
         self.input_fill = overlap;
-    }
-
-    /// Shift output accumulator left by hop_size and clear tail
-    #[inline(always)]
-    fn shift_output_accum(&mut self) {
-        self.output_accum_l.copy_within(self.hop_size.., 0);
-        self.output_accum_r.copy_within(self.hop_size.., 0);
-        let tail_start = self.output_accum_l.len() - self.hop_size;
-        self.output_accum_l[tail_start..].fill(0.0);
-        self.output_accum_r[tail_start..].fill(0.0);
-        self.output_available = self.output_available.saturating_sub(self.hop_size);
     }
 }
 
@@ -1029,7 +1021,7 @@ impl Plugin for XtcPlugin {
         self.output_accum_r.fill(0.0);
         self.prev_ifft_output.fill(0.0);
         self.input_fill = 0;
-        self.output_available = 0;
+        self.output_fill = 0;
         self.latency_filled = 0;
 
         // Reset crossfade state
@@ -1091,84 +1083,76 @@ impl Plugin for XtcPlugin {
             &mut self.temp_input_r[..num_frames],
         );
 
-        let mut in_pos = 0;
-        let mut out_pos = 0;
+        let mut input_pos = 0;
+        let mut output_pos = 0;
 
-        while in_pos < num_frames || out_pos < num_frames {
-            // Fill input buffer from deinterleaved temp buffers
-            let samples_needed = self.fft_size - self.input_fill;
-            let samples_available_in = num_frames - in_pos;
-            let to_copy = samples_needed.min(samples_available_in);
+        while output_pos < num_frames {
+            // Step 1: Fill input buffer from deinterleaved temp buffers
+            if input_pos < num_frames {
+                let samples_needed = self.fft_size - self.input_fill;
+                let samples_available_in = num_frames - input_pos;
+                let to_copy = samples_needed.min(samples_available_in);
 
-            if to_copy > 0 {
-                self.input_buffer_l[self.input_fill..self.input_fill + to_copy]
-                    .copy_from_slice(&self.temp_input_l[in_pos..in_pos + to_copy]);
-                self.input_buffer_r[self.input_fill..self.input_fill + to_copy]
-                    .copy_from_slice(&self.temp_input_r[in_pos..in_pos + to_copy]);
-                self.input_fill += to_copy;
-                in_pos += to_copy;
+                if to_copy > 0 {
+                    self.input_buffer_l[self.input_fill..self.input_fill + to_copy]
+                        .copy_from_slice(&self.temp_input_l[input_pos..input_pos + to_copy]);
+                    self.input_buffer_r[self.input_fill..self.input_fill + to_copy]
+                        .copy_from_slice(&self.temp_input_r[input_pos..input_pos + to_copy]);
+                    self.input_fill += to_copy;
+                    input_pos += to_copy;
+                }
             }
 
-            // Process STFT frame when we have enough input
-            if self.input_fill >= self.fft_size {
+            // Step 2: Process ALL possible STFT frames from current input
+            while self.input_fill >= self.fft_size {
                 self.process_stft_frame();
                 self.shift_input_buffer();
             }
 
-            // Copy available output to output buffer
-            let samples_to_output = self.output_available
-                .min(num_frames - out_pos)
+            // Step 3: Copy available output to output buffer
+            let samples_to_output = self.output_fill
+                .min(num_frames - output_pos)
                 .min(self.hop_size);
+            
             if samples_to_output > 0 {
-                // Flush denormals in-place then SIMD interleave
                 let n = samples_to_output;
                 flush_denormals_inplace(&mut self.output_accum_l[..n]);
                 flush_denormals_inplace(&mut self.output_accum_r[..n]);
                 interleave_stereo(
                     &self.output_accum_l[..n],
                     &self.output_accum_r[..n],
-                    &mut output[out_pos * 2..(out_pos + n) * 2],
+                    &mut output[output_pos * 2..(output_pos + n) * 2],
                 );
-                out_pos += samples_to_output;
-
-                // Shift accumulator after consuming
-                if samples_to_output >= self.hop_size {
-                    self.shift_output_accum();
+                
+                self.output_accum_l.copy_within(n.., 0);
+                self.output_accum_r.copy_within(n.., 0);
+                let tail = self.output_accum_l.len() - n;
+                self.output_accum_l[tail..].fill(0.0);
+                self.output_accum_r[tail..].fill(0.0);
+                self.output_fill -= n;
+                output_pos += n;
+            } else {
+                // If we reach here, we need more input to produce more output.
+                // If current input is exhausted, we must pad with silence.
+                if input_pos >= num_frames {
+                    let remaining = num_frames - output_pos;
+                    for i in 0..remaining {
+                        output[(output_pos + i) * 2] = 0.0;
+                        output[(output_pos + i) * 2 + 1] = 0.0;
+                    }
+                    output_pos = num_frames;
                 } else {
-                    // Partial shift - rare case
-                    self.output_accum_l.copy_within(samples_to_output.., 0);
-                    self.output_accum_r.copy_within(samples_to_output.., 0);
-                    let tail = self.output_accum_l.len() - samples_to_output;
-                    self.output_accum_l[tail..].fill(0.0);
-                    self.output_accum_r[tail..].fill(0.0);
-                    self.output_available -= samples_to_output;
+                    // Break to avoid infinite loop if no progress is possible
+                    break;
                 }
-            } else if out_pos < num_frames && in_pos >= num_frames {
-                // Only output silence if we have processed all input and still need more output
-                let remaining = num_frames - out_pos;
-                for i in 0..remaining {
-                    output[(out_pos + i) * 2] = 0.0;
-                    output[(out_pos + i) * 2 + 1] = 0.0;
-                }
-                out_pos = num_frames;
-            }
-
-            // Prevent infinite loop
-            if to_copy == 0 && samples_to_output == 0 && out_pos < num_frames {
-                // Fill remaining with silence
-                for i in out_pos..num_frames {
-                    output[i * 2] = 0.0;
-                    output[i * 2 + 1] = 0.0;
-                }
-                break;
             }
         }
 
         // Auto-gain: measure the UNCOMPENSATED output from the plugin filters.
         // This ensures the gain calculation is stable and doesn't oscillate.
         if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_output(&output[..out_pos * 2]);
-            ag.apply_compensation(&mut output[..out_pos * 2], out_pos);
+            let _ = ag.measure_output(&output[..output_pos * 2]);
+            ag.apply_compensation(&mut output[..output_pos * 2], output_pos);
         }
 
         // Per-sample peak limiter: prevent clipping after XTC filter summation + AutoGain.
@@ -1176,7 +1160,7 @@ impl Plugin for XtcPlugin {
         // Skip when filters are bypassed — no amplification occurs.
         if !self.params.bypass_xtc_filters {
             let threshold = 0.95_f32;
-            for frame in 0..out_pos {
+            for frame in 0..output_pos {
                 let idx_l = frame * 2;
                 let idx_r = frame * 2 + 1;
                 let peak = output[idx_l].abs().max(output[idx_r].abs());
@@ -1195,11 +1179,10 @@ impl Plugin for XtcPlugin {
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.
-        Ok(out_pos)
+        Ok(output_pos)
     }
 
     fn latency_samples(&self) -> usize {
-        // Latency is approximately fft_size - hop_size due to overlap-add
-        self.fft_size - self.hop_size
+        self.fft_size
     }
 }
