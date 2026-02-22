@@ -205,8 +205,6 @@ pub struct App {
 }
 
 /// GPUI-compatible state wrapper
-
-/// GPUI-compatible state wrapper
 pub struct AppState {
     pub app: App,
     pub layout: Entity<LayoutState>,

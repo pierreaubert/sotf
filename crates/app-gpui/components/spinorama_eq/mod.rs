@@ -23,6 +23,13 @@ use sotf_audio_player::autoeq::speaker::{
 use sotf_audio_player::autoeq::types::SpeakerConfigType;
 use std::sync::Mutex;
 
+/// Lock a std::sync::Mutex, recovering from poisoning instead of panicking.
+macro_rules! lock {
+    ($m:expr) => {
+        $m.lock().unwrap_or_else(|e| e.into_inner())
+    };
+}
+
 mod step_1_select;
 mod step_2_configure;
 mod step_3_review;
@@ -53,7 +60,7 @@ static SPINORAMA_CURVES: Mutex<Option<Result<crate::app::types::SpinoramaCurves,
 /// Spawn a background thread to load CEA2034 spinorama curves for the plot.
 fn spawn_spinorama_curves_thread(speaker: String, version: String) {
     // Clear previous result
-    *SPINORAMA_CURVES.lock().unwrap() = None;
+    *lock!(SPINORAMA_CURVES) = None;
 
     std::thread::spawn(move || {
         log::info!(
@@ -161,14 +168,14 @@ fn spawn_spinorama_curves_thread(speaker: String, version: String) {
                 log::error!("Failed to load spinorama curves: {}", e);
             }
         }
-        *SPINORAMA_CURVES.lock().unwrap() = Some(result);
+        *lock!(SPINORAMA_CURVES) = Some(result);
     });
 }
 
 /// Spawn a background task to check phase data availability for a speaker/version/measurement.
 /// This updates the state asynchronously when the result is ready.
 fn spawn_phase_data_check_thread(speaker: String, version: String, measurement: String) {
-    *PHASE_CHECK_RESULT.lock().unwrap() = None;
+    *lock!(PHASE_CHECK_RESULT) = None;
 
     let curve_name = "Estimated In-Room Response".to_string();
 
@@ -184,7 +191,7 @@ fn spawn_phase_data_check_thread(speaker: String, version: String, measurement: 
                 }
             }
         });
-        *PHASE_CHECK_RESULT.lock().unwrap() = Some(has_phase);
+        *lock!(PHASE_CHECK_RESULT) = Some(has_phase);
     });
 }
 
@@ -318,7 +325,7 @@ impl PlayerView {
                         .await;
 
                     let spinorama_result = {
-                        let mut guard = SPINORAMA_CURVES.lock().unwrap();
+                        let mut guard = lock!(SPINORAMA_CURVES);
                         guard.take()
                     };
 
@@ -579,7 +586,7 @@ impl PlayerView {
             std::sync::Mutex::new(None);
 
         // Clear any previous result
-        *SPEAKERS_RESULT.lock().unwrap() = None;
+        *lock!(SPEAKERS_RESULT) = None;
 
         // Spawn a background thread with its own tokio runtime for the HTTP request
         std::thread::spawn(|| {
@@ -587,7 +594,7 @@ impl PlayerView {
             let result = rt.block_on(async { autoeq::fetch_available_speakers().await });
 
             let mapped_result = result.map_err(|e| e.to_string());
-            *SPEAKERS_RESULT.lock().unwrap() = Some(mapped_result);
+            *lock!(SPEAKERS_RESULT) = Some(mapped_result);
         });
 
         // Poll for results from GPUI's async context
@@ -597,7 +604,7 @@ impl PlayerView {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
 
                 // Check if result is ready
-                let result = SPEAKERS_RESULT.lock().unwrap().take();
+                let result = lock!(SPEAKERS_RESULT).take();
 
                 if let Some(result) = result {
                     match result {
@@ -693,7 +700,7 @@ impl PlayerView {
         // Use a global mutex to share results
         static VERSIONS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
             std::sync::Mutex::new(None);
-        *VERSIONS_RESULT.lock().unwrap() = None;
+        *lock!(VERSIONS_RESULT) = None;
 
         // Spawn background thread for HTTP request
         let speaker_for_fetch = speaker_name.clone();
@@ -712,7 +719,7 @@ impl PlayerView {
                 let versions: Vec<String> = response.json().await?;
                 Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(versions)
             });
-            *VERSIONS_RESULT.lock().unwrap() = Some(result.map_err(|e| e.to_string()));
+            *lock!(VERSIONS_RESULT) = Some(result.map_err(|e| e.to_string()));
         });
 
         // Poll for results
@@ -724,7 +731,7 @@ impl PlayerView {
                     .timer(std::time::Duration::from_millis(100))
                     .await;
 
-                let result = VERSIONS_RESULT.lock().unwrap().take();
+                let result = lock!(VERSIONS_RESULT).take();
                 if let Some(result) = result {
                     match result {
                         Ok(versions) => {
@@ -821,7 +828,7 @@ impl PlayerView {
         // Use a global mutex to share results
         static MEASUREMENTS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
             std::sync::Mutex::new(None);
-        *MEASUREMENTS_RESULT.lock().unwrap() = None;
+        *lock!(MEASUREMENTS_RESULT) = None;
 
         // Spawn background thread for HTTP request
         std::thread::spawn(move || {
@@ -840,7 +847,7 @@ impl PlayerView {
                 let measurements: Vec<String> = response.json().await?;
                 Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(measurements)
             });
-            *MEASUREMENTS_RESULT.lock().unwrap() = Some(result.map_err(|e| e.to_string()));
+            *lock!(MEASUREMENTS_RESULT) = Some(result.map_err(|e| e.to_string()));
         });
 
         // Poll for results
@@ -853,7 +860,7 @@ impl PlayerView {
                     .timer(std::time::Duration::from_millis(100))
                     .await;
 
-                let result = MEASUREMENTS_RESULT.lock().unwrap().take();
+                let result = lock!(MEASUREMENTS_RESULT).take();
                 if let Some(result) = result {
                     match result {
                         Ok(measurements) => {
@@ -924,7 +931,7 @@ impl PlayerView {
                                 // Check for phase result
                                 if !phase_done {
                                     if let Some(has_phase) =
-                                        PHASE_CHECK_RESULT.lock().unwrap().take()
+                                        lock!(PHASE_CHECK_RESULT).take()
                                     {
                                         let _ = state_entity.update(cx, |state, cx| {
                                             state
@@ -942,7 +949,7 @@ impl PlayerView {
                                 // Check for spinorama curves result
                                 if !spinorama_done {
                                     let spinorama_result = {
-                                        let mut guard = SPINORAMA_CURVES.lock().unwrap();
+                                        let mut guard = lock!(SPINORAMA_CURVES);
                                         guard.take()
                                     };
                                     if let Some(result) = spinorama_result {
@@ -1101,7 +1108,7 @@ impl PlayerView {
         cx.notify();
 
         // Clear progress mutex for fresh start
-        SPINORAMA_PROGRESS.lock().unwrap().clear();
+        lock!(SPINORAMA_PROGRESS).clear();
 
         // Build optimization params
         let loss = mode.to_loss_string().to_string();
@@ -1337,7 +1344,7 @@ impl PlayerView {
                         };
 
                         // Use parking_lot or std Mutex to share result
-                        SPINORAMA_RESULT.lock().unwrap().replace((
+                        lock!(SPINORAMA_RESULT).replace((
                             true,
                             Some(result),
                             Some(opt_result),
@@ -1346,10 +1353,7 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("Optimization failed: {}", e);
-                        SPINORAMA_RESULT
-                            .lock()
-                            .unwrap()
-                            .replace((false, None, None, Some(e)));
+                        lock!(SPINORAMA_RESULT).replace((false, None, None, Some(e)));
                     }
                 }
             });
@@ -1363,7 +1367,7 @@ impl PlayerView {
 
                 // Check for progress updates and transfer to state
                 let new_progress: Vec<(usize, f64, Option<f64>, f32)> = {
-                    let mut progress_guard = SPINORAMA_PROGRESS.lock().unwrap();
+                    let mut progress_guard = lock!(SPINORAMA_PROGRESS);
                     std::mem::take(&mut *progress_guard)
                 };
 
@@ -1387,7 +1391,7 @@ impl PlayerView {
                 }
 
                 // Check if result is ready
-                let result_ready = SPINORAMA_RESULT.lock().unwrap().take();
+                let result_ready = lock!(SPINORAMA_RESULT).take();
 
                 if let Some((success, result, full_result, error)) = result_ready {
                     let _ = state_for_poll.update(cx, |state, cx| {

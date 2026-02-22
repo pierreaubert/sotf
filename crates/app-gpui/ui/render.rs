@@ -116,11 +116,6 @@ impl Render for PlayerView {
             self.last_saved_window_bounds = Some(window_bounds);
         }
 
-        // Ensure library cache is valid before reading from state
-        self.state.update(cx, |state, _cx| {
-            state.app.library_state.ensure_cache_valid();
-        });
-
         // Batch all state reads into a single scope to minimize locking overhead
         let (
             current_screen,
@@ -290,8 +285,10 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::clear_meter_mutes_solos))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 // Handle text input for search mode and add directory mode
-                let input_mode = view.state.read(cx).app.ui_state.input_mode;
-                let current_screen = view.state.read(cx).app.ui_state.current_screen;
+                let (input_mode, current_screen) = {
+                    let state = view.state.read(cx);
+                    (state.app.ui_state.input_mode, state.app.ui_state.current_screen)
+                };
 
                 log::debug!(
                     "on_key_down: key='{}', input_mode={:?}",

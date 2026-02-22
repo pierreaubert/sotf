@@ -257,10 +257,34 @@ impl Config {
         let json = serde_json::to_string_pretty(self)
             .map_err(|source| ConfigError::SerializeError { source })?;
 
-        std::fs::write(&path, json).map_err(|source| ConfigError::WriteError {
-            path: path.clone(),
-            source,
-        })
+        #[cfg(unix)]
+        {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)
+                .map_err(|source| ConfigError::WriteError {
+                    path: path.clone(),
+                    source,
+                })?;
+            file.write_all(json.as_bytes())
+                .map_err(|source| ConfigError::WriteError {
+                    path: path.clone(),
+                    source,
+                })
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&path, json).map_err(|source| ConfigError::WriteError {
+                path: path.clone(),
+                source,
+            })
+        }
     }
 }
 

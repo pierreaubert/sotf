@@ -1386,9 +1386,6 @@ impl LevelMeterManager for AppState {
     /// Update level meter groups based on current speaker configuration or channel count
     /// Creates a default stereo layout when no audio is playing
     /// Uses caching to avoid rebuilding every frame
-    /// Update level meter groups based on current speaker configuration or channel count
-    /// Creates a default stereo layout when no audio is playing
-    /// Uses caching to avoid rebuilding every frame
     fn update_level_meter_groups(&mut self) {
         let num_channels = self
             .playback
@@ -1416,7 +1413,6 @@ impl LevelMeterManager for AppState {
             return;
         }
 
-        // Update cache
         // Update cache
         self.level_meter_last_channel_count = num_channels;
         self.level_meter_last_speaker_config = current_speaker_config.clone();
@@ -1603,7 +1599,6 @@ impl LevelMeterManager for AppState {
     }
 
     /// Clear all mutes, solos, and dims in level meter groups
-    /// Clear all mutes, solos, and dims in level meter groups
     fn clear_level_meter_mutes_and_solos(&mut self) {
         for group in &mut self.level_meter_groups {
             group.muted = false;
@@ -1656,7 +1651,6 @@ impl LevelMeterManager for AppState {
     }
 
     /// Toggle mute for the selected level meter group
-    /// Toggle mute for the selected level meter group
     fn toggle_level_meter_mute(&mut self) {
         if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
             self.set_level_meter_mute(self.selected_level_meter_group, !group.muted);
@@ -1664,14 +1658,12 @@ impl LevelMeterManager for AppState {
     }
 
     /// Toggle solo for the selected level meter group
-    /// Toggle solo for the selected level meter group
     fn toggle_level_meter_solo(&mut self) {
         if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
             self.set_level_meter_solo(self.selected_level_meter_group, !group.soloed);
         }
     }
 
-    /// Toggle dim for the selected level meter group
     /// Toggle dim for the selected level meter group
     fn toggle_level_meter_dim(&mut self) {
         if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
@@ -1738,7 +1730,6 @@ impl LevelMeterManager for AppState {
     }
 
     /// Navigate to next level meter group
-    /// Navigate to next level meter group
     fn select_next_level_meter_group(&mut self) {
         if !self.level_meter_groups.is_empty() {
             self.selected_level_meter_group =
@@ -1746,7 +1737,6 @@ impl LevelMeterManager for AppState {
         }
     }
 
-    /// Navigate to previous level meter group
     /// Navigate to previous level meter group
     fn select_previous_level_meter_group(&mut self) {
         if !self.level_meter_groups.is_empty() {
@@ -1759,12 +1749,10 @@ impl LevelMeterManager for AppState {
     }
 
     /// Navigate between mute, solo, and dim controls
-    /// Navigate between mute, solo, and dim controls
     fn select_next_level_meter_control(&mut self) {
         self.level_meter_control_selection = (self.level_meter_control_selection + 1) % 3;
     }
 
-    /// Navigate between mute, solo, and dim controls (previous)
     /// Navigate between mute, solo, and dim controls (previous)
     fn select_previous_level_meter_control(&mut self) {
         self.level_meter_control_selection = if self.level_meter_control_selection == 0 {
@@ -1774,7 +1762,6 @@ impl LevelMeterManager for AppState {
         };
     }
 
-    /// Toggle the currently selected level meter control (mute/solo/dim)
     /// Toggle the currently selected level meter control (mute/solo/dim)
     fn toggle_selected_level_meter_control(&mut self) {
         match self.level_meter_control_selection {

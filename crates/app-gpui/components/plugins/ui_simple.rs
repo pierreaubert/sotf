@@ -3,15 +3,21 @@
 //! Alternative to the graphical plugin views, showing all parameters
 //! as a grouped table using the gpui-ui-kit Table component.
 //! Left column (parameter name) is right-justified.
-//! Right column (value) is editable via click-to-select + arrow keys.
+//! Right column (value) is editable:
+//!   - Float/Int: NumberInput with direct text entry
+//!   - Bool: Toggle switch
+//!   - Choice: clickable ◄/► buttons to cycle through options
 
 use super::common::render_section_title;
+use super::editing::PluginEditingManager;
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Column, SelectionMode, Table, TableTheme};
-use sotf_audio_player::tui_params::TuiEditablePlugin;
+use gpui_ui_kit::{
+    Column, NumberInput, NumberInputSize, SelectionMode, Table, TableTheme, Toggle, ToggleSize,
+};
+use sotf_audio_player::tui_params::{TuiEditablePlugin, TuiParamType};
 use sotf_audio_player::PluginSettings;
 use std::collections::HashSet;
 
@@ -20,6 +26,12 @@ use std::collections::HashSet;
 struct ParamRow {
     name: String,
     value_str: String,
+    value_f64: f64,
+    param_type: TuiParamType,
+    unit: String,
+    global_param_idx: usize,
+    /// For Bool params: whether currently true
+    bool_value: bool,
 }
 
 /// Render a simple table-based parameter list for any plugin
@@ -34,14 +46,14 @@ pub fn render_simple_plugin_view(
     let descriptors = settings.get_descriptors();
     let params = settings.get_params();
 
-    // Group params by their group name, tracking global param indices
-    let mut groups: Vec<(String, Vec<ParamRow>, Vec<usize>)> = Vec::new();
+    // Group params by their group name
+    let mut groups: Vec<(String, Vec<ParamRow>)> = Vec::new();
     let mut current_group = String::new();
 
     for (i, (desc, param)) in descriptors.iter().zip(params.iter()).enumerate() {
         if desc.group != current_group {
             current_group = desc.group.clone();
-            groups.push((current_group.clone(), Vec::new(), Vec::new()));
+            groups.push((current_group.clone(), Vec::new()));
         }
 
         let value_str = if param.unit.is_empty() {
@@ -50,12 +62,22 @@ pub fn render_simple_plugin_view(
             format!("{} {}", param.value, param.unit)
         };
 
+        let value_f64 = param.value.parse::<f64>().unwrap_or(0.0);
+        let bool_value = matches!(
+            param.value.to_lowercase().as_str(),
+            "true" | "on" | "yes" | "1"
+        );
+
         if let Some(last) = groups.last_mut() {
             last.1.push(ParamRow {
                 name: param.name.clone(),
                 value_str,
+                value_f64,
+                param_type: desc.param_type,
+                unit: desc.unit.clone(),
+                global_param_idx: i,
+                bool_value,
             });
-            last.2.push(i);
         }
     }
 
@@ -80,7 +102,7 @@ pub fn render_simple_plugin_view(
 
     let mut container = div().flex().flex_col().gap_2();
 
-    for (group_name, rows, param_indices) in groups {
+    for (group_name, rows) in groups {
         // Section title above each group table
         container = container.child(
             div()
@@ -91,22 +113,23 @@ pub fn render_simple_plugin_view(
 
         // Determine which row in this group is selected
         let selected_in_group: HashSet<usize> = if is_editing {
-            param_indices
-                .iter()
-                .position(|&pi| pi == selected_param)
+            rows.iter()
+                .position(|row| row.global_param_idx == selected_param)
                 .into_iter()
                 .collect()
         } else {
             HashSet::new()
         };
 
-        // Capture values for the selection change closure
-        let param_indices_for_handler = param_indices.clone();
+        // Capture for the selection change closure
         let entity_for_handler = entity.clone();
+        let rows_for_handler: Vec<usize> = rows.iter().map(|r| r.global_param_idx).collect();
 
         // Track which rows are selected for conditional styling in cell_render
         let selected_in_group_for_name = selected_in_group.clone();
         let selected_in_group_for_value = selected_in_group.clone();
+
+        let entity_for_value = entity.clone();
 
         let table = Table::new(
             SharedString::from(format!("simple-params-{}", group_name)),
@@ -137,32 +160,141 @@ pub fn render_simple_plugin_view(
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
                     let is_sel = selected_in_group_for_value.contains(&row_idx);
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(if is_sel { accent } else { text_primary })
-                                .child(row.value_str.clone()),
-                        )
-                        .when(is_sel, |d| {
-                            d.child(
-                                div()
-                                    .text_xs()
-                                    .text_color(accent)
-                                    .child("◄ ►"),
+
+                    match row.param_type {
+                        TuiParamType::Float { min, max, step } if is_sel => {
+                            let dec = if step < 0.01 {
+                                3
+                            } else if step < 0.1 {
+                                2
+                            } else if step < 1.0 {
+                                1
+                            } else {
+                                0
+                            };
+
+                            let param_idx = row.global_param_idx;
+                            let entity_clone = entity_for_value.clone();
+
+                            let mut input = NumberInput::new(SharedString::from(format!(
+                                "simple-param-{}-{}",
+                                plugin_idx, param_idx
+                            )))
+                            .value(row.value_f64)
+                            .min(min)
+                            .max(max)
+                            .step(step)
+                            .decimals(dec)
+                            .size(NumberInputSize::Xs)
+                            .on_change(move |value, _window, cx| {
+                                entity_clone.update(cx, |state, _| {
+                                    state.app.set_plugin_param(plugin_idx, param_idx, value);
+                                });
+                            });
+
+                            if !row.unit.is_empty() {
+                                input = input.unit(row.unit.clone());
+                            }
+
+                            input.into_any_element()
+                        }
+                        TuiParamType::Int { min, max, step } if is_sel => {
+                            let param_idx = row.global_param_idx;
+                            let entity_clone = entity_for_value.clone();
+
+                            let mut input = NumberInput::new(SharedString::from(format!(
+                                "simple-param-{}-{}",
+                                plugin_idx, param_idx
+                            )))
+                            .value(row.value_f64)
+                            .min(min as f64)
+                            .max(max as f64)
+                            .step(step as f64)
+                            .decimals(0)
+                            .size(NumberInputSize::Xs)
+                            .on_change(move |value, _window, cx| {
+                                entity_clone.update(cx, |state, _| {
+                                    state.app.set_plugin_param(plugin_idx, param_idx, value);
+                                });
+                            });
+
+                            if !row.unit.is_empty() {
+                                input = input.unit(row.unit.clone());
+                            }
+
+                            input.into_any_element()
+                        }
+                        TuiParamType::Bool if is_sel => {
+                            let param_idx = row.global_param_idx;
+                            let entity_clone = entity_for_value.clone();
+
+                            Toggle::new(SharedString::from(format!(
+                                "simple-toggle-{}-{}",
+                                plugin_idx, param_idx
+                            )))
+                            .checked(row.bool_value)
+                            .size(ToggleSize::Sm)
+                            .on_change(move |checked, _window, cx| {
+                                entity_clone.update(cx, |state, _| {
+                                    state.app.set_plugin_param(
+                                        plugin_idx,
+                                        param_idx,
+                                        if checked { 1.0 } else { 0.0 },
+                                    );
+                                });
+                            })
+                            .into_any_element()
+                        }
+                        TuiParamType::Choice { .. } if is_sel => {
+                            let param_idx = row.global_param_idx;
+                            let entity_prev = entity_for_value.clone();
+                            let entity_next = entity_for_value.clone();
+
+                            render_choice_buttons(
+                                &row.value_str,
+                                accent,
+                                move |_window, cx| {
+                                    entity_prev.update(cx, |state, _| {
+                                        state.app.adjust_selected_param(-1.0);
+                                    });
+                                },
+                                move |_window, cx| {
+                                    entity_next.update(cx, |state, _| {
+                                        state.app.adjust_selected_param(1.0);
+                                    });
+                                },
+                                plugin_idx,
+                                param_idx,
                             )
-                        })
+                            .into_any_element()
+                        }
+                        _ => {
+                            // Static text for non-selected rows
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(if is_sel {
+                                            accent
+                                        } else {
+                                            text_primary
+                                        })
+                                        .child(row.value_str.clone()),
+                                )
+                                .into_any_element()
+                        }
+                    }
                 }),
         )
         .selection_mode(SelectionMode::Single)
         .selected_indices(selected_in_group)
         .on_selection_change(move |indices: &HashSet<usize>, _window, cx| {
             if let Some(&row_idx) = indices.iter().next()
-                && let Some(&param_idx) = param_indices_for_handler.get(row_idx)
+                && let Some(&param_idx) = rows_for_handler.get(row_idx)
             {
                 entity_for_handler.update(cx, |state, _| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
@@ -177,4 +309,51 @@ pub fn render_simple_plugin_view(
     }
 
     container
+}
+
+/// Render clickable ◄ value ► buttons for Choice parameters
+fn render_choice_buttons(
+    value_str: &str,
+    accent: Rgba,
+    on_prev: impl Fn(&mut Window, &mut App) + 'static,
+    on_next: impl Fn(&mut Window, &mut App) + 'static,
+    plugin_idx: usize,
+    param_idx: usize,
+) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .child(
+            div()
+                .id(SharedString::from(format!(
+                    "choice-prev-{}-{}",
+                    plugin_idx, param_idx
+                )))
+                .text_sm()
+                .text_color(accent)
+                .cursor_pointer()
+                .on_click(move |_, window, cx| on_prev(window, cx))
+                .child("◄"),
+        )
+        .child(
+            div()
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(accent)
+                .mx_1()
+                .child(value_str.to_string()),
+        )
+        .child(
+            div()
+                .id(SharedString::from(format!(
+                    "choice-next-{}-{}",
+                    plugin_idx, param_idx
+                )))
+                .text_sm()
+                .text_color(accent)
+                .cursor_pointer()
+                .on_click(move |_, window, cx| on_next(window, cx))
+                .child("►"),
+        )
 }
