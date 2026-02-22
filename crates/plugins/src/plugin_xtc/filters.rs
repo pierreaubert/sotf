@@ -376,25 +376,24 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let delay_right_ipsi = asym.delay_right_ipsi;
         let delay_right_contra = asym.delay_right_contra;
 
-        // Left ear: ipsi speaker is left speaker, contra is right speaker
+        // Left ear: ipsi speaker is left speaker, contra is right speaker.
+        // Use relative transfer functions: ipsilateral path is our reference.
+        let h_ll_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let pinna_left_contra = pinna_left_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
-        let phase_ll_ipsi = -2.0 * PI * freq * delay_left_ipsi;
-        let h_ll_ipsi = Complex::new(phase_ll_ipsi.cos(), phase_ll_ipsi.sin()) * pinna_ipsi;
-        
+        let delta_t_left = delay_left_contra - delay_left_ipsi;
         let g_ll =
             head_shadowing_woodworth(freq, asym.angle_left_contra, a) * asym.amplitude_ratio_left;
-        let phase_ll_contra = -2.0 * PI * freq * delay_left_contra;
+        let phase_ll_contra = -2.0 * PI * freq * delta_t_left;
         let h_ll_contra =
             Complex::new(g_ll * phase_ll_contra.cos(), g_ll * phase_ll_contra.sin()) * pinna_left_contra;
 
         // Right ear: ipsi speaker is right speaker, contra is left speaker
+        let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
         let pinna_right_contra = pinna_right_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
-        let phase_rr_ipsi = -2.0 * PI * freq * delay_right_ipsi;
-        let h_rr_ipsi = Complex::new(phase_rr_ipsi.cos(), phase_rr_ipsi.sin()) * pinna_ipsi;
-        
+        let delta_t_right = delay_right_contra - delay_right_ipsi;
         let g_rr =
             head_shadowing_woodworth(freq, asym.angle_right_contra, a) * asym.amplitude_ratio_right;
-        let phase_rr_contra = -2.0 * PI * freq * delay_right_contra;
+        let phase_rr_contra = -2.0 * PI * freq * delta_t_right;
         let h_rr_contra =
             Complex::new(g_rr * phase_rr_contra.cos(), g_rr * phase_rr_contra.sin()) * pinna_right_contra;
 
@@ -497,13 +496,13 @@ fn compute_xtc_filters_symmetric_with_cache(
     for bin in 0..num_bins {
         let freq = bin as f32 * cache.freq_per_bin;
 
-        // Transfer function for ipsilateral path
-        let phase_ipsi = -2.0 * PI * freq * sym.delay_ipsi;
-        let h_ipsi = Complex::new(phase_ipsi.cos(), phase_ipsi.sin());
+        // Use relative transfer functions: ipsilateral path is our reference (gain 1.0, phase 0)
+        let h_ipsi = Complex::new(1.0, 0.0);
 
-        // Transfer function for contralateral path using Woodworth model
+        // Contralateral path is relative to ipsilateral
+        let delta_t = sym.delay_contra - sym.delay_ipsi;
         let g = head_shadowing_woodworth(freq, sym.contra_angle, a) * sym.amplitude_ratio;
-        let phase_contra = -2.0 * PI * freq * sym.delay_contra;
+        let phase_contra = -2.0 * PI * freq * delta_t;
         let h_contra = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
 
         // Frequency-dependent regularization: use pre-computed LUT (Optimization 5)

@@ -148,12 +148,18 @@ pub struct XtcPlugin {
     /// Number of samples currently in input buffer (0 to fft_size)
     input_fill: usize,
 
-    /// Output accumulator for overlap-add (holds fft_size + hop_size)
-    output_accum_l: Vec<f32>,
-    output_accum_r: Vec<f32>,
-
-    /// Number of valid samples in output accumulator (for overlap-add)
-    output_fill: usize,
+    /// Output accumulator for overlap-add (flat interleaved ring buffer)
+    /// Layout: [L0, R0, L1, R1, ...]
+    /// Buffer size in frames is always power-of-2 (4 * fft_size) for efficient masking
+    output_accumulator: Vec<f32>,
+    /// Bitmask for ring buffer frame index (buffer_frames - 1)
+    output_accumulator_mask: usize,
+    /// Number of valid frames in output accumulator
+    output_accumulator_fill: usize,
+    /// Next frame position to add a block (tracks overlap-add offset)
+    next_add_position: usize,
+    /// Current read frame position in the output accumulator ring buffer
+    output_read_position: usize,
 
     /// Temporary buffers for block processing (avoid per-call allocation)
     temp_input_l: Vec<f32>,
@@ -367,9 +373,11 @@ impl XtcPlugin {
             input_buffer_l: vec![0.0; fft_size],
             input_buffer_r: vec![0.0; fft_size],
             input_fill: 0,
-            output_accum_l: vec![0.0; fft_size + hop_size],
-            output_accum_r: vec![0.0; fft_size + hop_size],
-            output_fill: 0,
+            output_accumulator: vec![0.0; fft_size * 4 * 2], // 4*N frames, stereo
+            output_accumulator_mask: (fft_size * 4) - 1,
+            output_accumulator_fill: 0,
+            next_add_position: 0,
+            output_read_position: 0,
             // Temp buffers for block processing (max reasonable block size)
             temp_input_l: vec![0.0; 4096],
             temp_input_r: vec![0.0; 4096],
@@ -508,6 +516,8 @@ impl XtcPlugin {
         // Diagnostic bypass: skip all XTC filter math, just IFFT the windowed input.
         // This tests whether the STFT framework (windowing + OLA) itself is clean.
         if self.params.bypass_xtc_filters {
+            let mask = self.output_accumulator_mask;
+            
             // Left channel: IFFT the FFT output directly (identity in freq domain)
             self.ifft_input.copy_from_slice(&self.fft_output_l);
             let n = self.ifft_input.len();
@@ -517,11 +527,11 @@ impl XtcPlugin {
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
             
-            scale_add_simd(
-                &mut self.output_accum_l[..fft_size],
-                &self.ifft_output,
-                scale,
-            );
+            // Accumulate Left
+            for i in 0..fft_size {
+                let idx = (self.next_add_position + i) & mask;
+                self.output_accumulator[idx * 2] += self.ifft_output[i] * scale;
+            }
 
             // Right channel
             self.ifft_input.copy_from_slice(&self.fft_output_r);
@@ -531,18 +541,20 @@ impl XtcPlugin {
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
 
-            scale_add_simd(
-                &mut self.output_accum_r[..fft_size],
-                &self.ifft_output,
-                scale,
-            );
+            // Accumulate Right
+            for i in 0..fft_size {
+                let idx = (self.next_add_position + i) & mask;
+                self.output_accumulator[idx * 2 + 1] += self.ifft_output[i] * scale;
+            }
 
-            // Mark hop_size more samples as available
-            self.output_fill += self.hop_size;
+            // Update positions
+            self.next_add_position = (self.next_add_position + self.hop_size) & mask;
+            self.output_accumulator_fill += self.hop_size;
             return;
         }
 
         let is_crossfading = self.crossfade_progress < 1.0 && self.prev_filters.is_some();
+        let mask = self.output_accumulator_mask;
 
         if is_crossfading {
             let alpha = self.crossfade_progress;
@@ -573,15 +585,12 @@ impl XtcPlugin {
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
 
-            // 3. Blend: ifft_output = (1-alpha)*prev + alpha*current
-            blend_simd(&mut self.ifft_output, &self.prev_ifft_output, alpha);
-
-            // 4. Overlap-add to left accumulator
-            scale_add_simd(
-                &mut self.output_accum_l[..fft_size],
-                &self.ifft_output,
-                scale,
-            );
+            // 3. Blend and Accumulate Left
+            for i in 0..fft_size {
+                let val = (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
+                let idx = (self.next_add_position + i) & mask;
+                self.output_accumulator[idx * 2] += val * scale;
+            }
 
             // --- Right channel with crossfade ---
             // 1. IFFT with prev_filters into prev_ifft_output
@@ -606,15 +615,12 @@ impl XtcPlugin {
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
 
-            // 3. Blend
-            blend_simd(&mut self.ifft_output, &self.prev_ifft_output, alpha);
-
-            // 4. Overlap-add to right accumulator
-            scale_add_simd(
-                &mut self.output_accum_r[..fft_size],
-                &self.ifft_output,
-                scale,
-            );
+            // 3. Blend and Accumulate Right
+            for i in 0..fft_size {
+                let val = (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
+                let idx = (self.next_add_position + i) & mask;
+                self.output_accumulator[idx * 2 + 1] += val * scale;
+            }
         } else {
             // Normal path: no crossfade needed
             let filters = self.filters.load();
@@ -630,11 +636,10 @@ impl XtcPlugin {
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
             
-            scale_add_simd(
-                &mut self.output_accum_l[..fft_size],
-                &self.ifft_output,
-                scale,
-            );
+            for i in 0..fft_size {
+                let idx = (self.next_add_position + i) & mask;
+                self.output_accumulator[idx * 2] += self.ifft_output[i] * scale;
+            }
 
             // Right channel
             apply_filter_right(
@@ -647,12 +652,18 @@ impl XtcPlugin {
                 .process(&mut self.ifft_input, &mut self.ifft_output)
                 .expect("IFFT processing failed");
             
-            scale_add_simd(
-                &mut self.output_accum_r[..fft_size],
-                &self.ifft_output,
-                scale,
-            );
+            for i in 0..fft_size {
+                let idx = (self.next_add_position + i) & mask;
+                self.output_accumulator[idx * 2 + 1] += self.ifft_output[i] * scale;
+            }
         }
+
+        // Update positions
+        self.next_add_position = (self.next_add_position + self.hop_size) & mask;
+        
+        // Start draining immediately to match physical latency.
+        self.output_accumulator_fill += self.hop_size;
+        self.latency_filled += self.hop_size;
 
         // Advance crossfade progress
         if self.crossfade_progress < 1.0 {
@@ -661,11 +672,6 @@ impl XtcPlugin {
                 self.prev_filters = None; // Release old filters
             }
         }
-
-        // Mark hop_size more samples as available.
-        // We start draining immediately to match physical latency.
-        self.output_fill += self.hop_size;
-        self.latency_filled += self.hop_size;
     }
 
     /// Shift input buffer left by hop_size and clear tail
@@ -1017,11 +1023,12 @@ impl Plugin for XtcPlugin {
         // Clear all buffers
         self.input_buffer_l.fill(0.0);
         self.input_buffer_r.fill(0.0);
-        self.output_accum_l.fill(0.0);
-        self.output_accum_r.fill(0.0);
+        self.output_accumulator.fill(0.0);
+        self.output_accumulator_fill = 0;
+        self.next_add_position = 0;
+        self.output_read_position = 0;
         self.prev_ifft_output.fill(0.0);
         self.input_fill = 0;
-        self.output_fill = 0;
         self.latency_filled = 0;
 
         // Reset crossfade state
@@ -1085,6 +1092,7 @@ impl Plugin for XtcPlugin {
 
         let mut input_pos = 0;
         let mut output_pos = 0;
+        let mask = self.output_accumulator_mask;
 
         while output_pos < num_frames {
             // Step 1: Fill input buffer from deinterleaved temp buffers
@@ -1110,27 +1118,23 @@ impl Plugin for XtcPlugin {
             }
 
             // Step 3: Copy available output to output buffer
-            let samples_to_output = self.output_fill
-                .min(num_frames - output_pos)
-                .min(self.hop_size);
+            let frames_to_drain = self.output_accumulator_fill
+                .min(num_frames - output_pos);
             
-            if samples_to_output > 0 {
-                let n = samples_to_output;
-                flush_denormals_inplace(&mut self.output_accum_l[..n]);
-                flush_denormals_inplace(&mut self.output_accum_r[..n]);
-                interleave_stereo(
-                    &self.output_accum_l[..n],
-                    &self.output_accum_r[..n],
-                    &mut output[output_pos * 2..(output_pos + n) * 2],
-                );
-                
-                self.output_accum_l.copy_within(n.., 0);
-                self.output_accum_r.copy_within(n.., 0);
-                let tail = self.output_accum_l.len() - n;
-                self.output_accum_l[tail..].fill(0.0);
-                self.output_accum_r[tail..].fill(0.0);
-                self.output_fill -= n;
-                output_pos += n;
+            if frames_to_drain > 0 {
+                for i in 0..frames_to_drain {
+                    let read_idx = (self.output_read_position + i) & mask;
+                    let acc_base = read_idx * 2;
+                    let out_base = (output_pos + i) * 2;
+                    output[out_base] = self.output_accumulator[acc_base];
+                    output[out_base + 1] = self.output_accumulator[acc_base + 1];
+                    // Clear after reading for next overlap-add cycle
+                    self.output_accumulator[acc_base] = 0.0;
+                    self.output_accumulator[acc_base + 1] = 0.0;
+                }
+                self.output_read_position = (self.output_read_position + frames_to_drain) & mask;
+                self.output_accumulator_fill -= frames_to_drain;
+                output_pos += frames_to_drain;
             } else {
                 // If we reach here, we need more input to produce more output.
                 // If current input is exhausted, we must pad with silence.

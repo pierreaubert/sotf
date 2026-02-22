@@ -81,6 +81,10 @@ proptest = "1.5"
 name = "plugin-fuzzer"
 path = "bin/plugin_fuzzer.rs"
 
+[[bin]]
+name = "simd-fuzzer"
+path = "bin/simd_fuzzer.rs"
+
 [[bench]]
 name = "binaural-decoder-benchmark"
 harness = false
