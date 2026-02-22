@@ -2079,15 +2079,49 @@ impl PluginSettings {
                 output_channels,
                 matrix,
                 channel_states,
-            } => PluginConfig::new(
-                "matrix",
-                json!({
-                    "input_channels": input_channels,
-                    "output_channels": output_channels,
-                    "matrix": matrix,
-                    "channel_states": channel_states,
-                }),
-            ),
+            } => {
+                let off_diag_count = matrix
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, v)| {
+                        let row = idx / input_channels;
+                        let col = idx % input_channels;
+                        row != col && v.abs() > 1e-6
+                    })
+                    .count();
+                if off_diag_count > 0 {
+                    let off_diag_entries: Vec<_> = matrix
+                        .iter()
+                        .enumerate()
+                        .filter(|(idx, v)| {
+                            let row = idx / input_channels;
+                            let col = idx % input_channels;
+                            row != col && v.abs() > 1e-6
+                        })
+                        .map(|(idx, v)| {
+                            let row = idx / input_channels;
+                            let col = idx % input_channels;
+                            format!("in{}→out{}={:.3}", col, row, v)
+                        })
+                        .collect();
+                    log::debug!(
+                        "[Matrix::to_plugin_config] {}x{} with {} off-diagonal: [{}]",
+                        input_channels,
+                        output_channels,
+                        off_diag_count,
+                        off_diag_entries.join(", "),
+                    );
+                }
+                PluginConfig::new(
+                    "matrix",
+                    json!({
+                        "input_channels": input_channels,
+                        "output_channels": output_channels,
+                        "matrix": matrix,
+                        "channel_states": channel_states,
+                    }),
+                )
+            }
             Self::XTC {
                 distance_m,
                 speaker_angle_deg,

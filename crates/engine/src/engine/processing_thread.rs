@@ -856,6 +856,29 @@ fn create_plugin(
             let params: MatrixPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse matrix plugin parameters: {}", e))?;
 
+            {
+                let off_diag: Vec<_> = params
+                    .matrix
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, v)| {
+                        let cols = params
+                            .input_channels
+                            .or(params.input_channel_map.as_ref().map(|m| m.len()))
+                            .unwrap_or(1);
+                        let row = idx / cols;
+                        let col = idx % cols;
+                        row != col && v.abs() > 1e-6
+                    })
+                    .map(|(idx, v)| format!("[{}]={:.3}", idx, v))
+                    .collect();
+                log::debug!(
+                    "[create_plugin:matrix] deserialized matrix len={}, off-diagonal entries: {:?}",
+                    params.matrix.len(),
+                    off_diag,
+                );
+            }
+
             // Determine if using sparse or dense mapping
             let mut plugin = if let (Some(in_map), Some(out_map)) =
                 (params.input_channel_map, params.output_channel_map)
