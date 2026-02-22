@@ -314,10 +314,9 @@ impl XtcPlugin {
             .collect();
 
         // Combined scale factor: COLA normalization / FFT size
-        // At 75% overlap with analysis-only windowing, sum(w) = 2.0 * N.
-        // scale = 1.0 / sum(w) = 0.5 / fft_size.
-        // Let's use 1.17 / fft_size to reach unity gain if 1.0/fft_size was -1.3dB.
-        let output_scale = 1.17 / fft_size as f32;
+        // For 75% overlap dual-windowing Hann, Sum(w^2) = 1.5.
+        // scale = 1.0 / (1.5 * N).
+        let output_scale = 1.0 / (fft_size as f32 * 1.5);
 
         // Compute frequency-domain filters
         let num_bins = fft_size / 2 + 1;
@@ -638,7 +637,8 @@ impl XtcPlugin {
             
             for i in 0..fft_size {
                 let idx = (self.next_add_position + i) & mask;
-                self.output_accumulator[idx * 2] += self.ifft_output[i] * scale;
+                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
+                self.output_accumulator[idx * 2] += s;
             }
 
             // Right channel
@@ -654,7 +654,8 @@ impl XtcPlugin {
             
             for i in 0..fft_size {
                 let idx = (self.next_add_position + i) & mask;
-                self.output_accumulator[idx * 2 + 1] += self.ifft_output[i] * scale;
+                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
+                self.output_accumulator[idx * 2 + 1] += s;
             }
         }
 
@@ -1183,6 +1184,7 @@ impl Plugin for XtcPlugin {
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.
+        flush_denormals_inplace(output);
         Ok(output_pos)
     }
 

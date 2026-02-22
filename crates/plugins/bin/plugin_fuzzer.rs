@@ -464,8 +464,8 @@ impl PluginFuzzer for EqFuzzer {
             channel_filters: None,
             ..Default::default()
         };
-        let plugin = Box::new(EqPlugin::from_params(channels, self.sample_rate, params).unwrap());
-        (plugin, desc)
+        let plugin = EqPlugin::from_params(channels, self.sample_rate, params).unwrap();
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
 }
 
@@ -640,7 +640,7 @@ impl PluginFuzzer for LoudnessCompensationFuzzer {
             low_freq, low_gain, high_freq, high_gain
         );
 
-        (Box::new(plugin), desc)
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
 }
 

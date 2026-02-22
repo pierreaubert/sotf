@@ -102,7 +102,7 @@ fn test_eq_zero_alloc() {
             2.0,
         ),
     ];
-    let mut plugin = EqPlugin::new(2, filters);
+    let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -275,7 +275,7 @@ fn test_channel_mute_solo_zero_alloc() {
 }
 
 fn test_loudness_compensation_zero_alloc() {
-    let mut plugin = LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0);
+    let mut plugin = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);

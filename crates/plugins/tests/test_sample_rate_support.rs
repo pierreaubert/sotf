@@ -96,7 +96,7 @@ fn test_eq_multi_sample_rate() {
             Biquad::new(BiquadFilterType::Lowshelf, 200.0, sr as f64, 0.707, -3.0),
         ];
 
-        let mut plugin = EqPlugin::new(2, filters);
+        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters));
         plugin.initialize(sr).unwrap();
 
         let input = generate_sine_stereo(sr, 1000.0, 0.3, NUM_FRAMES);
@@ -297,7 +297,7 @@ fn test_plugin_chain_multi_sample_rate() {
             3.0,
         )];
         let eq = EqPlugin::new(2, filters);
-        host.add_plugin(Box::new(eq)).unwrap();
+        host.add_plugin(Box::new(InPlacePluginAdapter::new(eq))).unwrap();
 
         let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
         host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))
@@ -400,7 +400,7 @@ fn test_eq_near_nyquist() {
             3.0,
         )];
 
-        let mut plugin = EqPlugin::new(2, filters);
+        let mut plugin = InPlacePluginAdapter::new(EqPlugin::new(2, filters));
         plugin.initialize(sr).unwrap();
 
         let input = generate_sine_stereo(sr, freq as f32, 0.3, NUM_FRAMES);

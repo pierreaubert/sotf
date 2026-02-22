@@ -452,40 +452,41 @@ impl InPlacePlugin for ExpanderPlugin {
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let hold_samples = (self.hold_ms * 0.001 * self.sample_rate as f32) as usize;
-        let thresh = self.threshold_smoother.next();
-        let mix = self.mix_smoother.next();
+        
+        let thresh = self.threshold_smoother.next_n(num_frames);
+        let mix = self.mix_smoother.next_n(num_frames);
 
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
                 let mut det_level = 0.0f32;
                 for ch in 0..self.channels {
-                    det_level = det_level.max(
-                        self.apply_sidechain_filter(ch, buffer[frame * self.channels + ch])
-                            .abs(),
-                    );
+                    let idx = frame * self.channels + ch;
+                    let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
+                    let level = filtered.abs();
+                    det_level = det_level.max(level);
+                    self.input_levels_db[ch] = 20.0 * fast_log10(level.max(1e-10));
                 }
+                
                 let input_db = 20.0 * fast_log10(det_level.max(1e-10));
                 let atten = self.process_channel(0, input_db, hold_samples, thresh);
-                let gain = fast_pow10(-atten / 20.0);
+                let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0);
+                
                 for ch in 0..self.channels {
-                    let idx = frame * self.channels + ch;
-                    buffer[idx] = buffer[idx] * ((1.0 - mix) + mix * gain);
+                    buffer[frame * self.channels + ch] *= gain;
                 }
             }
         } else {
             for frame in 0..num_frames {
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
-                    let input_db = 20.0
-                        * fast_log10(
-                            self.apply_sidechain_filter(ch, buffer[idx])
-                                .abs()
-                                .max(1e-10),
-                        );
-                    let gain = fast_pow10(
-                        -self.process_channel(ch, input_db, hold_samples, thresh) / 20.0,
-                    );
-                    buffer[idx] = buffer[idx] * ((1.0 - mix) + mix * gain);
+                    let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
+                    let level = filtered.abs();
+                    let input_db = 20.0 * fast_log10(level.max(1e-10));
+                    self.input_levels_db[ch] = input_db;
+                    
+                    let atten = self.process_channel(ch, input_db, hold_samples, thresh);
+                    let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0);
+                    buffer[idx] *= gain;
                 }
             }
         }

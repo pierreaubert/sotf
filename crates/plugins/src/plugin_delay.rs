@@ -142,14 +142,15 @@ impl InPlacePlugin for DelayPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
+        
+        let delay_samples = self.delay_smoother.next_n(num_frames);
+        let fb = self.feedback_smoother.next_n(num_frames);
+        let mix = self.mix_smoother.next_n(num_frames);
+
+        let int_delay = delay_samples.floor() as usize;
+        let frac_delay = delay_samples - int_delay as f32;
+
         for frame in 0..num_frames {
-            let delay_samples = self.delay_smoother.next();
-            let fb = self.feedback_smoother.next();
-            let mix = self.mix_smoother.next();
-
-            let int_delay = delay_samples.floor() as usize;
-            let frac_delay = delay_samples - int_delay as f32;
-
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let input = buffer[idx];
@@ -167,6 +168,7 @@ impl InPlacePlugin for DelayPlugin {
             }
             self.write_pos = (self.write_pos + 1) % self.max_samples;
         }
+        
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

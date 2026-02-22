@@ -381,7 +381,6 @@ impl Plugin for MatrixPlugin {
             };
 
             for frame in 0..num_frames {
-                // Ticking smoothers every sample for correctness in tests and audio quality
                 let gain = self.gain_smoothers[idx].next();
                 let ch_gain = if logical_out < self.channel_state_smoothers.len() {
                     self.channel_state_smoothers[logical_out].next()
@@ -392,10 +391,14 @@ impl Plugin for MatrixPlugin {
                 output[frame * out_channels + phys_out] +=
                     input[frame * in_channels + phys_in] * gain * ch_gain;
             }
+            
+            // Sync smoothers after loop
+            self.gain_smoothers[idx].next_n(num_frames);
+            if logical_out < self.channel_state_smoothers.len() {
+                self.channel_state_smoothers[logical_out].next_n(num_frames);
+            }
         }
 
-        // Minor optimization: only update connections if something is still smoothing
-        // or we just finished smoothing.
         self.update_active_connections();
 
         Ok(num_frames)

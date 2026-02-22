@@ -3,13 +3,14 @@
 // ============================================================================
 
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, flush_denormals_inplace};
 use super::smoothing::Smoother;
 use arc_swap::ArcSwap;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
 use symphonia::core::audio::{AudioBufferRef, Signal};
@@ -170,14 +171,11 @@ impl ConvolutionPlugin {
     }
 }
 
-impl Plugin for ConvolutionPlugin {
+impl InPlacePlugin for ConvolutionPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Convolution", "1.2.0", "Sotf")
+        PluginInfo::new("Convolution", "2.0.0", "Sotf")
     }
-    fn input_channels(&self) -> usize {
-        self.channels
-    }
-    fn output_channels(&self) -> usize {
+    fn channels(&self) -> usize {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
@@ -219,6 +217,7 @@ impl Plugin for ConvolutionPlugin {
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
         self.mix.set_time(20.0, sr);
+        self.gain_linear.set_time(20.0, sr);
         Ok(())
     }
     fn reset(&mut self) {
@@ -230,20 +229,16 @@ impl Plugin for ConvolutionPlugin {
         self.fdl_head = 0;
     }
 
-    fn process(
+    fn process_in_place(
         &mut self,
-        input: &[f32],
-        output: &mut [f32],
+        buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> Result<usize, String> {
+    ) -> PluginResult<usize> {
         let nf = context.num_frames;
         let state_guard = self.state.load();
         let state = match state_guard.as_ref() {
             Some(s) => s,
-            None => {
-                output.copy_from_slice(input);
-                return Ok(nf);
-            }
+            None => return Ok(nf),
         };
 
         let num_partitions = state.num_partitions;
@@ -254,7 +249,7 @@ impl Plugin for ConvolutionPlugin {
             for ch in 0..self.channels {
                 for i in 0..to_copy {
                     self.input_buffers[ch][self.input_fill + i] =
-                        input[(in_pos + i) * self.channels + ch];
+                        buffer[(in_pos + i) * self.channels + ch];
                 }
             }
             self.input_fill += to_copy;
@@ -266,7 +261,6 @@ impl Plugin for ConvolutionPlugin {
                 let dry_g = 1.0 - m;
                 let inv_n = 1.0 / FFT_SIZE as f32;
 
-                // Advance FDL ring buffer head (replaces rotate_right)
                 self.fdl_head = if self.fdl_head == 0 {
                     num_partitions - 1
                 } else {
@@ -274,28 +268,18 @@ impl Plugin for ConvolutionPlugin {
                 };
 
                 for ch in 0..self.channels {
-                    // Fill pre-allocated spectrum buffer (zero-padded)
                     for i in 0..PARTITION_SIZE {
-                        self.fft_spectrum[i] =
-                            Complex::new(self.input_buffers[ch][i], 0.0);
+                        self.fft_spectrum[i] = Complex::new(self.input_buffers[ch][i], 0.0);
                     }
                     for i in PARTITION_SIZE..FFT_SIZE {
                         self.fft_spectrum[i] = Complex::new(0.0, 0.0);
                     }
-                    state
-                        .fft_forward
-                        .process_with_scratch(&mut self.fft_spectrum, &mut self.fft_scratch);
+                    state.fft_forward.process_with_scratch(&mut self.fft_spectrum, &mut self.fft_scratch);
 
-                    // Store into FDL at ring head
                     self.fdl[ch][self.fdl_head].copy_from_slice(&self.fft_spectrum);
 
-                    // Accumulate convolution sum using pre-allocated buffer
                     self.fft_sum.fill(Complex::new(0.0, 0.0));
-                    let ir_ch = if state.ir_channels == 1 {
-                        0
-                    } else {
-                        ch.min(state.ir_channels - 1)
-                    };
+                    let ir_ch = if state.ir_channels == 1 { 0 } else { ch.min(state.ir_channels - 1) };
                     for p in 0..num_partitions {
                         let fdl_idx = (self.fdl_head + p) % num_partitions;
                         complex_mul_add_simd(
@@ -304,33 +288,39 @@ impl Plugin for ConvolutionPlugin {
                             &state.partitions[ir_ch][p],
                         );
                     }
-                    state
-                        .fft_inverse
-                        .process_with_scratch(&mut self.fft_sum, &mut self.fft_scratch);
+                    state.fft_inverse.process_with_scratch(&mut self.fft_sum, &mut self.fft_scratch);
+                    
                     for i in 0..FFT_SIZE {
                         self.output_accum[ch][i] += self.fft_sum[i].re * inv_n;
                     }
                 }
 
-                // Drain output accumulator using copy_within + fill
-                for ch in 0..self.channels {
-                    let out_base =
-                        (in_pos - (PARTITION_SIZE - to_copy)) * self.channels;
-                    for i in 0..PARTITION_SIZE {
-                        let out_idx = out_base + i * self.channels + ch;
-                        let dry = input[out_idx];
-                        output[out_idx] =
-                            dry * dry_g + self.output_accum[ch][i] * wet_g;
+                // Apply to in-place buffer
+                for i in 0..PARTITION_SIZE {
+                    let frame_idx = in_pos - (PARTITION_SIZE - to_copy) + i;
+                    for ch in 0..self.channels {
+                        let idx = frame_idx * self.channels + ch;
+                        let dry = buffer[idx];
+                        buffer[idx] = dry * dry_g + self.output_accum[ch][i] * wet_g;
                     }
-                    self.output_accum[ch]
-                        .copy_within(PARTITION_SIZE..FFT_SIZE, 0);
+                }
+                
+                for ch in 0..self.channels {
+                    self.output_accum[ch].copy_within(PARTITION_SIZE..FFT_SIZE, 0);
                     self.output_accum[ch][PARTITION_SIZE..].fill(0.0);
                 }
                 self.input_fill = 0;
+                
+                self.mix.next_n(PARTITION_SIZE);
+                self.gain_linear.next_n(PARTITION_SIZE);
             }
             in_pos += to_copy;
         }
-        flush_denormals_inplace(output);
+        flush_denormals_inplace(buffer);
         Ok(nf)
+    }
+    
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        None
     }
 }

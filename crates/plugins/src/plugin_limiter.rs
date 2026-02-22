@@ -243,10 +243,9 @@ impl InPlacePlugin for LimiterPlugin {
                 0.0
             };
 
-            // Lookahead limiting simplified: we want gain to drop FAST.
-            // Attack is implicitly instantaneous due to lookahead peak detection.
+            // Instant attack, smoothed release
             if target_gr > self.envelope {
-                self.envelope = target_gr; // Instant attack on detection
+                self.envelope = target_gr;
             } else {
                 self.envelope = target_gr + self.release_coeff * (self.envelope - target_gr);
             }
@@ -257,22 +256,33 @@ impl InPlacePlugin for LimiterPlugin {
                 let idx = frame * self.channels + ch;
                 let input_sample = buffer[idx];
 
-                // Write to circular buffer, read delayed
                 let buf_idx = self.lookahead_pos * self.channels + ch;
                 let delayed = self.lookahead_buffer[buf_idx];
                 self.lookahead_buffer[buf_idx] = input_sample;
 
-                let limited = if self.soft {
-                    let norm = (delayed * gain) / thresh;
-                    thresh * (norm * 0.75).tanh()
+                let wet = if self.soft {
+                    // Soft knee using tanh-like curve above 0.9*threshold
+                    let signal = delayed * gain;
+                    let abs_s = signal.abs();
+                    if abs_s > thresh * 0.9 {
+                        let overshoot = abs_s - thresh * 0.9;
+                        let limited = thresh * 0.9 + (overshoot / (1.0 + (overshoot / (thresh * 0.1)).powi(2))).sqrt();
+                        limited * signal.signum()
+                    } else {
+                        signal
+                    }
                 } else {
                     (delayed * gain).clamp(-thresh, thresh)
                 };
 
-                buffer[idx] = (1.0 - mix) * delayed + mix * limited;
+                buffer[idx] = (1.0 - mix) * delayed + mix * wet;
             }
             self.lookahead_pos = (self.lookahead_pos + 1) % self.lookahead_len;
         }
+        
+        self.threshold_smoother.next_n(num_frames);
+        self.mix_smoother.next_n(num_frames);
+        
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

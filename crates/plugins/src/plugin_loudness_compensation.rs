@@ -5,12 +5,13 @@
 use super::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use super::param_specs::loudness_compensation::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -195,14 +196,11 @@ impl LoudnessCompensationPlugin {
     }
 }
 
-impl Plugin for LoudnessCompensationPlugin {
+impl InPlacePlugin for LoudnessCompensationPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Loudness Compensation", "1.2.0", "Sotf")
+        PluginInfo::new("Loudness Compensation", "2.0.0", "Sotf")
     }
-    fn input_channels(&self) -> usize {
-        self.num_channels
-    }
-    fn output_channels(&self) -> usize {
+    fn channels(&self) -> usize {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
@@ -292,36 +290,38 @@ impl Plugin for LoudnessCompensationPlugin {
         self.rebuild_filters();
     }
 
-    fn process(
+    fn process_in_place(
         &mut self,
-        input: &[f32],
-        output: &mut [f32],
+        buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> Result<usize, String> {
+    ) -> PluginResult<usize> {
         enable_ftz_daz();
         let nf = context.num_frames;
-        output.copy_from_slice(input);
         if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_input(output);
+            let _ = ag.measure_input(buffer);
         }
 
         for frame in 0..nf {
             for ch in 0..self.num_channels {
                 let idx = frame * self.num_channels + ch;
-                let mut s = output[idx] as f64;
+                let mut s = buffer[idx] as f64;
                 for f in &mut self.filters[ch] {
                     s = f.process(s);
                 }
-                output[idx] = (s as f32) * self.comp_gain_smoother[ch].next();
+                buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].next();
             }
         }
 
         if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_output(output);
-            ag.apply_compensation(output, nf);
+            let _ = ag.measure_output(buffer);
+            ag.apply_compensation(buffer, nf);
         }
-        flush_denormals_inplace(output);
+        
+        flush_denormals_inplace(buffer);
         Ok(nf)
+    }
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        self.auto_gain.as_ref().map(|ag| Arc::new(ag.get_data()) as Arc<dyn Any + Send + Sync>)
     }
 }
 
@@ -331,18 +331,16 @@ mod tests {
     #[test]
     fn test_loudness_basic() {
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
-        p.initialize(48000).unwrap();
-        let i = vec![0.5; 1000];
-        let mut o = vec![0.0; 1000];
-        p.process(
-            &i,
-            &mut o,
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        let mut b = vec![0.5; 1000];
+        p.process_in_place(
+            &mut b,
             &ProcessContext {
                 sample_rate: 48000,
                 num_frames: 1000,
             },
         )
         .unwrap();
-        assert!(o[999] > 0.0);
+        assert!(b[999] > 0.0);
     }
 }

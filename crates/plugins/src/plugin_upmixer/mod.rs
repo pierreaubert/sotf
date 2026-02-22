@@ -18,7 +18,7 @@
 use super::param_specs::upmixer::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::enable_ftz_daz;
+use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -2165,6 +2165,7 @@ Weights are normalized internally so they always sum to 1.0.",
         }
 
         // Return actual number of frames produced. DawHost handles silence padding.
+        flush_denormals_inplace(output);
         Ok(output_pos)
     }
 

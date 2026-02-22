@@ -133,7 +133,9 @@ impl InPlacePlugin for CrossoverPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        let new_freq = self.freq_smoother.next();
+        
+        // Block-based smoothing
+        let new_freq = self.freq_smoother.next_n(num_frames);
 
         if (new_freq - self.filters[0][0].freq as f32).abs() > 0.1 {
             let f64 = new_freq as f64;
@@ -157,6 +159,7 @@ impl InPlacePlugin for CrossoverPlugin {
                 buffer[idx] = s as f32;
             }
         }
+        
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

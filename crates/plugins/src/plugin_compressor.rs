@@ -490,23 +490,20 @@ impl InPlacePlugin for CompressorPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<usize> {
-        // Enable FTZ/DAZ to prevent denormal-induced CPU spikes
         enable_ftz_daz();
 
         let num_frames = context.num_frames;
-        let ratio = self.ratio.max(1.0);
-        let compression_slope = 1.0 - 1.0 / ratio;
-
+        
+        let thresh = self.threshold_smoother.next_n(num_frames);
+        let makeup_gain = self.makeup_gain_smoother.next_n(num_frames);
+        
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 
-        // Perform block-based smoothing for gain/threshold to reduce per-sample overhead
-        // while still having smooth transitions over time.
-        let threshold = self.threshold_smoother.next();
-        let makeup_gain = self.makeup_gain_smoother.next();
-
         let auto_makeup_db = if self.auto_makeup {
-            let avg_overshoot = (-threshold).max(0.0) * 0.5;
+            let ratio = self.ratio.max(1.0);
+            let compression_slope = 1.0 - 1.0 / ratio;
+            let avg_overshoot = (-thresh).max(0.0) * 0.5;
             avg_overshoot * compression_slope
         } else {
             0.0
@@ -516,23 +513,18 @@ impl InPlacePlugin for CompressorPlugin {
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
                 let mut detection_level = 0.0_f32;
-
                 for ch in 0..self.channels {
                     let sample_idx = frame * self.channels + ch;
-                    let input_sample = buffer[sample_idx];
-                    let sidechain_sample = self.apply_sidechain_filter(ch, input_sample);
-                    let level = sidechain_sample.abs();
-                    detection_level = detection_level.max(level);
+                    let filtered = self.apply_sidechain_filter(ch, buffer[sample_idx]);
+                    detection_level = detection_level.max(filtered.abs());
                 }
 
-                let detection_level = detection_level.max(1e-10);
-                let input_db = 20.0 * fast_log10(detection_level);
-                let target_gr = self.calculate_gain_reduction(input_db, threshold);
+                let input_db = 20.0 * fast_log10(detection_level.max(1e-10));
+                let target_gr = self.calculate_gain_reduction(input_db, thresh);
 
                 for ch in 0..self.channels {
                     let sample_idx = frame * self.channels + ch;
                     let input_sample = buffer[sample_idx];
-
                     buffer[sample_idx] = self.apply_gain_for_channel(
                         ch,
                         target_gr,
@@ -548,12 +540,9 @@ impl InPlacePlugin for CompressorPlugin {
                 for ch in 0..self.channels {
                     let sample_idx = frame * self.channels + ch;
                     let input_sample = buffer[sample_idx];
-                    let sidechain_sample = self.apply_sidechain_filter(ch, input_sample);
-
-                    let input_level = sidechain_sample.abs().max(1e-10);
-                    let input_db = 20.0 * fast_log10(input_level);
-
-                    let target_gr = self.calculate_gain_reduction(input_db, threshold);
+                    let filtered = self.apply_sidechain_filter(ch, input_sample);
+                    let input_db = 20.0 * fast_log10(filtered.abs().max(1e-10));
+                    let target_gr = self.calculate_gain_reduction(input_db, thresh);
 
                     buffer[sample_idx] = self.apply_gain_for_channel(
                         ch,
@@ -567,9 +556,7 @@ impl InPlacePlugin for CompressorPlugin {
             }
         }
 
-        // Periodic denormal flush just in case (though FTZ should handle it)
         flush_denormals_inplace(buffer);
-
         Ok(num_frames)
     }
 

@@ -78,7 +78,8 @@ impl MonoToStereoPlugin {
             .collect();
 
         // 75% overlap analysis-only scaling: sum(w) = 2.0 * N
-        let output_scale = 1.0 / (FFT_SIZE as f32 * 2.0);
+        // 75% overlap dual-window scaling: Sum(w^2) = (N/H) * (3/8) = 1.5
+        let output_scale = 1.0 / (FFT_SIZE as f32 * 1.5);
 
         Self {
             sample_rate: 44100,
@@ -144,7 +145,8 @@ impl MonoToStereoPlugin {
         self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
-            self.output_accumulator[idx * 2] += self.ifft_output_buf[i] * scale;
+            let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
+            self.output_accumulator[idx * 2] += s;
         }
 
         // Right channel: decorrelated
@@ -152,7 +154,8 @@ impl MonoToStereoPlugin {
         self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
-            self.output_accumulator[idx * 2 + 1] += self.ifft_output_buf[i] * scale;
+            let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
+            self.output_accumulator[idx * 2 + 1] += s;
         }
 
         self.next_add_position = (self.next_add_position + HOP_SIZE) & mask;

@@ -82,6 +82,62 @@ name = "plugin-fuzzer"
 path = "bin/plugin_fuzzer.rs"
 
 [[bin]]
+name = "qa-compressor"
+path = "bin/qa_compressor.rs"
+
+[[bin]]
+name = "qa-delay"
+path = "bin/qa_delay.rs"
+
+[[bin]]
+name = "qa-downmix"
+path = "bin/qa_downmix.rs"
+
+[[bin]]
+name = "qa-eq"
+path = "bin/qa_eq.rs"
+
+[[bin]]
+name = "qa-expander"
+path = "bin/qa_expander.rs"
+
+[[bin]]
+name = "qa-gain"
+path = "bin/qa_gain.rs"
+
+[[bin]]
+name = "qa-gate"
+path = "bin/qa_gate.rs"
+
+[[bin]]
+name = "qa-limiter"
+path = "bin/qa_limiter.rs"
+
+[[bin]]
+name = "qa-loudness-compensation"
+path = "bin/qa_loudness_compensation.rs"
+
+[[bin]]
+name = "qa-mono-to-stereo"
+path = "bin/qa_mono_to_stereo.rs"
+
+[[bin]]
+name = "qa-multiband-compressor"
+path = "bin/qa_multiband_compressor.rs"
+
+[[bin]]
+name = "qa-multiband-expander"
+path = "bin/qa_multiband_expander.rs"
+
+[[bin]]
+name = "qa-upmixer"
+path = "bin/qa_upmixer.rs"
+
+[[bin]]
+name = "qa-xtc"
+path = "bin/qa_xtc.rs"
+
+[[bin]]
 name = "simd-fuzzer"
 path = "bin/simd_fuzzer.rs"
 

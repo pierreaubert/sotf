@@ -314,50 +314,53 @@ impl InPlacePlugin for GatePlugin {
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let hs = (self.hold_ms * 0.001 * self.sample_rate as f32) as usize;
-        let thresh = self.threshold_smoother.next();
-        let mix = self.mix_smoother.next();
+        
+        // Block-based smoothing: advance once per block
+        let thresh = self.threshold_smoother.next_n(num_frames);
+        let mix = self.mix_smoother.next_n(num_frames);
 
-        for frame in 0..num_frames {
-            if self.link_channels && self.channels > 1 {
+        if self.link_channels && self.channels > 1 {
+            for frame in 0..num_frames {
                 let mut det = 0.0f32;
                 for ch in 0..self.channels {
-                    det = det.max(
-                        self.apply_sidechain_filter(ch, buffer[frame * self.channels + ch])
-                            .abs(),
-                    );
+                    let idx = frame * self.channels + ch;
+                    let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
+                    let level = filtered.abs();
+                    det = det.max(level);
+                    // Update monitoring
+                    self.envelope[ch] = 20.0 * fast_log10(level.max(1e-10));
                 }
+                
                 let idb = 20.0 * fast_log10(det.max(1e-10));
                 let atten_target = self.calculate_gate_attenuation(idb, thresh);
+                
+                // Detection logic (channel 0 is used as master for linked)
+                let target = if idb >= thresh {
+                    self.hold_counter[0] = hs;
+                    0.0
+                } else if self.hold_counter[0] > 0 {
+                    self.hold_counter[0] -= 1;
+                    0.0
+                } else {
+                    atten_target
+                };
+                
+                let coeff = if target > self.envelope[0] { self.release_coeff } else { self.attack_coeff };
+                self.envelope[0] = target + coeff * (self.envelope[0] - target);
+                let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[0] / 20.0);
+                
                 for ch in 0..self.channels {
-                    let target = if idb >= thresh {
-                        self.hold_counter[ch] = hs;
-                        0.0
-                    } else if self.hold_counter[ch] > 0 {
-                        self.hold_counter[ch] -= 1;
-                        0.0
-                    } else {
-                        atten_target
-                    };
-                    let coeff = if target > self.envelope[ch] {
-                        self.release_coeff
-                    } else {
-                        self.attack_coeff
-                    };
-                    self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
-                    let idx = frame * self.channels + ch;
-                    buffer[idx] =
-                        buffer[idx] * ((1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / 20.0));
+                    buffer[frame * self.channels + ch] *= gain;
                 }
-            } else {
+            }
+        } else {
+            for frame in 0..num_frames {
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
-                    let idb = 20.0
-                        * fast_log10(
-                            self.apply_sidechain_filter(ch, buffer[idx])
-                                .abs()
-                                .max(1e-10),
-                        );
+                    let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
+                    let idb = 20.0 * fast_log10(filtered.abs().max(1e-10));
                     let atten_target = self.calculate_gate_attenuation(idb, thresh);
+                    
                     let target = if idb >= thresh {
                         self.hold_counter[ch] = hs;
                         0.0
@@ -367,17 +370,15 @@ impl InPlacePlugin for GatePlugin {
                     } else {
                         atten_target
                     };
-                    let coeff = if target > self.envelope[ch] {
-                        self.release_coeff
-                    } else {
-                        self.attack_coeff
-                    };
+                    
+                    let coeff = if target > self.envelope[ch] { self.release_coeff } else { self.attack_coeff };
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
-                    buffer[idx] =
-                        buffer[idx] * ((1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / 20.0));
+                    let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / 20.0);
+                    buffer[idx] *= gain;
                 }
             }
         }
+        
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

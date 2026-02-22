@@ -134,8 +134,8 @@ impl DownmixPlugin {
             })
             .collect();
 
-        // 75% overlap analysis-only scaling: sum(w) = 2.0 * N
-        let output_scale = 1.0 / (FFT_SIZE as f32 * 2.0);
+        // 75% overlap dual-window scaling: Sum(w^2) = (N/H) * (3/8) * N = 1.5 * N
+        let output_scale = 1.0 / (FFT_SIZE as f32 * 1.5);
 
         Self {
             input_ch: input_channels,
@@ -417,14 +417,16 @@ impl DownmixPlugin {
             }
         }
 
-        // IFFT and Accumulate
+        // IFFT and Accumulate with Synthesis Window
         self.out_freq_l[0].im = 0.0;
         self.out_freq_l[num_bins - 1].im = 0.0;
         self.ifft_input_buf.copy_from_slice(&self.out_freq_l);
         self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
-            self.output_accumulator[idx * 2] += self.ifft_output_buf[i] * scale;
+            // Apply synthesis window
+            let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
+            self.output_accumulator[idx * 2] += s;
         }
 
         self.out_freq_r[0].im = 0.0;
@@ -433,7 +435,9 @@ impl DownmixPlugin {
         self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
-            self.output_accumulator[idx * 2 + 1] += self.ifft_output_buf[i] * scale;
+            // Apply synthesis window
+            let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
+            self.output_accumulator[idx * 2 + 1] += s;
         }
 
         self.next_add_position = (self.next_add_position + HOP_SIZE) & mask;

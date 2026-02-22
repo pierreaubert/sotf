@@ -203,15 +203,20 @@ impl InPlacePlugin for GainPlugin {
         }
         Ok(())
     }
-    fn process_in_place(&mut self, buffer: &mut [f32], _: &ProcessContext) -> PluginResult<usize> {
-        let nf = buffer.len() / self.channels;
+    fn process_in_place(
+        &mut self,
+        buffer: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<usize> {
+        let nf = context.num_frames;
         if self.is_per_channel() {
             for frame in 0..nf {
                 for ch in 0..self.channels {
                     self.cached_gains[ch] = self.channel_gains_smoothers[ch].next();
                 }
+                let off = frame * self.channels;
                 apply_per_channel_gain_simd(
-                    &mut buffer[frame * self.channels..(frame + 1) * self.channels],
+                    &mut buffer[off..off + self.channels],
                     self.channels,
                     &self.cached_gains,
                 );
@@ -219,10 +224,8 @@ impl InPlacePlugin for GainPlugin {
         } else {
             for frame in 0..nf {
                 let g = self.global_gain_smoother.next();
-                apply_gain_simd(
-                    &mut buffer[frame * self.channels..(frame + 1) * self.channels],
-                    g,
-                );
+                let off = frame * self.channels;
+                apply_gain_simd(&mut buffer[off..off + self.channels], g);
             }
         }
         Ok(nf)

@@ -299,9 +299,12 @@ impl Plugin for ABComparePlugin {
             "selected_path" => Some(ParameterValue::Int(self.selected_path)),
             "bypass" => Some(ParameterValue::Bool(self.bypass)),
             "auto_gain_enabled" => Some(ParameterValue::Bool(self.auto_gain.is_enabled())),
-            "loudness_type" => Some(ParameterValue::Int(0)), // TODO: store and return actual value
-            "max_auto_gain_db" => Some(ParameterValue::Float(12.0)), // TODO: store and return actual value
-            "gain_smoothing_ms" => Some(ParameterValue::Float(100.0)), // TODO: store and return actual value
+            "loudness_type" => Some(ParameterValue::Int(match self.auto_gain.loudness_type() {
+                AutoGainLoudnessType::Momentary => 0,
+                AutoGainLoudnessType::ShortTerm => 1,
+            })),
+            "max_auto_gain_db" => Some(ParameterValue::Float(self.auto_gain.max_gain_db())),
+            "gain_smoothing_ms" => Some(ParameterValue::Float(self.auto_gain.smoothing_ms())),
             "mix_transition_ms" => Some(ParameterValue::Float(self.mix_transition_ms)),
             "path_a_config" => serde_json::to_string(&self.path_a_config)
                 .ok()
@@ -418,15 +421,12 @@ impl Plugin for ABComparePlugin {
 
         // Process sample-by-sample
         for frame in 0..context.num_frames {
-            // Get smoothed gain from AutoGain
+            // Tick smoothers into loop
             let gain_linear = self.auto_gain.next_gain_linear();
-
-            // Get smoothed mix value
             let current_mix = self.mix_smoother.next();
 
             // Equal-power crossfade
             // mix: -1 = pure A, +1 = pure B
-            // Convert to 0..1 range for angle calculation
             let mix_01 = (current_mix + 1.0) / 2.0; // 0 = A, 1 = B
             let angle = mix_01 * std::f32::consts::FRAC_PI_2; // 0 to PI/2
             let gain_a = angle.cos();
@@ -439,6 +439,10 @@ impl Plugin for ABComparePlugin {
                 output[idx] = sample_a * gain_a + sample_b * gain_b;
             }
         }
+        
+        // Sync smoothers after loop
+        self.auto_gain.next_n(context.num_frames);
+        self.mix_smoother.next_n(context.num_frames);
 
         Ok(context.num_frames)
     }

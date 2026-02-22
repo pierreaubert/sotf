@@ -166,6 +166,11 @@ impl MultibandCompressorPlugin {
             });
         }
 
+        let mut band_params = params.bands;
+        while band_params.len() < nb {
+            band_params.push(BandCompressorParams::default());
+        }
+
         let mut p = Self {
             channels,
             sample_rate: sr,
@@ -179,7 +184,7 @@ impl MultibandCompressorPlugin {
             knee_db: params.knee_db,
             link_channels: params.link_channels,
             mix: params.mix,
-            band_params: params.bands,
+            band_params,
             crossover_points: Vec::new(),
             band_compressors: bcomps,
             band_buffers: Vec::new(),
@@ -241,96 +246,169 @@ impl MultibandCompressorPlugin {
 
 impl InPlacePlugin for MultibandCompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Multiband Compressor", "1.1.0", "Sotf")
+        PluginInfo::new("Multiband Compressor", "2.0.0", "Sotf").with_description("Phase-coherent multiband dynamics processor")
     }
     fn channels(&self) -> usize {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float(
-                "threshold",
-                "Threshold",
-                THRESHOLD_DEFAULT,
-                THRESHOLD_MIN,
-                THRESHOLD_MAX,
-            )
-            .with_description("Level above which compression starts (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Compression ratio (1:1 to 20:1)")
-                .with_group("Dynamics")
+        let mut params = vec![
+            Parameter::new_int("num_bands", "Bands", self.num_bands as i32, NUM_BANDS_MIN as i32, NUM_BANDS_MAX as i32)
+                .with_group("General")
                 .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Attack time (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "release",
-                "Release",
-                RELEASE_DEFAULT,
-                RELEASE_MIN,
-                RELEASE_MAX,
-            )
-            .with_description("Release time (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
-                .with_description("Soft knee width (dB)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Use linked sidechain for all channels")
-                .with_group("Channels")
+            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
+                .with_group("General")
                 .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = compressed)")
-                .with_group("Output")
+            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
+                .with_group("General")
                 .with_importance(ParameterImportance::Useful),
-        ]
+        ];
+
+        // Crossover frequencies
+        for i in 0..(self.num_bands - 1) {
+            let name = format!("crossover_freq_{}", i + 1);
+            let label = format!("X-Over {}", i + 1);
+            params.push(Parameter::new_float(
+                &name,
+                &label,
+                self.crossover_frequencies[i],
+                20.0,
+                20000.0,
+            ).with_group("Crossover"));
+        }
+
+        // Global dynamics (defaults for bands)
+        params.extend(vec![
+            Parameter::new_float("threshold", "Threshold", self.threshold_db, THRESHOLD_MIN, THRESHOLD_MAX)
+                .with_group("Global Dynamics"),
+            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
+                .with_group("Global Dynamics"),
+            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
+                .with_group("Global Dynamics"),
+            Parameter::new_float("release", "Release", self.release_ms, RELEASE_MIN, RELEASE_MAX)
+                .with_group("Global Dynamics"),
+        ]);
+
+        // Per-band dynamics
+        for i in 0..self.num_bands {
+            let group = format!("Band {}", i + 1);
+            let bp = &self.band_params[i];
+            
+            params.push(Parameter::new_float(&format!("band_{}_threshold", i), "Threshold", bp.threshold_db.unwrap_or(self.threshold_db), THRESHOLD_MIN, THRESHOLD_MAX).with_group(&group));
+            params.push(Parameter::new_float(&format!("band_{}_ratio", i), "Ratio", bp.ratio.unwrap_or(self.ratio), RATIO_MIN, RATIO_MAX).with_group(&group));
+            params.push(Parameter::new_float(&format!("band_{}_attack", i), "Attack", bp.attack_ms.unwrap_or(self.attack_ms), ATTACK_MIN, ATTACK_MAX).with_group(&group));
+            params.push(Parameter::new_float(&format!("band_{}_release", i), "Release", bp.release_ms.unwrap_or(self.release_ms), RELEASE_MIN, RELEASE_MAX).with_group(&group));
+            params.push(Parameter::new_float(&format!("band_{}_makeup", i), "Makeup (dB)", bp.makeup_gain_db, -24.0, 24.0).with_group(&group));
+            params.push(Parameter::new_bool(&format!("band_{}_solo", i), "Solo", bp.solo).with_group(&group));
+            params.push(Parameter::new_bool(&format!("band_{}_bypass", i), "Bypass", bp.bypass).with_group(&group));
+        }
+
+        params
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if id.0 == "threshold" {
-            self.threshold_db = value.as_float().ok_or("val")?;
-            self.threshold_smoother.set_target(self.threshold_db);
-        } else if id.0 == "ratio" {
-            self.ratio = value.as_float().ok_or("val")?.max(1.0);
-        } else if id.0 == "attack" {
-            self.attack_ms = value.as_float().ok_or("val")?;
-            self.update_coefficients();
-        } else if id.0 == "release" {
-            self.release_ms = value.as_float().ok_or("val")?;
-            self.update_coefficients();
-        } else if id.0 == "knee" {
-            self.knee_db = value.as_float().ok_or("val")?.max(0.0);
-        } else if id.0 == "link_channels" {
+        let name = &id.0;
+        
+        if name == "num_bands" {
+            let nb = value.as_int().ok_or("val")? as usize;
+            if nb != self.num_bands {
+                self.num_bands = nb.clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                self.build_crossovers();
+                while self.band_params.len() < self.num_bands {
+                    self.band_params.push(BandCompressorParams::default());
+                }
+            }
+        } else if name == "link_channels" {
             self.link_channels = value.as_bool().ok_or("val")?;
-        } else if id.0 == "mix" {
+        } else if name == "mix" {
             self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
             self.mix_smoother.set_target(self.mix);
+        } else if name.starts_with("crossover_freq_") {
+            let idx = name.replace("crossover_freq_", "").parse::<usize>().map(|i| i - 1).unwrap_or(0);
+            if idx < self.xover_smoothers.len() {
+                let f = value.as_float().ok_or("val")?;
+                self.crossover_frequencies[idx] = f;
+                self.xover_smoothers[idx].set_target(f);
+            }
+        } else if name == "threshold" {
+            self.threshold_db = value.as_float().ok_or("val")?;
+            self.threshold_smoother.set_target(self.threshold_db);
+        } else if name == "ratio" {
+            self.ratio = value.as_float().ok_or("val")?.max(1.0);
+        } else if name == "attack" {
+            self.attack_ms = value.as_float().ok_or("val")?;
+            self.update_coefficients();
+        } else if name == "release" {
+            self.release_ms = value.as_float().ok_or("val")?;
+            self.update_coefficients();
+        } else if name.starts_with("band_") {
+            let parts: Vec<&str> = name.split('_').collect();
+            if parts.len() >= 3 {
+                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
+                if b_idx < self.num_bands {
+                    let field = parts[2];
+                    let bp = &mut self.band_params[b_idx];
+                    match field {
+                        "threshold" => bp.threshold_db = Some(value.as_float().ok_or("val")?),
+                        "ratio" => bp.ratio = Some(value.as_float().ok_or("val")?),
+                        "attack" => {
+                            bp.attack_ms = Some(value.as_float().ok_or("val")?);
+                            self.update_coefficients();
+                        },
+                        "release" => {
+                            bp.release_ms = Some(value.as_float().ok_or("val")?);
+                            self.update_coefficients();
+                        },
+                        "makeup" => bp.makeup_gain_db = value.as_float().ok_or("val")?,
+                        "solo" => bp.solo = value.as_bool().ok_or("val")?,
+                        "bypass" => bp.bypass = value.as_bool().ok_or("val")?,
+                        _ => return Err(format!("Unknown band field: {}", field)),
+                    }
+                }
+            }
         } else {
-            return Err(format!("Unknown parameter: {}", id));
+            match name.as_str() {
+                "knee" => self.knee_db = value.as_float().ok_or("val")?,
+                _ => return Err(format!("Unknown parameter: {}", id)),
+            }
         }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "threshold" {
-            Some(ParameterValue::Float(self.threshold_db))
-        } else if id.0 == "ratio" {
-            Some(ParameterValue::Float(self.ratio))
-        } else if id.0 == "attack" {
-            Some(ParameterValue::Float(self.attack_ms))
-        } else if id.0 == "release" {
-            Some(ParameterValue::Float(self.release_ms))
-        } else if id.0 == "knee" {
-            Some(ParameterValue::Float(self.knee_db))
-        } else if id.0 == "link_channels" {
-            Some(ParameterValue::Bool(self.link_channels))
-        } else if id.0 == "mix" {
-            Some(ParameterValue::Float(self.mix))
+        let name = &id.0;
+        if name == "num_bands" { Some(ParameterValue::Int(self.num_bands as i32)) }
+        else if name == "link_channels" { Some(ParameterValue::Bool(self.link_channels)) }
+        else if name == "mix" { Some(ParameterValue::Float(self.mix)) }
+        else if name == "threshold" { Some(ParameterValue::Float(self.threshold_db)) }
+        else if name == "ratio" { Some(ParameterValue::Float(self.ratio)) }
+        else if name == "attack" { Some(ParameterValue::Float(self.attack_ms)) }
+        else if name == "release" { Some(ParameterValue::Float(self.release_ms)) }
+        else if name.starts_with("crossover_freq_") {
+            let idx = name.replace("crossover_freq_", "").parse::<usize>().map(|i| i - 1).unwrap_or(0);
+            self.crossover_frequencies.get(idx).map(|&f| ParameterValue::Float(f))
+        } else if name.starts_with("band_") {
+            let parts: Vec<&str> = name.split('_').collect();
+            if parts.len() >= 3 {
+                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
+                if b_idx < self.num_bands {
+                    let field = parts[2];
+                    let bp = &self.band_params[b_idx];
+                    match field {
+                        "threshold" => Some(ParameterValue::Float(bp.threshold_db.unwrap_or(self.threshold_db))),
+                        "ratio" => Some(ParameterValue::Float(bp.ratio.unwrap_or(self.ratio))),
+                        "attack" => Some(ParameterValue::Float(bp.attack_ms.unwrap_or(self.attack_ms))),
+                        "release" => Some(ParameterValue::Float(bp.release_ms.unwrap_or(self.release_ms))),
+                        "makeup" => Some(ParameterValue::Float(bp.makeup_gain_db)),
+                        "solo" => Some(ParameterValue::Bool(bp.solo)),
+                        "bypass" => Some(ParameterValue::Bool(bp.bypass)),
+                        _ => None,
+                    }
+                } else { None }
+            } else { None }
         } else {
-            None
+            match name.as_str() {
+                "knee" => Some(ParameterValue::Float(self.knee_db)),
+                _ => None,
+            }
         }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
@@ -342,6 +420,13 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         for s in &mut self.xover_smoothers {
             *s = LogSmoother::new(s.target(), 50.0, sr);
         }
+        
+        // Pre-allocate buffers for real-time safety
+        let max_frames = 4096;
+        let stride = max_frames * self.channels;
+        self.band_buffers.resize(self.num_bands * stride, 0.0);
+        self.dry_buffer.resize(max_frames * self.channels, 0.0);
+        
         Ok(())
     }
     fn reset(&mut self) {
@@ -351,6 +436,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         for b in &mut self.band_compressors {
             b.envelope.fill(0.0);
         }
+        self.band_buffers.fill(0.0);
+        self.dry_buffer.fill(0.0);
     }
 
     fn process_in_place(
@@ -361,12 +448,18 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         enable_ftz_daz();
         let nf = context.num_frames;
         let stride = nf * self.channels;
-        self.band_buffers.resize(self.num_bands * stride, 0.0);
-        self.dry_buffer.resize(buffer.len(), 0.0);
-        self.dry_buffer.copy_from_slice(buffer);
+        
+        if self.dry_buffer.len() < buffer.len() {
+            self.dry_buffer.resize(buffer.len(), 0.0);
+        }
+        if self.band_buffers.len() < self.num_bands * stride {
+            self.band_buffers.resize(self.num_bands * stride, 0.0);
+        }
+        
+        self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
 
         for i in 0..(self.num_bands - 1) {
-            let freq = self.xover_smoothers[i].next();
+            let freq = self.xover_smoothers[i].next_n(nf);
             if (freq - self.crossover_points[i].freq).abs() > 1.0 {
                 self.crossover_points[i].freq = freq;
                 let q = 1.0 / std::f64::consts::SQRT_2;
@@ -395,17 +488,44 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             }
         }
 
-        let g_th = self.threshold_smoother.next();
-        let g_mix = self.mix_smoother.next();
+        let g_th = self.threshold_smoother.next_n(nf);
+        let g_mix = self.mix_smoother.next_n(nf);
+        
+        let mut any_solo = false;
+        for b in 0..self.num_bands {
+            if let Some(p) = self.band_params.get(b) {
+                if p.solo { any_solo = true; break; }
+            }
+        }
 
         for b in 0..self.num_bands {
             let bp = self.band_params.get(b);
+            let is_bypassed = bp.map(|p| p.bypass).unwrap_or(false);
+            let is_muted = any_solo && !bp.map(|p| p.solo).unwrap_or(false);
+            
+            if is_muted {
+                let off = b * stride;
+                self.band_buffers[off..off + stride].fill(0.0);
+                self.band_levels_db[b] = -100.0;
+                continue;
+            }
+            
+            if is_bypassed {
+                let off = b * stride;
+                let mut max_abs = 0.0f32;
+                for i in 0..stride { max_abs = max_abs.max(self.band_buffers[off + i].abs()); }
+                self.band_levels_db[b] = 20.0 * fast_log10(max_abs.max(1e-10));
+                continue;
+            }
+
             let th = bp.and_then(|p| p.threshold_db).unwrap_or(g_th);
             let rat = bp.and_then(|p| p.ratio).unwrap_or(self.ratio);
             let kn = bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db);
             let mk = fast_pow10(bp.map(|p| p.makeup_gain_db).unwrap_or(0.0) / 20.0);
+            
             let bcomp = &mut self.band_compressors[b];
             let off = b * stride;
+            let mut band_max_abs = 0.0f32;
 
             for frame in 0..nf {
                 let mut det = 0.0f32;
@@ -414,18 +534,21 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
                     }
                 }
+                
+                let idb_shared = if self.link_channels {
+                    20.0 * fast_log10(det.max(1e-10))
+                } else {
+                    0.0
+                };
+
                 for ch in 0..self.channels {
                     let idx = off + frame * self.channels + ch;
-                    let idb = 20.0
-                        * fast_log10(
-                            (if self.link_channels {
-                                det
-                            } else {
-                                self.band_buffers[idx].abs()
-                            })
-                            .max(1e-10),
-                        );
+                    let sample_abs = self.band_buffers[idx].abs();
+                    band_max_abs = band_max_abs.max(sample_abs);
+                    
+                    let idb = if self.link_channels { idb_shared } else { 20.0 * fast_log10(sample_abs.max(1e-10)) };
                     let tgr = Self::calculate_gain_reduction(idb, th, rat, kn);
+                    
                     let c = if tgr > bcomp.envelope[ch] {
                         bcomp.attack_coeff
                     } else {
@@ -435,6 +558,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     self.band_buffers[idx] *= fast_pow10(-bcomp.envelope[ch] / 20.0) * mk;
                 }
             }
+            self.band_levels_db[b] = 20.0 * fast_log10(band_max_abs.max(1e-10));
         }
 
         for frame in 0..nf {
@@ -447,6 +571,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + s * g_mix;
             }
         }
+        
         flush_denormals_inplace(buffer);
         Ok(nf)
     }

@@ -5,6 +5,7 @@
 use crate::analyzer_loudness_monitor::LoudnessMonitor;
 use crate::simd::enable_ftz_daz;
 use crate::smoothing::Smoother;
+use math_audio_dsp::fast_math::fast_pow10;
 
 use serde::{Deserialize, Serialize};
 
@@ -153,6 +154,15 @@ impl AutoGain {
     pub fn set_loudness_type(&mut self, t: AutoGainLoudnessType) {
         self.loudness_type = t;
     }
+    pub fn loudness_type(&self) -> AutoGainLoudnessType {
+        self.loudness_type
+    }
+    pub fn max_gain_db(&self) -> f32 {
+        self.max_gain_db
+    }
+    pub fn smoothing_ms(&self) -> f32 {
+        self.smoothing_ms
+    }
 
     pub fn measure_input(&mut self, input: &[f32]) -> Result<(), String> {
         if !self.enabled {
@@ -195,7 +205,7 @@ impl AutoGain {
             return 1.0;
         }
         let target_db = self.gain_smoother.next();
-        let target_linear = 10.0_f32.powf(target_db / 20.0);
+        let target_linear = fast_pow10(target_db / 20.0);
         
         // Asymmetric smoothing in linear domain
         let coeff = if target_linear < self.current_gain_linear {
@@ -205,6 +215,23 @@ impl AutoGain {
         };
         self.current_gain_linear = target_linear + coeff * (self.current_gain_linear - target_linear);
         self.current_gain_linear
+    }
+
+    #[inline]
+    pub fn next_n(&mut self, n: usize) {
+        if !self.enabled {
+            return;
+        }
+        let target_db = self.gain_smoother.next_n(n);
+        let target_linear = fast_pow10(target_db / 20.0);
+        
+        // Block-based asymmetric smoothing approximation
+        let coeff = if target_linear < self.current_gain_linear {
+            self.attack_coeff.powi(n as i32)
+        } else {
+            self.release_coeff.powi(n as i32)
+        };
+        self.current_gain_linear = target_linear + coeff * (self.current_gain_linear - target_linear);
     }
 
     pub fn current_gain_db(&self) -> f32 {
@@ -237,7 +264,7 @@ impl AutoGain {
         
         // Convert target DB to linear once per block to avoid powf in the loop
         let target_db = self.gain_smoother.target();
-        let target_linear = 10.0_f32.powf(target_db / 20.0);
+        let target_linear = fast_pow10(target_db / 20.0);
 
         for frame in 0..num_frames {
             // Asymmetric smoothing in linear domain: fast attack (gain decrease), slow release (gain increase)
@@ -253,6 +280,8 @@ impl AutoGain {
                 output[frame * self.num_channels + ch] *= gain;
             }
         }
+        
+        self.gain_smoother.next_n(num_frames);
     }
 
     pub fn get_data(&self) -> AutoGainData {

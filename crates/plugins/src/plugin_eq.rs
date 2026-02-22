@@ -4,7 +4,7 @@
 
 use super::auto_gain::{AutoGain, AutoGainParams};
 use super::parameters::{Parameter, ParameterId, ParameterValue};
-use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use math_audio_iir_fir::Biquad;
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ impl EqPlugin {
         for _ in 0..num_channels {
             channel_filters.push(filters.clone());
         }
-        let sample_rate = 48000;
+        let sample_rate = 44100;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate).expect("ag");
         Self {
             num_channels,
@@ -60,7 +60,7 @@ impl EqPlugin {
         if channel_filters.len() != num_channels {
             return Err("Count mismatch".into());
         }
-        let sample_rate = 48000;
+        let sample_rate = 44100;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate)?;
         Ok(Self {
             num_channels,
@@ -78,13 +78,13 @@ impl EqPlugin {
         use math_audio_iir_fir::BiquadFilterType;
         let config_to_biquad = |f: &BiquadFilterConfig| -> Result<Biquad, String> {
             let filter_type = match f.filter_type.as_str() {
-                "peak" => BiquadFilterType::Peak,
-                "lowshelf" => BiquadFilterType::Lowshelf,
-                "highshelf" => BiquadFilterType::Highshelf,
-                "lowpass" => BiquadFilterType::Lowpass,
-                "highpass" => BiquadFilterType::Highpass,
-                "notch" => BiquadFilterType::Notch,
-                "bandpass" => BiquadFilterType::Bandpass,
+                "peak" | "Peak" => BiquadFilterType::Peak,
+                "lowshelf" | "Lowshelf" => BiquadFilterType::Lowshelf,
+                "highshelf" | "Highshelf" => BiquadFilterType::Highshelf,
+                "lowpass" | "Lowpass" => BiquadFilterType::Lowpass,
+                "highpass" | "Highpass" => BiquadFilterType::Highpass,
+                "notch" | "Notch" => BiquadFilterType::Notch,
+                "bandpass" | "Bandpass" => BiquadFilterType::Bandpass,
                 other => return Err(format!("Type: {}", other)),
             };
             Biquad::try_new(filter_type, f.freq, sample_rate as f64, f.q, f.db_gain)
@@ -144,34 +144,79 @@ impl EqPlugin {
     }
 }
 
-impl Plugin for EqPlugin {
+impl InPlacePlugin for EqPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Parametric EQ", "1.1.0", "SotF")
+        PluginInfo::new("Parametric EQ", "2.0.0", "SotF")
     }
-    fn input_channels(&self) -> usize {
-        self.num_channels
-    }
-    fn output_channels(&self) -> usize {
+    fn channels(&self) -> usize {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_bool(
+        let mut params = vec![Parameter::new_bool(
             "auto_gain_enabled",
             "Auto Gain",
             self.auto_gain.is_enabled(),
-        )]
+        )];
+        
+        // Expose first channel filters as parameters if all channels are identical
+        // This is a common case for stereo EQ
+        if !self.filters.is_empty() {
+            for (i, f) in self.filters[0].iter().enumerate() {
+                let group = format!("Band {}", i + 1);
+                params.push(Parameter::new_float(&format!("band_{}_freq", i), "Freq", f.freq as f32, 20.0, 20000.0).with_group(&group));
+                params.push(Parameter::new_float(&format!("band_{}_q", i), "Q", f.q as f32, 0.1, 10.0).with_group(&group));
+                params.push(Parameter::new_float(&format!("band_{}_gain", i), "Gain", f.db_gain as f32, -24.0, 24.0).with_group(&group));
+            }
+        }
+        
+        params
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if id.0 == "auto_gain_enabled" {
-            if let Some(v) = value.as_bool() {
-                self.auto_gain.set_enabled(v);
+        let name = id.0.as_str();
+        if name == "auto_gain_enabled" {
+            self.auto_gain.set_enabled(value.as_bool().unwrap_or(true));
+        } else if name.starts_with("band_") {
+            let parts: Vec<&str> = name.split('_').collect();
+            if parts.len() >= 3 {
+                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
+                let field = parts[2];
+                for ch in 0..self.num_channels {
+                    if let Some(f) = self.filters[ch].get_mut(b_idx) {
+                        let mut freq = f.freq;
+                        let mut q = f.q;
+                        let mut db_gain = f.db_gain;
+                        match field {
+                            "freq" => freq = value.as_float().unwrap_or(1000.0) as f64,
+                            "q" => q = value.as_float().unwrap_or(1.0) as f64,
+                            "gain" => db_gain = value.as_float().unwrap_or(0.0) as f64,
+                            _ => {}
+                        }
+                        *f = Biquad::new(f.filter_type, freq, f.srate, q, db_gain);
+                    }
+                }
             }
         }
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id.0 == "auto_gain_enabled" {
+        let name = id.0.as_str();
+        if name == "auto_gain_enabled" {
             Some(ParameterValue::Bool(self.auto_gain.is_enabled()))
+        } else if name.starts_with("band_") {
+            let parts: Vec<&str> = name.split('_').collect();
+            if parts.len() >= 3 {
+                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
+                let field = parts[2];
+                if let Some(f) = self.filters[0].get(b_idx) {
+                    return match field {
+                        "freq" => Some(ParameterValue::Float(f.freq as f32)),
+                        "q" => Some(ParameterValue::Float(f.q as f32)),
+                        "gain" => Some(ParameterValue::Float(f.db_gain as f32)),
+                        _ => None
+                    };
+                }
+            }
+            None
         } else {
             None
         }
@@ -183,9 +228,7 @@ impl Plugin for EqPlugin {
                 *f = Biquad::new(f.filter_type, f.freq, sample_rate as f64, f.q, f.db_gain);
             }
         }
-        self.auto_gain
-            .set_sample_rate(sample_rate)
-            .map_err(|e| e.to_string())?;
+        self.auto_gain.set_sample_rate(sample_rate).map_err(|e| e.to_string())?;
         Ok(())
     }
     fn reset(&mut self) {
@@ -196,35 +239,31 @@ impl Plugin for EqPlugin {
         }
         self.auto_gain.reset();
     }
-    fn process(
+    fn process_in_place(
         &mut self,
-        input: &[f32],
-        output: &mut [f32],
+        buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> Result<usize, String> {
+    ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        output.copy_from_slice(input);
-        self.auto_gain
-            .measure_input(output)
-            .map_err(|e| e.to_string())?;
+        
+        let _ = self.auto_gain.measure_input(buffer);
 
         for frame in 0..num_frames {
             for ch in 0..self.num_channels {
                 let idx = frame * self.num_channels + ch;
-                let mut s = output[idx] as f64;
+                let mut s = buffer[idx] as f64;
                 for f in &mut self.filters[ch] {
                     s = f.process(s);
                 }
-                output[idx] = s as f32;
+                buffer[idx] = s as f32;
             }
         }
 
-        self.auto_gain
-            .measure_output(output)
-            .map_err(|e| e.to_string())?;
-        self.auto_gain.apply_compensation(output, num_frames);
-        flush_denormals_inplace(output);
+        let _ = self.auto_gain.measure_output(buffer);
+        self.auto_gain.apply_compensation(buffer, num_frames);
+        
+        flush_denormals_inplace(buffer);
         Ok(num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
@@ -240,19 +279,17 @@ mod tests {
     #[test]
     fn test_eq_passthrough() {
         let mut p = EqPlugin::new(2, vec![]);
-        p.initialize(48000).unwrap();
-        let i = vec![0.5; 2048];
-        let mut o = vec![0.0; 2048];
-        p.process(
-            &i,
-            &mut o,
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        let mut b = vec![0.5; 2048];
+        p.process_in_place(
+            &mut b,
             &ProcessContext {
                 sample_rate: 48000,
                 num_frames: 1024,
             },
         )
         .unwrap();
-        assert_eq!(i, o);
+        assert_eq!(b, vec![0.5; 2048]);
     }
 
     #[test]
@@ -265,20 +302,20 @@ mod tests {
             6.0,
         )];
         let mut p = EqPlugin::new(1, f);
-        p.initialize(48000).unwrap();
-        p.set_parameter(
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+        InPlacePlugin::set_parameter(
+            &mut p,
             ParameterId::from("auto_gain_enabled"),
             ParameterValue::Bool(false),
         )
         .unwrap();
-        let mut i = vec![0.0; 1024];
+        let mut b = vec![0.0; 1024];
         for k in 0..1024 {
-            i[k] = (k as f32 * 0.1).sin();
+            b[k] = (k as f32 * 0.1).sin();
         }
-        let mut o = vec![0.0; 1024];
-        p.process(
-            &i,
-            &mut o,
+        let i = b.clone();
+        p.process_in_place(
+            &mut b,
             &ProcessContext {
                 sample_rate: 48000,
                 num_frames: 1024,
@@ -286,6 +323,6 @@ mod tests {
         )
         .unwrap();
         // Check a sample after some settling
-        assert!(o[100].abs() > i[100].abs());
+        assert!(b[100].abs() > i[100].abs());
     }
 }

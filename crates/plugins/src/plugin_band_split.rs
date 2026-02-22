@@ -131,7 +131,9 @@ impl Plugin for BandSplitPlugin {
         let num_frames = context.num_frames;
         let in_ch = self.input_channels;
         let out_ch = in_ch * 2;
-        let new_freq = self.freq_smoother.next();
+        
+        // Block-based smoothing
+        let new_freq = self.freq_smoother.next_n(num_frames);
 
         if (new_freq - self.lowpass[0][0].freq as f32).abs() > 0.1 {
             let f64 = new_freq as f64;
@@ -165,6 +167,7 @@ impl Plugin for BandSplitPlugin {
                 output[out_off + in_ch + ch] = hp_s as f32;
             }
         }
+        
         flush_denormals_inplace(output);
         Ok(num_frames)
     }

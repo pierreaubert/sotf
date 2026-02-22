@@ -733,7 +733,7 @@ qa-fem:
 qa-bem:
 	cargo run --release --bin qa-suite -p math-bem --features="native cli parallel"
 
-qa-plugins: qa-plugin-fuzzer
+qa-plugins: qa-plugin-fuzzer qa-plugin-diagnostics
 
 qa-plugin-fuzzer:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_*.wav; do \
@@ -742,6 +742,22 @@ qa-plugin-fuzzer:
 			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
 		done; \
 	done
+
+qa-plugin-diagnostics:
+	cargo run --release --package plugins --bin qa-compressor
+	cargo run --release --package plugins --bin qa-delay
+	cargo run --release --package plugins --bin qa-downmix
+	cargo run --release --package plugins --bin qa-eq
+	cargo run --release --package plugins --bin qa-expander
+	cargo run --release --package plugins --bin qa-gain
+	cargo run --release --package plugins --bin qa-gate
+	cargo run --release --package plugins --bin qa-limiter
+	cargo run --release --package plugins --bin qa-loudness-compensation
+	cargo run --release --package plugins --bin qa-mono-to-stereo
+	cargo run --release --package plugins --bin qa-multiband-compressor
+	cargo run --release --package plugins --bin qa-multiband-expander
+	cargo run --release --package plugins --bin qa-upmixer
+	cargo run --release --package plugins --bin qa-xtc
 
 qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21 qa-roomeq-small-stereo-22 qa-roomeq-convergence
 

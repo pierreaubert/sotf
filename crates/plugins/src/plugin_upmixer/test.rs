@@ -118,37 +118,36 @@ mod upmixer_tests {
         );
         plugin.initialize(44100).unwrap();
 
-        // Create test input: 2048 stereo samples (4096 samples total)
-        // Use a simple sine wave pattern for more interesting input
-        let mut input = vec![0.0_f32; 2048 * 2];
-        for i in 0..2048 {
+        // Process enough frames to overcome latency (2048 + 2048)
+        let num_frames = 4096;
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
             input[i * 2] = (i as f32 * 0.01).sin() * 0.5; // Left
             input[i * 2 + 1] = (i as f32 * 0.01).cos() * 0.5; // Right
         }
-        let mut output = vec![0.0_f32; 2048 * 6];
+        let mut output = vec![0.0_f32; num_frames * 6];
 
         let context = ProcessContext {
             sample_rate: 44100,
-            num_frames: 2048,
+            num_frames,
         };
 
         plugin.process(&input, &mut output, &context).unwrap();
 
         // Verify output is not all zeros (some processing occurred)
         let sum: f32 = output.iter().map(|x| x.abs()).sum();
-        // log::info!("Output sum (abs): {}", sum);
         assert!(sum > 0.0, "Output should not be all zeros");
 
         // Check that we have output in multiple channels
         let num_channels = 6; // 5.1 has 6 channels
         let mut channel_sums = vec![0.0; num_channels];
-        for i in 0..2048 {
+        for i in 0..num_frames {
             for ch in 0..num_channels {
                 channel_sums[ch] += output[i * num_channels + ch].abs();
             }
         }
-        // log::info!("Channel sums: {:?}", channel_sums);
-        // At least center and front channels should have content
+        
+        // At least one front channel should have content
         assert!(
             channel_sums[0] > 0.0 || channel_sums[1] > 0.0 || channel_sums[2] > 0.0,
             "At least one front channel should have content"
@@ -337,27 +336,29 @@ mod upmixer_tests {
             );
             plugin.initialize(44100).unwrap();
             plugin.center_spread.set_target(center_spread.clamp(0.0, 1.0));
+            plugin.center_spread.next_n(4096);
 
-            let fft_size = plugin.fft_size;
-            let mut input = vec![0.0f32; fft_size * 2];
-            for i in 0..fft_size {
+            // Process enough frames to overcome latency
+            let num_frames = 4096;
+            let mut input = vec![0.0f32; num_frames * 2];
+            for i in 0..num_frames {
                 let t = i as f32 / 44100.0;
                 let s = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5;
                 input[i * 2] = s;
                 input[i * 2 + 1] = s;
             }
 
-            let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+            let mut output = vec![0.0f32; num_frames * plugin.num_output_channels];
             let context = ProcessContext {
                 sample_rate: 44100,
-                num_frames: fft_size,
+                num_frames,
             };
             plugin.process(&input, &mut output, &context).unwrap();
 
             // 5.1 layout: channel 2 is Center.
             let center_idx = 2usize;
             let mut energy = 0.0f32;
-            for i in 0..fft_size {
+            for i in 0..num_frames {
                 let s = output[i * plugin.num_output_channels + center_idx];
                 energy += s * s;
             }

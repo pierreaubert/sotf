@@ -22,7 +22,7 @@ pub fn create_plugin(
             let params: EqPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Invalid EQ params: {}", e))?;
             let plugin = EqPlugin::from_params(num_channels, sample_rate, params)?;
-            Ok(Box::new(plugin))
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
         "gain" => {
             let params: GainPluginParams = serde_json::from_value(parameters.clone())

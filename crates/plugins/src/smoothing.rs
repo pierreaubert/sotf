@@ -133,11 +133,20 @@ impl LinearSmoother {
 
     #[inline]
     pub fn next(&mut self) -> f32 {
-        if (self.current - self.target).abs() <= self.step.abs() {
+        self.next_n(1)
+    }
+
+    #[inline]
+    pub fn next_n(&mut self, n: usize) -> f32 {
+        if n == 0 {
+            return self.current;
+        }
+        let total_step = self.step * n as f32;
+        if (self.current - self.target).abs() <= total_step.abs() {
             self.current = self.target;
             self.step = 0.0;
         } else {
-            self.current += self.step;
+            self.current += total_step;
         }
         self.current
     }
@@ -195,11 +204,16 @@ impl LogSmoother {
 
     #[inline]
     pub fn next(&mut self) -> f32 {
-        if self.ratio == 1.0 {
+        self.next_n(1)
+    }
+
+    #[inline]
+    pub fn next_n(&mut self, n: usize) -> f32 {
+        if self.ratio == 1.0 || n == 0 {
             return self.current;
         }
 
-        self.current *= self.ratio;
+        self.current *= self.ratio.powi(n as i32);
 
         // Check if we passed the target
         if (self.ratio > 1.0 && self.current >= self.target)

@@ -271,10 +271,10 @@ impl DawHost {
         }
         self.process_buffers = Some(ProcessBuffers {
             node_buffers,
-            scratch_input: vec![0.0; 4096 * 16],
-            scratch_output: vec![0.0; 4096 * 16],
-            merge_buffer: vec![0.0; 4096 * 16],
-            channel_map_buffer: vec![0.0; 4096 * 16],
+            scratch_input: vec![0.0; 4096 * 32],
+            scratch_output: vec![0.0; 4096 * 32],
+            merge_buffer: vec![0.0; 4096 * 32],
+            channel_map_buffer: vec![0.0; 4096 * 32],
         });
         // Cache per-frame properties to avoid mutex locks during process()
         self.cached_frames_identity = true;
@@ -488,7 +488,7 @@ impl DawHost {
     ) -> Result<usize, String> {
         let is = nf * n.input_channels();
         if mb.len() < is {
-            mb.resize(is, 0.0);
+            return Err(format!("Merge buffer too small: {} < {}", mb.len(), is));
         }
         mb[..is].fill(0.0);
         for e in &preds[n.id] {
@@ -497,7 +497,7 @@ impl DawHost {
             if let Some(ref cm) = e.channel_map {
                 let ms = nf * cm.len();
                 if cmb.len() < ms {
-                    cmb.resize(ms, 0.0);
+                    return Err(format!("Channel map buffer too small: {} < {}", cmb.len(), ms));
                 }
                 for f in 0..nf {
                     for (di, &si) in cm.iter().enumerate() {
