@@ -22,6 +22,16 @@ pub struct ReplayGainInfo {
     pub peak: f64,
 }
 
+/// Extended ReplayGain data including EBU R128 gating block statistics.
+/// Used for computing album-level gain by accumulating across tracks.
+#[derive(Debug, Clone)]
+pub struct ReplayGainTrackData {
+    pub gain: f64,
+    pub peak: f64,
+    pub gating_block_count: u64,
+    pub energy: f64,
+}
+
 /// Analyze an audio file and compute ReplayGain values
 ///
 /// This function decodes an audio file using Symphonia and computes ReplayGain 2.0
@@ -108,6 +118,83 @@ pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInf
 
     log::debug!("[Replay Gain] Gain: {}dB Peak: {}dB", gain, peak);
     Ok(ReplayGainInfo { gain, peak })
+}
+
+/// Analyze an audio file and return extended ReplayGain data including
+/// gating block count and energy, needed for album-level gain computation.
+pub fn analyze_file_extended<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainTrackData> {
+    let path = path.as_ref();
+    let mut decoder = create_decoder(path)?;
+    let spec = decoder.spec();
+    let channels = spec.channels as u32;
+    let sample_rate = spec.sample_rate;
+
+    let mut ebur128 = EbuR128::new(channels, sample_rate, Mode::all()).map_err(|e| {
+        AudioDecoderError::ConfigError(format!("Failed to create EBU R128 analyzer: {:?}", e))
+    })?;
+
+    while let Some(decoded) = decoder.decode_next()? {
+        if decoded.is_empty() {
+            continue;
+        }
+        ebur128.add_frames_f32(&decoded.samples).map_err(|e| {
+            AudioDecoderError::DecodingFailed(format!("Failed to add frames to EBU R128: {:?}", e))
+        })?;
+    }
+
+    let loudness = ebur128.loudness_global().map_err(|e| {
+        AudioDecoderError::DecodingFailed(format!("Failed to calculate loudness: {:?}", e))
+    })?;
+
+    let mut peak = 0.0f64;
+    for ch in 0..channels {
+        let ch_peak = ebur128.sample_peak(ch).map_err(|e| {
+            AudioDecoderError::DecodingFailed(format!("Failed to get peak for channel {}: {:?}", ch, e))
+        })?;
+        peak = peak.max(ch_peak);
+    }
+
+    let gain = REPLAYGAIN2_REFERENCE_LUFS - loudness;
+
+    let (gating_block_count, energy) = ebur128.gating_block_count_and_energy().ok_or_else(|| {
+        AudioDecoderError::DecodingFailed("Failed to get gating block count and energy".to_string())
+    })?;
+
+    Ok(ReplayGainTrackData {
+        gain,
+        peak,
+        gating_block_count,
+        energy,
+    })
+}
+
+/// Compute album-level ReplayGain from accumulated per-track gating block data.
+///
+/// `tracks` contains `(peak, gating_block_count, energy)` for each track in the album.
+/// Returns `(album_gain_db, album_peak)`.
+pub fn compute_album_gain(tracks: &[(f64, u64, f64)]) -> Option<(f64, f64)> {
+    if tracks.is_empty() {
+        return None;
+    }
+
+    let mut total_blocks: u64 = 0;
+    let mut total_energy: f64 = 0.0;
+    let mut album_peak: f64 = 0.0;
+
+    for &(peak, blocks, energy) in tracks {
+        total_blocks += blocks;
+        total_energy += energy;
+        album_peak = album_peak.max(peak);
+    }
+
+    if total_blocks == 0 {
+        return None;
+    }
+
+    let album_loudness = ebur128::energy_to_loudness(total_energy / total_blocks as f64);
+    let album_gain = REPLAYGAIN2_REFERENCE_LUFS - album_loudness;
+
+    Some((album_gain, album_peak))
 }
 
 #[cfg(test)]

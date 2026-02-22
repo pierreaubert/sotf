@@ -189,6 +189,24 @@ impl Drop for ReplayGainScanner {
     }
 }
 
+/// Progress state for album gain scanning
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlbumGainPhase {
+    /// Not running
+    Idle,
+    /// Computing album gains
+    Scanning,
+    /// Finished
+    Done,
+}
+
+/// Message from the album gain background thread
+#[derive(Debug)]
+enum AlbumGainMessage {
+    Progress { albums_done: usize },
+    Complete { succeeded: usize, failed: usize },
+}
+
 /// Helper struct to manage ReplayGain scanning state
 #[derive(Debug, Default)]
 pub struct ReplayGainScanManager {
@@ -198,6 +216,18 @@ pub struct ReplayGainScanManager {
     pub processed: usize,
     pub succeeded: usize,
     pub failed: usize,
+
+    // Album gain scanning (second pass)
+    album_gain_rx: Option<Receiver<AlbumGainMessage>>,
+    pub album_gain_phase: AlbumGainPhase,
+    pub album_gain_done: usize,
+    pub album_gain_total: usize,
+}
+
+impl Default for AlbumGainPhase {
+    fn default() -> Self {
+        Self::Idle
+    }
 }
 
 impl ReplayGainScanManager {
@@ -221,6 +251,11 @@ impl ReplayGainScanManager {
 
         if tracks.is_empty() {
             log::debug!("All tracks already have ReplayGain data");
+            // No track scanning needed, but check if album gains are missing
+            self.start_album_gain_scan();
+            if self.album_gain_phase == AlbumGainPhase::Scanning {
+                return Ok("Computing album ReplayGain...".to_string());
+            }
             return Ok("All tracks already have ReplayGain data".to_string());
         }
 
@@ -245,56 +280,221 @@ impl ReplayGainScanManager {
         self.processed = 0;
         self.succeeded = 0;
         self.failed = 0;
+        self.album_gain_phase = AlbumGainPhase::Idle;
 
         Ok(format!("Analyzing {} tracks for ReplayGain...", total))
+    }
+
+    /// Start the album gain computation pass.
+    /// This analyzes all tracks in each album that's missing album_gain and computes
+    /// the combined album-level ReplayGain using EBU R128 gating block accumulation.
+    fn start_album_gain_scan(&mut self) {
+        if self.album_gain_phase == AlbumGainPhase::Scanning {
+            return;
+        }
+
+        let db_path = match MusicDatabase::default_path() {
+            Some(p) => p,
+            None => return,
+        };
+
+        let db = match MusicDatabase::open(&db_path) {
+            Ok(db) => db,
+            Err(e) => {
+                log::error!("[AlbumGain] Failed to open database: {}", e);
+                return;
+            }
+        };
+
+        let albums = match db.get_albums_without_album_gain() {
+            Ok(a) => a,
+            Err(e) => {
+                log::error!("[AlbumGain] Failed to get albums: {}", e);
+                return;
+            }
+        };
+
+        if albums.is_empty() {
+            log::info!("[AlbumGain] All albums already have album gain data");
+            self.album_gain_phase = AlbumGainPhase::Done;
+            return;
+        }
+
+        let album_count = albums.len();
+        log::info!(
+            "[AlbumGain] Starting album gain computation for {} albums",
+            album_count
+        );
+
+        let (tx, rx) = mpsc::channel();
+        self.album_gain_rx = Some(rx);
+        self.album_gain_phase = AlbumGainPhase::Scanning;
+        self.album_gain_done = 0;
+        self.album_gain_total = album_count;
+        self.in_progress = true;
+
+        thread::spawn(move || {
+            let db = match MusicDatabase::open(&db_path) {
+                Ok(db) => db,
+                Err(e) => {
+                    log::error!("[AlbumGain] Worker failed to open database: {}", e);
+                    let _ = tx.send(AlbumGainMessage::Complete {
+                        succeeded: 0,
+                        failed: album_count,
+                    });
+                    return;
+                }
+            };
+
+            let mut succeeded = 0;
+            let mut failed = 0;
+
+            for (idx, (_album_id, track_paths)) in albums.iter().enumerate() {
+                // Analyze each track in the album using the extended function
+                let mut track_data: Vec<(f64, u64, f64)> = Vec::new();
+                let mut album_failed = false;
+
+                for path in track_paths {
+                    match replaygain::analyze_file_extended(path) {
+                        Ok(data) => {
+                            track_data.push((data.peak, data.gating_block_count, data.energy));
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[AlbumGain] Failed to analyze {}: {}",
+                                path.display(),
+                                e
+                            );
+                            album_failed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if album_failed {
+                    failed += 1;
+                    let _ = tx.send(AlbumGainMessage::Progress {
+                        albums_done: idx + 1,
+                    });
+                    continue;
+                }
+
+                // Compute album gain from accumulated data
+                if let Some((album_gain, album_peak)) = replaygain::compute_album_gain(&track_data)
+                {
+                    // Write album gain to all tracks in this album
+                    let mut write_ok = true;
+                    for path in track_paths {
+                        if let Err(e) = db.update_album_gain(path, album_gain, album_peak) {
+                            log::error!(
+                                "[AlbumGain] Failed to update DB for {}: {}",
+                                path.display(),
+                                e
+                            );
+                            write_ok = false;
+                        }
+                    }
+                    if write_ok {
+                        log::info!(
+                            "[AlbumGain] Album {} ({} tracks): gain={:+.2}dB, peak={:.4}",
+                            idx + 1,
+                            track_paths.len(),
+                            album_gain,
+                            album_peak
+                        );
+                        succeeded += 1;
+                    } else {
+                        failed += 1;
+                    }
+                } else {
+                    log::warn!("[AlbumGain] Could not compute gain for album {}", idx + 1);
+                    failed += 1;
+                }
+
+                let _ = tx.send(AlbumGainMessage::Progress {
+                    albums_done: idx + 1,
+                });
+            }
+
+            let _ = tx.send(AlbumGainMessage::Complete { succeeded, failed });
+        });
     }
 
     /// Update scanning progress by processing messages
     /// Returns true if scan just completed
     pub fn update(&mut self) -> bool {
-        let scanner = match &self.scanner {
-            Some(s) => Arc::clone(s),
-            None => return false,
-        };
-
         let mut just_completed = false;
 
-        // Process all pending messages
-        while let Some(msg) = scanner.try_recv() {
-            match msg {
-                ScanMessage::Started { .. } => {
-                    // Track started, no action needed
-                }
-                ScanMessage::Success { .. } => {
-                    self.processed += 1;
-                    self.succeeded += 1;
-                }
-                ScanMessage::Error { path, error } => {
-                    self.processed += 1;
-                    self.failed += 1;
-                    log::error!("ReplayGain scan failed for {}: {}", path.display(), error);
-                }
-                ScanMessage::Complete {
-                    total,
-                    succeeded,
-                    failed,
-                } => {
-                    self.in_progress = false;
-                    self.scanner = None;
-                    just_completed = true;
-                    log::info!(
-                        "ReplayGain scan complete: {}/{} succeeded, {} failed",
-                        succeeded,
+        // Process track scan messages
+        if let Some(scanner) = &self.scanner {
+            let scanner = Arc::clone(scanner);
+            while let Some(msg) = scanner.try_recv() {
+                match msg {
+                    ScanMessage::Started { .. } => {}
+                    ScanMessage::Success { .. } => {
+                        self.processed += 1;
+                        self.succeeded += 1;
+                    }
+                    ScanMessage::Error { path, error } => {
+                        self.processed += 1;
+                        self.failed += 1;
+                        log::error!("ReplayGain scan failed for {}: {}", path.display(), error);
+                    }
+                    ScanMessage::Complete {
                         total,
-                        failed
-                    );
+                        succeeded,
+                        failed,
+                    } => {
+                        log::info!(
+                            "ReplayGain track scan complete: {}/{} succeeded, {} failed",
+                            succeeded,
+                            total,
+                            failed
+                        );
+                    }
+                }
+            }
+
+            // Check if track scanning is done (all tracks processed)
+            if self.processed >= self.total && self.total > 0 {
+                self.scanner = None;
+                // Automatically start album gain scan
+                self.start_album_gain_scan();
+                if self.album_gain_phase != AlbumGainPhase::Scanning {
+                    // No albums to scan, we're fully done
+                    self.in_progress = false;
+                    just_completed = true;
                 }
             }
         }
 
-        // Also check manual completion if we processed everyone but didn't get complete msg?
-        // (Scanner sends complete message, so we should rely on it, but redundancy is okay)
-        // Leaving it as relying on message for now as implementation of scanner sends it.
+        // Process album gain messages
+        if self.album_gain_phase == AlbumGainPhase::Scanning {
+            let mut completed = false;
+            if let Some(rx) = &self.album_gain_rx {
+                while let Ok(msg) = rx.try_recv() {
+                    match msg {
+                        AlbumGainMessage::Progress { albums_done } => {
+                            self.album_gain_done = albums_done;
+                        }
+                        AlbumGainMessage::Complete { succeeded, failed } => {
+                            log::info!(
+                                "[AlbumGain] Complete: {} succeeded, {} failed",
+                                succeeded,
+                                failed
+                            );
+                            self.album_gain_phase = AlbumGainPhase::Done;
+                            self.in_progress = false;
+                            just_completed = true;
+                            completed = true;
+                        }
+                    }
+                }
+            }
+            if completed {
+                self.album_gain_rx = None;
+            }
+        }
 
         just_completed
     }
@@ -306,6 +506,8 @@ impl ReplayGainScanManager {
         }
         self.in_progress = false;
         self.scanner = None;
+        self.album_gain_phase = AlbumGainPhase::Idle;
+        self.album_gain_rx = None;
     }
 
     /// Get progress as a percentage

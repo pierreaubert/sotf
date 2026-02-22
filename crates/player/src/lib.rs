@@ -25,6 +25,7 @@ pub mod replay_gain_scanner;
 // Backward compatibility alias
 pub use autoeq as room_eq;
 pub mod security;
+pub mod tui_params;
 pub mod waveform_scanner;
 
 // Re-export commonly used types
@@ -42,7 +43,7 @@ pub use plugin_graph::{
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
 // Re-export plugins from engine
-pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
+pub use replay_gain_scanner::{AlbumGainPhase, ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::plugins::{
     EQFilter,
     Plugin,

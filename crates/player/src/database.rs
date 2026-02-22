@@ -1825,6 +1825,48 @@ impl MusicDatabase {
         Ok(paths)
     }
 
+    /// Update album-level ReplayGain for a track
+    pub fn update_album_gain(&self, path: &Path, album_gain: f64, album_peak: f64) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET album_gain = ?1, album_peak = ?2 WHERE path = ?3",
+            params![album_gain, album_peak, path.to_str().unwrap()],
+        )?;
+        Ok(())
+    }
+
+    /// Get albums whose tracks are missing album-level ReplayGain.
+    /// Returns `(album_id, Vec<track_path>)` for each album that has at least one track
+    /// without album_gain.
+    pub fn get_albums_without_album_gain(&self) -> SqlResult<Vec<(i64, Vec<PathBuf>)>> {
+        // Find album_ids that have any track missing album_gain
+        let mut album_stmt = self.conn.prepare(
+            "SELECT DISTINCT album_id FROM tracks WHERE album_gain IS NULL",
+        )?;
+        let album_ids: Vec<i64> = album_stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        // For each album, get all track paths (we need all tracks to compute album gain)
+        let mut track_stmt = self
+            .conn
+            .prepare("SELECT path FROM tracks WHERE album_id = ?1 ORDER BY disc_number, track_number")?;
+
+        let mut result = Vec::new();
+        for album_id in album_ids {
+            let paths: Vec<PathBuf> = track_stmt
+                .query_map(params![album_id], |row| {
+                    let path_str: String = row.get(0)?;
+                    Ok(PathBuf::from(path_str))
+                })?
+                .collect::<SqlResult<Vec<_>>>()?;
+            if !paths.is_empty() {
+                result.push((album_id, paths));
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Update waveform data for a track
     pub fn update_waveform(&self, path: &Path, waveform: &[u8]) -> SqlResult<()> {
         self.conn.execute(

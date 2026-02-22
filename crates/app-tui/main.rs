@@ -327,21 +327,20 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 .unwrap_or(2) as usize;
 
                             // Check for upmixer + non-stereo conflict
-                            if track_channels != 2 {
-                                if let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
-                                    if app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled) {
-                                        log::info!(
-                                            "[TUI] Auto-advance channel conflict: {}ch file with upmixer enabled",
-                                            track_channels
-                                        );
-                                        app.channel_conflict_path = Some(path);
-                                        app.channel_conflict_selection = 0;
-                                        app.channel_conflict_track_channels = track_channels;
-                                        app.input_mode = InputMode::ChannelConflict;
-                                        update_media_controls(app, player, media_controls);
-                                        continue;
-                                    }
-                                }
+                            if track_channels != 2
+                                && let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer)
+                                && app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled)
+                            {
+                                log::info!(
+                                    "[TUI] Auto-advance channel conflict: {}ch file with upmixer enabled",
+                                    track_channels
+                                );
+                                app.channel_conflict_path = Some(path);
+                                app.channel_conflict_selection = 0;
+                                app.channel_conflict_track_channels = track_channels;
+                                app.input_mode = InputMode::ChannelConflict;
+                                update_media_controls(app, player, media_controls);
+                                continue;
                             }
 
                             if let Err(e) = start_playback(player, app, path, track_channels) {
@@ -574,20 +573,19 @@ fn handle_player_command(
 
             // Check for upmixer + non-stereo conflict before attempting playback.
             // The upmixer only accepts stereo (2ch) input.
-            if track_channels != 2 {
-                if let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
-                    if app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled) {
-                        log::info!(
-                            "[TUI] Channel conflict: {}ch file with upmixer enabled",
-                            track_channels
-                        );
-                        app.channel_conflict_path = Some(path);
-                        app.channel_conflict_selection = 0;
-                        app.channel_conflict_track_channels = track_channels;
-                        app.input_mode = InputMode::ChannelConflict;
-                        return Ok(());
-                    }
-                }
+            if track_channels != 2
+                && let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer)
+                && app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled)
+            {
+                log::info!(
+                    "[TUI] Channel conflict: {}ch file with upmixer enabled",
+                    track_channels
+                );
+                app.channel_conflict_path = Some(path);
+                app.channel_conflict_selection = 0;
+                app.channel_conflict_track_channels = track_channels;
+                app.input_mode = InputMode::ChannelConflict;
+                return Ok(());
             }
 
             start_playback(player, app, path, track_channels)?;
