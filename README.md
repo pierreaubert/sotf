@@ -15,9 +15,13 @@ What can you do with it?
 
 ## A picture is worth a thousand words.
 
-### Player
+### Native Player
 
-![sotf](./docs/images/sotf-0.5.3-light.png)
+![sotf](./docs/images/0.5.11/sotf-gpui-v0.5.11-player.png)
+
+### Terminal Player
+
+![sotf](./docs/images/0.5.11/sotf-tui-v0.5.11-player.png)
 
 ## How to use?
 
@@ -267,7 +271,17 @@ Status: almost working.
 
 ## More pictures
 
+### Plugins list
+
+![Upmixer 2.0->5.1.4](./docs/images/0.5.11/sotf-tui-v0.5.11-plugins.png)
+
+### EQ
+
+![Parametric EQ](./docs/images/0.5.11/sotf-gpui-v0.5.11-eq.png)
+
 ### Upmixer
 
-![Upmixer 2.0->5.1.4](./docs/images/upmixer.png)
+![Upmixer 2.0->5.1.4](./docs/images/0.5.11/sotf-gpui-v0.5.11-upmixer.png)
+![Upmixer 2.0->5.1.4](./docs/images/0.5.11/sotf-tui-v0.5.11-upmixer.png)
+
 
