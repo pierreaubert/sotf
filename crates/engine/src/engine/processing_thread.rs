@@ -65,7 +65,7 @@ impl ProcessingThread {
         plugin_data_cache: super::PluginDataCache,
         gc_tx: super::GcSender,
         recycle_rx: Receiver<Vec<f32>>,
-        decoder_recycle_tx: Sender<Vec<f32>>,
+        decoder_recycle_tx: SyncSender<Vec<f32>>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -159,10 +159,18 @@ fn parse_parameter_value(value: &str) -> sotf_plugins::ParameterValue {
 struct ProcessingState {
     /// Current plugin host
     host: PluginHost,
+    /// Previous host for crossfading
+    prev_host: Option<PluginHost>,
+    /// Crossfade progress (0.0 to 1.0, 1.0 = current host only)
+    crossfade_progress: f32,
+    /// Crossfade step per frame
+    crossfade_step: f32,
     /// Number of channels
     channels: usize,
     bypassed: bool,
     process_buffer: Vec<f32>,
+    /// Buffer for previous host during crossfade
+    prev_process_buffer: Vec<f32>,
     /// Frame counter for diagnostic logging
     frame_count: u64,
     /// Total output samples produced (for effective rate measurement)
@@ -180,9 +188,13 @@ impl ProcessingState {
     fn new(channels: usize, sample_rate: u32) -> Self {
         Self {
             host: PluginHost::new(channels, sample_rate),
+            prev_host: None,
+            crossfade_progress: 1.0,
+            crossfade_step: 0.0,
             channels,
             bypassed: false,
             process_buffer: Vec::new(),
+            prev_process_buffer: Vec::new(),
             frame_count: 0,
             total_output_samples: 0,
             first_frame_time: None,
@@ -230,8 +242,32 @@ impl ProcessingState {
             return Ok(input_frames);
         }
 
-        // Normal processing - returns actual output frames
-        self.host.process(input, output)
+        // Handle crossfade if in progress
+        if let Some(ref mut prev_host) = self.prev_host {
+            let actual_frames = self.host.process(input, output)?;
+            
+            let output_samples = actual_frames * self.channels;
+            if self.prev_process_buffer.len() < output_samples {
+                self.prev_process_buffer.resize(output_samples, 0.0);
+            }
+            
+            let _ = prev_host.process(input, &mut self.prev_process_buffer[..output_samples])?;
+            
+            // Blend buffers: output = (1-alpha)*prev + alpha*current
+            let alpha = self.crossfade_progress;
+            sotf_plugins::simd::blend_simd(output, &self.prev_process_buffer[..output_samples], alpha);
+            
+            // Advance crossfade
+            self.crossfade_progress = (self.crossfade_progress + self.crossfade_step).min(1.0);
+            if self.crossfade_progress >= 1.0 {
+                self.prev_host = None;
+            }
+            
+            Ok(actual_frames)
+        } else {
+            // Normal processing - returns actual output frames
+            self.host.process(input, output)
+        }
     }
 }
 
@@ -250,8 +286,24 @@ fn handle_processing_command(
                 output_channels
             );
 
-            // Swap host
-            state.host = new_host;
+            // Initiate crossfade if channel counts match and we have an existing chain
+            if state.host.output_channels() == output_channels && state.host.plugin_count() > 0 {
+                state.prev_host = Some(std::mem::replace(&mut state.host, new_host));
+                state.crossfade_progress = 0.0;
+                
+                // Crossfade over ~50ms
+                // For a 1024 frame size at 48kHz, this is ~2.3 blocks.
+                // We ensure it takes at least 2 blocks for a smooth transition.
+                let crossfade_duration_ms = 50.0;
+                let block_duration_ms = (1024.0 * 1000.0) / state.sample_rate as f32;
+                state.crossfade_step = (block_duration_ms / crossfade_duration_ms).min(0.5);
+            } else {
+                // Immediate swap for first host or channel mismatch
+                state.host = new_host;
+                state.prev_host = None;
+                state.crossfade_progress = 1.0;
+            }
+            
             state.channels = output_channels;
 
             response_tx
@@ -340,7 +392,7 @@ fn run_processing_thread(
     plugin_data_cache: super::PluginDataCache,
     gc_tx: super::GcSender,
     recycle_rx: Receiver<Vec<f32>>,
-    decoder_recycle_tx: Sender<Vec<f32>>,
+    decoder_recycle_tx: SyncSender<Vec<f32>>,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
     // performance issues in IIR filters and other DSP code
@@ -376,22 +428,6 @@ fn run_processing_thread(
                 // Query plugin chain for actual output sample rate
                 let output_sample_rate = state.output_sample_rate(frame.sample_rate);
 
-                // Diagnostic logging for first 5 frames
-                if state.frame_count < 5 {
-                    log::warn!(
-                        "[Processing] Frame #{}: input_frames={}, input_samples={}, input_ch={}, input_sr={}, output_ch={}, output_frames={}, output_sr={}, plugins={}",
-                        state.frame_count,
-                        frame.num_frames,
-                        frame.data.len(),
-                        frame.num_channels,
-                        frame.sample_rate,
-                        output_channels,
-                        output_frames,
-                        output_sample_rate,
-                        state.host.plugin_count(),
-                    );
-                }
-
                 let mut process_buffer = std::mem::take(&mut state.process_buffer);
                 if process_buffer.len() != output_samples {
                     process_buffer.resize(output_samples, 0.0);
@@ -405,16 +441,6 @@ fn run_processing_thread(
                         // Use actual output frame count from processing (not max)
                         let actual_output_samples = actual_output_frames * output_channels;
 
-                        // Diagnostic logging for first 5 frames (post-processing)
-                        if state.frame_count < 5 {
-                            log::warn!(
-                                "[Processing] Frame #{}: actual_output_frames={}, actual_output_samples={}, expected_output_frames={}",
-                                state.frame_count,
-                                actual_output_frames,
-                                actual_output_samples,
-                                output_frames,
-                            );
-                        }
                         state.frame_count += 1;
 
                         // Update shared plugin data cache so the UI can read
@@ -470,12 +496,23 @@ fn run_processing_thread(
                         }
                         state.total_output_samples += actual_output_samples as u64;
 
-                        // Reuse a recycled Vec from the playback thread if available,
-                        // otherwise allocate (only happens during startup ramp-up)
+                        // Reuse a recycled Vec from the playback thread if available.
+                        // Steady state should never allocate thanks to pre-filled recycle queues.
                         let frame_data = {
                             let mut buf = match recycle_rx.try_recv() {
-                                Ok(mut v) => { v.clear(); v }
-                                Err(_) => Vec::with_capacity(actual_output_samples),
+                                Ok(mut v) => {
+                                    v.clear();
+                                    // Ensure capacity without re-allocating if possible.
+                                    // reserve() is a no-op if capacity is already sufficient.
+                                    if v.capacity() < actual_output_samples {
+                                        v.reserve(actual_output_samples);
+                                    }
+                                    v
+                                }
+                                Err(_) => {
+                                    // Fallback if recycle queue is empty (ramp-up or stall)
+                                    Vec::with_capacity(actual_output_samples)
+                                }
                             };
                             buf.extend_from_slice(&process_buffer[..actual_output_samples]);
                             buf
@@ -511,7 +548,6 @@ fn run_processing_thread(
                         }
                     }
                     Err(e) => {
-                        log::debug!("[Processing Thread] Processing error: {}", e);
                         event_tx.send(ThreadEvent::ProcessingError(e)).ok();
                     }
                 }

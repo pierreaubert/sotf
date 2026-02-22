@@ -11,7 +11,7 @@ use cpal::{Device, Stream, StreamConfig};
 use rtrb::{Consumer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
 // HAL writer removed - audio flows: HAL input → decoder thread → processing → cpal output
 // No loopback to HAL needed
@@ -35,7 +35,7 @@ impl PlaybackThread {
         sample_rate: u32,
         channels: usize,
         output_device: Option<String>,
-        recycle_tx: Sender<Vec<f32>>,
+        recycle_tx: SyncSender<Vec<f32>>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
 
@@ -124,7 +124,7 @@ fn run_playback_thread(
     sample_rate: u32,
     initial_channels: usize,
     output_device: Option<String>,
-    recycle_tx: Sender<Vec<f32>>,
+    recycle_tx: SyncSender<Vec<f32>>,
 ) -> Result<(), String> {
     // Initialize cpal
     let host = cpal::default_host();
@@ -749,13 +749,12 @@ fn run_playback_thread(
                     Err(_) => {
                         // FRAME DROPPED: popped from sync channel but can't write to ring buffer
                         frames_dropped += 1;
-                        log::warn!(
-                            "[Playback Thread] FRAME DROPPED #{}: {} samples, ring_buffer_space={}, required={}",
-                            frames_dropped,
-                            frame_samples,
-                            producer.slots(),
-                            frame_samples,
-                        );
+                        if frames_dropped % 100 == 1 {
+                            log::warn!(
+                                "[Playback Thread] FRAME DROPPED count: {} (buffer full)",
+                                frames_dropped
+                            );
+                        }
                         recycle_tx.send(frame.data).ok();
                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
                         continue;

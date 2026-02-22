@@ -253,13 +253,9 @@ impl DecoderState {
         }
         let decode_buffer = self.decode_buffer.as_mut().unwrap();
 
-        let decode_start = Instant::now();
         // Decode next chunk
         match decoder.decode_into(decode_buffer) {
             Ok(frames_decoded) if frames_decoded > 0 => {
-                let decode_time = decode_start.elapsed();
-                log::trace!("[Decoder Thread] Decode time: {:?}", decode_time);
-
                 let channels = spec.channels as usize;
                 let source_sample_rate = spec.sample_rate;
 
@@ -370,18 +366,6 @@ impl DecoderState {
                         return Ok(DecoderLoopAction::Interrupted(cmd));
                     }
                     total_send_time += s_start.elapsed();
-                }
-
-                let processing_time = decode_time + total_resample_time;
-
-                // Warn if actual processing is slow
-                if processing_time > Duration::from_millis(10) {
-                    log::warn!(
-                        "[Decoder Thread] Slow processing: {:?} (Decode: {:?}, Resample: {:?})",
-                        processing_time,
-                        decode_time,
-                        total_resample_time
-                    );
                 }
 
                 // Update position
@@ -587,32 +571,6 @@ impl DecoderState {
             }
 
             let samples_read = reader.read(&mut self.hal_input_buffer);
-
-            // Calculate RMS for audio level detection
-            let rms: f32 = if samples_read > 0 {
-                let sum: f32 = self.hal_input_buffer[..samples_read]
-                    .iter()
-                    .map(|s| s * s)
-                    .sum();
-                (sum / samples_read as f32).sqrt()
-            } else {
-                0.0
-            };
-
-            // Log every 100 frames (~2 seconds at 48kHz/1024 frames)
-            if count % 100 == 0 {
-                let has_audio = rms > 0.0001;
-                log::info!(
-                    "[AUDIO FLOW] Decoder HAL read: {} samples, RMS={:.6}, has_audio={}, connected={}, HAL config: {}Hz {}ch, Target: {}Hz",
-                    samples_read,
-                    rms,
-                    has_audio,
-                    reader.is_connected(),
-                    hal_sample_rate,
-                    hal_channels,
-                    target_sample_rate
-                );
-            }
 
             if samples_read < buffer_len {
                 self.hal_input_buffer[samples_read..].fill(0.0);

@@ -402,8 +402,20 @@ fn run_manager_thread(
     let (decoder_tx, decoder_rx) = sync_channel(queue_capacity);
     let (processing_tx, processing_rx) = sync_channel(queue_capacity);
     let (event_tx, event_rx) = channel(); // Events can be unbounded
-    let (recycle_tx, recycle_rx) = channel(); // Vec<f32> recycling: playback → processing
-    let (decoder_recycle_tx, decoder_recycle_rx) = channel(); // Vec<f32> recycling: processing → decoder
+    
+    // Use bounded channels for recycling to avoid growth allocations.
+    // Double capacity to ensure plenty of buffers are available for the entire pipeline.
+    let (recycle_tx, recycle_rx) = sync_channel(queue_capacity * 2); 
+    let (decoder_recycle_tx, decoder_recycle_rx) = sync_channel(queue_capacity * 2);
+
+    // Pre-fill recycle queues to avoid initial allocations in the hot path.
+    // We use a safe upper bound for sample count: frame_size * max_channels.
+    // Most plugins use 2-8 channels; 16 is a safe ceiling for most use cases.
+    let prefill_samples = config.frame_size * 16;
+    for _ in 0..queue_capacity * 2 {
+        let _ = recycle_tx.send(vec![0.0; prefill_samples]);
+        let _ = decoder_recycle_tx.send(vec![0.0; prefill_samples]);
+    }
 
     // Create GC thread for off-audio-thread deallocation
     let mut gc_thread = GcThread::new();
