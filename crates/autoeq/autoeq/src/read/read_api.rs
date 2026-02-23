@@ -97,7 +97,7 @@ pub async fn fetch_measurement_plot_data(
         if let Ok(plot_data) = normalize_plotly_json_from_str(&content) {
             return Ok(plot_data);
         } else {
-            eprintln!(
+            log::debug!(
                 "⚠️  Cache file exists but could not be parsed as Plotly JSON: {:?}",
                 &cache_file
             );
@@ -127,15 +127,15 @@ pub async fn fetch_measurement_plot_data(
 
     // 2) Save normalized Plotly JSON to cache for future use
     if let Err(e) = fs::create_dir_all(&cache_dir).await {
-        eprintln!("⚠️  Failed to create cache dir {:?}: {}", &cache_dir, e);
+        log::debug!("⚠️  Failed to create cache dir {:?}: {}", &cache_dir, e);
     } else {
         match serde_json::to_string(&plot_data) {
             Ok(serialized) => {
                 if let Err(e) = fs::write(&cache_file, serialized).await {
-                    eprintln!("⚠️  Failed to write cache file {:?}: {}", &cache_file, e);
+                    log::debug!("⚠️  Failed to write cache file {:?}: {}", &cache_file, e);
                 }
             }
-            Err(e) => eprintln!("⚠️  Failed to serialize plot data for cache: {}", e),
+            Err(e) => log::debug!("⚠️  Failed to serialize plot data for cache: {}", e),
         }
     }
 
@@ -401,7 +401,7 @@ fn is_target_trace_name(measurement: &str, curve_name: &str, candidate: &str) ->
         candidate == curve_name
     } else {
         // Fallback heuristic for other measurement types
-        eprintln!(
+        log::debug!(
             "⚠️  Warning: unable to determine if trace name {} is a target for curve {}, using heuristic",
             candidate, curve_name
         );
@@ -980,7 +980,7 @@ fn extract_contour_data(plot_data: &Value) -> Result<ContourPlotData, Box<dyn Er
                     // Verify data dimensions
                     let expected_size = freq_count * angle_count;
                     if spl.len() != expected_size {
-                        eprintln!(
+                        log::debug!(
                             "Warning: SPL grid size {} doesn't match expected {} ({}×{})",
                             spl.len(),
                             expected_size,

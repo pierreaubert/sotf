@@ -5,9 +5,10 @@ mod parameters;
 mod app_impl;
 
 pub use types::{
-    ArtistNode, ChannelConflictChoice, ChannelGroup, ChannelInfo, ChannelFilter, FocusedPane,
-    InputMode, LibraryViewMode, LibrarySortOrder, MatrixEditMode, PendingParameterUpdate,
-    QueueEntry, QueueItem, ReplayGainMode, Screen, TreeItem,
+    ArtistNode, ChannelConflictChoice, ChannelGroup, ChannelInfo, ChannelFilter,
+    ConfigureSubScreen, FocusedPane, InputMode, LibraryViewMode, LibrarySortOrder, MatrixEditMode,
+    PendingParameterUpdate, QueueEntry, QueueItem, ReplayGainMode, Screen, SpinoramaEqTuiState,
+    SpinoramaFilter, SpinoramaOptStatus, SpinoramaStep, TreeItem,
 };
 pub use parameters::{TuiEditablePlugin, TuiParamDescriptor, TuiParamSpec, TuiParamType};
 pub use app_impl::App;

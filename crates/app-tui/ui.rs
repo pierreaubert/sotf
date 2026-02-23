@@ -4,9 +4,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
+    symbols,
     widgets::{
-        Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
-        Wrap,
+        Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, GraphType, List, ListItem,
+        ListState, Paragraph, Row, Table, Wrap,
     },
 };
 use sotf_audio_player::{
@@ -252,10 +253,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         // Standard single-view mode
         match app.current_screen {
             Screen::Library => draw_library_screen(f, main_chunks[0], app),
-            Screen::DirectoryManager => draw_directory_manager(f, main_chunks[0], app),
             Screen::Queue => draw_queue_screen(f, main_chunks[0], app),
             Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
             Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
+            Screen::Configure => draw_configure_screen(f, main_chunks[0], app),
         }
     }
 
@@ -378,10 +379,10 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
     // Define screens with their labels
     let screens = [
         (Screen::Library, "Library"),
-        (Screen::DirectoryManager, "Directories"),
         (Screen::Queue, "Queue"),
         (Screen::Plugins, "Plugins"),
         (Screen::Devices, "Output Devices"),
+        (Screen::Configure, "Configure"),
     ];
 
     // Create spans for each screen box
@@ -1448,6 +1449,676 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(list, chunks[1]);
 }
 
+fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::ConfigureSubScreen;
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Sub-navigation bar
+            Constraint::Min(0),    // Content area
+        ])
+        .split(area);
+
+    // Sub-navigation tabs
+    let sub_screens = [
+        (ConfigureSubScreen::Directories, "1:Directories"),
+        (ConfigureSubScreen::Recording, "2:Recording"),
+        (ConfigureSubScreen::RoomEq, "3:RoomEQ"),
+        (ConfigureSubScreen::HeadphoneEq, "4:HeadphoneEQ"),
+        (ConfigureSubScreen::SpinoramaEq, "5:SpinoramaEQ"),
+    ];
+
+    let mut spans = vec![Span::raw(" ")];
+    for (sub, label) in &sub_screens {
+        let is_active = *sub == app.configure_sub_screen;
+        let style = if is_active {
+            Style::default()
+                .fg(app.theme.bg_primary)
+                .bg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(app.theme.fg_secondary)
+                .bg(app.theme.bg_secondary)
+        };
+        spans.push(Span::styled(format!(" {} ", label), style));
+        spans.push(Span::raw(" "));
+    }
+
+    let sub_nav = Paragraph::new(Line::from(spans))
+        .block(Block::default().borders(Borders::ALL).title("Configure"));
+    f.render_widget(sub_nav, chunks[0]);
+
+    // Content area
+    match app.configure_sub_screen {
+        ConfigureSubScreen::Directories => draw_directory_manager(f, chunks[1], app),
+        ConfigureSubScreen::Recording => {
+            let placeholder = Paragraph::new("Recording configuration (coming soon)")
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL).title("Recording"));
+            f.render_widget(placeholder, chunks[1]);
+        }
+        ConfigureSubScreen::RoomEq => {
+            let placeholder = Paragraph::new("Room EQ configuration (coming soon)")
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL).title("Room EQ"));
+            f.render_widget(placeholder, chunks[1]);
+        }
+        ConfigureSubScreen::HeadphoneEq => {
+            let placeholder = Paragraph::new("Headphone EQ configuration (coming soon)")
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL).title("Headphone EQ"));
+            f.render_widget(placeholder, chunks[1]);
+        }
+        ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, chunks[1], app),
+    }
+}
+
+fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::{SpinoramaOptStatus, SpinoramaStep};
+
+    let s = &app.spinorama_eq;
+
+    // Layout: step header (3) + content (rest)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(area);
+
+    // Step header tabs
+    let steps = [
+        SpinoramaStep::Select,
+        SpinoramaStep::Configure,
+        SpinoramaStep::Optimize,
+        SpinoramaStep::Results,
+    ];
+    let mut spans = vec![Span::raw(" ")];
+    for step in &steps {
+        let is_active = *step == s.step;
+        let style = if is_active {
+            Style::default()
+                .fg(app.theme.bg_primary)
+                .bg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(app.theme.fg_secondary)
+                .bg(app.theme.bg_secondary)
+        };
+        spans.push(Span::styled(format!(" {} ", step.label()), style));
+        spans.push(Span::raw(" "));
+    }
+    let header = Paragraph::new(Line::from(spans))
+        .block(Block::default().borders(Borders::ALL).title("Spinorama EQ"));
+    f.render_widget(header, chunks[0]);
+
+    // Content per step
+    match s.step {
+        SpinoramaStep::Select => {
+            // Split: search box (3) + list (rest) + hint (1)
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                    Constraint::Length(1),
+                ])
+                .split(chunks[1]);
+
+            // Search box
+            let search_title = if s.loading_speakers {
+                "Search Speaker (loading...)"
+            } else if let Some(ref e) = s.speakers_error {
+                &format!("Error: {}", e)
+            } else {
+                "Search Speaker (type to filter, Enter to select)"
+            };
+            let search = Paragraph::new(s.search_query.as_str())
+                .style(Style::default().fg(app.theme.fg_primary))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(search_title)
+                        .border_style(Style::default().fg(app.theme.accent_primary)),
+                );
+            f.render_widget(search, inner[0]);
+
+            // Speaker list
+            let items: Vec<ListItem> = s
+                .filtered_speakers
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let style = if i == s.selected_speaker_idx {
+                        Style::default()
+                            .fg(app.theme.fg_selected)
+                            .bg(app.theme.bg_selected)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(app.theme.fg_primary)
+                    };
+                    let prefix = if i == s.selected_speaker_idx { "► " } else { "  " };
+                    ListItem::new(format!("{}{}", prefix, name)).style(style)
+                })
+                .collect();
+
+            let list_title = if s.filtered_speakers.is_empty() && !s.loading_speakers {
+                "Speakers (press 'r' to load from spinorama.org)".to_string()
+            } else {
+                format!(
+                    "Speakers ({}/{})",
+                    s.filtered_speakers.len(),
+                    s.available_speakers.len()
+                )
+            };
+            let list = List::new(items)
+                .block(Block::default().borders(Borders::ALL).title(list_title));
+            f.render_widget(list, inner[1]);
+
+            // Hint bar
+            let hint = if let Some(ref sel) = s.selected_speaker {
+                format!(" Selected: {}  |  Enter=confirm  Tab=next step", sel)
+            } else {
+                " ↑/↓=navigate  Enter=select  r=load speakers  Tab=next step".to_string()
+            };
+            let hint_widget = Paragraph::new(hint)
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(hint_widget, inner[2]);
+        }
+
+        SpinoramaStep::Configure => {
+            let speaker_name = s
+                .selected_speaker
+                .as_deref()
+                .unwrap_or("(no speaker selected)");
+
+            let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
+
+            // Each entry is either a Section header (None index) or a field (Some index)
+            // Fields are numbered 0..24 for selected_field navigation
+            let rows: Vec<(Option<usize>, &str, String)> = vec![
+                (None,     "── Filters ──",         String::new()),
+                (Some(0),  "Filters (n)",           format!("{}", s.num_filters)),
+                (Some(1),  "Min Freq (Hz)",         format!("{:.0}", s.min_freq)),
+                (Some(2),  "Max Freq (Hz)",         format!("{:.0}", s.max_freq)),
+                (Some(3),  "Min dB",                format!("{:.1}", s.min_db)),
+                (Some(4),  "Max dB",                format!("{:.1}", s.max_db)),
+                (Some(5),  "Min Q",                 format!("{:.2}", s.min_q)),
+                (Some(6),  "Max Q",                 format!("{:.2}", s.max_q)),
+                (Some(7),  "PEQ Model",             s.peq_model.clone()),
+                (None,     "── Optimization ──",    String::new()),
+                (Some(8),  "Algorithm",             s.algorithm.clone()),
+                (Some(9),  "Max Iter",              format!("{}", s.max_iter)),
+                (Some(10), "Population",            format!("{}", s.population)),
+                (Some(11), "Strategy",              s.strategy.clone()),
+                (Some(12), "DE F (mutation)",        format!("{:.2}", s.de_f)),
+                (Some(13), "DE CR (crossover)",      format!("{:.2}", s.de_cr)),
+                (None,     "── Refinement ──",      String::new()),
+                (Some(14), "Refine",                bool_str(s.refine).to_string()),
+                (Some(15), "Local Algo",            s.local_algo.clone()),
+                (None,     "── Smoothing ──",       String::new()),
+                (Some(16), "Smooth",                bool_str(s.smooth).to_string()),
+                (Some(17), "Smooth N",              format!("{}", s.smooth_n)),
+                (Some(18), "Psychoacoustic",        bool_str(s.psychoacoustic).to_string()),
+                (None,     "── Constraints ──",     String::new()),
+                (Some(19), "Spacing Weight",        format!("{:.1}", s.spacing_weight)),
+                (Some(20), "Min Spacing (oct)",     format!("{:.2}", s.min_spacing_oct)),
+                (Some(21), "Asymmetric Loss",       bool_str(s.asymmetric_loss).to_string()),
+                (None,     "── Convergence ──",     String::new()),
+                (Some(22), "Tolerance",             format!("{:.0e}", s.tolerance)),
+                (Some(23), "Abs Tolerance",         format!("{:.0e}", s.atolerance)),
+                (Some(24), "Sample Rate",           format!("{}", s.sample_rate)),
+            ];
+
+            let mut lines = vec![
+                Line::from(vec![
+                    Span::styled("Speaker: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        speaker_name,
+                        Style::default()
+                            .fg(app.theme.accent_primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(""),
+            ];
+
+            let section_style = Style::default()
+                .fg(app.theme.fg_secondary)
+                .add_modifier(Modifier::DIM);
+
+            for (idx, label, value) in &rows {
+                match idx {
+                    None => {
+                        lines.push(Line::from(Span::styled(
+                            format!("  {}", label),
+                            section_style,
+                        )));
+                    }
+                    Some(i) => {
+                        let is_selected = *i == s.selected_field;
+                        let label_style = if is_selected {
+                            Style::default()
+                                .fg(app.theme.accent_primary)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(app.theme.fg_secondary)
+                        };
+                        let value_style = if is_selected {
+                            Style::default()
+                                .fg(app.theme.fg_selected)
+                                .bg(app.theme.bg_selected)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(app.theme.fg_primary)
+                        };
+                        let prefix = if is_selected { "► " } else { "  " };
+                        lines.push(Line::from(vec![
+                            Span::raw(prefix),
+                            Span::styled(format!("{:<20}", label), label_style),
+                            Span::styled(format!(" {}", value), value_style),
+                        ]));
+                    }
+                }
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                " ↑/↓=select field  ←/→ or -/+=adjust  Enter=start optimization  Tab=next step",
+                Style::default().fg(app.theme.fg_secondary),
+            )]));
+
+            let para = Paragraph::new(lines)
+                .block(Block::default().borders(Borders::ALL).title("Configuration"))
+                .scroll((s.selected_field.saturating_sub(10) as u16, 0));
+            f.render_widget(para, chunks[1]);
+        }
+
+        SpinoramaStep::Optimize => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(4),
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                ])
+                .split(chunks[1]);
+
+            // Status
+            let (status_text, status_style) = match &s.opt_status {
+                SpinoramaOptStatus::Idle => (
+                    "Press Enter to start optimization".to_string(),
+                    Style::default().fg(app.theme.fg_secondary),
+                ),
+                SpinoramaOptStatus::Running => (
+                    format!(
+                        "Running... iter {}/{} | loss: {:.6}",
+                        s.opt_iteration, s.opt_max_iter, s.opt_loss
+                    ),
+                    Style::default().fg(app.theme.accent_primary),
+                ),
+                SpinoramaOptStatus::Completed => (
+                    format!(
+                        "Completed! Final loss: {:.6}  |  {} filters found",
+                        s.post_loss,
+                        s.filters.len()
+                    ),
+                    Style::default().fg(app.theme.accent_success),
+                ),
+                SpinoramaOptStatus::Failed(e) => (
+                    format!("Failed: {}", e),
+                    Style::default().fg(app.theme.accent_error),
+                ),
+            };
+
+            let status_para = Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(status_text, status_style)),
+            ])
+            .block(Block::default().borders(Borders::ALL).title("Status"));
+            f.render_widget(status_para, inner[0]);
+
+            // Progress bar
+            let progress_pct = (s.opt_progress * 100.0) as u16;
+            let bar_width = inner[1].width.saturating_sub(4) as usize;
+            let filled = (bar_width * progress_pct as usize / 100).min(bar_width);
+            let bar = format!(
+                "[{}{}] {}%",
+                "█".repeat(filled),
+                "░".repeat(bar_width.saturating_sub(filled)),
+                progress_pct
+            );
+            let progress_para = Paragraph::new(bar)
+                .style(Style::default().fg(app.theme.accent_primary))
+                .block(Block::default().borders(Borders::ALL).title("Progress"));
+            f.render_widget(progress_para, inner[1]);
+
+            // Loss history chart (if data available), else hint
+            if s.loss_history.len() >= 2 {
+                draw_loss_chart(f, inner[2], app, &s.loss_history);
+            } else {
+                let hint = match &s.opt_status {
+                    SpinoramaOptStatus::Idle => " Enter=start  Tab=back to configure",
+                    SpinoramaOptStatus::Running => " Optimization running...",
+                    SpinoramaOptStatus::Completed => " Enter or Tab=view results",
+                    SpinoramaOptStatus::Failed(_) => " Enter=retry  Tab=back to configure",
+                };
+                let hint_para = Paragraph::new(hint)
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL).title("Loss History"));
+                f.render_widget(hint_para, inner[2]);
+            }
+        }
+
+        SpinoramaStep::Results => {
+            if s.filters.is_empty() {
+                let msg = Paragraph::new("No results yet. Go to Optimize step and run optimization.")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .alignment(Alignment::Center)
+                    .block(Block::default().borders(Borders::ALL).title("Results"));
+                f.render_widget(msg, chunks[1]);
+            } else {
+                // Split: chart on left, filter table on right
+                let cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+                    .split(chunks[1]);
+
+                // Left: summary + freq response chart
+                let left = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(3), Constraint::Min(0)])
+                    .split(cols[0]);
+
+                let summary = format!(
+                    " {} filters  |  Loss: {:.6} → {:.6}  |  Δ {:.4}",
+                    s.filters.len(),
+                    s.pre_loss,
+                    s.post_loss,
+                    s.pre_loss - s.post_loss
+                );
+                let summary_para = Paragraph::new(summary)
+                    .style(Style::default().fg(app.theme.accent_success))
+                    .block(Block::default().borders(Borders::ALL).title("Summary"));
+                f.render_widget(summary_para, left[0]);
+
+                draw_freq_response_chart(f, left[1], app, s);
+
+                // Right: filter table
+                let header_cells = ["#", "Type", "Freq", "Q", "dB"]
+                    .iter()
+                    .map(|h| {
+                        Cell::from(*h).style(
+                            Style::default()
+                                .fg(app.theme.accent_primary)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                    });
+                let header_row = Row::new(header_cells).height(1).bottom_margin(0);
+
+                let rows: Vec<Row> = s
+                    .filters
+                    .iter()
+                    .enumerate()
+                    .map(|(i, filt)| {
+                        let cells = vec![
+                            Cell::from(format!("{}", i + 1)),
+                            Cell::from(filt.filter_type.clone()),
+                            Cell::from(format!("{:.0}", filt.freq)),
+                            Cell::from(format!("{:.2}", filt.q)),
+                            Cell::from(format!("{:+.1}", filt.gain_db)),
+                        ];
+                        Row::new(cells)
+                    })
+                    .collect();
+
+                let table = Table::new(
+                    rows,
+                    [
+                        Constraint::Length(3),
+                        Constraint::Length(9),
+                        Constraint::Length(6),
+                        Constraint::Length(6),
+                        Constraint::Length(6),
+                    ],
+                )
+                .header(header_row)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("PEQ Filters"),
+                );
+                f.render_widget(table, cols[1]);
+            }
+        }
+
+        SpinoramaStep::UpdatePlugin => {
+            let has_results = !s.filters.is_empty();
+            let speaker = s.selected_speaker.as_deref().unwrap_or("(none)");
+
+            let mut lines = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Speaker: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        speaker,
+                        Style::default()
+                            .fg(app.theme.accent_primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(""),
+            ];
+
+            if has_results {
+                lines.push(Line::from(vec![Span::styled(
+                    format!("  {} PEQ filters ready to apply", s.filters.len()),
+                    Style::default().fg(app.theme.accent_success),
+                )]));
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![Span::styled(
+                    "  Press Enter to apply filters to the EQ plugin in the rack.",
+                    Style::default().fg(app.theme.fg_primary),
+                )]));
+                lines.push(Line::from(vec![Span::styled(
+                    "  If no EQ plugin exists it will be added automatically.",
+                    Style::default().fg(app.theme.fg_secondary),
+                )]));
+            } else {
+                lines.push(Line::from(vec![Span::styled(
+                    "  No optimization results yet. Run optimization first.",
+                    Style::default().fg(app.theme.accent_error),
+                )]));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                " Enter=apply to rack  Tab=back to Select  BackTab=back to Results",
+                Style::default().fg(app.theme.fg_secondary),
+            )]));
+
+            let para = Paragraph::new(lines)
+                .block(Block::default().borders(Borders::ALL).title("Update Plugin"));
+            f.render_widget(para, chunks[1]);
+        }
+    }
+}
+
+fn draw_loss_chart(
+    f: &mut Frame,
+    area: Rect,
+    app: &App,
+    history: &[(usize, f64)],
+) {
+    if history.len() < 2 {
+        return;
+    }
+
+    let max_iter = history.last().map(|h| h.0).unwrap_or(1) as f64;
+    let min_loss = history.iter().map(|h| h.1).fold(f64::INFINITY, f64::min);
+    let max_loss = history.iter().map(|h| h.1).fold(f64::NEG_INFINITY, f64::max);
+    let loss_range = (max_loss - min_loss).max(1e-9);
+
+    // Downsample to at most 200 points for chart performance
+    let step = (history.len() / 200).max(1);
+    let data: Vec<(f64, f64)> = history
+        .iter()
+        .step_by(step)
+        .map(|(iter, loss)| (*iter as f64, *loss))
+        .collect();
+
+    let dataset = Dataset::default()
+        .name("Loss")
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(app.theme.accent_primary))
+        .data(&data);
+
+    let x_labels = vec![
+        Span::raw("0"),
+        Span::raw(format!("{:.0}", max_iter / 2.0)),
+        Span::raw(format!("{:.0}", max_iter)),
+    ];
+    let y_labels = vec![
+        Span::raw(format!("{:.4}", min_loss)),
+        Span::raw(format!("{:.4}", min_loss + loss_range / 2.0)),
+        Span::raw(format!("{:.4}", max_loss)),
+    ];
+
+    let chart = Chart::new(vec![dataset])
+        .block(Block::default().borders(Borders::ALL).title("Loss History"))
+        .x_axis(
+            Axis::default()
+                .title("Iteration")
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .labels(x_labels)
+                .bounds([0.0, max_iter]),
+        )
+        .y_axis(
+            Axis::default()
+                .title("Loss")
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .labels(y_labels)
+                .bounds([min_loss - loss_range * 0.05, max_loss + loss_range * 0.05]),
+        );
+
+    f.render_widget(chart, area);
+}
+
+fn draw_freq_response_chart(
+    f: &mut Frame,
+    area: Rect,
+    app: &App,
+    s: &crate::app::SpinoramaEqTuiState,
+) {
+    if s.curve_frequencies.len() < 2 {
+        let placeholder = Paragraph::new("No curve data")
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Frequency Response"));
+        f.render_widget(placeholder, area);
+        return;
+    }
+
+    let freqs = &s.curve_frequencies;
+    let n = freqs.len();
+
+    // Downsample to at most 300 points
+    let step = (n / 300).max(1);
+
+    let input_data: Vec<(f64, f64)> = freqs
+        .iter()
+        .zip(s.curve_input.iter())
+        .step_by(step)
+        .map(|(f, v)| (*f, *v))
+        .collect();
+
+    let corrected_data: Vec<(f64, f64)> = freqs
+        .iter()
+        .zip(s.curve_corrected.iter())
+        .step_by(step)
+        .map(|(f, v)| (*f, *v))
+        .collect();
+
+    let filter_data: Vec<(f64, f64)> = freqs
+        .iter()
+        .zip(s.curve_filter_response.iter())
+        .step_by(step)
+        .map(|(f, v)| (*f, *v))
+        .collect();
+
+    // Compute y bounds across all curves
+    let all_vals = s.curve_input.iter()
+        .chain(s.curve_corrected.iter())
+        .chain(s.curve_filter_response.iter());
+    let y_min = all_vals.clone().copied().fold(f64::INFINITY, f64::min);
+    let y_max = all_vals.copied().fold(f64::NEG_INFINITY, f64::max);
+    let y_pad = ((y_max - y_min) * 0.1).max(1.0);
+
+    let x_min = freqs.first().copied().unwrap_or(20.0);
+    let x_max = freqs.last().copied().unwrap_or(20000.0);
+
+    let datasets = vec![
+        Dataset::default()
+            .name("Input")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Gray))
+            .data(&input_data),
+        Dataset::default()
+            .name("Corrected")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(app.theme.accent_success))
+            .data(&corrected_data),
+        Dataset::default()
+            .name("Filter")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(app.theme.accent_primary))
+            .data(&filter_data),
+    ];
+
+    let x_labels = vec![
+        Span::raw(format!("{:.0}", x_min)),
+        Span::raw("1k"),
+        Span::raw("5k"),
+        Span::raw(format!("{:.0}", x_max)),
+    ];
+    let y_labels = vec![
+        Span::raw(format!("{:.0}", y_min)),
+        Span::raw(format!("{:.0}", (y_min + y_max) / 2.0)),
+        Span::raw(format!("{:.0}", y_max)),
+    ];
+
+    let chart = Chart::new(datasets)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Frequency Response (Gray=Input  Green=Corrected  Blue=Filter)"),
+        )
+        .x_axis(
+            Axis::default()
+                .title("Hz")
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .labels(x_labels)
+                .bounds([x_min, x_max]),
+        )
+        .y_axis(
+            Axis::default()
+                .title("dB")
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .labels(y_labels)
+                .bounds([y_min - y_pad, y_max + y_pad]),
+        );
+
+    f.render_widget(chart, area);
+}
+
 fn draw_meters_column(f: &mut Frame, area: Rect, app: &mut App) {
     // Split the right column - LUFS, level meter, volume
     let chunks = Layout::default()
@@ -2335,7 +3006,7 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         let is_scan_message = msg.contains("Scanning")
             || msg.contains("Scan complete")
             || msg.contains("Scan failed");
-        let should_show = !is_scan_message || app.current_screen == Screen::DirectoryManager;
+        let should_show = !is_scan_message || app.current_screen == Screen::Configure;
 
         if should_show {
             // Truncate message to prevent overflow (leave room for other info)
@@ -3524,10 +4195,10 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
             "Help - {} Screen (Press ESC or ? to close)",
             match app.current_screen {
                 Screen::Library => "Library",
-                Screen::DirectoryManager => "Directories",
                 Screen::Queue => "Queue",
                 Screen::Plugins => "Plugins",
                 Screen::Devices => "Devices",
+                Screen::Configure => "Configure",
             }
         ));
 
@@ -3662,10 +4333,10 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
             "{} KEYBINDINGS",
             match app.current_screen {
                 Screen::Library => "LIBRARY",
-                Screen::DirectoryManager => "DIRECTORIES",
                 Screen::Queue => "QUEUE",
                 Screen::Plugins => "PLUGINS",
                 Screen::Devices => "DEVICES",
+                Screen::Configure => "CONFIGURE",
             }
         ),
         Style::default()
@@ -3705,10 +4376,15 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("a or Enter", "Add album to queue"),
             ("q", "Go to queue screen"),
         ],
-        Screen::DirectoryManager => vec![
+        Screen::Configure => vec![
+            ("1", "Directories sub-screen"),
+            ("2", "Recording sub-screen"),
+            ("3", "Room EQ sub-screen"),
+            ("4", "Headphone EQ sub-screen"),
+            ("5", "Spinorama EQ sub-screen"),
+            ("", ""),
+            ("DIRECTORIES:", "(when on Directories sub-screen)"),
             ("↑/↓ or k/j", "Navigate directories"),
-            ("PageUp/PageDown", "Jump by page"),
-            ("Enter/→/l", "Expand/collapse directory"),
             ("a", "Add directory"),
             ("d/Delete", "Remove selected directory"),
             ("s", "Scan library (incremental)"),

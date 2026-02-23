@@ -603,8 +603,8 @@ pub fn setup_bounds(args: &crate::cli::Args) -> (Vec<f64>, Vec<f64>) {
 
     // Debug: Display bounds for each filter (unless in QA mode)
     if args.qa.is_none() {
-        println!("\n📏 Parameter Bounds (Model: {}):", model);
-        println!("+-# -|---Freq Range (Hz)---|----Q Range----|---Gain Range (dB)---|--Type--+");
+        log::info!("\n📏 Parameter Bounds (Model: {}):", model);
+        log::info!("+-# -|---Freq Range (Hz)---|----Q Range----|---Gain Range (dB)---|--Type--+");
         for i in 0..args.num_filters {
             let offset = i * ppf;
             let (freq_idx, q_idx, gain_idx) = if ppf == 3 {
@@ -636,7 +636,7 @@ pub fn setup_bounds(args: &crate::cli::Args) -> (Vec<f64>, Vec<f64>) {
                 PeqModel::Free => "??",
             };
 
-            println!(
+            log::info!(
                 "| {:2} | {:7.1} - {:7.1} | {:5.2} - {:5.2} | {:+6.2} - {:+6.2} | {:6} |",
                 i + 1,
                 freq_low_hz,
@@ -648,7 +648,7 @@ pub fn setup_bounds(args: &crate::cli::Args) -> (Vec<f64>, Vec<f64>) {
                 filter_type
             );
         }
-        println!("+----|--------------------|---------------|---------------------|---------+\n");
+        log::info!("+----|--------------------|---------------|---------------------|---------+\n");
     }
 
     (lower_bounds, upper_bounds)
@@ -1359,8 +1359,8 @@ fn create_driver_optimization_args(
 ///     -12.0,    // min_db
 ///     12.0,     // max_db
 /// )?;
-/// println!("Gains: {:?}", result.gains);
-/// println!("Crossover freqs: {:?}", result.crossover_freqs);
+/// log::info!("Gains: {:?}", result.gains);
+/// log::info!("Crossover freqs: {:?}", result.crossover_freqs);
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn optimize_drivers_crossover(
@@ -1485,7 +1485,7 @@ pub fn load_driver_measurements_from_files(
         match load_driver_measurement(path) {
             Ok((freq, spl, phase)) => {
                 measurements.push(DriverMeasurement::new(freq, spl, phase));
-                eprintln!("✓ Loaded driver {} from {}", i + 1, path.display());
+                log::debug!("✓ Loaded driver {} from {}", i + 1, path.display());
             }
             Err(e) => {
                 return Err(format!(

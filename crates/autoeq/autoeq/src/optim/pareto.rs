@@ -111,13 +111,13 @@ pub fn extract_non_dominated(filters: &[ParetoFilter]) -> Vec<&ParetoFilter> {
 
 /// Print Pareto front for user selection
 pub fn print_pareto_front(filters: &[ParetoFilter]) {
-    println!("\nPareto-Optimal Filter Configurations:");
-    println!("=====================================");
-    println!("# | Filters | Flatness Loss | Converged");
-    println!("--+---------+---------------+-----------");
+    log::info!("\nPareto-Optimal Filter Configurations:");
+    log::info!("=====================================");
+    log::info!("# | Filters | Flatness Loss | Converged");
+    log::info!("--+---------+---------------+-----------");
 
     for (i, f) in filters.iter().enumerate() {
-        println!(
+        log::info!(
             "{} | {:3}     | {:12.6}   | {}",
             i + 1,
             f.num_filters,
@@ -126,6 +126,6 @@ pub fn print_pareto_front(filters: &[ParetoFilter]) {
         );
     }
 
-    println!("\nRecommendation: Choose the configuration with the fewest");
-    println!("filters that meets your loss tolerance threshold.");
+    log::info!("\nRecommendation: Choose the configuration with the fewest");
+    log::info!("filters that meets your loss tolerance threshold.");
 }

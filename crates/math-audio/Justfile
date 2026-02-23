@@ -1,0 +1,49 @@
+# ----------------------------------------------------------------------
+# BUILD MATH
+# ----------------------------------------------------------------------
+
+[group('build')]
+prod-math:
+	cargo build --release --bin plot_functions
+	cargo build --release --bin plot-autoeq-de
+	cargo build --release --bin run-autoeq-de
+
+# ----------------------------------------------------------------------
+# BENCH MATH
+# ----------------------------------------------------------------------
+
+[group('bench')]
+bench-math:
+	cargo run --release --bin benchmark-convergence
+
+# ----------------------------------------------------------------------
+# QA MATH
+# ----------------------------------------------------------------------
+
+[group('qa-math')]
+qa-math: qa-fem qa-bem
+
+[group('qa-math')]
+qa-fem:
+	cargo run --release --bin qa-suite -p math-fem --features="cli native parallel"
+
+[group('qa-math')]
+qa-bem:
+	cargo run --release --bin qa-suite -p math-bem --features="native cli parallel"
+
+# ----------------------------------------------------------------------
+# PUBLISH MATH
+# ----------------------------------------------------------------------
+
+[group('publish')]
+publish-math:
+	cd crates/math-test-functions && cargo publish
+	cd crates/math-differential-evolution && cargo publish
+	cd crates/math-iir-fir && cargo publish
+	cd crates/math-solvers && cargo publish
+	cd crates/math-wave && cargo publish
+	cd crates/math-convex-hull && cargo publish
+	cd crates/math-xem-common && cargo publish
+	cd crates/math-bem && cargo publish
+	cd crates/math-fem && cargo publish
+

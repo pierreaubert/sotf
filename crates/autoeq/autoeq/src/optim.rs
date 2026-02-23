@@ -438,7 +438,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     data.max_freq,
                 )
             } else {
-                eprintln!("Error: drivers-flat loss requested but driver data is missing");
+                log::debug!("Error: drivers-flat loss requested but driver data is missing");
                 process::exit(1);
             }
         }
@@ -457,7 +457,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     data.max_freq,
                 )
             } else {
-                eprintln!("Error: multi-sub-flat loss requested but driver data is missing");
+                log::debug!("Error: multi-sub-flat loss requested but driver data is missing");
                 process::exit(1);
             }
         }
@@ -481,7 +481,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq) / 3.0;
                 100.0 - s + p
             } else {
-                eprintln!("Error: speaker score loss requested but score data is missing");
+                log::debug!("Error: speaker score loss requested but score data is missing");
                 process::exit(1);
             }
         }
@@ -505,7 +505,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 // println!("DEBUG Headphone score: s={:.3} p={:.3} fitness={:.3}", s, p, 1000.0 - s + p * 20.0);
                 1000.0 - s + p * 20.0
             } else {
-                eprintln!("Error: headphone score loss requested but headphone data is missing");
+                log::debug!("Error: headphone score loss requested but headphone data is missing");
                 process::exit(1);
             }
         }
@@ -585,7 +585,7 @@ pub fn compute_fitness_penalties(
     //         format!("f{:.0}Hz/Q{:.2}/G{:.2}dB", freq, q, gain)
     //     }).collect();
 
-    //     eprintln!("TRACE[{}]: fit={:.3e}, penalties=[{}], params=[{}]",
+    //     log::debug!("TRACE[{}]: fit={:.3e}, penalties=[{}], params=[{}]",
     //               count, fit, penalty_terms.join(", "), param_summary.join(", "));
     // }
 

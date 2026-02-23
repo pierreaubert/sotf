@@ -77,17 +77,17 @@ pub fn setup_de_common(
             format!("{} filters", num_filters)
         };
 
-        eprintln!(
+        log::debug!(
             "DE Setup: {}, pop_size={}, max_iter={}, maxeval={}",
             params_desc, pop_size, max_iter, maxeval
         );
-        eprintln!(
+        log::debug!(
             "  Penalty weights: ceiling={:.1e}, spacing={:.1e}, mingain={:.1e}",
             penalty_data.penalty_w_ceiling,
             penalty_data.penalty_w_spacing,
             penalty_data.penalty_w_mingain
         );
-        eprintln!(
+        log::debug!(
             "  Constraints: max_db={:.1}, min_spacing={:.3} oct, min_db={:.1}",
             penalty_data.max_db, penalty_data.min_spacing_oct, penalty_data.min_db
         );
@@ -123,7 +123,7 @@ pub fn create_de_callback(
 
         // Print when stalling (unless in QA mode)
         if !qa_mode && (tracker.just_started_stalling() || tracker.stall_at_interval(25)) {
-            eprintln!(
+            log::debug!(
                 "{} iter {:4}  fitness={:.6e} {} conv={:.3e}",
                 name, intermediate.iter, intermediate.fun, improvement, intermediate.convergence
             );
@@ -132,7 +132,7 @@ pub fn create_de_callback(
         // Show parameter details every 100 iterations (unless in QA mode)
         if !qa_mode && intermediate.iter.is_multiple_of(100) {
             let summary = format_param_summary(intermediate.x.as_slice().unwrap(), 3);
-            eprintln!("  --> Best params: {}", summary);
+            log::debug!("  --> Best params: {}", summary);
         }
 
         CallbackAction::Continue
@@ -286,7 +286,7 @@ pub fn optimize_filters_autoeq_with_callback(
         let freq_grid = &setup.penalty_data.freqs;
 
         if cli_args.qa.is_none() {
-            eprintln!(
+            log::debug!(
                 "🧠 Generating smart initial guesses based on frequency response analysis..."
             );
         }
@@ -300,7 +300,7 @@ pub fn optimize_filters_autoeq_with_callback(
         );
 
         if cli_args.qa.is_none() {
-            eprintln!("📊 Generated {} smart initial guesses", guesses.len());
+            log::debug!("📊 Generated {} smart initial guesses", guesses.len());
         }
         guesses
     };
@@ -313,7 +313,7 @@ pub fn optimize_filters_autoeq_with_callback(
     );
 
     if cli_args.qa.is_none() {
-        eprintln!(
+        log::debug!(
             "🎯 Generated {} Sobol quasi-random samples",
             sobol_samples.len()
         );
@@ -332,14 +332,14 @@ pub fn optimize_filters_autoeq_with_callback(
     };
 
     if cli_args.qa.is_none() {
-        eprintln!("🚀 Using smart initial guess with Sobol population initialization");
+        log::debug!("🚀 Using smart initial guess with Sobol population initialization");
     }
 
     // Parse strategy from CLI args
     use std::str::FromStr;
     let strategy = Strategy::from_str(&cli_args.strategy).unwrap_or_else(|_| {
         if cli_args.qa.is_none() {
-            eprintln!(
+            log::debug!(
                 "⚠️ Warning: Invalid strategy '{}', falling back to CurrentToBest1Bin",
                 cli_args.strategy
             );
@@ -392,7 +392,7 @@ pub fn optimize_filters_autoeq_with_callback(
     if let Some(seed_value) = cli_args.seed {
         config_builder = config_builder.seed(seed_value);
         if cli_args.qa.is_none() {
-            eprintln!("🎲 Using deterministic seed: {}", seed_value);
+            log::debug!("🎲 Using deterministic seed: {}", seed_value);
         }
     }
 
@@ -413,7 +413,7 @@ pub fn optimize_filters_autoeq_with_callback(
     config_builder = config_builder.parallel(parallel_config);
 
     if !cli_args.no_parallel && cli_args.qa.is_none() {
-        eprintln!(
+        log::debug!(
             "🚄 Parallel evaluation enabled with {} threads",
             if cli_args.parallel_threads.eq(&0) {
                 "all available".to_string()

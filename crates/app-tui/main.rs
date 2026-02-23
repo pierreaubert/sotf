@@ -10,6 +10,7 @@ use sotf_audio_player::{Player, PluginSettings, PluginType};
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 use sotf_audio_player_tui::events::{
     AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
+    poll_spinorama_optimization, poll_spinorama_speaker_load,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::theme;
@@ -266,6 +267,15 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     }
                 }
                 AppEvent::Tick => {
+                    // Poll optimizer progress (non-blocking, no-op when not running)
+                    if poll_spinorama_optimization(app) {
+                        app.needs_redraw = true;
+                    }
+                    // Poll speaker-load result (non-blocking, no-op when not loading)
+                    if poll_spinorama_speaker_load(app) {
+                        app.needs_redraw = true;
+                    }
+
                     let state = player.get_playback_state();
 
                     // Update app state
@@ -468,7 +478,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     // Start library scan if needed (non-blocking)
                     if app.needs_rescan && !app.scan_in_progress {
                         // Switch to directory view so user can see scan progress
-                        app.current_screen = Screen::DirectoryManager;
+                        app.current_screen = Screen::Configure;
                         app.start_library_scan();
                     }
 

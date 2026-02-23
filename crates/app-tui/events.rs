@@ -194,9 +194,14 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.focused_pane = crate::app::FocusedPane::Main;
             None
         }
-        // Quit
+        // Quit — but first check if we're in a sub-screen and should go up
         KeyCode::Esc => {
-            app.should_quit = true;
+            if app.current_screen == Screen::Configure {
+                // Go back to Library from Configure
+                app.current_screen = Screen::Library;
+            } else {
+                app.should_quit = true;
+            }
             None
         }
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -217,11 +222,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 FocusedPane::Main => {
                     // Cycle through screens, then switch to Meters pane
                     app.current_screen = match app.current_screen {
-                        Screen::Library => Screen::DirectoryManager,
-                        Screen::DirectoryManager => Screen::Queue,
+                        Screen::Library => Screen::Queue,
                         Screen::Queue => Screen::Plugins,
                         Screen::Plugins => Screen::Devices,
-                        Screen::Devices => {
+                        Screen::Devices => Screen::Configure,
+                        Screen::Configure => {
                             // After last screen, switch to Meters pane
                             app.focused_pane = FocusedPane::Meters;
                             Screen::Library // Stay on a screen (doesn't matter which)
@@ -243,7 +248,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Char('D') => {
-            app.current_screen = Screen::DirectoryManager;
+            app.current_screen = Screen::Configure;
+            app.configure_sub_screen = crate::app::ConfigureSubScreen::Directories;
+            None
+        }
+        KeyCode::Char('N') => {
+            app.current_screen = Screen::Configure;
             None
         }
         KeyCode::Char('Q') => {
@@ -287,8 +297,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift-C to clear all mutes and solos
-            app.clear_level_meter_mutes_and_solos();
+            // Shift-C to clear all mutes and solos (only when meters pane focused)
+            if app.focused_pane == crate::app::FocusedPane::Meters {
+                app.clear_level_meter_mutes_and_solos();
+            } else {
+                app.current_screen = Screen::Configure;
+            }
             None
         }
 
@@ -398,10 +412,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         // Screen-specific controls
         _ => match app.current_screen {
             Screen::Library => handle_library_keys(app, key),
-            Screen::DirectoryManager => handle_directory_keys(app, key),
             Screen::Queue => handle_queue_keys(app, key),
             Screen::Plugins => handle_plugins_keys(app, key),
             Screen::Devices => handle_devices_keys(app, key),
+            Screen::Configure => handle_configure_keys(app, key),
         },
     }
 }
@@ -1473,6 +1487,684 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
         }
         _ => None,
     }
+}
+
+fn configure_sub_screen_prev(s: crate::app::ConfigureSubScreen) -> crate::app::ConfigureSubScreen {
+    use crate::app::ConfigureSubScreen;
+    match s {
+        ConfigureSubScreen::Directories  => ConfigureSubScreen::SpinoramaEq,
+        ConfigureSubScreen::Recording    => ConfigureSubScreen::Directories,
+        ConfigureSubScreen::RoomEq       => ConfigureSubScreen::Recording,
+        ConfigureSubScreen::HeadphoneEq  => ConfigureSubScreen::RoomEq,
+        ConfigureSubScreen::SpinoramaEq  => ConfigureSubScreen::HeadphoneEq,
+    }
+}
+
+fn configure_sub_screen_next(s: crate::app::ConfigureSubScreen) -> crate::app::ConfigureSubScreen {
+    use crate::app::ConfigureSubScreen;
+    match s {
+        ConfigureSubScreen::Directories  => ConfigureSubScreen::Recording,
+        ConfigureSubScreen::Recording    => ConfigureSubScreen::RoomEq,
+        ConfigureSubScreen::RoomEq       => ConfigureSubScreen::HeadphoneEq,
+        ConfigureSubScreen::HeadphoneEq  => ConfigureSubScreen::SpinoramaEq,
+        ConfigureSubScreen::SpinoramaEq  => ConfigureSubScreen::Directories,
+    }
+}
+
+fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use crate::app::ConfigureSubScreen;
+
+    // Esc always exits Configure → Library, and resets focus to tab bar.
+    if key.code == KeyCode::Esc {
+        app.configure_tab_focused = true;
+        app.current_screen = Screen::Library;
+        return None;
+    }
+
+    // ── Tab-bar level (arrows cycle tabs, Down enters sub-screen) ──────────
+    if app.configure_tab_focused {
+        match key.code {
+            KeyCode::Left => {
+                app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
+                return None;
+            }
+            KeyCode::Right => {
+                app.configure_sub_screen = configure_sub_screen_next(app.configure_sub_screen);
+                return None;
+            }
+            KeyCode::Down | KeyCode::Enter => {
+                app.configure_tab_focused = false;
+                return None;
+            }
+            KeyCode::Up => {
+                app.current_screen = Screen::Library;
+                return None;
+            }
+            // Number keys still jump directly to a tab
+            KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories;  return None; }
+            KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording;    return None; }
+            KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq;       return None; }
+            KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;  return None; }
+            KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;  return None; }
+            _ => return None,
+        }
+    }
+
+    // ── Inside a sub-screen ─────────────────────────────────────────────────
+    // Up at the top of any sub-screen returns focus to the tab bar.
+    if key.code == KeyCode::Up && app.configure_sub_screen != ConfigureSubScreen::SpinoramaEq {
+        app.configure_tab_focused = true;
+        return None;
+    }
+
+    // Sub-screens get priority: delegate first, before number-key tab switching.
+    // This prevents e.g. '1' in the Spinorama Select step from switching to Directories.
+    match app.configure_sub_screen {
+        ConfigureSubScreen::Directories => {
+            // Number keys 1-5 still switch sub-screens from Directories
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                _ => {}
+            }
+            return handle_directory_keys(app, key);
+        }
+        ConfigureSubScreen::SpinoramaEq => {
+            // Inside Spinorama wizard, all keys go to the wizard handler.
+            // Number keys do NOT switch sub-screens while inside the wizard.
+            return handle_spinorama_keys(app, key);
+        }
+        _ => {
+            // Other sub-screens: number keys switch tabs
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; }
+                _ => {}
+            }
+            None
+        }
+    }
+}
+
+fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
+    use crate::app::SpinoramaStep;
+    match s {
+        SpinoramaStep::Select       => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::Configure    => SpinoramaStep::Select,
+        SpinoramaStep::Optimize     => SpinoramaStep::Configure,
+        SpinoramaStep::Results      => SpinoramaStep::Optimize,
+        SpinoramaStep::UpdatePlugin => SpinoramaStep::Results,
+    }
+}
+
+fn spinorama_step_next(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
+    use crate::app::SpinoramaStep;
+    match s {
+        SpinoramaStep::Select       => SpinoramaStep::Configure,
+        SpinoramaStep::Configure    => SpinoramaStep::Optimize,
+        SpinoramaStep::Optimize     => SpinoramaStep::Results,
+        SpinoramaStep::Results      => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::UpdatePlugin => SpinoramaStep::Select,
+    }
+}
+
+fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use crate::app::{SpinoramaOptStatus, SpinoramaStep};
+
+    // Esc goes up one level within the wizard
+    if key.code == KeyCode::Esc {
+        match app.spinorama_eq.step {
+            SpinoramaStep::Select => {
+                // At top of wizard — go back to Configure tab bar
+                app.configure_tab_focused = true;
+            }
+            SpinoramaStep::Configure => {
+                app.spinorama_eq.step = SpinoramaStep::Select;
+            }
+            SpinoramaStep::Optimize => {
+                app.spinorama_eq.step = SpinoramaStep::Configure;
+            }
+            SpinoramaStep::Results => {
+                app.spinorama_eq.step = SpinoramaStep::Optimize;
+            }
+            SpinoramaStep::UpdatePlugin => {
+                app.spinorama_eq.step = SpinoramaStep::Results;
+            }
+        }
+        return None;
+    }
+
+    // Up always returns focus to the Configure tab bar
+    if key.code == KeyCode::Up && app.spinorama_eq.step == SpinoramaStep::Select {
+        app.configure_tab_focused = true;
+        return None;
+    }
+
+    // Left/Right navigate between wizard steps (step-bar level),
+    // but NOT in Configure step where Left/Right adjust field values.
+    if key.code == KeyCode::Left && app.spinorama_eq.step != SpinoramaStep::Configure {
+        app.spinorama_eq.step = spinorama_step_prev(app.spinorama_eq.step);
+        return None;
+    }
+    if key.code == KeyCode::Right && app.spinorama_eq.step != SpinoramaStep::Configure {
+        app.spinorama_eq.step = spinorama_step_next(app.spinorama_eq.step);
+        return None;
+    }
+
+    match app.spinorama_eq.step {
+        SpinoramaStep::Select => match key.code {
+            KeyCode::Up => {
+                if app.spinorama_eq.selected_speaker_idx > 0 {
+                    app.spinorama_eq.selected_speaker_idx -= 1;
+                }
+                None
+            }
+            KeyCode::Down => {
+                let max = app.spinorama_eq.filtered_speakers.len().saturating_sub(1);
+                if app.spinorama_eq.selected_speaker_idx < max {
+                    app.spinorama_eq.selected_speaker_idx += 1;
+                }
+                None
+            }
+            KeyCode::Enter => {
+                let idx = app.spinorama_eq.selected_speaker_idx;
+                if let Some(name) = app.spinorama_eq.filtered_speakers.get(idx).cloned() {
+                    app.spinorama_eq.selected_speaker = Some(name);
+                    app.spinorama_eq.step = SpinoramaStep::Configure;
+                }
+                None
+            }
+            KeyCode::Tab => {
+                if app.spinorama_eq.selected_speaker.is_some() {
+                    app.spinorama_eq.step = SpinoramaStep::Configure;
+                }
+                None
+            }
+            KeyCode::Char('r') => {
+                // Trigger speaker list load
+                app.spinorama_eq.loading_speakers = true;
+                app.spinorama_eq.speakers_error = None;
+                spawn_spinorama_speaker_load();
+                None
+            }
+            KeyCode::Backspace => {
+                app.spinorama_eq.search_query.pop();
+                app.spinorama_eq.update_filter();
+                None
+            }
+            KeyCode::Char(c) => {
+                app.spinorama_eq.search_query.push(c);
+                app.spinorama_eq.update_filter();
+                None
+            }
+            _ => None,
+        },
+
+        SpinoramaStep::Configure => match key.code {
+            KeyCode::Up => {
+                if app.spinorama_eq.selected_field > 0 {
+                    app.spinorama_eq.selected_field -= 1;
+                }
+                None
+            }
+            KeyCode::Down => {
+                if app.spinorama_eq.selected_field < 24 {
+                    app.spinorama_eq.selected_field += 1;
+                }
+                None
+            }
+            KeyCode::Left | KeyCode::Char('-') => {
+                adjust_spinorama_field(app, -1);
+                None
+            }
+            KeyCode::Right | KeyCode::Char('+') => {
+                adjust_spinorama_field(app, 1);
+                None
+            }
+            KeyCode::Enter | KeyCode::Tab => {
+                app.spinorama_eq.step = SpinoramaStep::Optimize;
+                None
+            }
+            KeyCode::BackTab => {
+                app.spinorama_eq.step = SpinoramaStep::Select;
+                None
+            }
+            _ => None,
+        },
+
+        SpinoramaStep::Optimize => match key.code {
+            KeyCode::Enter => {
+                match &app.spinorama_eq.opt_status {
+                    SpinoramaOptStatus::Idle | SpinoramaOptStatus::Failed(_) => {
+                        spawn_spinorama_optimization(app);
+                    }
+                    SpinoramaOptStatus::Completed => {
+                        app.spinorama_eq.step = SpinoramaStep::Results;
+                    }
+                    SpinoramaOptStatus::Running => {}
+                }
+                None
+            }
+            KeyCode::Tab => {
+                if app.spinorama_eq.opt_status == SpinoramaOptStatus::Completed {
+                    app.spinorama_eq.step = SpinoramaStep::Results;
+                } else {
+                    app.spinorama_eq.step = SpinoramaStep::Configure;
+                }
+                None
+            }
+            KeyCode::BackTab => {
+                app.spinorama_eq.step = SpinoramaStep::Configure;
+                None
+            }
+            _ => None,
+        },
+
+        SpinoramaStep::Results => match key.code {
+            KeyCode::Tab => {
+                app.spinorama_eq.step = SpinoramaStep::UpdatePlugin;
+                None
+            }
+            KeyCode::BackTab => {
+                app.spinorama_eq.step = SpinoramaStep::Optimize;
+                None
+            }
+            _ => None,
+        },
+
+        SpinoramaStep::UpdatePlugin => match key.code {
+            KeyCode::Enter => {
+                match app.apply_spinorama_to_plugin_chain() {
+                    Ok(msg) => app.status_message = Some(msg),
+                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                }
+                None
+            }
+            KeyCode::Tab => {
+                app.spinorama_eq.step = SpinoramaStep::Select;
+                None
+            }
+            KeyCode::BackTab => {
+                app.spinorama_eq.step = SpinoramaStep::Results;
+                None
+            }
+            _ => None,
+        },
+    }
+}
+
+fn cycle_string(current: &str, options: &[&str], delta: i32) -> String {
+    let idx = options.iter().position(|&o| o == current).unwrap_or(0);
+    let new_idx = if delta > 0 {
+        (idx + 1) % options.len()
+    } else {
+        (idx + options.len() - 1) % options.len()
+    };
+    options[new_idx].to_string()
+}
+
+fn adjust_spinorama_field(app: &mut App, delta: i32) {
+    let s = &mut app.spinorama_eq;
+    match s.selected_field {
+        // ── Filters ──
+        0 => {
+            let n = s.num_filters as i32 + delta;
+            s.num_filters = n.clamp(1, 30) as usize;
+        }
+        1 => s.min_freq = (s.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
+        2 => s.max_freq = (s.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
+        3 => s.min_db = (s.min_db + delta as f64).clamp(-24.0, 0.0),
+        4 => s.max_db = (s.max_db + delta as f64).clamp(0.0, 12.0),
+        5 => s.min_q = (s.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
+        6 => s.max_q = (s.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
+        7 => {
+            s.peq_model =
+                cycle_string(&s.peq_model, &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"], delta);
+        }
+        // ── Optimization ──
+        8 => {
+            s.algorithm = cycle_string(&s.algorithm, &["de", "cobyla", "nelder-mead"], delta);
+        }
+        9 => {
+            let n = s.max_iter as i32 + delta * 1000;
+            s.max_iter = n.clamp(1000, 100000) as usize;
+        }
+        10 => {
+            let n = s.population as i32 + delta * 10;
+            s.population = n.clamp(10, 200) as usize;
+        }
+        11 => {
+            s.strategy = cycle_string(
+                &s.strategy,
+                &["currenttobest1bin", "best1bin", "rand1bin", "best2bin"],
+                delta,
+            );
+        }
+        12 => s.de_f = (s.de_f + delta as f64 * 0.1).clamp(0.1, 2.0),
+        13 => s.de_cr = (s.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
+        // ── Refinement ──
+        14 => s.refine = !s.refine,
+        15 => {
+            s.local_algo = cycle_string(&s.local_algo, &["cobyla", "nelder-mead"], delta);
+        }
+        // ── Smoothing ──
+        16 => s.smooth = !s.smooth,
+        17 => {
+            let n = s.smooth_n as i32 + delta;
+            s.smooth_n = n.clamp(1, 24) as usize;
+        }
+        18 => s.psychoacoustic = !s.psychoacoustic,
+        // ── Constraints ──
+        19 => s.spacing_weight = (s.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
+        20 => s.min_spacing_oct = (s.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
+        21 => s.asymmetric_loss = !s.asymmetric_loss,
+        // ── Convergence ──
+        22 => {
+            s.tolerance = if delta > 0 {
+                (s.tolerance * 10.0).min(1e-1)
+            } else {
+                (s.tolerance / 10.0).max(1e-6)
+            };
+        }
+        23 => {
+            s.atolerance = if delta > 0 {
+                (s.atolerance * 10.0).min(1e-1)
+            } else {
+                (s.atolerance / 10.0).max(1e-6)
+            };
+        }
+        24 => {
+            s.sample_rate = match (s.sample_rate, delta > 0) {
+                (44100, true) => 48000,
+                (48000, true) => 96000,
+                (96000, true) => 44100,
+                (96000, false) => 48000,
+                (48000, false) => 44100,
+                (44100, false) => 96000,
+                _ => 48000,
+            };
+        }
+        _ => {}
+    }
+}
+
+/// Poll speaker-load result on every tick. Returns true if the UI needs a redraw.
+pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
+    if !app.spinorama_eq.loading_speakers {
+        return false;
+    }
+    let result_slot = SPEAKERS_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    if let Ok(mut guard) = result_slot.lock() {
+        if let Some(result) = guard.take() {
+            app.spinorama_eq.loading_speakers = false;
+            match result {
+                Ok(speakers) => {
+                    app.spinorama_eq.available_speakers = speakers;
+                    app.spinorama_eq.update_filter();
+                }
+                Err(e) => {
+                    app.spinorama_eq.speakers_error = Some(e);
+                }
+            }
+            return true;
+        }
+    }
+    false
+}
+
+fn spawn_spinorama_speaker_load() {
+    let result_slot = SPEAKERS_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    // Clear any stale result from a previous load
+    if let Ok(mut g) = result_slot.lock() { *g = None; }
+
+    // Spawn background thread
+    let slot = result_slot.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+        let result = rt
+            .block_on(async { autoeq::fetch_available_speakers().await })
+            .map_err(|e| e.to_string());
+        if let Ok(mut guard) = slot.lock() {
+            *guard = Some(result);
+        }
+    });
+}
+
+use std::sync::{Arc, Mutex};
+
+static SPEAKERS_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<Vec<String>, String>>>>> =
+    std::sync::OnceLock::new();
+
+static OPT_RESULT: std::sync::OnceLock<
+    Arc<
+        Mutex<
+            Option<
+                Result<sotf_audio_player::autoeq::SpeakerOptimizationResult, String>,
+            >,
+        >,
+    >,
+> = std::sync::OnceLock::new();
+static OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f32)>>>> =
+    std::sync::OnceLock::new();
+
+/// Poll optimization progress/result on every tick while optimization is running.
+/// Returns true if the UI needs a redraw.
+pub fn poll_spinorama_optimization(app: &mut App) -> bool {
+    use crate::app::{SpinoramaFilter, SpinoramaOptStatus};
+
+    if app.spinorama_eq.opt_status != SpinoramaOptStatus::Running {
+        return false;
+    }
+
+    let result_slot = OPT_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    let progress_slot = OPT_PROGRESS
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    if let Ok(mut guard) = result_slot.lock() {
+        if let Some(result) = guard.take() {
+            match result {
+                Ok(r) => {
+                    app.spinorama_eq.pre_loss = r.initial_loss;
+                    app.spinorama_eq.post_loss = r.final_loss;
+                    app.spinorama_eq.filters = r
+                        .biquads
+                        .iter()
+                        .map(|b| SpinoramaFilter {
+                            filter_type: format!("{:?}", b.filter_type),
+                            freq: b.freq,
+                            q: b.q,
+                            gain_db: b.db_gain,
+                        })
+                        .collect();
+                    app.spinorama_eq.curve_frequencies = r.frequencies.clone();
+                    app.spinorama_eq.curve_input = r.input_curve.clone();
+                    app.spinorama_eq.curve_target = r.target_curve.clone();
+                    app.spinorama_eq.curve_corrected = r.corrected_curve.clone();
+                    app.spinorama_eq.curve_filter_response = r.filter_response.clone();
+                    app.spinorama_eq.loss_history = r.optimization_history.clone();
+                    app.spinorama_eq.opt_status = SpinoramaOptStatus::Completed;
+                    app.spinorama_eq.opt_progress = 1.0;
+                }
+                Err(e) => {
+                    app.spinorama_eq.opt_status = SpinoramaOptStatus::Failed(e);
+                }
+            }
+            return true;
+        }
+    }
+
+    if let Ok(mut guard) = progress_slot.lock() {
+        if let Some((iter, max_iter, loss, pct)) = guard.take() {
+            app.spinorama_eq.opt_iteration = iter;
+            app.spinorama_eq.opt_max_iter = max_iter;
+            app.spinorama_eq.opt_loss = loss;
+            app.spinorama_eq.opt_progress = pct;
+            return true;
+        }
+    }
+
+    false
+}
+
+fn spawn_spinorama_optimization(app: &mut App) {
+    use crate::app::SpinoramaOptStatus;
+
+    // Start new optimization
+    let speaker = match &app.spinorama_eq.selected_speaker {
+        Some(s) => s.clone(),
+        None => {
+            app.spinorama_eq.opt_status =
+                SpinoramaOptStatus::Failed("No speaker selected".to_string());
+            return;
+        }
+    };
+
+    app.spinorama_eq.opt_status = SpinoramaOptStatus::Running;
+    app.spinorama_eq.opt_progress = 0.0;
+    app.spinorama_eq.opt_iteration = 0;
+    app.spinorama_eq.opt_loss = 0.0;
+    app.spinorama_eq.filters.clear();
+
+    let s = &app.spinorama_eq;
+    let num_filters = s.num_filters;
+    let min_freq = s.min_freq;
+    let max_freq = s.max_freq;
+    let min_db = s.min_db;
+    let max_db = s.max_db;
+    let min_q = s.min_q;
+    let max_q = s.max_q;
+    let max_iter = s.max_iter;
+    let peq_model_str = s.peq_model.clone();
+    let algorithm = s.algorithm.clone();
+    let population = s.population;
+    let strategy = s.strategy.clone();
+    let de_f = s.de_f;
+    let de_cr = s.de_cr;
+    let refine = s.refine;
+    let local_algo = s.local_algo.clone();
+    let smooth = s.smooth;
+    let smooth_n = s.smooth_n;
+    let psychoacoustic = s.psychoacoustic;
+    let spacing_weight = s.spacing_weight;
+    let min_spacing_oct = s.min_spacing_oct;
+    let asymmetric_loss = s.asymmetric_loss;
+    let tolerance = s.tolerance;
+    let atolerance = s.atolerance;
+    let sample_rate = s.sample_rate;
+
+    let result_slot2 = OPT_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    let progress_slot2 = OPT_PROGRESS
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    // Clear any stale result from a previous run
+    if let Ok(mut g) = result_slot2.lock() { *g = None; }
+    if let Ok(mut g) = progress_slot2.lock() { *g = None; }
+
+    std::thread::spawn(move || {
+        use sotf_audio_player::autoeq::{
+            CallbackAction, CallbackConfig, MeasurementInput, SpeakerOptimizationConfig,
+            run_speaker_optimization_with_callback,
+        };
+
+        let mut args = autoeq::Args::speaker_defaults();
+        args.num_filters = num_filters;
+        args.min_freq = min_freq;
+        args.max_freq = max_freq;
+        args.min_db = min_db;
+        args.max_db = max_db;
+        args.min_q = min_q;
+        args.max_q = max_q;
+        args.maxeval = max_iter;
+        args.sample_rate = sample_rate as f64;
+        args.population = population;
+        args.strategy = strategy;
+        args.adaptive_weight_f = de_f;
+        args.recombination = de_cr;
+        args.refine = refine;
+        args.local_algo = local_algo;
+        args.smooth = smooth;
+        args.smooth_n = smooth_n;
+        args.spacing_weight = spacing_weight;
+        args.min_spacing_oct = min_spacing_oct;
+        args.tolerance = tolerance;
+        args.atolerance = atolerance;
+        // Map algorithm string to autoeq algo format
+        args.algo = match algorithm.as_str() {
+            "de" => "autoeq:de".to_string(),
+            "cobyla" => "nlopt:cobyla".to_string(),
+            "nelder-mead" => "nlopt:neldermead".to_string(),
+            other => other.to_string(),
+        };
+        // Map PEQ model string to enum
+        args.peq_model = match peq_model_str.as_str() {
+            "pk" => autoeq::PeqModel::Pk,
+            "hp-pk" => autoeq::PeqModel::HpPk,
+            "hp-pk-lp" => autoeq::PeqModel::HpPkLp,
+            "ls-pk" => autoeq::PeqModel::LsPk,
+            "ls-pk-hs" => autoeq::PeqModel::LsPkHs,
+            _ => autoeq::PeqModel::Pk,
+        };
+        // Map loss type based on asymmetric_loss flag
+        args.loss = if asymmetric_loss {
+            autoeq::LossType::SpeakerFlatAsymmetric
+        } else {
+            autoeq::LossType::SpeakerFlat
+        };
+        // Psychoacoustic smoothing not directly on Args — handled via smooth settings
+        let _ = psychoacoustic; // TODO: map when autoeq supports it directly
+
+        let config = SpeakerOptimizationConfig {
+            main_measurement: Some(MeasurementInput::Spinorama {
+                speaker: speaker.clone(),
+                version: "asr".to_string(),
+                measurement: "CEA2034".to_string(),
+                curve_name: args.curve_name.clone(),
+            }),
+            args,
+            callback_config: Some(CallbackConfig {
+                interval: 50,
+                include_biquads: false,
+                include_filter_response: false,
+            }),
+            ..Default::default()
+        };
+
+        let progress_slot3 = progress_slot2.clone();
+        let callback: sotf_audio_player::autoeq::SpeakerOptimizationCallback =
+            Box::new(move |p| {
+                let pct = if p.max_iterations > 0 {
+                    p.iteration as f32 / p.max_iterations as f32
+                } else {
+                    0.0
+                };
+                if let Ok(mut guard) = progress_slot3.lock() {
+                    *guard = Some((p.iteration, p.max_iterations, p.loss, pct));
+                }
+                CallbackAction::Continue
+            });
+
+        let result = run_speaker_optimization_with_callback(&config, Some(callback));
+        if let Ok(mut guard) = result_slot2.lock() {
+            *guard = Some(result);
+        }
+    });
 }
 
 #[derive(Debug, Clone)]

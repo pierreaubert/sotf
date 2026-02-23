@@ -80,7 +80,7 @@ fn main() {
 
     log::info!("SOTF GPUI Player starting...");
 
-    gpui::Application::new().with_assets(Assets).run(move |cx| {
+    gpui::Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).with_assets(Assets).run(move |cx| {
         // Load custom fonts
         let fonts = vec![
             "fonts/DMSerifDisplay-Regular.ttf",

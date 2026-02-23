@@ -15,6 +15,7 @@ player = { workspace = true }
 plugins = { workspace = true }
 engine = { workspace = true }
 math-iir-fir = { workspace = true }
+autoeq = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }

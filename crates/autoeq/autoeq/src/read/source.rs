@@ -304,7 +304,7 @@ pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn E
 
             let phase = inline.phase_deg.as_ref().and_then(|p| {
                 if p.len() != inline.frequencies.len() {
-                    eprintln!(
+                    log::debug!(
                         "Warning: phase array length ({}) doesn't match frequencies ({}), ignoring phase",
                         p.len(),
                         inline.frequencies.len()
@@ -345,7 +345,7 @@ pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> 
                             .map(|p| p.display().to_string())
                             .or_else(|| r.name().map(String::from))
                             .unwrap_or_else(|| "inline".to_string());
-                        eprintln!("Warning: failed to load measurement {}: {}", name, e)
+                        log::debug!("Warning: failed to load measurement {}: {}", name, e)
                     }
                 }
             }

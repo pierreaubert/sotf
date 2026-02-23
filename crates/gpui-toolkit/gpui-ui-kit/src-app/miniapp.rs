@@ -199,7 +199,7 @@ impl MiniApp {
     {
         let config_clone = config.clone();
 
-        Application::new().run(move |cx: &mut App| {
+        gpui::Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(move |cx: &mut App| {
             // Initialize theme state if enabled
             if config_clone.with_theme {
                 cx.set_global(ThemeState::with_variant(config_clone.initial_theme));

@@ -154,6 +154,14 @@ pub struct App {
     pub image_picker: Option<ratatui_image::picker::Picker>, // Image protocol picker
     pub image_protocol: Option<ratatui_image::protocol::StatefulProtocol>, // Cached protocol for current image
     pub image_protocol_path: Option<PathBuf>, // Path the cached protocol was created from
+
+    // Configure section sub-screen
+    pub configure_sub_screen: super::types::ConfigureSubScreen,
+    /// When true, Left/Right arrows cycle the tab bar; when false, arrows go into the sub-screen.
+    pub configure_tab_focused: bool,
+
+    // Spinorama EQ wizard state
+    pub spinorama_eq: super::types::SpinoramaEqTuiState,
 }
 
 impl App {
@@ -256,6 +264,9 @@ impl App {
             image_picker: None,
             image_protocol: None,
             image_protocol_path: None,
+            configure_sub_screen: super::types::ConfigureSubScreen::Directories,
+            configure_tab_focused: true,
+            spinorama_eq: super::types::SpinoramaEqTuiState::default(),
         }
     }
 
@@ -2356,6 +2367,89 @@ impl App {
         } else {
             Err("No plugin selected".to_string())
         }
+    }
+
+    /// Apply Spinorama EQ results to the plugin chain.
+    /// Finds the first non-permanent EQ plugin and updates its filters.
+    /// If no EQ plugin exists, one is inserted at the user-plugin slot.
+    /// Returns a success message or an error string.
+    pub fn apply_spinorama_to_plugin_chain(&mut self) -> Result<String, String> {
+        use math_audio_iir_fir::BiquadFilterType;
+        use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
+
+        let filters = self.spinorama_eq.filters.clone();
+        if filters.is_empty() {
+            return Err("No optimization results to apply".to_string());
+        }
+
+        // Convert SpinoramaFilter (string filter_type) → EQFilter (BiquadFilterType)
+        let eq_filters: Vec<EQFilter> = filters
+            .iter()
+            .map(|f| {
+                let ft = match f.filter_type.as_str() {
+                    "Peak" => BiquadFilterType::Peak,
+                    "Lowshelf" => BiquadFilterType::Lowshelf,
+                    "Highshelf" => BiquadFilterType::Highshelf,
+                    "Lowpass" => BiquadFilterType::Lowpass,
+                    "Highpass" => BiquadFilterType::Highpass,
+                    "Bandpass" => BiquadFilterType::Bandpass,
+                    "Notch" => BiquadFilterType::Notch,
+                    "AllPass" => BiquadFilterType::AllPass,
+                    _ => BiquadFilterType::Peak,
+                };
+                EQFilter::new(ft, f.freq, f.q, f.gain_db)
+            })
+            .collect();
+
+        let n = eq_filters.len();
+
+        // Find the first non-permanent EQ plugin
+        let eq_idx = (0..self.plugin_chain.len()).find(|&i| {
+            if let Some(p) = self.plugin_chain.get_plugin(i) {
+                !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. })
+            } else {
+                false
+            }
+        });
+
+        let target_idx = if let Some(idx) = eq_idx {
+            idx
+        } else {
+            // No EQ plugin found — insert one at the user-plugin slot
+            let insert_at = self.plugin_chain.user_plugin_insert_index();
+            self.plugin_chain.insert_plugin(insert_at, &PluginType::EQ)
+        };
+
+        // Update the plugin settings
+        if let Some(plugin) = self.plugin_chain.get_plugin_mut(target_idx) {
+            let channels = match &plugin.settings {
+                PluginSettings::EQ { channels, .. } => *channels,
+                _ => 2,
+            };
+            plugin.settings = PluginSettings::EQ {
+                channels,
+                filters: eq_filters,
+                channel_filters: None,
+                per_channel_mode: false,
+                max_filters: n.clamp(1, 20),
+            };
+            plugin.enabled = true;
+        }
+
+        self.plugin_chain.update_channel_dependent_plugins();
+        self.request_plugin_update();
+
+        let speaker = self
+            .spinorama_eq
+            .selected_speaker
+            .as_deref()
+            .unwrap_or("unknown");
+        Ok(format!(
+            "Applied {} EQ filters for '{}' to plugin slot {}",
+            n,
+            speaker,
+            target_idx
+        ))
     }
 
     /// Find and load all image files in the currently playing album's directory
@@ -4682,8 +4776,8 @@ mod tests {
         app.current_screen = Screen::Library;
         assert_eq!(app.current_screen, Screen::Library);
 
-        app.current_screen = Screen::DirectoryManager;
-        assert_eq!(app.current_screen, Screen::DirectoryManager);
+        app.current_screen = Screen::Configure;
+        assert_eq!(app.current_screen, Screen::Configure);
 
         app.current_screen = Screen::Queue;
         assert_eq!(app.current_screen, Screen::Queue);
@@ -4782,5 +4876,64 @@ mod tests {
                 .contains("album1/track1.flac")
         );
         assert_eq!(app.current_queue_index, Some(0));
+    }
+
+    #[test]
+    fn test_apply_spinorama_to_plugin_chain_adds_eq_when_missing() {
+        use crate::app::types::SpinoramaFilter;
+        let mut app = App::new(Theme::default());
+        app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
+        app.spinorama_eq.filters = vec![
+            SpinoramaFilter { filter_type: "Peak".to_string(), freq: 1000.0, q: 1.5, gain_db: -3.0 },
+            SpinoramaFilter { filter_type: "Lowshelf".to_string(), freq: 80.0, q: 0.7, gain_db: 2.0 },
+        ];
+
+        let result = app.apply_spinorama_to_plugin_chain();
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        // An EQ plugin should now exist in the chain
+        let has_eq = (0..app.plugin_chain.len()).any(|i| {
+            app.plugin_chain.get_plugin(i)
+                .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
+                .unwrap_or(false)
+        });
+        assert!(has_eq, "Expected an EQ plugin to be present");
+    }
+
+    #[test]
+    fn test_apply_spinorama_to_plugin_chain_updates_existing_eq() {
+        use crate::app::types::SpinoramaFilter;
+        let mut app = App::new(Theme::default());
+        app.add_plugin(&PluginType::EQ);
+        app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
+        app.spinorama_eq.filters = vec![
+            SpinoramaFilter { filter_type: "Peak".to_string(), freq: 500.0, q: 2.0, gain_db: 1.5 },
+        ];
+
+        let result = app.apply_spinorama_to_plugin_chain();
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        // Verify the EQ plugin has the new filter
+        let eq_idx = (0..app.plugin_chain.len()).find(|&i| {
+            app.plugin_chain.get_plugin(i)
+                .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
+                .unwrap_or(false)
+        }).expect("EQ plugin should exist");
+
+        let plugin = app.plugin_chain.get_plugin(eq_idx).unwrap();
+        if let PluginSettings::EQ { filters, .. } = &plugin.settings {
+            assert_eq!(filters.len(), 1);
+            assert!((filters[0].frequency - 500.0).abs() < 0.01);
+        } else {
+            panic!("Expected EQ plugin settings");
+        }
+    }
+
+    #[test]
+    fn test_apply_spinorama_to_plugin_chain_empty_filters_returns_error() {
+        let mut app = App::new(Theme::default());
+        app.spinorama_eq.filters = vec![];
+        let result = app.apply_spinorama_to_plugin_chain();
+        assert!(result.is_err());
     }
 }

@@ -3,23 +3,23 @@
 /// Conditional println macro that only prints when not in QA mode
 #[macro_export]
 macro_rules! qa_println {
-    // Without args parameter - always print (for contexts without args access)
+    // Without args parameter - always log (for contexts without args access)
     // This pattern must come first to match string literals
     ($fmt:literal) => {
-        println!($fmt);
+        log::debug!($fmt);
     };
     ($fmt:literal, $($arg:expr),* $(,)?) => {
-        println!($fmt, $($arg),*);
+        log::debug!($fmt, $($arg),*);
     };
-    // With args parameter - conditional printing
+    // With args parameter - conditional logging
     ($args:expr, $fmt:literal) => {
         if $args.qa.is_none() {
-            println!($fmt);
+            log::debug!($fmt);
         }
     };
     ($args:expr, $fmt:literal, $($arg:expr),* $(,)?) => {
         if $args.qa.is_none() {
-            println!($fmt, $($arg),*);
+            log::debug!($fmt, $($arg),*);
         }
     };
 }
