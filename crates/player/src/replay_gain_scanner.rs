@@ -5,6 +5,13 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+/// ReplayGain application mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayGainMode {
+    Track,
+    Album,
+}
+
 /// Message sent by scanner thread
 #[derive(Debug, Clone)]
 pub enum ScanMessage {

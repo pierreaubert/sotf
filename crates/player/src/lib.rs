@@ -16,18 +16,23 @@ pub mod spinorama_eq_types;
 /// - Waveform scanning (`waveform_scanner`)
 /// - Bliss audio analysis (`bliss`)
 /// - Music recommendation engine (`recommendation`)
+pub mod audio_device;
 pub mod bliss;
 pub mod config;
 pub mod database;
+pub mod level_meter;
 pub mod library;
 pub mod library_scanner;
+pub mod play_tracker;
 pub mod player;
 pub mod plugin_graph;
+pub mod queue;
 // plugins module is now in engine
 pub mod recommendation;
 pub mod replay_gain_scanner;
 // Backward compatibility alias
 pub use autoeq as room_eq;
+pub mod library_stats;
 pub mod security;
 pub mod ui_params;
 pub mod waveform_scanner;
@@ -46,8 +51,15 @@ pub use plugin_graph::{
     ConnectionDrag, GraphConnection, GraphNodeId, GraphSelection, NodeDrag, NodePosition,
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
+pub use audio_device::{is_virtual_device, AudioOutputDeviceState};
+pub use play_tracker::PlayTracker;
+pub use level_meter::{build_level_meter_groups, ChannelGroup, ChannelInfo};
+pub use queue::{Queue, QueueItem};
+pub use library_stats::LibraryStats;
 // Re-export plugins from engine
-pub use replay_gain_scanner::{AlbumGainPhase, ReplayGainScanManager, ReplayGainScanner, ScanMessage};
+pub use replay_gain_scanner::{
+    AlbumGainPhase, ReplayGainMode, ReplayGainScanManager, ReplayGainScanner, ScanMessage,
+};
 pub use sotf_audio::plugins::{
     EQFilter,
     Plugin,

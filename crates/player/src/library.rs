@@ -180,7 +180,7 @@ pub struct DirectoryInfo {
     pub subdirectories: Vec<DirectoryInfo>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Track {
     pub path: PathBuf,
     pub title: Option<String>,
@@ -209,7 +209,7 @@ pub struct Track {
     pub play_count: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Album {
     pub id: Option<i64>,
     pub title: String,
@@ -232,11 +232,12 @@ pub enum AlbumChannelType {
 }
 
 /// Library sort order options
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LibrarySortOrder {
     Year,
     Genre,
     Artist,
+    #[default]
     Album,
     Tracks,
     Composer,
@@ -244,8 +245,9 @@ pub enum LibrarySortOrder {
 }
 
 /// Channel filter options
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChannelFilter {
+    #[default]
     All,           // Show all albums
     Mono,          // Only 1-channel albums
     Stereo,        // Only 2-channel albums
