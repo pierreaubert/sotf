@@ -264,6 +264,12 @@ pub fn render_plugin_content(
             dialogue_weight,
             voice_freq_min_hz,
             voice_freq_max_hz,
+            dialogue_centroid_weight,
+            dialogue_variance_weight,
+            dialogue_coherence_weight,
+            bypass_decorrelation,
+            bypass_transient_detection,
+            bypass_all_processing,
             ..
         } => render_upmixer_plugin(
             entity,
@@ -308,6 +314,13 @@ pub fn render_plugin_content(
                 dialogue_weight: *dialogue_weight,
                 voice_freq_min_hz: *voice_freq_min_hz,
                 voice_freq_max_hz: *voice_freq_max_hz,
+                dialogue_centroid_weight: *dialogue_centroid_weight,
+                dialogue_variance_weight: *dialogue_variance_weight,
+                dialogue_coherence_weight: *dialogue_coherence_weight,
+                // Bypasses
+                bypass_decorrelation: *bypass_decorrelation,
+                bypass_transient_detection: *bypass_transient_detection,
+                bypass_all_processing: *bypass_all_processing,
                 // UI state
                 is_editing,
                 selected_param,
@@ -554,9 +567,29 @@ pub fn render_plugin_content(
             knee_db,
             mix,
             link_channels,
+            bands,
             ..
         } => {
             let selected_band_idx = selected_band_idx.min(*num_bands);
+            
+            // If a band is selected (>0), we show its values if they exist, otherwise global
+            let (disp_threshold, disp_ratio, disp_attack, disp_release, disp_knee, disp_makeup, disp_solo, disp_bypass) = 
+                if selected_band_idx > 0 {
+                    let b = &bands[selected_band_idx - 1];
+                    (
+                        b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
+                        b.ratio.map(|v| v as f64).unwrap_or(*ratio),
+                        b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
+                        b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
+                        b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
+                        b.makeup_gain_db as f64,
+                        b.solo,
+                        b.bypass,
+                    )
+                } else {
+                    (*threshold_db, *ratio, *attack_ms, *release_ms, *knee_db, 0.0, false, false)
+                };
+
             render_mb_compressor_plugin(
                 entity.clone(),
                 plugin_idx,
@@ -567,11 +600,14 @@ pub fn render_plugin_content(
                     crossover_freq_2: *crossover_freq_2,
                     crossover_freq_3: *crossover_freq_3,
                     crossover_freq_4: *crossover_freq_4,
-                    threshold_db: *threshold_db,
-                    ratio: *ratio,
-                    attack_ms: *attack_ms,
-                    release_ms: *release_ms,
-                    knee_db: *knee_db,
+                    threshold_db: disp_threshold,
+                    ratio: disp_ratio,
+                    attack_ms: disp_attack,
+                    release_ms: disp_release,
+                    knee_db: disp_knee,
+                    makeup_gain_db: disp_makeup,
+                    solo: disp_solo,
+                    bypass: disp_bypass,
                     mix: *mix,
                     link_channels: *link_channels,
                     is_editing,
@@ -599,9 +635,31 @@ pub fn render_plugin_content(
             hold_ms,
             mix,
             link_channels,
+            bands,
             ..
         } => {
             let selected_band_idx = selected_band_idx.min(*num_bands);
+
+            // If a band is selected (>0), we show its values if they exist, otherwise global
+            let (disp_threshold, disp_ratio, disp_attack, disp_release, disp_range, disp_knee, disp_hysteresis, disp_hold, disp_solo, disp_bypass) = 
+                if selected_band_idx > 0 {
+                    let b = &bands[selected_band_idx - 1];
+                    (
+                        b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
+                        b.ratio.map(|v| v as f64).unwrap_or(*ratio),
+                        b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
+                        b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
+                        b.range_db.map(|v| v as f64).unwrap_or(*range_db),
+                        b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
+                        b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
+                        b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
+                        b.solo,
+                        b.bypass,
+                    )
+                } else {
+                    (*threshold_db, *ratio, *attack_ms, *release_ms, *range_db, *knee_db, *hysteresis_db, *hold_ms, false, false)
+                };
+
             render_mb_expander_plugin(
                 entity.clone(),
                 plugin_idx,
@@ -612,14 +670,16 @@ pub fn render_plugin_content(
                     crossover_freq_2: *crossover_freq_2,
                     crossover_freq_3: *crossover_freq_3,
                     crossover_freq_4: *crossover_freq_4,
-                    threshold_db: *threshold_db,
-                    ratio: *ratio,
-                    attack_ms: *attack_ms,
-                    release_ms: *release_ms,
-                    range_db: *range_db,
-                    knee_db: *knee_db,
-                    hysteresis_db: *hysteresis_db,
-                    hold_ms: *hold_ms,
+                    threshold_db: disp_threshold,
+                    ratio: disp_ratio,
+                    attack_ms: disp_attack,
+                    release_ms: disp_release,
+                    range_db: disp_range,
+                    knee_db: disp_knee,
+                    hysteresis_db: disp_hysteresis,
+                    hold_ms: disp_hold,
+                    solo: disp_solo,
+                    bypass: disp_bypass,
                     mix: *mix,
                     link_channels: *link_channels,
                     is_editing,
@@ -640,12 +700,24 @@ pub fn render_plugin_content(
             head_shadow_cutoff_hz,
             head_shadow_slope_db_per_octave,
             max_gain_db,
+            head_offset_x,
+            head_offset_z,
+            head_yaw_deg,
+            head_tracking_smooth_s: _,
+            spectral_normalization,
+            room_reflections_enabled,
+            room_ir_file: _,
+            room_width_m,
+            room_depth_m,
+            wall_absorption,
+            reflection_beta_boost,
             bypass_xtc_filters,
             bypass_spectral_normalization,
             bypass_neumann_refinement,
             auto_gain_enabled,
             auto_gain_max_db,
             auto_gain_smoothing_ms,
+            pinna_model_enabled,
         } => render_xtc_plugin(
             entity.clone(),
             plugin_idx,
@@ -653,12 +725,22 @@ pub fn render_plugin_content(
                 distance_m: *distance_m,
                 speaker_angle_deg: *speaker_angle_deg,
                 head_radius_m: *head_radius_m,
+                head_offset_x: *head_offset_x,
+                head_offset_z: *head_offset_z,
+                head_yaw_deg: *head_yaw_deg,
                 beta_base: *beta_base,
                 beta_low_freq_boost: *beta_low_freq_boost,
                 beta_high_freq_boost: *beta_high_freq_boost,
                 head_shadow_cutoff_hz: *head_shadow_cutoff_hz,
                 head_shadow_slope_db_per_octave: *head_shadow_slope_db_per_octave,
                 max_gain_db: *max_gain_db,
+                spectral_normalization: *spectral_normalization,
+                pinna_model_enabled: *pinna_model_enabled,
+                room_reflections_enabled: *room_reflections_enabled,
+                room_width_m: *room_width_m,
+                room_depth_m: *room_depth_m,
+                wall_absorption: *wall_absorption,
+                reflection_beta_boost: *reflection_beta_boost,
                 bypass_xtc_filters: *bypass_xtc_filters,
                 bypass_spectral_normalization: *bypass_spectral_normalization,
                 bypass_neumann_refinement: *bypass_neumann_refinement,
@@ -679,11 +761,18 @@ pub fn render_plugin_content(
             release_ms,
             low_latency,
             polyphonic_detection,
+            crack_sensitivity,
+            mcra_alpha_s,
+            mcra_alpha_p,
+            mcra_l,
+            mcra_delta,
             transparency,
             dd_enabled,
             dd_alpha,
             psychoacoustic_masking,
+            learn_noise,
             use_captured_profile,
+            clear_profile,
         } => render_denoiser_plugin(
             entity.clone(),
             plugin_idx,
@@ -695,11 +784,18 @@ pub fn render_plugin_content(
                 release_ms: *release_ms,
                 low_latency: *low_latency,
                 polyphonic_detection: *polyphonic_detection,
+                crack_sensitivity: *crack_sensitivity,
+                mcra_alpha_s: *mcra_alpha_s,
+                mcra_alpha_p: *mcra_alpha_p,
+                mcra_l: *mcra_l,
+                mcra_delta: *mcra_delta,
                 transparency: *transparency,
                 dd_enabled: *dd_enabled,
                 dd_alpha: *dd_alpha,
                 psychoacoustic_masking: *psychoacoustic_masking,
+                learn_noise: *learn_noise,
                 use_captured_profile: *use_captured_profile,
+                clear_profile: *clear_profile,
                 is_editing,
                 selected_param,
             },

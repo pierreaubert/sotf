@@ -5,7 +5,7 @@
 //! - Rotary knobs for gains and frequency controls
 //! - Toggles for processing modes
 
-use super::common::{render_knob, render_vertical_slider_with_ticks};
+use super::common::{render_knob, render_toggle, render_vertical_slider_with_ticks};
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
@@ -68,6 +68,13 @@ pub struct UpmixerRenderState<'a> {
     pub dialogue_weight: f64,
     pub voice_freq_min_hz: f64,
     pub voice_freq_max_hz: f64,
+    pub dialogue_centroid_weight: f64,
+    pub dialogue_variance_weight: f64,
+    pub dialogue_coherence_weight: f64,
+    // Bypasses
+    pub bypass_decorrelation: bool,
+    pub bypass_transient_detection: bool,
+    pub bypass_all_processing: bool,
     // UI state
     pub is_editing: bool,
     pub selected_param: usize,
@@ -108,6 +115,12 @@ mod param_idx {
     pub const DIALOGUE_WEIGHT: usize = 29;
     pub const VOICE_FREQ_MIN_HZ: usize = 30;
     pub const VOICE_FREQ_MAX_HZ: usize = 31;
+    pub const DIALOGUE_CENTROID_WEIGHT: usize = 32;
+    pub const DIALOGUE_VARIANCE_WEIGHT: usize = 33;
+    pub const DIALOGUE_COHERENCE_WEIGHT: usize = 34;
+    pub const BYPASS_DECORRELATION: usize = 35;
+    pub const BYPASS_TRANSIENT_DETECTION: usize = 36;
+    pub const BYPASS_ALL_PROCESSING: usize = 37;
 }
 
 /// Render the upmixer plugin controls
@@ -233,6 +246,12 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     &state,
                     decorrelation_mode,
+                    theme,
+                ))
+                .child(render_diagnostic_box(
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
                     theme,
                 ))
                 .build(),
@@ -577,6 +596,53 @@ fn render_dialogue_box(
             None,
             theme,
         ))
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "W-Cent",
+                    state.dialogue_centroid_weight,
+                    DIALOGUE_CENTROID_WEIGHT_MIN as f64,
+                    DIALOGUE_CENTROID_WEIGHT_MAX as f64,
+                    "",
+                    param_idx::DIALOGUE_CENTROID_WEIGHT,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "W-Var",
+                    state.dialogue_variance_weight,
+                    DIALOGUE_VARIANCE_WEIGHT_MIN as f64,
+                    DIALOGUE_VARIANCE_WEIGHT_MAX as f64,
+                    "",
+                    param_idx::DIALOGUE_VARIANCE_WEIGHT,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "W-Coh",
+                    state.dialogue_coherence_weight,
+                    DIALOGUE_COHERENCE_WEIGHT_MIN as f64,
+                    DIALOGUE_COHERENCE_WEIGHT_MAX as f64,
+                    "",
+                    param_idx::DIALOGUE_COHERENCE_WEIGHT,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .build(),
+        )
         .build()
         .p_2()
         .bg(theme.background_secondary)
@@ -836,6 +902,54 @@ fn render_decorrelation_box(
                 theme,
             ))
         })
+        .build()
+        .p_2()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// Diagnostic box
+fn render_diagnostic_box(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Diagnostic", theme))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "Bypass Decor",
+            state.bypass_decorrelation,
+            param_idx::BYPASS_DECORRELATION,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "Bypass Trans",
+            state.bypass_transient_detection,
+            param_idx::BYPASS_TRANSIENT_DETECTION,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "Bypass All",
+            state.bypass_all_processing,
+            param_idx::BYPASS_ALL_PROCESSING,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
         .build()
         .p_2()
         .bg(theme.background_secondary)

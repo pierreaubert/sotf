@@ -225,6 +225,10 @@ pub struct SpinoramaOptimizerConfig {
     pub tolerance: f64,
     /// Absolute tolerance for convergence
     pub atolerance: f64,
+    /// Enable psychoacoustic variable smoothing
+    pub psychoacoustic: bool,
+    /// Enable asymmetric loss weighting
+    pub asymmetric_loss: bool,
 }
 
 impl Default for SpinoramaOptimizerConfig {
@@ -257,6 +261,8 @@ impl Default for SpinoramaOptimizerConfig {
             min_spacing_oct: 0.08,
             tolerance: 0.00001,
             atolerance: 0.00001,
+            psychoacoustic: true,
+            asymmetric_loss: true,
         }
     }
 }

@@ -34,12 +34,22 @@ pub struct XtcRenderState {
     pub distance_m: f64,
     pub speaker_angle_deg: f64,
     pub head_radius_m: f64,
+    pub head_offset_x: f64,
+    pub head_offset_z: f64,
+    pub head_yaw_deg: f64,
     pub beta_base: f64,
     pub beta_low_freq_boost: f64,
     pub beta_high_freq_boost: f64,
     pub head_shadow_cutoff_hz: f64,
     pub head_shadow_slope_db_per_octave: f64,
     pub max_gain_db: f64,
+    pub spectral_normalization: bool,
+    pub pinna_model_enabled: bool,
+    pub room_reflections_enabled: bool,
+    pub room_width_m: f64,
+    pub room_depth_m: f64,
+    pub wall_absorption: f64,
+    pub reflection_beta_boost: f64,
     pub bypass_xtc_filters: bool,
     pub bypass_spectral_normalization: bool,
     pub bypass_neumann_refinement: bool,
@@ -120,7 +130,57 @@ pub fn render_xtc_plugin(
                             theme,
                         )),
                 )
-                // Column 2: Cancellation strength (Beta)
+                // Column 2: Head Tracking
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("TRACKING", theme))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Offset X",
+                            state.head_offset_x,
+                            -0.5,
+                            0.5,
+                            "m",
+                            3,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Offset Z",
+                            state.head_offset_z,
+                            -0.5,
+                            0.5,
+                            "m",
+                            4,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Yaw",
+                            state.head_yaw_deg,
+                            -90.0,
+                            90.0,
+                            "°",
+                            5,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                // Column 3: Cancellation strength (Beta)
                 .child(
                     div()
                         .flex()
@@ -136,7 +196,7 @@ pub fn render_xtc_plugin(
                             BETA_BASE_MIN * 1000.0,
                             BETA_BASE_MAX * 1000.0,
                             "×10⁻³",
-                            3,
+                            6,
                             state.selected_param,
                             state.is_editing,
                             Some('b'),
@@ -151,7 +211,7 @@ pub fn render_xtc_plugin(
                             BETA_BOOST_MIN,
                             BETA_BOOST_MAX,
                             "×",
-                            4,
+                            7,
                             state.selected_param,
                             state.is_editing,
                             Some('l'),
@@ -166,14 +226,14 @@ pub fn render_xtc_plugin(
                             BETA_BOOST_MIN,
                             BETA_BOOST_MAX,
                             "×",
-                            5,
+                            8,
                             state.selected_param,
                             state.is_editing,
                             Some('h'),
                             theme,
                         )),
                 )
-                // Column 3: Head shadow modeling
+                // Column 4: Head shadow modeling
                 .child(
                     div()
                         .flex()
@@ -189,7 +249,7 @@ pub fn render_xtc_plugin(
                             HEAD_SHADOW_CUTOFF_MIN,
                             HEAD_SHADOW_CUTOFF_MAX,
                             "Hz",
-                            6,
+                            9,
                             state.selected_param,
                             state.is_editing,
                             Some('c'),
@@ -204,20 +264,12 @@ pub fn render_xtc_plugin(
                             HEAD_SHADOW_SLOPE_MIN,
                             HEAD_SHADOW_SLOPE_MAX,
                             "dB/oct",
-                            7,
+                            10,
                             state.selected_param,
                             state.is_editing,
                             Some('s'),
                             theme,
-                        )),
-                )
-                // Column 4: Filter & Auto Gain
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("FILTER / AUTO GAIN", theme))
+                        ))
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -226,18 +278,78 @@ pub fn render_xtc_plugin(
                             3.0,
                             30.0,
                             "dB",
-                            8,
+                            11,
                             state.selected_param,
                             state.is_editing,
                             None,
+                            theme,
+                        )),
+                )
+                // Column 5: Advanced & Room
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("ADVANCED / ROOM", theme))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Spectral Norm",
+                            state.spectral_normalization,
+                            12,
+                            state.selected_param,
+                            state.is_editing,
                             theme,
                         ))
                         .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
+                            "Pinna Model",
+                            state.pinna_model_enabled,
+                            13,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Room Refl",
+                            state.room_reflections_enabled,
+                            14,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Reflection Beta",
+                            state.reflection_beta_boost,
+                            1.0,
+                            10.0,
+                            "×",
+                            18,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                // Column 6: Auto Gain
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("AUTO GAIN", theme))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
                             "Auto Gain",
                             state.auto_gain_enabled,
-                            12,
+                            22,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -250,7 +362,7 @@ pub fn render_xtc_plugin(
                             0.0,
                             24.0,
                             "dB",
-                            13,
+                            23,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -264,14 +376,14 @@ pub fn render_xtc_plugin(
                             10.0,
                             500.0,
                             "ms",
-                            14,
+                            24,
                             state.selected_param,
                             state.is_editing,
                             None,
                             theme,
                         )),
                 )
-                // Column 5: Diagnostic bypasses
+                // Column 7: Diagnostic bypasses
                 .child(
                     div()
                         .flex()
@@ -283,7 +395,7 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Bypass Filters",
                             state.bypass_xtc_filters,
-                            9,
+                            19,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -291,9 +403,9 @@ pub fn render_xtc_plugin(
                         .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
-                            "Bypass Spectral Norm",
+                            "Bypass Spec Norm",
                             state.bypass_spectral_normalization,
-                            10,
+                            20,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -303,7 +415,7 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Bypass Neumann",
                             state.bypass_neumann_refinement,
-                            11,
+                            21,
                             state.selected_param,
                             state.is_editing,
                             theme,

@@ -14,9 +14,19 @@
 
 use gpui::prelude::*;
 use gpui::{deferred, *};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
+
+// Thread-local registry for focus handles, keyed by element ID.
+// Ensures the same FocusHandle is reused across renders so keyboard
+// events reach the trigger after a mouse click.
+thread_local! {
+    static SELECT_FOCUS_HANDLES: RefCell<HashMap<ElementId, FocusHandle>> =
+        RefCell::new(HashMap::new());
+}
 
 /// Theme colors for select styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -237,7 +247,7 @@ impl Select {
     }
 
     /// Build into element
-    fn build(self, theme: &SelectTheme) -> Div {
+    fn build(self, theme: &SelectTheme, cx: &mut App) -> Div {
         let (py, _text_size_class) = match self.size {
             SelectSize::Xs => (px(2.0), "xs"),
             SelectSize::Sm => (px(4.0), "sm"),
@@ -276,8 +286,20 @@ impl Select {
         // Clone ID for use in dropdown (self.id is moved to trigger)
         let dropdown_id = self.id.clone();
 
+        // Get or create a stable FocusHandle for this select element.
+        // Without this, window.focus() cannot be called and keyboard events
+        // never reach the trigger after a mouse click.
+        let focus_handle = SELECT_FOCUS_HANDLES.with(|handles| {
+            let mut handles = handles.borrow_mut();
+            handles
+                .entry(self.id.clone())
+                .or_insert_with(|| cx.focus_handle())
+                .clone()
+        });
+
         let mut trigger = div()
             .id(self.id)
+            .track_focus(&focus_handle)
             .flex()
             .items_center()
             .justify_between()
@@ -314,34 +336,41 @@ impl Select {
             let hover_border = theme.trigger_border_hover;
             trigger = trigger.hover(move |s| s.border_color(hover_border));
 
-            // Mouse click handler - use on_mouse_down for more reliable response
-            if let Some(ref handler) = on_toggle_rc {
-                let handler = handler.clone();
-                trigger = trigger.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            // Mouse click handler - use on_mouse_down for more reliable response.
+            // B1 fix: call window.focus() so the trigger receives keyboard events.
+            let focus_handle_for_click = focus_handle.clone();
+            let toggle_for_click = on_toggle_rc.clone();
+            trigger = trigger.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.focus(&focus_handle_for_click, cx);
+                if let Some(ref handler) = toggle_for_click {
                     (handler)(!currently_open, window, cx);
-                });
-            }
+                }
+            });
 
-            // Keyboard handler
-            if let Some(ref toggle_handler) = on_toggle_rc {
-                let toggle_rc = toggle_handler.clone();
+            // Keyboard handler.
+            // B2 fix: keyboard handling is always attached (not gated on on_toggle).
+            // B3 fix: cx.stop_propagation() is only called for keys we actually handle.
+            {
+                let toggle_rc = on_toggle_rc.clone();
                 let change_rc = on_change_rc.clone();
                 let highlight_rc = on_highlight_rc.clone();
                 let options_clone = self.options.clone();
 
                 trigger = trigger.on_key_down(move |event, window, cx| {
-                    cx.stop_propagation();
-                    match event.keystroke.key.as_str() {
+                    let handled = match event.keystroke.key.as_str() {
                         "space" | " " => {
-                            // Toggle open/closed
-                            toggle_rc(!currently_open, window, cx);
+                            if let Some(ref handler) = toggle_rc {
+                                handler(!currently_open, window, cx);
+                            }
+                            true
                         }
                         "escape" if currently_open => {
-                            // Close dropdown
-                            toggle_rc(false, window, cx);
+                            if let Some(ref handler) = toggle_rc {
+                                handler(false, window, cx);
+                            }
+                            true
                         }
                         "enter" if currently_open => {
-                            // Select highlighted option
                             if let Some(idx) = current_highlight
                                 && idx < options_clone.len()
                                 && !options_clone[idx].disabled
@@ -349,16 +378,14 @@ impl Select {
                                 if let Some(ref change_handler) = change_rc {
                                     change_handler(&options_clone[idx].value, window, cx);
                                 }
-                                toggle_rc(false, window, cx);
+                                if let Some(ref handler) = toggle_rc {
+                                    handler(false, window, cx);
+                                }
                             }
+                            true
                         }
                         "down" | "up" if currently_open => {
-                            // Navigate options
-                            let delta = if event.keystroke.key == "down" {
-                                1
-                            } else {
-                                -1_i32
-                            };
+                            let delta = if event.keystroke.key == "down" { 1 } else { -1_i32 };
                             let new_idx = if let Some(idx) = current_highlight {
                                 let new = idx as i32 + delta;
                                 if new < 0 {
@@ -368,20 +395,20 @@ impl Select {
                                 } else {
                                     Some(new as usize)
                                 }
+                            } else if delta > 0 {
+                                Some(0)
                             } else {
-                                // No highlight yet, start at first/last
-                                if delta > 0 {
-                                    Some(0)
-                                } else {
-                                    Some(num_options.saturating_sub(1))
-                                }
+                                Some(num_options.saturating_sub(1))
                             };
-
                             if let Some(ref highlight_handler) = highlight_rc {
                                 highlight_handler(new_idx, window, cx);
                             }
+                            true
                         }
-                        _ => {}
+                        _ => false,
+                    };
+                    if handled {
+                        cx.stop_propagation();
                     }
                 });
             }
@@ -406,6 +433,7 @@ impl Select {
         // Dropdown menu (only shown when open)
         // Use deferred() to ensure the dropdown renders on top of other content
         if self.is_open {
+            let dropdown_id_for_options = dropdown_id.clone();
             let mut dropdown = div()
                 .id((dropdown_id, "dropdown"))
                 .absolute()
@@ -428,8 +456,13 @@ impl Select {
                 let is_highlighted = self.highlighted_index == Some(idx);
                 let option_value = option.value.clone();
 
+                // L4 fix: scope option IDs to parent to avoid collision when
+                // multiple Select components exist on the same screen.
+                let option_id = ElementId::Name(
+                    SharedString::from(format!("{:?}-option-{}", dropdown_id_for_options, idx))
+                );
                 let mut option_el = div()
-                    .id(("select-option", idx))
+                    .id(option_id)
                     .px_3()
                     .py(px(6.0))
                     .cursor_pointer();
@@ -502,16 +535,14 @@ impl RenderOnce for Select {
             .clone()
             .unwrap_or_else(|| SelectTheme::from(&global_theme));
 
-        self.build(&theme)
+        self.build(&theme, cx)
     }
 }
 
 impl IntoElement for Select {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        // When used without context, fall back to default theme
-        let theme = self.theme.clone().unwrap_or_default();
-        self.build(&theme)
+        gpui::Component::new(self)
     }
 }

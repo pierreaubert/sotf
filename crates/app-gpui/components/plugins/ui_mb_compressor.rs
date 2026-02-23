@@ -29,6 +29,9 @@ pub struct MbCompressorRenderState {
     pub attack_ms: f64,
     pub release_ms: f64,
     pub knee_db: f64,
+    pub makeup_gain_db: f64,
+    pub solo: bool,
+    pub bypass: bool,
     pub mix: f64,
     pub link_channels: bool,
     pub is_editing: bool,
@@ -325,7 +328,7 @@ pub fn render_mb_compressor_plugin(
                                         entity.clone(),
                                         plugin_idx,
                                         "Makeup",
-                                        0.0, // TODO: Bind to makeup gain
+                                        state.makeup_gain_db,
                                         -24.0,
                                         24.0,
                                         "dB",
@@ -349,7 +352,7 @@ pub fn render_mb_compressor_plugin(
                                     .child(render_toggle_button(
                                         entity.clone(),
                                         plugin_idx,
-                                        false, // TODO: Bind to Solo
+                                        state.solo,
                                         get_param_idx(15),
                                         state.selected_param,
                                         state.is_editing,
@@ -364,7 +367,7 @@ pub fn render_mb_compressor_plugin(
                                     .child(render_toggle_button(
                                         entity.clone(),
                                         plugin_idx,
-                                        false, // TODO: Bind to Bypass
+                                        state.bypass,
                                         get_param_idx(14),
                                         state.selected_param,
                                         state.is_editing,

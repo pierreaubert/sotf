@@ -66,6 +66,8 @@ impl PlayerView {
             local_algo: config.local_algo.clone(),
             smooth: config.smooth,
             smooth_n: config.smooth_n,
+            psychoacoustic: config.psychoacoustic,
+            asymmetric_loss: config.asymmetric_loss,
             spacing_weight: config.spacing_weight,
             min_spacing_oct: config.min_spacing_oct,
             ..Default::default()
@@ -551,6 +553,32 @@ impl PlayerView {
                             .spinorama_eq_state
                             .optimizer_config
                             .smooth_n = value;
+                    });
+                }
+            })
+            .on_psychoacoustic_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .optimizer_config
+                            .psychoacoustic = value;
+                    });
+                }
+            })
+            .on_asymmetric_loss_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .optimizer_config
+                            .asymmetric_loss = value;
                     });
                 }
             });

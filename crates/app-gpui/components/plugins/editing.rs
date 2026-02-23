@@ -227,6 +227,12 @@ impl PluginEditingManager for App {
                     dialogue_weight,
                     voice_freq_min_hz,
                     voice_freq_max_hz,
+                    dialogue_centroid_weight,
+                    dialogue_variance_weight,
+                    dialogue_coherence_weight,
+                    bypass_decorrelation,
+                    bypass_transient_detection,
+                    bypass_all_processing,
                     ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
@@ -433,6 +439,33 @@ impl PluginEditingManager for App {
                         31 => {
                             *voice_freq_max_hz = (*voice_freq_max_hz + delta * 100.0)
                                 .clamp(VOICE_FREQ_MAX_HZ_MIN as f64, VOICE_FREQ_MAX_HZ_MAX as f64);
+                            true
+                        }
+                        32 => {
+                            *dialogue_centroid_weight = (*dialogue_centroid_weight + delta * 0.05)
+                                .clamp(DIALOGUE_CENTROID_WEIGHT_MIN as f64, DIALOGUE_CENTROID_WEIGHT_MAX as f64);
+                            true
+                        }
+                        33 => {
+                            *dialogue_variance_weight = (*dialogue_variance_weight + delta * 0.05)
+                                .clamp(DIALOGUE_VARIANCE_WEIGHT_MIN as f64, DIALOGUE_VARIANCE_WEIGHT_MAX as f64);
+                            true
+                        }
+                        34 => {
+                            *dialogue_coherence_weight = (*dialogue_coherence_weight + delta * 0.05)
+                                .clamp(DIALOGUE_COHERENCE_WEIGHT_MIN as f64, DIALOGUE_COHERENCE_WEIGHT_MAX as f64);
+                            true
+                        }
+                        35 => {
+                            *bypass_decorrelation = !*bypass_decorrelation;
+                            true
+                        }
+                        36 => {
+                            *bypass_transient_detection = !*bypass_transient_detection;
+                            true
+                        }
+                        37 => {
+                            *bypass_all_processing = !*bypass_all_processing;
                             true
                         }
                         _ => false,
@@ -853,182 +886,346 @@ impl PluginEditingManager for App {
                     knee_db,
                     mix,
                     link_channels,
-                    ..
+                    bands,
                 } => {
                     use sotf_audio_player::param_specs::multiband_compressor::*;
-                    match param_idx {
-                        0 => {
-                            *num_bands = ((*num_bands as i64) + delta as i64)
-                                .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
-                                as usize;
-                            true
+                    if param_idx < 100 {
+                        match param_idx {
+                            0 => {
+                                let new_bands = ((*num_bands as i64) + delta as i64)
+                                    .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
+                                    as usize;
+                                *num_bands = new_bands;
+                                bands.resize_with(new_bands, Default::default);
+                                channel_count_changed = true;
+                                true
+                            }
+                            1 => {
+                                *crossover_preset = ((*crossover_preset as i64) + delta as i64)
+                                    .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
+                                    as i32;
+                                true
+                            }
+                            2 => {
+                                *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
+                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                                true
+                            }
+                            3 => {
+                                *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
+                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                                true
+                            }
+                            4 => {
+                                *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
+                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                                true
+                            }
+                            5 => {
+                                *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
+                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                                true
+                            }
+                            6 => {
+                                *threshold_db = (*threshold_db + delta)
+                                    .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                                true
+                            }
+                            7 => {
+                                *ratio =
+                                    (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                                true
+                            }
+                            8 => {
+                                *attack_ms = (*attack_ms + delta * 0.5)
+                                    .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                                true
+                            }
+                            9 => {
+                                *release_ms = (*release_ms + delta * 5.0)
+                                    .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                                true
+                            }
+                            10 => {
+                                *knee_db = (*knee_db + delta * 0.1)
+                                    .clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                                true
+                            }
+                            11 => {
+                                *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                                true
+                            }
+                            12 => {
+                                *link_channels = !*link_channels;
+                                true
+                            }
+                            _ => false,
                         }
-                        1 => {
-                            *crossover_preset = ((*crossover_preset as i64) + delta as i64)
-                                .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
-                                as i32;
-                            true
-                        }
-                        2 => {
-                            *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
-                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
-                            true
-                        }
-                        3 => {
-                            *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
-                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
-                            true
-                        }
-                        4 => {
-                            *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
-                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
-                            true
-                        }
-                        5 => {
-                            *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
-                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
-                            true
-                        }
-                        6 => {
-                            *threshold_db = (*threshold_db + delta)
-                                .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
-                            true
-                        }
-                        7 => {
-                            *ratio =
-                                (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
-                            true
-                        }
-                        8 => {
-                            *attack_ms = (*attack_ms + delta * 0.5)
-                                .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
-                            true
-                        }
-                        9 => {
-                            *release_ms = (*release_ms + delta * 5.0)
-                                .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
-                            true
-                        }
-                        10 => {
-                            *knee_db =
-                                (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64);
-                            true
-                        }
-                        11 => {
-                            *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
-                            true
-                        }
-                        12 => {
-                            *link_channels = !*link_channels;
-                            true
-                        }
-                        _ => false,
+                    } else {
+                        let band_idx = (param_idx / 100) - 1;
+                        let local_idx = param_idx % 100;
+                        if let Some(band) = bands.get_mut(band_idx) {
+                            match local_idx {
+                                6 => { // threshold override
+                                    band.threshold_db = match band.threshold_db {
+                                        None => Some(*threshold_db as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32;
+                                            if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
+                                        }
+                                    };
+                                    true
+                                }
+                                7 => { // ratio override
+                                    band.ratio = match band.ratio {
+                                        None => Some(*ratio as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 0.1;
+                                            if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
+                                        }
+                                    };
+                                    true
+                                }
+                                8 => { // attack override
+                                    band.attack_ms = match band.attack_ms {
+                                        None => Some(*attack_ms as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 0.5;
+                                            if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
+                                        }
+                                    };
+                                    true
+                                }
+                                9 => { // release override
+                                    band.release_ms = match band.release_ms {
+                                        None => Some(*release_ms as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 5.0;
+                                            if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
+                                        }
+                                    };
+                                    true
+                                }
+                                10 => { // knee override
+                                    band.knee_db = match band.knee_db {
+                                        None => Some(*knee_db as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 0.1;
+                                            if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
+                                        }
+                                    };
+                                    true
+                                }
+                                13 => { // makeup gain
+                                    band.makeup_gain_db = (band.makeup_gain_db + delta as f32 * 0.5).clamp(-24.0, 24.0);
+                                    true
+                                }
+                                14 => { band.bypass = !band.bypass; true }
+                                15 => { band.solo = !band.solo; true }
+                                _ => false,
+                            }
+                        } else { false }
                     }
                 }
-                PluginSettings::MultibandExpander {
-                    num_bands,
-                    crossover_preset,
-                    crossover_freq_1,
-                    crossover_freq_2,
-                    crossover_freq_3,
-                    crossover_freq_4,
-                    threshold_db,
-                    ratio,
-                    attack_ms,
-                    release_ms,
-                    range_db,
-                    knee_db,
-                    hysteresis_db,
-                    hold_ms,
-                    mix,
-                    link_channels,
-                    ..
-                } => {
-                    use sotf_audio_player::param_specs::multiband_expander::*;
-                    match param_idx {
-                        0 => {
-                            *num_bands = ((*num_bands as i64) + delta as i64)
-                                .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
-                                as usize;
-                            true
-                        }
-                        1 => {
-                            *crossover_preset = ((*crossover_preset as i64) + delta as i64)
-                                .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
-                                as i32;
-                            true
-                        }
-                        2 => {
-                            *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
-                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
-                            true
-                        }
-                        3 => {
-                            *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
-                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
-                            true
-                        }
-                        4 => {
-                            *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
-                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
-                            true
-                        }
-                        5 => {
-                            *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
-                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
-                            true
-                        }
-                        6 => {
-                            *threshold_db = (*threshold_db + delta)
-                                .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
-                            true
-                        }
-                        7 => {
-                            *ratio =
-                                (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
-                            true
-                        }
-                        8 => {
-                            *attack_ms = (*attack_ms + delta * 0.1)
-                                .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
-                            true
-                        }
-                        9 => {
-                            *release_ms = (*release_ms + delta * 10.0)
-                                .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
-                            true
-                        }
-                        10 => {
-                            *range_db =
-                                (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64);
-                            true
-                        }
-                        11 => {
-                            *knee_db =
-                                (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64);
-                            true
-                        }
-                        12 => {
-                            *hysteresis_db = (*hysteresis_db + delta * 0.1)
-                                .clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
-                            true
-                        }
-                        13 => {
-                            *hold_ms =
-                                (*hold_ms + delta * 5.0).clamp(HOLD_MIN as f64, HOLD_MAX as f64);
-                            true
-                        }
-                        14 => {
-                            *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
-                            true
-                        }
-                        15 => {
-                            *link_channels = !*link_channels;
-                            true
-                        }
-                        _ => false,
-                    }
-                }
+                                PluginSettings::MultibandExpander {
+                                    num_bands,
+                                    crossover_preset,
+                                    crossover_freq_1,
+                                    crossover_freq_2,
+                                    crossover_freq_3,
+                                    crossover_freq_4,
+                                    threshold_db,
+                                    ratio,
+                                    attack_ms,
+                                    release_ms,
+                                    range_db,
+                                    knee_db,
+                                    hysteresis_db,
+                                    hold_ms,
+                                    mix,
+                                    link_channels,
+                                    bands,
+                                } => {
+                                    use sotf_audio_player::param_specs::multiband_expander::*;
+                                    if param_idx < 100 {
+                                        match param_idx {
+                                            0 => {
+                                                let new_bands = ((*num_bands as i64) + delta as i64)
+                                                    .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
+                                                    as usize;
+                                                *num_bands = new_bands;
+                                                bands.resize_with(new_bands, Default::default);
+                                                channel_count_changed = true;
+                                                true
+                                            }
+                                            1 => {
+                                                *crossover_preset = ((*crossover_preset as i64) + delta as i64)
+                                                    .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
+                                                    as i32;
+                                                true
+                                            }
+                                            2 => {
+                                                *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
+                                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                                                true
+                                            }
+                                            3 => {
+                                                *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
+                                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                                                true
+                                            }
+                                            4 => {
+                                                *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
+                                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                                                true
+                                            }
+                                            5 => {
+                                                *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
+                                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                                                true
+                                            }
+                                            6 => {
+                                                *threshold_db = (*threshold_db + delta)
+                                                    .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                                                true
+                                            }
+                                            7 => {
+                                                *ratio =
+                                                    (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                                                true
+                                            }
+                                            8 => {
+                                                *attack_ms = (*attack_ms + delta * 0.1)
+                                                    .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                                                true
+                                            }
+                                            9 => {
+                                                *release_ms = (*release_ms + delta * 10.0)
+                                                    .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                                                true
+                                            }
+                                            10 => {
+                                                *range_db =
+                                                    (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64);
+                                                true
+                                            }
+                                            11 => {
+                                                *knee_db = (*knee_db + delta * 0.1)
+                                                    .clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                                                true
+                                            }
+                                            12 => {
+                                                *hysteresis_db = (*hysteresis_db + delta * 0.1)
+                                                    .clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
+                                                true
+                                            }
+                                            13 => {
+                                                *hold_ms =
+                                                    (*hold_ms + delta * 5.0).clamp(HOLD_MIN as f64, HOLD_MAX as f64);
+                                                true
+                                            }
+                                            14 => {
+                                                *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                                                true
+                                            }
+                                            15 => {
+                                                *link_channels = !*link_channels;
+                                                true
+                                            }
+                                            _ => false,
+                                        }
+                                    } else {
+                                        let band_idx = (param_idx / 100) - 1;
+                                        let local_idx = param_idx % 100;
+                                        if let Some(band) = bands.get_mut(band_idx) {
+                                            match local_idx {
+                                                6 => { // threshold override
+                                                    band.threshold_db = match band.threshold_db {
+                                                        None => Some(*threshold_db as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32;
+                                                            if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                7 => { // ratio override
+                                                    band.ratio = match band.ratio {
+                                                        None => Some(*ratio as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32 * 0.1;
+                                                            if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                8 => { // attack override
+                                                    band.attack_ms = match band.attack_ms {
+                                                        None => Some(*attack_ms as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32 * 0.1;
+                                                            if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                9 => { // release override
+                                                    band.release_ms = match band.release_ms {
+                                                        None => Some(*release_ms as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32 * 10.0;
+                                                            if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                10 => { // range override
+                                                    band.range_db = match band.range_db {
+                                                        None => Some(*range_db as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32;
+                                                            if new_v < RANGE_MIN { None } else { Some(new_v.clamp(RANGE_MIN, RANGE_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                11 => { // knee override
+                                                    band.knee_db = match band.knee_db {
+                                                        None => Some(*knee_db as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32 * 0.1;
+                                                            if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                12 => { // hysteresis override
+                                                    band.hysteresis_db = match band.hysteresis_db {
+                                                        None => Some(*hysteresis_db as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32 * 0.1;
+                                                            if new_v < HYSTERESIS_MIN { None } else { Some(new_v.clamp(HYSTERESIS_MIN, HYSTERESIS_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                13 => { // hold override
+                                                    band.hold_ms = match band.hold_ms {
+                                                        None => Some(*hold_ms as f32),
+                                                        Some(v) => {
+                                                            let new_v = v + delta as f32 * 5.0;
+                                                            if new_v < HOLD_MIN { None } else { Some(new_v.clamp(HOLD_MIN, HOLD_MAX)) }
+                                                        }
+                                                    };
+                                                    true
+                                                }
+                                                14 => { band.bypass = !band.bypass; true }
+                                                15 => { band.solo = !band.solo; true }
+                                                _ => false,
+                                            }
+                                        } else { false }
+                                    }
+                                }
                 PluginSettings::XTC {
                     distance_m,
                     speaker_angle_deg,
@@ -1039,83 +1236,132 @@ impl PluginEditingManager for App {
                     head_shadow_cutoff_hz,
                     head_shadow_slope_db_per_octave,
                     max_gain_db,
+                    head_offset_x,
+                    head_offset_z,
+                    head_yaw_deg,
+                    head_tracking_smooth_s: _,
+                    spectral_normalization,
+                    room_reflections_enabled,
+                    room_ir_file: _,
+                    room_width_m,
+                    room_depth_m,
+                    wall_absorption,
+                    reflection_beta_boost,
                     bypass_xtc_filters,
                     bypass_spectral_normalization,
                     bypass_neumann_refinement,
                     auto_gain_enabled,
                     auto_gain_max_db,
                     auto_gain_smoothing_ms,
-                } => {
-                    match param_idx {
-                        0 => {
-                            *distance_m = (*distance_m + delta * 0.1).clamp(0.5, 5.0);
-                            true
-                        }
-                        1 => {
-                            *speaker_angle_deg = (*speaker_angle_deg + delta).clamp(10.0, 60.0);
-                            true
-                        }
-                        2 => {
-                            // head_radius stored in meters, display in cm, so /100 back
-                            *head_radius_m = (*head_radius_m + delta * 0.001).clamp(0.05, 0.15);
-                            true
-                        }
-                        3 => {
-                            *beta_base = (*beta_base + delta * 0.001).clamp(0.0001, 0.1);
-                            true
-                        }
-                        4 => {
-                            *beta_low_freq_boost =
-                                (*beta_low_freq_boost + delta * 1.0).clamp(1.0, 100.0);
-                            true
-                        }
-                        5 => {
-                            *beta_high_freq_boost =
-                                (*beta_high_freq_boost + delta * 1.0).clamp(1.0, 100.0);
-                            true
-                        }
-                        6 => {
-                            *head_shadow_cutoff_hz =
-                                (*head_shadow_cutoff_hz + delta * 100.0).clamp(1000.0, 10000.0);
-                            true
-                        }
-                        7 => {
-                            *head_shadow_slope_db_per_octave =
-                                (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0);
-                            true
-                        }
-                        8 => {
-                            *max_gain_db = (*max_gain_db + delta).clamp(3.0, 30.0);
-                            true
-                        }
-                        9 => {
-                            *bypass_xtc_filters = !*bypass_xtc_filters;
-                            true
-                        }
-                        10 => {
-                            *bypass_spectral_normalization = !*bypass_spectral_normalization;
-                            true
-                        }
-                        11 => {
-                            *bypass_neumann_refinement = !*bypass_neumann_refinement;
-                            true
-                        }
-                        12 => {
-                            *auto_gain_enabled = !*auto_gain_enabled;
-                            true
-                        }
-                        13 => {
-                            *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0);
-                            true
-                        }
-                        14 => {
-                            *auto_gain_smoothing_ms =
-                                (*auto_gain_smoothing_ms + delta * 5.0).clamp(10.0, 500.0);
-                            true
-                        }
-                        _ => false,
+                    pinna_model_enabled,
+                } => match param_idx {
+                    0 => {
+                        *distance_m = (*distance_m + delta * 0.1).clamp(0.5, 5.0);
+                        true
                     }
-                }
+                    1 => {
+                        *speaker_angle_deg = (*speaker_angle_deg + delta).clamp(10.0, 60.0);
+                        true
+                    }
+                    2 => {
+                        *head_radius_m = (*head_radius_m + delta * 0.001).clamp(0.05, 0.15);
+                        true
+                    }
+                    3 => {
+                        *head_offset_x = (*head_offset_x + delta * 0.01).clamp(-0.5, 0.5);
+                        true
+                    }
+                    4 => {
+                        *head_offset_z = (*head_offset_z + delta * 0.01).clamp(-0.5, 0.5);
+                        true
+                    }
+                    5 => {
+                        *head_yaw_deg = (*head_yaw_deg + delta).clamp(-90.0, 90.0);
+                        true
+                    }
+                    6 => {
+                        *beta_base = (*beta_base + delta * 0.001).clamp(0.0001, 0.1);
+                        true
+                    }
+                    7 => {
+                        *beta_low_freq_boost =
+                            (*beta_low_freq_boost + delta * 1.0).clamp(1.0, 100.0);
+                        true
+                    }
+                    8 => {
+                        *beta_high_freq_boost =
+                            (*beta_high_freq_boost + delta * 1.0).clamp(1.0, 100.0);
+                        true
+                    }
+                    9 => {
+                        *head_shadow_cutoff_hz =
+                            (*head_shadow_cutoff_hz + delta * 100.0).clamp(1000.0, 10000.0);
+                        true
+                    }
+                    10 => {
+                        *head_shadow_slope_db_per_octave =
+                            (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0);
+                        true
+                    }
+                    11 => {
+                        *max_gain_db = (*max_gain_db + delta).clamp(3.0, 30.0);
+                        true
+                    }
+                    12 => {
+                        *spectral_normalization = !*spectral_normalization;
+                        true
+                    }
+                    13 => {
+                        *pinna_model_enabled = !*pinna_model_enabled;
+                        true
+                    }
+                    14 => {
+                        *room_reflections_enabled = !*room_reflections_enabled;
+                        true
+                    }
+                    15 => {
+                        *room_width_m = (*room_width_m + delta * 0.1).clamp(2.0, 10.0);
+                        true
+                    }
+                    16 => {
+                        *room_depth_m = (*room_depth_m + delta * 0.1).clamp(2.0, 15.0);
+                        true
+                    }
+                    17 => {
+                        *wall_absorption = (*wall_absorption + delta * 0.05).clamp(0.0, 1.0);
+                        true
+                    }
+                    18 => {
+                        *reflection_beta_boost = (*reflection_beta_boost + delta * 0.1).clamp(1.0, 10.0);
+                        true
+                    }
+                    19 => {
+                        *bypass_xtc_filters = !*bypass_xtc_filters;
+                        true
+                    }
+                    20 => {
+                        *bypass_spectral_normalization = !*bypass_spectral_normalization;
+                        true
+                    }
+                    21 => {
+                        *bypass_neumann_refinement = !*bypass_neumann_refinement;
+                        true
+                    }
+                    22 => {
+                        *auto_gain_enabled = !*auto_gain_enabled;
+                        true
+                    }
+                    23 => {
+                        *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0);
+                        true
+                    }
+                    24 => {
+                        *auto_gain_smoothing_ms =
+                            (*auto_gain_smoothing_ms + delta * 5.0).clamp(10.0, 500.0);
+                        true
+                    }
+                    _ => false,
+                },
                 PluginSettings::Denoiser {
                     reduction_db,
                     floor_db,
@@ -1124,11 +1370,18 @@ impl PluginEditingManager for App {
                     release_ms,
                     low_latency,
                     polyphonic_detection,
+                    crack_sensitivity,
+                    mcra_alpha_s,
+                    mcra_alpha_p,
+                    mcra_l,
+                    mcra_delta,
                     transparency,
                     dd_enabled,
                     dd_alpha,
                     psychoacoustic_masking,
+                    learn_noise,
                     use_captured_profile,
+                    clear_profile,
                 } => {
                     use sotf_audio_player::param_specs::denoiser::*;
                     match param_idx {
@@ -1143,17 +1396,17 @@ impl PluginEditingManager for App {
                             true
                         }
                         2 => {
-                            *smoothing = (*smoothing + delta * 0.05)
+                            *smoothing = (*smoothing + delta * 0.01)
                                 .clamp(SMOOTHING_MIN as f64, SMOOTHING_MAX as f64);
                             true
                         }
                         3 => {
-                            *attack_ms = (*attack_ms + delta)
+                            *attack_ms = (*attack_ms + delta * 0.1)
                                 .clamp(ATTACK_MS_MIN as f64, ATTACK_MS_MAX as f64);
                             true
                         }
                         4 => {
-                            *release_ms = (*release_ms + delta * 5.0)
+                            *release_ms = (*release_ms + delta)
                                 .clamp(RELEASE_MS_MIN as f64, RELEASE_MS_MAX as f64);
                             true
                         }
@@ -1166,29 +1419,55 @@ impl PluginEditingManager for App {
                             true
                         }
                         7 => {
+                            *crack_sensitivity = (*crack_sensitivity + delta).clamp(1.0, 100.0);
+                            true
+                        }
+                        8 => {
+                            *mcra_alpha_s = (*mcra_alpha_s + delta * 0.01).clamp(0.5, 0.99);
+                            true
+                        }
+                        9 => {
+                            *mcra_alpha_p = (*mcra_alpha_p + delta * 0.01).clamp(0.1, 0.99);
+                            true
+                        }
+                        10 => {
+                            *mcra_l = ((*mcra_l as i64) + delta as i64).clamp(10, 200) as usize;
+                            true
+                        }
+                        11 => {
+                            *mcra_delta = (*mcra_delta + delta * 0.5).clamp(1.0, 20.0);
+                            true
+                        }
+                        12 => {
                             *transparency = (*transparency + delta * 0.05)
                                 .clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64);
                             true
                         }
-                        8 => {
+                        13 => {
                             *dd_enabled = !*dd_enabled;
                             true
                         }
-                        9 => {
+                        14 => {
                             *dd_alpha = (*dd_alpha + delta * 0.01)
                                 .clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
                             true
                         }
-                        10 => {
+                        15 => {
                             *psychoacoustic_masking = !*psychoacoustic_masking;
                             true
                         }
-                        11 => true, // learn_noise trigger — handled by set_parameter_value
-                        12 => {
+                        16 => {
+                            *learn_noise = !*learn_noise;
+                            true
+                        }
+                        17 => {
                             *use_captured_profile = !*use_captured_profile;
                             true
                         }
-                        13 => true, // clear_profile trigger — handled by set_parameter_value
+                        18 => {
+                            *clear_profile = !*clear_profile;
+                            true
+                        }
                         _ => false,
                     }
                 }
@@ -1733,6 +2012,12 @@ impl PluginEditingManager for App {
                     dialogue_weight,
                     voice_freq_min_hz,
                     voice_freq_max_hz,
+                    dialogue_centroid_weight,
+                    dialogue_variance_weight,
+                    dialogue_coherence_weight,
+                    bypass_decorrelation,
+                    bypass_transient_detection,
+                    bypass_all_processing,
                     ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
@@ -1919,7 +2204,31 @@ impl PluginEditingManager for App {
                         }
                         31 => {
                             *voice_freq_max_hz = value
-                                .clamp(VOICE_FREQ_MAX_HZ_MIN as f64, VOICE_FREQ_MAX_HZ_MAX as f64);
+                                .clamp(VOICE_FREQ_MIN_HZ_MAX as f64, VOICE_FREQ_MAX_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        32 => {
+                            *dialogue_centroid_weight = value.clamp(DIALOGUE_CENTROID_WEIGHT_MIN as f64, DIALOGUE_CENTROID_WEIGHT_MAX as f64);
+                            update_needed = true;
+                        }
+                        33 => {
+                            *dialogue_variance_weight = value.clamp(DIALOGUE_VARIANCE_WEIGHT_MIN as f64, DIALOGUE_VARIANCE_WEIGHT_MAX as f64);
+                            update_needed = true;
+                        }
+                        34 => {
+                            *dialogue_coherence_weight = value.clamp(DIALOGUE_COHERENCE_WEIGHT_MIN as f64, DIALOGUE_COHERENCE_WEIGHT_MAX as f64);
+                            update_needed = true;
+                        }
+                        35 => {
+                            *bypass_decorrelation = value > 0.5;
+                            update_needed = true;
+                        }
+                        36 => {
+                            *bypass_transient_detection = value > 0.5;
+                            update_needed = true;
+                        }
+                        37 => {
+                            *bypass_all_processing = value > 0.5;
                             update_needed = true;
                         }
                         _ => {}
@@ -2287,68 +2596,88 @@ impl PluginEditingManager for App {
                     knee_db,
                     mix,
                     link_channels,
-                    ..
+                    bands,
                 } => {
                     use sotf_audio_player::param_specs::multiband_compressor::*;
-                    match param_idx {
-                        0 => {
-                            *num_bands = (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
-                            update_needed = true;
+                    if param_idx < 100 {
+                        match param_idx {
+                            0 => {
+                                *num_bands = (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                                bands.resize_with(*num_bands, Default::default);
+                                channel_count_changed = true;
+                                update_needed = true;
+                            }
+                            1 => {
+                                *crossover_preset =
+                                    (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                                update_needed = true;
+                            }
+                            2 => {
+                                *crossover_freq_1 = value
+                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                                update_needed = true;
+                            }
+                            3 => {
+                                *crossover_freq_2 = value
+                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                                update_needed = true;
+                            }
+                            4 => {
+                                *crossover_freq_3 = value
+                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                                update_needed = true;
+                            }
+                            5 => {
+                                *crossover_freq_4 = value
+                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                                update_needed = true;
+                            }
+                            6 => {
+                                *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                                update_needed = true;
+                            }
+                            7 => {
+                                *ratio = value.clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                                update_needed = true;
+                            }
+                            8 => {
+                                *attack_ms = value.clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                                update_needed = true;
+                            }
+                            9 => {
+                                *release_ms = value.clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                                update_needed = true;
+                            }
+                            10 => {
+                                *knee_db = value.clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                                update_needed = true;
+                            }
+                            11 => {
+                                *mix = (value / 100.0).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                                update_needed = true;
+                            }
+                            12 => {
+                                *link_channels = value > 0.5;
+                                update_needed = true;
+                            }
+                            _ => {}
                         }
-                        1 => {
-                            *crossover_preset =
-                                (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
-                            update_needed = true;
+                    } else {
+                        let band_idx = (param_idx / 100) - 1;
+                        let local_idx = param_idx % 100;
+                        if let Some(band) = bands.get_mut(band_idx) {
+                            match local_idx {
+                                6 => { band.threshold_db = Some(value as f32); update_needed = true; }
+                                7 => { band.ratio = Some(value as f32); update_needed = true; }
+                                8 => { band.attack_ms = Some(value as f32); update_needed = true; }
+                                9 => { band.release_ms = Some(value as f32); update_needed = true; }
+                                10 => { band.knee_db = Some(value as f32); update_needed = true; }
+                                13 => { band.makeup_gain_db = value as f32; update_needed = true; }
+                                14 => { band.bypass = value > 0.5; update_needed = true; }
+                                15 => { band.solo = value > 0.5; update_needed = true; }
+                                _ => {}
+                            }
                         }
-                        2 => {
-                            *crossover_freq_1 = value
-                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
-                            update_needed = true;
-                        }
-                        3 => {
-                            *crossover_freq_2 = value
-                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
-                            update_needed = true;
-                        }
-                        4 => {
-                            *crossover_freq_3 = value
-                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
-                            update_needed = true;
-                        }
-                        5 => {
-                            *crossover_freq_4 = value
-                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
-                            update_needed = true;
-                        }
-                        6 => {
-                            *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
-                            update_needed = true;
-                        }
-                        7 => {
-                            *ratio = value.clamp(RATIO_MIN as f64, RATIO_MAX as f64);
-                            update_needed = true;
-                        }
-                        8 => {
-                            *attack_ms = value.clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
-                            update_needed = true;
-                        }
-                        9 => {
-                            *release_ms = value.clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
-                            update_needed = true;
-                        }
-                        10 => {
-                            *knee_db = value.clamp(KNEE_MIN as f64, KNEE_MAX as f64);
-                            update_needed = true;
-                        }
-                        11 => {
-                            *mix = (value / 100.0).clamp(MIX_MIN as f64, MIX_MAX as f64);
-                            update_needed = true;
-                        }
-                        12 => {
-                            *link_channels = value > 0.5;
-                            update_needed = true;
-                        }
-                        _ => {}
                     }
                 }
                 PluginSettings::MultibandExpander {
@@ -2368,81 +2697,103 @@ impl PluginEditingManager for App {
                     hold_ms,
                     mix,
                     link_channels,
-                    ..
+                    bands,
                 } => {
                     use sotf_audio_player::param_specs::multiband_expander::*;
-                    match param_idx {
-                        0 => {
-                            *num_bands = (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
-                            update_needed = true;
+                    if param_idx < 100 {
+                        match param_idx {
+                            0 => {
+                                *num_bands = (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                                bands.resize_with(*num_bands, Default::default);
+                                channel_count_changed = true;
+                                update_needed = true;
+                            }
+                            1 => {
+                                *crossover_preset =
+                                    (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                                update_needed = true;
+                            }
+                            2 => {
+                                *crossover_freq_1 = value
+                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                                update_needed = true;
+                            }
+                            3 => {
+                                *crossover_freq_2 = value
+                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                                update_needed = true;
+                            }
+                            4 => {
+                                *crossover_freq_3 = value
+                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                                update_needed = true;
+                            }
+                            5 => {
+                                *crossover_freq_4 = value
+                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                                update_needed = true;
+                            }
+                            6 => {
+                                *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                                update_needed = true;
+                            }
+                            7 => {
+                                *ratio = value.clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                                update_needed = true;
+                            }
+                            8 => {
+                                *attack_ms = value.clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                                update_needed = true;
+                            }
+                            9 => {
+                                *release_ms = value.clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                                update_needed = true;
+                            }
+                            10 => {
+                                *range_db = value.clamp(RANGE_MIN as f64, RANGE_MAX as f64);
+                                update_needed = true;
+                            }
+                            11 => {
+                                *knee_db = value.clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                                update_needed = true;
+                            }
+                            12 => {
+                                *hysteresis_db =
+                                    value.clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
+                                update_needed = true;
+                            }
+                            13 => {
+                                *hold_ms = value.clamp(HOLD_MIN as f64, HOLD_MAX as f64);
+                                update_needed = true;
+                            }
+                            14 => {
+                                *mix = (value / 100.0).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                                update_needed = true;
+                            }
+                            15 => {
+                                *link_channels = value > 0.5;
+                                update_needed = true;
+                            }
+                            _ => {}
                         }
-                        1 => {
-                            *crossover_preset =
-                                (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
-                            update_needed = true;
+                    } else {
+                        let band_idx = (param_idx / 100) - 1;
+                        let local_idx = param_idx % 100;
+                        if let Some(band) = bands.get_mut(band_idx) {
+                            match local_idx {
+                                6 => { band.threshold_db = Some(value as f32); update_needed = true; }
+                                7 => { band.ratio = Some(value as f32); update_needed = true; }
+                                8 => { band.attack_ms = Some(value as f32); update_needed = true; }
+                                9 => { band.release_ms = Some(value as f32); update_needed = true; }
+                                10 => { band.range_db = Some(value as f32); update_needed = true; }
+                                11 => { band.knee_db = Some(value as f32); update_needed = true; }
+                                12 => { band.hysteresis_db = Some(value as f32); update_needed = true; }
+                                13 => { band.hold_ms = Some(value as f32); update_needed = true; }
+                                14 => { band.bypass = value > 0.5; update_needed = true; }
+                                15 => { band.solo = value > 0.5; update_needed = true; }
+                                _ => {}
+                            }
                         }
-                        2 => {
-                            *crossover_freq_1 = value
-                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
-                            update_needed = true;
-                        }
-                        3 => {
-                            *crossover_freq_2 = value
-                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
-                            update_needed = true;
-                        }
-                        4 => {
-                            *crossover_freq_3 = value
-                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
-                            update_needed = true;
-                        }
-                        5 => {
-                            *crossover_freq_4 = value
-                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
-                            update_needed = true;
-                        }
-                        6 => {
-                            *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
-                            update_needed = true;
-                        }
-                        7 => {
-                            *ratio = value.clamp(RATIO_MIN as f64, RATIO_MAX as f64);
-                            update_needed = true;
-                        }
-                        8 => {
-                            *attack_ms = value.clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
-                            update_needed = true;
-                        }
-                        9 => {
-                            *release_ms = value.clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
-                            update_needed = true;
-                        }
-                        10 => {
-                            *range_db = value.clamp(RANGE_MIN as f64, RANGE_MAX as f64);
-                            update_needed = true;
-                        }
-                        11 => {
-                            *knee_db = value.clamp(KNEE_MIN as f64, KNEE_MAX as f64);
-                            update_needed = true;
-                        }
-                        12 => {
-                            *hysteresis_db =
-                                value.clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
-                            update_needed = true;
-                        }
-                        13 => {
-                            *hold_ms = value.clamp(HOLD_MIN as f64, HOLD_MAX as f64);
-                            update_needed = true;
-                        }
-                        14 => {
-                            *mix = (value / 100.0).clamp(MIX_MIN as f64, MIX_MAX as f64);
-                            update_needed = true;
-                        }
-                        15 => {
-                            *link_channels = value > 0.5;
-                            update_needed = true;
-                        }
-                        _ => {}
                     }
                 }
                 PluginSettings::XTC {
@@ -2455,12 +2806,24 @@ impl PluginEditingManager for App {
                     head_shadow_cutoff_hz,
                     head_shadow_slope_db_per_octave,
                     max_gain_db,
+                    head_offset_x,
+                    head_offset_z,
+                    head_yaw_deg,
+                    head_tracking_smooth_s: _,
+                    spectral_normalization,
+                    room_reflections_enabled,
+                    room_ir_file: _,
+                    room_width_m,
+                    room_depth_m,
+                    wall_absorption,
+                    reflection_beta_boost,
                     bypass_xtc_filters,
                     bypass_spectral_normalization,
                     bypass_neumann_refinement,
                     auto_gain_enabled,
                     auto_gain_max_db,
                     auto_gain_smoothing_ms,
+                    pinna_model_enabled,
                 } => match param_idx {
                     0 => {
                         *distance_m = value.clamp(0.5, 5.0);
@@ -2476,51 +2839,91 @@ impl PluginEditingManager for App {
                         update_needed = true;
                     }
                     3 => {
+                        *head_offset_x = value.clamp(-0.5, 0.5);
+                        update_needed = true;
+                    }
+                    4 => {
+                        *head_offset_z = value.clamp(-0.5, 0.5);
+                        update_needed = true;
+                    }
+                    5 => {
+                        *head_yaw_deg = value.clamp(-90.0, 90.0);
+                        update_needed = true;
+                    }
+                    6 => {
                         // Value comes as scaled (×1000), convert back
                         *beta_base = (value / 1000.0).clamp(0.0001, 0.1);
                         update_needed = true;
                     }
-                    4 => {
+                    7 => {
                         *beta_low_freq_boost = value.clamp(1.0, 100.0);
                         update_needed = true;
                     }
-                    5 => {
+                    8 => {
                         *beta_high_freq_boost = value.clamp(1.0, 100.0);
                         update_needed = true;
                     }
-                    6 => {
+                    9 => {
                         *head_shadow_cutoff_hz = value.clamp(1000.0, 10000.0);
                         update_needed = true;
                     }
-                    7 => {
+                    10 => {
                         *head_shadow_slope_db_per_octave = value.clamp(0.0, 12.0);
                         update_needed = true;
                     }
-                    8 => {
+                    11 => {
                         *max_gain_db = value.clamp(3.0, 30.0);
                         update_needed = true;
                     }
-                    9 => {
-                        *bypass_xtc_filters = value > 0.5;
-                        update_needed = true;
-                    }
-                    10 => {
-                        *bypass_spectral_normalization = value > 0.5;
-                        update_needed = true;
-                    }
-                    11 => {
-                        *bypass_neumann_refinement = value > 0.5;
-                        update_needed = true;
-                    }
                     12 => {
-                        *auto_gain_enabled = value > 0.5;
+                        *spectral_normalization = value > 0.5;
                         update_needed = true;
                     }
                     13 => {
-                        *auto_gain_max_db = value.clamp(0.0, 24.0);
+                        *pinna_model_enabled = value > 0.5;
                         update_needed = true;
                     }
                     14 => {
+                        *room_reflections_enabled = value > 0.5;
+                        update_needed = true;
+                    }
+                    15 => {
+                        *room_width_m = value.clamp(2.0, 10.0);
+                        update_needed = true;
+                    }
+                    16 => {
+                        *room_depth_m = value.clamp(2.0, 15.0);
+                        update_needed = true;
+                    }
+                    17 => {
+                        *wall_absorption = value.clamp(0.0, 1.0);
+                        update_needed = true;
+                    }
+                    18 => {
+                        *reflection_beta_boost = value.clamp(1.0, 10.0);
+                        update_needed = true;
+                    }
+                    19 => {
+                        *bypass_xtc_filters = value > 0.5;
+                        update_needed = true;
+                    }
+                    20 => {
+                        *bypass_spectral_normalization = value > 0.5;
+                        update_needed = true;
+                    }
+                    21 => {
+                        *bypass_neumann_refinement = value > 0.5;
+                        update_needed = true;
+                    }
+                    22 => {
+                        *auto_gain_enabled = value > 0.5;
+                        update_needed = true;
+                    }
+                    23 => {
+                        *auto_gain_max_db = value.clamp(0.0, 24.0);
+                        update_needed = true;
+                    }
+                    24 => {
                         *auto_gain_smoothing_ms = value.clamp(10.0, 500.0);
                         update_needed = true;
                     }
@@ -2534,11 +2937,18 @@ impl PluginEditingManager for App {
                     release_ms,
                     low_latency,
                     polyphonic_detection,
+                    crack_sensitivity,
+                    mcra_alpha_s,
+                    mcra_alpha_p,
+                    mcra_l,
+                    mcra_delta,
                     transparency,
                     dd_enabled,
                     dd_alpha,
                     psychoacoustic_masking,
+                    learn_noise,
                     use_captured_profile,
+                    clear_profile,
                 } => {
                     use sotf_audio_player::param_specs::denoiser::*;
                     match param_idx {
@@ -2552,7 +2962,6 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         2 => {
-                            // Value comes as percentage, convert to 0-0.99
                             *smoothing =
                                 (value / 100.0).clamp(SMOOTHING_MIN as f64, SMOOTHING_MAX as f64);
                             update_needed = true;
@@ -2574,32 +2983,52 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         7 => {
-                            *transparency =
-                                value.clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64);
+                            *crack_sensitivity = value.clamp(1.0, 100.0);
                             update_needed = true;
                         }
                         8 => {
-                            *dd_enabled = value > 0.5;
+                            *mcra_alpha_s = value.clamp(0.5, 0.99);
                             update_needed = true;
                         }
                         9 => {
-                            *dd_alpha = value.clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
+                            *mcra_alpha_p = value.clamp(0.1, 0.99);
                             update_needed = true;
                         }
                         10 => {
-                            *psychoacoustic_masking = value > 0.5;
+                            *mcra_l = value.clamp(10.0, 200.0) as usize;
                             update_needed = true;
                         }
                         11 => {
-                            // learn_noise trigger: value > 0.5 starts learning
+                            *mcra_delta = value.clamp(1.0, 20.0);
                             update_needed = true;
                         }
                         12 => {
-                            *use_captured_profile = value > 0.5;
+                            *transparency =
+                                (value / 100.0).clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64);
                             update_needed = true;
                         }
                         13 => {
-                            // clear_profile trigger: value > 0.5 clears
+                            *dd_enabled = value > 0.5;
+                            update_needed = true;
+                        }
+                        14 => {
+                            *dd_alpha = value.clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
+                            update_needed = true;
+                        }
+                        15 => {
+                            *psychoacoustic_masking = value > 0.5;
+                            update_needed = true;
+                        }
+                        16 => {
+                            *learn_noise = value > 0.5;
+                            update_needed = true;
+                        }
+                        17 => {
+                            *use_captured_profile = value > 0.5;
+                            update_needed = true;
+                        }
+                        18 => {
+                            *clear_profile = value > 0.5;
                             update_needed = true;
                         }
                         _ => {}
@@ -3269,11 +3698,18 @@ impl PluginEditingManager for App {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
+                crack_sensitivity,
+                mcra_alpha_s,
+                mcra_alpha_p,
+                mcra_l,
+                mcra_delta,
                 transparency,
                 dd_enabled,
                 dd_alpha,
                 psychoacoustic_masking,
+                learn_noise,
                 use_captured_profile,
+                clear_profile,
             } => match param_idx {
                 0 => *reduction_db,
                 1 => *floor_db,
@@ -3294,31 +3730,48 @@ impl PluginEditingManager for App {
                         0.0
                     }
                 }
-                7 => *transparency,
-                8 => {
+                7 => *crack_sensitivity,
+                8 => *mcra_alpha_s,
+                9 => *mcra_alpha_p,
+                10 => *mcra_l as f64,
+                11 => *mcra_delta,
+                12 => *transparency * 100.0,
+                13 => {
                     if *dd_enabled {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                9 => *dd_alpha,
-                10 => {
+                14 => *dd_alpha,
+                15 => {
                     if *psychoacoustic_masking {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                11 => 0.0, // learn_noise trigger — always reads as 0
-                12 => {
+                16 => {
+                    if *learn_noise {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                17 => {
                     if *use_captured_profile {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                13 => 0.0, // clear_profile trigger — always reads as 0
+                18 => {
+                    if *clear_profile {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
                 _ => return,
             },
             PluginSettings::Pnd {
@@ -4063,7 +4516,7 @@ impl PluginEditingManager for App {
 // Helper function to get parameter count for a plugin
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
-        PluginSettings::Upmixer { .. } => 32, // All 32 upmixer parameters
+        PluginSettings::Upmixer { .. } => 38, // 38 parameters as defined in ui_upmixer.rs and adjust_selected_param
         PluginSettings::EQ { filters, .. } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz
@@ -4079,8 +4532,8 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Expander { .. } => 11, // threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels, sidechain_hpf_hz
         PluginSettings::MultibandCompressor { .. } => 13, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
-        PluginSettings::XTC { .. } => 15, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope, max_gain_db, bypass_xtc_filters, bypass_spectral_normalization, bypass_neumann_refinement, auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms
-        PluginSettings::Denoiser { .. } => 14, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection, transparency, dd_enabled, dd_alpha, psychoacoustic_masking, learn_noise, use_captured_profile, clear_profile
+        PluginSettings::XTC { .. } => 25, // 25 parameters as defined in ui_xtc.rs and adjust_selected_param
+        PluginSettings::Denoiser { .. } => 19, // 19 parameters as defined in ui_denoiser.rs and adjust_selected_param
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 9, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms
         PluginSettings::FletcherMunson { .. } => 22, // reference_level, smoothing, 4 bands x 4 params each, + 4 auto-gain params

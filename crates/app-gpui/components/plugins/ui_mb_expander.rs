@@ -34,6 +34,8 @@ pub struct MbExpanderRenderState {
     pub knee_db: f64,
     pub hysteresis_db: f64,
     pub hold_ms: f64,
+    pub solo: bool,
+    pub bypass: bool,
     pub mix: f64,
     pub link_channels: bool,
     pub is_editing: bool,
@@ -382,7 +384,7 @@ pub fn render_mb_expander_plugin(
                                     .child(render_toggle_button(
                                         entity.clone(),
                                         plugin_idx,
-                                        false, // TODO: Bind to Solo
+                                        state.solo,
                                         get_param_idx(15),
                                         state.selected_param,
                                         state.is_editing,
@@ -397,7 +399,7 @@ pub fn render_mb_expander_plugin(
                                     .child(render_toggle_button(
                                         entity.clone(),
                                         plugin_idx,
-                                        false, // TODO: Bind to Bypass
+                                        state.bypass,
                                         get_param_idx(14),
                                         state.selected_param,
                                         state.is_editing,
