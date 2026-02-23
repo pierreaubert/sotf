@@ -52,7 +52,6 @@ mod tests {
             speakers,
             crossovers: None,
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };
@@ -115,7 +114,6 @@ mod tests {
             speakers,
             crossovers: Some(crossovers),
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };

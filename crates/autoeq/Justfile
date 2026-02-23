@@ -140,7 +140,6 @@ qa-roomeq-small-stereo-20:
 		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_0/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
 		  python3 ./scripts/display-roomeq.py \
-	        --input        ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
 	  done \
 	done
@@ -156,7 +155,6 @@ qa-roomeq-small-stereo-21:
 		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_1/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
 		python3 ./scripts/display-roomeq.py \
-	        --input        ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
 	  done \
 	done
@@ -172,7 +170,6 @@ qa-roomeq-small-stereo-22:
 		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_2/optimiser-$method.json \
 		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
 		python3 ./scripts/display-roomeq.py \
-	        --input        ./data_tests/roomeq/generated/$algo/small_stereo_2_2/config.json \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
 	  done \
 	done

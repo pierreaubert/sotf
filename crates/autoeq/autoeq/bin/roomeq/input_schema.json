@@ -4,7 +4,9 @@
   "title": "RoomEQ Input Configuration",
   "description": "Configuration schema for the roomeq room equalization optimizer",
   "type": "object",
-  "required": ["speakers"],
+  "required": [
+    "speakers"
+  ],
   "properties": {
     "version": {
       "type": "string",
@@ -38,13 +40,6 @@
     "optimizer": {
       "$ref": "#/$defs/OptimizerConfig",
       "description": "Optimization parameters"
-    },
-    "group_delay": {
-      "type": "array",
-      "description": "Group delay optimization configurations for aligning subwoofers with speakers",
-      "items": {
-        "$ref": "#/$defs/GroupDelayConfig"
-      }
     }
   },
   "$defs": {
@@ -55,7 +50,11 @@
         "model": {
           "type": "string",
           "description": "System topology model",
-          "enum": ["stereo", "home_cinema", "custom"],
+          "enum": [
+            "stereo",
+            "home_cinema",
+            "custom"
+          ],
           "default": "custom"
         },
         "speakers": {
@@ -70,7 +69,9 @@
           "description": "Subwoofer configuration and mapping"
         }
       },
-      "required": ["speakers"],
+      "required": [
+        "speakers"
+      ],
       "additionalProperties": false
     },
     "SubwooferSystemConfig": {
@@ -80,7 +81,11 @@
         "config": {
           "type": "string",
           "description": "Strategy for subwoofer optimization",
-          "enum": ["single", "mso", "dba"],
+          "enum": [
+            "single",
+            "mso",
+            "dba"
+          ],
           "default": "single"
         },
         "crossover": {
@@ -144,7 +149,9 @@
         {
           "type": "object",
           "description": "Measurement with optional name",
-          "required": ["path"],
+          "required": [
+            "path"
+          ],
           "properties": {
             "path": {
               "type": "string",
@@ -161,8 +168,11 @@
     },
     "SpeakerGroup": {
       "type": "object",
-      "description": "Multi-driver speaker group with crossover. IMPORTANT: For accurate crossover optimization, measurements should include phase data. The optimizer uses complex summation (vector sum) to model interference between drivers at crossover frequencies. Without phase data, the optimizer assumes 0° phase, which may result in suboptimal crossover frequencies and driver alignment.",
-      "required": ["name", "measurements"],
+      "description": "Multi-driver speaker group with crossover. IMPORTANT: For accurate crossover optimization, measurements should include phase data. The optimizer uses complex summation (vector sum) to model interference between drivers at crossover frequencies. Without phase data, the optimizer assumes 0\u00b0 phase, which may result in suboptimal crossover frequencies and driver alignment.",
+      "required": [
+        "name",
+        "measurements"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -185,8 +195,11 @@
     },
     "MultiSubGroup": {
       "type": "object",
-      "description": "Multiple subwoofers with gain/delay optimization. IMPORTANT: For accurate optimization, measurements MUST include phase data. The optimizer uses complex summation (H_total = H_sub1 + H_sub2 * e^(-jωτ)) to model constructive/destructive interference between subwoofers. Without phase data, the optimizer cannot properly find delay settings that maximize summation at the listening position.",
-      "required": ["name", "subwoofers"],
+      "description": "Multiple subwoofers with gain/delay optimization. IMPORTANT: For accurate optimization, measurements MUST include phase data. The optimizer uses complex summation (H_total = H_sub1 + H_sub2 * e^(-j\u03c9\u03c4)) to model constructive/destructive interference between subwoofers. Without phase data, the optimizer cannot properly find delay settings that maximize summation at the listening position.",
+      "required": [
+        "name",
+        "subwoofers"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -205,8 +218,12 @@
     },
     "DBAConfig": {
       "type": "object",
-      "description": "Double Bass Array with front and rear arrays. IMPORTANT: For accurate DBA optimization, measurements MUST include phase data. The optimizer uses complex summation to model the interference between front and rear arrays. The rear array is automatically phase-inverted (180°) to create the pressure wave cancellation pattern characteristic of DBA systems.",
-      "required": ["name", "front", "rear"],
+      "description": "Double Bass Array with front and rear arrays. IMPORTANT: For accurate DBA optimization, measurements MUST include phase data. The optimizer uses complex summation to model the interference between front and rear arrays. The rear array is automatically phase-inverted (180\u00b0) to create the pressure wave cancellation pattern characteristic of DBA systems.",
+      "required": [
+        "name",
+        "front",
+        "rear"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -222,7 +239,7 @@
         },
         "rear": {
           "type": "array",
-          "description": "Measurements for the rear array (will be phase-inverted by adding 180°). Include phase data for accurate optimization.",
+          "description": "Measurements for the rear array (will be phase-inverted by adding 180\u00b0). Include phase data for accurate optimization.",
           "items": {
             "$ref": "#/$defs/MeasurementSource"
           },
@@ -234,7 +251,12 @@
     "CardioidConfig": {
       "type": "object",
       "description": "Gradient Cardioid subwoofer configuration (2 subs). Optimizes a pair of subwoofers (Front/Rear) to create a directional pattern by applying delay and inversion to the rear sub. Delay is calculated from physical separation.",
-      "required": ["name", "front", "rear", "separation_meters"],
+      "required": [
+        "name",
+        "front",
+        "rear",
+        "separation_meters"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -259,12 +281,23 @@
     "CrossoverConfig": {
       "type": "object",
       "description": "Crossover configuration",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "type": "string",
           "description": "Crossover type",
-          "enum": ["LR24", "LR4", "LR48", "LR8", "Butterworth12", "BW12", "Butterworth24", "BW24"]
+          "enum": [
+            "LR24",
+            "LR4",
+            "LR48",
+            "LR8",
+            "Butterworth12",
+            "BW12",
+            "Butterworth24",
+            "BW24"
+          ]
         },
         "frequency": {
           "type": "number",
@@ -302,39 +335,13 @@
         {
           "type": "string",
           "description": "Predefined target or path to CSV file",
-          "examples": ["flat", "harman", "targets/custom.csv"]
+          "examples": [
+            "flat",
+            "harman",
+            "targets/custom.csv"
+          ]
         }
       ]
-    },
-    "GroupDelayConfig": {
-      "type": "object",
-      "description": "Configuration for group delay optimization between subwoofer and speakers",
-      "required": ["subwoofer", "speakers"],
-      "properties": {
-        "subwoofer": {
-          "type": "string",
-          "description": "Name of the subwoofer channel"
-        },
-        "speakers": {
-          "type": "array",
-          "description": "Names of speaker channels to align",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1
-        },
-        "min_freq": {
-          "type": "number",
-          "description": "Minimum frequency for optimization in Hz",
-          "default": 30.0
-        },
-        "max_freq": {
-          "type": "number",
-          "description": "Maximum frequency for optimization in Hz",
-          "default": 120.0
-        }
-      },
-      "additionalProperties": false
     },
     "OptimizerConfig": {
       "type": "object",
@@ -343,7 +350,11 @@
         "mode": {
           "type": "string",
           "description": "Optimization mode: 'iir' uses parametric EQ filters (biquads), 'fir' generates FIR impulse response files (WAV), 'mixed' combines both (IIR for high frequencies, FIR for low frequencies by default). For 'fir' and 'mixed' modes, a WAV file is generated per channel (e.g., 'left_fir.wav') and referenced in the output JSON via a 'convolution' plugin.",
-          "enum": ["iir", "fir", "mixed"],
+          "enum": [
+            "iir",
+            "fir",
+            "mixed"
+          ],
           "default": "iir"
         },
         "fir": {
@@ -353,14 +364,22 @@
         "loss_type": {
           "type": "string",
           "description": "Loss function type",
-          "enum": ["flat", "score"],
+          "enum": [
+            "flat",
+            "score"
+          ],
           "default": "flat"
         },
         "algorithm": {
           "type": "string",
           "description": "Optimization algorithm",
           "default": "cobyla",
-          "examples": ["cobyla", "nlopt:cobyla", "autoeq:de", "nlopt:isres"]
+          "examples": [
+            "cobyla",
+            "nlopt:cobyla",
+            "autoeq:de",
+            "nlopt:isres"
+          ]
         },
         "num_filters": {
           "type": "integer",
@@ -421,7 +440,11 @@
         "peq_model": {
           "type": "string",
           "description": "PEQ model type",
-          "enum": ["pk", "ls-pk-hs", "free"],
+          "enum": [
+            "pk",
+            "ls-pk-hs",
+            "free"
+          ],
           "default": "pk"
         },
         "refine": {
@@ -432,7 +455,11 @@
         "local_algo": {
           "type": "string",
           "description": "Local optimizer algorithm for refinement stage (when refine=true)",
-          "enum": ["cobyla", "bobyqa", "sbplx"],
+          "enum": [
+            "cobyla",
+            "bobyqa",
+            "sbplx"
+          ],
           "default": "cobyla"
         },
         "psychoacoustic": {
@@ -486,7 +513,10 @@
         "phase": {
           "type": "string",
           "description": "Phase response type: 'linear' produces symmetric FIR, 'kirkeby' applies magnitude limits",
-          "enum": ["linear", "kirkeby"],
+          "enum": [
+            "linear",
+            "kirkeby"
+          ],
           "default": "kirkeby"
         },
         "correct_excess_phase": {
@@ -511,7 +541,11 @@
         "tilt_type": {
           "type": "string",
           "description": "Tilt type: 'flat' (no tilt), 'harman' (-0.8 dB/octave), or 'custom' (user-specified)",
-          "enum": ["flat", "harman", "custom"],
+          "enum": [
+            "flat",
+            "harman",
+            "custom"
+          ],
           "default": "flat"
         },
         "slope_db_per_octave": {
@@ -568,13 +602,21 @@
         "filter_order": {
           "type": "integer",
           "description": "Filter order (2 = 12dB/oct, 4 = 24dB/oct)",
-          "enum": [2, 4, 6, 8],
+          "enum": [
+            2,
+            4,
+            6,
+            8
+          ],
           "default": 4
         },
         "filter_type": {
           "type": "string",
           "description": "Highpass filter type",
-          "enum": ["linkwitzriley", "butterworth"],
+          "enum": [
+            "linkwitzriley",
+            "butterworth"
+          ],
           "default": "linkwitzriley"
         },
         "margin_octaves": {
@@ -621,7 +663,11 @@
     "RoomDimensions": {
       "type": "object",
       "description": "Room dimensions for Schroeder frequency calculation",
-      "required": ["length", "width", "height"],
+      "required": [
+        "length",
+        "width",
+        "height"
+      ],
       "properties": {
         "length": {
           "type": "number",
@@ -739,7 +785,11 @@
         "strategy": {
           "type": "string",
           "description": "Optimization strategy",
-          "enum": ["minimize_variance", "primary_with_constraints", "average"],
+          "enum": [
+            "minimize_variance",
+            "primary_with_constraints",
+            "average"
+          ],
           "default": "minimize_variance"
         },
         "primary_seat": {

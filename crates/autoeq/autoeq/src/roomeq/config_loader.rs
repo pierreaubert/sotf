@@ -25,7 +25,7 @@ pub fn merge_json_objects(base: &mut serde_json::Value, overrides: &serde_json::
                     base_obj.insert(key.clone(), override_value.clone());
                 }
             } else {
-                // Replace entirely (speakers, crossovers, group_delay, etc.)
+                // Replace entirely (speakers, crossovers, etc.)
                 base_obj.insert(key.clone(), override_value.clone());
             }
         }

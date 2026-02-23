@@ -209,6 +209,7 @@ impl ProcessingMethod {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct TestCase {
     scenario: String,
     description: String,
@@ -336,20 +337,19 @@ fn build_test_matrix(
             }
 
             // Apply solver filter
-            if let Some(f) = solver_filter {
-                if solver.name() != f
-                    && (f != "both" || (solver.name() != "fem" && solver.name() != "bem"))
-                {
-                    continue;
-                }
+            if let Some(f) = solver_filter
+                && solver.name() != f
+                && (f != "both" || (solver.name() != "fem" && solver.name() != "bem"))
+            {
+                continue;
             }
 
             for method in &methods {
                 // Apply mode filter
-                if let Some(f) = mode_filter {
-                    if method.name() != f && f != "all" {
-                        continue;
-                    }
+                if let Some(f) = mode_filter
+                    && method.name() != f && f != "all"
+                {
+                    continue;
                 }
 
                 test_cases.push(TestCase {
@@ -565,6 +565,7 @@ fn validate_result(
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct TestResult {
     name: String,
     scenario: String,

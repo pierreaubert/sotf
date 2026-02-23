@@ -51,7 +51,6 @@ mod tests {
             speakers,
             crossovers: None,
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig {
                 max_iter: 100, // Fast
                 ..OptimizerConfig::default()
@@ -146,7 +145,6 @@ mod tests {
             speakers,
             crossovers: Some(crossovers),
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig {
                 max_iter: 100,
                 ..OptimizerConfig::default()

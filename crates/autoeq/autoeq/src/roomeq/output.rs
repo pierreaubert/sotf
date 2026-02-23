@@ -307,12 +307,11 @@ pub fn build_multidriver_dsp_chain_with_curves(
         }
 
         // Add per-driver EQ (linearization) if provided
-        if let Some(eqs) = driver_eqs {
-            if let Some(filters) = eqs.get(i) {
-                if !filters.is_empty() {
-                    driver_plugins.push(create_eq_plugin(filters));
-                }
-            }
+        if let Some(eqs) = driver_eqs
+            && let Some(filters) = eqs.get(i)
+            && !filters.is_empty()
+        {
+            driver_plugins.push(create_eq_plugin(filters));
         }
 
         // Add highpass crossover from previous driver (if not first driver)

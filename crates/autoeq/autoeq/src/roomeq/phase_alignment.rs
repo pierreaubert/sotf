@@ -203,12 +203,11 @@ where
             break;
         }
 
-        let d;
-        if (b - c) > (c - a) {
-            d = c + RESPHI * (b - c);
+        let d = if (b - c) > (c - a) {
+            c + RESPHI * (b - c)
         } else {
-            d = c - RESPHI * (c - a);
-        }
+            c - RESPHI * (c - a)
+        };
 
         let fd = f(d);
 
@@ -220,12 +219,10 @@ where
             }
             c = d;
             fc = fd;
+        } else if (b - c) > (c - a) {
+            b = d;
         } else {
-            if (b - c) > (c - a) {
-                b = d;
-            } else {
-                a = d;
-            }
+            a = d;
         }
     }
 
@@ -361,7 +358,15 @@ fn interpolate_curve_complex(curve: &Curve, new_freqs: &Array1<f64>) -> Result<V
         };
 
         let spl_interp = curve.spl[lower_idx] + t * (curve.spl[upper_idx] - curve.spl[lower_idx]);
-        let phase_interp = phase[lower_idx] + t * (phase[upper_idx] - phase[lower_idx]);
+        // Shortest-arc interpolation to handle phase wrapping (e.g., 179° to -179°)
+        let mut phase_delta = phase[upper_idx] - phase[lower_idx];
+        if phase_delta > 180.0 {
+            phase_delta -= 360.0;
+        }
+        if phase_delta < -180.0 {
+            phase_delta += 360.0;
+        }
+        let phase_interp = phase[lower_idx] + t * phase_delta;
 
         let magnitude = 10.0_f64.powf(spl_interp / 20.0);
         let phase_rad = phase_interp.to_radians();

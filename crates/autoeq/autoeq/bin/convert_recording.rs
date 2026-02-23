@@ -155,7 +155,6 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
         speakers,
         crossovers: None,
         target_curve: None,
-        group_delay: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
     }
@@ -207,7 +206,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check if already new format
     if !is_legacy_format(&json) {
-        // Try to parse as RoomConfig to verify
+        // Check for deprecated keys that need stripping
+        let deprecated_keys = ["group_delay"];
+        let mut value: serde_json::Value = serde_json::from_str(&json)?;
+        let mut stripped = false;
+
+        if let Some(obj) = value.as_object_mut() {
+            for key in &deprecated_keys {
+                if obj.remove(*key).is_some() {
+                    println!("Stripped deprecated key: {}", key);
+                    stripped = true;
+                }
+            }
+        }
+
+        if stripped {
+            // Re-parse to verify it's valid after stripping
+            let cleaned_json = serde_json::to_string_pretty(&value)?;
+            match serde_json::from_str::<RoomConfig>(&cleaned_json) {
+                Ok(config) => {
+                    println!(
+                        "File is already in RoomConfig format (version {}), stripped deprecated keys",
+                        config.version
+                    );
+                    println!("  {} speaker(s)", config.speakers.len());
+
+                    // Create backup if overwriting
+                    if output_path == input_path {
+                        let backup_path = {
+                            let mut backup = input_path.clone();
+                            let extension = backup
+                                .extension()
+                                .map(|e| format!("{}.bak", e.to_string_lossy()))
+                                .unwrap_or_else(|| "bak".to_string());
+                            backup.set_extension(extension);
+                            backup
+                        };
+                        std::fs::copy(&input_path, &backup_path)?;
+                        println!("Backup: {}", backup_path.display());
+                    }
+
+                    std::fs::write(&output_path, &cleaned_json)?;
+                    println!("Output: {}", output_path.display());
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Error: File is not valid after stripping deprecated keys: {}",
+                        e
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        // No deprecated keys found, try to parse as-is
         match serde_json::from_str::<RoomConfig>(&json) {
             Ok(config) => {
                 println!(

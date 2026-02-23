@@ -61,7 +61,7 @@ pub fn align_channels_to_lowest(
 ///
 /// Normalizes SPL by subtracting the mean in the given range, then computes
 /// the weighted MSE — same metric used in the main optimization path.
-fn compute_flat_score(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
+fn compute_flat_loss(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
     let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
     let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
     let mean = compute_average_response(
@@ -221,14 +221,16 @@ fn preprocess_multisub_independent(ms: &MultiSubGroup) -> Result<SubPreprocessRe
         curves.push(curve);
     }
 
-    // Average SPL (dB domain) on the first sub's frequency grid
+    // Power summation on the first sub's frequency grid:
+    // Convert dB to linear power, sum, convert back to dB.
+    // This correctly represents incoherent summation of multiple subs.
     let ref_freq = curves[0].freq.clone();
-    let mut avg_spl = ndarray::Array1::<f64>::zeros(ref_freq.len());
+    let mut sum_power = ndarray::Array1::<f64>::zeros(ref_freq.len());
     for curve in &curves {
         let interp = crate::read::interpolate_log_space(&ref_freq, curve);
-        avg_spl = avg_spl + &interp.spl;
+        sum_power += &interp.spl.mapv(|db| 10.0_f64.powf(db / 10.0));
     }
-    avg_spl /= curves.len() as f64;
+    let avg_spl = sum_power.mapv(|p| 10.0 * p.log10());
 
     let combined = Curve {
         freq: ref_freq,
@@ -362,8 +364,8 @@ fn preprocess_dba(
     let drivers = vec![
         SubDriverInfo {
             name: "Front Array".to_string(),
-            gain: result.gains.get(0).copied().unwrap_or(0.0),
-            delay: result.delays.get(0).copied().unwrap_or(0.0),
+            gain: result.gains.first().copied().unwrap_or(0.0),
+            delay: result.delays.first().copied().unwrap_or(0.0),
             inverted: false,
             initial_curve: Some(front_curve),
         },
@@ -419,7 +421,7 @@ pub fn optimize_stereo_2_0(
         }
 
         // Pre-optimization score
-        let pre_score = compute_flat_score(&aligned_curve, min_freq, max_freq);
+        let pre_score = compute_flat_loss(&aligned_curve, min_freq, max_freq);
 
         info!(
             "  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})",
@@ -451,7 +453,7 @@ pub fn optimize_stereo_2_0(
         let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
 
         // Post-optimization score
-        let post_score = compute_flat_score(&final_curve_obj, min_freq, max_freq);
+        let post_score = compute_flat_loss(&final_curve_obj, min_freq, max_freq);
 
         info!("  '{}' post_score={:.4}", role, post_score);
 
@@ -608,11 +610,12 @@ pub fn optimize_stereo_2_1(
 
     // 1. Level Measurement & Alignment
     // Use max_xo for boundary to ensure we measure Sub fully and Mains safely.
-    // For Sub, restrict to octave below crossover to avoid deep bass peaks skewing level.
+    // Align sub over its full passband (down to optimizer min_freq) to prevent
+    // the crossover optimizer from seeing a level mismatch in the deep bass.
     let mut ranges = HashMap::new();
     ranges.insert("L".to_string(), (max_xo, 2000.0));
     ranges.insert("R".to_string(), (max_xo, 2000.0));
-    let sub_min_align = (max_xo * 0.5).max(20.0);
+    let sub_min_align = config.optimizer.min_freq.max(20.0);
     ranges.insert(sub_role.to_string(), (sub_min_align, max_xo));
 
     let gains = align_channels_to_lowest(&curves, &ranges);
@@ -702,12 +705,19 @@ pub fn optimize_stereo_2_1(
         (None, Some((min_xo, max_xo)))
     };
 
+    // The crossover optimizer should only optimize delay and polarity, not gains.
+    // Level matching is handled by alignment (step 1) and re-alignment (step 4).
+    // Using gain bounds allows the optimizer to shift levels, undoing alignment.
+    let mut xo_optimizer_config = config.optimizer.clone();
+    xo_optimizer_config.min_db = 0.0;
+    xo_optimizer_config.max_db = 0.0;
+
     // Optimize
     let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
         vec![virtual_main.clone(), sub_curve.clone()],
         crossover_type_enum,
         sample_rate,
-        &config.optimizer,
+        &xo_optimizer_config,
         fixed_freqs,
         range_opt,
     )
@@ -717,15 +727,15 @@ pub fn optimize_stereo_2_1(
 
     // Results: index 0 = Mains, index 1 = Sub
     let main_gain_post = xo_gains[0];
-    let _main_delay_post = xo_delays[0];
+    let main_delay_post = xo_delays[0];
     let sub_gain_post = xo_gains[1];
-    let _sub_delay_post = xo_delays[1];
+    let sub_delay_post = xo_delays[1];
     let sub_inverted = inversions[1];
     let final_xo_freq = xo_freqs[0];
 
     info!(
-        "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Sub Delay={:.2}",
-        final_xo_freq, main_gain_post, sub_gain_post, _sub_delay_post
+        "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Main Delay={:.2}, Sub Delay={:.2}",
+        final_xo_freq, main_gain_post, sub_gain_post, main_delay_post, sub_delay_post
     );
 
     // 6. Apply Crossover (Filters + Gain/Delay)
@@ -735,7 +745,7 @@ pub fn optimize_stereo_2_1(
     let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
 
     let apply_chain =
-        |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
+        |curve: &Curve, filters: &[Biquad], gain: f64, _delay: f64, _invert: bool| -> Curve {
             let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
             let mut c = response::apply_complex_response(curve, &resp);
             // Apply gain
@@ -772,21 +782,23 @@ pub fn optimize_stereo_2_1(
     );
 
     // Re-align Subwoofer level after crossover application
-    // Calculate mean SPL of filtered curves to ensure levels match at crossover
-    let freqs_f32: Vec<f32> = l_post.freq.iter().map(|&f| f as f32).collect();
+    // Calculate mean SPL of filtered curves to ensure levels match at crossover.
+    // Each curve has its own frequency grid, so use the correct one for each.
+    let main_freqs_f32: Vec<f32> = l_post.freq.iter().map(|&f| f as f32).collect();
     let main_spl_f32: Vec<f32> = l_post.spl.iter().map(|&s| s as f32).collect();
+    let sub_freqs_f32: Vec<f32> = sub_post_initial.freq.iter().map(|&f| f as f32).collect();
     let sub_spl_f32: Vec<f32> = sub_post_initial.spl.iter().map(|&s| s as f32).collect();
 
     // Mains: measure above crossover
     let main_mean = compute_average_response(
-        &freqs_f32,
+        &main_freqs_f32,
         &main_spl_f32,
         Some((final_xo_freq as f32, 2000.0)),
     ) as f64;
 
     // Sub: measure below crossover (full passband)
     let sub_mean =
-        compute_average_response(&freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32)))
+        compute_average_response(&sub_freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32)))
             as f64;
 
     let sub_correction = main_mean - sub_mean;
@@ -842,11 +854,11 @@ pub fn optimize_stereo_2_1(
 
         // "Do no harm" guard: discard Post-EQ if it makes the sub worse
         // (e.g., cardioid subs with steep low-frequency rolloff)
-        let pre = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
+        let pre = compute_flat_loss(&sub_post, sub_min_score, final_xo_freq);
         let eq_resp =
             response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
         let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
-        let post = compute_flat_score(&sub_after_eq, sub_min_score, final_xo_freq);
+        let post = compute_flat_loss(&sub_after_eq, sub_min_score, final_xo_freq);
         if post < pre {
             post_eq_filters.insert(sub_role.to_string(), filters);
         } else {
@@ -860,7 +872,7 @@ pub fn optimize_stereo_2_1(
     // 8. Construct Output Chains
     let mut channel_chains = HashMap::new();
 
-    // L/R Chain: AlignGain -> Crossover(HP) -> MainGain -> PostEQ (No PreEQ, No Delay)
+    // L/R Chain: AlignGain -> Crossover(HP) -> MainGain -> Delay -> PostEQ
     for role in ["L", "R"] {
         let mut plugins = Vec::new();
         let align_gain = *gains.get(role).unwrap_or(&0.0);
@@ -877,9 +889,14 @@ pub fn optimize_stereo_2_1(
             "high",
         ));
 
-        // Main Post Gain (Delay removed)
+        // Main Post Gain
         if main_gain_post.abs() > 0.01 {
             plugins.push(output::create_gain_plugin(main_gain_post));
+        }
+
+        // Main delay from crossover optimizer (sub-main time alignment)
+        if main_delay_post.abs() > 0.01 {
+            plugins.push(output::create_delay_plugin(main_delay_post));
         }
 
         let eqs = post_eq_filters.get(role);
@@ -924,12 +941,17 @@ pub fn optimize_stereo_2_1(
         "low",
     ));
 
-    // Sub Gain + Invert (Delay removed)
+    // Sub Gain + Invert
     if sub_inverted || sub_gain_post.abs() > 0.01 {
         sub_plugins.push(output::create_gain_plugin_with_invert(
             sub_gain_post,
             sub_inverted,
         ));
+    }
+
+    // Sub delay from crossover optimizer (sub-main time alignment)
+    if sub_delay_post.abs() > 0.01 {
+        sub_plugins.push(output::create_delay_plugin(sub_delay_post));
     }
 
     let sub_eqs = post_eq_filters.get(sub_role);
@@ -965,7 +987,7 @@ pub fn optimize_stereo_2_1(
                 let driver_curve = d
                     .initial_curve
                     .as_ref()
-                    .map(|c| output::extend_curve_to_full_range(c))
+                    .map(output::extend_curve_to_full_range)
                     .map(|c| (&c).into());
                 DriverDspChain {
                     name: d.name.clone(),
@@ -1004,14 +1026,14 @@ pub fn optimize_stereo_2_1(
 
     for role in ["L", "R"] {
         let intermediate = if role == "L" { &l_post } else { &r_post };
-        let pre_score = compute_flat_score(intermediate, final_xo_freq, max_freq);
+        let pre_score = compute_flat_loss(intermediate, final_xo_freq, max_freq);
         let final_curve_obj = if let Some(e) = post_eq_filters.get(role) {
             let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
             response::apply_complex_response(intermediate, &resp)
         } else {
             intermediate.clone()
         };
-        let post_score = compute_flat_score(&final_curve_obj, final_xo_freq, max_freq);
+        let post_score = compute_flat_loss(&final_curve_obj, final_xo_freq, max_freq);
 
         pre_scores.push(pre_score);
         post_scores.push(post_score);
@@ -1031,8 +1053,8 @@ pub fn optimize_stereo_2_1(
 
     // Sub channel
     {
-        let pre_score = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
-        let post_score = compute_flat_score(&final_sub_curve, sub_min_score, final_xo_freq);
+        let pre_score = compute_flat_loss(&sub_post, sub_min_score, final_xo_freq);
+        let post_score = compute_flat_loss(&final_sub_curve, sub_min_score, final_xo_freq);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
         channel_results.insert(
@@ -1209,7 +1231,7 @@ fn optimize_home_cinema_no_sub(
             *s += gain;
         }
 
-        let pre_score = compute_flat_score(&aligned_curve, min_freq, max_freq);
+        let pre_score = compute_flat_loss(&aligned_curve, min_freq, max_freq);
         info!(
             "  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})",
             role, gain, pre_score
@@ -1236,7 +1258,7 @@ fn optimize_home_cinema_no_sub(
         let resp =
             response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
         let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
-        let post_score = compute_flat_score(&final_curve_obj, min_freq, max_freq);
+        let post_score = compute_flat_loss(&final_curve_obj, min_freq, max_freq);
 
         info!("  '{}' post_score={:.4}", role, post_score);
 
@@ -1336,7 +1358,7 @@ fn optimize_home_cinema_with_sub(
     for role in main_roles {
         ranges.insert(role.clone(), (max_xo, 2000.0));
     }
-    let sub_min_align = (max_xo * 0.5).max(20.0);
+    let sub_min_align = config.optimizer.min_freq.max(20.0);
     ranges.insert(sub_role.to_string(), (sub_min_align, max_xo));
 
     let gains = align_channels_to_lowest(curves, &ranges);
@@ -1407,11 +1429,17 @@ fn optimize_home_cinema_with_sub(
         (None, Some((min_xo, max_xo)))
     };
 
-    let (xo_gains, _xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
+    // The crossover optimizer should only optimize delay and polarity, not gains.
+    // Level matching is handled by alignment (step 1) and re-alignment (step 4).
+    let mut xo_optimizer_config = config.optimizer.clone();
+    xo_optimizer_config.min_db = 0.0;
+    xo_optimizer_config.max_db = 0.0;
+
+    let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
         vec![virtual_main.clone(), sub_curve.clone()],
         crossover_type_enum,
         sample_rate,
-        &config.optimizer,
+        &xo_optimizer_config,
         fixed_freqs,
         range_opt,
     )
@@ -1420,13 +1448,15 @@ fn optimize_home_cinema_with_sub(
     })?;
 
     let main_gain_post = xo_gains[0];
+    let main_delay_post = xo_delays[0];
     let sub_gain_post = xo_gains[1];
+    let sub_delay_post = xo_delays[1];
     let sub_inverted = inversions[1];
     let final_xo_freq = xo_freqs[0];
 
     info!(
-        "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}",
-        final_xo_freq, main_gain_post, sub_gain_post
+        "  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Main Delay={:.2}, Sub Delay={:.2}",
+        final_xo_freq, main_gain_post, sub_gain_post, main_delay_post, sub_delay_post
     );
 
     // 5. Apply crossover filters
@@ -1451,18 +1481,20 @@ fn optimize_home_cinema_with_sub(
     let sub_post_initial = apply_chain(&aligned_curves[sub_role], &lp_biquads, sub_gain_post);
 
     // Re-align sub level post-crossover (use first main as reference)
+    // Each curve has its own frequency grid, so use the correct one for each.
     let ref_main_post = &main_post_curves[&main_roles[0]];
-    let freqs_f32: Vec<f32> = ref_main_post.freq.iter().map(|&f| f as f32).collect();
+    let main_freqs_f32: Vec<f32> = ref_main_post.freq.iter().map(|&f| f as f32).collect();
     let main_spl_f32: Vec<f32> = ref_main_post.spl.iter().map(|&s| s as f32).collect();
+    let sub_freqs_f32: Vec<f32> = sub_post_initial.freq.iter().map(|&f| f as f32).collect();
     let sub_spl_f32: Vec<f32> = sub_post_initial.spl.iter().map(|&s| s as f32).collect();
 
     let main_mean = math_audio_dsp::analysis::compute_average_response(
-        &freqs_f32,
+        &main_freqs_f32,
         &main_spl_f32,
         Some((final_xo_freq as f32, 2000.0)),
     ) as f64;
     let sub_mean = math_audio_dsp::analysis::compute_average_response(
-        &freqs_f32,
+        &sub_freqs_f32,
         &sub_spl_f32,
         Some((20.0, final_xo_freq as f32)),
     ) as f64;
@@ -1514,11 +1546,11 @@ fn optimize_home_cinema_with_sub(
         })?;
 
         // "Do no harm" guard: discard Post-EQ if it makes the sub worse
-        let pre = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
+        let pre = compute_flat_loss(&sub_post, sub_min_score, final_xo_freq);
         let eq_resp =
             response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
         let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
-        let post = compute_flat_score(&sub_after_eq, sub_min_score, final_xo_freq);
+        let post = compute_flat_loss(&sub_after_eq, sub_min_score, final_xo_freq);
         if post < pre {
             post_eq_filters.insert(sub_role.to_string(), filters);
         } else {
@@ -1532,7 +1564,7 @@ fn optimize_home_cinema_with_sub(
     // 7. Build output chains
     let mut channel_chains = HashMap::new();
 
-    // Main channels: AlignGain -> Crossover(HP) -> MainGain -> PostEQ
+    // Main channels: AlignGain -> Crossover(HP) -> MainGain -> Delay -> PostEQ
     for role in main_roles {
         let mut plugins = Vec::new();
         let align_gain = *gains.get(role).unwrap_or(&0.0);
@@ -1550,11 +1582,16 @@ fn optimize_home_cinema_with_sub(
             plugins.push(output::create_gain_plugin(main_gain_post));
         }
 
+        // Main delay from crossover optimizer (sub-main time alignment)
+        if main_delay_post.abs() > 0.01 {
+            plugins.push(output::create_delay_plugin(main_delay_post));
+        }
+
         let eqs = post_eq_filters.get(role);
-        if let Some(e) = eqs {
-            if !e.is_empty() {
-                plugins.push(output::create_eq_plugin(e));
-            }
+        if let Some(e) = eqs
+            && !e.is_empty()
+        {
+            plugins.push(output::create_eq_plugin(e));
         }
 
         let intermediate = &main_post_curves[role];
@@ -1584,7 +1621,7 @@ fn optimize_home_cinema_with_sub(
         channel_chains.insert(role.clone(), chain);
     }
 
-    // Sub chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> PostEQ
+    // Sub chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> Delay -> PostEQ
     let mut sub_plugins = Vec::new();
     let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
     if sub_align_gain.abs() > 0.01 {
@@ -1604,11 +1641,16 @@ fn optimize_home_cinema_with_sub(
         ));
     }
 
+    // Sub delay from crossover optimizer (sub-main time alignment)
+    if sub_delay_post.abs() > 0.01 {
+        sub_plugins.push(output::create_delay_plugin(sub_delay_post));
+    }
+
     let sub_eqs = post_eq_filters.get(sub_role);
-    if let Some(e) = sub_eqs {
-        if !e.is_empty() {
-            sub_plugins.push(output::create_eq_plugin(e));
-        }
+    if let Some(e) = sub_eqs
+        && !e.is_empty()
+    {
+        sub_plugins.push(output::create_eq_plugin(e));
     }
 
     let final_sub_curve = if let Some(e) = sub_eqs {
@@ -1642,7 +1684,7 @@ fn optimize_home_cinema_with_sub(
                 let driver_curve = d
                     .initial_curve
                     .as_ref()
-                    .map(|c| output::extend_curve_to_full_range(c))
+                    .map(output::extend_curve_to_full_range)
                     .map(|c| (&c).into());
                 DriverDspChain {
                     name: d.name.clone(),
@@ -1676,7 +1718,7 @@ fn optimize_home_cinema_with_sub(
 
     for role in main_roles {
         let intermediate = &main_post_curves[role];
-        let pre_score = compute_flat_score(intermediate, final_xo_freq, max_freq);
+        let pre_score = compute_flat_loss(intermediate, final_xo_freq, max_freq);
         let final_curve_obj = if let Some(e) = post_eq_filters.get(role) {
             if !e.is_empty() {
                 let resp =
@@ -1688,7 +1730,7 @@ fn optimize_home_cinema_with_sub(
         } else {
             intermediate.clone()
         };
-        let post_score = compute_flat_score(&final_curve_obj, final_xo_freq, max_freq);
+        let post_score = compute_flat_loss(&final_curve_obj, final_xo_freq, max_freq);
 
         pre_scores.push(pre_score);
         post_scores.push(post_score);
@@ -1708,8 +1750,8 @@ fn optimize_home_cinema_with_sub(
 
     // Sub channel score
     {
-        let pre_score = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
-        let post_score = compute_flat_score(&final_sub_curve, sub_min_score, final_xo_freq);
+        let pre_score = compute_flat_loss(&sub_post, sub_min_score, final_xo_freq);
+        let post_score = compute_flat_loss(&final_sub_curve, sub_min_score, final_xo_freq);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
         channel_results.insert(

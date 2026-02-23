@@ -136,6 +136,60 @@ const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
 const ARRIVAL_TIME_WARNING_THRESHOLD_MS: f64 = 50.0;
 
 // ============================================================================
+// Sub-Main Pairing Logic
+// ============================================================================
+
+/// Find subwoofer-to-main-speaker pairings using system config or heuristic fallback.
+///
+/// Returns `(sub_name, main_name)` pairs where names are keys into the curves/chains maps.
+/// Used by both phase alignment and GD-Opt v2.
+fn find_sub_main_pairings(
+    config: &RoomConfig,
+    curves: &HashMap<String, crate::Curve>,
+) -> Vec<(String, String)> {
+    let mut pairings = Vec::new();
+
+    if let Some(sys) = &config.system {
+        // Use explicit system configuration
+        if let Some(subs) = &sys.subwoofers {
+            // Invert speakers map to find roles from measurement keys
+            // measurement_key -> role
+            let meas_to_role: HashMap<&String, &String> =
+                sys.speakers.iter().map(|(r, m)| (m, r)).collect();
+
+            for (sub_meas_key, main_role) in &subs.mapping {
+                if let Some(sub_role) = meas_to_role.get(sub_meas_key) {
+                    pairings.push((sub_role.to_string(), main_role.clone()));
+                } else {
+                    warn!(
+                        "Subwoofer measurement '{}' not mapped to any output channel",
+                        sub_meas_key
+                    );
+                }
+            }
+        }
+    } else {
+        // Legacy heuristic: find "lfe" or "sub*" channel, pair with all non-sub channels
+        let sub_channel = curves
+            .keys()
+            .find(|name| *name == "lfe" || name.starts_with("sub"))
+            .cloned();
+        if let Some(sub_name) = sub_channel {
+            let main_channels: Vec<String> = curves
+                .keys()
+                .filter(|name| *name != &sub_name && !name.starts_with("sub"))
+                .cloned()
+                .collect();
+            for main in main_channels {
+                pairings.push((sub_name.clone(), main));
+            }
+        }
+    }
+
+    pairings
+}
+
+// ============================================================================
 // Progress and Callback Types
 // ============================================================================
 
@@ -586,29 +640,33 @@ pub fn optimize_room(
     // ========================================================================
     // Phase alignment maximizes energy sum in the crossover region by optimizing
     // delay and polarity. This runs BEFORE group delay optimization.
+    // Uses the same sub-main pairing logic as GD-Opt v2 (system config or heuristic).
     let mut phase_alignment_results: HashMap<String, (f64, bool)> = HashMap::new();
 
     if config.optimizer.allow_delay()
         && let Some(phase_config) = &config.optimizer.phase_alignment
         && phase_config.enabled
-        && let Some(gd_configs) = &config.group_delay
     {
-        info!("Running phase alignment optimization...");
+        let pairings = find_sub_main_pairings(config, &curves);
 
-        for gd_config in gd_configs {
-            let sub_curve = match curves.get(&gd_config.subwoofer) {
-                Some(c) => c,
-                None => {
-                    warn!(
-                        "Subwoofer channel '{}' not found for phase alignment",
-                        gd_config.subwoofer
-                    );
-                    continue;
-                }
-            };
+        if pairings.is_empty() {
+            warn!("Phase alignment enabled but no valid sub-main pairings found.");
+        } else {
+            info!("Running phase alignment optimization...");
 
-            for speaker_name in &gd_config.speakers {
-                if let Some(speaker_curve) = curves.get(speaker_name) {
+            for (sub_name, main_name) in &pairings {
+                let sub_curve = match curves.get(sub_name) {
+                    Some(c) => c,
+                    None => {
+                        warn!(
+                            "Subwoofer channel '{}' not found for phase alignment",
+                            sub_name
+                        );
+                        continue;
+                    }
+                };
+
+                if let Some(speaker_curve) = curves.get(main_name) {
                     // Phase alignment requires phase data
                     if sub_curve.phase.is_some() && speaker_curve.phase.is_some() {
                         match phase_alignment::optimize_phase_alignment(
@@ -619,25 +677,25 @@ pub fn optimize_room(
                             Ok(result) => {
                                 info!(
                                     "  Phase alignment '{}' with '{}': delay={:.2}ms, invert={}, improvement={:.2}dB",
-                                    speaker_name,
-                                    gd_config.subwoofer,
+                                    main_name,
+                                    sub_name,
                                     result.delay_ms,
                                     result.invert_polarity,
                                     result.improvement_db
                                 );
                                 phase_alignment_results.insert(
-                                    speaker_name.clone(),
+                                    main_name.clone(),
                                     (result.delay_ms, result.invert_polarity),
                                 );
                             }
                             Err(e) => {
-                                warn!("  Phase alignment failed for '{}': {}", speaker_name, e);
+                                warn!("  Phase alignment failed for '{}': {}", main_name, e);
                             }
                         }
                     } else {
                         debug!(
                             "  Skipping phase alignment for '{}': no phase data available",
-                            speaker_name
+                            main_name
                         );
                     }
                 }
@@ -645,13 +703,23 @@ pub fn optimize_room(
         }
     }
 
-    // Apply phase alignment results (polarity inversion)
-    for (speaker_name, (_delay, invert)) in &phase_alignment_results {
-        if *invert && let Some(chain) = channel_chains.get_mut(speaker_name) {
-            // Insert polarity inversion at the beginning of the chain
-            let invert_plugin = output::create_gain_plugin_with_invert(0.0, true);
-            chain.plugins.insert(0, invert_plugin);
-            info!("  Applied polarity inversion to '{}'", speaker_name);
+    // Apply phase alignment results (polarity inversion + delay)
+    for (speaker_name, (delay_ms, invert)) in &phase_alignment_results {
+        if let Some(chain) = channel_chains.get_mut(speaker_name) {
+            if *invert {
+                // Insert polarity inversion at the beginning of the chain
+                let invert_plugin = output::create_gain_plugin_with_invert(0.0, true);
+                chain.plugins.insert(0, invert_plugin);
+                info!("  Applied polarity inversion to '{}'", speaker_name);
+            }
+            if *delay_ms > 0.01 {
+                // Apply phase alignment delay (additive with any existing time-alignment delay)
+                output::add_delay_plugin(chain, *delay_ms);
+                info!(
+                    "  Applied {:.3} ms phase alignment delay to '{}'",
+                    delay_ms, speaker_name
+                );
+            }
         }
     }
 
@@ -665,44 +733,7 @@ pub fn optimize_room(
     {
         info!("Running Group Delay Optimization (IIR Mode)...");
 
-        let mut pairings = Vec::new();
-
-        if let Some(sys) = &config.system {
-            // Use explicit system configuration
-            if let Some(subs) = &sys.subwoofers {
-                // Invert speakers map to find roles from measurement keys
-                // measurement_key -> role
-                let meas_to_role: HashMap<&String, &String> =
-                    sys.speakers.iter().map(|(r, m)| (m, r)).collect();
-
-                for (sub_meas_key, main_role) in &subs.mapping {
-                    if let Some(sub_role) = meas_to_role.get(sub_meas_key) {
-                        pairings.push((sub_role.to_string(), main_role.clone()));
-                    } else {
-                        warn!(
-                            "GD-Opt: Subwoofer measurement '{}' not mapped to any output channel",
-                            sub_meas_key
-                        );
-                    }
-                }
-            }
-        } else {
-            // Legacy heuristic
-            let sub_channel = curves
-                .keys()
-                .find(|name| *name == "lfe" || name.starts_with("sub"))
-                .cloned();
-            if let Some(sub_name) = sub_channel {
-                let main_channels: Vec<String> = curves
-                    .keys()
-                    .filter(|name| *name != &sub_name && !name.starts_with("sub"))
-                    .cloned()
-                    .collect();
-                for main in main_channels {
-                    pairings.push((sub_name.clone(), main));
-                }
-            }
-        }
+        let pairings = find_sub_main_pairings(config, &curves);
 
         if pairings.is_empty() {
             warn!("GD-Opt enabled but no valid sub-main pairings found.");
@@ -747,115 +778,6 @@ pub fn optimize_room(
                     "GD-Opt: Channel '{}' or '{}' not found in results",
                     sub_name, main_name
                 );
-            }
-        }
-    }
-
-    // Group Delay Optimization (Legacy v1)
-    if config.optimizer.allow_delay()
-        && let Some(gd_configs) = &config.group_delay
-    {
-        info!("Optimizing group delay alignments...");
-
-        let mut calculated_rel_delays = Vec::new();
-        let mut sub_base_delays: HashMap<String, f64> = HashMap::new();
-
-        for gd_config in gd_configs {
-            let sub_curve = match curves.get(&gd_config.subwoofer) {
-                Some(c) => c,
-                None => {
-                    warn!(
-                        "Subwoofer channel '{}' not found for group delay optimization",
-                        gd_config.subwoofer
-                    );
-                    continue;
-                }
-            };
-
-            for speaker_name in &gd_config.speakers {
-                if let Some(speaker_curve) = curves.get(speaker_name) {
-                    info!(
-                        "  Aligning '{}' with '{}'",
-                        speaker_name, gd_config.subwoofer
-                    );
-
-                    let delay_res = group_delay::optimize_group_delay(
-                        sub_curve,
-                        speaker_curve,
-                        gd_config.min_freq,
-                        gd_config.max_freq,
-                    );
-
-                    match delay_res {
-                        Ok(delay_ms) => {
-                            info!(
-                                "    Optimal relative delay: {:.3} ms (positive = delay speaker)",
-                                delay_ms
-                            );
-
-                            calculated_rel_delays.push((
-                                gd_config.subwoofer.clone(),
-                                speaker_name.clone(),
-                                delay_ms,
-                            ));
-
-                            if delay_ms < 0.0 {
-                                let current_base =
-                                    *sub_base_delays.get(&gd_config.subwoofer).unwrap_or(&0.0);
-                                if -delay_ms > current_base {
-                                    sub_base_delays.insert(gd_config.subwoofer.clone(), -delay_ms);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            warn!("    Group delay optimization failed: {}", e);
-                        }
-                    }
-                } else {
-                    warn!("Speaker channel '{}' not found", speaker_name);
-                }
-            }
-        }
-
-        // Apply delays
-        for (sub_name, base_delay) in &sub_base_delays {
-            if *base_delay > 1e-3
-                && let Some(chain) = channel_chains.get_mut(sub_name)
-            {
-                output::add_delay_plugin(chain, *base_delay);
-                info!(
-                    "    Applied base delay of {:.3} ms to subwoofer '{}'",
-                    base_delay, sub_name
-                );
-            }
-        }
-
-        for (sub_name, speaker_name, rel_delay) in calculated_rel_delays {
-            let base_delay = *sub_base_delays.get(&sub_name).unwrap_or(&0.0);
-
-            // Include phase alignment delay if available
-            let phase_delay = phase_alignment_results
-                .get(&speaker_name)
-                .map(|(d, _)| *d)
-                .unwrap_or(0.0);
-
-            let final_speaker_delay = rel_delay + base_delay + phase_delay;
-
-            if final_speaker_delay > 1e-3
-                && let Some(chain) = channel_chains.get_mut(&speaker_name)
-            {
-                output::add_delay_plugin(chain, final_speaker_delay);
-                if phase_delay.abs() > 0.01 {
-                    info!(
-                        "    Applied {:.3} ms delay to '{}' (rel: {:.3} + sub_base: {:.3} + phase: {:.3})",
-                        final_speaker_delay, speaker_name, rel_delay, base_delay, phase_delay
-                    );
-                } else {
-                    info!(
-                        "    Applied {:.3} ms delay to '{}' (rel: {:.3} + sub_base: {:.3})",
-                        final_speaker_delay, speaker_name, rel_delay, base_delay
-                    );
-                }
             }
         }
     }
@@ -980,7 +902,6 @@ pub fn optimize_speaker(
         speakers: HashMap::new(),
         crossovers: None,
         target_curve: target_curve.cloned(),
-        group_delay: None,
         optimizer: optimizer_config.clone(),
         recording_config: None,
     };
@@ -1143,6 +1064,18 @@ fn process_single_speaker(
         None
     };
 
+    // When target_tilt is non-flat, the tilt is baked into the measurement curve
+    // before optimization. Passing target_curve to the optimizer on top of that
+    // would double-apply the target. Guard against this.
+    if target_tilt_curve.is_some() && room_config.target_curve.is_some() {
+        warn!(
+            "  Both target_curve and target_tilt are configured for '{}'. \
+             target_tilt is baked into the measurement; target_curve will be \
+             ignored to avoid double-application.",
+            channel_name
+        );
+    }
+
     // ========================================================================
     // Excursion Protection (detect F3, generate HPF)
     // ========================================================================
@@ -1179,17 +1112,26 @@ fn process_single_speaker(
     let min_freq = room_config.optimizer.min_freq;
     let max_freq = room_config.optimizer.max_freq;
 
-    // Detect passband for normalization
-    let (norm_range, mean) = detect_passband_and_mean(&curve);
+    // Detect passband for display metadata only
+    let (norm_range, _passband_mean) = detect_passband_and_mean(&curve);
 
     if let Some((f_low, f_high)) = norm_range {
         info!(
-            "  Detected passband for '{}': {:.1} Hz - {:.1} Hz (Mean SPL: {:.2} dB)",
-            channel_name, f_low, f_high, mean
+            "  Detected passband for '{}': {:.1} Hz - {:.1} Hz",
+            channel_name, f_low, f_high
         );
     }
 
-    let normalized_spl = &curve.spl - mean;
+    // Use range-based mean (same as optimizer) for consistent pre/post scoring
+    let pre_freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+    let pre_spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+    let pre_mean = compute_average_response(
+        &pre_freqs_f32,
+        &pre_spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
+
+    let normalized_spl = &curve.spl - pre_mean;
     let pre_score = crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
 
     // Level alignment: use mean SPL within the EQ optimization range.
@@ -1250,11 +1192,7 @@ fn process_single_speaker(
                         plugins.push(eq);
                     }
 
-                    // 4. precise simulation of the correction
-                    // We need to construct the filters again to simulate them, or use the result params.
-                    // Ideally `create_alignment_plugins` would return the filters too, but it returns ConfigWrappers.
-                    // We can reconstruct them easily using spectral_align constants.
-                    
+                    // Simulate the broadband correction on the curve
                     use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
                     let mut filters = Vec::new();
                     if result.lowshelf_gain_db.abs() > 1e-3 {
@@ -1266,7 +1204,7 @@ fn process_single_speaker(
                             result.lowshelf_gain_db,
                         ));
                     }
-                     if result.highshelf_gain_db.abs() > 1e-3 {
+                    if result.highshelf_gain_db.abs() > 1e-3 {
                          filters.push(Biquad::new(
                             BiquadFilterType::Highshelf,
                             spectral_align::HIGHSHELF_FREQ,
@@ -1275,35 +1213,7 @@ fn process_single_speaker(
                             result.highshelf_gain_db,
                         ));
                     }
-                    
-                    // Gain is just a scalar addition in dB
-                    let mut corrected_spl = curve.spl.clone();
-                    corrected_spl += result.flat_gain_db;
-                    
-                    // Apply filters if any
-                    if !filters.is_empty() {
-                         let resp = response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
-                         // Apply magnitude response (add db)
-                         for (i, c) in resp.iter().enumerate() {
-                             corrected_spl[i] += c.norm().log10() * 20.0;
-                         }
-                         // TODO: Update phase if we want to be perfect, but for magnitude opt it's fine.
-                         // Let's do it properly using the complex response
-                         let corrected_curve = response::apply_complex_response(
-                             &Curve { freq: curve.freq.clone(), spl: corrected_spl.clone() - result.flat_gain_db, phase: curve.phase.clone() }, // hack: apply_complex adds to input
-                             &resp
-                         );
-                         // Re-add gain
-                         corrected_spl = corrected_curve.spl + result.flat_gain_db;
-                    }
 
-                    let new_curve = Curve {
-                        freq: curve.freq.clone(),
-                        spl: corrected_spl,
-                        phase: curve.phase.clone(), // Phase is arguably changed by IIR, but for now we keep it simple or use `apply_complex_response` which handles it.
-                    };
-                    
-                    // Better way:
                     // 1. Gain
                     let mut temp_curve = curve.clone();
                     temp_curve.spl += result.flat_gain_db;
@@ -1337,22 +1247,41 @@ fn process_single_speaker(
 
             // Check if we should force excess phase correction for GD-Opt on subwoofer
             let mut opt_config = room_config.optimizer.clone();
-            if let Some(gd_opt) = &room_config.optimizer.gd_opt {
-                if gd_opt.enabled && (channel_name == "lfe" || channel_name.starts_with("sub")) {
-                    if let Some(fir) = &mut opt_config.fir {
-                        fir.correct_excess_phase = true;
-                        info!(
-                            "  GD-Opt: Forcing excess phase correction for '{}'",
-                            channel_name
-                        );
-                    }
-                }
+            if let Some(gd_opt) = &room_config.optimizer.gd_opt
+                && gd_opt.enabled && (channel_name == "lfe" || channel_name.starts_with("sub"))
+                && let Some(fir) = &mut opt_config.fir
+            {
+                fir.correct_excess_phase = true;
+                info!(
+                    "  GD-Opt: Forcing excess phase correction for '{}'",
+                    channel_name
+                );
             }
 
+            // Apply target tilt to the curve (subtract tilt from measurement),
+            // same as LowLatency does
+            let fir_input_curve = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: curve_for_optim.freq.clone(),
+                    spl: &curve_for_optim.spl - &tilt_curve.spl,
+                    phase: curve_for_optim.phase.clone(),
+                }
+            } else {
+                curve_for_optim.clone()
+            };
+
+            // When tilt is baked into the curve, don't also pass target_curve
+            // to the optimizer (would double-apply the target)
+            let effective_target = if target_tilt_curve.is_some() {
+                None
+            } else {
+                room_config.target_curve.as_ref()
+            };
+
             let coeffs = fir::generate_fir_correction(
-                &curve_for_optim,
+                &fir_input_curve,
                 &opt_config,
-                room_config.target_curve.as_ref(),
+                effective_target,
                 sample_rate,
             )
             .map_err(|e| AutoeqError::OptimizationFailed {
@@ -1386,8 +1315,14 @@ fn process_single_speaker(
                 response::compute_fir_complex_response(&coeffs, &curve.freq, sample_rate);
             let final_curve = response::apply_complex_response(&curve_for_optim, &complex_resp);
 
-            // Compute post_score consistently with pre_score
-            let (_, mean_final) = detect_passband_and_mean(&final_curve);
+            // Compute post_score consistently with pre_score (range-based mean)
+            let post_freqs_f32: Vec<f32> = final_curve.freq.iter().map(|&f| f as f32).collect();
+            let post_spl_f32: Vec<f32> = final_curve.spl.iter().map(|&s| s as f32).collect();
+            let mean_final = compute_average_response(
+                &post_freqs_f32,
+                &post_spl_f32,
+                Some((min_freq as f32, max_freq as f32)),
+            ) as f64;
             let normalized_final_spl = &final_curve.spl - mean_final;
             let post_score = crate::loss::flat_loss(
                 &final_curve.freq,
@@ -1451,40 +1386,60 @@ fn process_single_speaker(
             // Legacy sequential mixed mode: IIR first, then FIR on residual
             // Check if we should force excess phase correction for GD-Opt on subwoofer
             let mut opt_config = room_config.optimizer.clone();
-            if let Some(gd_opt) = &room_config.optimizer.gd_opt {
-                if gd_opt.enabled {
-                    let is_sub = if let Some(sys) = &room_config.system {
-                        // V2.1 System Config
-                        if let Some(meas_key) = sys.speakers.get(channel_name) {
-                            if let Some(subs) = &sys.subwoofers {
-                                subs.mapping.contains_key(meas_key)
-                            } else {
-                                false
-                            }
+            if let Some(gd_opt) = &room_config.optimizer.gd_opt
+                && gd_opt.enabled
+            {
+                let is_sub = if let Some(sys) = &room_config.system {
+                    // V2.1 System Config
+                    if let Some(meas_key) = sys.speakers.get(channel_name) {
+                        if let Some(subs) = &sys.subwoofers {
+                            subs.mapping.contains_key(meas_key)
                         } else {
                             false
                         }
                     } else {
-                        // Legacy
-                        channel_name == "lfe" || channel_name.starts_with("sub")
-                    };
-
-                    if is_sub {
-                        if let Some(fir) = &mut opt_config.fir {
-                            fir.correct_excess_phase = true;
-                            info!(
-                                "  GD-Opt: Forcing excess phase correction for '{}'",
-                                channel_name
-                            );
-                        }
+                        false
                     }
+                } else {
+                    // Legacy
+                    channel_name == "lfe" || channel_name.starts_with("sub")
+                };
+
+                if is_sub
+                    && let Some(fir) = &mut opt_config.fir
+                {
+                    fir.correct_excess_phase = true;
+                    info!(
+                        "  GD-Opt: Forcing excess phase correction for '{}'",
+                        channel_name
+                    );
                 }
             }
 
+            // Apply target tilt to the curve (subtract tilt from measurement),
+            // same as LowLatency does
+            let hybrid_optim_curve = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: curve_for_optim.freq.clone(),
+                    spl: &curve_for_optim.spl - &tilt_curve.spl,
+                    phase: curve_for_optim.phase.clone(),
+                }
+            } else {
+                curve_for_optim.clone()
+            };
+
+            // When tilt is baked into the curve, don't also pass target_curve
+            // to the optimizer (would double-apply the target)
+            let effective_target = if target_tilt_curve.is_some() {
+                None
+            } else {
+                room_config.target_curve.as_ref()
+            };
+
             let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
-                &curve_for_optim,
+                &hybrid_optim_curve,
                 &opt_config, // Use modified config
-                room_config.target_curve.as_ref(),
+                effective_target,
                 sample_rate,
             )
             .map_err(|e| AutoeqError::OptimizationFailed {
@@ -1505,7 +1460,7 @@ fn process_single_speaker(
             let coeffs = fir::generate_fir_correction(
                 &input_plus_iir,
                 &opt_config, // Use modified config
-                room_config.target_curve.as_ref(),
+                effective_target,
                 sample_rate,
             )
             .map_err(|e| AutoeqError::OptimizationFailed {
@@ -1531,8 +1486,14 @@ fn process_single_speaker(
                 response::compute_fir_complex_response(&coeffs, &curve.freq, sample_rate);
             let final_curve = response::apply_complex_response(&input_plus_iir, &fir_resp);
 
-            // Compute post_score consistently with pre_score
-            let (_, mean_final) = detect_passband_and_mean(&final_curve);
+            // Compute post_score consistently with pre_score (range-based mean)
+            let post_freqs_f32: Vec<f32> = final_curve.freq.iter().map(|&f| f as f32).collect();
+            let post_spl_f32: Vec<f32> = final_curve.spl.iter().map(|&s| s as f32).collect();
+            let mean_final = compute_average_response(
+                &post_freqs_f32,
+                &post_spl_f32,
+                Some((min_freq as f32, max_freq as f32)),
+            ) as f64;
             let normalized_final_spl = &final_curve.spl - mean_final;
             let post_score = crate::loss::flat_loss(
                 &final_curve.freq,
@@ -1595,6 +1556,14 @@ fn process_single_speaker(
                 curve_for_optim.clone()
             };
 
+            // When tilt is baked into the curve, don't also pass target_curve
+            // to the optimizer (would double-apply the target)
+            let effective_target = if target_tilt_curve.is_some() {
+                None
+            } else {
+                room_config.target_curve.as_ref()
+            };
+
             // ================================================================
             // Schroeder Split Optimization (if configured)
             // ================================================================
@@ -1645,7 +1614,7 @@ fn process_single_speaker(
                     let (filters, _opt_loss) = eq::optimize_channel_eq(
                         &optimization_curve,
                         &room_config.optimizer,
-                        room_config.target_curve.as_ref(),
+                        effective_target,
                         sample_rate,
                     )
                     .map_err(|e| AutoeqError::OptimizationFailed {
@@ -1661,7 +1630,7 @@ fn process_single_speaker(
                 let (filters, _opt_loss) = eq::optimize_channel_eq(
                     &optimization_curve,
                     &room_config.optimizer,
-                    room_config.target_curve.as_ref(),
+                    effective_target,
                     sample_rate,
                 )
                 .map_err(|e| AutoeqError::OptimizationFailed {
@@ -1703,7 +1672,13 @@ fn process_single_speaker(
                 final_curve.clone()
             };
 
-            let (_, mean_final) = detect_passband_and_mean(&score_curve);
+            let post_freqs_f32: Vec<f32> = score_curve.freq.iter().map(|&f| f as f32).collect();
+            let post_spl_f32: Vec<f32> = score_curve.spl.iter().map(|&s| s as f32).collect();
+            let mean_final = compute_average_response(
+                &post_freqs_f32,
+                &post_spl_f32,
+                Some((min_freq as f32, max_freq as f32)),
+            ) as f64;
             let normalized_final_spl = &score_curve.spl - mean_final;
             let post_score = crate::loss::flat_loss(
                 &score_curve.freq,
@@ -1881,11 +1856,11 @@ fn determine_optimization_bands(
             }
         }
 
-        if !xover_points.is_empty() {
-            if idx < xover_points.len() {
-                let f = xover_points[idx];
-                return (f, f);
-            }
+        if !xover_points.is_empty()
+            && idx < xover_points.len()
+        {
+            let f = xover_points[idx];
+            return (f, f);
         }
 
         // Fallback: log-distribute between 80Hz and 3000Hz
@@ -2022,10 +1997,9 @@ fn process_speaker_group(
     // 6. Compute pre-score (using linearized drivers)
     let n_drivers = linearized_drivers.len();
     let initial_gains = vec![0.0; n_drivers];
-    let initial_delays = vec![0.0; n_drivers];
     let mut initial_xover_freqs = Vec::new();
     // Simple geometric mean estimate for initial guess
-    for i in 0..(n_drivers - 1) {
+    for _ in 0..(n_drivers - 1) {
         let (min, max) = match crossover_config.frequency_range {
             Some((a, b)) => (a, b),
             None => (80.0, 3000.0),

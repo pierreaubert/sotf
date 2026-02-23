@@ -100,9 +100,9 @@ pub fn optimize_dba(
     // Index 2: Front Delay -> 0 (Locked)
     // Index 3: Rear Delay -> 0 to 100 ms (approx 34m room)
 
-    // Ensure bounds cover typical DBA range (-30dB to +5dB)
+    // DBA rear array is for cancellation — clamp rear gain to 0 dB max
     let min_gain = config.min_db.min(-30.0);
-    let max_gain = config.max_db.max(5.0);
+    let max_gain = 0.0;
 
     let lower_bounds = vec![-0.01, min_gain, 0.0, 0.0];
     let upper_bounds = vec![0.01, max_gain, 0.001, 100.0];

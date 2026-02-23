@@ -35,13 +35,5 @@
       "enabled": false,
       "strategy": "minimize_variance"
     }
-  },
-  "group_delay": [
-    {
-      "subwoofer": "sub",
-      "speakers": ["left", "right"],
-      "min_freq": 30.0,
-      "max_freq": 120.0
-    }
-  ]
+  }
 }

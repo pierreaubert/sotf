@@ -1,7 +1,6 @@
 //! Group delay optimization for subwoofer-main speaker alignment.
 //!
 //! This module provides algorithms for aligning speakers in the time domain:
-//! - `optimize_group_delay`: Finds optimal delay to minimize GD variance
 //! - `optimize_gd_iir`: Generates All-Pass filters to match GD slopes
 
 use crate::error::Result;
@@ -11,27 +10,6 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;
-
-/// Configuration for group delay optimization
-#[derive(Debug, Clone)]
-pub struct GroupDelayConfig {
-    /// Maximum delay to search (ms)
-    pub max_delay_ms: f64,
-    /// Tolerance for Brent's method (ms)
-    pub tolerance_ms: f64,
-    /// Maximum iterations for Brent's method
-    pub max_iterations: usize,
-}
-
-impl Default for GroupDelayConfig {
-    fn default() -> Self {
-        Self {
-            max_delay_ms: 30.0,
-            tolerance_ms: 0.01,
-            max_iterations: 100,
-        }
-    }
-}
 
 /// Configuration for All-Pass filter optimization
 #[derive(Debug, Clone)]
@@ -58,239 +36,6 @@ impl Default for ApOptimizerConfig {
             fine_tune: true,
         }
     }
-}
-
-/// Optimize group delay alignment between a subwoofer and a speaker using Brent's method.
-///
-/// Returns the optimal delay (in ms) to apply to the speaker to align it with the subwoofer.
-/// A positive value means the speaker should be delayed.
-/// A negative value means the speaker is "too late" and the subwoofer should be delayed.
-///
-/// # Algorithm
-/// Uses Brent's method for efficient 1D minimization, which combines:
-/// - Bisection (robust)
-/// - Secant method (fast convergence)
-/// - Inverse quadratic interpolation (superlinear convergence)
-///
-/// This typically converges in 10-15 iterations vs 120+ for grid search.
-pub fn optimize_group_delay(
-    sub: &Curve,
-    speaker: &Curve,
-    min_freq: f64,
-    max_freq: f64,
-) -> Result<f64> {
-    optimize_group_delay_with_config(
-        sub,
-        speaker,
-        min_freq,
-        max_freq,
-        GroupDelayConfig::default(),
-    )
-}
-
-/// Optimize group delay with custom configuration.
-pub fn optimize_group_delay_with_config(
-    sub: &Curve,
-    speaker: &Curve,
-    min_freq: f64,
-    max_freq: f64,
-    config: GroupDelayConfig,
-) -> Result<f64> {
-    let freq = &sub.freq;
-    let speaker_interp = interpolate_curve(speaker, freq);
-
-    let sub_complex = curve_to_complex(sub);
-    let speaker_complex = curve_to_complex(&speaker_interp);
-
-    // Pre-compute indices in frequency range for efficiency
-    let range_indices: Vec<usize> = freq
-        .iter()
-        .enumerate()
-        .filter(|&(_, &f)| f >= min_freq && f <= max_freq)
-        .map(|(i, _)| i)
-        .collect();
-
-    // Use Brent's method for minimization
-    let result = brent_minimize(
-        |delay_ms| {
-            evaluate_delay_fast(
-                delay_ms,
-                freq,
-                &sub_complex,
-                &speaker_complex,
-                &range_indices,
-            )
-        },
-        -config.max_delay_ms,
-        config.max_delay_ms,
-        config.tolerance_ms,
-        config.max_iterations,
-    );
-
-    Ok(result)
-}
-
-/// Brent's method for 1D minimization.
-///
-/// Combines bisection, secant method, and inverse quadratic interpolation
-/// for robust and efficient optimization.
-fn brent_minimize<F>(mut f: F, mut a: f64, mut b: f64, tol: f64, max_iter: usize) -> f64
-where
-    F: FnMut(f64) -> f64,
-{
-    const GOLDEN_RATIO: f64 = 0.3819660112501051; // (3 - sqrt(5)) / 2
-
-    let mut x = a + GOLDEN_RATIO * (b - a);
-    let mut w = x;
-    let mut v = x;
-
-    let mut fx = f(x);
-    let mut fw = fx;
-    let mut fv = fx;
-
-    let mut d: f64 = 0.0;
-    let mut e: f64 = 0.0;
-
-    for _ in 0..max_iter {
-        let xm = 0.5 * (a + b);
-        let tol1 = tol; // Use absolute tolerance (ms units)
-
-        // Check convergence
-        if (x - xm).abs() <= tol1 && (b - a) < 4.0 * tol1 {
-            return x;
-        }
-
-        // Fit parabola
-        let mut u: f64;
-        let fu: f64;
-
-        if e.abs() > tol1 {
-            // Parabolic interpolation
-            let r = (x - w) * (fx - fv);
-            let q = (x - v) * (fx - fw);
-            let p = (x - v) * q - (x - w) * r;
-            let q = 2.0 * (q - r);
-
-            let p = if q > 0.0 { -p } else { -p };
-            let q = q.abs();
-
-            if q.abs() < 1e-10 {
-                u = x + GOLDEN_RATIO * e;
-            } else {
-                let etemp = e;
-                e = d;
-                if (p.abs() < 0.5 * q * etemp) && p > q * (a - x) && p < q * (b - x) {
-                    d = p / q;
-                    u = x + d;
-                    if (u - a) < tol1 || (b - u) < tol1 {
-                        d = if x < xm { tol1 } else { -tol1 };
-                    }
-                } else {
-                    e = if x >= xm { a - x } else { b - x };
-                    d = GOLDEN_RATIO * e;
-                }
-            }
-        } else {
-            e = if x >= xm { a - x } else { b - x };
-            d = GOLDEN_RATIO * e;
-        }
-
-        u = if d.abs() >= tol1 {
-            x + d
-        } else {
-            x + if d > 0.0 { tol1 } else { -tol1 }
-        };
-        fu = f(u);
-
-        if fu <= fx {
-            if u >= x {
-                a = x;
-            } else {
-                b = x;
-            }
-            v = w;
-            fv = fw;
-            w = x;
-            fw = fx;
-            x = u;
-            fx = fu;
-        } else {
-            if u < x {
-                a = u;
-            } else {
-                b = u;
-            }
-            if fu <= fw || (w - x).abs() < 1e-10 {
-                v = w;
-                fv = fw;
-                w = u;
-                fw = fu;
-            } else if fu <= fv || (v - x).abs() < 1e-10 || (v - w).abs() < 1e-10 {
-                v = u;
-                fv = fu;
-            }
-        }
-    }
-
-    x
-}
-
-/// Fast delay evaluation using pre-computed range indices.
-fn evaluate_delay_fast(
-    delay_ms: f64,
-    freq: &Array1<f64>,
-    sub: &Array1<Complex64>,
-    speaker: &Array1<Complex64>,
-    range_indices: &[usize],
-) -> f64 {
-    if range_indices.is_empty() {
-        return f64::INFINITY;
-    }
-
-    let delay_s = delay_ms / 1000.0;
-
-    // Calculate combined phase at each frequency in range
-    let mut phases = Vec::with_capacity(range_indices.len());
-    for &i in range_indices {
-        let f = freq[i];
-        let w = 2.0 * PI * f;
-        let phase_shift = -w * delay_s;
-        let rot = Complex64::from_polar(1.0, phase_shift);
-
-        let combined = sub[i] + speaker[i] * rot;
-        phases.push(combined.arg());
-    }
-
-    // Compute group delay variance from phases
-    let unwrapped = unwrap_phase(&phases);
-
-    // Calculate GD from finite differences
-    let mut gd_values = Vec::with_capacity(unwrapped.len() - 1);
-    for i in 0..unwrapped.len() - 1 {
-        let idx1 = range_indices[i];
-        let idx2 = range_indices[i + 1];
-
-        let d_phi = unwrapped[i + 1] - unwrapped[i];
-        let d_f = freq[idx2] - freq[idx1];
-        let d_w = 2.0 * PI * d_f;
-
-        if d_w.abs() > 1e-9 {
-            let gd = -d_phi / d_w * 1000.0; // Convert to ms
-            if gd.is_finite() {
-                gd_values.push(gd);
-            }
-        }
-    }
-
-    if gd_values.is_empty() {
-        return f64::INFINITY;
-    }
-
-    // Standard deviation of GD
-    let mean = gd_values.iter().sum::<f64>() / gd_values.len() as f64;
-    let variance =
-        gd_values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / gd_values.len() as f64;
-    variance.sqrt()
 }
 
 /// Optimize All-Pass filters for Main speakers to match Subwoofer group delay (IIR Mode).
@@ -623,12 +368,11 @@ where
             break;
         }
 
-        let d;
-        if (b - c) > (c - a) {
-            d = c + RESPHI * (b - c);
+        let d = if (b - c) > (c - a) {
+            c + RESPHI * (b - c)
         } else {
-            d = c - RESPHI * (c - a);
-        }
+            c - RESPHI * (c - a)
+        };
 
         let fd = f(d);
 
@@ -640,55 +384,14 @@ where
             }
             c = d;
             fc = fd;
+        } else if (b - c) > (c - a) {
+            b = d;
         } else {
-            if (b - c) > (c - a) {
-                b = d;
-            } else {
-                a = d;
-            }
+            a = d;
         }
     }
 
     (c, fc)
-}
-
-/// Original delay evaluation (kept for compatibility).
-fn evaluate_delay(
-    delay_ms: f64,
-    freq: &Array1<f64>,
-    sub: &Array1<Complex64>,
-    speaker: &Array1<Complex64>,
-    min_freq: f64,
-    max_freq: f64,
-) -> f64 {
-    let delay_s = delay_ms / 1000.0;
-    let mut combined_complex = vec![Complex64::new(0.0, 0.0); freq.len()];
-
-    for (i, ((&f, &sub_val), &speaker_val)) in
-        freq.iter().zip(sub.iter()).zip(speaker.iter()).enumerate()
-    {
-        let w = 2.0 * PI * f;
-        let phase_shift = -w * delay_s;
-        let rot = Complex64::from_polar(1.0, phase_shift);
-        combined_complex[i] = sub_val + speaker_val * rot;
-    }
-
-    let gd = calculate_group_delay(freq, &combined_complex);
-
-    let mut values = Vec::new();
-    for i in 0..freq.len() {
-        if freq[i] >= min_freq && freq[i] <= max_freq && gd[i].is_finite() {
-            values.push(gd[i]);
-        }
-    }
-
-    if values.is_empty() {
-        return f64::INFINITY;
-    }
-
-    let mean = values.iter().sum::<f64>() / values.len() as f64;
-    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
-    variance.sqrt()
 }
 
 fn calculate_group_delay(freq: &Array1<f64>, complex: &[Complex64]) -> Vec<f64> {
@@ -880,57 +583,6 @@ mod tests {
         for &d in &gd {
             assert!((d - 10.0).abs() < 0.1, "Expected 10ms, got {}", d);
         }
-    }
-
-    #[test]
-    fn test_optimize_group_delay_alignment() {
-        let fc = 80.0;
-        let freqs = Array1::linspace(20.0, 200.0, 100);
-        let mut sub_spl = Array1::zeros(freqs.len());
-        let mut sub_phase = Array1::zeros(freqs.len());
-        let mut spk_spl = Array1::zeros(freqs.len());
-        let mut spk_phase = Array1::zeros(freqs.len());
-
-        let sub_extra_delay_s = 0.005;
-
-        for i in 0..freqs.len() {
-            let f = freqs[i];
-            let w = 2.0 * PI * f;
-            let s = Complex64::new(0.0, f / fc);
-
-            let lp = Complex64::new(1.0, 0.0) / (Complex64::new(1.0, 0.0) + s);
-            let sub_rot = Complex64::from_polar(1.0, -w * sub_extra_delay_s);
-            let sub_final = lp * sub_rot;
-
-            sub_spl[i] = 20.0 * sub_final.norm().log10();
-            sub_phase[i] = sub_final.arg().to_degrees();
-
-            let hp = s / (Complex64::new(1.0, 0.0) + s);
-            spk_spl[i] = 20.0 * hp.norm().log10();
-            spk_phase[i] = hp.arg().to_degrees();
-        }
-
-        let sub = Curve {
-            freq: freqs.clone(),
-            spl: sub_spl,
-            phase: Some(sub_phase),
-        };
-        let spk = Curve {
-            freq: freqs.clone(),
-            spl: spk_spl,
-            phase: Some(spk_phase),
-        };
-
-        let delay = optimize_group_delay(&sub, &spk, 40.0, 160.0).unwrap();
-
-        assert!((delay - 5.0).abs() < 0.1, "Expected 5.0ms, got {}", delay);
-    }
-
-    #[test]
-    fn test_brent_minimization() {
-        // Minimize (x - 3)^2
-        let result = brent_minimize(|x| (x - 3.0).powi(2), -10.0, 10.0, 1e-6, 100);
-        assert!((result - 3.0).abs() < 1e-5, "Expected 3.0, got {}", result);
     }
 
     #[test]

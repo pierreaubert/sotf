@@ -4,20 +4,18 @@
 //! Includes panic handling and config validation for robust fuzzing.
 
 use autoeq::roomeq::{
-    CrossoverConfig, DBAConfig, GroupDelayConfig, MultiSubGroup, OptimizerConfig, RoomConfig,
+    CrossoverConfig, DBAConfig, MultiSubGroup, OptimizerConfig, RoomConfig,
     SpeakerConfig, SpeakerGroup, TargetCurveConfig,
 };
-use autoeq::{MeasurementRef, MeasurementSource};
 use clap::Parser;
 use rand::Rng;
 use rand::SeedableRng;
-use rand::seq::{IndexedRandom, SliceRandom};
+use rand::seq::IndexedRandom;
 use rand_chacha::ChaCha8Rng;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -63,7 +61,6 @@ enum FilterType {
 /// Driver type for multi-driver simulation
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum DriverType {
-    Subwoofer,
     Woofer,
     Midrange,
     Tweeter,
@@ -103,7 +100,6 @@ impl DriverType {
 
     fn freq_range(&self) -> (f64, f64) {
         match self {
-            DriverType::Subwoofer => (20.0, 400.0),
             DriverType::Woofer => (50.0, 1000.0),
             DriverType::Midrange => (400.0, 5000.0),
             DriverType::Tweeter => (2000.0, 20000.0),
@@ -129,6 +125,7 @@ struct MultiDriverGroupInfo {
 
 /// Roomeq output for parsing
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct RoomeqOutput {
     channels: HashMap<String, ChannelOutput>,
     metadata: Option<Metadata>,
@@ -151,6 +148,7 @@ struct PluginOutput {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Metadata {
     pre_score: f64,
     post_score: f64,
@@ -206,10 +204,10 @@ fn generate_plots_for_multi_drivers(
                     if let Some(gain) = plugin.parameters.get("gain_db").and_then(|v| v.as_f64()) {
                         gains.push(gain);
                     }
-                } else if plugin.plugin_type == "Biquad" {
-                    if let Some(freq) = plugin.parameters.get("freq").and_then(|v| v.as_f64()) {
-                        crossover_freqs.push(freq);
-                    }
+                } else if plugin.plugin_type == "Biquad"
+                    && let Some(freq) = plugin.parameters.get("freq").and_then(|v| v.as_f64())
+                {
+                    crossover_freqs.push(freq);
                 }
             }
         }
@@ -397,17 +395,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             successful_tests += 1;
 
             // Generate plots for multi-driver groups
-            if !multi_driver_groups.is_empty() {
-                if let Err(e) = generate_plots_for_multi_drivers(
+            if !multi_driver_groups.is_empty()
+                && let Err(e) = generate_plots_for_multi_drivers(
                     &output_json_path,
                     &multi_driver_groups,
                     &test_dir,
                     i,
                     args.sample_rate,
                     args.verbose,
-                ) {
-                    println!("  Warning: failed to generate plots: {}", e);
-                }
+                )
+            {
+                println!("  Warning: failed to generate plots: {}", e);
             }
         } else {
             println!(
@@ -600,7 +598,6 @@ fn generate_random_config(
             Some(crossovers)
         },
         target_curve,
-        group_delay: None,
         optimizer: OptimizerConfig {
             algorithm: "autoeq:de".to_string(),
             num_filters: 7,
@@ -718,10 +715,9 @@ fn generate_random_speaker(rng: &mut ChaCha8Rng) -> SyntheticSpeaker {
 /// Generate synthetic measurement CSV file with realistic driver characteristics
 ///
 /// For multi-driver systems, generates bandpass responses appropriate for each driver type:
-/// - Subwoofer: 10-400 Hz
 /// - Woofer: 50-1000 Hz
-/// - Midrange: 400-4000 Hz
-/// - Tweeter: 1000-20000 Hz
+/// - Midrange: 400-5000 Hz
+/// - Tweeter: 2000-20000 Hz
 fn generate_measurement_csv(
     path: &Path,
     config: &SyntheticSpeaker,

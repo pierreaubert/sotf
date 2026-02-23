@@ -2,7 +2,7 @@
 //!
 //! Performs comprehensive validation of RoomConfig before optimization.
 
-use super::types::{GroupDelayConfig, OptimizerConfig, RoomConfig, SpeakerConfig};
+use super::types::{OptimizerConfig, RoomConfig, SpeakerConfig, TiltType};
 use std::collections::HashMap;
 
 /// Result of configuration validation
@@ -69,14 +69,24 @@ pub fn validate_room_config(config: &RoomConfig) -> ValidationResult {
     // Validate optimizer config
     validate_optimizer_config(&config.optimizer, &mut result);
 
+    // Warn when both target_curve and target_tilt are set (non-flat)
+    if config.target_curve.is_some()
+        && let Some(ref tilt) = config.optimizer.target_tilt
+        && tilt.tilt_type != TiltType::Flat
+    {
+        result.add_warning(
+            "Both target_curve and target_tilt are configured. \
+             target_tilt will be baked into the measurement and target_curve \
+             will be ignored to avoid double-application."
+                .to_string(),
+        );
+    }
+
     // Validate speaker configurations
     validate_speakers(&config.speakers, &mut result);
 
     // Validate crossover references
     validate_crossovers(&config.speakers, config.crossovers.as_ref(), &mut result);
-
-    // Validate group delay configuration
-    validate_group_delay(&config.speakers, config.group_delay.as_ref(), &mut result);
 
     result
 }
@@ -305,13 +315,13 @@ fn validate_speakers(speakers: &HashMap<String, SpeakerConfig>, result: &mut Val
 
     for (name, config) in speakers {
         // Validate speaker model name if provided
-        if let Some(speaker_name) = config.speaker_name() {
-            if !is_valid_speaker_name(speaker_name) {
-                result.add_error(format!(
-                    "Speaker '{}' has invalid speaker_name '{}'. Only alphanumeric, spaces, and hyphens allowed.",
-                    name, speaker_name
-                ));
-            }
+        if let Some(speaker_name) = config.speaker_name()
+            && !is_valid_speaker_name(speaker_name)
+        {
+            result.add_error(format!(
+                "Speaker '{}' has invalid speaker_name '{}'. Only alphanumeric, spaces, and hyphens allowed.",
+                name, speaker_name
+            ));
         }
 
         match config {
@@ -437,68 +447,6 @@ fn validate_crossovers(
     }
 }
 
-/// Validate group delay configuration
-fn validate_group_delay(
-    speakers: &HashMap<String, SpeakerConfig>,
-    group_delay: Option<&Vec<GroupDelayConfig>>,
-    result: &mut ValidationResult,
-) {
-    if let Some(gd_configs) = group_delay {
-        for gd in gd_configs {
-            if !speakers.contains_key(&gd.subwoofer) {
-                result.add_error(format!(
-                    "Group delay references non-existent subwoofer '{}'",
-                    gd.subwoofer
-                ));
-            } else {
-                // Verify it's actually a subwoofer-capable channel
-                let speaker = &speakers[&gd.subwoofer];
-                match speaker {
-                    SpeakerConfig::MultiSub(_) | SpeakerConfig::Dba(_) => {
-                        // Good - these are subwoofer types
-                    }
-                    _ => {
-                        result.add_warning(format!(
-                            "Group delay subwoofer '{}' is not a MultiSub or DBA configuration",
-                            gd.subwoofer
-                        ));
-                    }
-                }
-            }
-
-            for speaker in &gd.speakers {
-                if !speakers.contains_key(speaker) {
-                    result.add_error(format!(
-                        "Group delay references non-existent speaker '{}'",
-                        speaker
-                    ));
-                }
-            }
-
-            if gd.min_freq >= gd.max_freq {
-                result.add_error(format!(
-                    "Group delay min_freq ({}) must be less than max_freq ({})",
-                    gd.min_freq, gd.max_freq
-                ));
-            }
-
-            if gd.min_freq < 20.0 {
-                result.add_warning(format!(
-                    "Group delay min_freq ({}) is very low, may not be useful",
-                    gd.min_freq
-                ));
-            }
-
-            if gd.max_freq > 200.0 {
-                result.add_warning(format!(
-                    "Group delay max_freq ({}) is high for subwoofer alignment",
-                    gd.max_freq
-                ));
-            }
-        }
-    }
-}
-
 /// Check if a speaker name is valid (alphanumeric, spaces, hyphens)
 fn is_valid_speaker_name(name: &str) -> bool {
     if name.is_empty() {
@@ -547,7 +495,6 @@ mod tests {
             speakers: HashMap::new(),
             crossovers: None,
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };
@@ -578,7 +525,6 @@ mod tests {
             speakers,
             crossovers: None,
             target_curve: None,
-            group_delay: None,
             optimizer,
             recording_config: None,
         };
@@ -616,7 +562,6 @@ mod tests {
             speakers,
             crossovers: Some(HashMap::new()), // Empty crossovers
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };
@@ -628,43 +573,6 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.contains("non-existent crossover"))
-        );
-    }
-
-    #[test]
-    fn test_validate_group_delay_reference() {
-        let mut speakers = HashMap::new();
-        speakers.insert(
-            "left".to_string(),
-            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
-                measurement: MeasurementRef::Path(PathBuf::from("left.csv")),
-                speaker_name: None,
-            })),
-        );
-
-        let config = RoomConfig {
-            version: default_config_version(),
-            system: None,
-            speakers,
-            crossovers: None,
-            target_curve: None,
-            group_delay: Some(vec![GroupDelayConfig {
-                subwoofer: "nonexistent_sub".to_string(),
-                speakers: vec!["left".to_string()],
-                min_freq: 30.0,
-                max_freq: 120.0,
-            }]),
-            optimizer: OptimizerConfig::default(),
-            recording_config: None,
-        };
-
-        let result = validate_room_config(&config);
-        assert!(!result.is_valid);
-        assert!(
-            result
-                .errors
-                .iter()
-                .any(|e| e.contains("non-existent subwoofer"))
         );
     }
 
@@ -685,7 +593,6 @@ mod tests {
             speakers,
             crossovers: None,
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };

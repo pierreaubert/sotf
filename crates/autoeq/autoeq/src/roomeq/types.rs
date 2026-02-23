@@ -210,18 +210,13 @@ pub struct VoiceOfGodConfig {
 // ============================================================================
 
 /// System topology model
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SystemModel {
     Stereo,
     HomeCinema,
+    #[default]
     Custom,
-}
-
-impl Default for SystemModel {
-    fn default() -> Self {
-        Self::Custom
-    }
 }
 
 /// Subwoofer system configuration (part of SystemConfig)
@@ -283,10 +278,6 @@ pub struct RoomConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_curve: Option<TargetCurveConfig>,
 
-    /// Optional group delay optimization configuration (Legacy v1 - prefer bass_management in v2)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub group_delay: Option<Vec<GroupDelayConfig>>,
-
     /// Optimizer configuration
     #[serde(default)]
     pub optimizer: OptimizerConfig,
@@ -316,31 +307,6 @@ impl RoomConfig {
 /// Default configuration version
 pub fn default_config_version() -> String {
     "1.3.0".to_string()
-}
-
-/// Group delay optimization configuration (Legacy v1)
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GroupDelayConfig {
-    /// Subwoofer channel name
-    pub subwoofer: String,
-
-    /// List of speaker channel names to align with this subwoofer
-    pub speakers: Vec<String>,
-
-    /// Minimum frequency for optimization (Hz)
-    #[serde(default = "default_group_delay_min_freq")]
-    pub min_freq: f64,
-
-    /// Maximum frequency for optimization (Hz)
-    #[serde(default = "default_group_delay_max_freq")]
-    pub max_freq: f64,
-}
-
-fn default_group_delay_min_freq() -> f64 {
-    30.0
-}
-fn default_group_delay_max_freq() -> f64 {
-    120.0
 }
 
 /// Speaker configuration (can be single measurement or group)
@@ -1412,7 +1378,6 @@ mod tests {
             speakers,
             crossovers: None,
             target_curve: None,
-            group_delay: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };

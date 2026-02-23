@@ -189,9 +189,6 @@ impl<'de> Deserialize<'de> for MeasurementSingle {
             name: Option<String>,
             inline: Option<InlineMeasurement>,
             speaker_name: Option<String>,
-            // Also support direct string for 'path' if not in object
-            #[serde(flatten)]
-            extra: serde_json::Value,
         }
 
         let value = serde_json::Value::deserialize(deserializer)?;

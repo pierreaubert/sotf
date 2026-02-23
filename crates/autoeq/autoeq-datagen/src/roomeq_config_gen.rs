@@ -132,7 +132,6 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
             speakers,
             crossovers,
             target_curve: None,
-            group_delay: None,
             optimizer,
             recording_config: None,
         };
@@ -240,7 +239,6 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         speakers,
         crossovers,
         target_curve: None,
-        group_delay: None,
         optimizer,
         recording_config: None,
     };

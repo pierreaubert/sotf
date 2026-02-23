@@ -120,9 +120,9 @@ pub fn optimize_crossover(
         // Driver 0 is always normal (false)
         // Driver k (k>0) is inverted if bit (k-1) is set
         let mut inversions = vec![false; n_drivers];
-        for k in 1..n_drivers {
+        for (k, inv) in inversions.iter_mut().enumerate().skip(1) {
             if (i >> (k - 1)) & 1 == 1 {
-                inversions[k] = true;
+                *inv = true;
             }
         }
 
