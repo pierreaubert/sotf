@@ -2,4 +2,4 @@
 //!
 //! Re-exports shared parameter types and trait from the player crate.
 
-pub use sotf_audio_player::tui_params::*;
+pub use sotf_audio_player::ui_params::*;

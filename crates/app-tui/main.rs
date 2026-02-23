@@ -10,6 +10,7 @@ use sotf_audio_player::{Player, PluginSettings, PluginType};
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 use sotf_audio_player_tui::events::{
     AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
+    poll_headphone_eq_optimization, poll_room_eq_optimization,
     poll_spinorama_optimization, poll_spinorama_speaker_load,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
@@ -269,6 +270,12 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                 AppEvent::Tick => {
                     // Poll optimizer progress (non-blocking, no-op when not running)
                     if poll_spinorama_optimization(app) {
+                        app.needs_redraw = true;
+                    }
+                    if poll_headphone_eq_optimization(app) {
+                        app.needs_redraw = true;
+                    }
+                    if poll_room_eq_optimization(app) {
                         app.needs_redraw = true;
                     }
                     // Poll speaker-load result (non-blocking, no-op when not loading)

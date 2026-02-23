@@ -25,6 +25,9 @@ crossterm = { workspace = true }
 # Synchronous mutex (faster than std::sync::Mutex)
 parking_lot = { workspace = true }
 
+# Numerical arrays (for autoeq Curve construction)
+ndarray = { workspace = true }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }

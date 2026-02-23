@@ -162,6 +162,12 @@ pub struct App {
 
     // Spinorama EQ wizard state
     pub spinorama_eq: super::types::SpinoramaEqTuiState,
+    // Headphone EQ wizard state
+    pub headphone_eq: super::types::HeadphoneEqTuiState,
+    // Room EQ wizard state
+    pub room_eq: super::types::RoomEqTuiState,
+    // Recording wizard state
+    pub recording: super::types::RecordingTuiState,
 }
 
 impl App {
@@ -267,6 +273,9 @@ impl App {
             configure_sub_screen: super::types::ConfigureSubScreen::Directories,
             configure_tab_focused: true,
             spinorama_eq: super::types::SpinoramaEqTuiState::default(),
+            headphone_eq: super::types::HeadphoneEqTuiState::default(),
+            room_eq: super::types::RoomEqTuiState::default(),
+            recording: super::types::RecordingTuiState::default(),
         }
     }
 
@@ -2382,7 +2391,7 @@ impl App {
             return Err("No optimization results to apply".to_string());
         }
 
-        // Convert SpinoramaFilter (string filter_type) → EQFilter (BiquadFilterType)
+        // Convert SpinoramaBiquad (string filter_type) → EQFilter (BiquadFilterType)
         let eq_filters: Vec<EQFilter> = filters
             .iter()
             .map(|f| {
@@ -2397,7 +2406,7 @@ impl App {
                     "AllPass" => BiquadFilterType::AllPass,
                     _ => BiquadFilterType::Peak,
                 };
-                EQFilter::new(ft, f.freq, f.q, f.gain_db)
+                EQFilter::new(ft, f.freq, f.q, f.db_gain)
             })
             .collect();
 
@@ -4880,12 +4889,12 @@ mod tests {
 
     #[test]
     fn test_apply_spinorama_to_plugin_chain_adds_eq_when_missing() {
-        use crate::app::types::SpinoramaFilter;
+        use sotf_audio_player::spinorama_eq_types::SpinoramaBiquad;
         let mut app = App::new(Theme::default());
         app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
         app.spinorama_eq.filters = vec![
-            SpinoramaFilter { filter_type: "Peak".to_string(), freq: 1000.0, q: 1.5, gain_db: -3.0 },
-            SpinoramaFilter { filter_type: "Lowshelf".to_string(), freq: 80.0, q: 0.7, gain_db: 2.0 },
+            SpinoramaBiquad { filter_type: "Peak".to_string(), freq: 1000.0, q: 1.5, db_gain: -3.0 },
+            SpinoramaBiquad { filter_type: "Lowshelf".to_string(), freq: 80.0, q: 0.7, db_gain: 2.0 },
         ];
 
         let result = app.apply_spinorama_to_plugin_chain();
@@ -4902,12 +4911,12 @@ mod tests {
 
     #[test]
     fn test_apply_spinorama_to_plugin_chain_updates_existing_eq() {
-        use crate::app::types::SpinoramaFilter;
+        use sotf_audio_player::spinorama_eq_types::SpinoramaBiquad;
         let mut app = App::new(Theme::default());
         app.add_plugin(&PluginType::EQ);
         app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
         app.spinorama_eq.filters = vec![
-            SpinoramaFilter { filter_type: "Peak".to_string(), freq: 500.0, q: 2.0, gain_db: 1.5 },
+            SpinoramaBiquad { filter_type: "Peak".to_string(), freq: 500.0, q: 2.0, db_gain: 1.5 },
         ];
 
         let result = app.apply_spinorama_to_plugin_chain();

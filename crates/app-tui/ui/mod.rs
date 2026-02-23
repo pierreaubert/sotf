@@ -1493,33 +1493,1131 @@ fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
     // Content area
     match app.configure_sub_screen {
         ConfigureSubScreen::Directories => draw_directory_manager(f, chunks[1], app),
-        ConfigureSubScreen::Recording => {
-            let placeholder = Paragraph::new("Recording configuration (coming soon)")
-                .style(Style::default().fg(app.theme.fg_secondary))
-                .alignment(Alignment::Center)
-                .block(Block::default().borders(Borders::ALL).title("Recording"));
-            f.render_widget(placeholder, chunks[1]);
-        }
-        ConfigureSubScreen::RoomEq => {
-            let placeholder = Paragraph::new("Room EQ configuration (coming soon)")
-                .style(Style::default().fg(app.theme.fg_secondary))
-                .alignment(Alignment::Center)
-                .block(Block::default().borders(Borders::ALL).title("Room EQ"));
-            f.render_widget(placeholder, chunks[1]);
-        }
-        ConfigureSubScreen::HeadphoneEq => {
-            let placeholder = Paragraph::new("Headphone EQ configuration (coming soon)")
-                .style(Style::default().fg(app.theme.fg_secondary))
-                .alignment(Alignment::Center)
-                .block(Block::default().borders(Borders::ALL).title("Headphone EQ"));
-            f.render_widget(placeholder, chunks[1]);
-        }
+        ConfigureSubScreen::Recording => draw_recording_screen(f, chunks[1], app),
+        ConfigureSubScreen::RoomEq => draw_room_eq_screen(f, chunks[1], app),
+        ConfigureSubScreen::HeadphoneEq => draw_headphone_eq_screen(f, chunks[1], app),
         ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, chunks[1], app),
     }
 }
 
+fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
+    use ratatui::widgets::Tabs;
+    use sotf_audio_player::recording_types::{ChannelRecording, ChannelRecordingState, RecordingStep};
+
+    let s = &app.recording;
+
+    // Layout: step tabs on top, content below
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(5)])
+        .split(area);
+
+    // Step tabs
+    let steps = [
+        RecordingStep::Config,
+        RecordingStep::Capture,
+        RecordingStep::Evaluating,
+        RecordingStep::Saving,
+    ];
+    let step_labels = ["1:Config", "2:Capture", "3:Evaluate", "4:Save"];
+    let tab_titles: Vec<Line> = steps
+        .iter()
+        .zip(step_labels.iter())
+        .map(|(st, label)| {
+            let style = if *st == s.step {
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg_secondary)
+            };
+            Line::from(Span::styled(*label, style))
+        })
+        .collect();
+    let step_idx = steps.iter().position(|st| *st == s.step).unwrap_or(0);
+    let tabs = Tabs::new(tab_titles)
+        .block(Block::default().borders(Borders::ALL).title("Recording"))
+        .select(step_idx)
+        .highlight_style(Style::default().fg(app.theme.accent_primary));
+    f.render_widget(tabs, outer[0]);
+
+    let content = outer[1];
+
+    match s.step {
+        RecordingStep::Config => {
+            let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
+
+            let playback_name = if s.available_playback_devices.is_empty() {
+                "(no devices)".to_string()
+            } else if let Some(d) = s.available_playback_devices.get(s.selected_playback_idx) {
+                d.1.clone()
+            } else {
+                "(select)".to_string()
+            };
+
+            let recording_name = if s.available_recording_devices.is_empty() {
+                "(no devices)".to_string()
+            } else if let Some(d) = s.available_recording_devices.get(s.selected_recording_idx) {
+                d.1.clone()
+            } else {
+                "(select)".to_string()
+            };
+
+            let rows: Vec<(Option<usize>, &str, String)> = vec![
+                (None,     "── Devices ──",           String::new()),
+                (Some(0),  "Playback Device",         playback_name),
+                (Some(1),  "Recording Device",        recording_name),
+                (Some(2),  "Speaker Config",          s.playback_config.speaker_configuration.as_str().to_string()),
+                (None,     "── Signal ──",            String::new()),
+                (Some(3),  "Signal Type",             s.signal_type.as_str().to_string()),
+                (Some(4),  "Duration (s)",            format!("{:.1}", s.signal_duration_secs)),
+                (Some(5),  "Level (dB)",              format!("{:.1}", s.signal_level_db)),
+                (Some(6),  "Sweep Start (Hz)",        format!("{:.0}", s.sweep_start_freq)),
+                (Some(7),  "Sweep End (Hz)",          format!("{:.0}", s.sweep_end_freq)),
+                (None,     "── Paths ──",             String::new()),
+                (Some(8),  "Output Directory",        if s.output_directory.is_empty() { "<not set>".to_string() } else { s.output_directory.clone() }),
+                (Some(9),  "Mic Calibration",         if s.mic_calibration_path.is_empty() { "<none>".to_string() } else { s.mic_calibration_path.clone() }),
+            ];
+
+            let mut lines: Vec<Line> = Vec::new();
+            for (idx, label, value) in &rows {
+                let is_selected = idx.map_or(false, |i| i == s.selected_field);
+                let style = if is_selected {
+                    Style::default()
+                        .fg(app.theme.accent_primary)
+                        .add_modifier(Modifier::BOLD)
+                } else if idx.is_none() {
+                    Style::default()
+                        .fg(app.theme.fg_secondary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(app.theme.fg_primary)
+                };
+                let arrow = if is_selected { "> " } else { "  " };
+                lines.push(Line::from(Span::styled(
+                    format!("{}{:<22} {}", arrow, label, value),
+                    style,
+                )));
+            }
+
+            // Channel mapping display
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Channels:",
+                Style::default().fg(app.theme.fg_secondary).add_modifier(Modifier::BOLD),
+            )));
+            for mapping in &s.playback_config.channel_mappings {
+                lines.push(Line::from(Span::styled(
+                    format!("    {} → ch {}", mapping.group_name, mapping.interface_channels.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",")),
+                    Style::default().fg(app.theme.fg_primary),
+                )));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                " Up/Down=navigate  Left/Right=adjust  Enter=edit path  Tab=capture",
+                Style::default().fg(app.theme.fg_secondary),
+            )));
+
+            let para = Paragraph::new(lines)
+                .block(Block::default().borders(Borders::ALL).title("Configure"))
+                .wrap(Wrap { trim: false });
+            f.render_widget(para, content);
+        }
+
+        RecordingStep::Capture => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // status
+                    Constraint::Min(5),   // channel list
+                    Constraint::Length(1), // help
+                ])
+                .split(content);
+
+            // Status
+            let status_text = if s.status_message.is_empty() {
+                "Ready to record. Select a channel and press Enter.".to_string()
+            } else {
+                s.status_message.clone()
+            };
+            let status = Paragraph::new(status_text)
+                .style(Style::default().fg(app.theme.accent_primary))
+                .block(Block::default().borders(Borders::ALL).title("Status"));
+            f.render_widget(status, inner[0]);
+
+            // Channel list
+            let header = Row::new(vec![
+                Cell::from("#"),
+                Cell::from("Channel"),
+                Cell::from("State"),
+            ])
+            .style(
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let rows: Vec<Row> = s
+                .channel_recordings
+                .iter()
+                .enumerate()
+                .map(|(i, ch)| {
+                    let is_current = s.current_channel == Some(i);
+                    let state_str = match ch.state {
+                        ChannelRecordingState::Empty => "[ ]",
+                        ChannelRecordingState::Recording => "[REC]",
+                        ChannelRecordingState::Done => "[OK]",
+                        ChannelRecordingState::Error => "[ERR]",
+                    };
+                    let style = if is_current {
+                        Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)
+                    } else if ch.state == ChannelRecordingState::Done {
+                        Style::default().fg(app.theme.accent_success)
+                    } else {
+                        Style::default().fg(app.theme.fg_primary)
+                    };
+                    Row::new(vec![
+                        Cell::from(format!("{}", i + 1)),
+                        Cell::from(ch.channel_name.clone()),
+                        Cell::from(state_str),
+                    ])
+                    .style(style)
+                })
+                .collect();
+
+            let ch_table = Table::new(
+                rows,
+                [
+                    Constraint::Length(3),
+                    Constraint::Length(12),
+                    Constraint::Length(8),
+                ],
+            )
+            .header(header)
+            .block(Block::default().borders(Borders::ALL).title("Channels"));
+            f.render_widget(ch_table, inner[1]);
+
+            let help = Paragraph::new(" Up/Down=select  Enter=record  A=auto-record all  Tab=evaluate")
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(help, inner[2]);
+        }
+
+        RecordingStep::Evaluating => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(5), // channel summary
+                    Constraint::Min(3),   // selected channel details
+                    Constraint::Length(1), // help
+                ])
+                .split(content);
+
+            // Channel summary
+            let completed: Vec<&ChannelRecording> = s
+                .channel_recordings
+                .iter()
+                .filter(|ch| ch.state == ChannelRecordingState::Done)
+                .collect();
+
+            if completed.is_empty() {
+                let placeholder = Paragraph::new("No recordings completed yet. Go to Capture step.")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .alignment(Alignment::Center)
+                    .block(Block::default().borders(Borders::ALL).title("Evaluate"));
+                f.render_widget(placeholder, content);
+                return;
+            }
+
+            let header = Row::new(vec![
+                Cell::from("Channel"),
+                Cell::from("Points"),
+                Cell::from("Status"),
+            ])
+            .style(
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let rows: Vec<Row> = completed
+                .iter()
+                .enumerate()
+                .map(|(i, ch)| {
+                    let pts = ch
+                        .result
+                        .as_ref()
+                        .map(|r| format!("{}", r.frequencies.len()))
+                        .unwrap_or_else(|| "-".to_string());
+                    let style = if i == s.selected_channel_view {
+                        Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(app.theme.fg_primary)
+                    };
+                    Row::new(vec![
+                        Cell::from(ch.channel_name.clone()),
+                        Cell::from(pts),
+                        Cell::from("OK"),
+                    ])
+                    .style(style)
+                })
+                .collect();
+
+            let table = Table::new(
+                rows,
+                [
+                    Constraint::Length(12),
+                    Constraint::Length(10),
+                    Constraint::Length(8),
+                ],
+            )
+            .header(header)
+            .block(Block::default().borders(Borders::ALL).title("Recorded Channels"));
+            f.render_widget(table, inner[0]);
+
+            // Selected channel details
+            if let Some(ch) = completed.get(s.selected_channel_view) {
+                if let Some(ref result) = ch.result {
+                    let mut details = vec![
+                        Line::from(Span::styled(
+                            format!(" Channel: {}", ch.channel_name),
+                            Style::default().fg(app.theme.accent_primary),
+                        )),
+                        Line::from(format!(" Frequency points: {}", result.frequencies.len())),
+                    ];
+                    if let Some(ref thd) = result.thd_percent {
+                        let avg_thd = thd.iter().copied().sum::<f32>() / thd.len().max(1) as f32;
+                        details.push(Line::from(format!(" Avg THD: {:.2}%", avg_thd)));
+                    }
+                    if let Some(ref rt60) = result.rt60_ms {
+                        let positive: Vec<f32> = rt60.iter().copied().filter(|v| *v > 0.0).collect();
+                        if !positive.is_empty() {
+                            let avg_rt60 = positive.iter().sum::<f32>() / positive.len() as f32;
+                            details.push(Line::from(format!(" Avg RT60: {:.0} ms", avg_rt60)));
+                        }
+                    }
+                    let detail_para = Paragraph::new(details)
+                        .block(Block::default().borders(Borders::ALL).title("Details"));
+                    f.render_widget(detail_para, inner[1]);
+                }
+            }
+
+            let help = Paragraph::new(" Up/Down=select channel  Tab=save  BackTab=capture")
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(help, inner[2]);
+        }
+
+        RecordingStep::Saving => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // save name
+                    Constraint::Length(3), // status
+                    Constraint::Min(1),   // help
+                ])
+                .split(content);
+
+            let name_label = if s.editing_save_name { "Session Name (editing)" } else { "Session Name" };
+            let name_style = Style::default().fg(app.theme.accent_primary);
+            let name_para = Paragraph::new(if s.save_name.is_empty() {
+                "<type session name>".to_string()
+            } else {
+                s.save_name.clone()
+            })
+            .style(name_style)
+            .block(Block::default().borders(Borders::ALL).title(name_label));
+            f.render_widget(name_para, inner[0]);
+
+            // Status
+            if let Some(ref err) = s.save_error {
+                let err_para = Paragraph::new(err.as_str())
+                    .style(Style::default().fg(app.theme.accent_error))
+                    .block(Block::default().borders(Borders::ALL).title("Error"));
+                f.render_widget(err_para, inner[1]);
+            } else if s.save_success {
+                let ok = Paragraph::new(" Recordings saved successfully!")
+                    .style(Style::default().fg(app.theme.accent_success))
+                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                f.render_widget(ok, inner[1]);
+            } else {
+                let completed = s
+                    .channel_recordings
+                    .iter()
+                    .filter(|ch| ch.state == ChannelRecordingState::Done)
+                    .count();
+                let status = Paragraph::new(format!(
+                    " {} channels ready to save. Output: {}",
+                    completed,
+                    if s.output_directory.is_empty() { "<default>" } else { &s.output_directory }
+                ))
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .block(Block::default().borders(Borders::ALL).title("Status"));
+                f.render_widget(status, inner[1]);
+            }
+
+            let help = Paragraph::new(" Enter=edit name/save  Tab=config  BackTab=evaluate")
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(help, inner[2]);
+        }
+    }
+}
+
+fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
+    use ratatui::widgets::{Gauge, Tabs};
+    use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
+
+    let s = &app.room_eq;
+
+    // Layout: step tabs on top, content below
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(5)])
+        .split(area);
+
+    // Step tabs
+    let steps = RoomEqStep::all();
+    let tab_titles: Vec<Line> = steps
+        .iter()
+        .map(|st| {
+            let style = if *st == s.step {
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg_secondary)
+            };
+            Line::from(Span::styled(st.label(), style))
+        })
+        .collect();
+    let tabs = Tabs::new(tab_titles)
+        .block(Block::default().borders(Borders::ALL).title("Room EQ"))
+        .select(s.step.index())
+        .highlight_style(Style::default().fg(app.theme.accent_primary));
+    f.render_widget(tabs, outer[0]);
+
+    let content = outer[1];
+
+    match s.step {
+        RoomEqStep::LoadData => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // file path
+                    Constraint::Length(3), // status/error
+                    Constraint::Min(3),   // loaded channels
+                    Constraint::Length(1), // help
+                ])
+                .split(content);
+
+            let path_label = if s.editing_file_path { "Measurements JSON (editing)" } else { "Measurements JSON" };
+            let path_style = Style::default().fg(app.theme.accent_primary);
+            let path = Paragraph::new(if s.file_path.is_empty() {
+                "<type path to recordings.json>".to_string()
+            } else {
+                s.file_path.clone()
+            })
+            .style(path_style)
+            .block(Block::default().borders(Borders::ALL).title(path_label));
+            f.render_widget(path, inner[0]);
+
+            // Status/error
+            if let Some(ref err) = s.load_error {
+                let err_para = Paragraph::new(err.as_str())
+                    .style(Style::default().fg(app.theme.accent_error))
+                    .block(Block::default().borders(Borders::ALL).title("Error"));
+                f.render_widget(err_para, inner[1]);
+            } else if !s.channel_measurements.is_empty() {
+                let status = Paragraph::new(format!(" {} channels loaded", s.channel_measurements.len()))
+                    .style(Style::default().fg(app.theme.accent_success))
+                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                f.render_widget(status, inner[1]);
+            } else {
+                let status = Paragraph::new(" No data loaded")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                f.render_widget(status, inner[1]);
+            }
+
+            // Loaded channels list
+            if !s.channel_measurements.is_empty() {
+                let rows: Vec<Row> = s
+                    .channel_measurements
+                    .iter()
+                    .map(|m| {
+                        Row::new(vec![
+                            Cell::from(m.channel_name.clone()),
+                            Cell::from(format!("{} pts", m.measurement.frequencies.len())),
+                            Cell::from(if m.is_group { "Group" } else { "Single" }),
+                        ])
+                    })
+                    .collect();
+
+                let header = Row::new(vec![
+                    Cell::from("Channel"),
+                    Cell::from("Points"),
+                    Cell::from("Type"),
+                ])
+                .style(
+                    Style::default()
+                        .fg(app.theme.accent_primary)
+                        .add_modifier(Modifier::BOLD),
+                );
+
+                let table = Table::new(
+                    rows,
+                    [
+                        Constraint::Length(12),
+                        Constraint::Length(10),
+                        Constraint::Length(8),
+                    ],
+                )
+                .header(header)
+                .block(Block::default().borders(Borders::ALL).title("Channels"));
+                f.render_widget(table, inner[2]);
+            }
+
+            let help = Paragraph::new(" Enter=edit path  Tab=next step (after loading)")
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(help, inner[3]);
+        }
+
+        RoomEqStep::Configure => {
+            let c = &s.config;
+            let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
+
+            let rows: Vec<(Option<usize>, &str, String)> = vec![
+                (None,      "── Basic ──",              String::new()),
+                (Some(0),   "Filters (n)",              format!("{}", c.num_filters)),
+                (Some(1),   "Min Freq (Hz)",            format!("{:.0}", c.min_freq)),
+                (Some(2),   "Max Freq (Hz)",            format!("{:.0}", c.max_freq)),
+                (Some(3),   "Min dB",                   format!("{:.1}", c.min_db)),
+                (Some(4),   "Max dB",                   format!("{:.1}", c.max_db)),
+                (Some(5),   "Min Q",                    format!("{:.2}", c.min_q)),
+                (Some(6),   "Max Q",                    format!("{:.2}", c.max_q)),
+                (Some(7),   "PEQ Model",                c.peq_model.clone()),
+                (None,      "── Optimization ──",       String::new()),
+                (Some(8),   "Algorithm",                c.algorithm.clone()),
+                (Some(9),   "Max Iter",                 format!("{}", c.max_iter)),
+                (Some(10),  "Population",               format!("{}", c.population)),
+                (Some(11),  "Refine",                   bool_str(c.refine).to_string()),
+                (Some(12),  "Local Algo",               c.local_algo.clone()),
+                (Some(13),  "Psychoacoustic",           bool_str(c.psychoacoustic).to_string()),
+                (Some(14),  "Asymmetric Loss",          bool_str(c.asymmetric_loss).to_string()),
+                (None,      "── Mode ──",               String::new()),
+                (Some(15),  "Mode",                     c.mode.as_str().to_string()),
+                (Some(16),  "Multi-Speaker",            c.multi_speaker_mode.as_str().to_string()),
+                (None,      "── Target Tilt ──",        String::new()),
+                (Some(17),  "Target Tilt",              bool_str(c.target_tilt.enabled).to_string()),
+                (Some(18),  "Slope (dB/oct)",           format!("{:.1}", c.target_tilt.slope)),
+                (None,      "── Excursion ──",          String::new()),
+                (Some(19),  "Excursion Prot.",          bool_str(c.excursion_protection.enabled).to_string()),
+                (Some(20),  "Manual F3 (Hz)",           format!("{:.0}", c.excursion_protection.manual_f3_hz)),
+                (None,      "── Schroeder Split ──",    String::new()),
+                (Some(21),  "Schroeder Split",          bool_str(c.schroeder_split.enabled).to_string()),
+                (Some(22),  "Schroeder Freq",           format!("{:.0}", c.schroeder_split.schroeder_freq)),
+                (None,      "── Phase ──",              String::new()),
+                (Some(23),  "Phase Alignment",          bool_str(c.phase_alignment.enabled).to_string()),
+            ];
+
+            let channels_info = if s.channel_measurements.is_empty() {
+                "No data".to_string()
+            } else {
+                let names: Vec<&str> = s.channel_measurements.iter().map(|m| m.channel_name.as_str()).collect();
+                names.join(", ")
+            };
+
+            let mut lines = vec![
+                Line::from(vec![
+                    Span::styled("Channels: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        channels_info,
+                        Style::default().fg(app.theme.accent_primary),
+                    ),
+                ]),
+                Line::from(""),
+            ];
+
+            for (idx, label, value) in &rows {
+                let is_selected = idx.map_or(false, |i| i == s.selected_field);
+                let style = if is_selected {
+                    Style::default()
+                        .fg(app.theme.accent_primary)
+                        .add_modifier(Modifier::BOLD)
+                } else if idx.is_none() {
+                    Style::default()
+                        .fg(app.theme.fg_secondary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(app.theme.fg_primary)
+                };
+                let arrow = if is_selected { "> " } else { "  " };
+                lines.push(Line::from(Span::styled(
+                    format!("{}{:<22} {}", arrow, label, value),
+                    style,
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                " Up/Down=navigate  Left/Right=adjust  Enter/Tab=optimize",
+                Style::default().fg(app.theme.fg_secondary),
+            )));
+
+            let para = Paragraph::new(lines)
+                .block(Block::default().borders(Borders::ALL).title("Configure"))
+                .wrap(Wrap { trim: false });
+            f.render_widget(para, content);
+        }
+
+        RoomEqStep::Optimize => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(5), // status
+                    Constraint::Length(3), // progress bar
+                    Constraint::Min(3),   // loss chart or hint
+                ])
+                .split(content);
+
+            let (status_text, status_style) = match &s.opt_status {
+                OptimizationStatus::Idle => (
+                    "Ready to optimize. Press Enter to start.".to_string(),
+                    Style::default().fg(app.theme.fg_secondary),
+                ),
+                OptimizationStatus::Running => (
+                    format!(
+                        "Optimizing... iter {}/{} | loss: {:.4}",
+                        s.opt_iteration, s.opt_max_iter, s.opt_loss
+                    ),
+                    Style::default().fg(app.theme.accent_primary),
+                ),
+                OptimizationStatus::Completed => (
+                    format!(
+                        "Completed! {} channel results",
+                        s.channel_results.len()
+                    ),
+                    Style::default().fg(app.theme.accent_success),
+                ),
+                OptimizationStatus::Failed => (
+                    format!("Failed: {}", s.opt_error.as_deref().unwrap_or("unknown error")),
+                    Style::default().fg(app.theme.accent_error),
+                ),
+                OptimizationStatus::Cancelled => (
+                    "Cancelled".to_string(),
+                    Style::default().fg(app.theme.accent_error),
+                ),
+            };
+
+            let status_para = Paragraph::new(vec![
+                Line::from(Span::styled(status_text, status_style)),
+            ])
+            .block(Block::default().borders(Borders::ALL).title("Optimization"));
+            f.render_widget(status_para, inner[0]);
+
+            // Progress bar
+            let pct = (s.opt_progress * 100.0) as u16;
+            let gauge = Gauge::default()
+                .block(Block::default().borders(Borders::ALL).title("Progress"))
+                .gauge_style(Style::default().fg(app.theme.accent_primary))
+                .percent(pct.min(100));
+            f.render_widget(gauge, inner[1]);
+
+            // Hint
+            let hint = match &s.opt_status {
+                OptimizationStatus::Idle => " Enter=start  BackTab=back to configure",
+                OptimizationStatus::Running => " Optimization running...",
+                OptimizationStatus::Completed => " Enter or Tab=view results",
+                OptimizationStatus::Failed | OptimizationStatus::Cancelled => " Enter=retry  BackTab=back to configure",
+            };
+            let hint_para = Paragraph::new(hint)
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .block(Block::default().borders(Borders::ALL).title("Info"));
+            f.render_widget(hint_para, inner[2]);
+        }
+
+        RoomEqStep::Review => {
+            if s.channel_results.is_empty() {
+                let placeholder = Paragraph::new("No optimization results yet. Go to Optimize step first.")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .alignment(Alignment::Center)
+                    .block(Block::default().borders(Borders::ALL).title("Review"));
+                f.render_widget(placeholder, content);
+                return;
+            }
+
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(5), // channel summary table
+                    Constraint::Min(5),   // selected channel filters
+                ])
+                .split(content);
+
+            // Channel summary
+            let header = Row::new(vec![
+                Cell::from("Channel"),
+                Cell::from("Pre Score"),
+                Cell::from("Post Score"),
+                Cell::from("Filters"),
+            ])
+            .style(
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let rows: Vec<Row> = s
+                .channel_results
+                .iter()
+                .enumerate()
+                .map(|(i, ch)| {
+                    let style = if i == s.selected_channel {
+                        Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(app.theme.fg_primary)
+                    };
+                    Row::new(vec![
+                        Cell::from(ch.channel_name.clone()),
+                        Cell::from(format!("{:.2}", ch.pre_score)),
+                        Cell::from(format!("{:.2}", ch.post_score)),
+                        Cell::from(format!("{}", ch.eq_filters.len())),
+                    ])
+                    .style(style)
+                })
+                .collect();
+
+            let ch_table = Table::new(
+                rows,
+                [
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                    Constraint::Length(8),
+                ],
+            )
+            .header(header)
+            .block(Block::default().borders(Borders::ALL).title("Channels (Up/Down to select)"));
+            f.render_widget(ch_table, inner[0]);
+
+            // Selected channel filters
+            if let Some(ch) = s.channel_results.get(s.selected_channel) {
+                let filt_header = Row::new(vec![
+                    Cell::from("#"),
+                    Cell::from("Type"),
+                    Cell::from("Freq (Hz)"),
+                    Cell::from("Q"),
+                    Cell::from("Gain (dB)"),
+                ])
+                .style(
+                    Style::default()
+                        .fg(app.theme.accent_primary)
+                        .add_modifier(Modifier::BOLD),
+                );
+
+                let filt_rows: Vec<Row> = ch
+                    .eq_filters
+                    .iter()
+                    .enumerate()
+                    .map(|(i, filt)| {
+                        Row::new(vec![
+                            Cell::from(format!("{}", i + 1)),
+                            Cell::from(filt.filter_type.clone()),
+                            Cell::from(format!("{:.1}", filt.frequency)),
+                            Cell::from(format!("{:.2}", filt.q)),
+                            Cell::from(format!("{:+.1}", filt.gain_db)),
+                        ])
+                    })
+                    .collect();
+
+                let filt_table = Table::new(
+                    filt_rows,
+                    [
+                        Constraint::Length(3),
+                        Constraint::Length(12),
+                        Constraint::Length(12),
+                        Constraint::Length(8),
+                        Constraint::Length(10),
+                    ],
+                )
+                .header(filt_header)
+                .block(Block::default().borders(Borders::ALL).title(format!("Filters: {}", ch.channel_name)));
+                f.render_widget(filt_table, inner[1]);
+            }
+        }
+
+        RoomEqStep::Export => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // export path
+                    Constraint::Length(3), // status
+                    Constraint::Min(1),   // help
+                ])
+                .split(content);
+
+            let path_label = if s.editing_export_path { "Export Path (editing)" } else { "Export Path" };
+            let path_style = Style::default().fg(app.theme.accent_primary);
+            let path = Paragraph::new(if s.export_path.is_empty() {
+                "<type path for JSON export>".to_string()
+            } else {
+                s.export_path.clone()
+            })
+            .style(path_style)
+            .block(Block::default().borders(Borders::ALL).title(path_label));
+            f.render_widget(path, inner[0]);
+
+            // Status
+            if let Some(ref err) = s.export_error {
+                let err_para = Paragraph::new(err.as_str())
+                    .style(Style::default().fg(app.theme.accent_error))
+                    .block(Block::default().borders(Borders::ALL).title("Error"));
+                f.render_widget(err_para, inner[1]);
+            } else if s.export_success {
+                let ok = Paragraph::new(" Export successful!")
+                    .style(Style::default().fg(app.theme.accent_success))
+                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                f.render_widget(ok, inner[1]);
+            } else {
+                let hint = Paragraph::new(" Enter=edit path, type path and Enter to export")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL).title("Status"));
+                f.render_widget(hint, inner[1]);
+            }
+
+            let help = Paragraph::new(" Enter=edit/export  Tab=back to load  BackTab=review")
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(help, inner[2]);
+        }
+    }
+}
+
+fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::{HeadphoneEqStep, HEADPHONE_TARGET_PRESETS};
+    use ratatui::widgets::{Gauge, Tabs};
+    use sotf_audio_player::room_eq_types::OptimizationStatus;
+
+    let s = &app.headphone_eq;
+
+    // Layout: step tabs on top, content below
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(5)])
+        .split(area);
+
+    // Step tabs
+    let steps = [
+        HeadphoneEqStep::SelectFile,
+        HeadphoneEqStep::Configure,
+        HeadphoneEqStep::Optimize,
+        HeadphoneEqStep::Results,
+    ];
+    let tab_titles: Vec<Line> = steps
+        .iter()
+        .map(|st| {
+            let style = if *st == s.step {
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg_secondary)
+            };
+            Line::from(Span::styled(st.label(), style))
+        })
+        .collect();
+    let tabs = Tabs::new(tab_titles)
+        .block(Block::default().borders(Borders::ALL).title("Headphone EQ"))
+        .select(s.step as usize)
+        .highlight_style(Style::default().fg(app.theme.accent_primary));
+    f.render_widget(tabs, outer[0]);
+
+    let content = outer[1];
+
+    match s.step {
+        HeadphoneEqStep::SelectFile => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // measurement path
+                    Constraint::Length(3), // target preset
+                    Constraint::Length(3), // custom target path
+                    Constraint::Min(1),   // help
+                ])
+                .split(content);
+
+            let meas_style = if s.selected_field == 0 {
+                Style::default().fg(app.theme.accent_primary)
+            } else {
+                Style::default().fg(app.theme.fg_primary)
+            };
+            let meas_label = if s.editing_measurement { "Measurement CSV (editing)" } else { "Measurement CSV" };
+            let meas = Paragraph::new(if s.measurement_path.is_empty() {
+                "<type path or paste>".to_string()
+            } else {
+                s.measurement_path.clone()
+            })
+            .style(meas_style)
+            .block(Block::default().borders(Borders::ALL).title(meas_label));
+            f.render_widget(meas, inner[0]);
+
+            let target_style = if s.selected_field == 1 {
+                Style::default().fg(app.theme.accent_primary)
+            } else {
+                Style::default().fg(app.theme.fg_primary)
+            };
+            let target = Paragraph::new(s.target_preset.clone())
+                .style(target_style)
+                .block(Block::default().borders(Borders::ALL).title("Target Preset (Left/Right to cycle)"));
+            f.render_widget(target, inner[1]);
+
+            if s.target_preset == "custom" {
+                let custom_style = if s.selected_field == 2 {
+                    Style::default().fg(app.theme.accent_primary)
+                } else {
+                    Style::default().fg(app.theme.fg_primary)
+                };
+                let custom_label = if s.editing_custom_target { "Custom Target (editing)" } else { "Custom Target CSV" };
+                let custom = Paragraph::new(if s.custom_target_path.is_empty() {
+                    "<type path>".to_string()
+                } else {
+                    s.custom_target_path.clone()
+                })
+                .style(custom_style)
+                .block(Block::default().borders(Borders::ALL).title(custom_label));
+                f.render_widget(custom, inner[2]);
+            }
+
+            let help = Paragraph::new(" Up/Down=select field  Enter=edit text  Left/Right=cycle preset  Tab=next step")
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(help, inner[3]);
+        }
+
+        HeadphoneEqStep::Configure => {
+            let c = &s.config;
+            let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
+
+            let rows: Vec<(Option<usize>, &str, String)> = vec![
+                (None,     "── Filters ──",         String::new()),
+                (Some(0),  "Filters (n)",           format!("{}", c.num_filters)),
+                (Some(1),  "Min Freq (Hz)",         format!("{:.0}", c.min_freq)),
+                (Some(2),  "Max Freq (Hz)",         format!("{:.0}", c.max_freq)),
+                (Some(3),  "Min dB",                format!("{:.1}", c.min_db)),
+                (Some(4),  "Max dB",                format!("{:.1}", c.max_db)),
+                (Some(5),  "Min Q",                 format!("{:.2}", c.min_q)),
+                (Some(6),  "Max Q",                 format!("{:.2}", c.max_q)),
+                (Some(7),  "PEQ Model",             c.peq_model.clone()),
+                (None,     "── Optimization ──",    String::new()),
+                (Some(8),  "Algorithm",             c.algorithm.as_str().to_string()),
+                (Some(9),  "Max Iter",              format!("{}", c.max_iter)),
+                (Some(10), "Population",            format!("{}", c.population)),
+                (Some(11), "Strategy",              c.strategy.clone()),
+                (Some(12), "DE F (mutation)",        format!("{:.2}", c.de_f)),
+                (Some(13), "DE CR (crossover)",      format!("{:.2}", c.de_cr)),
+                (None,     "── Refinement ──",      String::new()),
+                (Some(14), "Refine",                bool_str(c.refine).to_string()),
+                (Some(15), "Local Algo",            c.local_algo.clone()),
+                (None,     "── Smoothing ──",       String::new()),
+                (Some(16), "Smooth",                bool_str(c.smooth).to_string()),
+                (Some(17), "Smooth N",              format!("{}", c.smooth_n)),
+            ];
+
+            let mut lines = vec![
+                Line::from(vec![
+                    Span::styled("Speaker: ", Style::default().fg(app.theme.fg_secondary)),
+                    Span::styled(
+                        &s.measurement_path,
+                        Style::default().fg(app.theme.accent_primary),
+                    ),
+                ]),
+                Line::from(""),
+            ];
+
+            for (idx, label, value) in &rows {
+                let is_selected = idx.map_or(false, |i| i == s.config_selected_field);
+                let style = if is_selected {
+                    Style::default()
+                        .fg(app.theme.accent_primary)
+                        .add_modifier(Modifier::BOLD)
+                } else if idx.is_none() {
+                    Style::default()
+                        .fg(app.theme.fg_secondary)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(app.theme.fg_primary)
+                };
+                let arrow = if is_selected { "> " } else { "  " };
+                lines.push(Line::from(Span::styled(
+                    format!("{}{:<22} {}", arrow, label, value),
+                    style,
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                " Up/Down=navigate  Left/Right=adjust  Enter/Tab=optimize",
+                Style::default().fg(app.theme.fg_secondary),
+            )));
+
+            let para = Paragraph::new(lines)
+                .block(Block::default().borders(Borders::ALL).title("Configure"))
+                .wrap(Wrap { trim: false });
+            f.render_widget(para, content);
+        }
+
+        HeadphoneEqStep::Optimize => {
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(5), // status
+                    Constraint::Length(3), // progress bar
+                    Constraint::Min(3),   // loss chart or hint
+                ])
+                .split(content);
+
+            let (status_text, status_style) = match &s.opt_status {
+                OptimizationStatus::Idle => (
+                    "Ready to optimize. Press Enter to start.".to_string(),
+                    Style::default().fg(app.theme.fg_secondary),
+                ),
+                OptimizationStatus::Running => (
+                    format!(
+                        "Optimizing... iter {}/{} | loss: {:.4}",
+                        s.opt_iteration, s.opt_max_iter, s.opt_loss
+                    ),
+                    Style::default().fg(app.theme.accent_primary),
+                ),
+                OptimizationStatus::Completed => (
+                    format!(
+                        "Completed! Final loss: {:.4} | {} filters",
+                        s.post_loss,
+                        s.filters.len()
+                    ),
+                    Style::default().fg(app.theme.accent_success),
+                ),
+                OptimizationStatus::Failed => (
+                    format!("Failed: {}", s.opt_error.as_deref().unwrap_or("unknown error")),
+                    Style::default().fg(app.theme.accent_error),
+                ),
+                OptimizationStatus::Cancelled => (
+                    "Cancelled".to_string(),
+                    Style::default().fg(app.theme.accent_error),
+                ),
+            };
+
+            let status_para = Paragraph::new(vec![
+                Line::from(Span::styled(status_text, status_style)),
+            ])
+            .block(Block::default().borders(Borders::ALL).title("Optimization"));
+            f.render_widget(status_para, inner[0]);
+
+            // Progress bar
+            let pct = (s.opt_progress * 100.0) as u16;
+            let gauge = Gauge::default()
+                .block(Block::default().borders(Borders::ALL).title("Progress"))
+                .gauge_style(Style::default().fg(app.theme.accent_primary))
+                .percent(pct.min(100));
+            f.render_widget(gauge, inner[1]);
+
+            // Loss chart or hint
+            if s.loss_history.len() >= 2 {
+                draw_loss_chart(f, inner[2], app, &s.loss_history);
+            } else {
+                let hint = match &s.opt_status {
+                    OptimizationStatus::Idle => " Enter=start  BackTab=back to configure",
+                    OptimizationStatus::Running => " Optimization running...",
+                    OptimizationStatus::Completed => " Enter or Tab=view results",
+                    OptimizationStatus::Failed | OptimizationStatus::Cancelled => " Enter=retry  BackTab=back to configure",
+                };
+                let hint_para = Paragraph::new(hint)
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL).title("Loss"));
+                f.render_widget(hint_para, inner[2]);
+            }
+        }
+
+        HeadphoneEqStep::Results => {
+            if s.filters.is_empty() {
+                let placeholder = Paragraph::new("No optimization results yet. Go to Optimize step first.")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .alignment(Alignment::Center)
+                    .block(Block::default().borders(Borders::ALL).title("Results"));
+                f.render_widget(placeholder, content);
+                return;
+            }
+
+            let inner = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // summary
+                    Constraint::Min(5),    // filter table
+                ])
+                .split(content);
+
+            let summary = Paragraph::new(vec![Line::from(vec![
+                Span::styled(
+                    format!(" {} filters", s.filters.len()),
+                    Style::default().fg(app.theme.accent_primary),
+                ),
+                Span::raw("  |  "),
+                Span::styled(
+                    format!("Pre: {:.2}", s.pre_loss),
+                    Style::default().fg(app.theme.fg_secondary),
+                ),
+                Span::raw(" → "),
+                Span::styled(
+                    format!("Post: {:.2}", s.post_loss),
+                    Style::default().fg(app.theme.accent_success),
+                ),
+            ])])
+            .block(Block::default().borders(Borders::ALL).title("Summary"));
+            f.render_widget(summary, inner[0]);
+
+            // Filter table
+            let header = Row::new(vec![
+                Cell::from("#"),
+                Cell::from("Type"),
+                Cell::from("Freq (Hz)"),
+                Cell::from("Q"),
+                Cell::from("Gain (dB)"),
+            ])
+            .style(
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let rows: Vec<Row> = s
+                .filters
+                .iter()
+                .enumerate()
+                .map(|(i, filt)| {
+                    Row::new(vec![
+                        Cell::from(format!("{}", i + 1)),
+                        Cell::from(filt.filter_type.clone()),
+                        Cell::from(format!("{:.1}", filt.freq)),
+                        Cell::from(format!("{:.2}", filt.q)),
+                        Cell::from(format!("{:+.1}", filt.db_gain)),
+                    ])
+                })
+                .collect();
+
+            let table = Table::new(
+                rows,
+                [
+                    Constraint::Length(3),
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                    Constraint::Length(8),
+                    Constraint::Length(10),
+                ],
+            )
+            .header(header)
+            .block(Block::default().borders(Borders::ALL).title("Filters"));
+            f.render_widget(table, inner[1]);
+        }
+    }
+}
+
 fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
-    use crate::app::{SpinoramaOptStatus, SpinoramaStep};
+    use crate::app::SpinoramaStep;
+    use sotf_audio_player::room_eq_types::OptimizationStatus;
 
     let s = &app.spinorama_eq;
 
@@ -1640,38 +2738,39 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Each entry is either a Section header (None index) or a field (Some index)
             // Fields are numbered 0..24 for selected_field navigation
+            let c = &s.config;
             let rows: Vec<(Option<usize>, &str, String)> = vec![
                 (None,     "── Filters ──",         String::new()),
-                (Some(0),  "Filters (n)",           format!("{}", s.num_filters)),
-                (Some(1),  "Min Freq (Hz)",         format!("{:.0}", s.min_freq)),
-                (Some(2),  "Max Freq (Hz)",         format!("{:.0}", s.max_freq)),
-                (Some(3),  "Min dB",                format!("{:.1}", s.min_db)),
-                (Some(4),  "Max dB",                format!("{:.1}", s.max_db)),
-                (Some(5),  "Min Q",                 format!("{:.2}", s.min_q)),
-                (Some(6),  "Max Q",                 format!("{:.2}", s.max_q)),
-                (Some(7),  "PEQ Model",             s.peq_model.clone()),
+                (Some(0),  "Filters (n)",           format!("{}", c.num_filters)),
+                (Some(1),  "Min Freq (Hz)",         format!("{:.0}", c.min_freq)),
+                (Some(2),  "Max Freq (Hz)",         format!("{:.0}", c.max_freq)),
+                (Some(3),  "Min dB",                format!("{:.1}", c.min_db)),
+                (Some(4),  "Max dB",                format!("{:.1}", c.max_db)),
+                (Some(5),  "Min Q",                 format!("{:.2}", c.min_q)),
+                (Some(6),  "Max Q",                 format!("{:.2}", c.max_q)),
+                (Some(7),  "PEQ Model",             c.peq_model.clone()),
                 (None,     "── Optimization ──",    String::new()),
-                (Some(8),  "Algorithm",             s.algorithm.clone()),
-                (Some(9),  "Max Iter",              format!("{}", s.max_iter)),
-                (Some(10), "Population",            format!("{}", s.population)),
-                (Some(11), "Strategy",              s.strategy.clone()),
-                (Some(12), "DE F (mutation)",        format!("{:.2}", s.de_f)),
-                (Some(13), "DE CR (crossover)",      format!("{:.2}", s.de_cr)),
+                (Some(8),  "Algorithm",             c.algorithm.as_str().to_string()),
+                (Some(9),  "Max Iter",              format!("{}", c.max_iter)),
+                (Some(10), "Population",            format!("{}", c.population)),
+                (Some(11), "Strategy",              c.strategy.clone()),
+                (Some(12), "DE F (mutation)",        format!("{:.2}", c.de_f)),
+                (Some(13), "DE CR (crossover)",      format!("{:.2}", c.de_cr)),
                 (None,     "── Refinement ──",      String::new()),
-                (Some(14), "Refine",                bool_str(s.refine).to_string()),
-                (Some(15), "Local Algo",            s.local_algo.clone()),
+                (Some(14), "Refine",                bool_str(c.refine).to_string()),
+                (Some(15), "Local Algo",            c.local_algo.clone()),
                 (None,     "── Smoothing ──",       String::new()),
-                (Some(16), "Smooth",                bool_str(s.smooth).to_string()),
-                (Some(17), "Smooth N",              format!("{}", s.smooth_n)),
-                (Some(18), "Psychoacoustic",        bool_str(s.psychoacoustic).to_string()),
+                (Some(16), "Smooth",                bool_str(c.smooth).to_string()),
+                (Some(17), "Smooth N",              format!("{}", c.smooth_n)),
+                (Some(18), "Psychoacoustic",        bool_str(c.psychoacoustic).to_string()),
                 (None,     "── Constraints ──",     String::new()),
-                (Some(19), "Spacing Weight",        format!("{:.1}", s.spacing_weight)),
-                (Some(20), "Min Spacing (oct)",     format!("{:.2}", s.min_spacing_oct)),
-                (Some(21), "Asymmetric Loss",       bool_str(s.asymmetric_loss).to_string()),
+                (Some(19), "Spacing Weight",        format!("{:.1}", c.spacing_weight)),
+                (Some(20), "Min Spacing (oct)",     format!("{:.2}", c.min_spacing_oct)),
+                (Some(21), "Asymmetric Loss",       bool_str(c.asymmetric_loss).to_string()),
                 (None,     "── Convergence ──",     String::new()),
-                (Some(22), "Tolerance",             format!("{:.0e}", s.tolerance)),
-                (Some(23), "Abs Tolerance",         format!("{:.0e}", s.atolerance)),
-                (Some(24), "Sample Rate",           format!("{}", s.sample_rate)),
+                (Some(22), "Tolerance",             format!("{:.0e}", c.tolerance)),
+                (Some(23), "Abs Tolerance",         format!("{:.0e}", c.atolerance)),
+                (Some(24), "Sample Rate",           format!("{}", c.sample_rate)),
             ];
 
             let mut lines = vec![
@@ -1750,18 +2849,18 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Status
             let (status_text, status_style) = match &s.opt_status {
-                SpinoramaOptStatus::Idle => (
+                OptimizationStatus::Idle => (
                     "Press Enter to start optimization".to_string(),
                     Style::default().fg(app.theme.fg_secondary),
                 ),
-                SpinoramaOptStatus::Running => (
+                OptimizationStatus::Running => (
                     format!(
                         "Running... iter {}/{} | loss: {:.6}",
                         s.opt_iteration, s.opt_max_iter, s.opt_loss
                     ),
                     Style::default().fg(app.theme.accent_primary),
                 ),
-                SpinoramaOptStatus::Completed => (
+                OptimizationStatus::Completed => (
                     format!(
                         "Completed! Final loss: {:.6}  |  {} filters found",
                         s.post_loss,
@@ -1769,8 +2868,12 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     ),
                     Style::default().fg(app.theme.accent_success),
                 ),
-                SpinoramaOptStatus::Failed(e) => (
-                    format!("Failed: {}", e),
+                OptimizationStatus::Failed => (
+                    format!("Failed: {}", s.opt_error.as_deref().unwrap_or("unknown error")),
+                    Style::default().fg(app.theme.accent_error),
+                ),
+                OptimizationStatus::Cancelled => (
+                    "Cancelled".to_string(),
                     Style::default().fg(app.theme.accent_error),
                 ),
             };
@@ -1802,10 +2905,10 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 draw_loss_chart(f, inner[2], app, &s.loss_history);
             } else {
                 let hint = match &s.opt_status {
-                    SpinoramaOptStatus::Idle => " Enter=start  Tab=back to configure",
-                    SpinoramaOptStatus::Running => " Optimization running...",
-                    SpinoramaOptStatus::Completed => " Enter or Tab=view results",
-                    SpinoramaOptStatus::Failed(_) => " Enter=retry  Tab=back to configure",
+                    OptimizationStatus::Idle => " Enter=start  Tab=back to configure",
+                    OptimizationStatus::Running => " Optimization running...",
+                    OptimizationStatus::Completed => " Enter or Tab=view results",
+                    OptimizationStatus::Failed | OptimizationStatus::Cancelled => " Enter=retry  Tab=back to configure",
                 };
                 let hint_para = Paragraph::new(hint)
                     .style(Style::default().fg(app.theme.fg_secondary))
@@ -1870,7 +2973,7 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                             Cell::from(filt.filter_type.clone()),
                             Cell::from(format!("{:.0}", filt.freq)),
                             Cell::from(format!("{:.2}", filt.q)),
-                            Cell::from(format!("{:+.1}", filt.gain_db)),
+                            Cell::from(format!("{:+.1}", filt.db_gain)),
                         ];
                         Row::new(cells)
                     })

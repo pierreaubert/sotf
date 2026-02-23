@@ -1,4 +1,14 @@
 //! Core types for the TUI application state management
+use sotf_audio_player::headphone_eq_types::{HeadphoneEqBiquad, HeadphoneEqOptimizerConfig};
+use sotf_audio_player::recording_types::{
+    ChannelRecording, PlaybackDeviceConfig, RecordingDeviceConfig,
+    RecordingSignalType, RecordingStep,
+};
+use sotf_audio_player::room_eq_types::{
+    ChannelMeasurement, ChannelOptResult, OptimizationStatus,
+    RoomEqOptimizerConfig, RoomEqStep,
+};
+use sotf_audio_player::spinorama_eq_types::{SpinoramaBiquad, SpinoramaOptimizerConfig};
 use sotf_audio_player::{Album, Track};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +30,7 @@ pub enum ConfigureSubScreen {
     SpinoramaEq,
 }
 
-/// Step in the Spinorama EQ wizard
+/// Step in the Spinorama EQ wizard (TUI-specific: 5 steps)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpinoramaStep {
     #[default]
@@ -43,25 +53,6 @@ impl SpinoramaStep {
     }
 }
 
-/// Optimization status for spinorama TUI
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum SpinoramaOptStatus {
-    #[default]
-    Idle,
-    Running,
-    Completed,
-    Failed(String),
-}
-
-/// A single PEQ filter result
-#[derive(Debug, Clone)]
-pub struct SpinoramaFilter {
-    pub filter_type: String,
-    pub freq: f64,
-    pub q: f64,
-    pub gain_db: f64,
-}
-
 /// TUI state for the Spinorama EQ wizard
 #[derive(Debug, Clone)]
 pub struct SpinoramaEqTuiState {
@@ -74,46 +65,18 @@ pub struct SpinoramaEqTuiState {
     pub selected_speaker: Option<String>,
     pub loading_speakers: bool,
     pub speakers_error: Option<String>,
-    // Step 2: configuration — Filters
-    pub num_filters: usize,
-    pub min_freq: f64,
-    pub max_freq: f64,
-    pub min_db: f64,
-    pub max_db: f64,
-    pub min_q: f64,
-    pub max_q: f64,
-    pub peq_model: String,
-    // Optimization
-    pub algorithm: String,
-    pub max_iter: usize,
-    pub population: usize,
-    pub strategy: String,
-    pub de_f: f64,
-    pub de_cr: f64,
-    // Refinement
-    pub refine: bool,
-    pub local_algo: String,
-    // Smoothing
-    pub smooth: bool,
-    pub smooth_n: usize,
-    pub psychoacoustic: bool,
-    // Constraints
-    pub spacing_weight: f64,
-    pub min_spacing_oct: f64,
-    pub asymmetric_loss: bool,
-    // Convergence
-    pub tolerance: f64,
-    pub atolerance: f64,
-    pub sample_rate: u32,
+    // Step 2: configuration (shared config struct)
+    pub config: SpinoramaOptimizerConfig,
     pub selected_field: usize, // which config field is selected
     // Step 3: optimization progress
-    pub opt_status: SpinoramaOptStatus,
+    pub opt_status: OptimizationStatus,
+    pub opt_error: Option<String>,
     pub opt_progress: f32,
     pub opt_loss: f64,
     pub opt_iteration: usize,
     pub opt_max_iter: usize,
     // Step 4: results
-    pub filters: Vec<SpinoramaFilter>,
+    pub filters: Vec<SpinoramaBiquad>,
     pub pre_loss: f64,
     pub post_loss: f64,
     // Frequency response curves (log-spaced Hz, dB values)
@@ -128,6 +91,15 @@ pub struct SpinoramaEqTuiState {
 
 impl Default for SpinoramaEqTuiState {
     fn default() -> Self {
+        // TUI uses slightly different defaults than GPUI
+        let mut config = SpinoramaOptimizerConfig::default();
+        config.population = 50;
+        config.smooth = true;
+        config.smooth_n = 1;
+        config.spacing_weight = 20.0;
+        config.min_spacing_oct = 0.5;
+        config.tolerance = 1e-3;
+        config.atolerance = 1e-4;
         Self {
             step: SpinoramaStep::Select,
             search_query: String::new(),
@@ -137,33 +109,10 @@ impl Default for SpinoramaEqTuiState {
             selected_speaker: None,
             loading_speakers: false,
             speakers_error: None,
-            num_filters: 5,
-            min_freq: 60.0,
-            max_freq: 16000.0,
-            min_db: -12.0,
-            max_db: 4.0,
-            min_q: 0.5,
-            max_q: 6.0,
-            peq_model: "pk".to_string(),
-            algorithm: "de".to_string(),
-            max_iter: 10000,
-            population: 50,
-            strategy: "currenttobest1bin".to_string(),
-            de_f: 0.8,
-            de_cr: 0.9,
-            refine: false,
-            local_algo: "cobyla".to_string(),
-            smooth: true,
-            smooth_n: 1,
-            psychoacoustic: true,
-            spacing_weight: 20.0,
-            min_spacing_oct: 0.5,
-            asymmetric_loss: true,
-            tolerance: 1e-3,
-            atolerance: 1e-4,
-            sample_rate: 48000,
+            config,
             selected_field: 0,
-            opt_status: SpinoramaOptStatus::Idle,
+            opt_status: OptimizationStatus::Idle,
+            opt_error: None,
             opt_progress: 0.0,
             opt_loss: 0.0,
             opt_iteration: 0,
@@ -195,6 +144,229 @@ impl SpinoramaEqTuiState {
                 .collect();
         }
         self.selected_speaker_idx = 0;
+    }
+}
+
+/// Step in the Headphone EQ wizard (TUI-specific: 4 steps)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HeadphoneEqStep {
+    #[default]
+    SelectFile,
+    Configure,
+    Optimize,
+    Results,
+}
+
+impl HeadphoneEqStep {
+    pub fn label(self) -> &'static str {
+        match self {
+            HeadphoneEqStep::SelectFile => "1:File",
+            HeadphoneEqStep::Configure => "2:Configure",
+            HeadphoneEqStep::Optimize => "3:Optimize",
+            HeadphoneEqStep::Results => "4:Results",
+        }
+    }
+}
+
+/// Available headphone target curve presets
+pub const HEADPHONE_TARGET_PRESETS: &[&str] = &[
+    "harman-over-ear-2018",
+    "harman-over-ear-2015",
+    "harman-over-ear-2013",
+    "harman-in-ear-2019",
+    "custom",
+];
+
+/// TUI state for the Headphone EQ wizard
+#[derive(Debug, Clone)]
+pub struct HeadphoneEqTuiState {
+    pub step: HeadphoneEqStep,
+    // Step 1: file selection
+    pub measurement_path: String,
+    pub target_preset: String,
+    pub custom_target_path: String,
+    pub editing_measurement: bool,
+    pub editing_custom_target: bool,
+    pub selected_field: usize,
+    // Step 2: configuration (shared config struct)
+    pub config: HeadphoneEqOptimizerConfig,
+    pub config_selected_field: usize,
+    // Step 3: optimization progress
+    pub opt_status: OptimizationStatus,
+    pub opt_error: Option<String>,
+    pub opt_progress: f32,
+    pub opt_loss: f64,
+    pub opt_iteration: usize,
+    pub opt_max_iter: usize,
+    // Step 4: results
+    pub filters: Vec<HeadphoneEqBiquad>,
+    pub pre_loss: f64,
+    pub post_loss: f64,
+    pub curve_frequencies: Vec<f64>,
+    pub curve_input: Vec<f64>,
+    pub curve_target: Vec<f64>,
+    pub curve_corrected: Vec<f64>,
+    pub curve_filter_response: Vec<f64>,
+    pub loss_history: Vec<(usize, f64)>,
+}
+
+impl Default for HeadphoneEqTuiState {
+    fn default() -> Self {
+        Self {
+            step: HeadphoneEqStep::SelectFile,
+            measurement_path: String::new(),
+            target_preset: "harman-over-ear-2018".to_string(),
+            custom_target_path: String::new(),
+            editing_measurement: false,
+            editing_custom_target: false,
+            selected_field: 0,
+            config: HeadphoneEqOptimizerConfig::default(),
+            config_selected_field: 0,
+            opt_status: OptimizationStatus::Idle,
+            opt_error: None,
+            opt_progress: 0.0,
+            opt_loss: 0.0,
+            opt_iteration: 0,
+            opt_max_iter: 0,
+            filters: Vec::new(),
+            pre_loss: 0.0,
+            post_loss: 0.0,
+            curve_frequencies: Vec::new(),
+            curve_input: Vec::new(),
+            curve_target: Vec::new(),
+            curve_corrected: Vec::new(),
+            curve_filter_response: Vec::new(),
+            loss_history: Vec::new(),
+        }
+    }
+}
+
+/// TUI state for the Room EQ wizard
+#[derive(Debug, Clone)]
+pub struct RoomEqTuiState {
+    pub step: RoomEqStep,
+    // Step 1: load measurement file (JSON)
+    pub file_path: String,
+    pub editing_file_path: bool,
+    pub channel_measurements: Vec<ChannelMeasurement>,
+    pub load_error: Option<String>,
+    // Step 2: configure (shared config struct)
+    pub config: RoomEqOptimizerConfig,
+    pub selected_field: usize,
+    pub selected_section: usize,
+    // Step 3: optimization
+    pub opt_status: OptimizationStatus,
+    pub opt_error: Option<String>,
+    pub opt_progress: f32,
+    pub opt_iteration: usize,
+    pub opt_max_iter: usize,
+    pub opt_loss: f64,
+    pub channel_results: Vec<ChannelOptResult>,
+    pub loss_history: Vec<(usize, f64)>,
+    // Step 4: review
+    pub selected_channel: usize,
+    // Step 5: export
+    pub export_path: String,
+    pub editing_export_path: bool,
+    pub export_error: Option<String>,
+    pub export_success: bool,
+}
+
+impl Default for RoomEqTuiState {
+    fn default() -> Self {
+        Self {
+            step: RoomEqStep::LoadData,
+            file_path: String::new(),
+            editing_file_path: false,
+            channel_measurements: Vec::new(),
+            load_error: None,
+            config: RoomEqOptimizerConfig::default(),
+            selected_field: 0,
+            selected_section: 0,
+            opt_status: OptimizationStatus::Idle,
+            opt_error: None,
+            opt_progress: 0.0,
+            opt_iteration: 0,
+            opt_max_iter: 0,
+            opt_loss: 0.0,
+            channel_results: Vec::new(),
+            loss_history: Vec::new(),
+            selected_channel: 0,
+            export_path: String::new(),
+            editing_export_path: false,
+            export_error: None,
+            export_success: false,
+        }
+    }
+}
+
+/// TUI state for the Recording wizard
+#[derive(Debug, Clone)]
+pub struct RecordingTuiState {
+    pub step: RecordingStep,
+    // Step 1: config
+    pub playback_config: PlaybackDeviceConfig,
+    pub recording_config: RecordingDeviceConfig,
+    pub available_playback_devices: Vec<(String, String)>, // (id, name)
+    pub available_recording_devices: Vec<(String, String)>,
+    pub selected_playback_idx: usize,
+    pub selected_recording_idx: usize,
+    pub mic_calibration_path: String,
+    pub signal_type: RecordingSignalType,
+    pub signal_duration_secs: f32,
+    pub signal_level_db: f32,
+    pub sweep_start_freq: f32,
+    pub sweep_end_freq: f32,
+    pub output_directory: String,
+    pub editing_output_dir: bool,
+    pub editing_mic_cal: bool,
+    pub selected_field: usize,
+    // Step 2: capture
+    pub channel_recordings: Vec<ChannelRecording>,
+    pub current_channel: Option<usize>,
+    pub recording_progress: f32,
+    pub auto_record: bool,
+    pub status_message: String,
+    // Step 3: evaluate
+    pub selected_channel_view: usize,
+    // Step 4: save
+    pub save_name: String,
+    pub editing_save_name: bool,
+    pub save_error: Option<String>,
+    pub save_success: bool,
+}
+
+impl Default for RecordingTuiState {
+    fn default() -> Self {
+        Self {
+            step: RecordingStep::Config,
+            playback_config: PlaybackDeviceConfig::default(),
+            recording_config: RecordingDeviceConfig::default(),
+            available_playback_devices: Vec::new(),
+            available_recording_devices: Vec::new(),
+            selected_playback_idx: 0,
+            selected_recording_idx: 0,
+            mic_calibration_path: String::new(),
+            signal_type: RecordingSignalType::Sweep,
+            signal_duration_secs: 5.0,
+            signal_level_db: -12.0,
+            sweep_start_freq: 20.0,
+            sweep_end_freq: 20000.0,
+            output_directory: String::new(),
+            editing_output_dir: false,
+            editing_mic_cal: false,
+            selected_field: 0,
+            channel_recordings: Vec::new(),
+            current_channel: None,
+            recording_progress: 0.0,
+            auto_record: false,
+            status_message: String::new(),
+            selected_channel_view: 0,
+            save_name: String::new(),
+            editing_save_name: false,
+            save_error: None,
+            save_success: false,
+        }
     }
 }
 
