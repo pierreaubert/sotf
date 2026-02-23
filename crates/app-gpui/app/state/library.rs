@@ -49,61 +49,7 @@ pub enum LibraryResponse {
     None,
 }
 
-/// Library sort order options
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LibrarySortOrder {
-    #[default]
-    Album,
-    Year,
-    Genre,
-    Artist,
-    Tracks,
-    Composer,
-}
-
-impl LibrarySortOrder {
-    /// Convert to sotf_audio_player LibrarySortOrder
-    pub fn to_library_sort_order(self) -> sotf_audio_player::LibrarySortOrder {
-        match self {
-            Self::Year => sotf_audio_player::LibrarySortOrder::Year,
-            Self::Genre => sotf_audio_player::LibrarySortOrder::Genre,
-            Self::Artist => sotf_audio_player::LibrarySortOrder::Artist,
-            Self::Album => sotf_audio_player::LibrarySortOrder::Album,
-            Self::Tracks => sotf_audio_player::LibrarySortOrder::Tracks,
-            Self::Composer => sotf_audio_player::LibrarySortOrder::Composer,
-        }
-    }
-}
-
-/// Channel filter options
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ChannelFilter {
-    #[default]
-    All, // Show all albums
-    Mono,          // Only 1-channel albums
-    Stereo,        // Only 2-channel albums
-    Surround,      // 5.0/5.1 albums (5-6 channels)
-    Surround71,    // 7.1 albums (8 channels)
-    SurroundPlus,  // More than 8 channels
-    Mixed,         // Only albums with mixed channel counts
-    Specific(u32), // Only albums with specific channel count
-}
-
-impl ChannelFilter {
-    /// Convert to sotf_audio_player ChannelFilter
-    pub fn to_library_channel_filter(self) -> sotf_audio_player::ChannelFilter {
-        match self {
-            Self::All => sotf_audio_player::ChannelFilter::All,
-            Self::Mono => sotf_audio_player::ChannelFilter::Mono,
-            Self::Stereo => sotf_audio_player::ChannelFilter::Stereo,
-            Self::Surround => sotf_audio_player::ChannelFilter::Surround,
-            Self::Surround71 => sotf_audio_player::ChannelFilter::Surround71,
-            Self::SurroundPlus => sotf_audio_player::ChannelFilter::SurroundPlus,
-            Self::Mixed => sotf_audio_player::ChannelFilter::Mixed,
-            Self::Specific(n) => sotf_audio_player::ChannelFilter::Specific(n),
-        }
-    }
-}
+pub use sotf_audio_player::{ChannelFilter, LibrarySortOrder};
 
 /// Library state - can be used as a GPUI Entity
 #[derive(Debug)]
@@ -329,6 +275,16 @@ impl LibraryState {
                         .map(|s| s.to_lowercase());
                     composer_a
                         .cmp(&composer_b)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Popularity => {
+                albums.sort_by(|a, b| {
+                    let pop_a: usize = a.tracks.iter().map(|t| t.play_count as usize).sum();
+                    let pop_b: usize = b.tracks.iter().map(|t| t.play_count as usize).sum();
+                    pop_b
+                        .cmp(&pop_a)
                         .then_with(|| a.artist().cmp(&b.artist()))
                         .then_with(|| a.title.cmp(&b.title))
                 });

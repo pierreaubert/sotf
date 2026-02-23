@@ -9,7 +9,7 @@ use sotf_audio_player::room_eq_types::{
     RoomEqOptimizerConfig, RoomEqStep,
 };
 use sotf_audio_player::spinorama_eq_types::{SpinoramaBiquad, SpinoramaOptimizerConfig};
-use sotf_audio_player::{Album, Track};
+pub use sotf_audio_player::QueueItem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -442,30 +442,9 @@ pub enum TreeItem {
     Album { index: usize },
 }
 
-/// ReplayGain application mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReplayGainMode {
-    Track,
-    Album,
-}
+pub use sotf_audio_player::ReplayGainMode;
 
-/// Channel group for level meter display
-#[derive(Debug, Clone)]
-pub struct ChannelGroup {
-    pub name: String,
-    pub channels: Vec<ChannelInfo>,
-    pub muted: bool,
-    pub soloed: bool,
-    pub dimmed: bool,
-}
-
-/// Individual channel information
-#[derive(Debug, Clone)]
-pub struct ChannelInfo {
-    pub index: usize,              // Index in loudness.channel_peaks
-    pub name: String,              // e.g., "FL", "FR", "C"
-    pub display_name: Vec<String>, // Multi-line display: ["F", "L"] or ["T", "B", "R"]
-}
+pub use sotf_audio_player::{ChannelGroup, ChannelInfo};
 
 /// Pending parameter update for zero-dropout updates
 #[derive(Debug, Clone)]
@@ -473,43 +452,6 @@ pub struct PendingParameterUpdate {
     pub plugin_index: usize,
     pub param_id: String,
     pub value: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct QueueItem {
-    pub album: Album,
-    pub current_track_index: usize,
-}
-
-impl QueueItem {
-    pub fn new(album: Album) -> Self {
-        Self {
-            album,
-            current_track_index: 0,
-        }
-    }
-
-    pub fn current_track(&self) -> Option<&Track> {
-        self.album.tracks.get(self.current_track_index)
-    }
-
-    pub fn next_track(&mut self) -> Option<&Track> {
-        if self.current_track_index + 1 < self.album.tracks.len() {
-            self.current_track_index += 1;
-            self.current_track()
-        } else {
-            None
-        }
-    }
-
-    pub fn previous_track(&mut self) -> Option<&Track> {
-        if self.current_track_index > 0 {
-            self.current_track_index -= 1;
-            self.current_track()
-        } else {
-            None
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

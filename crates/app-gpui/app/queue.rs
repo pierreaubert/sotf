@@ -4,8 +4,9 @@
 
 use std::path::PathBuf;
 
+use sotf_audio_player::QueueItem;
+
 use super::state::App;
-use super::types::QueueItem;
 
 impl App {
     /// Debug assertion to verify queue and expanded_queue_items are in sync.
@@ -21,6 +22,13 @@ impl App {
         );
     }
 
+    /// Sync playback.current_queue_index from queue.current_index.
+    /// Must be called after every queue mutation that might change the current index.
+    #[inline]
+    fn sync_queue_index(&mut self) {
+        self.playback.current_queue_index = self.queue.current_index;
+    }
+
     pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.playback.is_playing;
@@ -30,7 +38,7 @@ impl App {
         let selected_album = albums.get(self.library_state.selected_index).copied();
 
         if let Some(album) = selected_album {
-            self.queue.push(QueueItem::new(album.clone()));
+            self.queue.add(album.clone());
             self.expanded_queue_items.push(false);
             self.assert_queue_consistency();
 
@@ -51,142 +59,76 @@ impl App {
 
         if let Some(album) = selected_album {
             // Add to queue
-            self.queue.push(QueueItem::new(album.clone()));
+            let new_index = self.queue.add(album.clone());
             self.expanded_queue_items.push(false);
             self.assert_queue_consistency();
 
             // Jump to the newly added album (last in queue)
-            let new_index = self.queue.len() - 1;
+            self.queue.current_index = Some(new_index);
             self.playback.current_queue_index = Some(new_index);
             self.playback.is_playing = true;
 
             // Get the first track
-            return self.queue[new_index]
-                .current_track()
-                .map(|track| track.path.clone());
+            return self.queue.current_track_path();
         }
         None
     }
 
     pub fn start_queue(&mut self) -> Option<PathBuf> {
-        if self.queue.is_empty() {
-            return None;
+        let path = self.queue.start();
+        self.sync_queue_index();
+        if path.is_some() {
+            self.playback.is_playing = true;
         }
-
-        // Set current index to 0
-        self.playback.current_queue_index = Some(0);
-        self.playback.is_playing = true;
-
-        // Get the first track of the first album
-        self.queue
-            .first()
-            .and_then(|item| item.current_track())
-            .map(|track| track.path.clone())
+        path
     }
 
     pub fn next_track(&mut self) -> Option<PathBuf> {
-        let current_idx = self.playback.current_queue_index?;
-        let item = self.queue.get_mut(current_idx)?;
-
-        // Try to advance to next track in current album
-        if let Some(track) = item.next_track() {
-            return Some(track.path.clone());
-        }
-
-        // No more tracks in current album, try next album
-        if current_idx + 1 < self.queue.len() {
-            self.playback.current_queue_index = Some(current_idx + 1);
-            self.queue[current_idx + 1].current_track_index = 0;
-            return self.queue[current_idx + 1]
-                .current_track()
-                .map(|t| t.path.clone());
-        }
-
-        // No more albums
-        None
+        let path = self.queue.next_track();
+        self.sync_queue_index();
+        path
     }
 
     pub fn previous_track(&mut self) -> Option<PathBuf> {
-        if let Some(idx) = self.playback.current_queue_index
-            && let Some(item) = self.queue.get_mut(idx)
-        {
-            if let Some(track) = item.previous_track() {
-                return Some(track.path.clone());
-            } else {
-                // Move to previous album in queue
-                if idx > 0 {
-                    self.playback.current_queue_index = Some(idx - 1);
-                    // Go to last track of previous album
-                    if let Some(prev_item) = self.queue.get_mut(idx - 1) {
-                        prev_item.current_track_index =
-                            prev_item.album.tracks.len().saturating_sub(1);
-                        return prev_item.current_track().map(|t| t.path.clone());
-                    }
-                }
-            }
-        }
-        None
+        let path = self.queue.previous_track();
+        self.sync_queue_index();
+        path
     }
 
     pub fn remove_from_queue(&mut self, index: usize) {
-        if index < self.queue.len() {
-            self.queue.remove(index);
-
-            // Safely remove from expanded_queue_items, handling potential sync issues
-            if index < self.expanded_queue_items.len() {
-                self.expanded_queue_items.remove(index);
-            } else {
-                // If vectors are out of sync, resync them
-                log::warn!(
-                    "Queue sync issue detected: queue.len()={}, expanded.len()={}",
-                    self.queue.len(),
-                    self.expanded_queue_items.len()
-                );
-                // Resize expanded_queue_items to match queue
-                self.expanded_queue_items.resize(self.queue.len(), false);
-            }
-
-            // Adjust current queue index if needed
-            if let Some(current_idx) = self.playback.current_queue_index {
-                if current_idx == index {
-                    // We deleted the currently playing album
-                    if self.queue.is_empty() {
-                        // Queue is now empty
-                        self.playback.current_queue_index = None;
-                        self.playback.is_playing = false;
-                    } else if index < self.queue.len() {
-                        // There are albums after the deleted one, stay at same index
-                        // (items have shifted down, so index now points to the next album)
-                        self.playback.current_queue_index = Some(index);
-                        // Reset to first track of the new album at this position
-                        if let Some(item) = self.queue.get_mut(index) {
-                            item.current_track_index = 0;
-                        }
-                    } else if index > 0 {
-                        // Deleted last album, move to previous album
-                        self.playback.current_queue_index = Some(index - 1);
-                        // Stay on whatever track was playing in that album
-                    } else {
-                        // Queue is empty
-                        self.playback.current_queue_index = None;
-                        self.playback.is_playing = false;
-                    }
-                } else if current_idx > index {
-                    // Deleted an album before the current one, adjust index
-                    self.playback.current_queue_index = Some(current_idx - 1);
-                }
-            }
-            if self.selected_queue_index >= self.queue.len() && self.selected_queue_index > 0 {
-                self.selected_queue_index = self.queue.len() - 1;
-            }
-            self.assert_queue_consistency();
+        if index >= self.queue.len() {
+            return;
         }
+
+        let was_current = self.queue.remove(index);
+        self.sync_queue_index();
+
+        // Safely remove from expanded_queue_items, handling potential sync issues
+        if index < self.expanded_queue_items.len() {
+            self.expanded_queue_items.remove(index);
+        } else {
+            log::warn!(
+                "Queue sync issue detected: queue.len()={}, expanded.len()={}",
+                self.queue.len(),
+                self.expanded_queue_items.len()
+            );
+            self.expanded_queue_items.resize(self.queue.len(), false);
+        }
+
+        if was_current && self.queue.is_empty() {
+            self.playback.is_playing = false;
+        }
+
+        if self.selected_queue_index >= self.queue.len() && self.selected_queue_index > 0 {
+            self.selected_queue_index = self.queue.len() - 1;
+        }
+        self.assert_queue_consistency();
     }
 
     pub fn clear_queue(&mut self) {
         self.queue.clear();
         self.expanded_queue_items.clear();
-        self.playback.current_queue_index = None;
+        self.sync_queue_index();
         self.selected_queue_index = 0;
         self.playback.is_playing = false;
         self.assert_queue_consistency();
@@ -194,22 +136,12 @@ impl App {
 
     /// Get the duration of the currently playing track in seconds
     pub fn get_current_track_duration(&self) -> f64 {
-        self.playback
-            .current_queue_index
-            .and_then(|idx| self.queue.get(idx))
-            .and_then(|item| item.current_track())
-            .and_then(|track| track.duration_secs)
-            .map(|d| d as f64)
-            .unwrap_or(0.0)
+        self.queue.current_track_duration()
     }
 
     /// Get the path of the currently playing track
     pub fn get_current_track_path(&self) -> Option<PathBuf> {
-        self.playback
-            .current_queue_index
-            .and_then(|idx| self.queue.get(idx))
-            .and_then(|item| item.current_track())
-            .map(|track| track.path.clone())
+        self.queue.current_track_path()
     }
 
     pub fn toggle_queue_item_expansion(&mut self) {
@@ -226,17 +158,12 @@ impl App {
             return None;
         }
 
-        // Set current queue index to the selected item
-        self.playback.current_queue_index = Some(self.selected_queue_index);
-        self.playback.is_playing = true;
-
-        // Reset to first track of the album
-        if let Some(item) = self.queue.get_mut(self.selected_queue_index) {
-            item.current_track_index = 0;
-            return item.current_track().map(|track| track.path.clone());
+        let path = self.queue.jump_to(self.selected_queue_index);
+        self.sync_queue_index();
+        if path.is_some() {
+            self.playback.is_playing = true;
         }
-
-        None
+        path
     }
 
     /// Fill queue with "magic" recommendations (1h of music)
@@ -254,6 +181,7 @@ impl App {
         // Collect current queue paths
         let current_queue_paths: Vec<PathBuf> = self
             .queue
+            .items
             .iter()
             .flat_map(|item| {
                 item.album
@@ -286,7 +214,6 @@ impl App {
         let mut added_count = 0;
 
         // Optimization: Build a lookup map of track path to album index
-        // This avoids O(N_albums * M_tracks) search for each recommendation
         let mut path_to_album = std::collections::HashMap::new();
         for (idx, album) in self.library_state.library.albums.iter().enumerate() {
             for track in &album.tracks {
@@ -296,18 +223,16 @@ impl App {
 
         // Add recommended tracks to queue
         for path in recommendations {
-            // Find the album containing this track using the lookup map
             let found_album = path_to_album
                 .get(&path)
                 .and_then(|&idx| self.library_state.library.albums.get(idx));
 
             if let Some(album) = found_album {
-                // Clone the album and keep only the recommended track
                 let mut single_track_album: sotf_audio_player::Album = album.clone();
                 single_track_album.tracks.retain(|t| t.path == path);
 
                 if !single_track_album.tracks.is_empty() {
-                    self.queue.push(QueueItem::new(single_track_album));
+                    self.queue.add(single_track_album);
                     self.expanded_queue_items.push(false);
                     added_count += 1;
                 }

@@ -1201,7 +1201,6 @@ impl PlayerView {
                 speakers,
                 crossovers: None,
                 target_curve: None,
-                group_delay: None,
                 optimizer: OptimizerConfig::default(),
                 recording_config: Some(recording_config),
             };

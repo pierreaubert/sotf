@@ -18,11 +18,7 @@ pub enum Screen {
     PluginGraph,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReplayGainMode {
-    Track,
-    Album,
-}
+pub use sotf_audio_player::ReplayGainMode;
 
 /// Audio playback source mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -127,27 +123,10 @@ pub enum MeterDisplayMode {
     Levels, // Show level meters
 }
 
-// Enums mapped from library
-pub use crate::app::state::library::LibrarySortOrder;
-pub use sotf_audio_player::library::ChannelFilter;
+// Library enums (shared via player crate)
+pub use sotf_audio_player::{ChannelFilter, LibrarySortOrder};
 
-/// Channel group for level meter display
-#[derive(Debug, Clone)]
-pub struct ChannelGroup {
-    pub name: String,
-    pub channels: Vec<ChannelInfo>,
-    pub muted: bool,
-    pub soloed: bool,
-    pub dimmed: bool,
-}
-
-/// Individual channel information
-#[derive(Debug, Clone)]
-pub struct ChannelInfo {
-    pub index: usize,              // Index in loudness.channel_peaks
-    pub name: String,              // e.g., "FL", "FR", "C"
-    pub display_name: Vec<String>, // Multi-line display: ["F", "L"] or ["T", "B", "R"]
-}
+pub use sotf_audio_player::{ChannelGroup, ChannelInfo};
 
 /// Context menu state
 #[derive(Debug, Clone)]

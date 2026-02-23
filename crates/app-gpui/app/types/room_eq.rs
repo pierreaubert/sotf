@@ -424,43 +424,8 @@ impl MultiSpeakerMode {
     }
 }
 
-/// Optimization algorithm selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum RoomEqAlgorithm {
-    /// COBYLA (Constrained Optimization BY Linear Approximations)
-    #[default]
-    Cobyla,
-    /// Differential Evolution
-    DifferentialEvolution,
-    /// Nelder-Mead simplex
-    NelderMead,
-}
-
-impl RoomEqAlgorithm {
-    pub fn all() -> &'static [RoomEqAlgorithm] {
-        &[
-            RoomEqAlgorithm::Cobyla,
-            RoomEqAlgorithm::DifferentialEvolution,
-            RoomEqAlgorithm::NelderMead,
-        ]
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            RoomEqAlgorithm::Cobyla => "COBYLA",
-            RoomEqAlgorithm::DifferentialEvolution => "Differential Evolution",
-            RoomEqAlgorithm::NelderMead => "Nelder-Mead",
-        }
-    }
-
-    pub fn to_autoeq_string(&self) -> &'static str {
-        match self {
-            RoomEqAlgorithm::Cobyla => "cobyla",
-            RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
-            RoomEqAlgorithm::NelderMead => "nelder-mead",
-        }
-    }
-}
+// Re-export shared algorithm type from player crate
+pub use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
 
 // === Type conversions for room_eq library ===
 
@@ -876,21 +841,8 @@ impl Default for RoomEqOptimizerConfig {
     }
 }
 
-/// Optimization status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum OptimizationStatus {
-    /// Not started
-    #[default]
-    Idle,
-    /// Currently running
-    Running,
-    /// Completed successfully
-    Completed,
-    /// Failed with error
-    Failed,
-    /// Cancelled by user
-    Cancelled,
-}
+// Re-export shared optimization status from player crate
+pub use sotf_audio_player::room_eq_types::OptimizationStatus;
 
 /// EQ filter configuration (for display and export)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1201,18 +1153,8 @@ pub struct RoomEqDropdowns {
     pub dragging_control_point: Option<usize>,
 }
 
-/// Field identifiers for AutoEQ form editing (legacy compatibility)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AutoEqField {
-    NumFilters,
-    MinQ,
-    MaxQ,
-    MinDb,
-    MaxDb,
-    MinFreq,
-    MaxFreq,
-    MaxIter,
-}
+// Re-export shared AutoEqField from player crate
+pub use sotf_audio_player::room_eq_types::AutoEqField;
 
 /// Complete Room EQ screen state
 #[derive(Debug, Clone)]
@@ -1782,7 +1724,6 @@ impl RoomEqState {
             speakers,
             crossovers: Some(crossovers),
             target_curve: None,
-            group_delay: None,
             optimizer,
             recording_config: None,
         }

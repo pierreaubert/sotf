@@ -86,6 +86,7 @@ impl PlayerView {
                 crate::app::LibrarySortOrder::Album => 3,
                 crate::app::LibrarySortOrder::Tracks => 4,
                 crate::app::LibrarySortOrder::Composer => 5,
+                crate::app::LibrarySortOrder::Popularity => 3, // maps to Album tab as closest
             }
         };
 

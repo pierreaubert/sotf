@@ -17,7 +17,7 @@ use gpui::*;
 use gpui_ui_kit::{
     Column, NumberInput, NumberInputSize, SelectionMode, Table, TableTheme, Toggle, ToggleSize,
 };
-use sotf_audio_player::tui_params::{TuiEditablePlugin, TuiParamType};
+use sotf_audio_player::ui_params::{TuiEditablePlugin, TuiParamType};
 use sotf_audio_player::PluginSettings;
 use std::collections::HashSet;
 

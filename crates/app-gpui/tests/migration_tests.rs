@@ -144,7 +144,6 @@ fn test_room_config_roundtrip() {
         speakers,
         crossovers: None,
         target_curve: None,
-        group_delay: None,
         optimizer: OptimizerConfig::default(),
         recording_config: Some(RecordingConfiguration {
             playback_device_name: Some("Test Device".to_string()),

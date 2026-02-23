@@ -168,11 +168,7 @@ impl AudioDeviceState {
 
     /// Check if a device name is a virtual/passthrough device that shouldn't be default
     pub fn is_virtual_device(name: &str) -> bool {
-        let lower_name = name.to_lowercase();
-        lower_name.contains("hal")
-            || lower_name.contains("blackhole")
-            || lower_name.contains("soundflower")
-            || lower_name.contains("loopback")
+        sotf_audio_player::is_virtual_device(name)
     }
 
     /// Find the best default output device index (prefers non-virtual, is_default, then first)

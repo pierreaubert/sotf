@@ -44,7 +44,8 @@ impl PlayerView {
                 LibrarySortOrder::Artist => LibrarySortOrder::Album,
                 LibrarySortOrder::Album => LibrarySortOrder::Tracks,
                 LibrarySortOrder::Tracks => LibrarySortOrder::Composer,
-                LibrarySortOrder::Composer => LibrarySortOrder::Year,
+                LibrarySortOrder::Composer => LibrarySortOrder::Popularity,
+                LibrarySortOrder::Popularity => LibrarySortOrder::Year,
             };
             state.app.set_library_sort_order(next_order);
         });
