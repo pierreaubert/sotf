@@ -2,7 +2,7 @@
 // Binaural Decoder Plugin
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, enable_ftz_daz, window_mul_simd};
 use super::smoothing::Smoother;
@@ -29,7 +29,7 @@ pub use self::room::{Reflection, RoomModel};
 struct BinauralState {
     hrtf_filters_freq: Vec<Vec<Complex<f32>>>,
     diffuse_field_eq_filter: Option<[Vec<Complex<f32>>; 2]>,
-    hrtf_data: Option<SofaFile>,
+    _hrtf_data: Option<SofaFile>,
 }
 
 pub struct BinauralDecoderPlugin {
@@ -89,6 +89,7 @@ pub struct BinauralDecoderPlugin {
 }
 
 impl BinauralDecoderPlugin {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         input_channels: usize,
         fft_size: usize,
@@ -156,7 +157,7 @@ impl BinauralDecoderPlugin {
             state: Arc::new(ArcSwap::from_pointee(BinauralState {
                 hrtf_filters_freq,
                 diffuse_field_eq_filter: None,
-                hrtf_data: None,
+                _hrtf_data: None,
             })),
             lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); freq_size],
             lfe_gain: 1.0,
@@ -241,9 +242,9 @@ impl BinauralDecoderPlugin {
         }
 
         if let Some(eq) = df_eq {
-            for k in 0..freq_size {
-                self.sum_left[k] *= eq[0][k];
-                self.sum_right[k] *= eq[1][k];
+            for (k, (sl, sr)) in self.sum_left.iter_mut().zip(self.sum_right.iter_mut()).enumerate().take(freq_size) {
+                *sl *= eq[0][k];
+                *sr *= eq[1][k];
             }
         }
 
@@ -364,7 +365,7 @@ impl Plugin for BinauralDecoderPlugin {
             }
             hrtf::normalize_hrtf_gains(&mut filters, &self.lfe_channels, self.freq_size, self.input_channels);
             let eq = if self.diffuse_field_eq { filter::compute_diffuse_field_eq(&sofa, self.fft_size, sr, &self.fft_r2c).ok() } else { None };
-            self.state.store(Arc::new(BinauralState { hrtf_filters_freq: filters, diffuse_field_eq_filter: eq, hrtf_data: Some(sofa) }));
+            self.state.store(Arc::new(BinauralState { hrtf_filters_freq: filters, diffuse_field_eq_filter: eq, _hrtf_data: Some(sofa) }));
         }
         Ok(())
     }
@@ -409,12 +410,10 @@ impl Plugin for BinauralDecoderPlugin {
                 self.output_read_position = (self.output_read_position + to_drain) & mask;
                 self.output_accumulator_fill -= to_drain;
                 op += to_drain;
-            } else {
-                if ip >= nf {
-                    for i in op..nf { output[i * 2] = 0.0; output[i * 2 + 1] = 0.0; }
-                    op = nf;
-                } else { break; }
-            }
+            } else if ip >= nf {
+                for i in op..nf { output[i * 2] = 0.0; output[i * 2 + 1] = 0.0; }
+                op = nf;
+            } else { break; }
         }
         self.externalization.next_n(nf);
         Ok(nf)

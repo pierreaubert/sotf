@@ -226,8 +226,8 @@ impl InPlacePlugin for LimiterPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        let thresh = self.threshold_smoother.next();
-        let mix = self.mix_smoother.next();
+        let thresh = self.threshold_smoother.advance();
+        let mix = self.mix_smoother.advance();
 
         for frame in 0..num_frames {
             let mut frame_peak = 0.0f32;

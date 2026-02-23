@@ -491,9 +491,9 @@ impl DenoiserPlugin {
             let accum = &mut self.output_accumulator[ch];
             let time_out = &self.time_out_channels[ch];
 
-            for i in 0..self.fft_size {
+            for (i, (t, w)) in time_out.iter().zip(self.synthesis_window.iter()).enumerate().take(self.fft_size) {
                 let idx = (self.output_write_pos + i) & mask;
-                accum[idx] += time_out[i] * self.synthesis_window[i];
+                accum[idx] += t * w;
             }
         }
 

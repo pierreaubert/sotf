@@ -3,7 +3,6 @@
 // ============================================================================
 
 use crate::analyzer_loudness_monitor::LoudnessMonitor;
-use crate::simd::enable_ftz_daz;
 use crate::smoothing::Smoother;
 use math_audio_dsp::fast_math::fast_pow10;
 
@@ -54,6 +53,8 @@ pub struct AutoGain {
     sample_rate: u32,
     input_monitor: LoudnessMonitor,
     output_monitor: LoudnessMonitor,
+    input_data: crate::analyzer::LoudnessData,
+    output_data: crate::analyzer::LoudnessData,
     gain_smoother: Smoother,
     current_gain_linear: f32,
     last_input_lufs: f64,
@@ -95,6 +96,8 @@ impl AutoGain {
             sample_rate,
             input_monitor: LoudnessMonitor::new(num_channels as u32, sample_rate)?,
             output_monitor: LoudnessMonitor::new(num_channels as u32, sample_rate)?,
+            input_data: crate::analyzer::LoudnessData::new(num_channels),
+            output_data: crate::analyzer::LoudnessData::new(num_channels),
             gain_smoother: Smoother::new(0.0, params.smoothing_ms, sample_rate),
             current_gain_linear: 1.0,
             last_input_lufs: f64::NEG_INFINITY,
@@ -118,6 +121,8 @@ impl AutoGain {
         self.sample_rate = sr;
         self.input_monitor = LoudnessMonitor::new(self.num_channels as u32, sr)?;
         self.output_monitor = LoudnessMonitor::new(self.num_channels as u32, sr)?;
+        self.input_data = crate::analyzer::LoudnessData::new(self.num_channels);
+        self.output_data = crate::analyzer::LoudnessData::new(self.num_channels);
         self.gain_smoother.set_time(self.smoothing_ms, sr);
         self.attack_coeff = (-1.0 / (20.0 * 0.001 * sr as f32)).exp();
         self.release_coeff = (-1.0 / (300.0 * 0.001 * sr as f32)).exp();
@@ -165,32 +170,31 @@ impl AutoGain {
     }
 
     pub fn measure_input(&mut self, input: &[f32]) -> Result<(), String> {
-        if !self.enabled {
-            return Ok(());
-        }
         self.input_monitor.add_frames(input)?;
-        let info = self.input_monitor.get_loudness();
+        self.input_monitor.update_loudness_data(&mut self.input_data);
         self.last_input_lufs = if self.loudness_type == AutoGainLoudnessType::Momentary {
-            info.momentary_lufs
+            self.input_data.momentary_lufs
         } else {
-            info.shortterm_lufs
+            self.input_data.shortterm_lufs
         };
-        self.last_input_peak = info.peak;
+        self.last_input_peak = self.input_data.peak;
         Ok(())
     }
 
     pub fn measure_output(&mut self, output: &[f32]) -> Result<(), String> {
+        self.output_monitor.add_frames(output)?;
+        self.output_monitor.update_loudness_data(&mut self.output_data);
+        self.last_output_lufs = if self.loudness_type == AutoGainLoudnessType::Momentary {
+            self.output_data.momentary_lufs
+        } else {
+            self.output_data.shortterm_lufs
+        };
+        self.last_output_peak = self.output_data.peak;
+
         if !self.enabled {
             return Ok(());
         }
-        self.output_monitor.add_frames(output)?;
-        let info = self.output_monitor.get_loudness();
-        self.last_output_lufs = if self.loudness_type == AutoGainLoudnessType::Momentary {
-            info.momentary_lufs
-        } else {
-            info.shortterm_lufs
-        };
-        self.last_output_peak = info.peak;
+
         if self.last_input_lufs.is_finite() && self.last_output_lufs.is_finite() {
             let target = (self.last_input_lufs - self.last_output_lufs) as f32;
             self.gain_smoother
@@ -204,7 +208,7 @@ impl AutoGain {
         if !self.enabled {
             return 1.0;
         }
-        let target_db = self.gain_smoother.next();
+        let target_db = self.gain_smoother.advance();
         let target_linear = fast_pow10(target_db / 20.0);
         
         // Asymmetric smoothing in linear domain
@@ -260,18 +264,25 @@ impl AutoGain {
         if !self.enabled {
             return;
         }
-        enable_ftz_daz();
+        crate::simd::enable_ftz_daz();
         
-        // Convert target DB to linear once per block to avoid powf in the loop
         let target_db = self.gain_smoother.target();
         let target_linear = fast_pow10(target_db / 20.0);
 
+        // Optimization: if gain is already stable at target, use fast SIMD path
+        if (self.current_gain_linear - target_linear).abs() < 1e-5 {
+            self.current_gain_linear = target_linear;
+            crate::simd::scale_add_simd_inplace(output, target_linear);
+            self.gain_smoother.next_n(num_frames);
+            return;
+        }
+
+        // Otherwise, use per-sample smoothing (can be further SIMD optimized with ramp)
         for frame in 0..num_frames {
-            // Asymmetric smoothing in linear domain: fast attack (gain decrease), slow release (gain increase)
             let coeff = if target_linear < self.current_gain_linear {
-                self.attack_coeff  // reducing gain: fast (~20ms)
+                self.attack_coeff
             } else {
-                self.release_coeff // increasing gain: slow (~300ms)
+                self.release_coeff
             };
             self.current_gain_linear = target_linear + coeff * (self.current_gain_linear - target_linear);
             
@@ -309,6 +320,19 @@ pub struct AutoGainData {
     pub output_lufs: f64,
     pub input_peak: f64,
     pub output_peak: f64,
+}
+
+impl Default for AutoGainData {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            gain_db: 0.0,
+            input_lufs: -120.0,
+            output_lufs: -120.0,
+            input_peak: 0.0,
+            output_peak: 0.0,
+        }
+    }
 }
 #[cfg(test)]
 mod tests {

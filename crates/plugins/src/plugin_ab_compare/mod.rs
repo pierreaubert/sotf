@@ -21,8 +21,26 @@ use crate::host::DawHost;
 use crate::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use crate::smoothing::Smoother;
+use crate::analyzer::RealTimeCache;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
+
+// ============================================================================
+// Exposed Data Structure
+// ============================================================================
+
+/// Data exposed by the A/B comparison plugin for monitoring
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ABCompareData {
+    pub loudness_a_lufs: f64,
+    pub loudness_b_lufs: f64,
+    pub auto_gain_db: f32,
+    pub peak_a: f64,
+    pub peak_b: f64,
+    pub current_mix: f32,
+    pub bypass_active: bool,
+}
 
 // ============================================================================
 // Main Plugin Struct
@@ -66,6 +84,9 @@ pub struct ABComparePlugin {
     // Cached peak values
     last_peak_a: f64,
     last_peak_b: f64,
+
+    cache: RealTimeCache<ABCompareData>,
+    cache_update_counter: usize,
 }
 
 impl ABComparePlugin {
@@ -111,6 +132,8 @@ impl ABComparePlugin {
             buffer_b: Vec::new(),
             last_peak_a: 0.0,
             last_peak_b: 0.0,
+            cache: RealTimeCache::new(ABCompareData::default()),
+            cache_update_counter: 0,
         })
     }
 
@@ -396,15 +419,24 @@ impl Plugin for ABComparePlugin {
         // Process path B
         self.host_b.process(input, &mut self.buffer_b)?;
 
-        // Measure loudness and peaks using AutoGain
+        // Measure loudness and peaks using AutoGain (throttled)
         // A's output is the "input reference" (what we want B to match)
         // B's output is the "output to compensate"
-        self.auto_gain.measure_input(&self.buffer_a)?;
-        self.auto_gain.measure_output(&self.buffer_b)?;
+        self.cache_update_counter += 1;
+        let mut do_measure = false;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            do_measure = true;
+        }
 
-        // Cache peak values for get_data()
-        self.last_peak_a = self.auto_gain.last_input_peak();
-        self.last_peak_b = self.auto_gain.last_output_peak();
+        if do_measure {
+            self.auto_gain.measure_input(&self.buffer_a)?;
+            self.auto_gain.measure_output(&self.buffer_b)?;
+
+            // Cache peak values for get_data()
+            self.last_peak_a = self.auto_gain.last_input_peak();
+            self.last_peak_b = self.auto_gain.last_output_peak();
+        }
 
         // Determine target mix value
         let target_mix = match self.mix_mode {
@@ -423,7 +455,7 @@ impl Plugin for ABComparePlugin {
         for frame in 0..context.num_frames {
             // Tick smoothers into loop
             let gain_linear = self.auto_gain.next_gain_linear();
-            let current_mix = self.mix_smoother.next();
+            let current_mix = self.mix_smoother.advance();
 
             // Equal-power crossfade
             // mix: -1 = pure A, +1 = pure B
@@ -439,25 +471,28 @@ impl Plugin for ABComparePlugin {
                 output[idx] = sample_a * gain_a + sample_b * gain_b;
             }
         }
-        
-        // Sync smoothers after loop
-        self.auto_gain.next_n(context.num_frames);
-        self.mix_smoother.next_n(context.num_frames);
+
+        // Update diagnostic cache (throttled)
+        if do_measure {
+            let data = ABCompareData {
+                loudness_a_lufs: self.auto_gain.last_input_lufs(),
+                loudness_b_lufs: self.auto_gain.last_output_lufs(),
+                auto_gain_db: self.auto_gain.current_gain_db(),
+                peak_a: self.last_peak_a,
+                peak_b: self.last_peak_b,
+                current_mix: self.mix_smoother.current(),
+                bypass_active: self.bypass,
+            };
+            self.cache.update(|d| {
+                *d = data;
+            });
+        }
 
         Ok(context.num_frames)
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let data = ABCompareData {
-            loudness_a_lufs: self.auto_gain.last_input_lufs(),
-            loudness_b_lufs: self.auto_gain.last_output_lufs(),
-            auto_gain_db: self.auto_gain.current_gain_db(),
-            peak_a: self.last_peak_a,
-            peak_b: self.last_peak_b,
-            current_mix: self.mix_smoother.current(),
-            bypass_active: self.bypass,
-        };
-        Some(Arc::new(data))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 
     fn latency_samples(&self) -> usize {

@@ -2,10 +2,11 @@
 // Loudness Compensation Plugin
 // ============================================================================
 
-use super::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
+use super::analyzer::RealTimeCache;
+use super::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 use super::param_specs::loudness_compensation::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use super::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
 
@@ -100,6 +101,8 @@ pub struct LoudnessCompensationPlugin {
     filters: Vec<Vec<Biquad>>,
     auto_gain: Option<AutoGain>,
     comp_gain_smoother: Vec<Smoother>,
+    cache: RealTimeCache<AutoGainData>,
+    cache_update_counter: usize,
 }
 
 impl LoudnessCompensationPlugin {
@@ -123,6 +126,8 @@ impl LoudnessCompensationPlugin {
             comp_gain_smoother: (0..num_channels)
                 .map(|_| Smoother::new(1.0, 20.0, sr))
                 .collect(),
+            cache: RealTimeCache::new(AutoGainData::default()),
+            cache_update_counter: 0,
         };
         p.rebuild_filters();
         p
@@ -297,8 +302,19 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let nf = context.num_frames;
+
+        // Throttled measurement
+        self.cache_update_counter += 1;
+        let mut do_measure = false;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            do_measure = true;
+        }
+
         if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_input(buffer);
+            if do_measure {
+                let _ = ag.measure_input(buffer);
+            }
         }
 
         for frame in 0..nf {
@@ -308,12 +324,19 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 for f in &mut self.filters[ch] {
                     s = f.process(s);
                 }
-                buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].next();
+                buffer[idx] = (s as f32) * self.comp_gain_smoother[ch].advance();
             }
         }
 
         if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_output(buffer);
+            if do_measure {
+                let _ = ag.measure_output(buffer);
+                // Update diagnostic cache
+                let data = ag.get_data();
+                self.cache.update(|d| {
+                    *d = data;
+                });
+            }
             ag.apply_compensation(buffer, nf);
         }
         
@@ -321,7 +344,11 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
         Ok(nf)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        self.auto_gain.as_ref().map(|ag| Arc::new(ag.get_data()) as Arc<dyn Any + Send + Sync>)
+        if self.auto_gain.is_some() {
+            Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
+        } else {
+            None
+        }
     }
 }
 

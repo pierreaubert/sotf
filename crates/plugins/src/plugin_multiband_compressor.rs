@@ -2,6 +2,7 @@
 // Multiband Compressor Plugin
 // ============================================================================
 
+use super::analyzer::RealTimeCache;
 use super::param_specs::multiband_compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -46,10 +47,47 @@ pub struct MultibandCompressorPluginParams {
     pub bands: Vec<BandCompressorParams>,
 }
 
+#[derive(Debug, Clone)]
 pub struct MultibandCompressorData {
-    pub gain_reduction_db: Vec<Vec<f32>>,
-    pub band_levels_db: Vec<f32>,
-    pub crossover_frequencies: Vec<f32>,
+    /// Gain reduction per band and per channel (flattened: [band0_ch0, band0_ch1, ..., band1_ch0, ...])
+    pub gain_reduction_db: Arc<Vec<f32>>,
+    pub band_levels_db: Arc<Vec<f32>>,
+    pub crossover_frequencies: Arc<Vec<f32>>,
+}
+
+impl Default for MultibandCompressorData {
+    fn default() -> Self {
+        Self {
+            gain_reduction_db: Arc::new(Vec::new()),
+            band_levels_db: Arc::new(Vec::new()),
+            crossover_frequencies: Arc::new(Vec::new()),
+        }
+    }
+}
+
+impl MultibandCompressorData {
+    pub fn new(num_bands: usize, channels: usize) -> Self {
+        Self {
+            gain_reduction_db: Arc::new(vec![0.0; num_bands * channels]),
+            band_levels_db: Arc::new(vec![-120.0; num_bands]),
+            crossover_frequencies: Arc::new(vec![0.0; num_bands.saturating_sub(1)]),
+        }
+    }
+
+    pub fn update(&mut self, gains: &[f32], levels: &[f32], xovers: &[f32]) {
+        if let Some(mut_gains) = Arc::get_mut(&mut self.gain_reduction_db)
+            && mut_gains.len() == gains.len() {
+                mut_gains.copy_from_slice(gains);
+            }
+        if let Some(mut_levels) = Arc::get_mut(&mut self.band_levels_db)
+            && mut_levels.len() == levels.len() {
+                mut_levels.copy_from_slice(levels);
+            }
+        if let Some(mut_xovers) = Arc::get_mut(&mut self.crossover_frequencies)
+            && mut_xovers.len() == xovers.len() {
+                mut_xovers.copy_from_slice(xovers);
+            }
+    }
 }
 
 struct CrossoverPoint {
@@ -126,7 +164,7 @@ pub struct MultibandCompressorPlugin {
     channels: usize,
     sample_rate: u32,
     num_bands: usize,
-    crossover_preset: i32,
+    _crossover_preset: i32,
     crossover_frequencies: Vec<f32>,
     threshold_db: f32,
     ratio: f32,
@@ -144,6 +182,11 @@ pub struct MultibandCompressorPlugin {
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
     xover_smoothers: Vec<LogSmoother>,
+
+    // Internal flattened monitoring buffer
+    gain_reduction_flattened: Vec<f32>,
+    cache: RealTimeCache<MultibandCompressorData>,
+    cache_update_counter: usize,
 }
 
 impl MultibandCompressorPlugin {
@@ -175,7 +218,7 @@ impl MultibandCompressorPlugin {
             channels,
             sample_rate: sr,
             num_bands: nb,
-            crossover_preset: params.crossover_preset,
+            _crossover_preset: params.crossover_preset,
             crossover_frequencies: xfs.clone(),
             threshold_db: params.threshold_db,
             ratio: params.ratio,
@@ -193,6 +236,9 @@ impl MultibandCompressorPlugin {
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
             xover_smoothers: xfs.iter().map(|&f| LogSmoother::new(f, 50.0, sr)).collect(),
+            gain_reduction_flattened: vec![0.0; nb * channels],
+            cache: RealTimeCache::new(MultibandCompressorData::new(nb, channels)),
+            cache_update_counter: 0,
         };
         p.build_crossovers();
         p.update_coefficients();
@@ -493,9 +539,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         
         let mut any_solo = false;
         for b in 0..self.num_bands {
-            if let Some(p) = self.band_params.get(b) {
-                if p.solo { any_solo = true; break; }
-            }
+            if let Some(p) = self.band_params.get(b)
+                && p.solo { any_solo = true; break; }
         }
 
         for b in 0..self.num_bands {
@@ -571,20 +616,28 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + s * g_mix;
             }
         }
+
+        // Update diagnostic cache (throttled)
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            for b in 0..self.num_bands {
+                for ch in 0..self.channels {
+                    self.gain_reduction_flattened[b * self.channels + ch] = self.band_compressors[b].envelope[ch];
+                }
+            }
+            let levels = &self.band_levels_db;
+            let xovers = &self.crossover_frequencies;
+            self.cache.update(|d| {
+                d.update(&self.gain_reduction_flattened, levels, xovers);
+            });
+        }
         
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        Some(Arc::new(MultibandCompressorData {
-            gain_reduction_db: self
-                .band_compressors
-                .iter()
-                .map(|b| b.envelope.clone())
-                .collect(),
-            band_levels_db: self.band_levels_db.clone(),
-            crossover_frequencies: self.crossover_frequencies.clone(),
-        }))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
 

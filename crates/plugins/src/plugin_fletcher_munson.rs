@@ -225,8 +225,8 @@ impl InPlacePlugin for FletcherMunsonPlugin {
         // Update filters if gain changed significantly
         let mut gains = [0.0f32; NUM_BANDS];
         let mut changed = false;
-        for i in 0..NUM_BANDS {
-            gains[i] = self.gain_smoothers[i].next();
+        for (i, smoother) in self.gain_smoothers.iter_mut().enumerate().take(NUM_BANDS) {
+            gains[i] = smoother.advance();
             if (gains[i] - self.filters[0][i].db_gain as f32).abs() > 0.05 {
                 changed = true;
             }
@@ -234,9 +234,8 @@ impl InPlacePlugin for FletcherMunsonPlugin {
         if changed {
             let sr = self.sample_rate as f64;
             for ch in 0..self.num_channels {
-                for i in 0..NUM_BANDS {
-                    let b = &self.bands[i];
-                    self.filters[ch][i] = Biquad::new(BiquadFilterType::Peak, b.frequency, sr, b.q, gains[i] as f64);
+                for (filter, (band, &gain)) in self.filters[ch].iter_mut().zip(self.bands.iter().zip(gains.iter())).take(NUM_BANDS) {
+                    *filter = Biquad::new(BiquadFilterType::Peak, band.frequency, sr, band.q, gain as f64);
                 }
             }
         }

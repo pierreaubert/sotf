@@ -1,21 +1,27 @@
 use sotf_plugins::plugin_multiband_compressor::{MultibandCompressorPlugin, MultibandCompressorPluginParams};
-use sotf_plugins::{InPlacePlugin, ProcessContext, ParameterValue};
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ParameterValue, ProcessContext};
 use std::f32::consts::PI;
+
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
     let channels = 1;
-    let mut params = MultibandCompressorPluginParams::default();
-    params.num_bands = 3;
-    params.crossover_frequencies = vec![200.0, 5000.0];
-    params.threshold_db = -20.0;
-    params.ratio = 4.0;
-    params.attack_ms = 5.0;
-    params.release_ms = 50.0;
-    params.mix = 1.0;
+    let params = MultibandCompressorPluginParams {
+        num_bands: 3,
+        crossover_frequencies: vec![200.0, 5000.0],
+        threshold_db: -20.0,
+        ratio: 4.0,
+        attack_ms: 5.0,
+        release_ms: 50.0,
+        mix: 1.0,
+        ..Default::default()
+    };
 
-    let mut plugin = MultibandCompressorPlugin::from_params(channels, params);
-    plugin.initialize(sample_rate).unwrap();
+    let mut inner = MultibandCompressorPlugin::from_params(channels, params);
+    inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: Multiband Compressor Plugin ===");
 
@@ -30,7 +36,7 @@ fn main() {
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
         let ctx = ProcessContext { sample_rate, num_frames: end - pos };
-        plugin.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
+        inner.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
         pos = end;
     }
     
@@ -41,22 +47,23 @@ fn main() {
 
     // Test 2: Band Muting
     println!("\n[Test 2] Low Band Mute (100Hz signal muted by mid band solo)");
-    plugin.reset();
-    plugin.set_parameter("band_0_solo".into(), ParameterValue::Bool(false)).unwrap();
-    plugin.set_parameter("band_1_solo".into(), ParameterValue::Bool(true)).unwrap();
-    plugin.set_parameter("band_2_solo".into(), ParameterValue::Bool(false)).unwrap();
+    inner.reset();
+    inner.set_parameter("band_0_solo".into(), ParameterValue::Bool(false)).unwrap();
+    inner.set_parameter("band_1_solo".into(), ParameterValue::Bool(true)).unwrap();
+    inner.set_parameter("band_2_solo".into(), ParameterValue::Bool(false)).unwrap();
     
     let mut buffer = generate_sine(sample_rate, 100.0, -10.0, 4096);
     let ctx = ProcessContext { sample_rate, num_frames: 4096 };
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Muted Peak: {:.2}dB", peak);
-    // 100Hz is in band 0. Band 1 starts at 200Hz.
-    // 24dB/oct crossover should give significant attenuation.
-    // -28dB was measured, so -25dB is a safe threshold.
     assert!(peak < -25.0); 
 
-    println!("\n[PASS] Multiband Compressor QA Complete.");
+    // Run standard QA tests
+    let mut plugin = InPlacePluginAdapter::new(inner);
+    run_standard_tests(&mut plugin, "MultibandCompressorPlugin");
+
+    println!("\n[ALL PASS] Multiband Compressor QA Complete.");
 }
 
 fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {

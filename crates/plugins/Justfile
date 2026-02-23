@@ -52,18 +52,20 @@ qa-plugin-fuzzer-6ch:
 
 [group('qa-plugins')]
 qa-plugin-diagnostics:
-	cargo run --release --package plugins --bin qa-compressor
-	cargo run --release --package plugins --bin qa-delay
-	cargo run --release --package plugins --bin qa-downmix
-	cargo run --release --package plugins --bin qa-eq
-	cargo run --release --package plugins --bin qa-expander
-	cargo run --release --package plugins --bin qa-gain
-	cargo run --release --package plugins --bin qa-gate
-	cargo run --release --package plugins --bin qa-limiter
-	cargo run --release --package plugins --bin qa-loudness-compensation
-	cargo run --release --package plugins --bin qa-mono-to-stereo
-	cargo run --release --package plugins --bin qa-multiband-compressor
-	cargo run --release --package plugins --bin qa-multiband-expander
-	cargo run --release --package plugins --bin qa-upmixer
-	cargo run --release --package plugins --bin qa-xtc
+	cargo run --release --package plugins --bin qa-ab-compare --features qa
+	cargo run --release --package plugins --bin qa-compressor --features qa
+	cargo run --release --package plugins --bin qa-delay --features qa
+	cargo run --release --package plugins --bin qa-downmix --features qa
+	cargo run --release --package plugins --bin qa-eq --features qa
+	cargo run --release --package plugins --bin qa-expander --features qa
+	cargo run --release --package plugins --bin qa-gain --features qa
+	cargo run --release --package plugins --bin qa-gate --features qa
+	cargo run --release --package plugins --bin qa-limiter --features qa
+	cargo run --release --package plugins --bin qa-loudness-compensation --features qa
+	cargo run --release --package plugins --bin qa-mono-to-stereo --features qa
+	cargo run --release --package plugins --bin qa-multiband-compressor --features qa
+	cargo run --release --package plugins --bin qa-multiband-expander --features qa
+	cargo run --release --package plugins --bin qa-pnd --features qa
+	cargo run --release --package plugins --bin qa-upmixer --features qa
+	cargo run --release --package plugins --bin qa-xtc --features qa
 

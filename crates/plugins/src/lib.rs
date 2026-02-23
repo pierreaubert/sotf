@@ -42,6 +42,8 @@ pub mod plugin_pnd;
 pub mod plugin_resampler;
 pub mod plugin_upmixer;
 pub mod plugin_xtc;
+#[cfg(feature = "qa")]
+pub mod qa_util;
 pub mod serialization;
 pub mod simd;
 pub mod smoothing;

@@ -20,6 +20,8 @@ use rustfft::num_complex::Complex;
 const SHUFFLE_SWAP_RE_IM: i32 = 0b10110001; // Swaps: [re, im] -> [im, re]
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+/// # Safety
+/// Caller must ensure `dst`, `src` and `hrtf` have at least `start + 4` elements.
 #[inline]
 pub unsafe fn complex_mul_add_simd_chunk(
     dst: &mut [Complex<f32>],
@@ -70,6 +72,8 @@ pub unsafe fn complex_mul_add_simd_chunk(
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+/// # Safety
+/// Caller must ensure `dst`, `src` and `hrtf` have at least `start + 2` elements.
 #[inline]
 pub unsafe fn complex_mul_add_simd_chunk(
     dst: &mut [Complex<f32>],
@@ -461,6 +465,64 @@ pub fn scale_add_simd(dst: &mut [f32], src: &[f32], scale: f32) {
     {
         for i in 0..len {
             dst[i] += src[i] * scale;
+        }
+    }
+}
+
+/// SIMD-optimized in-place scaling.
+///
+/// Computes: data[i] *= scale for all i
+#[inline]
+pub fn scale_add_simd_inplace(data: &mut [f32], scale: f32) {
+    let len = data.len();
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let scale_vec = unsafe { _mm256_set1_ps(scale) };
+        let simd_len = (len / 8) * 8;
+
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let ptr = data.as_mut_ptr().add(i);
+                let d = _mm256_loadu_ps(ptr);
+                _mm256_storeu_ps(ptr, _mm256_mul_ps(d, scale_vec));
+            }
+        }
+
+        for i in simd_len..len {
+            data[i] *= scale;
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+
+        let scale_vec = unsafe { vdupq_n_f32(scale) };
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let ptr = data.as_mut_ptr().add(i);
+                let d = vld1q_f32(ptr);
+                vst1q_f32(ptr, vmulq_f32(d, scale_vec));
+            }
+        }
+
+        for sample in &mut data[simd_len..len] {
+            *sample *= scale;
+        }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for sample in data {
+            *sample *= scale;
         }
     }
 }
@@ -2252,8 +2314,8 @@ pub fn apply_gain_simd(buffer: &mut [f32], gain: f32) {
                 vst1q_f32(ptr, res);
             }
         }
-        for i in simd_len..len {
-            buffer[i] *= gain;
+        for sample in buffer[simd_len..len].iter_mut() {
+            *sample *= gain;
         }
     }
 

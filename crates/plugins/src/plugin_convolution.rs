@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use super::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, flush_denormals_inplace};
 use super::smoothing::Smoother;
 use arc_swap::ArcSwap;
@@ -73,7 +73,7 @@ impl ConvolutionPlugin {
             state: Arc::new(ArcSwap::from_pointee(None)),
             input_buffers: vec![vec![0.0; PARTITION_SIZE]; channels],
             input_fill: 0,
-            fdl: vec![vec![vec![Complex::new(0.0, 0.0); FFT_SIZE]; 0]; channels],
+            fdl: vec![vec![]; channels],
             fdl_head: 0,
             output_accum: vec![vec![0.0; FFT_SIZE]; channels],
             fft_spectrum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
@@ -109,7 +109,7 @@ impl ConvolutionPlugin {
 
         let mut partitions = Vec::with_capacity(ir_channels);
         for ch_samples in ir_samples {
-            let num_parts = (ch_samples.len() + PARTITION_SIZE - 1) / PARTITION_SIZE;
+            let num_parts = ch_samples.len().div_ceil(PARTITION_SIZE);
             let mut ch_parts = Vec::with_capacity(num_parts);
             for p in 0..num_parts {
                 let mut block = vec![Complex::new(0.0, 0.0); FFT_SIZE];
@@ -160,9 +160,9 @@ impl ConvolutionPlugin {
             let decoded = decoder
                 .decode(&packet)
                 .map_err(|e| format!("Decode: {}", e))?;
-            for ch in 0..samples.len() {
+            for (ch, sample_ch) in samples.iter_mut().enumerate() {
                 match &decoded {
-                    AudioBufferRef::F32(buf) => samples[ch].extend_from_slice(buf.chan(ch)),
+                    AudioBufferRef::F32(buf) => sample_ch.extend_from_slice(buf.chan(ch)),
                     _ => return Err("Format not supported".into()),
                 }
             }
@@ -255,8 +255,8 @@ impl InPlacePlugin for ConvolutionPlugin {
             self.input_fill += to_copy;
 
             if self.input_fill == PARTITION_SIZE {
-                let m = self.mix.next();
-                let g = self.gain_linear.next();
+                let m = self.mix.advance();
+                let g = self.gain_linear.advance();
                 let wet_g = m * g;
                 let dry_g = 1.0 - m;
                 let inv_n = 1.0 / FFT_SIZE as f32;

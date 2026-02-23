@@ -23,7 +23,7 @@
 // }
 // ```
 
-use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use super::parameters::{Parameter, ParameterImportance};
 
 /// Common parameter definitions for audio plugins
 pub struct CommonParams;

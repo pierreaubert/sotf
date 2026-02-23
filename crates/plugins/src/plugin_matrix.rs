@@ -23,6 +23,7 @@ pub struct MatrixPlugin {
     channel_states: Vec<ChannelState>,
     channel_state_smoothers: Vec<Smoother>,
     active_connections: Vec<(usize, usize, usize)>,
+    ch_gains_buffer: Vec<f32>,
 }
 
 impl MatrixPlugin {
@@ -44,6 +45,7 @@ impl MatrixPlugin {
             channel_states: Vec::new(),
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
+            ch_gains_buffer: Vec::new(),
         };
         plugin.update_active_connections();
         plugin
@@ -74,6 +76,7 @@ impl MatrixPlugin {
             channel_states: Vec::new(),
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
+            ch_gains_buffer: Vec::new(),
         };
         plugin.update_active_connections();
 
@@ -122,6 +125,7 @@ impl MatrixPlugin {
             channel_states: Vec::new(),
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
+            ch_gains_buffer: Vec::new(),
         };
         plugin.update_active_connections();
         Ok(plugin)
@@ -368,6 +372,24 @@ impl Plugin for MatrixPlugin {
         let in_channels = self.physical_input_channels;
         let out_channels = self.physical_output_channels;
 
+        // Tick channel state smoothers once per sample before connection loop
+        // We use a temporary buffer to store the current gain for each channel for this block
+        let buffer_size = out_channels * num_frames;
+        if self.ch_gains_buffer.len() < buffer_size {
+            self.ch_gains_buffer.resize(buffer_size, 1.0f32);
+        }
+        
+        // Fill buffer with 1.0 default (in case some channels have no smoother)
+        self.ch_gains_buffer[..buffer_size].fill(1.0);
+
+        for ch in 0..self.channel_state_smoothers.len() {
+            if ch < out_channels {
+                for frame in 0..num_frames {
+                    self.ch_gains_buffer[frame * out_channels + ch] = self.channel_state_smoothers[ch].advance();
+                }
+            }
+        }
+
         for &(logical_in, logical_out, idx) in &self.active_connections {
             let phys_in = if self.input_channel_map.is_empty() {
                 logical_in
@@ -381,21 +403,11 @@ impl Plugin for MatrixPlugin {
             };
 
             for frame in 0..num_frames {
-                let gain = self.gain_smoothers[idx].next();
-                let ch_gain = if logical_out < self.channel_state_smoothers.len() {
-                    self.channel_state_smoothers[logical_out].next()
-                } else {
-                    1.0
-                };
+                let gain = self.gain_smoothers[idx].advance();
+                let ch_gain = self.ch_gains_buffer[frame * out_channels + logical_out];
 
                 output[frame * out_channels + phys_out] +=
                     input[frame * in_channels + phys_in] * gain * ch_gain;
-            }
-            
-            // Sync smoothers after loop
-            self.gain_smoothers[idx].next_n(num_frames);
-            if logical_out < self.channel_state_smoothers.len() {
-                self.channel_state_smoothers[logical_out].next_n(num_frames);
             }
         }
 

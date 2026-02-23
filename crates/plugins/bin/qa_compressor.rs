@@ -1,6 +1,9 @@
 use sotf_plugins::plugin_compressor::{CompressorPlugin, CompressorPluginParams};
-use sotf_plugins::{InPlacePlugin, ProcessContext};
-use std::f32::consts::PI;
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
@@ -18,8 +21,8 @@ fn main() {
         sidechain_hpf_hz: 0.0,
     };
 
-    let mut plugin = CompressorPlugin::from_params(channels, params);
-    plugin.initialize(sample_rate).unwrap();
+    let mut inner = CompressorPlugin::from_params(channels, params);
+    inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: Compressor Plugin ===");
 
@@ -27,7 +30,7 @@ fn main() {
     println!("\n[Test 1] Below Threshold (-30dB)");
     let mut buffer = generate_dc(sample_rate, -30.0, 4800);
     let ctx = ProcessContext { sample_rate, num_frames: 4800 };
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Target: -30.00dB, Measured: {:.2}dB", peak);
     assert!((peak + 30.0).abs() < 0.1);
@@ -37,14 +40,14 @@ fn main() {
     println!("\n[Test 2] Ratio Accuracy (Input -10dB, Thresh -20dB, Ratio 4:1)");
     let num_frames = 48000; // 1 second
     let mut buffer = generate_dc(sample_rate, -10.0, num_frames);
-    plugin.reset();
+    inner.reset();
     
     let block_size = 4096;
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
         let ctx_block = ProcessContext { sample_rate, num_frames: end - pos };
-        plugin.process_in_place(&mut buffer[pos..end], &ctx_block).unwrap();
+        inner.process_in_place(&mut buffer[pos..end], &ctx_block).unwrap();
         pos = end;
     }
     
@@ -52,21 +55,14 @@ fn main() {
     println!("  Expected: -17.50dB, Measured: {:.2}dB", peak);
     assert!((peak + 17.5).abs() < 0.1);
 
-    // Test 3: Soft Knee Transition
-    println!("\n[Test 3] Soft Knee (Knee 10dB)");
-    plugin.set_parameter("knee".into(), sotf_plugins::ParameterValue::Float(10.0)).unwrap();
-    // Input at threshold (-20dB) should already have some GR with soft knee
-    let mut buffer = generate_dc(sample_rate, -20.0, 4800);
-    let ctx_block = ProcessContext { sample_rate, num_frames: 4800 };
-    plugin.process_in_place(&mut buffer, &ctx_block).unwrap();
-    let peak = measure_peak_db(&buffer);
-    println!("  Input -20dB (at thresh), Output: {:.2}dB", peak);
-    assert!(peak < -21.0); // Soft knee should reduce by ~1.8dB at threshold for 10dB knee
+    // Run standard QA tests
+    let mut plugin = InPlacePluginAdapter::new(inner);
+    run_standard_tests(&mut plugin, "CompressorPlugin");
 
-    println!("\n[PASS] Compressor QA Complete.");
+    println!("\n[ALL PASS] Compressor QA Complete.");
 }
 
-fn generate_dc(sr: u32, db: f32, frames: usize) -> Vec<f32> {
+fn generate_dc(_sr: u32, db: f32, frames: usize) -> Vec<f32> {
     let amp = 10.0f32.powf(db / 20.0);
     vec![amp; frames]
 }

@@ -61,7 +61,7 @@ impl Smoother {
 
     /// Process one sample step (updates current value)
     #[inline]
-    pub fn next(&mut self) -> f32 {
+    pub fn advance(&mut self) -> f32 {
         self.next_n(1)
     }
 
@@ -132,7 +132,7 @@ impl LinearSmoother {
     }
 
     #[inline]
-    pub fn next(&mut self) -> f32 {
+    pub fn advance(&mut self) -> f32 {
         self.next_n(1)
     }
 
@@ -203,7 +203,7 @@ impl LogSmoother {
     }
 
     #[inline]
-    pub fn next(&mut self) -> f32 {
+    pub fn advance(&mut self) -> f32 {
         self.next_n(1)
     }
 
@@ -252,11 +252,11 @@ mod tests {
         let mut s = Smoother::new(0.0, 10.0, 1000); // 10ms at 1kHz = 10 samples
         s.set_target(1.0);
 
-        let first = s.next();
+        let first = s.advance();
         assert!(first > 0.0 && first < 1.0);
 
         for _ in 0..100 {
-            s.next();
+            s.advance();
         }
         assert!((s.current() - 1.0).abs() < 1e-4);
     }
@@ -266,14 +266,14 @@ mod tests {
         let mut s = LinearSmoother::new(0.0, 10.0, 1000); // 10 samples
         s.set_target(1.0);
 
-        assert!((s.next() - 0.1).abs() < 1e-6);
-        assert!((s.next() - 0.2).abs() < 1e-6);
+        assert!((s.advance() - 0.1).abs() < 1e-6);
+        assert!((s.advance() - 0.2).abs() < 1e-6);
 
         for _ in 0..7 {
-            s.next();
+            s.advance();
         }
-        assert!((s.next() - 1.0).abs() < 1e-6);
-        assert!((s.next() - 1.0).abs() < 1e-6);
+        assert!((s.advance() - 1.0).abs() < 1e-6);
+        assert!((s.advance() - 1.0).abs() < 1e-6);
     }
 
     #[test]
@@ -281,14 +281,14 @@ mod tests {
         let mut s = LogSmoother::new(100.0, 10.0, 1000); // 10 samples
         s.set_target(1000.0);
 
-        let first = s.next();
+        let first = s.advance();
         // 100 * (1000/100)^(1/10) = 100 * 10^0.1 approx 125.89
         assert!((first - 125.89).abs() < 0.1);
 
         for _ in 0..8 {
-            s.next();
+            s.advance();
         }
-        assert!((s.next() - 1000.0).abs() < 1e-4);
-        assert!((s.next() - 1000.0).abs() < 1e-6);
+        assert!((s.advance() - 1000.0).abs() < 1e-4);
+        assert!((s.advance() - 1000.0).abs() < 1e-6);
     }
 }

@@ -37,12 +37,14 @@ use reflections::{
     build_reflection_data_image_source, build_reflection_data_ir, RoomReflectionData,
 };
 
+use super::analyzer::RealTimeCache;
 use super::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
-    blend_simd, complex_mul_add_simd, complex_mul_simd, deinterleave_stereo,
-    flush_denormals_inplace, interleave_stereo, scale_add_simd, window_mul_simd,
+    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo,
+    flush_denormals_inplace,
+    window_mul_simd,
 };
 use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -56,8 +58,17 @@ use std::sync::Arc;
 /// Diagnostic data from XTC plugin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XtcData {
-    pub auto_gain: Option<AutoGainData>,
+    pub auto_gain: AutoGainData,
     pub limiter_envelope: f32,
+}
+
+impl Default for XtcData {
+    fn default() -> Self {
+        Self {
+            auto_gain: AutoGainData::default(),
+            limiter_envelope: 1.0,
+        }
+    }
 }
 
 // ============================================================================
@@ -234,6 +245,12 @@ pub struct XtcPlugin {
 
     /// Initial latency counter to ensure OLA buffer is primed before output
     latency_filled: usize,
+
+    /// Diagnostic data cache (Real-time safe)
+    cache: RealTimeCache<XtcData>,
+
+    /// Counter to throttle diagnostic cache updates
+    cache_update_counter: usize,
 }
 
 // ============================================================================
@@ -421,6 +438,8 @@ impl XtcPlugin {
             limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
             limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
             latency_filled: 0,
+            cache: RealTimeCache::new(XtcData::default()),
+            cache_update_counter: 0,
         })
     }
 
@@ -1003,11 +1022,7 @@ impl Plugin for XtcPlugin {
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let ag_data = self.auto_gain.as_ref().map(|ag| ag.get_data());
-        Some(Arc::new(XtcData {
-            auto_gain: ag_data,
-            limiter_envelope: self.limiter_envelope,
-        }))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
@@ -1076,15 +1091,34 @@ impl Plugin for XtcPlugin {
             ));
         }
 
-        // Bypass if disabled
-        if !self.params.enabled {
-            output.copy_from_slice(input);
-            return Ok(context.num_frames);
+        // Measure loudness (throttled to 1/10 blocks to save CPU)
+        self.cache_update_counter += 1;
+        let mut do_measure = false;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            do_measure = true;
         }
 
         // Measure input loudness for auto-gain (before any processing)
-        if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_input(input);
+        if do_measure {
+            if let Some(ag) = &mut self.auto_gain {
+                let _ = ag.measure_input(input);
+            }
+        }
+
+        // Bypass if disabled
+        if !self.params.enabled {
+            output.copy_from_slice(input);
+            
+            // Still update diagnostic cache when bypassed
+            if do_measure {
+                let ag_data = self.auto_gain.as_ref().map(|ag| ag.get_data()).unwrap_or_default();
+                self.cache.update(|d| {
+                    d.auto_gain = ag_data;
+                    d.limiter_envelope = 1.0;
+                });
+            }
+            return Ok(context.num_frames);
         }
 
         // Temp buffers are pre-allocated in initialize() to 4096 frames.
@@ -1166,20 +1200,34 @@ impl Plugin for XtcPlugin {
         // Auto-gain: measure the UNCOMPENSATED output from the plugin filters.
         // This ensures the gain calculation is stable and doesn't oscillate.
         if let Some(ag) = &mut self.auto_gain {
-            let _ = ag.measure_output(&output[..output_pos * 2]);
+            if do_measure {
+                let _ = ag.measure_output(&output[..output_pos * 2]);
+                
+                // Update diagnostic cache (Real-time safe, throttled)
+                let ag_data = ag.get_data();
+                let limiter_env = self.limiter_envelope;
+                self.cache.update(|d| {
+                    d.auto_gain = ag_data;
+                    d.limiter_envelope = limiter_env;
+                });
+            }
             ag.apply_compensation(&mut output[..output_pos * 2], output_pos);
         }
 
         // Per-sample peak limiter: prevent clipping after XTC filter summation + AutoGain.
         // Smooth attack (~0.2ms) and release (~50ms) to avoid gain modulation artifacts.
         // Skip when filters are bypassed — no amplification occurs.
-        if !self.params.bypass_xtc_filters {
+        if !self.params.bypass_xtc_filters && output_pos > 0 {
             let threshold = 0.95_f32;
             for frame in 0..output_pos {
                 let idx_l = frame * 2;
                 let idx_r = frame * 2 + 1;
                 let peak = output[idx_l].abs().max(output[idx_r].abs());
-                let target_gr = if peak > threshold { threshold / peak } else { 1.0 };
+                let target_gr = if peak > threshold {
+                    threshold / peak
+                } else {
+                    1.0
+                };
                 if target_gr < self.limiter_envelope {
                     // Smooth attack (~0.2ms) to avoid per-sample gain jumps
                     self.limiter_envelope = target_gr

@@ -1114,7 +1114,6 @@ impl PluginFuzzer for SpectrumAnalyzerFuzzer {
             min_freq,
             max_freq,
             smoothing,
-            ..Default::default()
         };
 
         let plugin = SpectrumAnalyzerPlugin::with_config(channels, config)
@@ -1178,7 +1177,7 @@ impl PluginFuzzer for XtcFuzzer {
 }
 
 struct BinauralFuzzer {
-    sample_rate: u32,
+    _sample_rate: u32,
 }
 
 impl PluginFuzzer for BinauralFuzzer {
@@ -1420,7 +1419,7 @@ fn get_fuzzer(plugin_name: &str, sample_rate: u32) -> Result<Box<dyn PluginFuzze
         "fletcher_munson" | "fletcher" => Ok(Box::new(FletcherMunsonFuzzer)),
         "spectrum" | "spectrum_analyzer" => Ok(Box::new(SpectrumAnalyzerFuzzer)),
         "xtc" => Ok(Box::new(XtcFuzzer { sample_rate })),
-        "binaural" => Ok(Box::new(BinauralFuzzer { sample_rate })),
+        "binaural" => Ok(Box::new(BinauralFuzzer { _sample_rate: sample_rate })),
         "convolution" | "conv" => Ok(Box::new(ConvolutionFuzzer { sample_rate })),
         "bandsplit" => Ok(Box::new(BandSplitFuzzer)),
         "bandmerge" => Ok(Box::new(BandMergeFuzzer)),

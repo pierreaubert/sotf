@@ -2,6 +2,7 @@
 // Expander Plugin
 // ============================================================================
 
+use super::analyzer::RealTimeCache;
 use super::param_specs::expander::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -94,9 +95,37 @@ impl Default for ExpanderPluginParams {
 /// Data exposed by the expander for monitoring
 #[derive(Debug, Clone)]
 pub struct ExpanderData {
-    pub attenuation_db: Vec<f32>,
+    pub input_levels_db: Arc<Vec<f32>>,
     pub is_open: bool,
-    pub input_levels_db: Vec<f32>,
+    pub attenuation_db: Arc<Vec<f32>>,
+}
+
+impl Default for ExpanderData {
+    fn default() -> Self {
+        Self {
+            input_levels_db: Arc::new(Vec::new()),
+            is_open: false,
+            attenuation_db: Arc::new(Vec::new()),
+        }
+    }
+}
+
+impl ExpanderData {
+    pub fn new(channels: usize) -> Self {
+        Self {
+            input_levels_db: Arc::new(vec![-120.0; channels]),
+            is_open: false,
+            attenuation_db: Arc::new(vec![0.0; channels]),
+        }
+    }
+
+    pub fn update(&mut self, is_open: bool, attenuation: &[f32]) {
+        self.is_open = is_open;
+        if let Some(mut_att) = Arc::get_mut(&mut self.attenuation_db)
+            && mut_att.len() == attenuation.len() {
+                mut_att.copy_from_slice(attenuation);
+            }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -142,6 +171,8 @@ pub struct ExpanderPlugin {
     release_coeff: f32,
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
+    cache: RealTimeCache<ExpanderData>,
+    cache_update_counter: usize,
 }
 
 impl ExpanderPlugin {
@@ -186,6 +217,8 @@ impl ExpanderPlugin {
             release_coeff: 0.0,
             threshold_smoother: Smoother::new(params.threshold_db, 5.0, sr),
             mix_smoother: Smoother::new(params.mix, 5.0, sr),
+            cache: RealTimeCache::new(ExpanderData::new(channels)),
+            cache_update_counter: 0,
         }
     }
     pub fn from_params(channels: usize, params: ExpanderPluginParams) -> Self {
@@ -490,19 +523,30 @@ impl InPlacePlugin for ExpanderPlugin {
                 }
             }
         }
+
+        // Update diagnostic cache (throttled)
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            let is_open = self
+                .gate_state
+                .iter()
+                .any(|&s| s == GateState::Open || s == GateState::Hold);
+            self.cache.update(|d| {
+                d.update(is_open, &self.envelope);
+            });
+        }
+
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }
+
+    fn latency_samples(&self) -> usize {
+        0
+    }
+
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let is_open = self
-            .gate_state
-            .iter()
-            .any(|&s| s == GateState::Open || s == GateState::Hold);
-        Some(Arc::new(ExpanderData {
-            attenuation_db: self.envelope.clone(),
-            is_open,
-            input_levels_db: self.input_levels_db.clone(),
-        }))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
 

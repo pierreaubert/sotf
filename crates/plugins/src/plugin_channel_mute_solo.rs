@@ -247,7 +247,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         for frame in 0..num_frames {
             // Tick smoothers into cache
             for ch in 0..self.channels {
-                self.cached_gains[ch] = self.channel_smoothers[ch].next();
+                self.cached_gains[ch] = self.channel_smoothers[ch].advance();
             }
 
             let offset = frame * self.channels;

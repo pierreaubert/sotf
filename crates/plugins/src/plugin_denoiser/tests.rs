@@ -1,10 +1,11 @@
-use super::*;
-use crate::param_specs::denoiser::*;
-use crate::parameters::{ParameterId, ParameterValue};
-use crate::plugin::ProcessContext;
 
+#[allow(unused_imports)]
+use super::*;
+
+#[allow(dead_code)]
 const SAMPLE_RATE: u32 = 48000;
 
+#[allow(dead_code)]
 fn make_test_signal(num_frames: usize, channels: usize, freq_hz: f32) -> Vec<f32> {
     let mut buffer = vec![0.0_f32; num_frames * channels];
     for i in 0..num_frames {
@@ -17,6 +18,7 @@ fn make_test_signal(num_frames: usize, channels: usize, freq_hz: f32) -> Vec<f32
     buffer
 }
 
+#[allow(dead_code)]
 fn make_noisy_signal(
     num_frames: usize,
     channels: usize,
@@ -32,7 +34,7 @@ fn make_noisy_signal(
     let mut buffer = vec![0.0_f32; num_frames * channels];
     let hasher = RandomState::new();
 
-    for i in 0..num_frames * channels {
+    for (i, sample) in buffer.iter_mut().enumerate().take(num_frames * channels) {
         let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / SAMPLE_RATE as f32;
         let signal = phase.sin() * signal_linear;
 
@@ -41,7 +43,7 @@ fn make_noisy_signal(
         let rand: f32 = (h.finish() as f32 / u64::MAX as f32) * 2.0 - 1.0;
         let noise = rand * noise_linear;
 
-        buffer[i] = signal + noise;
+        *sample = signal + noise;
     }
     buffer
 }

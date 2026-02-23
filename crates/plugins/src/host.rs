@@ -483,8 +483,8 @@ impl DawHost {
         preds: &[Vec<GraphEdge>],
         nbs: &[Option<NodeBuffer>],
         nf: usize,
-        mb: &mut Vec<f32>,
-        cmb: &mut Vec<f32>,
+        mb: &mut [f32],
+        cmb: &mut [f32],
     ) -> Result<usize, String> {
         let is = nf * n.input_channels();
         if mb.len() < is {

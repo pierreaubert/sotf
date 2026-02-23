@@ -31,14 +31,12 @@ impl UpmixerPlugin {
 
                 let mut dg = if is_f && !is_h {
                     gfd
+                } else if gfd == 0.0 && gra == 0.0 {
+                    0.0
                 } else {
-                    if gfd == 0.0 && gra == 0.0 {
-                        0.0
-                    } else {
-                        // Reduce bleed for coherent signals to prevent voice leakage
-                        let bleed_scale = (1.0 - self.dialogue_probability * 0.8).clamp(0.1, 1.0);
-                        self.surround_direct_bleed.current() * bleed_scale
-                    }
+                    // Reduce bleed for coherent signals to prevent voice leakage
+                    let bleed_scale = (1.0 - self.dialogue_probability * 0.8).clamp(0.1, 1.0);
+                    self.surround_direct_bleed.current() * bleed_scale
                 };
                 let mut ag = if is_f && !is_h {
                     gfa

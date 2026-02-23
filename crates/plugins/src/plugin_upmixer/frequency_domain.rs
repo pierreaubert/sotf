@@ -55,9 +55,7 @@ fn median5(arr: [f32; 5]) -> f32 {
     if b <= c {
         // (1 comparison)
         if c <= e { c } else { e } // (1 comparison)
-    } else {
-        if b <= d { b } else { d }
-    }
+    } else if b <= d { b } else { d }
 }
 
 fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
@@ -349,8 +347,8 @@ impl UpmixerPlugin {
                 if strength >= 0.99 {
                     self.blended_decorrelation_filters[ch].copy_from_slice(decor);
                 } else {
-                    for i in 0..spec_size {
-                        let blended = Complex::new(strength * decor[i].re + id_w, strength * decor[i].im);
+                    for (i, d) in decor.iter().enumerate().take(spec_size) {
+                        let blended = Complex::new(strength * d.re + id_w, strength * d.im);
                         // Normalize magnitude to 1.0 to preserve spectral balance (magnitude-preserving phase blend)
                         let mag_sq = blended.norm_sqr();
                         if mag_sq > 1e-9 {
@@ -390,6 +388,7 @@ impl UpmixerPlugin {
         // Only apply correction to upmix bins (including transition zone)
         let apply_start = self.cached_bandpass_bin.saturating_sub(4);
         let mut smoothed = std::mem::take(&mut self.energy_correction_temp);
+        #[allow(clippy::needless_range_loop)]
         for i in apply_start..spec_size {
             let start = i.saturating_sub(1).max(apply_start);
             let end = (i + 2).min(spec_size);
@@ -402,6 +401,7 @@ impl UpmixerPlugin {
             smoothed[i] = sum / count as f32;
         }
 
+        #[allow(clippy::needless_range_loop)]
         for i in apply_start..spec_size {
             let prev = self.energy_correction_prev[i];
             let alpha = if smoothed[i] < prev { 0.3 } else { 0.1 };

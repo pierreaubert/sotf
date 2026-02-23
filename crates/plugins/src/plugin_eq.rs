@@ -2,9 +2,10 @@
 // Parametric EQ Plugin
 // ============================================================================
 
-use super::auto_gain::{AutoGain, AutoGainParams};
+use super::analyzer::RealTimeCache;
+use super::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
 use super::parameters::{Parameter, ParameterId, ParameterValue};
-use super::plugin::{InPlacePlugin, Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use math_audio_iir_fir::Biquad;
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,8 @@ pub struct EqPlugin {
     filters: Vec<Vec<Biquad>>,
     sample_rate: u32,
     auto_gain: AutoGain,
+    cache: RealTimeCache<AutoGainData>,
+    cache_update_counter: usize,
 }
 
 impl EqPlugin {
@@ -50,6 +53,8 @@ impl EqPlugin {
             filters: channel_filters,
             sample_rate,
             auto_gain,
+            cache: RealTimeCache::new(AutoGainData::default()),
+            cache_update_counter: 0,
         }
     }
 
@@ -67,6 +72,8 @@ impl EqPlugin {
             filters: channel_filters,
             sample_rate,
             auto_gain,
+            cache: RealTimeCache::new(AutoGainData::default()),
+            cache_update_counter: 0,
         })
     }
 
@@ -108,6 +115,8 @@ impl EqPlugin {
                 filters: channel_filters,
                 sample_rate,
                 auto_gain,
+                cache: RealTimeCache::new(AutoGainData::default()),
+                cache_update_counter: 0,
             })
         } else {
             let filters = params
@@ -124,6 +133,8 @@ impl EqPlugin {
                 filters: channel_filters,
                 sample_rate,
                 auto_gain,
+                cache: RealTimeCache::new(AutoGainData::default()),
+                cache_update_counter: 0,
             })
         }
     }
@@ -246,8 +257,18 @@ impl InPlacePlugin for EqPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        
-        let _ = self.auto_gain.measure_input(buffer);
+
+        // Throttled measurement
+        self.cache_update_counter += 1;
+        let mut do_measure = false;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            do_measure = true;
+        }
+
+        if do_measure {
+            let _ = self.auto_gain.measure_input(buffer);
+        }
 
         for frame in 0..num_frames {
             for ch in 0..self.num_channels {
@@ -260,14 +281,21 @@ impl InPlacePlugin for EqPlugin {
             }
         }
 
-        let _ = self.auto_gain.measure_output(buffer);
+        if do_measure {
+            let _ = self.auto_gain.measure_output(buffer);
+            let ag_data = self.auto_gain.get_data();
+            self.cache.update(|d| {
+                *d = ag_data;
+            });
+        }
+        
         self.auto_gain.apply_compensation(buffer, num_frames);
         
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        Some(Arc::new(self.auto_gain.get_data()))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
 

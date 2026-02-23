@@ -63,6 +63,12 @@ pub struct MonoToStereoPlugin {
     latency_filled: usize,
 }
 
+impl Default for MonoToStereoPlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MonoToStereoPlugin {
     pub fn new() -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
@@ -114,14 +120,14 @@ impl MonoToStereoPlugin {
     }
 
     fn generate_decorrelation_filter(&mut self) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         use rand::Rng;
         let num_bins = self.decorrelation_filter.len();
 
         for i in 0..num_bins {
             let freq = i as f32 * self.sample_rate as f32 / FFT_SIZE as f32;
-            if freq >= 300.0 && freq <= 15000.0 {
-                let phase = rng.gen_range(0.0..2.0 * std::f32::consts::PI);
+            if (300.0..=15000.0).contains(&freq) {
+                let phase = rng.random_range(0.0..2.0 * std::f32::consts::PI);
                 if i == 100 {
                     // println!("DEBUG: bin 100 phase={}", phase);
                 }
@@ -248,7 +254,7 @@ impl Plugin for MonoToStereoPlugin {
 
                 for i in 0..to_drain {
                     let read_idx = (self.output_read_position + i) & mask;
-                    let width = self.stereo_width.next();
+                    let width = self.stereo_width.advance();
                     let orig = self.output_accumulator[read_idx * 2];
                     let decor = self.output_accumulator[read_idx * 2 + 1] * decor_gain;
                     
@@ -261,16 +267,14 @@ impl Plugin for MonoToStereoPlugin {
                 self.output_read_position = (self.output_read_position + to_drain) & mask;
                 self.output_accumulator_fill -= to_drain;
                 output_pos += to_drain;
-            } else {
-                if input_pos >= nf {
-                    while output_pos < nf {
-                        output[output_pos * 2] = 0.0;
-                        output[output_pos * 2 + 1] = 0.0;
-                        output_pos += 1;
-                    }
-                } else {
-                    break;
+            } else if input_pos >= nf {
+                while output_pos < nf {
+                    output[output_pos * 2] = 0.0;
+                    output[output_pos * 2 + 1] = 0.0;
+                    output_pos += 1;
                 }
+            } else {
+                break;
             }
         }
         Ok(nf)

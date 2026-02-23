@@ -1,28 +1,33 @@
 use sotf_plugins::plugin_multiband_expander::{MultibandExpanderPlugin, MultibandExpanderPluginParams};
-use sotf_plugins::{InPlacePlugin, ProcessContext, ParameterValue};
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 use std::f32::consts::PI;
+
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
     let channels = 1;
-    let mut params = MultibandExpanderPluginParams::default();
-    params.num_bands = 3;
-    params.crossover_frequencies = vec![200.0, 5000.0];
-    params.threshold_db = -20.0;
-    params.ratio = 2.0;
-    params.attack_ms = 5.0;
-    params.release_ms = 50.0;
-    params.range_db = 40.0;
-    params.mix = 1.0;
+    let params = MultibandExpanderPluginParams {
+        num_bands: 3,
+        crossover_frequencies: vec![200.0, 5000.0],
+        threshold_db: -20.0,
+        ratio: 2.0,
+        attack_ms: 5.0,
+        release_ms: 50.0,
+        range_db: 40.0,
+        mix: 1.0,
+        ..Default::default()
+    };
 
-    let mut plugin = MultibandExpanderPlugin::from_params(channels, params);
-    plugin.initialize(sample_rate).unwrap();
+    let mut inner = MultibandExpanderPlugin::from_params(channels, params);
+    inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: Multiband Expander Plugin ===");
 
     // Test 1: Expansion Accuracy
-    println!("
-[Test 1] High Band Expansion (Input -40dB @ 10kHz, Thresh -20dB)");
+    println!("\n[Test 1] High Band Expansion (Input -40dB @ 10kHz, Thresh -20dB)");
     let num_frames = 48000;
     let mut buffer = generate_sine(sample_rate, 10000.0, -40.0, num_frames);
     
@@ -31,7 +36,7 @@ fn main() {
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
         let ctx = ProcessContext { sample_rate, num_frames: end - pos };
-        plugin.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
+        inner.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
         pos = end;
     }
     
@@ -41,8 +46,11 @@ fn main() {
     assert!((peak + 50.0).abs() < 2.0);
     println!("  High Band Expansion: PASS");
 
-    println!("
-[PASS] Multiband Expander QA Complete.");
+    // Run standard QA tests
+    let mut plugin = InPlacePluginAdapter::new(inner);
+    run_standard_tests(&mut plugin, "MultibandExpanderPlugin");
+
+    println!("\n[ALL PASS] Multiband Expander QA Complete.");
 }
 
 fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {

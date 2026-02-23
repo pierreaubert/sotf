@@ -2,6 +2,7 @@
 // Gate Plugin
 // ============================================================================
 
+use super::analyzer::RealTimeCache;
 use super::param_specs::gate::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -58,10 +59,39 @@ fn default_sidechain_hpf_hz() -> f32 {
     SIDECHAIN_HPF_HZ_DEFAULT
 }
 
+#[derive(Debug, Clone)]
 pub struct GateData {
-    pub input_levels_db: Vec<f32>,
+    pub input_levels_db: Arc<Vec<f32>>,
     pub is_open: bool,
-    pub attenuation_db: Vec<f32>,
+    pub attenuation_db: Arc<Vec<f32>>,
+}
+
+impl Default for GateData {
+    fn default() -> Self {
+        Self {
+            input_levels_db: Arc::new(Vec::new()),
+            is_open: false,
+            attenuation_db: Arc::new(Vec::new()),
+        }
+    }
+}
+
+impl GateData {
+    pub fn new(channels: usize) -> Self {
+        Self {
+            input_levels_db: Arc::new(vec![-120.0; channels]),
+            is_open: false,
+            attenuation_db: Arc::new(vec![0.0; channels]),
+        }
+    }
+
+    pub fn update(&mut self, is_open: bool, attenuation: &[f32]) {
+        self.is_open = is_open;
+        if let Some(mut_att) = Arc::get_mut(&mut self.attenuation_db)
+            && mut_att.len() == attenuation.len() {
+                mut_att.copy_from_slice(attenuation);
+            }
+    }
 }
 
 pub struct GatePlugin {
@@ -92,6 +122,8 @@ pub struct GatePlugin {
     sidechain_hpf_alpha: f32,
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
+    cache: RealTimeCache<GateData>,
+    cache_update_counter: usize,
 }
 
 impl GatePlugin {
@@ -132,6 +164,8 @@ impl GatePlugin {
             sidechain_hpf_alpha: 0.0,
             threshold_smoother: Smoother::new(threshold_db, 5.0, sr),
             mix_smoother: Smoother::new(1.0, 5.0, sr),
+            cache: RealTimeCache::new(GateData::new(channels)),
+            cache_update_counter: 0,
         }
     }
 
@@ -379,15 +413,21 @@ impl InPlacePlugin for GatePlugin {
             }
         }
         
+        // Update diagnostic cache (throttled)
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            let is_open = self.envelope.iter().any(|&a| a < 0.1);
+            self.cache.update(|d| {
+                d.update(is_open, &self.envelope);
+            });
+        }
+        
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        Some(Arc::new(GateData {
-            input_levels_db: vec![-100.0; self.channels],
-            is_open: self.envelope.iter().any(|&a| a < 0.1),
-            attenuation_db: self.envelope.clone(),
-        }))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
 

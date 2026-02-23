@@ -1,5 +1,9 @@
 use sotf_plugins::plugin_gate::{GatePlugin, GatePluginParams};
-use sotf_plugins::{InPlacePlugin, ProcessContext};
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
@@ -15,8 +19,8 @@ fn main() {
         sidechain_hpf_hz: 0.0,
     };
 
-    let mut plugin = GatePlugin::from_params(channels, params);
-    plugin.initialize(sample_rate).unwrap();
+    let mut inner = GatePlugin::from_params(channels, params);
+    inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: Gate Plugin ===");
 
@@ -24,7 +28,7 @@ fn main() {
     println!("\n[Test 1] Open State (Input -10dB, Thresh -20dB)");
     let mut buffer = generate_dc(sample_rate, -10.0, 4800);
     let ctx = ProcessContext { sample_rate, num_frames: 4800 };
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Target: -10.00dB, Measured: {:.2}dB", peak);
     assert!((peak + 10.0).abs() < 0.1);
@@ -34,14 +38,14 @@ fn main() {
     // Process 1 second to fully close
     let num_frames = 48000;
     let mut buffer = generate_dc(sample_rate, -40.0, num_frames);
-    plugin.reset();
+    inner.reset();
     
     let block_size = 4096;
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
         let ctx_block = ProcessContext { sample_rate, num_frames: end - pos };
-        plugin.process_in_place(&mut buffer[pos..end], &ctx_block).unwrap();
+        inner.process_in_place(&mut buffer[pos..end], &ctx_block).unwrap();
         pos = end;
     }
     
@@ -49,7 +53,11 @@ fn main() {
     println!("  Expected: ~ -59.80dB, Measured: {:.2}dB", peak);
     assert!(peak < -59.0);
 
-    println!("\n[PASS] Gate QA Complete.");
+    // Run standard QA tests
+    let mut plugin = InPlacePluginAdapter::new(inner);
+    run_standard_tests(&mut plugin, "GatePlugin");
+
+    println!("\n[ALL PASS] Gate QA Complete.");
 }
 
 fn generate_dc(_sr: u32, db: f32, frames: usize) -> Vec<f32> {

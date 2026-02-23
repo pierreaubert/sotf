@@ -12,6 +12,7 @@ path = "src/lib.rs"
 default = ["sofa_support"]
 hal = ["driver-hal"]
 sofa_support = ["dep:netcdf"]
+qa = []
 
 [dependencies]
 tokio = { workspace = true }
@@ -82,60 +83,84 @@ name = "plugin-fuzzer"
 path = "bin/plugin_fuzzer.rs"
 
 [[bin]]
+name = "qa-ab-compare"
+path = "bin/qa_ab_compare.rs"
+required-features = ["qa"]
+
+[[bin]]
 name = "qa-compressor"
 path = "bin/qa_compressor.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-delay"
 path = "bin/qa_delay.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-downmix"
 path = "bin/qa_downmix.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-eq"
 path = "bin/qa_eq.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-expander"
 path = "bin/qa_expander.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-gain"
 path = "bin/qa_gain.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-gate"
 path = "bin/qa_gate.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-limiter"
 path = "bin/qa_limiter.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-loudness-compensation"
 path = "bin/qa_loudness_compensation.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-mono-to-stereo"
 path = "bin/qa_mono_to_stereo.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-multiband-compressor"
 path = "bin/qa_multiband_compressor.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-multiband-expander"
 path = "bin/qa_multiband_expander.rs"
+required-features = ["qa"]
+
+[[bin]]
+name = "qa-pnd"
+path = "bin/qa_pnd.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-upmixer"
 path = "bin/qa_upmixer.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "qa-xtc"
 path = "bin/qa_xtc.rs"
+required-features = ["qa"]
 
 [[bin]]
 name = "simd-fuzzer"

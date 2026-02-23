@@ -213,7 +213,7 @@ pub(crate) fn measure_cancellation_depth_db_with_filters(
 
     // Cancellation depth = how much crosstalk was reduced
     let depth = 20.0 * (crosstalk_without / crosstalk_with).log10();
-    depth.max(0.0).min(40.0)
+    depth.clamp(0.0, 40.0)
 }
 
 /// Measure cancellation depth at a specific frequency.

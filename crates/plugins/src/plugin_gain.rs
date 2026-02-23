@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::param_specs::gain::*;
-use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{apply_gain_simd, apply_per_channel_gain_simd};
 use super::smoothing::Smoother;
@@ -169,19 +169,16 @@ impl InPlacePlugin for GainPlugin {
         vec![Parameter::new_float("gain_db", "Gain", 0.0, -100.0, 24.0)]
     }
     fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
-        if id == self.param_gain_db {
-            if let Some(v) = val.as_float() {
+        if id == self.param_gain_db
+            && let Some(v) = val.as_float() {
                 self.set_gain_db(v);
                 return Ok(());
             }
-        }
-        if let Some(s) = id.as_str().strip_prefix("gain_db_") {
-            if let Ok(ch) = s.parse::<usize>() {
-                if let Some(v) = val.as_float() {
+        if let Some(s) = id.as_str().strip_prefix("gain_db_")
+            && let Ok(ch) = s.parse::<usize>()
+                && let Some(v) = val.as_float() {
                     return self.set_channel_gain_db(ch, v);
                 }
-            }
-        }
         Err("unk".into())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -212,7 +209,7 @@ impl InPlacePlugin for GainPlugin {
         if self.is_per_channel() {
             for frame in 0..nf {
                 for ch in 0..self.channels {
-                    self.cached_gains[ch] = self.channel_gains_smoothers[ch].next();
+                    self.cached_gains[ch] = self.channel_gains_smoothers[ch].advance();
                 }
                 let off = frame * self.channels;
                 apply_per_channel_gain_simd(
@@ -223,7 +220,7 @@ impl InPlacePlugin for GainPlugin {
             }
         } else {
             for frame in 0..nf {
-                let g = self.global_gain_smoother.next();
+                let g = self.global_gain_smoother.advance();
                 let off = frame * self.channels;
                 apply_gain_simd(&mut buffer[off..off + self.channels], g);
             }

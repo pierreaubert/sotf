@@ -1,5 +1,9 @@
 use sotf_plugins::plugin_downmix::{DownmixPlugin, DownmixPluginParams};
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
 use sotf_plugins::{Plugin, ProcessContext};
+
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
@@ -38,16 +42,13 @@ fn main() {
         pos = end;
     }
     
-    // For Center only, L_out = 0.707 * C = 0.707 (by default downmix usually uses -3dB for center)
-    // Wait, DownmixPlugin uses center_gain_db. I set it to 0dB.
-    // In update_downmix_coeffs:
-    // self.target_coeffs[2] = DownmixCoeffs { left_gain: center_gain, right_gain: center_gain };
-    // center_gain = fast_pow10(self.center_gain_db / 20.0) * 0.707; // Ah! It adds 0.707!
-    
     let last_sample_l = output[(num_frames-1)*2];
     println!("  L_out Expected: ~0.707, Measured: {:.3}", last_sample_l);
     assert!((last_sample_l - 0.707).abs() < 0.1);
     println!("  Center to L/R: PASS");
 
-    println!("\n[PASS] Downmix QA Complete.");
+    // Run standard QA tests
+    run_standard_tests(&mut plugin, "DownmixPlugin");
+
+    println!("\n[ALL PASS] Downmix QA Complete.");
 }

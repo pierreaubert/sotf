@@ -320,8 +320,8 @@ impl DownmixPlugin {
                     val = self.lfe_lpf[l_idx][1].process(val);
                     s = val as f32;
                 }
-                l += s * self.coeff_smoothers[ch * 2].next();
-                r += s * self.coeff_smoothers[ch * 2 + 1].next();
+                l += s * self.coeff_smoothers[ch * 2].advance();
+                r += s * self.coeff_smoothers[ch * 2 + 1].advance();
             }
             output[frame * 2] = l;
             output[frame * 2 + 1] = r;
@@ -357,9 +357,9 @@ impl DownmixPlugin {
             let fft_offset = ch * num_bins;
             let channel_fft = &self.fft_output[fft_offset..fft_offset + num_bins];
             
-            for i in 0..num_bins {
-                self.out_freq_l[i] += channel_fft[i] * gl;
-                self.out_freq_r[i] += channel_fft[i] * gr;
+            for (cfi, (ol, or_)) in channel_fft.iter().zip(self.out_freq_l.iter_mut().zip(self.out_freq_r.iter_mut())).take(num_bins) {
+                *ol += *cfi * gl;
+                *or_ += *cfi * gr;
             }
         }
 
@@ -563,17 +563,15 @@ impl Plugin for DownmixPlugin {
                 self.output_read_position = (self.output_read_position + to_drain) & mask;
                 self.output_accumulator_fill -= to_drain;
                 output_pos += to_drain;
-            } else {
-                if input_pos >= num_frames {
-                    let rem = num_frames - output_pos;
-                    for i in 0..rem {
-                        output[(output_pos + i) * 2] = 0.0;
-                        output[(output_pos + i) * 2 + 1] = 0.0;
-                    }
-                    output_pos = num_frames;
-                } else {
-                    break;
+            } else if input_pos >= num_frames {
+                let rem = num_frames - output_pos;
+                for i in 0..rem {
+                    output[(output_pos + i) * 2] = 0.0;
+                    output[(output_pos + i) * 2 + 1] = 0.0;
                 }
+                output_pos = num_frames;
+            } else {
+                break;
             }
         }
 

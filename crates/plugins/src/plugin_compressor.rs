@@ -16,6 +16,7 @@
 // - link_channels: Use a shared detector across channels to avoid image shifts
 // - sidechain_hpf_hz: High-pass filter cutoff for the detector sidechain (Hz)
 
+use super::analyzer::RealTimeCache;
 use super::param_specs::compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -77,7 +78,32 @@ pub fn default_sidechain_hpf_hz() -> f32 {
 pub struct CompressorData {
     /// Current gain reduction in dB (positive value, e.g., 6.0 means -6dB gain)
     /// One value per channel
-    pub gain_reduction_db: Vec<f32>,
+    pub gain_reduction_db: Arc<Vec<f32>>,
+}
+
+impl Default for CompressorData {
+    fn default() -> Self {
+        Self {
+            gain_reduction_db: Arc::new(Vec::new()),
+        }
+    }
+}
+
+impl CompressorData {
+    pub fn new(channels: usize) -> Self {
+        Self {
+            gain_reduction_db: Arc::new(vec![0.0; channels]),
+        }
+    }
+
+    pub fn update_gains(&mut self, new_gains: &[f32]) {
+        if let Some(mut_gains) = Arc::get_mut(&mut self.gain_reduction_db)
+            && mut_gains.len() == new_gains.len() {
+                mut_gains.copy_from_slice(new_gains);
+                return;
+            }
+        self.gain_reduction_db = Arc::new(new_gains.to_vec());
+    }
 }
 
 /// Configuration parameters for CompressorPlugin
@@ -156,6 +182,9 @@ pub struct CompressorPlugin {
     // Smoothing
     threshold_smoother: Smoother,
     makeup_gain_smoother: Smoother,
+
+    cache: RealTimeCache<CompressorData>,
+    cache_update_counter: usize,
 }
 
 impl CompressorPlugin {
@@ -213,6 +242,8 @@ impl CompressorPlugin {
 
             threshold_smoother: Smoother::new(threshold_db, 20.0, sample_rate),
             makeup_gain_smoother: Smoother::new(makeup_gain_db, 20.0, sample_rate),
+            cache: RealTimeCache::new(CompressorData::new(channels)),
+            cache_update_counter: 0,
         }
     }
 
@@ -556,6 +587,15 @@ impl InPlacePlugin for CompressorPlugin {
             }
         }
 
+        // Update diagnostic cache (throttled)
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            self.cache.update(|d| {
+                d.update_gains(&self.envelope);
+            });
+        }
+
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }
@@ -565,10 +605,7 @@ impl InPlacePlugin for CompressorPlugin {
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        // Expose current gain reduction envelope
-        Some(Arc::new(CompressorData {
-            gain_reduction_db: self.envelope.clone(),
-        }))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
 

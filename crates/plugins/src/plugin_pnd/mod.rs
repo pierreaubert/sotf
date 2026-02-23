@@ -2,6 +2,7 @@
 // PND (Polyphonic Note Detection & Varispeed) Plugin
 // ============================================================================
 
+use super::analyzer::RealTimeCache;
 use super::param_specs::pnd::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -30,7 +31,7 @@ const CORRECTION_STRENGTH_SMOOTH_MS: f32 = 50.0;
 // ============================================================================
 
 /// Data exposed by the PND plugin for drift monitoring.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PndData {
     /// Current raw drift ratio from analysis (1.0 = no drift).
     pub drift_ratio: f64,
@@ -61,12 +62,19 @@ pub struct PndPlugin {
     planar_input: Vec<Vec<f32>>,
     planar_output: Vec<Vec<f32>>,
 
-    // Block buffering for arbitrary host block sizes
-    input_ring: Vec<f32>, // Interleaved input accumulator
-    input_ring_fill: usize,
-    output_ring: Vec<f32>, // Interleaved output drain buffer
-    output_ring_fill: usize,
+    // Block buffering for arbitrary host block sizes (Circular buffers)
+    input_ring: Vec<f32>,
+    input_ring_write_pos: usize,
+    input_ring_read_pos: usize,
+    input_ring_count: usize,
+
+    output_ring: Vec<f32>,
+    output_ring_write_pos: usize,
     output_ring_read_pos: usize,
+    output_ring_count: usize,
+
+    // Temp buffer for wrapped chunks
+    interleaved_chunk_buffer: Vec<f32>,
 
     // Parameters
     param_correction_strength: ParameterId,
@@ -78,6 +86,9 @@ pub struct PndPlugin {
 
     param_drift_smoothing: ParameterId,
     drift_smoothing: f32,
+
+    cache: RealTimeCache<PndData>,
+    cache_update_counter: usize,
 }
 
 impl PndPlugin {
@@ -92,10 +103,14 @@ impl PndPlugin {
             planar_input: vec![Vec::new(); channels],
             planar_output: Vec::new(),
             input_ring: Vec::new(),
-            input_ring_fill: 0,
+            input_ring_write_pos: 0,
+            input_ring_read_pos: 0,
+            input_ring_count: 0,
             output_ring: Vec::new(),
-            output_ring_fill: 0,
+            output_ring_write_pos: 0,
             output_ring_read_pos: 0,
+            output_ring_count: 0,
+            interleaved_chunk_buffer: Vec::new(),
 
             param_correction_strength: ParameterId::from("correction_strength"),
             correction_strength: CORRECTION_STRENGTH_DEFAULT,
@@ -111,6 +126,8 @@ impl PndPlugin {
 
             param_drift_smoothing: ParameterId::from("drift_smoothing"),
             drift_smoothing: DRIFT_SMOOTHING_DEFAULT,
+            cache: RealTimeCache::new(PndData::default()),
+            cache_update_counter: 0,
         }
     }
 
@@ -151,26 +168,42 @@ impl PndPlugin {
     fn process_one_chunk(&mut self) -> Result<(), String> {
         let resampler = self.resampler.as_mut().ok_or("Resampler not initialized")?;
         let chunk_frames = resampler.input_frames_next();
+        let chunk_samples = chunk_frames * self.channels;
 
-        // 1. De-interleave input into planar buffers
-        //    Done first so we can analyze directly from planar_input[0] (no separate mono buffer)
+        // 1. Get contiguous input chunk (Circular)
+        let cap_in = self.input_ring.len();
+        let input_slice = if self.input_ring_read_pos + chunk_samples <= cap_in {
+            // Contiguous path
+            &self.input_ring[self.input_ring_read_pos..self.input_ring_read_pos + chunk_samples]
+        } else {
+            // Wrapped path: copy to temp buffer
+            let first_part = cap_in - self.input_ring_read_pos;
+            self.interleaved_chunk_buffer[..first_part]
+                .copy_from_slice(&self.input_ring[self.input_ring_read_pos..]);
+            let second_part = chunk_samples - first_part;
+            self.interleaved_chunk_buffer[first_part..chunk_samples]
+                .copy_from_slice(&self.input_ring[..second_part]);
+            &self.interleaved_chunk_buffer[..chunk_samples]
+        };
+
+        // 2. De-interleave input into planar buffers
         debug_assert!(self.planar_input.iter().all(|ch| ch.len() >= chunk_frames));
         if self.channels == 2 {
             let (left, rest) = self.planar_input.split_at_mut(1);
             deinterleave_stereo(
-                &self.input_ring[..chunk_frames * 2],
+                &input_slice[..chunk_frames * 2],
                 &mut left[0][..chunk_frames],
                 &mut rest[0][..chunk_frames],
             );
         } else {
             for i in 0..chunk_frames {
                 for c in 0..self.channels {
-                    self.planar_input[c][i] = self.input_ring[i * self.channels + c];
+                    self.planar_input[c][i] = input_slice[i * self.channels + c];
                 }
             }
         }
 
-        // 2. Analyze first channel for drift
+        // 3. Analyze first channel for drift
         let drift_ratio = if let Some(analyzer) = &mut self.analyzer {
             analyzer.analyze(&self.planar_input[0][..chunk_frames])
         } else {
@@ -178,24 +211,23 @@ impl PndPlugin {
         };
         self.last_drift_ratio = drift_ratio as f64;
 
-        // 3. Calculate correction ratio (smoothed correction_strength prevents pitch jumps)
+        // 4. Calculate correction ratio
         let target_correction = 1.0 / drift_ratio as f64;
         let alpha = self.drift_smoothing as f64;
         self.current_ratio = self.current_ratio * (1.0 - alpha) + target_correction * alpha;
 
-        let strength = self.correction_strength_smoother.next() as f64;
+        let strength = self.correction_strength_smoother.advance() as f64;
         let final_ratio = 1.0 + (self.current_ratio - 1.0) * strength;
 
         resampler
             .set_resample_ratio(final_ratio, true)
             .map_err(|e| format!("{:?}", e))?;
 
-        // Shift consumed samples out of input ring
-        let consumed_samples = chunk_frames * self.channels;
-        self.input_ring.copy_within(consumed_samples.., 0);
-        self.input_ring_fill -= consumed_samples;
+        // Update read position (Circular)
+        self.input_ring_read_pos = (self.input_ring_read_pos + chunk_samples) % cap_in;
+        self.input_ring_count -= chunk_samples;
 
-        // 4. Resample
+        // 5. Resample
         let max_output_frames = resampler.output_frames_max();
         debug_assert!(self
             .planar_output
@@ -216,29 +248,47 @@ impl PndPlugin {
             .process_into_buffer(&input_adapter, &mut output_adapter, None)
             .map_err(|e| format!("{:?}", e))?;
 
-        // 5. Re-interleave into output ring
+        // 6. Re-interleave into output ring (Circular)
+        let out_samples = out_written * self.channels;
+        let cap_out = self.output_ring.len();
         debug_assert!(
-            self.output_ring.len() >= self.output_ring_fill + out_written * self.channels,
-            "output_ring overflow: len={}, needed={}",
-            self.output_ring.len(),
-            self.output_ring_fill + out_written * self.channels
+            self.output_ring_count + out_samples <= cap_out,
+            "output_ring overflow"
         );
+
         if self.channels == 2 {
-            interleave_stereo(
-                &self.planar_output[0][..out_written],
-                &self.planar_output[1][..out_written],
-                &mut self.output_ring
-                    [self.output_ring_fill..self.output_ring_fill + out_written * 2],
-            );
+            // Need a contiguous target slice for interleave_stereo
+            if self.output_ring_write_pos + out_samples <= cap_out {
+                interleave_stereo(
+                    &self.planar_output[0][..out_written],
+                    &self.planar_output[1][..out_written],
+                    &mut self.output_ring
+                        [self.output_ring_write_pos..self.output_ring_write_pos + out_samples],
+                );
+            } else {
+                // Wrapped output write: interleave to temp then copy in two parts
+                interleave_stereo(
+                    &self.planar_output[0][..out_written],
+                    &self.planar_output[1][..out_written],
+                    &mut self.interleaved_chunk_buffer[..out_samples],
+                );
+                let first_part = cap_out - self.output_ring_write_pos;
+                self.output_ring[self.output_ring_write_pos..]
+                    .copy_from_slice(&self.interleaved_chunk_buffer[..first_part]);
+                let second_part = out_samples - first_part;
+                self.output_ring[..second_part]
+                    .copy_from_slice(&self.interleaved_chunk_buffer[first_part..out_samples]);
+            }
         } else {
             for i in 0..out_written {
                 for c in 0..self.channels {
-                    self.output_ring[self.output_ring_fill + i * self.channels + c] =
-                        self.planar_output[c][i];
+                    let idx = (self.output_ring_write_pos + i * self.channels + c) % cap_out;
+                    self.output_ring[idx] = self.planar_output[c][i];
                 }
             }
         }
-        self.output_ring_fill += out_written * self.channels;
+        self.output_ring_write_pos = (self.output_ring_write_pos + out_samples) % cap_out;
+        self.output_ring_count += out_samples;
 
         Ok(())
     }
@@ -334,16 +384,21 @@ impl Plugin for PndPlugin {
         self.planar_output = vec![vec![0.0; max_output_frames]; self.channels];
 
         // Allocate block buffering rings
-        // Input ring: hold up to 2 resampler chunks worth of interleaved samples
-        let input_ring_capacity = RESAMPLER_CHUNK_SIZE * self.channels * 2;
+        // Input ring: hold up to 4 resampler chunks worth of interleaved samples
+        let input_ring_capacity = RESAMPLER_CHUNK_SIZE * self.channels * 4;
         self.input_ring = vec![0.0; input_ring_capacity];
-        self.input_ring_fill = 0;
+        self.input_ring_write_pos = 0;
+        self.input_ring_read_pos = 0;
+        self.input_ring_count = 0;
 
-        // Output ring: hold up to 2 chunks worth of resampled output
-        let output_ring_capacity = max_output_frames * self.channels * 2;
+        // Output ring: hold up to 4 chunks worth of resampled output
+        let output_ring_capacity = max_output_frames * self.channels * 4;
         self.output_ring = vec![0.0; output_ring_capacity];
-        self.output_ring_fill = 0;
+        self.output_ring_write_pos = 0;
         self.output_ring_read_pos = 0;
+        self.output_ring_count = 0;
+
+        self.interleaved_chunk_buffer = vec![0.0; RESAMPLER_CHUNK_SIZE * self.channels * 2];
 
         // Initialize correction_strength smoother at chunk rate
         let chunk_rate = (sample_rate as f32 / RESAMPLER_CHUNK_SIZE as f32) as u32;
@@ -365,38 +420,45 @@ impl Plugin for PndPlugin {
         let num_frames = context.num_frames;
         let total_input_samples = num_frames * self.channels;
 
-        // 1. Accumulate input into input ring
-        let space_available = self.input_ring.len() - self.input_ring_fill;
-        let samples_to_copy = total_input_samples.min(space_available);
-        self.input_ring[self.input_ring_fill..self.input_ring_fill + samples_to_copy]
-            .copy_from_slice(&input[..samples_to_copy]);
-        self.input_ring_fill += samples_to_copy;
+        // 1. Accumulate input into input ring (Circular)
+        {
+            let cap = self.input_ring.len();
+            let first_part = total_input_samples.min(cap - self.input_ring_write_pos);
+            self.input_ring[self.input_ring_write_pos..self.input_ring_write_pos + first_part]
+                .copy_from_slice(&input[..first_part]);
+            if total_input_samples > first_part {
+                let second_part = total_input_samples - first_part;
+                self.input_ring[..second_part].copy_from_slice(&input[first_part..]);
+            }
+            self.input_ring_write_pos = (self.input_ring_write_pos + total_input_samples) % cap;
+            self.input_ring_count += total_input_samples;
+        }
 
         // 2. Process complete resampler chunks
         if let Some(resampler) = &self.resampler {
             let chunk_samples = resampler.input_frames_next() * self.channels;
-            while self.input_ring_fill >= chunk_samples {
+            while self.input_ring_count >= chunk_samples {
                 self.process_one_chunk()?;
             }
         }
 
-        // 3. Drain output ring to output buffer
+        // 3. Drain output ring to output buffer (Circular)
         let total_output_samples = num_frames * self.channels;
-        let available = self.output_ring_fill - self.output_ring_read_pos;
-        let drain_samples = available.min(total_output_samples);
+        let drain_samples = self.output_ring_count.min(total_output_samples);
         let drain_frames = drain_samples / self.channels;
 
-        output[..drain_samples].copy_from_slice(
-            &self.output_ring[self.output_ring_read_pos..self.output_ring_read_pos + drain_samples],
-        );
-        self.output_ring_read_pos += drain_samples;
-
-        // Compact output ring when fully drained
-        if self.output_ring_read_pos > 0 {
-            self.output_ring
-                .copy_within(self.output_ring_read_pos..self.output_ring_fill, 0);
-            self.output_ring_fill -= self.output_ring_read_pos;
-            self.output_ring_read_pos = 0;
+        if drain_samples > 0 {
+            let cap = self.output_ring.len();
+            let first_part = drain_samples.min(cap - self.output_ring_read_pos);
+            output[..first_part].copy_from_slice(
+                &self.output_ring[self.output_ring_read_pos..self.output_ring_read_pos + first_part],
+            );
+            if drain_samples > first_part {
+                let second_part = drain_samples - first_part;
+                output[first_part..drain_samples].copy_from_slice(&self.output_ring[..second_part]);
+            }
+            self.output_ring_read_pos = (self.output_ring_read_pos + drain_samples) % cap;
+            self.output_ring_count -= drain_samples;
         }
 
         // Zero remaining output if not enough data (initial latency period)
@@ -406,7 +468,34 @@ impl Plugin for PndPlugin {
         }
 
         // Report num_frames to prevent ring buffer underruns in host
-        Ok(context.num_frames)
+        let nf = context.num_frames;
+
+        // Update diagnostic cache (throttled)
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            let (confidence, matched_partials, total_peaks) = if let Some(analyzer) = &self.analyzer {
+                (
+                    analyzer.confidence(),
+                    analyzer.matched_partials(),
+                    analyzer.total_peaks(),
+                )
+            } else {
+                (0.0, 0, 0)
+            };
+
+            let drift = self.last_drift_ratio;
+            let correction = self.current_ratio;
+            self.cache.update(|d| {
+                d.drift_ratio = drift;
+                d.correction_ratio = correction;
+                d.confidence = confidence;
+                d.matched_partials = matched_partials;
+                d.total_peaks = total_peaks;
+            });
+        }
+
+        Ok(nf)
     }
 
     fn reset(&mut self) {
@@ -415,9 +504,12 @@ impl Plugin for PndPlugin {
         }
         self.current_ratio = 1.0;
         self.last_drift_ratio = 1.0;
-        self.input_ring_fill = 0;
-        self.output_ring_fill = 0;
+        self.input_ring_write_pos = 0;
+        self.input_ring_read_pos = 0;
+        self.input_ring_count = 0;
+        self.output_ring_write_pos = 0;
         self.output_ring_read_pos = 0;
+        self.output_ring_count = 0;
         self.correction_strength_smoother
             .reset(self.correction_strength);
     }
@@ -427,22 +519,6 @@ impl Plugin for PndPlugin {
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let (confidence, matched_partials, total_peaks) = if let Some(analyzer) = &self.analyzer {
-            (
-                analyzer.confidence(),
-                analyzer.matched_partials(),
-                analyzer.total_peaks(),
-            )
-        } else {
-            (0.0, 0, 0)
-        };
-
-        Some(Arc::new(PndData {
-            drift_ratio: self.last_drift_ratio,
-            correction_ratio: self.current_ratio,
-            confidence,
-            matched_partials,
-            total_peaks,
-        }))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }

@@ -1,14 +1,20 @@
 use sotf_plugins::plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
 use sotf_plugins::{Plugin, ProcessContext};
 use std::f32::consts::PI;
 
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
+
 fn main() {
     let sample_rate = 48000;
-    let mut params = UpmixerPluginParams::default();
-    params.fft_size = 2048;
-    params.speaker_config = "5.1".to_string();
-    params.gain_front_direct = 1.0;
-    params.center_spread = 0.0;
+    let params = UpmixerPluginParams {
+        fft_size: 2048,
+        speaker_config: "5.1".to_string(),
+        gain_front_direct: 1.0,
+        center_spread: 0.0,
+        ..Default::default()
+    };
 
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();
@@ -82,5 +88,8 @@ fn main() {
     assert!(energies_spread[0] > energies[0], "Front Left energy should have increased");
     println!("  Center Spread: PASS");
 
-    println!("\n[PASS] Upmixer QA Complete.");
+    // Run standard QA tests
+    run_standard_tests(&mut plugin, "UpmixerPlugin");
+
+    println!("\n[ALL PASS] Upmixer QA Complete.");
 }

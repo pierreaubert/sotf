@@ -1,5 +1,9 @@
 use sotf_plugins::plugin_limiter::{LimiterPlugin, LimiterPluginParams};
-use sotf_plugins::{InPlacePlugin, ProcessContext};
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
@@ -12,32 +16,26 @@ fn main() {
         mix: 1.0,
     };
 
-    let mut plugin = LimiterPlugin::from_params(channels, params);
-    plugin.initialize(sample_rate).unwrap();
+    let mut inner = LimiterPlugin::from_params(channels, params);
+    inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: Limiter Plugin ===");
 
     // Test 1: Ceiling Enforcement
-    println!("
-[Test 1] Ceiling Enforcement (Input +6dB, Thresh -1dB)");
+    println!("\n[Test 1] Ceiling Enforcement (Input +6dB, Thresh -1dB)");
     let num_frames = 4800;
     let mut buffer = generate_dc(sample_rate, 6.0, num_frames);
     let ctx = ProcessContext { sample_rate, num_frames };
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[1000..]); // Skip lookahead fill
     println!("  Ceiling: -1.00dB, Measured Peak: {:.2}dB", peak);
     assert!(peak <= -0.99 && peak > -1.1);
 
-    // Test 2: Latency Reporting
-    println!("
-[Test 2] Latency Accuracy");
-    let reported = plugin.latency_samples();
-    let expected = (5.0 * 0.001 * sample_rate as f32) as usize;
-    println!("  Expected: ~{} samples, Reported: {} samples", expected, reported);
-    assert!((reported as i32 - expected as i32).abs() < 10);
+    // Run standard QA tests
+    let mut plugin = InPlacePluginAdapter::new(inner);
+    run_standard_tests(&mut plugin, "LimiterPlugin");
 
-    println!("
-[PASS] Limiter QA Complete.");
+    println!("\n[ALL PASS] Limiter QA Complete.");
 }
 
 fn generate_dc(_sr: u32, db: f32, frames: usize) -> Vec<f32> {

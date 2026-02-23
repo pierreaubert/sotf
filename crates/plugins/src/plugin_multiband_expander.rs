@@ -2,6 +2,7 @@
 // Multiband Expander Plugin
 // ============================================================================
 
+use super::analyzer::RealTimeCache;
 use super::param_specs::multiband_expander::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -51,11 +52,54 @@ pub struct MultibandExpanderPluginParams {
     pub bands: Vec<BandExpanderParams>,
 }
 
+#[derive(Debug, Clone)]
 pub struct MultibandExpanderData {
-    pub attenuation_db: Vec<Vec<f32>>,
-    pub is_open: Vec<bool>,
-    pub band_levels_db: Vec<f32>,
-    pub crossover_frequencies: Vec<f32>,
+    /// Attenuation per band and per channel (flattened)
+    pub attenuation_db: Arc<Vec<f32>>,
+    pub is_open: Arc<Vec<bool>>,
+    pub band_levels_db: Arc<Vec<f32>>,
+    pub crossover_frequencies: Arc<Vec<f32>>,
+}
+
+impl Default for MultibandExpanderData {
+    fn default() -> Self {
+        Self {
+            attenuation_db: Arc::new(Vec::new()),
+            is_open: Arc::new(Vec::new()),
+            band_levels_db: Arc::new(Vec::new()),
+            crossover_frequencies: Arc::new(Vec::new()),
+        }
+    }
+}
+
+impl MultibandExpanderData {
+    pub fn new(num_bands: usize, channels: usize) -> Self {
+        Self {
+            attenuation_db: Arc::new(vec![0.0; num_bands * channels]),
+            is_open: Arc::new(vec![false; num_bands]),
+            band_levels_db: Arc::new(vec![-120.0; num_bands]),
+            crossover_frequencies: Arc::new(vec![0.0; num_bands.saturating_sub(1)]),
+        }
+    }
+
+    pub fn update(&mut self, atten: &[f32], open: &[bool], levels: &[f32], xovers: &[f32]) {
+        if let Some(mut_atten) = Arc::get_mut(&mut self.attenuation_db)
+            && mut_atten.len() == atten.len() {
+                mut_atten.copy_from_slice(atten);
+            }
+        if let Some(mut_open) = Arc::get_mut(&mut self.is_open)
+            && mut_open.len() == open.len() {
+                mut_open.copy_from_slice(open);
+            }
+        if let Some(mut_levels) = Arc::get_mut(&mut self.band_levels_db)
+            && mut_levels.len() == levels.len() {
+                mut_levels.copy_from_slice(levels);
+            }
+        if let Some(mut_xovers) = Arc::get_mut(&mut self.crossover_frequencies)
+            && mut_xovers.len() == xovers.len() {
+                mut_xovers.copy_from_slice(xovers);
+            }
+    }
 }
 
 struct CrossoverPoint {
@@ -126,7 +170,7 @@ pub struct MultibandExpanderPlugin {
     channels: usize,
     sample_rate: u32,
     num_bands: usize,
-    crossover_preset: i32,
+    _crossover_preset: i32,
     crossover_frequencies: Vec<f32>,
     threshold_db: f32,
     ratio: f32,
@@ -147,6 +191,12 @@ pub struct MultibandExpanderPlugin {
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
     xover_smoothers: Vec<LogSmoother>,
+
+    // Internal flattened monitoring buffers
+    attenuation_flattened: Vec<f32>,
+    is_open_buffer: Vec<bool>,
+    cache: RealTimeCache<MultibandExpanderData>,
+    cache_update_counter: usize,
 }
 
 impl MultibandExpanderPlugin {
@@ -180,7 +230,7 @@ impl MultibandExpanderPlugin {
             channels,
             sample_rate: sr,
             num_bands: nb,
-            crossover_preset: params.crossover_preset,
+            _crossover_preset: params.crossover_preset,
             crossover_frequencies: xfs.clone(),
             threshold_db: params.threshold_db,
             ratio: params.ratio,
@@ -201,6 +251,10 @@ impl MultibandExpanderPlugin {
             threshold_smoother: Smoother::new(params.threshold_db, 20.0, sr),
             mix_smoother: Smoother::new(params.mix, 20.0, sr),
             xover_smoothers: xfs.iter().map(|&f| LogSmoother::new(f, 50.0, sr)).collect(),
+            attenuation_flattened: vec![0.0; nb * channels],
+            is_open_buffer: vec![false; nb],
+            cache: RealTimeCache::new(MultibandExpanderData::new(nb, channels)),
+            cache_update_counter: 0,
         };
         p.build_crossovers();
         p.update_coefficients();
@@ -514,9 +568,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         
         let mut any_solo = false;
         for b in 0..self.num_bands {
-            if let Some(p) = self.band_params.get(b) {
-                if p.solo { any_solo = true; break; }
-            }
+            if let Some(p) = self.band_params.get(b)
+                && p.solo { any_solo = true; break; }
         }
 
         // 3. Dynamic Processing per Band
@@ -628,25 +681,30 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 buffer[idx] = self.dry_buffer[idx] * (1.0 - g_mix) + s * g_mix;
             }
         }
+
+        // Update diagnostic cache (throttled)
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= 10 {
+            self.cache_update_counter = 0;
+            for b in 0..self.num_bands {
+                self.is_open_buffer[b] = self.band_expanders[b].gate_state.iter().any(|&s| s != GateState::Closing);
+                for ch in 0..self.channels {
+                    self.attenuation_flattened[b * self.channels + ch] = self.band_expanders[b].envelope[ch];
+                }
+            }
+            let levels = &self.band_levels_db;
+            let xovers = &self.crossover_frequencies;
+            let open = &self.is_open_buffer;
+            self.cache.update(|d| {
+                d.update(&self.attenuation_flattened, open, levels, xovers);
+            });
+        }
         
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        Some(Arc::new(MultibandExpanderData {
-            attenuation_db: self
-                .band_expanders
-                .iter()
-                .map(|b| b.envelope.clone())
-                .collect(),
-            is_open: self
-                .band_expanders
-                .iter()
-                .map(|b| b.gate_state.iter().any(|&s| s != GateState::Closing))
-                .collect(),
-            band_levels_db: self.band_levels_db.clone(),
-            crossover_frequencies: self.crossover_frequencies.clone(),
-        }))
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
 

@@ -2,7 +2,7 @@
 // Delay Plugin
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;

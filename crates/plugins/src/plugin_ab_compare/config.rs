@@ -151,28 +151,3 @@ impl Default for ABComparePluginParams {
         }
     }
 }
-
-/// Data exposed by the A/B Compare plugin for monitoring
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ABCompareData {
-    /// Current loudness of path A (LUFS)
-    pub loudness_a_lufs: f64,
-
-    /// Current loudness of path B (LUFS)
-    pub loudness_b_lufs: f64,
-
-    /// Current auto-gain applied to B (dB)
-    pub auto_gain_db: f32,
-
-    /// Peak level of path A (0.0 to 1.0+)
-    pub peak_a: f64,
-
-    /// Peak level of path B (after auto-gain) (0.0 to 1.0+)
-    pub peak_b: f64,
-
-    /// Current mix value (-1.0 to +1.0)
-    pub current_mix: f32,
-
-    /// Whether bypass is active
-    pub bypass_active: bool,
-}

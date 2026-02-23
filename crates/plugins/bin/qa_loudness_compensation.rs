@@ -1,6 +1,10 @@
 use sotf_plugins::plugin_loudness_compensation::{LoudnessCompensationPlugin, LoudnessCompensationPluginParams};
-use sotf_plugins::{InPlacePlugin, ProcessContext};
+use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 use std::f32::consts::PI;
+
+#[global_allocator]
+static A: CountingAlloc = CountingAlloc;
 
 fn main() {
     let sample_rate = 48000;
@@ -16,18 +20,17 @@ fn main() {
         auto_gain_smoothing_ms: 100.0,
     };
 
-    let mut plugin = LoudnessCompensationPlugin::from_params(channels, params).unwrap();
-    plugin.initialize(sample_rate).unwrap();
+    let mut inner = LoudnessCompensationPlugin::from_params(channels, params).unwrap();
+    inner.initialize(sample_rate).unwrap();
 
     println!("=== QA: Loudness Compensation Plugin ===");
 
     // Test 1: Low Frequency Boost
-    println!("
-[Test 1] Low Boost (+6dB at 50Hz)");
+    println!("\n[Test 1] Low Boost (+6dB at 50Hz)");
     let num_frames = 4800;
     let mut buffer = generate_sine(sample_rate, 50.0, -10.0, num_frames);
     let ctx = ProcessContext { sample_rate, num_frames };
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[num_frames-1000..]);
     
     // LoudnessComp uses 2 cascaded biquads, so 6dB total boost
@@ -37,16 +40,18 @@ fn main() {
     assert!((peak + 10.0).abs() < 1.0);
 
     // Test 2: Mid Frequency Neutrality
-    println!("
-[Test 2] Mid Frequency (-6dB attenuation due to compensation)");
+    println!("\n[Test 2] Mid Frequency (-6dB attenuation due to compensation)");
     let mut buffer = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
-    plugin.process_in_place(&mut buffer, &ctx).unwrap();
+    inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[num_frames-1000..]);
     println!("  Expected: ~ -16.00dB, Measured: {:.2}dB", peak);
     assert!((peak + 16.0).abs() < 1.0);
 
-    println!("
-[PASS] Loudness Compensation QA Complete.");
+    // Run standard QA tests
+    let mut plugin = InPlacePluginAdapter::new(inner);
+    run_standard_tests(&mut plugin, "LoudnessCompensationPlugin");
+
+    println!("\n[ALL PASS] Loudness Compensation QA Complete.");
 }
 
 fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {
