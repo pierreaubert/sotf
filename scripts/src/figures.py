@@ -40,7 +40,9 @@ def get_spl_axis_config(y_range: tuple[float, float]) -> dict:
     )
 
 
-def create_smoothing_buttons(n_traces: int, freq_data: list, spl_data_list: list[list]) -> list[dict]:
+def create_smoothing_buttons(
+    n_traces: int, freq_data: list, spl_data_list: list[list]
+) -> list[dict]:
     """
     Create dropdown buttons for smoothing selection.
 
@@ -64,11 +66,7 @@ def create_smoothing_buttons(n_traces: int, freq_data: list, spl_data_list: list
             else:
                 new_y_data.append(None)
 
-        buttons.append(dict(
-            label=label,
-            method="update",
-            args=[{"y": new_y_data}]
-        ))
+        buttons.append(dict(label=label, method="update", args=[{"y": new_y_data}]))
 
     return buttons
 
@@ -142,18 +140,20 @@ def create_channel_figure(
     updatemenus = []
     if freq_data and any(s is not None for s in spl_data_list):
         buttons = create_smoothing_buttons(2, freq_data, spl_data_list)
-        updatemenus = [dict(
-            type="dropdown",
-            direction="down",
-            active=0,
-            x=0.0,
-            xanchor="left",
-            y=1.15,
-            yanchor="top",
-            buttons=buttons,
-            showactive=True,
-            font=dict(size=10),
-        )]
+        updatemenus = [
+            dict(
+                type="dropdown",
+                direction="down",
+                active=0,
+                x=0.0,
+                xanchor="left",
+                y=1.15,
+                yanchor="top",
+                buttons=buttons,
+                showactive=True,
+                font=dict(size=10),
+            )
+        ]
 
     freq_axis = get_freq_axis_config()
     freq_axis["range"] = [1.3, 4.3]  # 20 Hz to 20 kHz in log scale
@@ -186,7 +186,11 @@ def create_zoomed_figure(
 
     # Compute average SPL for centering (use final curve if available, else initial)
     ref_curve = final_curve if final_curve else initial_curve
-    avg_spl = compute_average_spl_in_range(ref_curve, min_freq, max_freq) if ref_curve else 0.0
+    avg_spl = (
+        compute_average_spl_in_range(ref_curve, min_freq, max_freq)
+        if ref_curve
+        else 0.0
+    )
 
     freq_data = None
     spl_data_list = []
@@ -247,18 +251,20 @@ def create_zoomed_figure(
     updatemenus = []
     if freq_data and any(s is not None for s in spl_data_list):
         buttons = create_smoothing_buttons(2, freq_data, spl_data_list)
-        updatemenus = [dict(
-            type="dropdown",
-            direction="down",
-            active=0,
-            x=0.0,
-            xanchor="left",
-            y=1.15,
-            yanchor="top",
-            buttons=buttons,
-            showactive=True,
-            font=dict(size=10),
-        )]
+        updatemenus = [
+            dict(
+                type="dropdown",
+                direction="down",
+                active=0,
+                x=0.0,
+                xanchor="left",
+                y=1.15,
+                yanchor="top",
+                buttons=buttons,
+                showactive=True,
+                font=dict(size=10),
+            )
+        ]
 
     freq_axis = get_freq_axis_config()
     freq_axis["range"] = [log_min, log_max]
@@ -369,11 +375,38 @@ def create_eq_figure(
     )
 
     # Compute y-range from EQ response
+    y_limit: int | None = None
+    y_min = -15
+    y_max = 15
+
     if eq_response:
-        max_abs = max(abs(min(eq_response)), abs(max(eq_response)))
-        y_limit = max(15, math.ceil(max_abs / 5) * 5 + 5)
+        is_lfe = "lfe" in channel_name.lower()
+        if is_lfe:
+            lfe_spl = []
+            for f, s in zip(freq_points, eq_response):
+                if 20 <= f <= 200:
+                    lfe_spl.append(s)
+            if lfe_spl:
+                max_abs = max(abs(min(lfe_spl)), abs(max(lfe_spl)))
+                y_limit = max(10, math.ceil(max_abs / 5) * 5 + 5)
+            else:
+                y_limit = 15
+        else:
+            eq_max = max(eq_response)
+            eq_min = min(eq_response)
+            y_max = math.ceil(eq_max / 5) * 5
+            y_min = math.floor(eq_min / 5) * 5
+            if y_max - y_min < 50:
+                y_min = y_max - 50
+            y_limit = None
     else:
         y_limit = 15
+
+    # Compute y_range for plot
+    if y_limit is not None:
+        y_range = [-y_limit, y_limit]
+    else:
+        y_range = [y_min, y_max]
 
     freq_axis = get_freq_axis_config()
     freq_axis["range"] = [1.3, 4.3]
@@ -385,7 +418,7 @@ def create_eq_figure(
             title=dict(text="Gain (dB)", font=dict(size=11)),
             tickfont=dict(size=10),
             gridcolor="rgba(128, 128, 128, 0.2)",
-            range=[-y_limit, y_limit],
+            range=y_range,
             dtick=5,
         ),
         legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
@@ -436,19 +469,23 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
     fig = make_subplots(
         rows=3,
         cols=1,
-        subplot_titles=["All Original Curves", "All EQ Responses", "All Corrected Curves"],
+        subplot_titles=[
+            "All Original Curves",
+            "All EQ Responses",
+            "All Corrected Curves",
+        ],
         vertical_spacing=0.08,
         specs=[[{}], [{}], [{}]],
     )
 
     # Color palette for channels
     channel_colors = [
-        "rgba(31, 119, 180, 0.9)",   # blue
-        "rgba(255, 127, 14, 0.9)",   # orange
-        "rgba(44, 160, 44, 0.9)",    # green
-        "rgba(214, 39, 40, 0.9)",    # red
+        "rgba(31, 119, 180, 0.9)",  # blue
+        "rgba(255, 127, 14, 0.9)",  # orange
+        "rgba(44, 160, 44, 0.9)",  # green
+        "rgba(214, 39, 40, 0.9)",  # red
         "rgba(148, 103, 189, 0.9)",  # purple
-        "rgba(140, 86, 75, 0.9)",    # brown
+        "rgba(140, 86, 75, 0.9)",  # brown
         "rgba(227, 119, 194, 0.9)",  # pink
         "rgba(127, 127, 127, 0.9)",  # gray
     ]
@@ -509,10 +546,10 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
 
     # Track trace indices and raw data for smoothing
     trace_y_data: list = []
-    original_freq_data = None
+    original_freq_list: list[list[float]] = []
     original_raw_spl: list[list[float]] = []
     original_trace_indices: list[int] = []
-    corrected_freq_data = None
+    corrected_freq_list: list[list[float]] = []
     corrected_raw_spl: list[list[float]] = []
     corrected_trace_indices: list[int] = []
 
@@ -521,14 +558,14 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
         color = channel_colors[i % len(channel_colors)]
 
         if channel_name in per_driver_initial:
-            for d_idx, (driver_name, dcurve) in enumerate(per_driver_initial[channel_name]):
-                if original_freq_data is None:
-                    original_freq_data = dcurve["freq"]
-
+            for d_idx, (driver_name, dcurve) in enumerate(
+                per_driver_initial[channel_name]
+            ):
                 spl_raw = dcurve["spl"]
                 spl_smoothed = smooth_octave(dcurve["freq"], spl_raw, DEFAULT_SMOOTHING)
 
                 original_trace_indices.append(len(trace_y_data))
+                original_freq_list.append(dcurve["freq"])
                 original_raw_spl.append(spl_raw)
 
                 fig.add_trace(
@@ -544,19 +581,20 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                         ),
                         legendgroup=f"ch_{channel_name}",
                     ),
-                    row=1, col=1,
+                    row=1,
+                    col=1,
                 )
                 trace_y_data.append(spl_smoothed)
         else:
             initial_curve = channel_data.get("initial_curve")
             if initial_curve:
-                if original_freq_data is None:
-                    original_freq_data = initial_curve["freq"]
-
                 spl_raw = initial_curve["spl"]
-                spl_smoothed = smooth_octave(initial_curve["freq"], spl_raw, DEFAULT_SMOOTHING)
+                spl_smoothed = smooth_octave(
+                    initial_curve["freq"], spl_raw, DEFAULT_SMOOTHING
+                )
 
                 original_trace_indices.append(len(trace_y_data))
+                original_freq_list.append(initial_curve["freq"])
                 original_raw_spl.append(spl_raw)
 
                 fig.add_trace(
@@ -568,7 +606,8 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                         line=dict(color=color, width=2),
                         legendgroup=f"ch_{channel_name}",
                     ),
-                    row=1, col=1,
+                    row=1,
+                    col=1,
                 )
                 trace_y_data.append(spl_smoothed)
 
@@ -587,7 +626,8 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                     line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
                     showlegend=False,
                 ),
-                row=1, col=1,
+                row=1,
+                col=1,
             )
             trace_y_data.append([0, 0])
 
@@ -596,7 +636,11 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
         color = channel_colors[i % len(channel_colors)]
 
         eq_response_data = channel_data.get("eq_response")
-        if eq_response_data and "freq" in eq_response_data and "spl" in eq_response_data:
+        if (
+            eq_response_data
+            and "freq" in eq_response_data
+            and "spl" in eq_response_data
+        ):
             eq_freq = eq_response_data["freq"]
             eq_spl = eq_response_data["spl"]
         else:
@@ -607,7 +651,9 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                     filters = plugin.get("parameters", {}).get("filters", [])
                     eq_filters.extend(filters)
             eq_freq = freq_points if eq_filters else None
-            eq_spl = compute_eq_response(eq_filters, freq_points) if eq_filters else None
+            eq_spl = (
+                compute_eq_response(eq_filters, freq_points) if eq_filters else None
+            )
 
         if eq_spl:
             fig.add_trace(
@@ -620,7 +666,8 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                     legendgroup=f"ch_{channel_name}",
                     showlegend=False,
                 ),
-                row=2, col=1,
+                row=2,
+                col=1,
             )
             trace_y_data.append(eq_spl)
 
@@ -634,7 +681,8 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
             line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
             showlegend=False,
         ),
-        row=2, col=1,
+        row=2,
+        col=1,
     )
     trace_y_data.append([0, 0])
 
@@ -647,12 +695,10 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
             freq = final_curve["freq"]
             spl_raw = final_curve["spl"]
 
-            if corrected_freq_data is None:
-                corrected_freq_data = freq
-
             spl_smoothed = smooth_octave(freq, spl_raw, DEFAULT_SMOOTHING)
 
             corrected_trace_indices.append(len(trace_y_data))
+            corrected_freq_list.append(freq)
             corrected_raw_spl.append(spl_raw)
 
             fig.add_trace(
@@ -665,7 +711,8 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                     legendgroup=f"ch_{channel_name}",
                     showlegend=False,
                 ),
-                row=3, col=1,
+                row=3,
+                col=1,
             )
             trace_y_data.append(spl_smoothed)
 
@@ -683,7 +730,8 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                     line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
                     showlegend=False,
                 ),
-                row=3, col=1,
+                row=3,
+                col=1,
             )
             trace_y_data.append([0, 0])
 
@@ -695,7 +743,9 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
         (3, corrected_y_min, corrected_y_max),
     ]
     for xover_freq in crossover_freqs:
-        freq_label = f"{xover_freq/1000:.1f}k" if xover_freq >= 1000 else f"{xover_freq:.0f}"
+        freq_label = (
+            f"{xover_freq / 1000:.1f}k" if xover_freq >= 1000 else f"{xover_freq:.0f}"
+        )
 
         for row_idx, (row, y_lo, y_hi) in enumerate(row_ranges):
             fig.add_trace(
@@ -704,17 +754,22 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
                     y=[y_lo, y_hi],
                     mode="lines",
                     name=f"Xover {freq_label} Hz",
-                    line=dict(color="rgba(180, 80, 180, 0.7)", width=1.5, dash="dashdot"),
+                    line=dict(
+                        color="rgba(180, 80, 180, 0.7)", width=1.5, dash="dashdot"
+                    ),
                     showlegend=(row_idx == 0),
                     legendgroup="crossover",
                 ),
-                row=row, col=1,
+                row=row,
+                col=1,
             )
             trace_y_data.append([y_lo, y_hi])
 
     # --- Smoothing dropdown ---
     updatemenus = []
-    has_smoothable = (corrected_freq_data and corrected_raw_spl) or (original_freq_data and original_raw_spl)
+    has_smoothable = (corrected_freq_list and corrected_raw_spl) or (
+        original_freq_list and original_raw_spl
+    )
     if has_smoothable:
         buttons = []
         for label, octave_frac in SMOOTHING_OPTIONS:
@@ -722,39 +777,45 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
             original_idx = 0
             corrected_idx = 0
             for trace_idx, y_data in enumerate(trace_y_data):
-                if trace_idx in original_trace_indices and original_freq_data is not None:
+                if (
+                    trace_idx in original_trace_indices
+                    and original_freq_list
+                ):
                     smoothed = smooth_octave(
-                        original_freq_data, original_raw_spl[original_idx], octave_frac
+                        original_freq_list[original_idx], original_raw_spl[original_idx], octave_frac
                     )
                     new_y_data.append(smoothed)
                     original_idx += 1
-                elif trace_idx in corrected_trace_indices and corrected_freq_data is not None:
+                elif (
+                    trace_idx in corrected_trace_indices
+                    and corrected_freq_list
+                ):
                     smoothed = smooth_octave(
-                        corrected_freq_data, corrected_raw_spl[corrected_idx], octave_frac
+                        corrected_freq_list[corrected_idx],
+                        corrected_raw_spl[corrected_idx],
+                        octave_frac,
                     )
                     new_y_data.append(smoothed)
                     corrected_idx += 1
                 else:
                     new_y_data.append(y_data)
 
-            buttons.append(dict(
-                label=label,
-                method="update",
-                args=[{"y": new_y_data}]
-            ))
+            buttons.append(dict(label=label, method="update", args=[{"y": new_y_data}]))
 
-        updatemenus = [dict(
-            type="dropdown",
-            direction="down",
-            active=0,
-            x=0.0,
-            xanchor="left",
-            y=0.60,
-            yanchor="top",
-            buttons=buttons,
-            showactive=True,
-            font=dict(size=10),
-        )]
+        updatemenus = [
+            dict(
+                type="dropdown",
+                direction="down",
+                active=0,
+                x=0.0,
+                xanchor="left",
+                y=0.60,
+                yanchor="top",
+                buttons=buttons,
+                showactive=True,
+                font=dict(size=10),
+            )
+        ]
 
     # --- Axis configuration ---
     for row in [1, 2, 3]:
@@ -765,26 +826,37 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
             tickfont=dict(size=10),
             gridcolor="rgba(128, 128, 128, 0.2)",
             range=[1.3, 4.3],
-            row=row, col=1,
+            row=row,
+            col=1,
         )
 
     fig.update_yaxes(
-        title_text="SPL (dB)", title_font=dict(size=11),
-        tickfont=dict(size=10), gridcolor="rgba(128, 128, 128, 0.2)",
+        title_text="SPL (dB)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
         range=[initial_y_min, initial_y_max],
-        row=1, col=1,
+        row=1,
+        col=1,
     )
     fig.update_yaxes(
-        title_text="Gain (dB)", title_font=dict(size=11),
-        tickfont=dict(size=10), gridcolor="rgba(128, 128, 128, 0.2)",
-        range=[eq_y_lower, eq_y_upper], dtick=5,
-        row=2, col=1,
+        title_text="Gain (dB)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        range=[eq_y_lower, eq_y_upper],
+        dtick=5,
+        row=2,
+        col=1,
     )
     fig.update_yaxes(
-        title_text="SPL (dB)", title_font=dict(size=11),
-        tickfont=dict(size=10), gridcolor="rgba(128, 128, 128, 0.2)",
+        title_text="SPL (dB)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
         range=[corrected_y_min, corrected_y_max],
-        row=3, col=1,
+        row=3,
+        col=1,
     )
 
     fig.update_layout(
