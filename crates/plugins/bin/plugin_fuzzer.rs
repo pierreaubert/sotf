@@ -15,15 +15,20 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use sotf_plugins::{
-    ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState, CompressorPlugin,
-    CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost, DelayPlugin,
-    DelayPluginParams, DenoiserPlugin, DenoiserPluginParams, EqPlugin, EqPluginParams,
-    ExpanderPlugin, ExpanderPluginParams, FletcherMunsonPlugin, FletcherMunsonPluginParams,
-    GainPlugin, GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter,
-    LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
-    LoudnessCompensationPluginParams, MatrixPlugin, MultibandCompressorPlugin,
-    MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
-    Plugin, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams,
+    ABComparePlugin, ABComparePluginParams, BandMergePlugin, BandMergePluginParams,
+    BandSplitPlugin, BandSplitPluginParams, BinauralDecoderPlugin, ChannelMuteSoloParams,
+    ChannelMuteSoloPlugin, ChannelState, CompressorPlugin, CompressorPluginParams,
+    ConvolutionPlugin, ConvolutionPluginParams, CrossfeedMode, CrossfeedPlugin,
+    CrossfeedPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost, DelayPlugin,
+    DelayPluginParams, DenoiserPlugin, DenoiserPluginParams, DownmixPlugin, DownmixPluginParams,
+    EqPlugin, EqPluginParams, ExpanderPlugin, ExpanderPluginParams, FletcherMunsonPlugin,
+    FletcherMunsonPluginParams, GainPlugin, GainPluginParams, GatePlugin, GatePluginParams,
+    InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
+    LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin,
+    MonoToStereoPluginParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
+    MultibandExpanderPlugin, MultibandExpanderPluginParams, PndPlugin, PndPluginParams, Plugin,
+    RoomModel, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams,
+    XtcPlugin, XtcPluginParams,
 };
 use std::fs::File;
 use std::path::PathBuf;
@@ -1124,6 +1129,275 @@ impl PluginFuzzer for SpectrumAnalyzerFuzzer {
     }
 }
 
+struct XtcFuzzer {
+    sample_rate: u32,
+}
+
+impl PluginFuzzer for XtcFuzzer {
+    fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        // XTC always takes 2 channels
+        let speaker_angle_deg = rng.random_range(15.0..45.0);
+        let distance_m = rng.random_range(0.5..3.0);
+        let head_radius_m = rng.random_range(0.08..0.1);
+        let beta_base = rng.random_range(0.0001..0.01);
+        let max_gain_db = rng.random_range(6.0..18.0);
+
+        let fft_sizes = [1024, 2048, 4096];
+        let fft_size = fft_sizes[rng.random_range(0..fft_sizes.len())];
+
+        let head_offset_x = rng.random_range(-0.2..0.2);
+        let head_offset_z = rng.random_range(-0.2..0.2);
+        let head_yaw_deg = rng.random_range(-30.0..30.0);
+
+        let params = XtcPluginParams {
+            speaker_angle_deg,
+            distance_m,
+            head_radius_m,
+            fft_size,
+            beta_base,
+            max_gain_db,
+            head_offset_x,
+            head_offset_z,
+            head_yaw_deg,
+            enabled: true,
+            spectral_normalization: rng.random_bool(0.5),
+            pinna_model_enabled: rng.random_bool(0.3),
+            auto_gain_enabled: true,
+            ..XtcPluginParams::default()
+        };
+
+        let plugin = XtcPlugin::new(params, self.sample_rate).expect("Failed to create XtcPlugin");
+
+        let desc = format!(
+            "angle={:.1} dist={:.2}m head_r={:.3}m beta={:.4} max_g={:.1}dB fft={} x={:.2} z={:.2} yaw={:.1}",
+            speaker_angle_deg, distance_m, head_radius_m, beta_base, max_gain_db, fft_size, head_offset_x, head_offset_z, head_yaw_deg
+        );
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct BinauralFuzzer {
+    sample_rate: u32,
+}
+
+impl PluginFuzzer for BinauralFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let externalization = rng.random_range(0.0..1.0);
+        let near_field_strength = rng.random_range(0.0..1.0);
+        let diffuse_field_eq = rng.random_bool(0.5);
+        let fft_size = 1024;
+
+        let plugin = BinauralDecoderPlugin::new(
+            channels,
+            fft_size,
+            None, // hrtf_path
+            true, // enable_optimization
+            externalization,
+            near_field_strength,
+            diffuse_field_eq,
+            120.0, // lfe_crossover
+            2.0,   // lfe_distance
+            1.0,   // lfe_level
+            RoomModel::default(),
+        );
+
+        let desc = format!(
+            "ext={:.2} near={:.2} dfeq={} fft={}",
+            externalization, near_field_strength, diffuse_field_eq, fft_size
+        );
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct ConvolutionFuzzer {
+    sample_rate: u32,
+}
+
+impl PluginFuzzer for ConvolutionFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        // Create a very short random IR
+        let ir_len = 128;
+        let mut ir = vec![0.0f32; ir_len * channels];
+        for val in &mut ir {
+            *val = rng.random_range(-1.0..1.0);
+        }
+
+        let params = ConvolutionPluginParams {
+            ir_file: "".to_string(), // Not used with direct IR load
+            mix: rng.random_range(0.1..1.0),
+            gain_db: rng.random_range(-12.0..0.0),
+        };
+
+        let plugin = ConvolutionPlugin::from_params(channels, self.sample_rate, params.clone())
+            .expect("Failed to create ConvolutionPlugin");
+        
+        let desc = format!("ir_len={} mix={:.2}", ir_len, params.mix);
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+    }
+}
+
+struct BandSplitFuzzer;
+
+impl PluginFuzzer for BandSplitFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let frequency = rng.random_range(100.0..5000.0);
+        let crossover_type = if rng.random_bool(0.5) { "LR24" } else { "LR48" };
+
+        let params = BandSplitPluginParams {
+            frequency,
+            crossover_type: crossover_type.to_string(),
+        };
+
+        let plugin = BandSplitPlugin::from_params(channels, &params)
+            .expect("Failed to create BandSplitPlugin");
+
+        let desc = format!("freq={:.0}Hz type={}", frequency, crossover_type);
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct BandMergeFuzzer;
+
+impl PluginFuzzer for BandMergeFuzzer {
+    fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let bands = rng.random_range(2..=4);
+        let output_channels = 2; // Fixed stereo output for fuzzer
+
+        let params = BandMergePluginParams { bands };
+
+        let plugin = BandMergePlugin::from_params(output_channels, &params)
+            .expect("Failed to create BandMergePlugin");
+
+        let desc = format!("bands={} out_ch={}", bands, output_channels);
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct DownmixFuzzer;
+
+impl PluginFuzzer for DownmixFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let params = DownmixPluginParams {
+            input_channels: channels,
+            center_gain_db: rng.random_range(-6.0..3.0),
+            surround_gain_db: rng.random_range(-6.0..3.0),
+            height_gain_db: rng.random_range(-6.0..3.0),
+            lfe_gain_db: rng.random_range(-6.0..3.0),
+            phase_coherence: rng.random_bool(0.5),
+            phase_blend_low_hz: 200.0,
+            phase_blend_high_hz: 500.0,
+        };
+
+        let plugin = DownmixPlugin::from_params(params.clone());
+
+        let desc = format!(
+            "in_ch={} c_g={:.1} s_g={:.1} h_g={:.1} lfe_g={:.1} phase={}",
+            channels, params.center_gain_db, params.surround_gain_db, params.height_gain_db, params.lfe_gain_db, params.phase_coherence
+        );
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct CrossfeedFuzzer;
+
+impl PluginFuzzer for CrossfeedFuzzer {
+    fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        // Crossfeed always takes 2 channels
+        let mode = match rng.random_range(0..3) {
+            0 => CrossfeedMode::Bauer,
+            1 => CrossfeedMode::Meier,
+            _ => CrossfeedMode::Mb,
+        };
+
+        let params = CrossfeedPluginParams {
+            mode,
+            enabled: true,
+            mix: rng.random_range(0.1..1.0),
+            bauer_fcut_hz: rng.random_range(500.0..1000.0),
+            bauer_feed_db: rng.random_range(3.0..9.0),
+            meier_level: rng.random_range(10.0..50.0),
+            ..Default::default()
+        };
+
+        let plugin = CrossfeedPlugin::new(params.clone()).expect("Failed to create CrossfeedPlugin");
+
+        let desc = format!("mode={:?} mix={:.2} bauer_f={:.0}Hz", mode, params.mix, params.bauer_fcut_hz);
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+    }
+}
+
+struct MonoToStereoFuzzer;
+
+impl PluginFuzzer for MonoToStereoFuzzer {
+    fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        // MonoToStereo input is always 1 channel
+        let params = MonoToStereoPluginParams {
+            stereo_width: rng.random_range(0.0..1.0),
+            comp_eq_depth_db: rng.random_range(0.0..6.0),
+        };
+
+        let plugin = MonoToStereoPlugin::from_params(1, params.clone());
+
+        let desc = format!("width={:.2} comp={:.1}dB", params.stereo_width, params.comp_eq_depth_db);
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct PndFuzzer;
+
+impl PluginFuzzer for PndFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let params = PndPluginParams {
+            correction_strength: rng.random_range(0.0..1.0),
+            analysis_window_ms: rng.random_range(20.0..100.0),
+            drift_smoothing: rng.random_range(0.001..0.1),
+        };
+
+        let plugin = PndPlugin::from_params(channels, params.clone());
+
+        let desc = format!("strength={:.2} window={:.1}ms", params.correction_strength, params.analysis_window_ms);
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct ABCompareFuzzer;
+
+impl PluginFuzzer for ABCompareFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let selected_path = if rng.random_bool(0.5) { 0 } else { 1 };
+
+        let params = ABComparePluginParams {
+            selected_path,
+            ..Default::default()
+        };
+
+        let plugin = ABComparePlugin::from_params(channels, params).expect("Failed to create ABComparePlugin");
+
+        let desc = format!("selected_path={}", selected_path);
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct LoudnessMonitorFuzzer;
+
+impl PluginFuzzer for LoudnessMonitorFuzzer {
+    fn create_plugin(&self, channels: usize, _rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let plugin = LoudnessMonitorPlugin::new(channels).expect("Failed to create LoudnessMonitorPlugin");
+        let desc = "loudness_monitor".to_string();
+        (Box::new(plugin), desc)
+    }
+}
+
 fn get_fuzzer(plugin_name: &str, sample_rate: u32) -> Result<Box<dyn PluginFuzzer>, String> {
     match plugin_name.to_lowercase().as_str() {
         "gain" => Ok(Box::new(GainFuzzer)),
@@ -1145,8 +1419,19 @@ fn get_fuzzer(plugin_name: &str, sample_rate: u32) -> Result<Box<dyn PluginFuzze
         "denoiser" | "denoise" => Ok(Box::new(DenoiserFuzzer)),
         "fletcher_munson" | "fletcher" => Ok(Box::new(FletcherMunsonFuzzer)),
         "spectrum" | "spectrum_analyzer" => Ok(Box::new(SpectrumAnalyzerFuzzer)),
+        "xtc" => Ok(Box::new(XtcFuzzer { sample_rate })),
+        "binaural" => Ok(Box::new(BinauralFuzzer { sample_rate })),
+        "convolution" | "conv" => Ok(Box::new(ConvolutionFuzzer { sample_rate })),
+        "bandsplit" => Ok(Box::new(BandSplitFuzzer)),
+        "bandmerge" => Ok(Box::new(BandMergeFuzzer)),
+        "downmix" => Ok(Box::new(DownmixFuzzer)),
+        "crossfeed" => Ok(Box::new(CrossfeedFuzzer)),
+        "monotostereo" | "mono_to_stereo" => Ok(Box::new(MonoToStereoFuzzer)),
+        "pnd" => Ok(Box::new(PndFuzzer)),
+        "abcompare" | "ab_compare" => Ok(Box::new(ABCompareFuzzer)),
+        "loudness_monitor" | "loudness_mon" => Ok(Box::new(LoudnessMonitorFuzzer)),
         _ => Err(format!(
-            "Unknown plugin type: {}. Supported: gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer, expander, multiband_compressor (mbcomp), multiband_expander (mbexp), matrix, channel_mute_solo (mutesolo), denoiser, fletcher_munson (fletcher), spectrum",
+            "Unknown plugin type: {}. Supported: gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer, expander, multiband_compressor (mbcomp), multiband_expander (mbexp), matrix, channel_mute_solo (mutesolo), denoiser, fletcher_munson (fletcher), spectrum, xtc, binaural, convolution, bandsplit, bandmerge, downmix, crossfeed, monotostereo, pnd, abcompare, loudness_monitor",
             plugin_name
         )),
     }

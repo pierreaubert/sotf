@@ -3293,7 +3293,7 @@ mod tests {
         let orig_type = filters[0].filter_type;
 
         // Frequency
-        app.plugin_param_selection = 0;
+        app.plugin_param_selection = 1; // Index 0 is now 'Max Filters'
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
@@ -3303,7 +3303,7 @@ mod tests {
         assert_ne!(filters[0].frequency, orig_freq);
 
         // Q
-        app.plugin_param_selection = 1;
+        app.plugin_param_selection = 2;
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
@@ -3313,7 +3313,7 @@ mod tests {
         assert_ne!(filters[0].q, orig_q);
 
         // Gain
-        app.plugin_param_selection = 2;
+        app.plugin_param_selection = 3;
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
@@ -3323,7 +3323,7 @@ mod tests {
         assert_ne!(filters[0].gain_db, orig_gain);
 
         // Type
-        app.plugin_param_selection = 3;
+        app.plugin_param_selection = 4;
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
@@ -3353,6 +3353,9 @@ mod tests {
             orig_bandpass,
             orig_enable_subharm,
             orig_subharm_gain,
+            orig_subharm_freq,
+            orig_subharm_attack,
+            orig_subharm_release,
             orig_enable_hr_direct,
             orig_hr_sharpen,
             orig_safety_cap_db,
@@ -3370,6 +3373,9 @@ mod tests {
                 bandpass_hz,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
                 enable_hr_direct,
                 hr_sharpen,
                 safety_cap_db,
@@ -3387,6 +3393,9 @@ mod tests {
                 *bandpass_hz,
                 *enable_subharmonic_synth,
                 *subharmonic_gain,
+                *subharmonic_freq_hz,
+                *subharmonic_attack_ms,
+                *subharmonic_release_ms,
                 *enable_hr_direct,
                 *hr_sharpen,
                 *safety_cap_db,
@@ -3395,14 +3404,12 @@ mod tests {
         };
 
         // Indices match new get_params() order:
-        // 0: speaker_config, 1-4: gains, 5: lfe_gain, 6: lfe_cutoff, 7: stereo_width,
-        // 8: center_spread, 9: bandpass, 10: enable_subharm (toggle), 11: subharm_gain,
-        // 12: enable_hr_direct (toggle), 13: hr_sharpen, 14: safety_cap
+        // 0: speaker_config, 1-4: gains, 5: lfe_gain, 6: lfe_cutoff, 7: enable_subharm (toggle),
+        // 8: subharm_gain, 9: subharm_freq, 10: subharm_attack, 11: subharm_release
+        // 12: stereo_width, 13: center_spread, 14: bandpass
         for idx in 0..15 {
             app.plugin_param_selection = idx;
-            // hr_sharpen (13) defaults to 1.0 and safety_cap_db (14) defaults to 3.0, both at max
-            let delta = if idx == 13 || idx == 14 { -1.0 } else { 1.0 };
-            assert!(app.adjust_selected_param(delta));
+            assert!(app.adjust_selected_param(1.0));
         }
 
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
@@ -3419,9 +3426,9 @@ mod tests {
             bandpass_hz,
             enable_subharmonic_synth,
             subharmonic_gain,
-            enable_hr_direct,
-            hr_sharpen,
-            safety_cap_db,
+            subharmonic_freq_hz,
+            subharmonic_attack_ms,
+            subharmonic_release_ms,
             ..
         } = &plugin.settings
         {
@@ -3432,14 +3439,14 @@ mod tests {
             assert_ne!(*height_gain, orig_height_gain);
             assert_ne!(*lfe_gain, orig_lfe_gain);
             assert_ne!(*lfe_cutoff_hz, orig_lfe_cutoff);
+            assert_ne!(*enable_subharmonic_synth, orig_enable_subharm);
+            assert_ne!(*subharmonic_gain, orig_subharm_gain);
+            assert_ne!(*subharmonic_freq_hz, orig_subharm_freq);
+            assert_ne!(*subharmonic_attack_ms, orig_subharm_attack);
+            assert_ne!(*subharmonic_release_ms, orig_subharm_release);
             assert_ne!(*stereo_width, orig_stereo_width);
             assert_ne!(*center_spread, orig_center_spread);
             assert_ne!(*bandpass_hz, orig_bandpass);
-            assert_ne!(*enable_subharmonic_synth, orig_enable_subharm);
-            assert_ne!(*subharmonic_gain, orig_subharm_gain);
-            assert_ne!(*enable_hr_direct, orig_enable_hr_direct);
-            assert_ne!(*hr_sharpen, orig_hr_sharpen);
-            assert_ne!(*safety_cap_db, orig_safety_cap_db);
         } else {
             panic!("Expected Upmixer plugin");
         }

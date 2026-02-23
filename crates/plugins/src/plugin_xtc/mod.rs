@@ -511,12 +511,11 @@ impl XtcPlugin {
 
         let scale = self.output_scale;
         let fft_size = self.fft_size;
+        let mask = self.output_accumulator_mask;
 
         // Diagnostic bypass: skip all XTC filter math, just IFFT the windowed input.
         // This tests whether the STFT framework (windowing + OLA) itself is clean.
         if self.params.bypass_xtc_filters {
-            let mask = self.output_accumulator_mask;
-            
             // Left channel: IFFT the FFT output directly (identity in freq domain)
             self.ifft_input.copy_from_slice(&self.fft_output_l);
             let n = self.ifft_input.len();
@@ -529,7 +528,8 @@ impl XtcPlugin {
             // Accumulate Left
             for i in 0..fft_size {
                 let idx = (self.next_add_position + i) & mask;
-                self.output_accumulator[idx * 2] += self.ifft_output[i] * scale;
+                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
+                self.output_accumulator[idx * 2] += s;
             }
 
             // Right channel
@@ -543,19 +543,10 @@ impl XtcPlugin {
             // Accumulate Right
             for i in 0..fft_size {
                 let idx = (self.next_add_position + i) & mask;
-                self.output_accumulator[idx * 2 + 1] += self.ifft_output[i] * scale;
+                let s = self.ifft_output[i] * self.analysis_window[i] * scale;
+                self.output_accumulator[idx * 2 + 1] += s;
             }
-
-            // Update positions
-            self.next_add_position = (self.next_add_position + self.hop_size) & mask;
-            self.output_accumulator_fill += self.hop_size;
-            return;
-        }
-
-        let is_crossfading = self.crossfade_progress < 1.0 && self.prev_filters.is_some();
-        let mask = self.output_accumulator_mask;
-
-        if is_crossfading {
+        } else if self.crossfade_progress < 1.0 && self.prev_filters.is_some() {
             let alpha = self.crossfade_progress;
             let prev_filters = self.prev_filters.as_ref().unwrap();
             // Single atomic load for both L and R channels (guarantees filter consistency)
@@ -588,7 +579,8 @@ impl XtcPlugin {
             for i in 0..fft_size {
                 let val = (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
                 let idx = (self.next_add_position + i) & mask;
-                self.output_accumulator[idx * 2] += val * scale;
+                let s = val * self.analysis_window[i] * scale;
+                self.output_accumulator[idx * 2] += s;
             }
 
             // --- Right channel with crossfade ---
@@ -618,7 +610,8 @@ impl XtcPlugin {
             for i in 0..fft_size {
                 let val = (1.0 - alpha) * self.prev_ifft_output[i] + alpha * self.ifft_output[i];
                 let idx = (self.next_add_position + i) & mask;
-                self.output_accumulator[idx * 2 + 1] += val * scale;
+                let s = val * self.analysis_window[i] * scale;
+                self.output_accumulator[idx * 2 + 1] += s;
             }
         } else {
             // Normal path: no crossfade needed

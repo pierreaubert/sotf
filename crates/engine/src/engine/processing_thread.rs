@@ -747,7 +747,7 @@ fn create_plugin(
                 .map_err(|e| format!("Failed to parse EQ plugin parameters: {}", e))?;
 
             let plugin = EqPlugin::from_params(channels, sample_rate, params)?;
-            Ok(Box::new(plugin))
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "compressor" => {
@@ -792,7 +792,7 @@ fn create_plugin(
 
             let plugin = ConvolutionPlugin::from_params(channels, sample_rate, params)
                 .map_err(|e| format!("Failed to create convolution plugin: {}", e))?;
-            Ok(Box::new(plugin))
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "gate" => {
@@ -855,7 +855,7 @@ fn create_plugin(
                 })?;
 
             let plugin = LoudnessCompensationPlugin::from_params(channels, params)?;
-            Ok(Box::new(plugin))
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "fletcher_munson" => {
@@ -1157,7 +1157,7 @@ fn create_plugin(
             let params: CrossfeedPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse crossfeed plugin parameters: {}", e))?;
 
-            let plugin = CrossfeedPlugin::from_params(params)
+            let plugin = CrossfeedPlugin::new(params)
                 .map_err(|e| format!("Failed to create crossfeed plugin: {}", e))?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }

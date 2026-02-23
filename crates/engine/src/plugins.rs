@@ -792,17 +792,41 @@ fn default_xtc_head_shadow_cutoff_hz() -> f64 {
 fn default_xtc_head_shadow_slope() -> f64 {
     6.0
 }
+
 fn default_xtc_max_gain_db() -> f64 {
     12.0
 }
+
 fn default_xtc_auto_gain_enabled() -> bool {
     true
 }
+
 fn default_xtc_auto_gain_max_db() -> f64 {
-    12.0
+    24.0
 }
+
 fn default_xtc_auto_gain_smoothing_ms() -> f64 {
     100.0
+}
+
+fn default_xtc_room_width() -> f64 {
+    4.0
+}
+
+fn default_xtc_room_depth() -> f64 {
+    5.0
+}
+
+fn default_xtc_wall_absorption() -> f64 {
+    0.3
+}
+
+fn default_xtc_reflection_beta_boost() -> f64 {
+    3.0
+}
+
+fn default_xtc_head_tracking_smooth_s() -> f64 {
+    0.1
 }
 
 // Denoiser defaults
@@ -842,6 +866,21 @@ fn default_denoiser_dd_enabled() -> bool {
 }
 fn default_denoiser_dd_alpha() -> f64 {
     0.98
+}
+fn default_denoiser_mcra_alpha_s() -> f64 {
+    0.9
+}
+fn default_denoiser_mcra_alpha_p() -> f64 {
+    0.7
+}
+fn default_denoiser_mcra_l() -> usize {
+    50
+}
+fn default_denoiser_mcra_delta() -> f64 {
+    5.0
+}
+fn default_denoiser_crack_sensitivity() -> f64 {
+    10.0
 }
 
 // PND defaults
@@ -1365,6 +1404,28 @@ pub enum PluginSettings {
         #[serde(default = "default_xtc_max_gain_db")]
         max_gain_db: f64,
         #[serde(default)]
+        head_offset_x: f64,
+        #[serde(default)]
+        head_offset_z: f64,
+        #[serde(default)]
+        head_yaw_deg: f64,
+        #[serde(default = "default_xtc_head_tracking_smooth_s")]
+        head_tracking_smooth_s: f64,
+        #[serde(default)]
+        spectral_normalization: bool,
+        #[serde(default)]
+        room_reflections_enabled: bool,
+        #[serde(default)]
+        room_ir_file: Option<String>,
+        #[serde(default = "default_xtc_room_width")]
+        room_width_m: f64,
+        #[serde(default = "default_xtc_room_depth")]
+        room_depth_m: f64,
+        #[serde(default = "default_xtc_wall_absorption")]
+        wall_absorption: f64,
+        #[serde(default = "default_xtc_reflection_beta_boost")]
+        reflection_beta_boost: f64,
+        #[serde(default)]
         bypass_xtc_filters: bool,
         #[serde(default)]
         bypass_spectral_normalization: bool,
@@ -1376,6 +1437,8 @@ pub enum PluginSettings {
         auto_gain_max_db: f64,
         #[serde(default = "default_xtc_auto_gain_smoothing_ms")]
         auto_gain_smoothing_ms: f64,
+        #[serde(default)]
+        pinna_model_enabled: bool,
     },
     Denoiser {
         #[serde(default = "default_denoiser_reduction_db")]
@@ -1392,6 +1455,16 @@ pub enum PluginSettings {
         low_latency: bool,
         #[serde(default = "default_denoiser_polyphonic_detection")]
         polyphonic_detection: bool,
+        #[serde(default = "default_denoiser_crack_sensitivity")]
+        crack_sensitivity: f64,
+        #[serde(default = "default_denoiser_mcra_alpha_s")]
+        mcra_alpha_s: f64,
+        #[serde(default = "default_denoiser_mcra_alpha_p")]
+        mcra_alpha_p: f64,
+        #[serde(default = "default_denoiser_mcra_l")]
+        mcra_l: usize,
+        #[serde(default = "default_denoiser_mcra_delta")]
+        mcra_delta: f64,
         #[serde(default = "default_denoiser_transparency")]
         transparency: f64,
         #[serde(default = "default_denoiser_dd_enabled")]
@@ -1400,8 +1473,12 @@ pub enum PluginSettings {
         dd_alpha: f64,
         #[serde(default = "default_denoiser_psychoacoustic_masking")]
         psychoacoustic_masking: bool,
+        #[serde(default)]
+        learn_noise: bool,
         #[serde(default = "default_denoiser_use_captured_profile")]
         use_captured_profile: bool,
+        #[serde(default)]
+        clear_profile: bool,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -2132,12 +2209,24 @@ impl PluginSettings {
                 head_shadow_cutoff_hz,
                 head_shadow_slope_db_per_octave,
                 max_gain_db,
+                head_offset_x,
+                head_offset_z,
+                head_yaw_deg,
+                head_tracking_smooth_s,
+                spectral_normalization,
+                room_reflections_enabled,
+                room_ir_file,
+                room_width_m,
+                room_depth_m,
+                wall_absorption,
+                reflection_beta_boost,
                 bypass_xtc_filters,
                 bypass_spectral_normalization,
                 bypass_neumann_refinement,
                 auto_gain_enabled,
                 auto_gain_max_db,
                 auto_gain_smoothing_ms,
+                pinna_model_enabled,
             } => PluginConfig::new(
                 "xtc",
                 json!({
@@ -2150,12 +2239,24 @@ impl PluginSettings {
                     "head_shadow_cutoff_hz": head_shadow_cutoff_hz,
                     "head_shadow_slope_db_per_octave": head_shadow_slope_db_per_octave,
                     "max_gain_db": max_gain_db,
+                    "head_offset_x": head_offset_x,
+                    "head_offset_z": head_offset_z,
+                    "head_yaw_deg": head_yaw_deg,
+                    "head_tracking_smooth_s": head_tracking_smooth_s,
+                    "spectral_normalization": spectral_normalization,
+                    "room_reflections_enabled": room_reflections_enabled,
+                    "room_ir_file": room_ir_file,
+                    "room_width_m": room_width_m,
+                    "room_depth_m": room_depth_m,
+                    "wall_absorption": wall_absorption,
+                    "reflection_beta_boost": reflection_beta_boost,
                     "bypass_xtc_filters": bypass_xtc_filters,
                     "bypass_spectral_normalization": bypass_spectral_normalization,
                     "bypass_neumann_refinement": bypass_neumann_refinement,
                     "auto_gain_enabled": auto_gain_enabled,
                     "auto_gain_max_db": auto_gain_max_db,
                     "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
+                    "pinna_model_enabled": pinna_model_enabled,
                 }),
             ),
             Self::Denoiser {
@@ -2166,11 +2267,18 @@ impl PluginSettings {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
+                crack_sensitivity,
+                mcra_alpha_s,
+                mcra_alpha_p,
+                mcra_l,
+                mcra_delta,
                 transparency,
                 dd_enabled,
                 dd_alpha,
                 psychoacoustic_masking,
+                learn_noise,
                 use_captured_profile,
+                clear_profile,
             } => PluginConfig::new(
                 "denoiser",
                 json!({
@@ -2181,11 +2289,18 @@ impl PluginSettings {
                     "release_ms": release_ms,
                     "low_latency": low_latency,
                     "polyphonic_detection": polyphonic_detection,
+                    "crack_sensitivity": crack_sensitivity,
+                    "mcra_alpha_s": mcra_alpha_s,
+                    "mcra_alpha_p": mcra_alpha_p,
+                    "mcra_l": mcra_l,
+                    "mcra_delta": mcra_delta,
                     "transparency": transparency,
                     "dd_enabled": dd_enabled,
                     "dd_alpha": dd_alpha,
                     "psychoacoustic_masking": psychoacoustic_masking,
+                    "learn_noise": learn_noise,
                     "use_captured_profile": use_captured_profile,
+                    "clear_profile": clear_profile,
                 }),
             ),
             Self::Pnd {
@@ -2523,12 +2638,24 @@ impl PluginSettings {
                 head_shadow_cutoff_hz: default_xtc_head_shadow_cutoff_hz(),
                 head_shadow_slope_db_per_octave: default_xtc_head_shadow_slope(),
                 max_gain_db: default_xtc_max_gain_db(),
+                head_offset_x: 0.0,
+                head_offset_z: 0.0,
+                head_yaw_deg: 0.0,
+                head_tracking_smooth_s: default_xtc_head_tracking_smooth_s(),
+                spectral_normalization: true,
+                room_reflections_enabled: false,
+                room_ir_file: None,
+                room_width_m: default_xtc_room_width(),
+                room_depth_m: default_xtc_room_depth(),
+                wall_absorption: default_xtc_wall_absorption(),
+                reflection_beta_boost: default_xtc_reflection_beta_boost(),
                 bypass_xtc_filters: false,
                 bypass_spectral_normalization: false,
                 bypass_neumann_refinement: false,
                 auto_gain_enabled: default_xtc_auto_gain_enabled(),
                 auto_gain_max_db: default_xtc_auto_gain_max_db(),
                 auto_gain_smoothing_ms: default_xtc_auto_gain_smoothing_ms(),
+                pinna_model_enabled: false,
             },
             PluginType::Denoiser => Self::Denoiser {
                 reduction_db: default_denoiser_reduction_db(),
@@ -2538,11 +2665,18 @@ impl PluginSettings {
                 release_ms: default_denoiser_release_ms(),
                 low_latency: default_denoiser_low_latency(),
                 polyphonic_detection: default_denoiser_polyphonic_detection(),
+                crack_sensitivity: default_denoiser_crack_sensitivity(),
+                mcra_alpha_s: default_denoiser_mcra_alpha_s(),
+                mcra_alpha_p: default_denoiser_mcra_alpha_p(),
+                mcra_l: default_denoiser_mcra_l(),
+                mcra_delta: default_denoiser_mcra_delta(),
                 transparency: default_denoiser_transparency(),
                 dd_enabled: default_denoiser_dd_enabled(),
                 dd_alpha: default_denoiser_dd_alpha(),
                 psychoacoustic_masking: default_denoiser_psychoacoustic_masking(),
+                learn_noise: false,
                 use_captured_profile: default_denoiser_use_captured_profile(),
+                clear_profile: false,
             },
             PluginType::Pnd => Self::Pnd {
                 correction_strength: default_pnd_correction_strength(),

@@ -77,8 +77,7 @@ impl MonoToStereoPlugin {
             })
             .collect();
 
-        // 75% overlap analysis-only scaling: sum(w) = 2.0 * N
-        // 75% overlap dual-window scaling: Sum(w^2) = (N/H) * (3/8) = 1.5
+        // 75% overlap dual-window scaling: Sum(w^2) = 1.5
         let output_scale = 1.0 / (FFT_SIZE as f32 * 1.5);
 
         Self {
@@ -123,6 +122,9 @@ impl MonoToStereoPlugin {
             let freq = i as f32 * self.sample_rate as f32 / FFT_SIZE as f32;
             if freq >= 300.0 && freq <= 15000.0 {
                 let phase = rng.gen_range(0.0..2.0 * std::f32::consts::PI);
+                if i == 100 {
+                    // println!("DEBUG: bin 100 phase={}", phase);
+                }
                 self.decorrelation_filter[i] = Complex::from_polar(1.0, phase);
             } else {
                 self.decorrelation_filter[i] = Complex::new(1.0, 0.0);
@@ -240,13 +242,19 @@ impl Plugin for MonoToStereoPlugin {
 
             let to_drain = self.output_accumulator_fill.min(nf - output_pos);
             if to_drain > 0 {
+                // Decorrelation energy correction factor (sqrt(Sum(w^2)/Sum(w^4)))
+                // For 75% overlap Hann, this is approximately 1.17.
+                let decor_gain = 1.17;
+
                 for i in 0..to_drain {
                     let read_idx = (self.output_read_position + i) & mask;
                     let width = self.stereo_width.next();
                     let orig = self.output_accumulator[read_idx * 2];
-                    let decor = self.output_accumulator[read_idx * 2 + 1];
+                    let decor = self.output_accumulator[read_idx * 2 + 1] * decor_gain;
+                    
                     output[(output_pos + i) * 2] = orig;
                     output[(output_pos + i) * 2 + 1] = orig * (1.0 - width) + decor * width;
+                    
                     self.output_accumulator[read_idx * 2] = 0.0;
                     self.output_accumulator[read_idx * 2 + 1] = 0.0;
                 }
