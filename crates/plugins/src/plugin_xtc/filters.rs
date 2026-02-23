@@ -229,13 +229,9 @@ pub(crate) fn compute_xtc_filters_full_with_cache(
         f
     };
 
-    // Post-processing: spectral energy normalization to prevent tonal imbalance
-    if params.spectral_normalization && !params.bypass_spectral_normalization {
-        apply_spectral_normalization(&mut filters, num_bins);
-    }
-
     // Sanitize filter coefficients (NaN/Inf guard)
     sanitize_filter(&mut filters.filter_ll);
+
     sanitize_filter(&mut filters.filter_lr);
     if let Some(ref mut rl) = filters.filter_rl {
         sanitize_filter(rl);
@@ -260,52 +256,6 @@ pub(crate) fn sanitize_filter(filter: &mut [Complex<f32>]) {
         }
         if !c.im.is_finite() {
             c.im = 0.0;
-        }
-    }
-}
-
-// ============================================================================
-// Spectral normalization
-// ============================================================================
-
-/// Apply spectral energy normalization to XTC filters.
-///
-/// XTC processing can create spectral tilt (boosting some frequencies, attenuating others).
-/// This normalizes the average energy per bin to keep tonal balance close to the original signal.
-/// Uses a gentle smoothed approach to avoid introducing artifacts.
-fn apply_spectral_normalization(filters: &mut XtcFilters, num_bins: usize) {
-    let mut gains = vec![1.0_f32; num_bins];
-    let is_asymmetric = filters.filter_rl.is_some();
-
-    for bin in 1..num_bins - 1 {
-        // Target unity gain for the diagonal (ipsilateral) filters.
-        // This ensures the main signal level is preserved while XTC adds/subtracts.
-        let mag_l = filters.filter_ll[bin].norm();
-
-        let mag_r = if is_asymmetric {
-            filters.filter_rr.as_ref().unwrap()[bin].norm()
-        } else {
-            mag_l
-        };
-
-        let avg_mag = (mag_l + mag_r) / 2.0;
-
-        if avg_mag > 0.01 {
-            let correction = (1.0 / avg_mag).clamp(0.5, 4.0);
-            gains[bin] = 1.0 + 0.9 * (correction - 1.0);
-        }
-    }
-
-    // Second pass: apply gains
-    for bin in 1..num_bins - 1 {
-        let gain = gains[bin];
-        filters.filter_ll[bin] *= gain;
-        filters.filter_lr[bin] *= gain;
-        if let Some(ref mut rl) = filters.filter_rl {
-            rl[bin] *= gain;
-        }
-        if let Some(ref mut rr) = filters.filter_rr {
-            rr[bin] *= gain;
         }
     }
 }
@@ -422,7 +372,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
         // Speaker R -> Ear L: h_ll_contra_final
         // Speaker L -> Ear R: h_rr_contra_final
         // Speaker R -> Ear R: h_rr_ipsi_final
-        let (w_ll, w_lr, w_rl, w_rr) = compute_full_2x2_inverse(
+        let (mut w_ll, mut w_lr, mut w_rl, mut w_rr) = compute_full_2x2_inverse(
             h_ll_ipsi_final,
             h_ll_contra_final,
             h_rr_contra_final,
@@ -430,6 +380,27 @@ fn compute_xtc_filters_asymmetric_with_cache(
             beta,
             max_gain_linear,
         );
+
+        // Per-bin spectral normalization: target unity gain for the estimated ear response.
+        if params.spectral_normalization && !params.bypass_spectral_normalization {
+            // Left Ear response for unit Left Input (L_in = 1, R_in = 0)
+            let ear_l = w_ll * h_ll_ipsi_final + w_lr * h_ll_contra_final;
+            let mag_l = ear_l.norm();
+            if mag_l > 0.01 {
+                let gain_l = 1.0 + 0.9 * ((1.0 / mag_l).clamp(0.5, 4.0) - 1.0);
+                w_ll *= gain_l;
+                w_lr *= gain_l;
+            }
+
+            // Right Ear response for unit Right Input (L_in = 0, R_in = 1)
+            let ear_r = w_rl * h_rr_contra_final + w_rr * h_rr_ipsi_final;
+            let mag_r = ear_r.norm();
+            if mag_r > 0.01 {
+                let gain_r = 1.0 + 0.9 * ((1.0 / mag_r).clamp(0.5, 4.0) - 1.0);
+                w_rl *= gain_r;
+                w_rr *= gain_r;
+            }
+        }
 
         filter_ll[bin] = w_ll;
         filter_lr[bin] = w_lr;
@@ -531,7 +502,22 @@ fn compute_xtc_filters_symmetric_with_cache(
         };
 
         // Use shared 2x2 inverse computation with gain clamping
-        let (w_ll, w_lr) = compute_2x2_inverse(h_ipsi_final, h_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
+        let (mut w_ll, mut w_lr) = compute_2x2_inverse(h_ipsi_final, h_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
+
+        // Per-bin spectral normalization: target unity gain for the estimated ear response.
+        // This compensates for attenuation introduced by regularization (beta),
+        // preventing dull/mono-like sound at low frequencies.
+        if params.spectral_normalization && !params.bypass_spectral_normalization {
+            let ear_response = w_ll * h_ipsi_final + w_lr * h_contra_final;
+            let mag = ear_response.norm();
+            if mag > 0.01 {
+                // Gentle correction: 90% of the way to unity.
+                let correction = (1.0 / mag).clamp(0.5, 4.0);
+                let gain = 1.0 + 0.9 * (correction - 1.0);
+                w_ll *= gain;
+                w_lr *= gain;
+            }
+        }
 
         filter_ll[bin] = w_ll;
         filter_lr[bin] = w_lr;

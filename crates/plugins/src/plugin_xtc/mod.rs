@@ -37,7 +37,7 @@ use reflections::{
     build_reflection_data_image_source, build_reflection_data_ir, RoomReflectionData,
 };
 
-use super::auto_gain::{AutoGain, AutoGainParams};
+use super::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
@@ -47,9 +47,18 @@ use super::simd::{
 use arc_swap::ArcSwap;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
+use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::f32::consts::PI;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
+/// Diagnostic data from XTC plugin.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct XtcData {
+    pub auto_gain: Option<AutoGainData>,
+    pub limiter_envelope: f32,
+}
 
 // ============================================================================
 // Helper functions for Optimization 4: Room reflection caching
@@ -991,6 +1000,14 @@ impl Plugin for XtcPlugin {
         } else {
             None
         }
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        let ag_data = self.auto_gain.as_ref().map(|ag| ag.get_data());
+        Some(Arc::new(XtcData {
+            auto_gain: ag_data,
+            limiter_envelope: self.limiter_envelope,
+        }))
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
