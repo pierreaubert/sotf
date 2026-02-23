@@ -86,7 +86,6 @@ pub use multi_speaker::{
     DriverDspChain,
     DspChainOutput,
     FirConfig,
-    GroupDelayConfig,
     MeasurementSource,
     MultiSubGroup,
     OptimizationMetadata,

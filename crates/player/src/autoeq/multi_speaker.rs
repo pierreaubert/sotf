@@ -65,7 +65,6 @@ pub use autoeq::roomeq::{
     DBAConfig,
     DriverDspChain,
     FirConfig,
-    GroupDelayConfig,
     MeasurementSource,
     MultiSubGroup,
     OptimizationMetadata,
@@ -286,7 +285,6 @@ pub fn run_multi_speaker_optimization(
         speakers: speakers_map,
         crossovers: None,
         target_curve: None,
-        group_delay: None,
         optimizer: OptimizerConfig {
             loss_type: format!("{:?}", config.args.loss).to_lowercase(),
             algorithm: config.args.algo.clone(),
@@ -436,7 +434,6 @@ pub fn build_room_config_from_curves(
         speakers: speakers_map,
         crossovers: None,
         target_curve: None,
-        group_delay: None,
         optimizer,
         recording_config: None,
     }

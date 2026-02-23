@@ -1125,23 +1125,52 @@ impl MusicLibrary {
 
                     match extract_metadata(path) {
                         Ok(metadata) => {
-                            let raw_album_title = metadata
-                                .album
-                                .clone()
-                                .unwrap_or_else(|| "Unknown Album".to_string());
+                            // When a track has no album tag, create a standalone
+                            // single-track album keyed by file path so that loose
+                            // files are not all lumped into one giant "Unknown Album".
+                            let has_album_tag = metadata.album.is_some();
+
+                            let raw_album_title = if has_album_tag {
+                                metadata.album.clone().unwrap()
+                            } else {
+                                // Use track title (or filename) as the standalone album name.
+                                // Prepend the parent directory name to disambiguate tracks
+                                // with identical titles in different folders.
+                                let track_name = metadata
+                                    .title
+                                    .clone()
+                                    .unwrap_or_else(|| {
+                                        path.file_stem()
+                                            .map(|s| s.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| "Unknown".to_string())
+                                    });
+                                let parent_name = path
+                                    .parent()
+                                    .and_then(|p| p.file_name())
+                                    .map(|n| n.to_string_lossy().to_string());
+                                match parent_name {
+                                    Some(dir) => format!("{} - {}", dir, track_name),
+                                    None => track_name,
+                                }
+                            };
 
                             let album_title = clean_album_title(&raw_album_title);
 
-                            // Albums are now keyed by title only - artist comes from tracks
-                            let normalized_title = normalize_album_key(&album_title);
+                            let key = if has_album_tag {
+                                // Albums are keyed by title only - artist comes from tracks
+                                let normalized_title = normalize_album_key(&album_title);
 
-                            // Include edition in key to separate versions
-                            let edition_key = metadata
-                                .edition
-                                .as_ref()
-                                .map(|e| normalize_album_key(e))
-                                .unwrap_or_default();
-                            let key = format!("{}|{}", normalized_title, edition_key);
+                                // Include edition in key to separate versions
+                                let edition_key = metadata
+                                    .edition
+                                    .as_ref()
+                                    .map(|e| normalize_album_key(e))
+                                    .unwrap_or_default();
+                                format!("{}|{}", normalized_title, edition_key)
+                            } else {
+                                // Unique key per file so each loose track is its own album
+                                format!("__standalone__|{}", path.to_string_lossy())
+                            };
 
                             let album = album_map.entry(key).or_insert_with(|| {
                                 // Capitalize first letter of each word for nice display
@@ -2466,6 +2495,40 @@ mod tests {
 
         let result = find_album_art(temp_dir.path());
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_standalone_tracks_not_merged() {
+        // Standalone tracks (no album tag) with different titles should stay separate
+        let make_standalone = |title: &str, path: &str| -> Album {
+            let mut album = create_test_album(title, "Artist X", 1);
+            album.tracks[0].path = PathBuf::from(path);
+            album.tracks[0].title = Some(title.to_string());
+            album
+        };
+        let album_a = make_standalone("MyFolder - Song A", "/music/MyFolder/song_a.flac");
+        let album_b = make_standalone("MyFolder - Song B", "/music/MyFolder/song_b.flac");
+
+        let albums = vec![album_a, album_b];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(merged.len(), 2, "Standalone tracks with different titles must not merge");
+    }
+
+    #[test]
+    fn test_real_albums_still_merge() {
+        // Tracks that DO have a real album tag should still merge normally
+        let album1 = create_test_album("Abbey Road (CD 1)", "The Beatles", 1);
+        let mut album2 = create_test_album("Abbey Road (CD 2)", "The Beatles", 2);
+        album2.tracks[0].title = Some("Here Comes The Sun".to_string());
+
+        let albums = vec![album1, album2];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(merged.len(), 1, "Real albums with same title should merge");
+        assert_eq!(merged[0].tracks.len(), 2);
     }
 }
 

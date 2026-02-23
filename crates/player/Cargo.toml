@@ -38,6 +38,7 @@ num-complex = { workspace = true }
 
 # common stuff
 anyhow = { workspace = true }
+md-5 = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 directories = { workspace = true }

@@ -2768,6 +2768,20 @@ pub fn backup_existing_database<P: AsRef<Path>>(
         None => return Ok(()),
     };
 
+    // Compute MD5 of the current database
+    let current_hash = md5_of_file(db_path)?;
+
+    // Find the most recent backup and compare hashes
+    if let Some(latest_backup) = find_latest_backup(&dir) {
+        crate::security::validate_config_read_path(&latest_backup)?;
+        if let Ok(backup_hash) = md5_of_file(&latest_backup) {
+            if current_hash == backup_hash {
+                log::debug!("Database unchanged since last backup, skipping");
+                return Ok(());
+            }
+        }
+    }
+
     let now = Local::now().naive_local();
     let filename = format!("music-{}.sqlite", now.format("%Y%m%d-%H%M%S"));
     let backup_path = dir.join(filename);
@@ -2783,6 +2797,37 @@ pub fn backup_existing_database<P: AsRef<Path>>(
     }
 
     Ok(())
+}
+
+/// Compute the MD5 hash of a file, reading in 8 KiB chunks.
+fn md5_of_file(path: &Path) -> Result<[u8; 16], std::io::Error> {
+    use md5::{Digest, Md5};
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Md5::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().into())
+}
+
+/// Find the most recent backup file in the given directory.
+fn find_latest_backup(dir: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let path = entry.path();
+            parse_backup_timestamp(&path).map(|ts| (path, ts))
+        })
+        .max_by_key(|(_, ts)| *ts)
+        .map(|(path, _)| path)
 }
 
 fn parse_backup_timestamp(path: &Path) -> Option<NaiveDateTime> {
@@ -2976,5 +3021,74 @@ mod tests {
 
         // Cleanup
         std::fs::remove_dir_all(&test_dir).ok();
+    }
+
+    #[test]
+    fn test_md5_of_file() {
+        let dir = std::env::temp_dir().join("sotf_test_md5");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.bin");
+        std::fs::write(&path, b"hello world").unwrap();
+
+        let hash = md5_of_file(&path).unwrap();
+        // MD5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
+        assert_eq!(
+            hash,
+            [0x5e, 0xb6, 0x3b, 0xbb, 0xe0, 0x1e, 0xee, 0xd0, 0x93, 0xcb, 0x22, 0xbb, 0x8f, 0x5a, 0xcd, 0xc3]
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_backup_skips_duplicate() {
+        let config_dir = match crate::config::get_app_config_dir() {
+            Some(dir) => dir,
+            None => {
+                eprintln!("Skipping test: could not get config directory");
+                return;
+            }
+        };
+
+        let test_dir = config_dir.join("test_backup_dedup");
+        // Clean up from any previous failed run
+        std::fs::remove_dir_all(&test_dir).ok();
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        let db_path = test_dir.join("music.db");
+        std::fs::write(&db_path, b"unchanged content").unwrap();
+
+        // First backup should create a file
+        backup_existing_database(&db_path).unwrap();
+        let count_after_first = count_backups(&test_dir);
+        assert_eq!(count_after_first, 1);
+
+        // Second backup with same content should NOT create another file
+        // Sleep 1 second so timestamp would differ
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        backup_existing_database(&db_path).unwrap();
+        let count_after_second = count_backups(&test_dir);
+        assert_eq!(count_after_second, 1, "duplicate backup should be skipped");
+
+        // Modify the database — next backup SHOULD create a new file
+        std::fs::write(&db_path, b"modified content").unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        backup_existing_database(&db_path).unwrap();
+        let count_after_third = count_backups(&test_dir);
+        assert_eq!(count_after_third, 2, "changed database should produce a new backup");
+
+        // Cleanup
+        std::fs::remove_dir_all(&test_dir).ok();
+    }
+
+    fn count_backups(dir: &Path) -> usize {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().into_string().unwrap_or_default();
+                name.starts_with("music-") && name.ends_with(".sqlite")
+            })
+            .count()
     }
 }

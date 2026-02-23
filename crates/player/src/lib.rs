@@ -1,5 +1,9 @@
 #![allow(clippy::collapsible_if)]
 pub mod autoeq;
+pub mod headphone_eq_types;
+pub mod recording_types;
+pub mod room_eq_types;
+pub mod spinorama_eq_types;
 /// Shared business logic for SOTF audio players (TUI, GPUI, etc.)
 ///
 /// This crate provides:
@@ -25,7 +29,7 @@ pub mod replay_gain_scanner;
 // Backward compatibility alias
 pub use autoeq as room_eq;
 pub mod security;
-pub mod tui_params;
+pub mod ui_params;
 pub mod waveform_scanner;
 
 // Re-export commonly used types
