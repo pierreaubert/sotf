@@ -6,8 +6,10 @@ from .figures import (
     create_channel_figure,
     create_zoomed_figure,
     create_eq_figure,
+    create_ir_figure,
     create_combined_figure,
 )
+from .data_extract import get_channel_sort_key
 
 
 def create_html_report(
@@ -22,9 +24,13 @@ def create_html_report(
         output_path: Path to write HTML report
         output_json_path: Path to output JSON (for resolving relative paths)
     """
-    channels = data.get("channels", {})
+    channels_dict = data.get("channels", {})
     metadata = data.get("metadata", {})
     version = data.get("version", "unknown")
+
+    # Sort channels by classical order
+    sorted_channel_names = sorted(channels_dict.keys(), key=get_channel_sort_key)
+    channels = [(name, channels_dict[name]) for name in sorted_channel_names]
 
     # Short name for title: parent_dir/filename
     if output_json_path:
@@ -111,11 +117,11 @@ def create_html_report(
             }
         }
         .filters-section {
-            background: white;
+            background: #fdfdfd;
             padding: 15px 20px;
             border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-top: 20px;
+            border: 1px solid #eee;
         }
         .filters-section h3 {
             margin-top: 0;
@@ -130,15 +136,68 @@ def create_html_report(
             overflow-x: auto;
         }
         .channel-section {
-            border-left: 4px solid #4a90d9;
-            padding-left: 15px;
-            margin-bottom: 30px;
+            padding: 10px 0;
         }
-        .channel-section h2 {
-            margin-top: 0;
+        
+        /* Tabs styles */
+        .tabs-container {
+            margin-top: 30px;
+        }
+        .tab-header {
+            display: flex;
+            flex-wrap: wrap;
+            background: #e0e0e0;
+            padding: 10px 10px 0;
+            border-radius: 8px 8px 0 0;
+            gap: 2px;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: #d0d0d0;
+            cursor: pointer;
+            border-radius: 5px 5px 0 0;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            background: #c0c0c0;
+        }
+        .tab-btn.active {
+            background: white;
             color: #4a90d9;
+            border-top: 3px solid #4a90d9;
+        }
+        .tab-content {
+            display: none;
+            background: white;
+            padding: 20px;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .tab-content.active {
+            display: block;
         }
     </style>
+    <script>
+        function openChannel(evt, channelId) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tab-content");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].classList.remove("active");
+            }
+            tablinks = document.getElementsByClassName("tab-btn");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].classList.remove("active");
+            }
+            document.getElementById(channelId).classList.add("active");
+            evt.currentTarget.classList.add("active");
+            
+            // Trigger resize to fix Plotly plots in the newly visible tab
+            window.dispatchEvent(new Event('resize'));
+        }
+    </script>
 </head>
 <body>
     <div class="container">
@@ -202,8 +261,18 @@ def create_html_report(
 """
     )
 
-    # Individual channel sections
-    for channel_name, channel_data in channels.items():
+    # Individual channel sections in tabs
+    html_parts.append('<div class="tabs-container">\n')
+    html_parts.append('    <div class="tab-header">\n')
+    for i, (channel_name, _) in enumerate(channels):
+        active_class = " active" if i == 0 else ""
+        safe_id = f"channel_{i}"
+        html_parts.append(f'        <button class="tab-btn{active_class}" onclick="openChannel(event, \'{safe_id}\')">{channel_name}</button>\n')
+    html_parts.append('    </div>\n')
+
+    for i, (channel_name, channel_data) in enumerate(channels):
+        active_class = " active" if i == 0 else ""
+        safe_id = f"channel_{i}"
         initial_curve = channel_data.get("initial_curve")
         final_curve = channel_data.get("final_curve")
 
@@ -217,8 +286,9 @@ def create_html_report(
 
         html_parts.append(
             f"""
-        <div class="channel-section">
-            <h2>Channel: {channel_name}</h2>
+        <div id="{safe_id}" class="tab-content{active_class}">
+            <div class="channel-section">
+                <h2>Channel: {channel_name}</h2>
 """
         )
 
@@ -232,14 +302,14 @@ def create_html_report(
 
         html_parts.append(
             f"""
-            <div class="plot-row">
-                <div class="plot-container">
-                    {full_html}
+                <div class="plot-row">
+                    <div class="plot-container">
+                        {full_html}
+                    </div>
+                    <div class="plot-container">
+                        {zoom_html}
+                    </div>
                 </div>
-                <div class="plot-container">
-                    {zoom_html}
-                </div>
-            </div>
 """
         )
 
@@ -249,9 +319,25 @@ def create_html_report(
             eq_html = fig_eq.to_html(full_html=False, include_plotlyjs=False)
             html_parts.append(
                 f"""
-            <div class="plot-container">
-                {eq_html}
-            </div>
+                <div class="plot-container">
+                    {eq_html}
+                </div>
+"""
+            )
+
+        # IR waveform plot
+        fig_ir = create_ir_figure(
+            channel_name,
+            channel_data.get("pre_ir"),
+            channel_data.get("post_ir"),
+        )
+        if fig_ir:
+            ir_html = fig_ir.to_html(full_html=False, include_plotlyjs=False)
+            html_parts.append(
+                f"""
+                <div class="plot-container">
+                    {ir_html}
+                </div>
 """
             )
 
@@ -259,31 +345,34 @@ def create_html_report(
         if eq_filters:
             html_parts.append(
                 f"""
-            <div class="filters-section">
-                <h3>EQ Filters</h3>
-                <div class="filter-list">
+                <div class="filters-section">
+                    <h3>EQ Filters</h3>
+                    <div class="filter-list">
 """
             )
-            for i, f in enumerate(eq_filters, 1):
+            for j, f in enumerate(eq_filters, 1):
                 filter_type = f.get("filter_type", "peak")
                 freq = f.get("freq", 0)
                 q = f.get("q", 1)
                 gain = f.get("db_gain", 0)
                 html_parts.append(
-                    f"Filter {i}: {filter_type.upper()} @ {freq:.1f} Hz, Q={q:.2f}, Gain={gain:+.1f} dB<br>\n"
+                    f"Filter {j}: {filter_type.upper()} @ {freq:.1f} Hz, Q={q:.2f}, Gain={gain:+.1f} dB<br>\n"
                 )
             html_parts.append(
                 """
+                    </div>
                 </div>
-            </div>
 """
             )
 
         html_parts.append(
             """
+            </div>
         </div>
 """
         )
+
+    html_parts.append('</div><!-- tabs-container -->\n')
 
     # Close HTML
     html_parts.append(

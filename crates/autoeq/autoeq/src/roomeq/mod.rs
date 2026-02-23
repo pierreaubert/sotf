@@ -83,6 +83,7 @@ pub use spectral_align::{
 };
 
 // Utility modules
+mod ir_waveform;
 mod phase_utils;
 mod time_align;
 mod weighted_loss;

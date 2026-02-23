@@ -1260,6 +1260,15 @@ pub struct DspChainOutput {
     pub metadata: Option<OptimizationMetadata>,
 }
 
+/// Impulse response waveform (time-domain)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct IrWaveform {
+    /// Time axis in milliseconds
+    pub time_ms: Vec<f64>,
+    /// Amplitude (normalized so pre-IR peak = 1.0)
+    pub amplitude: Vec<f64>,
+}
+
 /// DSP chain for a single channel
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ChannelDspChain {
@@ -1284,6 +1293,14 @@ pub struct ChannelDspChain {
     /// EQ filter response curve (correction magnitude in dB) (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eq_response: Option<CurveData>,
+
+    /// Impulse response before correction (optional, requires phase data)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_ir: Option<IrWaveform>,
+
+    /// Impulse response after correction (optional, requires phase data)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub post_ir: Option<IrWaveform>,
 }
 
 /// DSP chain for an individual driver in a multi-driver speaker

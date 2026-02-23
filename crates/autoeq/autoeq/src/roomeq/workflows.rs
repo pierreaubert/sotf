@@ -467,6 +467,8 @@ pub fn optimize_stereo_2_0(
             initial_curve: Some(initial_data),
             final_curve: Some(final_data),
             eq_response: Some(eq_resp),
+            pre_ir: None,
+            post_ir: None,
         };
 
         channel_chains.insert(role.clone(), chain);
@@ -923,6 +925,8 @@ pub fn optimize_stereo_2_1(
             initial_curve: Some(initial_data),
             final_curve: Some(final_data),
             eq_response: Some(eq_resp),
+            pre_ir: None,
+            post_ir: None,
         };
         channel_chains.insert(role.to_string(), chain);
     }
@@ -1009,6 +1013,8 @@ pub fn optimize_stereo_2_1(
         initial_curve: Some(sub_initial_data),
         final_curve: Some(sub_final_data),
         eq_response: Some(sub_eq_resp),
+        pre_ir: None,
+        post_ir: None,
     };
     channel_chains.insert(sub_role.to_string(), sub_chain);
 
@@ -1272,6 +1278,8 @@ fn optimize_home_cinema_no_sub(
             initial_curve: Some(initial_data),
             final_curve: Some(final_data),
             eq_response: Some(eq_resp),
+            pre_ir: None,
+            post_ir: None,
         };
 
         channel_chains.insert(role.clone(), chain);
@@ -1617,6 +1625,8 @@ fn optimize_home_cinema_with_sub(
             initial_curve: Some(initial_data),
             final_curve: Some(final_data),
             eq_response: Some(eq_resp),
+            pre_ir: None,
+            post_ir: None,
         };
         channel_chains.insert(role.clone(), chain);
     }
@@ -1706,6 +1716,8 @@ fn optimize_home_cinema_with_sub(
         initial_curve: Some(sub_initial_data),
         final_curve: Some(sub_final_data),
         eq_response: Some(sub_eq_resp),
+        pre_ir: None,
+        post_ir: None,
     };
     channel_chains.insert(sub_role.to_string(), sub_chain);
 

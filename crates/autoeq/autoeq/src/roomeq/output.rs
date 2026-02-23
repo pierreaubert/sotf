@@ -200,6 +200,8 @@ pub fn build_channel_dsp_chain_with_curves(
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
         eq_response: None,
+        pre_ir: None,
+        post_ir: None,
     }
 }
 
@@ -359,6 +361,8 @@ pub fn build_multidriver_dsp_chain_with_curves(
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
         eq_response: None,
+        pre_ir: None,
+        post_ir: None,
     }
 }
 
@@ -448,6 +452,8 @@ pub fn build_multisub_dsp_chain_with_curves(
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
         eq_response: None,
+        pre_ir: None,
+        post_ir: None,
     }
 }
 
@@ -527,6 +533,8 @@ pub fn build_dba_dsp_chain_with_curves(
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
         eq_response: None,
+        pre_ir: None,
+        post_ir: None,
     }
 }
 
@@ -597,6 +605,8 @@ pub fn build_cardioid_dsp_chain_with_curves(
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: final_curve.map(|c| c.into()),
         eq_response: None,
+        pre_ir: None,
+        post_ir: None,
     }
 }
 
@@ -748,6 +758,8 @@ pub fn build_mixed_mode_crossover_chain(
         initial_curve: initial_curve.map(|c| c.into()),
         final_curve: None, // Will be set by caller after computing response
         eq_response: None,
+        pre_ir: None,
+        post_ir: None,
     }
 }
 
@@ -1045,6 +1057,8 @@ mod tests {
             initial_curve: None,
             final_curve: None,
             eq_response: None,
+            pre_ir: None,
+            post_ir: None,
         };
 
         add_delay_plugin(&mut chain, 10.0);

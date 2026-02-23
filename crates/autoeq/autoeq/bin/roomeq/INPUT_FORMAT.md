@@ -18,10 +18,10 @@ check-jsonschema --schemafile input_schema.json your_config.json
 ```json
 {
   "version": "1.1.0",
+  "system": { ... },
   "speakers": { ... },
   "crossovers": { ... },
   "target_curve": "...",
-  "group_delay": [ ... ],
   "optimizer": { ... }
 }
 ```
@@ -31,14 +31,17 @@ check-jsonschema --schemafile input_schema.json your_config.json
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `version` | string | No | `"1.1.0"` | Configuration version (semantic versioning) |
-| `system` | object | No | - | System topology and logical channel mapping (v2.1) |
+| `system` | object | No | - | System topology and logical channel mapping |
 | `speakers` | object | **Yes** | - | Map of channel names to speaker configurations |
+| `crossovers` | object | No | - | Crossover configurations referenced by multi-driver speakers |
+| `target_curve` | string | No | - | Target frequency response curve |
+| `optimizer` | object | No | defaults | Optimization parameters |
 
 ---
 
-## System Configuration (v2.1)
+## System Configuration
 
-The `system` section decouples logical channel roles (e.g., "L", "R", "LFE") from physical measurement files. This allows for explicit topology definitions and automatic alignment strategies.
+The `system` section decouples logical channel roles (e.g., "L", "R", "LFE") from physical measurement files. This allows for explicit topology definitions and automatic subwoofer alignment strategies.
 
 ```json
 {
@@ -77,16 +80,8 @@ The `system` section decouples logical channel roles (e.g., "L", "R", "LFE") fro
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `config` | string | No | `"single"` | Strategy: `"single"`, `"mso"`, `"dba"` |
-| `crossover` | string | No | - | Reference to a crossover definition in the `crossovers` map (required for 2.1+ systems) |
-| `*` | string | - | - | Any other key is treated as a mapping: `Subwoofer Measurement Key` → `Main Speaker Logical Role` (for alignment) |
-
----
-
-## Speakers Configuration
-| `crossovers` | object | No | - | Crossover configurations referenced by multi-driver speakers |
-| `target_curve` | string or path | No | - | Target frequency response curve |
-| `group_delay` | array | No | - | Group delay optimization configurations |
-| `optimizer` | object | No | defaults | Optimization parameters |
+| `crossover` | string | No | - | Reference to a crossover definition in the `crossovers` map |
+| `*` | string | - | - | Any other key is treated as: `Subwoofer Measurement Key` → `Main Speaker Logical Role` (for alignment) |
 
 ---
 
@@ -94,7 +89,7 @@ The `system` section decouples logical channel roles (e.g., "L", "R", "LFE") fro
 
 The `speakers` field is a map where keys are channel names (e.g., `"left"`, `"right"`, `"center"`, `"lfe"`) and values are speaker configurations.
 
-RoomEQ supports four speaker types:
+RoomEQ supports five speaker types:
 1. **Single** - A single speaker measurement
 2. **Group** - Multi-driver speaker with crossover optimization
 3. **MultiSub** - Multiple subwoofers with gain/delay optimization
@@ -103,7 +98,7 @@ RoomEQ supports four speaker types:
 
 ### Measurement References
 
-Measurements can be specified in three ways:
+Measurements can be specified in four ways:
 
 **1. Simple path string:**
 ```json
@@ -168,6 +163,8 @@ Or with explicit path objects:
 
 For speakers with multiple drivers (woofer, midrange, tweeter) requiring crossover optimization.
 
+> **Note:** For accurate crossover optimization, measurements should include phase data. The optimizer uses complex summation (vector sum) to model interference between drivers at crossover frequencies. Without phase data, the optimizer assumes 0° phase.
+
 ```json
 {
   "speakers": {
@@ -200,6 +197,8 @@ For speakers with multiple drivers (woofer, midrange, tweeter) requiring crossov
 
 For optimizing multiple subwoofers with individual gain and delay adjustments.
 
+> **Note:** For accurate optimization, measurements **must** include phase data. The optimizer uses complex summation to model constructive/destructive interference between subwoofers.
+
 ```json
 {
   "speakers": {
@@ -225,7 +224,9 @@ For optimizing multiple subwoofers with individual gain and delay adjustments.
 
 ### Double Bass Array (DBA)
 
-For optimizing front and rear bass arrays with phase cancellation.
+For optimizing front and rear bass arrays with phase cancellation. The rear array is automatically phase-inverted (180°).
+
+> **Note:** For accurate DBA optimization, measurements **must** include phase data.
 
 ```json
 {
@@ -251,11 +252,11 @@ For optimizing front and rear bass arrays with phase cancellation.
 |-------|------|----------|-------------|
 | `name` | string | **Yes** | Name of the DBA system |
 | `front` | array | **Yes** | Measurements for the front array |
-| `rear` | array | **Yes** | Measurements for the rear array (will be phase-inverted) |
+| `rear` | array | **Yes** | Measurements for the rear array (will be phase-inverted by adding 180°) |
 
 ### Gradient Cardioid (2 Subs)
 
-For optimizing a pair of subwoofers in a gradient cardioid configuration (e.g., stacked front/back) to reduce rear radiation.
+For optimizing a pair of subwoofers in a gradient cardioid configuration (e.g., stacked front/back) to reduce rear radiation. Delay is calculated from the physical separation.
 
 ```json
 {
@@ -342,39 +343,9 @@ Predefined options: `"flat"`, `"harman"`
 
 ---
 
-## Group Delay Configuration
-
-Optimizes time alignment between subwoofers and main speakers in the crossover region. This minimizes group delay variation in the combined response, resulting in better transient response and smoother frequency transitions.
-
-```json
-{
-  "group_delay": [
-    {
-      "subwoofer": "sub",
-      "speakers": ["left", "right"],
-      "min_freq": 30.0,
-      "max_freq": 120.0
-    }
-  ]
-}
-```
-
-**GroupDelayConfig Fields:**
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `subwoofer` | string | **Yes** | - | Channel name of the subwoofer to use as reference |
-| `speakers` | array | **Yes** | - | Array of speaker channel names to align with the subwoofer |
-| `min_freq` | number (Hz) | No | `30.0` | Minimum frequency for optimization |
-| `max_freq` | number (Hz) | No | `120.0` | Maximum frequency for optimization |
-
-The optimizer searches for the optimal delay (±30ms range) that minimizes group delay variation in the specified frequency range. Positive delays are applied to speakers. If the optimal delay is negative (meaning the subwoofer should be delayed), a warning is shown since this may affect other speaker alignments.
-
----
-
 ## Optimizer Configuration
 
-Controls the optimization algorithm and constraints.
+Controls the optimization algorithm, constraints, and advanced features.
 
 ```json
 {
@@ -390,7 +361,11 @@ Controls the optimization algorithm and constraints.
     "min_freq": 20.0,
     "max_freq": 20000.0,
     "max_iter": 10000,
-    "peq_model": "pk"
+    "peq_model": "pk",
+    "refine": true,
+    "local_algo": "cobyla",
+    "psychoacoustic": true,
+    "asymmetric_loss": true
   }
 }
 ```
@@ -402,7 +377,7 @@ Controls the optimization algorithm and constraints.
 | `mode` | string | `"iir"` | Optimization mode: `"iir"`, `"fir"`, or `"mixed"` |
 | `fir` | object | - | FIR configuration (when mode is `"fir"` or `"mixed"`) |
 | `loss_type` | string | `"flat"` | Loss function: `"flat"` or `"score"` |
-| `algorithm` | string | `"cobyla"` | Optimization algorithm |
+| `algorithm` | string | `"cobyla"` | Global optimization algorithm |
 | `num_filters` | integer | `10` | Number of PEQ filters per channel |
 | `min_q` | number | `0.5` | Minimum Q factor |
 | `max_q` | number | `10.0` | Maximum Q factor |
@@ -412,52 +387,16 @@ Controls the optimization algorithm and constraints.
 | `max_freq` | number (Hz) | `20000.0` | Maximum frequency |
 | `max_iter` | integer | `10000` | Maximum optimization iterations |
 | `peq_model` | string | `"pk"` | PEQ model type |
-
-### Broadband Target Matching (v2.1)
-
-Using `min_freq` / `max_freq` limits the optimization range, which effectively disables correction outside this band. This can leave significant spectral imbalances (e.g., too much bass or treble) if the optimization range is narrow (e.g., 20Hz-1kHz).
-
-**Broadband Target Matching** solves this by performing a preliminary alignment pass:
-1.  Analyzes the full 20Hz-20kHz spectrum.
-2.  Fits Low Shelf (200Hz), High Shelf (4kHz), and Gain filters to match the target curve.
-3.  Applies this correction *before* the fine-grained PEQ optimization.
-
-This ensures the overall tonal balance is correct even if the main optimizer only focuses on accurate modal correction below 1kHz.
-
-```json
-{
-  "optimizer": {
-    "broadband_target_matching": {
-      "enabled": true
-    }
-  }
-}
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `enabled` | boolean | true | Enable broadband target matching |
-
-### FIR Configuration
-
-When `mode` is `"fir"` or `"mixed"`:
-
-```json
-{
-  "optimizer": {
-    "mode": "fir",
-    "fir": {
-      "taps": 4096,
-      "phase": "kirkeby"
-    }
-  }
-}
-```
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `taps` | integer | `4096` | Number of FIR filter taps |
-| `phase` | string | `"kirkeby"` | Phase type: `"linear"` or `"kirkeby"` |
+| `refine` | boolean | `true` | Enable hybrid two-stage optimization (DE global + COBYLA local) |
+| `local_algo` | string | `"cobyla"` | Local optimizer for refinement stage (when `refine=true`) |
+| `psychoacoustic` | boolean | `true` | Enable psychoacoustic variable smoothing before optimization |
+| `asymmetric_loss` | boolean | `true` | Penalize peaks 2× more than dips (psychoacoustically correct) |
+| `target_tilt` | object | - | Target curve tilt configuration |
+| `excursion_protection` | object | - | Excursion protection for bookshelf speakers |
+| `schroeder_split` | object | - | Different Q constraints above/below Schroeder frequency |
+| `phase_alignment` | object | - | Phase alignment for subwoofer integration |
+| `multi_seat` | object | - | Multi-seat variance optimization |
+| `broadband_target_matching` | object | - | Preliminary broadband shelf alignment |
 
 ### Optimization Algorithms
 
@@ -467,6 +406,14 @@ When `mode` is `"fir"` or `"mixed"`:
 | `nlopt:cobyla` | NLopt COBYLA variant |
 | `autoeq:de` | Differential Evolution (global optimizer) |
 | `nlopt:isres` | Improved Stochastic Ranking Evolution Strategy |
+
+### Local Algorithms (for `refine`)
+
+| Algorithm | Description |
+|-----------|-------------|
+| `cobyla` | COBYLA (default) |
+| `bobyqa` | Bound Optimization BY Quadratic Approximations |
+| `sbplx` | Subplex method |
 
 ### Loss Types
 
@@ -482,6 +429,284 @@ When `mode` is `"fir"` or `"mixed"`:
 | `pk` | Peaking EQ only |
 | `ls-pk-hs` | Low shelf + Peaking + High shelf |
 | `free` | Unconstrained filter types |
+
+---
+
+## FIR Configuration
+
+When `mode` is `"fir"` or `"mixed"`, a WAV file is generated per channel (e.g., `left_fir.wav`) and referenced in the output JSON via a convolution plugin.
+
+```json
+{
+  "optimizer": {
+    "mode": "fir",
+    "fir": {
+      "taps": 4096,
+      "phase": "kirkeby",
+      "correct_excess_phase": false,
+      "phase_smoothing": 0.167
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `taps` | integer | `4096` | Number of FIR filter taps (64–65536) |
+| `phase` | string | `"kirkeby"` | Phase type: `"linear"` (symmetric FIR) or `"kirkeby"` (magnitude limits) |
+| `correct_excess_phase` | boolean | `false` | Correct excess phase (kirkeby only). Requires clean phase measurements. |
+| `phase_smoothing` | number | `0.167` | Phase smoothing width in octaves (0 = disabled). Applied via group delay smoothing when excess phase correction is enabled. |
+
+---
+
+## Target Tilt Configuration
+
+Applies a frequency-dependent tilt to the target curve. The Harman-style tilt (-0.8 dB/octave) is psychoacoustically preferred for in-room listening.
+
+```json
+{
+  "optimizer": {
+    "target_tilt": {
+      "tilt_type": "harman"
+    }
+  }
+}
+```
+
+With custom tilt and bass shelf:
+```json
+{
+  "optimizer": {
+    "target_tilt": {
+      "tilt_type": "custom",
+      "slope_db_per_octave": -1.0,
+      "reference_freq": 1000,
+      "bass_shelf_db": 3.0,
+      "bass_shelf_freq": 150
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tilt_type` | string | `"flat"` | Tilt type: `"flat"` (no tilt), `"harman"` (-0.8 dB/oct), `"custom"` |
+| `slope_db_per_octave` | number | `-0.8` | Slope in dB/octave (negative = downward tilt). Used with `"custom"`. |
+| `reference_freq` | number (Hz) | `1000` | Reference frequency where tilt equals 0 dB |
+| `bass_shelf_db` | number (dB) | `0.0` | Bass shelf boost in dB (applied below `bass_shelf_freq`) |
+| `bass_shelf_freq` | number (Hz) | `200` | Bass shelf frequency |
+
+---
+
+## Excursion Protection Configuration
+
+Detects the speaker's F3 rolloff and generates a highpass filter to prevent dangerous over-boost of bass frequencies. Recommended for bookshelf speakers.
+
+```json
+{
+  "optimizer": {
+    "excursion_protection": {
+      "enabled": true,
+      "auto_detect_f3": true,
+      "filter_order": 4,
+      "filter_type": "linkwitzriley",
+      "margin_octaves": 0.25
+    }
+  }
+}
+```
+
+With manual F3 override:
+```json
+{
+  "optimizer": {
+    "excursion_protection": {
+      "enabled": true,
+      "auto_detect_f3": false,
+      "manual_f3_hz": 60,
+      "filter_order": 4
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable excursion protection |
+| `auto_detect_f3` | boolean | `true` | Auto-detect F3 from measurement |
+| `manual_f3_hz` | number (Hz) | - | Manual F3 override (used if `auto_detect_f3` is false) |
+| `filter_order` | integer | `4` | Filter order: `2` (12 dB/oct), `4` (24 dB/oct), `6` (36 dB/oct), `8` (48 dB/oct) |
+| `filter_type` | string | `"linkwitzriley"` | Highpass filter type: `"linkwitzriley"` or `"butterworth"` |
+| `margin_octaves` | number | `0.25` | Safety margin in octaves below F3 for HPF placement |
+
+---
+
+## Schroeder Split Configuration
+
+Applies different Q constraints below and above the Schroeder frequency:
+- **Below**: high-Q narrow filters to address room modes
+- **Above**: low-Q broad filters for gentle tone control
+
+```json
+{
+  "optimizer": {
+    "schroeder_split": {
+      "enabled": true,
+      "schroeder_freq": 300,
+      "low_freq_config": {
+        "max_q": 10.0,
+        "min_q": 0.5,
+        "allow_boost": false
+      },
+      "high_freq_config": {
+        "max_q": 1.0,
+        "shelving_only": false
+      }
+    }
+  }
+}
+```
+
+With automatic Schroeder frequency from room dimensions:
+```json
+{
+  "optimizer": {
+    "schroeder_split": {
+      "enabled": true,
+      "room_dimensions": {
+        "length": 6.0,
+        "width": 4.5,
+        "height": 2.8
+      }
+    }
+  }
+}
+```
+
+**SchroederSplitConfig Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable Schroeder split optimization |
+| `schroeder_freq` | number (Hz) | `300` | Schroeder frequency (typical: 200–500 Hz for domestic rooms) |
+| `room_dimensions` | object | - | Room dimensions for automatic Schroeder frequency calculation |
+| `low_freq_config` | object | - | Low frequency filter configuration (below Schroeder) |
+| `high_freq_config` | object | - | High frequency filter configuration (above Schroeder) |
+
+**RoomDimensions Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `length` | number (m) | **Yes** | Room length in meters |
+| `width` | number (m) | **Yes** | Room width in meters |
+| `height` | number (m) | **Yes** | Room height in meters |
+
+**LowFreqFilterConfig Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_q` | number | `10.0` | Maximum Q factor for low frequency filters |
+| `min_q` | number | `0.5` | Minimum Q factor |
+| `allow_boost` | boolean | `false` | Allow boost (`true`) or cuts only (`false`). Cuts-only is recommended for room modes. |
+
+**HighFreqFilterConfig Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_q` | number | `1.0` | Maximum Q factor for high frequency filters |
+| `shelving_only` | boolean | `false` | Use shelving filters only (no parametric peaks) |
+
+---
+
+## Phase Alignment Configuration
+
+Optimizes delay and polarity to maximize energy sum in the crossover region between subwoofer and main speakers.
+
+```json
+{
+  "optimizer": {
+    "phase_alignment": {
+      "enabled": true,
+      "min_freq": 60,
+      "max_freq": 100,
+      "optimize_polarity": true,
+      "max_delay_ms": 30
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable phase alignment optimization |
+| `min_freq` | number (Hz) | `60` | Minimum frequency for optimization |
+| `max_freq` | number (Hz) | `100` | Maximum frequency for optimization |
+| `optimize_polarity` | boolean | `true` | Optimize polarity (normal vs inverted) |
+| `max_delay_ms` | number (ms) | `30` | Maximum delay in milliseconds |
+
+---
+
+## Multi-Seat Configuration
+
+Optimizes subwoofer delays and gains to minimize response variance across multiple listening positions.
+
+```json
+{
+  "optimizer": {
+    "multi_seat": {
+      "enabled": true,
+      "strategy": "minimize_variance"
+    }
+  }
+}
+```
+
+With primary seat constraints:
+```json
+{
+  "optimizer": {
+    "multi_seat": {
+      "enabled": true,
+      "strategy": "primary_with_constraints",
+      "primary_seat": 0,
+      "max_deviation_db": 6
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable multi-seat optimization |
+| `strategy` | string | `"minimize_variance"` | Strategy: `"minimize_variance"`, `"primary_with_constraints"`, `"average"` |
+| `primary_seat` | integer | `0` | Index of primary seat (0-based, used with `primary_with_constraints`) |
+| `max_deviation_db` | number (dB) | `6` | Maximum allowed deviation at non-primary seats |
+
+---
+
+## Broadband Target Matching
+
+Using `min_freq` / `max_freq` limits the optimization range, which can leave spectral imbalances outside that band. Broadband Target Matching solves this with a preliminary alignment pass:
+
+1. Analyzes the full 20 Hz–20 kHz spectrum.
+2. Fits Low Shelf (200 Hz), High Shelf (4 kHz), and Gain filters to match the target curve.
+3. Applies this correction *before* the fine-grained PEQ optimization.
+
+This ensures the overall tonal balance is correct even when the main optimizer focuses only on modal correction below 1 kHz.
+
+```json
+{
+  "optimizer": {
+    "broadband_target_matching": {
+      "enabled": true
+    }
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Enable broadband target matching |
 
 ---
 
@@ -502,7 +727,7 @@ freq,spl,phase
 |--------|------|----------|-------------|
 | `freq` | number (Hz) | **Yes** | Frequency |
 | `spl` | number (dB) | **Yes** | Sound Pressure Level |
-| `phase` | number (degrees) | No | Phase response |
+| `phase` | number (degrees) | No | Phase response (recommended for subwoofer and multi-driver configs) |
 
 ---
 
@@ -526,7 +751,7 @@ freq,spl,phase
 }
 ```
 
-### Example 2: 2.1 System with Subwoofer (v2.1)
+### Example 2: 2.1 System with Subwoofer
 
 ```json
 {
@@ -540,22 +765,19 @@ freq,spl,phase
     },
     "subwoofers": {
       "config": "single",
+      "crossover": "bass_xover",
       "sub": "L"
     }
   },
-  "bass_management": {
-    "crossover_freq": 80.0,
-    "lfe_slope": 24.0
-  },
   "speakers": {
-    "left": {
-      "path": "measurements/left_speaker.csv"
-    },
-    "right": {
-      "path": "measurements/right_speaker.csv"
-    },
-    "sub": {
-      "path": "measurements/subwoofer.csv"
+    "left": "measurements/left_speaker.csv",
+    "right": "measurements/right_speaker.csv",
+    "sub": "measurements/subwoofer.csv"
+  },
+  "crossovers": {
+    "bass_xover": {
+      "type": "LR24",
+      "frequency": 80.0
     }
   },
   "optimizer": {
@@ -696,7 +918,7 @@ freq,spl,phase
 }
 ```
 
-### Example 7: With Averaging Multiple Measurement Positions
+### Example 7: Multiple Measurement Positions (Averaged)
 
 ```json
 {
@@ -720,7 +942,7 @@ freq,spl,phase
 }
 ```
 
-### Example 8: FIR Mode Optimization
+### Example 8: FIR Mode with Excess Phase Correction
 
 ```json
 {
@@ -732,7 +954,9 @@ freq,spl,phase
     "mode": "fir",
     "fir": {
       "taps": 8192,
-      "phase": "linear"
+      "phase": "kirkeby",
+      "correct_excess_phase": true,
+      "phase_smoothing": 0.167
     },
     "algorithm": "cobyla",
     "max_iter": 5000,
@@ -742,7 +966,7 @@ freq,spl,phase
 }
 ```
 
-### Example 9: Target Curve Matching
+### Example 9: Target Curve with Harman Tilt
 
 ```json
 {
@@ -750,37 +974,189 @@ freq,spl,phase
     "left": "measurements/left.csv",
     "right": "measurements/right.csv"
   },
-  "target_curve": "targets/harman_curve.csv",
+  "target_curve": "flat",
   "optimizer": {
     "loss_type": "flat",
     "num_filters": 12,
     "algorithm": "cobyla",
-    "max_iter": 10000
+    "max_iter": 10000,
+    "target_tilt": {
+      "tilt_type": "harman"
+    }
   }
 }
 ```
 
-### Example 10: Group Delay Alignment (2.1 System)
+### Example 10: Bookshelf Speakers with Excursion Protection
 
 ```json
 {
   "speakers": {
-    "sub": "measurements/subwoofer.csv",
-    "left": "measurements/left_speaker.csv",
-    "right": "measurements/right_speaker.csv"
+    "left": "measurements/left_bookshelf.csv",
+    "right": "measurements/right_bookshelf.csv"
   },
-  "group_delay": [
-    {
-      "subwoofer": "sub",
-      "speakers": ["left", "right"],
-      "min_freq": 40.0,
-      "max_freq": 100.0
-    }
-  ],
   "optimizer": {
     "num_filters": 10,
     "algorithm": "cobyla",
-    "max_iter": 10000
+    "max_iter": 10000,
+    "excursion_protection": {
+      "enabled": true,
+      "auto_detect_f3": true,
+      "filter_order": 4,
+      "filter_type": "linkwitzriley"
+    }
+  }
+}
+```
+
+### Example 11: Room Mode Correction with Schroeder Split
+
+```json
+{
+  "speakers": {
+    "left": "measurements/left.csv",
+    "right": "measurements/right.csv"
+  },
+  "optimizer": {
+    "num_filters": 15,
+    "algorithm": "autoeq:de",
+    "refine": true,
+    "local_algo": "cobyla",
+    "psychoacoustic": true,
+    "asymmetric_loss": true,
+    "schroeder_split": {
+      "enabled": true,
+      "room_dimensions": {
+        "length": 6.5,
+        "width": 4.2,
+        "height": 2.7
+      },
+      "low_freq_config": {
+        "max_q": 12.0,
+        "allow_boost": false
+      },
+      "high_freq_config": {
+        "max_q": 1.0
+      }
+    }
+  }
+}
+```
+
+### Example 12: Subwoofer Phase Alignment
+
+```json
+{
+  "speakers": {
+    "left": "measurements/left.csv",
+    "right": "measurements/right.csv",
+    "sub": "measurements/sub.csv"
+  },
+  "optimizer": {
+    "num_filters": 10,
+    "algorithm": "cobyla",
+    "max_iter": 10000,
+    "phase_alignment": {
+      "enabled": true,
+      "min_freq": 40,
+      "max_freq": 120,
+      "optimize_polarity": true,
+      "max_delay_ms": 30
+    }
+  }
+}
+```
+
+### Example 13: Multi-Seat Home Theater Optimization
+
+```json
+{
+  "speakers": {
+    "left": "measurements/left.csv",
+    "right": "measurements/right.csv",
+    "sub": {
+      "name": "Dual Subs",
+      "subwoofers": [
+        "measurements/sub_left.csv",
+        "measurements/sub_right.csv"
+      ]
+    }
+  },
+  "optimizer": {
+    "num_filters": 10,
+    "algorithm": "autoeq:de",
+    "refine": true,
+    "multi_seat": {
+      "enabled": true,
+      "strategy": "primary_with_constraints",
+      "primary_seat": 0,
+      "max_deviation_db": 6
+    }
+  }
+}
+```
+
+### Example 14: Full-Featured Room Correction
+
+```json
+{
+  "version": "1.2.0",
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "L": "left",
+      "R": "right",
+      "LFE": "sub"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "bass_xover",
+      "sub": "L"
+    }
+  },
+  "speakers": {
+    "left": "measurements/left.csv",
+    "right": "measurements/right.csv",
+    "sub": "measurements/sub.csv"
+  },
+  "crossovers": {
+    "bass_xover": {
+      "type": "LR24",
+      "frequency": 80.0
+    }
+  },
+  "target_curve": "flat",
+  "optimizer": {
+    "num_filters": 15,
+    "algorithm": "autoeq:de",
+    "refine": true,
+    "local_algo": "cobyla",
+    "psychoacoustic": true,
+    "asymmetric_loss": true,
+    "min_freq": 20.0,
+    "max_freq": 20000.0,
+    "target_tilt": {
+      "tilt_type": "harman"
+    },
+    "schroeder_split": {
+      "enabled": true,
+      "schroeder_freq": 300,
+      "low_freq_config": {
+        "max_q": 10.0,
+        "allow_boost": false
+      },
+      "high_freq_config": {
+        "max_q": 1.0
+      }
+    },
+    "phase_alignment": {
+      "enabled": true,
+      "min_freq": 60,
+      "max_freq": 100
+    },
+    "broadband_target_matching": {
+      "enabled": true
+    }
   }
 }
 ```

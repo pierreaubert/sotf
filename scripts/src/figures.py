@@ -15,6 +15,7 @@ from .data_extract import (
     compute_y_range,
     compute_average_spl_in_range,
     get_all_crossover_frequencies,
+    get_channel_sort_key,
 )
 
 
@@ -396,8 +397,7 @@ def create_eq_figure(
             eq_min = min(eq_response)
             y_max = math.ceil(eq_max / 5) * 5
             y_min = math.floor(eq_min / 5) * 5
-            if y_max - y_min < 50:
-                y_min = y_max - 50
+            y_min = max(y_min, y_max - 50)
             y_limit = None
     else:
         y_limit = 15
@@ -431,6 +431,74 @@ def create_eq_figure(
     return fig
 
 
+def create_ir_figure(
+    channel_name: str,
+    pre_ir: dict | None,
+    post_ir: dict | None,
+    display_ms: float = 100.0,
+) -> go.Figure | None:
+    """Create a Plotly figure showing pre- and post-correction impulse responses.
+
+    Args:
+        channel_name: Name of the channel.
+        pre_ir: Dict with 'time_ms' and 'amplitude' keys (before correction).
+        post_ir: Dict with 'time_ms' and 'amplitude' keys (after correction).
+        display_ms: Initial x-axis range in milliseconds (default 100 ms).
+    """
+    if not pre_ir and not post_ir:
+        return None
+
+    fig = go.Figure()
+
+    if pre_ir:
+        fig.add_trace(
+            go.Scatter(
+                x=pre_ir["time_ms"],
+                y=pre_ir["amplitude"],
+                mode="lines",
+                name="Before EQ",
+                line=dict(color="rgba(255, 100, 100, 0.8)", width=1),
+            )
+        )
+
+    if post_ir:
+        fig.add_trace(
+            go.Scatter(
+                x=post_ir["time_ms"],
+                y=post_ir["amplitude"],
+                mode="lines",
+                name="After EQ",
+                line=dict(color="rgba(100, 200, 100, 0.9)", width=1),
+            )
+        )
+
+    # 0 reference line
+    fig.add_hline(y=0, line=dict(color="rgba(150, 150, 150, 0.4)", width=1, dash="dash"))
+
+    fig.update_layout(
+        title=dict(text=f"Impulse Response: {channel_name}", font=dict(size=14)),
+        xaxis=dict(
+            title=dict(text="Time (ms)", font=dict(size=11)),
+            tickfont=dict(size=10),
+            gridcolor="rgba(128, 128, 128, 0.2)",
+            range=[0, display_ms],
+        ),
+        yaxis=dict(
+            title=dict(text="Amplitude (normalized)", font=dict(size=11)),
+            tickfont=dict(size=10),
+            gridcolor="rgba(128, 128, 128, 0.2)",
+            range=[-1.1, 1.1],
+        ),
+        legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        margin=dict(l=60, r=40, t=60, b=60),
+        height=350,
+    )
+
+    return fig
+
+
 def _get_driver_initial_curves(channel_data: dict) -> list[tuple[str, dict]] | None:
     """Extract per-driver initial curves from a channel's driver chains.
 
@@ -459,11 +527,15 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
         data: Output JSON data (roomeq result with correction filters)
         json_path: Path to output JSON (unused, kept for API compatibility)
     """
-    channels = data.get("channels", {})
+    channels_dict = data.get("channels", {})
 
-    if not channels:
+    if not channels_dict:
         print("Warning: No channels found in the JSON file")
         return go.Figure()
+
+    # Sort channels by classical order
+    sorted_channel_names = sorted(channels_dict.keys(), key=get_channel_sort_key)
+    channels = [(name, channels_dict[name]) for name in sorted_channel_names]
 
     # Create 3-row subplot layout
     fig = make_subplots(
@@ -474,7 +546,7 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
             "All EQ Responses",
             "All Corrected Curves",
         ],
-        vertical_spacing=0.08,
+        vertical_spacing=0.1,
         specs=[[{}], [{}], [{}]],
     )
 
@@ -488,6 +560,8 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
         "rgba(140, 86, 75, 0.9)",  # brown
         "rgba(227, 119, 194, 0.9)",  # pink
         "rgba(127, 127, 127, 0.9)",  # gray
+        "rgba(188, 189, 34, 0.9)",  # olive
+        "rgba(23, 190, 207, 0.9)",  # cyan
     ]
 
     # Generate frequency points for EQ response
@@ -503,7 +577,7 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
     # Per-driver data for channels that are speaker groups
     per_driver_initial: dict[str, list[tuple[str, dict]]] = {}
 
-    for channel_name, channel_data in channels.items():
+    for channel_name, channel_data in channels:
         driver_curves = _get_driver_initial_curves(channel_data)
         if driver_curves:
             per_driver_initial[channel_name] = driver_curves
@@ -522,7 +596,7 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
 
     # Compute EQ y-range
     all_eq_values: list[float] = []
-    for channel_data in channels.values():
+    for _, channel_data in channels:
         eq_response_data = channel_data.get("eq_response")
         if eq_response_data and "spl" in eq_response_data:
             all_eq_values.extend(eq_response_data["spl"])
@@ -554,7 +628,7 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
     corrected_trace_indices: list[int] = []
 
     # --- Row 1: Original curves ---
-    for i, (channel_name, channel_data) in enumerate(channels.items()):
+    for i, (channel_name, channel_data) in enumerate(channels):
         color = channel_colors[i % len(channel_colors)]
 
         if channel_name in per_driver_initial:
@@ -613,7 +687,7 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
 
     # Target line on original curves
     if channels:
-        first_channel = next(iter(channels.values()))
+        first_channel = channels[0][1]
         ref_curve = first_channel.get("initial_curve")
         if ref_curve:
             freq = ref_curve["freq"]
@@ -632,7 +706,7 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
             trace_y_data.append([0, 0])
 
     # --- Row 2: EQ responses ---
-    for i, (channel_name, channel_data) in enumerate(channels.items()):
+    for i, (channel_name, channel_data) in enumerate(channels):
         color = channel_colors[i % len(channel_colors)]
 
         eq_response_data = channel_data.get("eq_response")
@@ -687,7 +761,7 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
     trace_y_data.append([0, 0])
 
     # --- Row 3: Corrected curves (final_curve from JSON) ---
-    for i, (channel_name, channel_data) in enumerate(channels.items()):
+    for i, (channel_name, channel_data) in enumerate(channels):
         color = channel_colors[i % len(channel_colors)]
         final_curve = channel_data.get("final_curve")
 
@@ -866,12 +940,12 @@ def create_combined_figure(data: dict, json_path: "None | object" = None) -> go.
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.0,
-            xanchor="left",
-            x=0.0,
+            y=1.05,
+            xanchor="center",
+            x=0.5,
             font=dict(size=10),
         ),
-        margin=dict(l=60, r=60, t=110, b=60),
+        margin=dict(l=60, r=60, t=140, b=60),
         updatemenus=updatemenus,
     )
 

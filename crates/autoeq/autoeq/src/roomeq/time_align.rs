@@ -112,6 +112,66 @@ pub fn find_arrival_time(
     })
 }
 
+/// Estimate speaker propagation delay from a frequency-domain phase measurement.
+///
+/// Uses linear regression on the unwrapped phase in the [min_freq, max_freq] band:
+///   φ(f) ≈ φ₀ - 2π·τ·f  →  τ = -slope / (2π)
+///
+/// Returns the estimated arrival time in milliseconds, or None if phase data
+/// is absent, no points fall in the band, or the estimate is implausible.
+pub fn estimate_arrival_from_phase(
+    curve: &crate::Curve,
+    min_freq: f64,
+    max_freq: f64,
+) -> Option<f64> {
+    use std::f64::consts::PI;
+
+    let phase = curve.phase.as_ref()?;
+
+    // Unwrap phase to remove discontinuities
+    let unwrapped = super::phase_utils::unwrap_phase_degrees(phase);
+
+    // Filter to the [min_freq, max_freq] band
+    let points: Vec<(f64, f64)> = curve
+        .freq
+        .iter()
+        .zip(unwrapped.iter())
+        .filter(|&(&f, _)| f >= min_freq && f <= max_freq)
+        .map(|(&f, &p)| (f, p))
+        .collect();
+
+    if points.len() < 5 {
+        return None;
+    }
+
+    // Linear regression in radians: φ_rad = φ₀ - 2π·τ·f  →  slope = dφ/df
+    let n = points.len() as f64;
+    let sum_f: f64 = points.iter().map(|(f, _)| f).sum();
+    let sum_phi: f64 = points.iter().map(|(_, p)| p.to_radians()).sum();
+    let sum_f2: f64 = points.iter().map(|(f, _)| f * f).sum();
+    let sum_f_phi: f64 = points
+        .iter()
+        .map(|(f, p)| f * p.to_radians())
+        .sum();
+
+    let denom = n * sum_f2 - sum_f * sum_f;
+    if denom.abs() < 1e-12 {
+        return None;
+    }
+
+    let slope = (n * sum_f_phi - sum_f * sum_phi) / denom;
+
+    // τ = -slope / (2π), convert seconds → milliseconds
+    let delay_ms = -slope / (2.0 * PI) * 1000.0;
+
+    // Sanity check: plausible acoustic propagation time (0–500 ms)
+    if delay_ms > 0.0 && delay_ms < 500.0 {
+        Some(delay_ms)
+    } else {
+        None
+    }
+}
+
 /// Calculate time alignment delays for multiple channels
 ///
 /// Given arrival times for multiple channels, calculates the delays needed
@@ -161,6 +221,48 @@ mod tests {
         assert!((delays["R"] - 0.0).abs() < 0.001);
         assert!((delays["L"] - 2.0).abs() < 0.001);
         assert!((delays["C"] - 4.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_estimate_arrival_from_phase() {
+        use ndarray::Array1;
+
+        // Synthesize φ(f) = -2π·τ·f for τ = 5 ms
+        let tau_ms = 5.0_f64;
+        let tau_s = tau_ms / 1000.0;
+        let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
+        let phase_deg: Vec<f64> = freqs
+            .iter()
+            .map(|&f| -360.0 * f * tau_s)
+            .collect();
+
+        let curve = crate::Curve {
+            freq: Array1::from_vec(freqs),
+            spl: Array1::zeros(phase_deg.len()),
+            phase: Some(Array1::from_vec(phase_deg)),
+        };
+
+        let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
+        assert!(estimated.is_some(), "Should recover arrival time from phase");
+        let estimated = estimated.unwrap();
+        assert!(
+            (estimated - tau_ms).abs() < 0.1,
+            "Expected ~{} ms, got {} ms",
+            tau_ms,
+            estimated
+        );
+    }
+
+    #[test]
+    fn test_estimate_arrival_from_phase_no_phase() {
+        use ndarray::Array1;
+
+        let curve = crate::Curve {
+            freq: Array1::linspace(20.0, 2000.0, 100),
+            spl: Array1::zeros(100),
+            phase: None,
+        };
+        assert!(estimate_arrival_from_phase(&curve, 200.0, 2000.0).is_none());
     }
 
     #[test]

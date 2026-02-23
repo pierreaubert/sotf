@@ -3,6 +3,39 @@
 import math
 
 
+# Channel order mapping for sorting (classical order)
+CHANNEL_ORDER_MAP = {
+    "L": 10, "LEFT": 10,
+    "R": 20, "RIGHT": 20,
+    "C": 30, "CENTER": 30,
+    "LFE": 40, "SUB": 40, "SUBWOOFER": 40, "LFE1": 41, "LFE2": 42,
+    "SL": 50, "SURROUND LEFT": 50, "LS": 50,
+    "SR": 60, "SURROUND RIGHT": 60, "RS": 60,
+    "SBL": 70, "SURROUND BACK LEFT": 70, "LBS": 70, "LB": 70,
+    "SBR": 80, "SURROUND BACK RIGHT": 80, "RBS": 80, "RB": 80,
+    "FHL": 90, "FRONT HEIGHT LEFT": 90,
+    "FHR": 100, "FRONT HEIGHT RIGHT": 100,
+    "BHL": 110, "BACK HEIGHT LEFT": 110,
+    "BHR": 120, "BACK HEIGHT RIGHT": 120,
+}
+
+
+def get_channel_sort_key(channel_name: str) -> tuple[int, str]:
+    """Get sort key for a channel name."""
+    name_upper = channel_name.upper()
+    # Try exact match
+    if name_upper in CHANNEL_ORDER_MAP:
+        return (CHANNEL_ORDER_MAP[name_upper], channel_name)
+
+    # Try to see if it starts with one of the keys (e.g. "L (tweeter)")
+    for key, order in CHANNEL_ORDER_MAP.items():
+        if name_upper.startswith(key) and (len(name_upper) == len(key) or not name_upper[len(key)].isalnum()):
+            return (order, channel_name)
+
+    # Default: large number to put unknown at the end
+    return (1000, channel_name)
+
+
 def compute_y_range(curves: list[dict | None]) -> tuple[float, float]:
     """Compute y-axis range from curve data: 50 dB span, max rounded up to next multiple of 5."""
     all_spl = []

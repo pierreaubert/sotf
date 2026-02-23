@@ -385,6 +385,30 @@ pub fn optimize_room(
                         );
                     }
                 }
+                // Compute IR waveforms for the workflow result
+                for (channel_name, ch_result) in &result.channel_results {
+                    let delay_ms = result
+                        .channels
+                        .get(channel_name)
+                        .and_then(|chain| {
+                            chain.plugins.iter().find(|p| p.plugin_type == "delay")
+                        })
+                        .and_then(|p| p.parameters.get("delay_ms").and_then(|v| v.as_f64()))
+                        .unwrap_or(0.0);
+                    if let Some((pre_ir, post_ir)) =
+                        super::ir_waveform::compute_channel_ir_waveforms(
+                            &ch_result.initial_curve,
+                            &ch_result.biquads,
+                            ch_result.fir_coeffs.as_deref(),
+                            delay_ms,
+                            sample_rate,
+                        ) && let Some(chain) = result.channels.get_mut(channel_name)
+                    {
+                        chain.pre_ir = Some(pre_ir);
+                        chain.post_ir = Some(post_ir);
+                    }
+                }
+
                 return Ok(result);
             }
         }
@@ -520,9 +544,36 @@ pub fn optimize_room(
         );
     }
 
+    // Auto IR sync: if no WAV-based arrivals were collected, estimate from phase data.
+    // Runs unconditionally (does not require allow_delay = true).
+    let phase_ir_sync = channel_arrivals.is_empty() && channel_results.len() > 1;
+    if phase_ir_sync {
+        for (channel_name, result) in &channel_results {
+            if let Some(arrival_ms) = super::time_align::estimate_arrival_from_phase(
+                &result.initial_curve,
+                200.0,
+                2000.0,
+            ) {
+                channel_arrivals.insert(channel_name.clone(), arrival_ms);
+            }
+        }
+        if channel_arrivals.len() > 1 {
+            info!(
+                "Auto IR sync: phase-estimated arrival times for {} channels",
+                channel_arrivals.len()
+            );
+            for (name, arrival) in &channel_arrivals {
+                info!("  Channel '{}': phase-estimated arrival = {:.2} ms", name, arrival);
+            }
+        } else {
+            // Clear partial arrivals — not enough channels have phase data
+            channel_arrivals.clear();
+        }
+    }
+
     // Time alignment: add delay plugins to align all channels to the slowest one
     // This is done PRE-EQ by inserting at the beginning of the plugin chain
-    if config.optimizer.allow_delay() && channel_arrivals.len() > 1 {
+    if (config.optimizer.allow_delay() || phase_ir_sync) && channel_arrivals.len() > 1 {
         let arrivals: Vec<f64> = channel_arrivals.values().copied().collect();
         let min_arrival = arrivals.iter().cloned().fold(f64::INFINITY, f64::min);
         let max_arrival = arrivals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -560,7 +611,7 @@ pub fn optimize_room(
             }
         }
     } else if channel_arrivals.is_empty() && config.speakers.len() > 1 {
-        info!("No WAV files available for time alignment. Skipping time alignment.");
+        info!("No arrival time data (WAV or phase) available for time alignment. Skipping.");
     }
 
     // Spectral channel alignment: fit low-shelf + high-shelf + flat gain to each
@@ -779,6 +830,27 @@ pub fn optimize_room(
                     sub_name, main_name
                 );
             }
+        }
+    }
+
+    // Compute IR waveforms (pre- and post-correction) for each channel
+    for (channel_name, result) in &channel_results {
+        let delay_ms = channel_chains
+            .get(channel_name)
+            .and_then(|chain| chain.plugins.iter().find(|p| p.plugin_type == "delay"))
+            .and_then(|p| p.parameters.get("delay_ms").and_then(|v| v.as_f64()))
+            .unwrap_or(0.0);
+
+        if let Some((pre_ir, post_ir)) = super::ir_waveform::compute_channel_ir_waveforms(
+            &result.initial_curve,
+            &result.biquads,
+            result.fir_coeffs.as_deref(),
+            delay_ms,
+            sample_rate,
+        ) && let Some(chain) = channel_chains.get_mut(channel_name)
+        {
+            chain.pre_ir = Some(pre_ir);
+            chain.post_ir = Some(post_ir);
         }
     }
 
