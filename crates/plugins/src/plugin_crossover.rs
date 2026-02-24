@@ -24,6 +24,7 @@ pub struct CrossoverPlugin {
     crossover_type: String,
     is_highpass: bool,
     freq_smoother: LogSmoother,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl CrossoverPlugin {
@@ -39,14 +40,27 @@ impl CrossoverPlugin {
             _ => return Err(format!("Invalid output: {}", output)),
         };
         let sr = 48000;
-        Ok(Self {
+        let mut p = Self {
             num_channels,
             filters: vec![Vec::new(); num_channels],
             sample_rate: sr,
             crossover_type: crossover_type.to_string(),
             is_highpass,
             freq_smoother: LogSmoother::new(frequency as f32, 20.0, sr),
-        })
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![Parameter::new_float(
+            "frequency",
+            "Frequency",
+            self.freq_smoother.target(),
+            20.0,
+            20000.0,
+        )];
     }
 
     pub fn from_params(
@@ -92,21 +106,20 @@ impl InPlacePlugin for CrossoverPlugin {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float(
-            "frequency",
-            "Frequency",
-            1000.0,
-            20.0,
-            20000.0,
-        )]
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id.0 == "frequency" {
-            self.freq_smoother
-                .set_target(value.as_float().ok_or("val")?);
+            let val = value.as_float().unwrap_or(1000.0);
+            if val.is_finite() {
+                self.freq_smoother.set_target(val);
+                self.rebuild_cached_parameters();
+            }
             Ok(())
         } else {
-            Err("unknown".into())
+            Err(format!("Unknown parameter: {}", id))
         }
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -133,7 +146,7 @@ impl InPlacePlugin for CrossoverPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        
+
         // Block-based smoothing
         let new_freq = self.freq_smoother.next_n(num_frames);
 
@@ -159,7 +172,7 @@ impl InPlacePlugin for CrossoverPlugin {
                 buffer[idx] = s as f32;
             }
         }
-        
+
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

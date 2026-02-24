@@ -32,6 +32,7 @@ pub struct GainPlugin {
     param_gain_db: ParameterId,
     cached_gains: Vec<f32>,
     smoothing_ms: f32,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl GainPlugin {
@@ -42,17 +43,20 @@ impl GainPlugin {
     pub fn with_smoothing(channels: usize, gain_db: f32, smoothing_ms: f32) -> Self {
         let sr = 44100;
         let gain_linear = Self::db_to_linear(gain_db);
-        Self {
+        let mut p = Self {
             channels,
             sample_rate: sr,
             global_gain_db: gain_db,
             global_gain_smoother: Smoother::new(gain_linear, smoothing_ms, sr),
-            channel_gains_db: Vec::new(),
-            channel_gains_smoothers: Vec::new(),
+            channel_gains_db: Vec::with_capacity(channels),
+            channel_gains_smoothers: Vec::with_capacity(channels),
             param_gain_db: ParameterId::from("gain_db"),
             cached_gains: vec![0.0; channels],
             smoothing_ms,
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
     }
 
     pub fn new_per_channel(channel_gains: Vec<f32>) -> Result<Self, String> {
@@ -65,7 +69,7 @@ impl GainPlugin {
             .iter()
             .map(|&db| Smoother::new(Self::db_to_linear(db), 20.0, sr))
             .collect();
-        Ok(Self {
+        let mut p = Self {
             channels,
             sample_rate: sr,
             global_gain_db: 0.0,
@@ -75,7 +79,34 @@ impl GainPlugin {
             param_gain_db: ParameterId::from("gain_db"),
             cached_gains: vec![0.0; channels],
             smoothing_ms: 20.0,
-        })
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        let mut params = vec![Parameter::new_float(
+            "gain_db",
+            "Gain",
+            self.global_gain_db,
+            GAIN_DB_MIN,
+            GAIN_DB_MAX,
+        )];
+
+        if self.is_per_channel() {
+            for ch in 0..self.channels {
+                params.push(Parameter::new_float(
+                    &format!("gain_db_{}", ch),
+                    &format!("Gain Ch {}", ch + 1),
+                    self.channel_gains_db[ch],
+                    GAIN_DB_MIN,
+                    GAIN_DB_MAX,
+                ));
+            }
+        }
+
+        self.cached_parameters = params;
     }
 
     pub fn from_params(channels: usize, params: GainPluginParams) -> Result<Self, String> {
@@ -166,20 +197,35 @@ impl InPlacePlugin for GainPlugin {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float("gain_db", "Gain", 0.0, -100.0, 24.0)]
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
-        if id == self.param_gain_db
-            && let Some(v) = val.as_float() {
-                self.set_gain_db(v);
-                return Ok(());
+        // Validate against parameter definitions
+        // For per-channel gains, we might need a template since they are dynamic
+        if id == self.param_gain_db {
+            Parameter::new_float("gain_db", "Gain", 0.0, -100.0, 24.0).validate(&val)?;
+            if let Some(v) = val.as_float() {
+                if v.is_finite() {
+                    self.set_gain_db(v);
+                    self.rebuild_cached_parameters();
+                    return Ok(());
+                }
             }
+        }
+
         if let Some(s) = id.as_str().strip_prefix("gain_db_")
             && let Ok(ch) = s.parse::<usize>()
-                && let Some(v) = val.as_float() {
-                    return self.set_channel_gain_db(ch, v);
+        {
+            Parameter::new_float("gain_db_ch", "Gain Ch", 0.0, -100.0, 24.0).validate(&val)?;
+            if let Some(v) = val.as_float() {
+                if v.is_finite() {
+                    self.set_channel_gain_db(ch, v)?;
+                    self.rebuild_cached_parameters();
+                    return Ok(());
                 }
-        Err("unk".into())
+            }
+        }
+        Err(format!("Invalid or unknown parameter: {}", id))
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id == &self.param_gain_db {

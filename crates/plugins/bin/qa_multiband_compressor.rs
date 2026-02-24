@@ -1,5 +1,7 @@
-use sotf_plugins::plugin_multiband_compressor::{MultibandCompressorPlugin, MultibandCompressorPluginParams};
-use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::plugin_multiband_compressor::{
+    MultibandCompressorPlugin, MultibandCompressorPluginParams,
+};
+use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ParameterValue, ProcessContext};
 use std::f32::consts::PI;
 
@@ -29,18 +31,21 @@ fn main() {
     println!("\n[Test 1] High Band Compression (Input +10dB @ 10kHz, Thresh -20dB)");
     let num_frames = 24576; // multiple of 1024
     let mut buffer = generate_sine(sample_rate, 10000.0, 10.0, num_frames);
-    
+
     // Process in small blocks
     let mut pos = 0;
     let block_size = 1024;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext { sample_rate, num_frames: end - pos };
+        let ctx = ProcessContext {
+            sample_rate,
+            num_frames: end - pos,
+        };
         inner.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
         pos = end;
     }
-    
-    let peak = measure_peak_db(&buffer[num_frames-4096..]);
+
+    let peak = measure_peak_db(&buffer[num_frames - 4096..]);
     println!("  Measured: {:.2}dB", peak);
     assert!(peak < 0.0, "Should have significant compression");
     println!("  High Band Compression: PASS");
@@ -48,16 +53,25 @@ fn main() {
     // Test 2: Band Muting
     println!("\n[Test 2] Low Band Mute (100Hz signal muted by mid band solo)");
     inner.reset();
-    inner.set_parameter("band_0_solo".into(), ParameterValue::Bool(false)).unwrap();
-    inner.set_parameter("band_1_solo".into(), ParameterValue::Bool(true)).unwrap();
-    inner.set_parameter("band_2_solo".into(), ParameterValue::Bool(false)).unwrap();
-    
+    inner
+        .set_parameter("band_0_solo".into(), ParameterValue::Bool(false))
+        .unwrap();
+    inner
+        .set_parameter("band_1_solo".into(), ParameterValue::Bool(true))
+        .unwrap();
+    inner
+        .set_parameter("band_2_solo".into(), ParameterValue::Bool(false))
+        .unwrap();
+
     let mut buffer = generate_sine(sample_rate, 100.0, -10.0, 4096);
-    let ctx = ProcessContext { sample_rate, num_frames: 4096 };
+    let ctx = ProcessContext {
+        sample_rate,
+        num_frames: 4096,
+    };
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Muted Peak: {:.2}dB", peak);
-    assert!(peak < -25.0); 
+    assert!(peak < -25.0);
 
     // Run standard QA tests
     let mut plugin = InPlacePluginAdapter::new(inner);
@@ -68,7 +82,9 @@ fn main() {
 
 fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {
     let amp = 10.0f32.powf(db / 20.0);
-    (0..frames).map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin() * amp).collect()
+    (0..frames)
+        .map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin() * amp)
+        .collect()
 }
 
 fn measure_peak_db(buffer: &[f32]) -> f32 {

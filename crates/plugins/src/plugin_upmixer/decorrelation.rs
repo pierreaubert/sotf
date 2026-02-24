@@ -104,6 +104,44 @@ impl UpmixerPlugin {
         self.decor_lfo_phase = 0.0;
     }
 
+    /// Precompute per-bin LFO depth table (depends on sample_rate, fft_size, bandpass_hz, lfe_cutoff_hz).
+    /// Call in initialize() and when bandpass_hz or lfe_cutoff_hz changes.
+    pub(super) fn precompute_lfo_depth_table(&mut self) {
+        let half = self.fft_size / 2;
+        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        let nyquist = self.sample_rate as f32 / 2.0;
+        let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
+
+        let mid_start = 800.0_f32;
+        let mid_end = 4000.0_f32;
+        let max_depth = 0.08_f32;
+
+        self.cached_lfo_depth_table.resize(half + 1, 0.0);
+        for i in 0..=half {
+            let freq = i as f32 * freq_per_bin;
+
+            let hf_ratio = if freq <= hf_start {
+                0.0
+            } else if freq >= nyquist {
+                1.0
+            } else {
+                (freq - hf_start) / (nyquist - hf_start)
+            };
+
+            let mid_reduction = if freq < mid_start || freq > mid_end {
+                1.0
+            } else {
+                let t = (freq - mid_start) / (mid_end - mid_start);
+                0.3 + 0.7 * (std::f32::consts::PI * t).cos().abs()
+            };
+
+            self.cached_lfo_depth_table[i] = max_depth * hf_ratio * mid_reduction;
+        }
+        // DC and Nyquist: zero depth (force real-only)
+        self.cached_lfo_depth_table[0] = 0.0;
+        self.cached_lfo_depth_table[half] = 0.0;
+    }
+
     /// Update LFO-based decorrelation filters per frame
     pub(super) fn update_lfo_decorrelation(&mut self) {
         // Diagnostic bypass: skip update if bypass is enabled
@@ -132,34 +170,36 @@ impl UpmixerPlugin {
             self.decor_lfo_phase -= two_pi;
         }
 
-        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
-        let nyquist = self.sample_rate as f32 / 2.0;
-        let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
-
-        // Critical frequencies for decorrelation shaping
-        let mid_start = 800.0_f32; // Start reducing decorrelation in vocal range
-        let mid_end = 4000.0_f32; // End of critical mid-range
+        // Use precomputed depth table (avoids per-bin hf_ratio, mid_reduction, cos() calculations)
+        let has_depth_table = self.cached_lfo_depth_table.len() == half + 1;
 
         for i in 0..=half {
-            let freq = i as f32 * freq_per_bin;
-
-            let hf_ratio = if freq <= hf_start {
-                0.0
-            } else if freq >= nyquist {
-                1.0
+            let depth = if has_depth_table {
+                self.cached_lfo_depth_table[i]
             } else {
-                (freq - hf_start) / (nyquist - hf_start)
+                // Fallback: compute inline if table not yet built
+                let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+                let nyquist = self.sample_rate as f32 / 2.0;
+                let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
+                let freq = i as f32 * freq_per_bin;
+                let hf_ratio = if freq <= hf_start {
+                    0.0
+                } else if freq >= nyquist {
+                    1.0
+                } else {
+                    (freq - hf_start) / (nyquist - hf_start)
+                };
+                let mid_start = 800.0_f32;
+                let mid_end = 4000.0_f32;
+                let mid_reduction = if freq < mid_start || freq > mid_end {
+                    1.0
+                } else {
+                    let t = (freq - mid_start) / (mid_end - mid_start);
+                    0.3 + 0.7 * (std::f32::consts::PI * t).cos().abs()
+                };
+                0.08_f32 * hf_ratio * mid_reduction
             };
 
-            let mid_reduction = if freq < mid_start || freq > mid_end {
-                1.0
-            } else {
-                let t = (freq - mid_start) / (mid_end - mid_start);
-                0.3 + 0.7 * (std::f32::consts::PI * t).cos().abs()
-            };
-
-            let max_depth = 0.08_f32;
-            let depth = max_depth * hf_ratio * mid_reduction;
             let phase_warp = (self.decor_lfo_phase + 0.37_f32 * i as f32).sin() * depth;
 
             let base_l = self.decor_base_phases_left[i];

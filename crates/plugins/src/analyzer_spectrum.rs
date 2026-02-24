@@ -82,21 +82,17 @@ pub struct SpectrumAnalyzerPlugin {
     bin_to_display: Vec<Option<usize>>,
     // Cached constants derived from config and sample_rate
     fft_bin_hz: f32,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl SpectrumAnalyzerPlugin {
     fn generate_window() -> Vec<f32> {
         (0..FFT_SIZE)
-            .map(|i| {
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / FFT_SIZE as f32).cos())
-            })
+            .map(|i| 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / FFT_SIZE as f32).cos()))
             .collect()
     }
 
-    fn build_bin_to_display(
-        config: &SpectrumConfig,
-        sample_rate: u32,
-    ) -> Vec<Option<usize>> {
+    fn build_bin_to_display(config: &SpectrumConfig, sample_rate: u32) -> Vec<Option<usize>> {
         let fft_bin_hz = sample_rate as f32 / FFT_SIZE as f32;
         let log_min = config.min_freq.log10();
         let log_max = config.max_freq.log10();
@@ -108,8 +104,7 @@ impl SpectrumAnalyzerPlugin {
                 if freq < config.min_freq || freq > config.max_freq {
                     return None;
                 }
-                let bin_idx = (((freq.log10() - log_min) / log_range)
-                    * config.num_bins as f32)
+                let bin_idx = (((freq.log10() - log_min) / log_range) * config.num_bins as f32)
                     .floor() as usize;
                 if bin_idx < config.num_bins {
                     Some(bin_idx)
@@ -120,10 +115,7 @@ impl SpectrumAnalyzerPlugin {
             .collect()
     }
 
-    fn build_common(
-        num_channels: usize,
-        config: SpectrumConfig,
-    ) -> Result<Self, String> {
+    fn build_common(num_channels: usize, config: SpectrumConfig) -> Result<Self, String> {
         let (p, c) = RingBuffer::new(FFT_SIZE * 4);
         let log_min = config.min_freq.log10();
         let log_max = config.max_freq.log10();
@@ -148,7 +140,7 @@ impl SpectrumAnalyzerPlugin {
         let sample_rate = 48000u32;
         let bin_to_display = Self::build_bin_to_display(&config, sample_rate);
         let fft_bin_hz = sample_rate as f32 / FFT_SIZE as f32;
-        Ok(Self {
+        let mut p = Self {
             num_channels,
             sample_rate,
             config,
@@ -163,7 +155,19 @@ impl SpectrumAnalyzerPlugin {
             window: Self::generate_window(),
             bin_to_display,
             fft_bin_hz,
-        })
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float("smoothing", "Smoothing", self.config.smoothing, 0.0, 0.999),
+            Parameter::new_int("num_bins", "Bins", self.config.num_bins as i32, 10, 100),
+            Parameter::new_float("min_freq", "Min Freq", self.config.min_freq, 10.0, 500.0),
+            Parameter::new_float("max_freq", "Max Freq", self.config.max_freq, 1000.0, 22050.0),
+        ];
     }
 
     pub fn new(num_channels: usize) -> Result<Self, String> {
@@ -172,6 +176,31 @@ impl SpectrumAnalyzerPlugin {
 
     pub fn with_config(num_channels: usize, config: SpectrumConfig) -> Result<Self, String> {
         Self::build_common(num_channels, config)
+    }
+
+    fn rebuild_config_dependent(&mut self) {
+        let log_min = self.config.min_freq.log10();
+        let log_max = self.config.max_freq.log10();
+        let mut freqs = Vec::with_capacity(self.config.num_bins);
+        for i in 0..self.config.num_bins {
+            let f1 = 10.0f32
+                .powf(log_min + (log_max - log_min) * (i as f32 / self.config.num_bins as f32));
+            let f2 = 10.0f32.powf(
+                log_min + (log_max - log_min) * ((i + 1) as f32 / self.config.num_bins as f32),
+            );
+            freqs.push((f1 * f2).sqrt());
+        }
+
+        self.new_mags.resize(self.config.num_bins, -100.0);
+        self.current_magnitudes.resize(self.config.num_bins, -100.0);
+        self.bin_to_display = Self::build_bin_to_display(&self.config, self.sample_rate);
+
+        // Update cache structure
+        self.cache.update(|data| {
+            data.frequencies = freqs.clone().into();
+            data.magnitudes = vec![-100.0; self.config.num_bins].into();
+            data.peak_magnitude = -100.0;
+        });
     }
 }
 
@@ -186,9 +215,41 @@ impl Plugin for SpectrumAnalyzerPlugin {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        Vec::new()
+        self.cached_parameters.clone()
     }
-    fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> PluginResult<()> {
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+        match id.0.as_str() {
+            "smoothing" => {
+                let v = value.as_float().unwrap_or(0.7);
+                if v.is_finite() {
+                    self.config.smoothing = v.clamp(0.0, 0.999);
+                }
+            }
+            "num_bins" => {
+                let v = value.as_int().unwrap_or(30) as usize;
+                if v != self.config.num_bins {
+                    self.config.num_bins = v.clamp(10, 100);
+                    self.rebuild_config_dependent();
+                }
+            }
+            "min_freq" => {
+                let v = value.as_float().unwrap_or(20.0);
+                if v.is_finite() && v < self.config.max_freq {
+                    self.config.min_freq = v.clamp(10.0, 500.0);
+                    self.rebuild_config_dependent();
+                }
+            }
+            "max_freq" => {
+                let v = value.as_float().unwrap_or(20000.0);
+                if v.is_finite() && v > self.config.min_freq {
+                    self.config.max_freq = v.clamp(1000.0, 22050.0);
+                    self.rebuild_config_dependent();
+                }
+            }
+            _ => return Err(format!("Unknown parameter: {}", id)),
+        }
+        self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
@@ -197,8 +258,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
         self.fft_bin_hz = sr as f32 / FFT_SIZE as f32;
-        self.bin_to_display =
-            Self::build_bin_to_display(&self.config, sr);
+        self.bin_to_display = Self::build_bin_to_display(&self.config, sr);
         Ok(())
     }
     fn reset(&mut self) {

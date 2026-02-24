@@ -21,6 +21,7 @@ pub struct BandMergePlugin {
     output_channels: usize,
     num_bands: usize,
     param_bands: ParameterId,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl BandMergePlugin {
@@ -28,17 +29,30 @@ impl BandMergePlugin {
         if bands < 2 {
             return Err("Min 2 bands".into());
         }
-        Ok(Self {
+        let mut p = Self {
             output_channels,
             num_bands: bands,
             param_bands: ParameterId("bands".to_string()),
-        })
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
     }
     pub fn from_params(
         output_channels: usize,
         params: &BandMergePluginParams,
     ) -> Result<Self, String> {
         Self::new(output_channels, params.bands)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![Parameter::new_int(
+            "bands",
+            "Bands",
+            self.num_bands as i32,
+            2,
+            32,
+        )];
     }
 }
 
@@ -53,11 +67,12 @@ impl Plugin for BandMergePlugin {
         self.output_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        Vec::new()
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         if id == self.param_bands {
             self.num_bands = value.as_int().ok_or("val")? as usize;
+            self.rebuild_cached_parameters();
             Ok(())
         } else {
             Err("unknown".into())

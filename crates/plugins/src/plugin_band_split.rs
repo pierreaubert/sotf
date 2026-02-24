@@ -27,6 +27,7 @@ pub struct BandSplitPlugin {
     lowpass: Vec<Vec<Biquad>>,
     highpass: Vec<Vec<Biquad>>,
     freq_smoother: LogSmoother,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl BandSplitPlugin {
@@ -43,8 +44,10 @@ impl BandSplitPlugin {
             lowpass: vec![Vec::new(); input_channels],
             highpass: vec![Vec::new(); input_channels],
             freq_smoother: LogSmoother::new(frequency as f32, 20.0, sr),
+            cached_parameters: Vec::new(),
         };
         p.build_filters(frequency);
+        p.rebuild_cached_parameters();
         Ok(p)
     }
 
@@ -53,6 +56,16 @@ impl BandSplitPlugin {
         params: &BandSplitPluginParams,
     ) -> Result<Self, String> {
         Self::new(input_channels, params.frequency, &params.crossover_type)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![Parameter::new_float(
+            "frequency",
+            "Frequency",
+            self.freq_smoother.target(),
+            20.0,
+            20000.0,
+        )];
     }
 
     fn build_filters(&mut self, freq: f64) {
@@ -87,21 +100,19 @@ impl Plugin for BandSplitPlugin {
         self.input_channels * 2
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![Parameter::new_float(
-            "frequency",
-            "Frequency",
-            1000.0,
-            20.0,
-            20000.0,
-        )]
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
         if id.0 == "frequency" {
-            self.freq_smoother
-                .set_target(value.as_float().ok_or("val")?);
+            let v = value.as_float().ok_or_else(|| "frequency must be a float".to_string())?;
+            if v.is_finite() {
+                self.freq_smoother.set_target(v);
+                self.rebuild_cached_parameters();
+            }
             Ok(())
         } else {
-            Err("unknown".into())
+            Err(format!("Unknown parameter: {}", id))
         }
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -131,7 +142,7 @@ impl Plugin for BandSplitPlugin {
         let num_frames = context.num_frames;
         let in_ch = self.input_channels;
         let out_ch = in_ch * 2;
-        
+
         // Block-based smoothing
         let new_freq = self.freq_smoother.next_n(num_frames);
 
@@ -167,7 +178,7 @@ impl Plugin for BandSplitPlugin {
                 output[out_off + in_ch + ch] = hp_s as f32;
             }
         }
-        
+
         flush_denormals_inplace(output);
         Ok(num_frames)
     }

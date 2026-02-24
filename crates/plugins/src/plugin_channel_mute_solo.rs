@@ -185,13 +185,10 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
         if id == self.param_enabled {
-            if let Some(enabled) = value.as_bool() {
-                self.set_enabled(enabled);
-                Ok(())
-            } else {
-                Err("enabled must be bool".to_string())
-            }
+            self.set_enabled(value.as_bool().unwrap_or(true));
+            Ok(())
         } else if id == self.param_channel_states {
             if let Some(json_str) = value.as_string() {
                 let states: Vec<ChannelState> =
@@ -486,5 +483,4 @@ mod tests {
         assert!(buffer[0] < 1.0, "Should start fading");
         assert!(buffer[0] > 0.0, "Should not jump to 0.0 instantly");
     }
-
 }

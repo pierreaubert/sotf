@@ -245,7 +245,8 @@ fn test_binaural_silence_after_draining_stft_tail() {
     // After draining, output should be all zeros
     let non_zero_count = output.iter().filter(|&&x| x != 0.0).count();
     assert_eq!(
-        non_zero_count, 0,
+        non_zero_count,
+        0,
         "Expected all-zero output after {} blocks of silence, but found {} non-zero samples (max abs: {:e})",
         drain_blocks,
         non_zero_count,

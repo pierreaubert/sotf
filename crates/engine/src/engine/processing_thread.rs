@@ -245,24 +245,28 @@ impl ProcessingState {
         // Handle crossfade if in progress
         if let Some(ref mut prev_host) = self.prev_host {
             let actual_frames = self.host.process(input, output)?;
-            
+
             let output_samples = actual_frames * self.channels;
             if self.prev_process_buffer.len() < output_samples {
                 self.prev_process_buffer.resize(output_samples, 0.0);
             }
-            
+
             let _ = prev_host.process(input, &mut self.prev_process_buffer[..output_samples])?;
-            
+
             // Blend buffers: output = (1-alpha)*prev + alpha*current
             let alpha = self.crossfade_progress;
-            sotf_plugins::simd::blend_simd(output, &self.prev_process_buffer[..output_samples], alpha);
-            
+            sotf_plugins::simd::blend_simd(
+                output,
+                &self.prev_process_buffer[..output_samples],
+                alpha,
+            );
+
             // Advance crossfade
             self.crossfade_progress = (self.crossfade_progress + self.crossfade_step).min(1.0);
             if self.crossfade_progress >= 1.0 {
                 self.prev_host = None;
             }
-            
+
             Ok(actual_frames)
         } else {
             // Normal processing - returns actual output frames
@@ -290,7 +294,7 @@ fn handle_processing_command(
             if state.host.output_channels() == output_channels && state.host.plugin_count() > 0 {
                 state.prev_host = Some(std::mem::replace(&mut state.host, new_host));
                 state.crossfade_progress = 0.0;
-                
+
                 // Crossfade over ~50ms
                 // For a 1024 frame size at 48kHz, this is ~2.3 blocks.
                 // We ensure it takes at least 2 blocks for a smooth transition.
@@ -303,7 +307,7 @@ fn handle_processing_command(
                 state.prev_host = None;
                 state.crossfade_progress = 1.0;
             }
-            
+
             state.channels = output_channels;
 
             response_tx
@@ -467,7 +471,9 @@ fn run_processing_thread(
                                         true
                                     } else {
                                         // UI thread still reading — send to GC, fall back to clone
-                                        gc_tx.try_send(super::gc_thread::GcItem::AnyArc(spare)).ok();
+                                        gc_tx
+                                            .try_send(super::gc_thread::GcItem::AnyArc(spare))
+                                            .ok();
                                         false
                                     }
                                 } else {
@@ -484,7 +490,8 @@ fn run_processing_thread(
                                     for &i in analyzer_indices {
                                         new_cache[i] = state.host.get_plugin_data(i);
                                     }
-                                    let old_arc = plugin_data_cache.swap(std::sync::Arc::new(new_cache));
+                                    let old_arc =
+                                        plugin_data_cache.swap(std::sync::Arc::new(new_cache));
                                     state.spare_cache_arc = Some(old_arc);
                                 }
                             }
@@ -864,7 +871,7 @@ fn create_plugin(
             let params: FletcherMunsonPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse Fletcher-Munson plugin parameters: {}", e))?;
 
-            let mut plugin = FletcherMunsonPlugin::from_params(channels, params);
+            let mut plugin = FletcherMunsonPlugin::from_params(channels, params)?;
             plugin.initialize(sample_rate)?;
             Ok(Box::new(plugin))
         }
@@ -930,7 +937,10 @@ fn create_plugin(
                 if in_ch != channels || out_ch != channels {
                     log::info!(
                         "[create_plugin:matrix] Resizing matrix from {}x{} to {}x{} to match chain",
-                        in_ch, out_ch, channels, channels
+                        in_ch,
+                        out_ch,
+                        channels,
+                        channels
                     );
                     let mut matrix = params.matrix;
                     crate::plugins::resize_matrix(&mut matrix, in_ch, out_ch, channels, channels);

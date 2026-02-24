@@ -72,8 +72,7 @@ impl UpmixerPlugin {
                 }
 
                 // Last 2 bins: partial window
-                smoothed[n - 2] =
-                    (src[n - 4] + src[n - 3] + src[n - 2] + src[n - 1]) * 0.25;
+                smoothed[n - 2] = (src[n - 4] + src[n - 3] + src[n - 2] + src[n - 1]) * 0.25;
                 smoothed[n - 1] = (src[n - 3] + src[n - 2] + src[n - 1]) / 3.0;
             }
         }
@@ -82,8 +81,20 @@ impl UpmixerPlugin {
         // Fast attack for transient ducking, slow release to prevent crackle on mask recovery.
         let attack_alpha = 0.25_f32;
         let release_alpha = 0.08_f32;
-        for (s, (gain, prev)) in smoothed.iter().zip(self.height_band_gains.iter_mut().zip(self.height_band_gains_prev.iter_mut())).take(n) {
-            let alpha = if *s < *prev { attack_alpha } else { release_alpha };
+        for (s, (gain, prev)) in smoothed
+            .iter()
+            .zip(
+                self.height_band_gains
+                    .iter_mut()
+                    .zip(self.height_band_gains_prev.iter_mut()),
+            )
+            .take(n)
+        {
+            let alpha = if *s < *prev {
+                attack_alpha
+            } else {
+                release_alpha
+            };
             let blended = alpha * s + (1.0 - alpha) * *prev;
             *gain = blended;
             *prev = blended;

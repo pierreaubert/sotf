@@ -79,6 +79,16 @@ pub trait Plugin: Send {
     /// Returns an error if the parameter doesn't exist or the value is invalid
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()>;
 
+    /// Helper to validate a parameter value against its definition
+    fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
+        let params = self.parameters();
+        if let Some(param) = params.iter().find(|p| p.id == *id) {
+            param.validate(value).map_err(|e| format!("{}: {}", id, e))
+        } else {
+            Err(format!("Unknown parameter: {}", id))
+        }
+    }
+
     /// Get a parameter value
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue>;
 
@@ -165,6 +175,16 @@ pub trait InPlacePlugin: Send {
 
     /// Set a parameter value
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()>;
+
+    /// Helper to validate a parameter value against its definition
+    fn validate_parameter(&self, id: &ParameterId, value: &ParameterValue) -> PluginResult<()> {
+        let params = self.parameters();
+        if let Some(param) = params.iter().find(|p| p.id == *id) {
+            param.validate(value).map_err(|e| format!("{}: {}", id, e))
+        } else {
+            Err(format!("Unknown parameter: {}", id))
+        }
+    }
 
     /// Get a parameter value
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue>;

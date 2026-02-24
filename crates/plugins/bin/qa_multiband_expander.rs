@@ -1,5 +1,7 @@
-use sotf_plugins::plugin_multiband_expander::{MultibandExpanderPlugin, MultibandExpanderPluginParams};
-use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::plugin_multiband_expander::{
+    MultibandExpanderPlugin, MultibandExpanderPluginParams,
+};
+use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 use std::f32::consts::PI;
 
@@ -30,17 +32,20 @@ fn main() {
     println!("\n[Test 1] High Band Expansion (Input -40dB @ 10kHz, Thresh -20dB)");
     let num_frames = 48000;
     let mut buffer = generate_sine(sample_rate, 10000.0, -40.0, num_frames);
-    
+
     let mut pos = 0;
     let block_size = 1024;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx = ProcessContext { sample_rate, num_frames: end - pos };
+        let ctx = ProcessContext {
+            sample_rate,
+            num_frames: end - pos,
+        };
         inner.process_in_place(&mut buffer[pos..end], &ctx).unwrap();
         pos = end;
     }
-    
-    let peak = measure_peak_db(&buffer[num_frames-4096..]);
+
+    let peak = measure_peak_db(&buffer[num_frames - 4096..]);
     // Input -40dB, Thresh -20dB. Diff 20dB. Ratio 2:1. Expansion = 20 * 0.5 = 10dB. Output = -40 - 10 = -50dB
     println!("  Expected: ~-50.0dB, Measured: {:.2}dB", peak);
     assert!((peak + 50.0).abs() < 2.0);
@@ -55,7 +60,9 @@ fn main() {
 
 fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {
     let amp = 10.0f32.powf(db / 20.0);
-    (0..frames).map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin() * amp).collect()
+    (0..frames)
+        .map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin() * amp)
+        .collect()
 }
 
 fn measure_peak_db(buffer: &[f32]) -> f32 {

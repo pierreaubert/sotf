@@ -26,6 +26,8 @@ use rustfft::num_complex::Complex;
 use std::any::Any;
 use std::sync::Arc;
 
+use super::analyzer::RealTimeCache;
+
 mod config;
 mod fft;
 mod masking;
@@ -50,10 +52,10 @@ const NUM_DISPLAY_BANDS: usize = 30;
 pub struct DenoiserData {
     /// Estimated noise floor per frequency band (in dB)
     /// Averaged across channels, downsampled to ~30 bands for display
-    pub noise_floor_db: Vec<f32>,
+    pub noise_floor_db: Arc<Vec<f32>>,
 
     /// Current SNR estimate per frequency band (in dB)
-    pub snr_db: Vec<f32>,
+    pub snr_db: Arc<Vec<f32>>,
 
     /// Average gain reduction in dB (positive value = reduction)
     pub avg_reduction_db: f32,
@@ -72,6 +74,48 @@ pub struct DenoiserData {
 
     /// Whether using captured profile
     pub using_captured_profile: bool,
+}
+
+impl Default for DenoiserData {
+    fn default() -> Self {
+        Self {
+            noise_floor_db: Arc::new(vec![0.0; NUM_DISPLAY_BANDS]),
+            snr_db: Arc::new(vec![0.0; NUM_DISPLAY_BANDS]),
+            avg_reduction_db: 0.0,
+            learning_active: true,
+            is_learning_noise: false,
+            has_captured_profile: false,
+            learning_progress: 0.0,
+            using_captured_profile: false,
+        }
+    }
+}
+
+impl DenoiserData {
+    pub fn update(&mut self, other: &DenoiserData) {
+        if let Some(mut_nf) = Arc::get_mut(&mut self.noise_floor_db)
+            && mut_nf.len() == other.noise_floor_db.len()
+        {
+            mut_nf.copy_from_slice(&other.noise_floor_db);
+        } else {
+            self.noise_floor_db = other.noise_floor_db.clone();
+        }
+
+        if let Some(mut_snr) = Arc::get_mut(&mut self.snr_db)
+            && mut_snr.len() == other.snr_db.len()
+        {
+            mut_snr.copy_from_slice(&other.snr_db);
+        } else {
+            self.snr_db = other.snr_db.clone();
+        }
+
+        self.avg_reduction_db = other.avg_reduction_db;
+        self.learning_active = other.learning_active;
+        self.is_learning_noise = other.is_learning_noise;
+        self.has_captured_profile = other.has_captured_profile;
+        self.learning_progress = other.learning_progress;
+        self.using_captured_profile = other.using_captured_profile;
+    }
 }
 
 // ============================================================================
@@ -205,10 +249,11 @@ pub struct DenoiserPlugin {
     // Data exposure for UI — cached to avoid allocations in get_data()
     avg_reduction_db: f32,
     learning_active: bool,
-    cached_data: Arc<DenoiserData>,
+    cache: RealTimeCache<DenoiserData>,
     data_update_counter: usize,
     cached_noise_floor_buf: Vec<f32>, // [NUM_DISPLAY_BANDS] pre-allocated
     cached_snr_buf: Vec<f32>,         // [NUM_DISPLAY_BANDS] pre-allocated
+    cached_parameters: Vec<Parameter>,
 }
 
 impl DenoiserPlugin {
@@ -254,18 +299,7 @@ impl DenoiserPlugin {
         let output_accumulator = vec![vec![0.0_f32; ring_capacity]; channels];
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
 
-        let cached_data = Arc::new(DenoiserData {
-            noise_floor_db: vec![0.0; NUM_DISPLAY_BANDS],
-            snr_db: vec![0.0; NUM_DISPLAY_BANDS],
-            avg_reduction_db: 0.0,
-            learning_active: true,
-            is_learning_noise: false,
-            has_captured_profile: false,
-            learning_progress: 0.0,
-            using_captured_profile: false,
-        });
-
-        Self {
+        let mut p = Self {
             channels,
             fft_size,
             hop_size,
@@ -370,11 +404,117 @@ impl DenoiserPlugin {
 
             avg_reduction_db: 0.0,
             learning_active: true,
-            cached_data,
+            cache: RealTimeCache::new(DenoiserData::default()),
             data_update_counter: 0,
             cached_noise_floor_buf: vec![0.0; NUM_DISPLAY_BANDS],
             cached_snr_buf: vec![0.0; NUM_DISPLAY_BANDS],
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "reduction_db",
+                "Reduction",
+                self.reduction_db,
+                REDUCTION_DB_MIN,
+                REDUCTION_DB_MAX,
+            )
+            .with_unit("dB")
+            .with_group("Noise Reduction")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "floor_db",
+                "Floor",
+                self.floor_db,
+                FLOOR_DB_MIN,
+                FLOOR_DB_MAX,
+            )
+            .with_unit("dB")
+            .with_group("Noise Reduction")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "smoothing",
+                "Spectral Smoothing",
+                self.smoothing,
+                SMOOTHING_MIN,
+                SMOOTHING_MAX,
+            )
+            .with_group("Noise Reduction")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "attack_ms",
+                "Attack",
+                self.attack_ms,
+                ATTACK_MS_MIN,
+                ATTACK_MS_MAX,
+            )
+            .with_unit("ms")
+            .with_group("Envelope")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "release_ms",
+                "Release",
+                self.release_ms,
+                RELEASE_MS_MIN,
+                RELEASE_MS_MAX,
+            )
+            .with_unit("ms")
+            .with_group("Envelope")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("low_latency", "Low Latency", self.low_latency)
+                .with_group("General")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool(
+                "polyphonic_detection",
+                "Polyphonic Detection",
+                self.polyphonic_detection,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "crack_sensitivity",
+                "Crack Sensitivity",
+                self.crack_sensitivity,
+                1.0,
+                50.0,
+            )
+            .with_group("Transient")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "transparency",
+                "Transparency",
+                self.transparency,
+                TRANSPARENCY_MIN,
+                TRANSPARENCY_MAX,
+            )
+            .with_group("Noise Reduction")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "psychoacoustic_masking",
+                "Psychoacoustic Masking",
+                self.psychoacoustic_masking,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("dd_enabled", "Dialogue Detection", self.dd_enabled)
+                .with_group("Analysis")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("dd_alpha", "DD Sensitivity", self.dd_alpha, 0.0, 1.0)
+                .with_group("Analysis")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("learn_noise", "Learn Noise", false).with_group("Profile"),
+            Parameter::new_bool(
+                "use_captured_profile",
+                "Use Captured Profile",
+                self.use_captured_profile,
+            )
+            .with_group("Profile"),
+            Parameter::new_bool("clear_profile", "Clear Profile", false).with_group("Profile"),
+        ];
     }
 
     /// Create a new denoiser plugin from configuration parameters
@@ -468,15 +608,30 @@ impl DenoiserPlugin {
     fn update_cached_data(&mut self) {
         self.compute_noise_floor_db();
         self.compute_snr_db();
-        self.cached_data = Arc::new(DenoiserData {
-            noise_floor_db: self.cached_noise_floor_buf.clone(),
-            snr_db: self.cached_snr_buf.clone(),
-            avg_reduction_db: self.avg_reduction_db,
-            learning_active: self.learning_active,
-            is_learning_noise: self.is_learning,
-            has_captured_profile: self.has_noise_profile,
-            learning_progress: self.learning_progress(),
-            using_captured_profile: self.use_captured_profile,
+
+        let avg_red = self.avg_reduction_db;
+        let learn_act = self.learning_active;
+        let is_learn = self.is_learning;
+        let has_prof = self.has_noise_profile;
+        let progress = self.learning_progress();
+        let using_prof = self.use_captured_profile;
+
+        let nf_buf = &self.cached_noise_floor_buf;
+        let snr_buf = &self.cached_snr_buf;
+
+        self.cache.update(|d| {
+            if let Some(mut_nf) = Arc::get_mut(&mut d.noise_floor_db) {
+                mut_nf.copy_from_slice(nf_buf);
+            }
+            if let Some(mut_snr) = Arc::get_mut(&mut d.snr_db) {
+                mut_snr.copy_from_slice(snr_buf);
+            }
+            d.avg_reduction_db = avg_red;
+            d.learning_active = learn_act;
+            d.is_learning_noise = is_learn;
+            d.has_captured_profile = has_prof;
+            d.learning_progress = progress;
+            d.using_captured_profile = using_prof;
         });
     }
 
@@ -491,7 +646,12 @@ impl DenoiserPlugin {
             let accum = &mut self.output_accumulator[ch];
             let time_out = &self.time_out_channels[ch];
 
-            for (i, (t, w)) in time_out.iter().zip(self.synthesis_window.iter()).enumerate().take(self.fft_size) {
+            for (i, (t, w)) in time_out
+                .iter()
+                .zip(self.synthesis_window.iter())
+                .enumerate()
+                .take(self.fft_size)
+            {
                 let idx = (self.output_write_pos + i) & mask;
                 accum[idx] += t * w;
             }
@@ -541,203 +701,83 @@ impl InPlacePlugin for DenoiserPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float(
-                "reduction_db",
-                "Reduction",
-                REDUCTION_DB_DEFAULT,
-                REDUCTION_DB_MIN,
-                REDUCTION_DB_MAX,
-            )
-            .with_description("Noise reduction strength (dB)")
-            .with_group("General")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "floor_db",
-                "Floor",
-                FLOOR_DB_DEFAULT,
-                FLOOR_DB_MIN,
-                FLOOR_DB_MAX,
-            )
-            .with_description("Minimum gain floor to prevent musical noise (dB)")
-            .with_group("General")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "smoothing",
-                "Smoothing",
-                SMOOTHING_DEFAULT,
-                SMOOTHING_MIN,
-                SMOOTHING_MAX,
-            )
-            .with_description("Temporal smoothing factor")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "attack_ms",
-                "Attack",
-                ATTACK_MS_DEFAULT,
-                ATTACK_MS_MIN,
-                ATTACK_MS_MAX,
-            )
-            .with_description("Attack time for gain changes (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "release_ms",
-                "Release",
-                RELEASE_MS_DEFAULT,
-                RELEASE_MS_MIN,
-                RELEASE_MS_MAX,
-            )
-            .with_description("Release time for gain changes (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool("low_latency", "Low Latency", LOW_LATENCY_DEFAULT)
-                .with_description("Use smaller FFT for lower latency (requires reinit)")
-                .with_group("Performance")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool(
-                "polyphonic_detection",
-                "Polyphonic Detection",
-                POLYPHONIC_DETECTION_DEFAULT,
-            )
-            .with_description("Enable polyphonic note detection mode (gates non-tonal content)")
-            .with_group("Detection")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("crack_sensitivity", "Crack Sens.", 10.0, 1.0, 100.0)
-                .with_description("Sensitivity of transient suppressor (higher = less sensitive)")
-                .with_group("Detection")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "psychoacoustic_masking",
-                "Psychoacoustic Masking",
-                PSYCHOACOUSTIC_MASKING_DEFAULT,
-            )
-            .with_description("Skip denoising for perceptually masked noise bins")
-            .with_group("Processing")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "transparency",
-                "Transparency",
-                TRANSPARENCY_DEFAULT,
-                TRANSPARENCY_MIN,
-                TRANSPARENCY_MAX,
-            )
-            .with_description("Blend toward dry signal (0 = full denoising, 1 = pass-through)")
-            .with_group("General")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("dd_enabled", "DD SNR", DD_ENABLED_DEFAULT)
-                .with_description("Enable Decision-Directed SNR estimation (Ephraim-Malah)")
-                .with_group("Processing")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "dd_alpha",
-                "DD Alpha",
-                DD_ALPHA_DEFAULT,
-                DD_ALPHA_MIN,
-                DD_ALPHA_MAX,
-            )
-            .with_description("Decision-directed smoothing factor (higher = more smoothing)")
-            .with_group("Processing")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool("learn_noise", "Learn Noise", false)
-                .with_description("Start capturing noise profile from current audio")
-                .with_group("Noise Profile")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "use_captured_profile",
-                "Use Profile",
-                USE_CAPTURED_PROFILE_DEFAULT,
-            )
-            .with_description("Use captured noise profile instead of live estimation")
-            .with_group("Noise Profile")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("clear_profile", "Clear Profile", false)
-                .with_description("Clear the captured noise profile")
-                .with_group("Noise Profile")
-                .with_importance(ParameterImportance::Useful),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id == self.param_reduction_db {
-            self.reduction_db = value
-                .as_float()
-                .ok_or("Invalid reduction_db value")?
-                .clamp(REDUCTION_DB_MIN, REDUCTION_DB_MAX);
-            self.reduction_linear = 10.0_f32.powf(self.reduction_db / 10.0);
+            let val = value.as_float().unwrap_or(REDUCTION_DB_DEFAULT);
+            if val.is_finite() {
+                self.reduction_db = val.clamp(REDUCTION_DB_MIN, REDUCTION_DB_MAX);
+                self.reduction_linear = 10.0_f32.powf(self.reduction_db / 10.0);
+            }
         } else if id == self.param_floor_db {
-            self.floor_db = value
-                .as_float()
-                .ok_or("Invalid floor_db value")?
-                .clamp(FLOOR_DB_MIN, FLOOR_DB_MAX);
-            self.floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
+            let val = value.as_float().unwrap_or(FLOOR_DB_DEFAULT);
+            if val.is_finite() {
+                self.floor_db = val.clamp(FLOOR_DB_MIN, FLOOR_DB_MAX);
+                self.floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
+            }
         } else if id == self.param_smoothing {
-            self.smoothing = value
-                .as_float()
-                .ok_or("Invalid smoothing value")?
-                .clamp(SMOOTHING_MIN, SMOOTHING_MAX);
-            self.freq_smooth_kernel = Self::compute_smoothing_kernel(self.smoothing);
+            let val = value.as_float().unwrap_or(SMOOTHING_DEFAULT);
+            if val.is_finite() {
+                self.smoothing = val.clamp(SMOOTHING_MIN, SMOOTHING_MAX);
+                self.freq_smooth_kernel = Self::compute_smoothing_kernel(self.smoothing);
+            }
         } else if id == self.param_attack_ms {
-            self.attack_ms = value
-                .as_float()
-                .ok_or("Invalid attack_ms value")?
-                .clamp(ATTACK_MS_MIN, ATTACK_MS_MAX);
-            self.update_envelope_coefficients();
+            let val = value.as_float().unwrap_or(ATTACK_MS_DEFAULT);
+            if val.is_finite() {
+                self.attack_ms = val.clamp(ATTACK_MS_MIN, ATTACK_MS_MAX);
+                self.update_envelope_coefficients();
+            }
         } else if id == self.param_release_ms {
-            self.release_ms = value
-                .as_float()
-                .ok_or("Invalid release_ms value")?
-                .clamp(RELEASE_MS_MIN, RELEASE_MS_MAX);
-            self.update_envelope_coefficients();
+            let val = value.as_float().unwrap_or(RELEASE_MS_DEFAULT);
+            if val.is_finite() {
+                self.release_ms = val.clamp(RELEASE_MS_MIN, RELEASE_MS_MAX);
+                self.update_envelope_coefficients();
+            }
         } else if id == self.param_low_latency {
-            // Note: Changing low_latency requires reinitializing the plugin
-            // This is typically not done at runtime
-            self.low_latency = value.as_bool().ok_or("Invalid low_latency value")?;
+            self.low_latency = value.as_bool().unwrap_or(LOW_LATENCY_DEFAULT);
         } else if id == self.param_polyphonic_detection {
-            self.polyphonic_detection = value
-                .as_bool()
-                .ok_or("Invalid polyphonic_detection value")?;
+            self.polyphonic_detection = value.as_bool().unwrap_or(POLYPHONIC_DETECTION_DEFAULT);
         } else if id == self.param_crack_sensitivity {
-            self.crack_sensitivity = value
-                .as_float()
-                .ok_or("Invalid crack_sensitivity value")?
-                .max(1.0);
-            self.transient_suppressor
-                .set_sensitivity(self.crack_sensitivity);
+            let val = value.as_float().unwrap_or(10.0);
+            if val.is_finite() {
+                self.crack_sensitivity = val.max(1.0);
+                self.transient_suppressor
+                    .set_sensitivity(self.crack_sensitivity);
+            }
         } else if id == self.param_transparency {
-            self.transparency = value
-                .as_float()
-                .ok_or("Invalid transparency value")?
-                .clamp(TRANSPARENCY_MIN, TRANSPARENCY_MAX);
+            let val = value.as_float().unwrap_or(TRANSPARENCY_DEFAULT);
+            if val.is_finite() {
+                self.transparency = val.clamp(TRANSPARENCY_MIN, TRANSPARENCY_MAX);
+            }
         } else if id == self.param_psychoacoustic_masking {
-            self.psychoacoustic_masking = value
-                .as_bool()
-                .ok_or("Invalid psychoacoustic_masking value")?;
+            self.psychoacoustic_masking = value.as_bool().unwrap_or(PSYCHOACOUSTIC_MASKING_DEFAULT);
         } else if id == self.param_dd_enabled {
-            self.dd_enabled = value.as_bool().ok_or("Invalid dd_enabled value")?;
+            self.dd_enabled = value.as_bool().unwrap_or(DD_ENABLED_DEFAULT);
         } else if id == self.param_dd_alpha {
-            self.dd_alpha = value
-                .as_float()
-                .ok_or("Invalid dd_alpha value")?
-                .clamp(DD_ALPHA_MIN, DD_ALPHA_MAX);
+            let val = value.as_float().unwrap_or(DD_ALPHA_DEFAULT);
+            if val.is_finite() {
+                self.dd_alpha = val.clamp(DD_ALPHA_MIN, DD_ALPHA_MAX);
+            }
         } else if id == self.param_learn_noise {
-            let trigger = value.as_bool().ok_or("Invalid learn_noise value")?;
+            let trigger = value.as_bool().unwrap_or(false);
             if trigger {
                 self.start_learning();
             }
         } else if id == self.param_use_captured_profile {
-            self.use_captured_profile = value
-                .as_bool()
-                .ok_or("Invalid use_captured_profile value")?;
+            self.use_captured_profile = value.as_bool().unwrap_or(USE_CAPTURED_PROFILE_DEFAULT);
         } else if id == self.param_clear_profile {
-            let trigger = value.as_bool().ok_or("Invalid clear_profile value")?;
+            let trigger = value.as_bool().unwrap_or(false);
             if trigger {
                 self.clear_noise_profile();
             }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -888,6 +928,6 @@ impl InPlacePlugin for DenoiserPlugin {
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        Some(self.cached_data.clone())
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }

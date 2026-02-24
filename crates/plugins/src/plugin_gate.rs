@@ -88,9 +88,10 @@ impl GateData {
     pub fn update(&mut self, is_open: bool, attenuation: &[f32]) {
         self.is_open = is_open;
         if let Some(mut_att) = Arc::get_mut(&mut self.attenuation_db)
-            && mut_att.len() == attenuation.len() {
-                mut_att.copy_from_slice(attenuation);
-            }
+            && mut_att.len() == attenuation.len()
+        {
+            mut_att.copy_from_slice(attenuation);
+        }
     }
 }
 
@@ -113,7 +114,6 @@ pub struct GatePlugin {
     link_channels: bool,
     param_sidechain_hpf_hz: ParameterId,
     sidechain_hpf_hz: f32,
-    envelope: Vec<f32>,
     hold_counter: Vec<usize>,
     attack_coeff: f32,
     release_coeff: f32,
@@ -122,8 +122,13 @@ pub struct GatePlugin {
     sidechain_hpf_alpha: f32,
     threshold_smoother: Smoother,
     mix_smoother: Smoother,
+    /// Gain reduction envelope in dB (positive value)
+    envelope: Vec<f32>,
+    /// Instantaneous input levels in dB for monitoring
+    monitoring_levels: Vec<f32>,
     cache: RealTimeCache<GateData>,
     cache_update_counter: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl GatePlugin {
@@ -136,7 +141,7 @@ impl GatePlugin {
         release_ms: f32,
     ) -> Self {
         let sr = 44100;
-        Self {
+        let mut p = Self {
             channels,
             sample_rate: sr,
             param_threshold: ParameterId::from("threshold"),
@@ -156,6 +161,7 @@ impl GatePlugin {
             param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
             sidechain_hpf_hz: 0.0,
             envelope: vec![0.0; channels],
+            monitoring_levels: vec![-120.0; channels],
             hold_counter: vec![0; channels],
             attack_coeff: 0.0,
             release_coeff: 0.0,
@@ -166,7 +172,65 @@ impl GatePlugin {
             mix_smoother: Smoother::new(1.0, 5.0, sr),
             cache: RealTimeCache::new(GateData::new(channels)),
             cache_update_counter: 0,
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                self.threshold_db,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            )
+            .with_description("Level below which gating starts (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
+                .with_description("Gate ratio (1:1 to 100:1)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
+                .with_description("Attack time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("hold", "Hold", self.hold_ms, HOLD_MIN, HOLD_MAX)
+                .with_description("Hold time before closing (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "release",
+                "Release",
+                self.release_ms,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_description("Release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
+                .with_description("Dry/wet mix (0 = dry, 1 = gated)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
+                .with_description("Use linked sidechain for all channels")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "sidechain_hpf_hz",
+                "Sidechain HPF",
+                self.sidechain_hpf_hz,
+                SIDECHAIN_HPF_HZ_MIN,
+                SIDECHAIN_HPF_HZ_MAX,
+            )
+            .with_description("High-pass filter frequency for sidechain (Hz)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
+        ];
     }
 
     pub fn from_params(channels: usize, params: GatePluginParams) -> Self {
@@ -226,84 +290,55 @@ impl InPlacePlugin for GatePlugin {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float(
-                "threshold",
-                "Threshold",
-                THRESHOLD_DEFAULT,
-                THRESHOLD_MIN,
-                THRESHOLD_MAX,
-            )
-            .with_description("Level below which gating starts (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Gate ratio (1:1 to 100:1)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Attack time (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
-                .with_description("Hold time before closing (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "release",
-                "Release",
-                RELEASE_DEFAULT,
-                RELEASE_MIN,
-                RELEASE_MAX,
-            )
-            .with_description("Release time (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = gated)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Use linked sidechain for all channels")
-                .with_group("Channels")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "sidechain_hpf_hz",
-                "Sidechain HPF",
-                SIDECHAIN_HPF_HZ_DEFAULT,
-                SIDECHAIN_HPF_HZ_MIN,
-                SIDECHAIN_HPF_HZ_MAX,
-            )
-            .with_description("High-pass filter frequency for sidechain (Hz)")
-            .with_group("Sidechain")
-            .with_importance(ParameterImportance::FineTuning),
-        ]
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id == self.param_threshold {
-            self.threshold_db = value.as_float().ok_or("val")?;
-            self.threshold_smoother.set_target(self.threshold_db);
+            let v = value.as_float().unwrap_or(THRESHOLD_DEFAULT);
+            if v.is_finite() {
+                self.threshold_db = v;
+                self.threshold_smoother.set_target(self.threshold_db);
+            }
         } else if id == self.param_ratio {
-            self.ratio = value.as_float().ok_or("val")?.max(1.0);
+            let v = value.as_float().unwrap_or(RATIO_DEFAULT);
+            if v.is_finite() {
+                self.ratio = v.max(1.0);
+            }
         } else if id == self.param_attack {
-            self.attack_ms = value.as_float().ok_or("val")?;
-            self.update_coefficients();
+            let v = value.as_float().unwrap_or(ATTACK_DEFAULT);
+            if v.is_finite() {
+                self.attack_ms = v;
+                self.update_coefficients();
+            }
         } else if id == self.param_hold {
-            self.hold_ms = value.as_float().ok_or("val")?;
+            let v = value.as_float().unwrap_or(HOLD_DEFAULT);
+            if v.is_finite() {
+                self.hold_ms = v;
+            }
         } else if id == self.param_release {
-            self.release_ms = value.as_float().ok_or("val")?;
-            self.update_coefficients();
+            let v = value.as_float().unwrap_or(RELEASE_DEFAULT);
+            if v.is_finite() {
+                self.release_ms = v;
+                self.update_coefficients();
+            }
         } else if id == self.param_mix {
-            self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
-            self.mix_smoother.set_target(self.mix);
+            let v = value.as_float().unwrap_or(MIX_DEFAULT);
+            if v.is_finite() {
+                self.mix = v.clamp(0.0, 1.0);
+                self.mix_smoother.set_target(self.mix);
+            }
         } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().ok_or("val")?;
+            self.link_channels = value.as_bool().unwrap_or(LINK_CHANNELS_DEFAULT);
         } else if id == self.param_sidechain_hpf_hz {
-            self.sidechain_hpf_hz = value.as_float().ok_or("val")?.max(0.0);
-            self.update_coefficients();
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
+            let v = value.as_float().unwrap_or(SIDECHAIN_HPF_HZ_DEFAULT);
+            if v.is_finite() {
+                self.sidechain_hpf_hz = v.max(0.0);
+                self.update_coefficients();
+            }
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -348,7 +383,7 @@ impl InPlacePlugin for GatePlugin {
         enable_ftz_daz();
         let num_frames = context.num_frames;
         let hs = (self.hold_ms * 0.001 * self.sample_rate as f32) as usize;
-        
+
         // Block-based smoothing: advance once per block
         let thresh = self.threshold_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
@@ -362,12 +397,12 @@ impl InPlacePlugin for GatePlugin {
                     let level = filtered.abs();
                     det = det.max(level);
                     // Update monitoring
-                    self.envelope[ch] = 20.0 * fast_log10(level.max(1e-10));
+                    self.monitoring_levels[ch] = 20.0 * fast_log10(level.max(1e-10));
                 }
-                
+
                 let idb = 20.0 * fast_log10(det.max(1e-10));
                 let atten_target = self.calculate_gate_attenuation(idb, thresh);
-                
+
                 // Detection logic (channel 0 is used as master for linked)
                 let target = if idb >= thresh {
                     self.hold_counter[0] = hs;
@@ -378,11 +413,15 @@ impl InPlacePlugin for GatePlugin {
                 } else {
                     atten_target
                 };
-                
-                let coeff = if target > self.envelope[0] { self.release_coeff } else { self.attack_coeff };
+
+                let coeff = if target > self.envelope[0] {
+                    self.release_coeff
+                } else {
+                    self.attack_coeff
+                };
                 self.envelope[0] = target + coeff * (self.envelope[0] - target);
                 let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[0] / 20.0);
-                
+
                 for ch in 0..self.channels {
                     buffer[frame * self.channels + ch] *= gain;
                 }
@@ -392,9 +431,11 @@ impl InPlacePlugin for GatePlugin {
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
                     let filtered = self.apply_sidechain_filter(ch, buffer[idx]);
-                    let idb = 20.0 * fast_log10(filtered.abs().max(1e-10));
+                    let level_abs = filtered.abs();
+                    self.monitoring_levels[ch] = 20.0 * fast_log10(level_abs.max(1e-10));
+                    let idb = self.monitoring_levels[ch];
                     let atten_target = self.calculate_gate_attenuation(idb, thresh);
-                    
+
                     let target = if idb >= thresh {
                         self.hold_counter[ch] = hs;
                         0.0
@@ -404,25 +445,34 @@ impl InPlacePlugin for GatePlugin {
                     } else {
                         atten_target
                     };
-                    
-                    let coeff = if target > self.envelope[ch] { self.release_coeff } else { self.attack_coeff };
+
+                    let coeff = if target > self.envelope[ch] {
+                        self.release_coeff
+                    } else {
+                        self.attack_coeff
+                    };
                     self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
                     let gain = (1.0 - mix) + mix * fast_pow10(-self.envelope[ch] / 20.0);
                     buffer[idx] *= gain;
                 }
             }
         }
-        
+
         // Update diagnostic cache (throttled)
         self.cache_update_counter += 1;
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
             let is_open = self.envelope.iter().any(|&a| a < 0.1);
+            if self.link_channels {
+                self.monitoring_levels.fill(self.envelope[0]);
+            } else {
+                self.monitoring_levels.copy_from_slice(&self.envelope);
+            }
             self.cache.update(|d| {
-                d.update(is_open, &self.envelope);
+                d.update(is_open, &self.monitoring_levels);
             });
         }
-        
+
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

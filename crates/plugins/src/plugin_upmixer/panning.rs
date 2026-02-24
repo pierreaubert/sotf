@@ -8,7 +8,8 @@ impl UpmixerPlugin {
     #[inline]
     pub(super) fn apply_vbap_panning_and_inverse_fft(&mut self) {
         let spectrum_size = self.fft_size / 2 + 1;
-        let hr_mix = (self.hr_transient_env * self.hr_sharpen.current() * self.hr_direct_envelope).clamp(0.0, 1.0);
+        let hr_mix = (self.hr_transient_env * self.hr_sharpen.current() * self.hr_direct_envelope)
+            .clamp(0.0, 1.0);
 
         let gfd = self.gain_front_direct.current();
         let gfa = self.gain_front_ambient.current();
@@ -69,7 +70,8 @@ impl UpmixerPlugin {
                     if !is_f {
                         let rlr = self.rear_late_reflection.current() * gra; // Scale by rear gain
                         // For non-front height: use dominant ambient side to preserve separation
-                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0 {
+                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0
+                        {
                             (&self.ambient_left, &self.ambient_right, pla, pra)
                         } else {
                             (&self.ambient_right, &self.ambient_left, pra, pla)
@@ -82,7 +84,8 @@ impl UpmixerPlugin {
 
                             let d_comp = dl_val * pld_dl + dr_val * prd_dl;
                             // Stereo-preserving ambient sum: mix primary and secondary sides
-                            let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
+                            let a_stereo =
+                                a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             let a_comp = a_stereo * dec[i]
                                 + (self.direct_left[i] + self.direct_right[i]) * rlr;
                             self.temp_freq_out[i] =
@@ -90,7 +93,8 @@ impl UpmixerPlugin {
                         }
                     } else {
                         // For front height: use standard L/R mapping
-                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0 {
+                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0
+                        {
                             (&self.ambient_left, &self.ambient_right, pla, pra)
                         } else {
                             (&self.ambient_right, &self.ambient_left, pra, pla)
@@ -102,7 +106,8 @@ impl UpmixerPlugin {
                             let dr_val = self.direct_right[i] + d_val * sw_cs;
 
                             let d_comp = dl_val * pld_dl + dr_val * prd_dl;
-                            let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
+                            let a_stereo =
+                                a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             let a_comp = a_stereo * dec[i];
                             self.temp_freq_out[i] =
                                 (d_comp + a_comp) * (hg * self.height_band_gains[i]);
@@ -130,7 +135,8 @@ impl UpmixerPlugin {
                     if !is_f {
                         let dec = &self.blended_decorrelation_filters[ch];
                         // Preserve stereo separation in surround ambient
-                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0 {
+                        let (a_primary, a_secondary, g_primary, g_secondary) = if spk.azimuth >= 0.0
+                        {
                             (&self.ambient_left, &self.ambient_right, pla, pra)
                         } else {
                             (&self.ambient_right, &self.ambient_left, pra, pla)
@@ -141,10 +147,11 @@ impl UpmixerPlugin {
                             let dl_val = self.direct_left[i] + d_val * sw_cs;
                             let dr_val = self.direct_right[i] + d_val * sw_cs;
 
-                            let a_stereo = a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
+                            let a_stereo =
+                                a_primary[i] * g_primary + a_secondary[i] * (g_secondary * 0.3);
                             // Surrounds get direct residues + decorrelated ambient
-                            self.temp_freq_out[i] = (dl_val * plds + dr_val * prds)
-                                + a_stereo * dec[i];
+                            self.temp_freq_out[i] =
+                                (dl_val * plds + dr_val * prds) + a_stereo * dec[i];
                         }
                     } else {
                         // Front speakers: use standard L/R mix + extracted center

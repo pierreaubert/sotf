@@ -2,10 +2,10 @@
 // Audio Streaming Manager
 // ============================================================================
 
-use std::sync::Mutex;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
 use crate::devices::get_device_current_sample_rate;
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
@@ -209,7 +209,8 @@ impl AudioEngineManager {
 
         let audio_info = self
             .current_audio_info
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
@@ -447,7 +448,8 @@ impl AudioEngineManager {
     /// Set volume (0.0 = silence, 1.0 = unity gain)
     pub fn set_volume(&self, volume: f32) -> AudioDecoderResult<()> {
         // Store volume so it's preserved across song changes
-        self.current_volume.store(volume.to_bits(), Ordering::Relaxed);
+        self.current_volume
+            .store(volume.to_bits(), Ordering::Relaxed);
 
         if let Some(engine) = &*self.engine.load() {
             engine

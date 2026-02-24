@@ -23,44 +23,49 @@ pub struct MonoToStereoPluginParams {
     pub comp_eq_depth_db: f32,
 }
 
-fn default_stereo_width() -> f32 { STEREO_WIDTH_DEFAULT }
-fn default_comp_eq_depth_db() -> f32 { COMP_EQ_DEPTH_DB_DEFAULT }
+fn default_stereo_width() -> f32 {
+    STEREO_WIDTH_DEFAULT
+}
+fn default_comp_eq_depth_db() -> f32 {
+    COMP_EQ_DEPTH_DB_DEFAULT
+}
 
 pub struct MonoToStereoPlugin {
     sample_rate: u32,
     fft_forward: Arc<dyn RealToComplex<f32>>,
     fft_inverse: Arc<dyn ComplexToReal<f32>>,
-    
+
     /// Random phase decorrelation filter
     decorrelation_filter: Vec<Complex<f32>>,
-    
+
     /// Flat input buffer
     input_buffer: Vec<f32>,
     input_fill: usize,
-    
+
     /// Interleaved output ring buffer [L0, R0, L1, R1, ...]
     output_accumulator: Vec<f32>,
     output_accumulator_mask: usize,
     output_accumulator_fill: usize,
     next_add_position: usize,
     output_read_position: usize,
-    
+
     analysis_window: Vec<f32>,
     output_scale: f32,
-    
+
     /// Smoothers
     stereo_width: Smoother,
     comp_eq_depth: Smoother,
-    
+
     /// Temporary buffers
     fft_input_buf: Vec<f32>,
     fft_output_buf: Vec<Complex<f32>>,
     ifft_input_buf: Vec<Complex<f32>>,
     ifft_output_buf: Vec<f32>,
-    
+
     param_stereo_width: ParameterId,
     param_comp_eq_depth_db: ParameterId,
     latency_filled: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl Default for MonoToStereoPlugin {
@@ -75,7 +80,7 @@ impl MonoToStereoPlugin {
         let fft_forward = planner.plan_fft_forward(FFT_SIZE);
         let fft_inverse = planner.plan_fft_inverse(FFT_SIZE);
         let num_bins = FFT_SIZE / 2 + 1;
-        
+
         let analysis_window: Vec<f32> = (0..FFT_SIZE)
             .map(|i| {
                 let x = i as f32 / FFT_SIZE as f32;
@@ -86,7 +91,7 @@ impl MonoToStereoPlugin {
         // 75% overlap dual-window scaling: Sum(w^2) = 1.5
         let output_scale = 1.0 / (FFT_SIZE as f32 * 1.5);
 
-        Self {
+        let mut p = Self {
             sample_rate: 44100,
             fft_forward,
             fft_inverse,
@@ -109,7 +114,29 @@ impl MonoToStereoPlugin {
             param_stereo_width: ParameterId::from("stereo_width"),
             param_comp_eq_depth_db: ParameterId::from("comp_eq_depth_db"),
             latency_filled: 0,
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "stereo_width",
+                "Stereo Width",
+                self.stereo_width.target(),
+                0.0,
+                1.0,
+            ),
+            Parameter::new_float(
+                "comp_eq_depth_db",
+                "Comp EQ Depth",
+                self.comp_eq_depth.target(),
+                0.0,
+                12.0,
+            ),
+        ];
     }
 
     pub fn from_params(_channels: usize, params: MonoToStereoPluginParams) -> Self {
@@ -137,7 +164,8 @@ impl MonoToStereoPlugin {
             }
         }
         self.decorrelation_filter[0] = Complex::new(self.decorrelation_filter[0].re, 0.0);
-        self.decorrelation_filter[num_bins - 1] = Complex::new(self.decorrelation_filter[num_bins - 1].re, 0.0);
+        self.decorrelation_filter[num_bins - 1] =
+            Complex::new(self.decorrelation_filter[num_bins - 1].re, 0.0);
     }
 
     fn process_stft(&mut self) {
@@ -145,12 +173,20 @@ impl MonoToStereoPlugin {
         let mask = self.output_accumulator_mask;
         let scale = self.output_scale;
 
-        super::simd::window_mul_simd(&mut self.fft_input_buf, &self.input_buffer, &self.analysis_window);
-        self.fft_forward.process(&mut self.fft_input_buf, &mut self.fft_output_buf).unwrap();
+        super::simd::window_mul_simd(
+            &mut self.fft_input_buf,
+            &self.input_buffer,
+            &self.analysis_window,
+        );
+        self.fft_forward
+            .process(&mut self.fft_input_buf, &mut self.fft_output_buf)
+            .unwrap();
 
         // Left channel: latent mono
         self.ifft_input_buf.copy_from_slice(&self.fft_output_buf);
-        self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
+        self.fft_inverse
+            .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
+            .unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
@@ -158,8 +194,14 @@ impl MonoToStereoPlugin {
         }
 
         // Right channel: decorrelated
-        super::simd::complex_mul_simd(&mut self.ifft_input_buf, &self.fft_output_buf, &self.decorrelation_filter);
-        self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
+        super::simd::complex_mul_simd(
+            &mut self.ifft_input_buf,
+            &self.fft_output_buf,
+            &self.decorrelation_filter,
+        );
+        self.fft_inverse
+            .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
+            .unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
@@ -177,22 +219,32 @@ impl Plugin for MonoToStereoPlugin {
         PluginInfo::new("MonoToStereo", "2.0.0", "Sotf")
     }
 
-    fn input_channels(&self) -> usize { 1 }
-    fn output_channels(&self) -> usize { 2 }
+    fn input_channels(&self) -> usize {
+        1
+    }
+    fn output_channels(&self) -> usize {
+        2
+    }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float("stereo_width", "Stereo Width", self.stereo_width.target(), 0.0, 1.0),
-            Parameter::new_float("comp_eq_depth_db", "Comp EQ Depth", self.comp_eq_depth.target(), 0.0, 12.0),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id == self.param_stereo_width {
-            self.stereo_width.set_target(value.as_float().ok_or("val")?);
+            let v = value.as_float().unwrap_or(STEREO_WIDTH_DEFAULT);
+            if v.is_finite() {
+                self.stereo_width.set_target(v);
+            }
         } else if id == self.param_comp_eq_depth_db {
-            self.comp_eq_depth.set_target(value.as_float().ok_or("val")?);
+            let v = value.as_float().unwrap_or(COMP_EQ_DEPTH_DB_DEFAULT);
+            if v.is_finite() {
+                self.comp_eq_depth.set_target(v);
+            }
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -226,7 +278,12 @@ impl Plugin for MonoToStereoPlugin {
         self.comp_eq_depth.reset(self.comp_eq_depth.target());
     }
 
-    fn process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext) -> Result<usize, String> {
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
         let nf = context.num_frames;
         let mut input_pos = 0;
         let mut output_pos = 0;
@@ -235,7 +292,8 @@ impl Plugin for MonoToStereoPlugin {
         while output_pos < nf {
             if input_pos < nf {
                 let to_copy = (FFT_SIZE - self.input_fill).min(nf - input_pos);
-                self.input_buffer[self.input_fill..self.input_fill + to_copy].copy_from_slice(&input[input_pos..input_pos + to_copy]);
+                self.input_buffer[self.input_fill..self.input_fill + to_copy]
+                    .copy_from_slice(&input[input_pos..input_pos + to_copy]);
                 self.input_fill += to_copy;
                 input_pos += to_copy;
             }
@@ -257,10 +315,10 @@ impl Plugin for MonoToStereoPlugin {
                     let width = self.stereo_width.advance();
                     let orig = self.output_accumulator[read_idx * 2];
                     let decor = self.output_accumulator[read_idx * 2 + 1] * decor_gain;
-                    
+
                     output[(output_pos + i) * 2] = orig;
                     output[(output_pos + i) * 2 + 1] = orig * (1.0 - width) + decor * width;
-                    
+
                     self.output_accumulator[read_idx * 2] = 0.0;
                     self.output_accumulator[read_idx * 2 + 1] = 0.0;
                 }
@@ -280,7 +338,9 @@ impl Plugin for MonoToStereoPlugin {
         Ok(nf)
     }
 
-    fn latency_samples(&self) -> usize { FFT_SIZE }
+    fn latency_samples(&self) -> usize {
+        FFT_SIZE
+    }
 }
 
 #[cfg(test)]
@@ -292,7 +352,15 @@ mod tests {
         p.initialize(48000).unwrap();
         let i = vec![0.5; 1024];
         let mut o = vec![0.0; 2048];
-        p.process(&i, &mut o, &ProcessContext { sample_rate: 48000, num_frames: 1024 }).unwrap();
+        p.process(
+            &i,
+            &mut o,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 1024,
+            },
+        )
+        .unwrap();
         assert!(o[2047].is_finite());
     }
 
@@ -304,11 +372,22 @@ mod tests {
         let total_frames = FFT_SIZE * 10;
         let input: Vec<f32> = (0..total_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut output = vec![0.0; total_frames * 2];
-        p.process(&input, &mut output, &ProcessContext { sample_rate: 48000, num_frames: total_frames }).unwrap();
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: total_frames,
+            },
+        )
+        .unwrap();
         for frame in (FFT_SIZE * 5)..(FFT_SIZE * 6) {
             let l = output[frame * 2];
             let r = output[frame * 2 + 1];
-            assert!((l - r).abs() < 1e-5, "L/R differ at frame {frame}: L={l}, R={r}");
+            assert!(
+                (l - r).abs() < 1e-5,
+                "L/R differ at frame {frame}: L={l}, R={r}"
+            );
         }
     }
 
@@ -320,16 +399,32 @@ mod tests {
         let total_frames = FFT_SIZE * 10;
         let input: Vec<f32> = (0..total_frames).map(|i| (i as f32 * 0.1).sin()).collect();
         let mut output = vec![0.0; total_frames * 2];
-        p.process(&input, &mut output, &ProcessContext { sample_rate: 48000, num_frames: total_frames }).unwrap();
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: total_frames,
+            },
+        )
+        .unwrap();
         let mut any_differ = false;
         let mut non_zero = false;
         for frame in (FFT_SIZE * 5)..(FFT_SIZE * 6) {
             let l = output[frame * 2];
             let r = output[frame * 2 + 1];
-            if l.abs() > 1e-4 || r.abs() > 1e-4 { non_zero = true; }
-            if (l - r).abs() > 1e-3 { any_differ = true; break; }
+            if l.abs() > 1e-4 || r.abs() > 1e-4 {
+                non_zero = true;
+            }
+            if (l - r).abs() > 1e-3 {
+                any_differ = true;
+                break;
+            }
         }
-        assert!(non_zero, "Output should not be zero in the middle of the stream");
+        assert!(
+            non_zero,
+            "Output should not be zero in the middle of the stream"
+        );
         assert!(any_differ, "L and R should differ at width=1.0");
     }
 }

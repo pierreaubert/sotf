@@ -61,21 +61,21 @@ mod upmixer_tests {
             .unwrap();
         assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
 
-        // Values outside [0.0, 1.0] are clamped
+        // Values outside [0.0, 1.0] are rejected by validation
         let res = plugin.set_parameter(
             ParameterId::from("center_spread"),
             ParameterValue::Float(1.5),
         );
-        assert!(res.is_ok());
-        assert!((plugin.center_spread.target() - 1.0).abs() < 1e-6);
+        assert!(res.is_err());
+        assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
 
-        // Test lower bound clamping
+        // Test lower bound rejection
         let res = plugin.set_parameter(
             ParameterId::from("center_spread"),
             ParameterValue::Float(-0.5),
         );
-        assert!(res.is_ok());
-        assert!((plugin.center_spread.target() - 0.0).abs() < 1e-6);
+        assert!(res.is_err());
+        assert!((plugin.center_spread.target() - 0.7).abs() < 1e-6);
     }
 
     #[test]
@@ -94,21 +94,21 @@ mod upmixer_tests {
             .unwrap();
         assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
 
-        // Values outside [0.0, 1.0] are clamped
+        // Values outside [0.0, 1.0] are rejected by validation
         let res = plugin.set_parameter(
             ParameterId::from("stereo_width"),
             ParameterValue::Float(2.0),
         );
-        assert!(res.is_ok());
-        assert!((plugin.stereo_width.target() - 1.0).abs() < 1e-6);
+        assert!(res.is_err());
+        assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
 
-        // Test lower bound clamping
+        // Test lower bound rejection
         let res = plugin.set_parameter(
             ParameterId::from("stereo_width"),
             ParameterValue::Float(-1.0),
         );
-        assert!(res.is_ok());
-        assert!((plugin.stereo_width.target() - 0.0).abs() < 1e-6);
+        assert!(res.is_err());
+        assert!((plugin.stereo_width.target() - 0.3).abs() < 1e-6);
     }
 
     #[test]
@@ -146,7 +146,7 @@ mod upmixer_tests {
                 channel_sums[ch] += output[i * num_channels + ch].abs();
             }
         }
-        
+
         // At least one front channel should have content
         assert!(
             channel_sums[0] > 0.0 || channel_sums[1] > 0.0 || channel_sums[2] > 0.0,
@@ -335,7 +335,9 @@ mod upmixer_tests {
                 2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
             );
             plugin.initialize(44100).unwrap();
-            plugin.center_spread.set_target(center_spread.clamp(0.0, 1.0));
+            plugin
+                .center_spread
+                .set_target(center_spread.clamp(0.0, 1.0));
             plugin.center_spread.next_n(4096);
 
             // Process enough frames to overcome latency
@@ -466,7 +468,10 @@ mod upmixer_tests {
 
         // Verify output is effectively silent (allow for small numerical artifacts from normalization)
         // Skip first block for settling
-        let max_abs = output[2048*6..].iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+        let max_abs = output[2048 * 6..]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0.0_f32, f32::max);
         // log::info!("Max abs value with zero gains: {}", max_abs);
         assert!(
             max_abs < 0.05,
@@ -526,7 +531,7 @@ mod upmixer_tests {
             let common = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.3;
             let left_only = (2.0 * std::f32::consts::PI * 880.0 * t).cos() * 0.3;
             let right_only = (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.3;
-            
+
             input[i * 2] = common + left_only; // Left
             input[i * 2 + 1] = common + right_only; // Right
         }
@@ -560,14 +565,16 @@ mod upmixer_tests {
         // Center should have signal (direct component)
         assert!(
             channel_energies[2] > 0.001,
-            "Center should have direct component (got {})", channel_energies[2]
+            "Center should have direct component (got {})",
+            channel_energies[2]
         );
 
         // LFE should have minimal signal since test frequencies (440 Hz, 880 Hz)
         // are above the LFE cutoff (120 Hz)
         assert!(
             channel_energies[3] < 0.5,
-            "LFE should be minimal with high frequency input (got {})", channel_energies[3]
+            "LFE should be minimal with high frequency input (got {})",
+            channel_energies[3]
         );
 
         // Rear channels should have signal (ambient with gain=1.0)
@@ -829,7 +836,10 @@ mod upmixer_tests {
             num_frames: 2048,
         };
 
-        plugin.process(&input, &mut output, &context).unwrap();
+        // Process multiple blocks to overcome latency and let filters settle
+        for _ in 0..10 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
 
         // Calculate energy per channel
         let mut channel_energies = vec![0.0; 10];

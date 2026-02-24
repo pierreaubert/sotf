@@ -46,7 +46,8 @@ impl UpmixerPlugin {
             if self.spectral_flux_smooth < 1e-12 && flux > 0.0 {
                 self.spectral_flux_smooth = flux;
             }
-            self.spectral_flux_smooth += SPECTRAL_FLUX_SMOOTH_ALPHA * (flux - self.spectral_flux_smooth);
+            self.spectral_flux_smooth +=
+                SPECTRAL_FLUX_SMOOTH_ALPHA * (flux - self.spectral_flux_smooth);
 
             let transient_target = if self.spectral_flux_smooth > 1e-9 {
                 ((flux / self.spectral_flux_smooth - 1.0) / TRANSIENT_RATIO_DIVISOR).clamp(0.0, 1.0)
@@ -68,10 +69,8 @@ impl UpmixerPlugin {
         self.process_frequency_domain_erb_bands();
 
         // 50% overlap Hann sum is 1.0*N.
-        // Scale should be 1.0 / fft_size.
-        // If diagnostic shows loss, it might be due to windowing at the edges of the block.
-        // We will try 2.35 / fft_size (2.0 * 1.175) to reach unity.
-        let combined_scale = 2.35 / self.fft_size as f32;
+        // Scale should be 1.0 / fft_size to account for FFT normalization.
+        let combined_scale = 1.0 / self.fft_size as f32;
 
         self.apply_vbap_panning_and_inverse_fft();
         self.apply_subharmonic_synthesis();

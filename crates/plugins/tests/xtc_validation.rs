@@ -5,11 +5,11 @@
 //! Run with:
 //!   cargo test -p plugins --no-default-features xtc_validation -- --nocapture
 
-use sotf_plugins::validation::{
-    measure_cancellation_depth_db, reference_ild_db, reference_itd_ms, run_validation,
-    run_validation_verbose, REFERENCE_ILD_POINTS,
-};
 use sotf_plugins::XtcPluginParams;
+use sotf_plugins::validation::{
+    REFERENCE_ILD_POINTS, measure_cancellation_depth_db, reference_ild_db, reference_itd_ms,
+    run_validation, run_validation_verbose,
+};
 
 mod reference {
     use std::f32::consts::PI;

@@ -5,7 +5,7 @@
 // This example shows how to use the DawHost to create complex
 // audio processing topologies with parallel processing and stream merging.
 
-use sotf_plugins::{GraphEdge, DawHost, GainPlugin, InPlacePluginAdapter};
+use sotf_plugins::{DawHost, GainPlugin, GraphEdge, InPlacePluginAdapter};
 
 fn main() -> Result<(), String> {
     println!("=== Plugin Graph Demo ===\n");

@@ -224,6 +224,12 @@ impl Parameter {
         // Check type matches
         match (&self.default_value, value) {
             (ParameterValue::Float(_), ParameterValue::Float(v)) => {
+                if v.is_nan() {
+                    return Err("Value is NaN".to_string());
+                }
+                if v.is_infinite() {
+                    return Err("Value is infinite".to_string());
+                }
                 if let Some(ParameterValue::Float(min)) = self.min_value
                     && *v < min
                 {
@@ -250,6 +256,7 @@ impl Parameter {
                 Ok(())
             }
             (ParameterValue::Bool(_), ParameterValue::Bool(_)) => Ok(()),
+            (ParameterValue::String(_), ParameterValue::String(_)) => Ok(()),
             _ => Err("Parameter type mismatch".to_string()),
         }
     }

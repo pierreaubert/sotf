@@ -9,12 +9,12 @@ use super::{
     GcThread, ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
     PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent,
 };
-use arc_swap::ArcSwap;
 use crate::engine::processing_thread::build_plugin_host;
+use arc_swap::ArcSwap;
 use std::any::Any;
 use std::collections::VecDeque;
-use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 
 const SPIN_MS_SLEEP_MANAGER: u64 = 10;
 const SPIN_MS_CHECK_MANAGER: u64 = 50;
@@ -312,7 +312,8 @@ impl ManagerThread {
         let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
         let state_clone = Arc::clone(&state);
 
-        let plugin_data_cache: PluginDataCache = Arc::new(arc_swap::ArcSwap::from_pointee(Vec::new()));
+        let plugin_data_cache: PluginDataCache =
+            Arc::new(arc_swap::ArcSwap::from_pointee(Vec::new()));
         let cache_clone = Arc::clone(&plugin_data_cache);
 
         let thread_handle = std::thread::Builder::new()
@@ -402,10 +403,10 @@ fn run_manager_thread(
     let (decoder_tx, decoder_rx) = sync_channel(queue_capacity);
     let (processing_tx, processing_rx) = sync_channel(queue_capacity);
     let (event_tx, event_rx) = channel(); // Events can be unbounded
-    
+
     // Use bounded channels for recycling to avoid growth allocations.
     // Double capacity to ensure plenty of buffers are available for the entire pipeline.
-    let (recycle_tx, recycle_rx) = sync_channel(queue_capacity * 2); 
+    let (recycle_tx, recycle_rx) = sync_channel(queue_capacity * 2);
     let (decoder_recycle_tx, decoder_recycle_rx) = sync_channel(queue_capacity * 2);
 
     // Pre-fill recycle queues to avoid initial allocations in the hot path.
@@ -1406,12 +1407,8 @@ fn handle_command(
 
             ManagerResponse::Ok
         }
-        ManagerCommand::GetState => {
-            ManagerResponse::State((**state.load()).clone())
-        }
-        ManagerCommand::GetPosition => {
-            ManagerResponse::Position(state.load().position)
-        }
+        ManagerCommand::GetState => ManagerResponse::State((**state.load()).clone()),
+        ManagerCommand::GetPosition => ManagerResponse::Position(state.load().position),
         ManagerCommand::GetPluginData(index) => {
             if let Err(e) = processing.send_command(ProcessingCommand::GetPluginData(index)) {
                 return ManagerResponse::Error(e);

@@ -98,10 +98,11 @@ impl CompressorData {
 
     pub fn update_gains(&mut self, new_gains: &[f32]) {
         if let Some(mut_gains) = Arc::get_mut(&mut self.gain_reduction_db)
-            && mut_gains.len() == new_gains.len() {
-                mut_gains.copy_from_slice(new_gains);
-                return;
-            }
+            && mut_gains.len() == new_gains.len()
+        {
+            mut_gains.copy_from_slice(new_gains);
+            return;
+        }
         self.gain_reduction_db = Arc::new(new_gains.to_vec());
     }
 }
@@ -171,8 +172,12 @@ pub struct CompressorPlugin {
     param_sidechain_hpf_hz: ParameterId,
     sidechain_hpf_hz: f32,
 
-    // State per channel
-    envelope: Vec<f32>, // Current gain reduction envelope per channel
+    cached_parameters: Vec<Parameter>,
+
+    /// Gain reduction envelope in dB (positive value)
+    envelope: Vec<f32>,
+    /// Buffer for monitoring gain reduction without allocations
+    monitoring_levels: Vec<f32>,
     sidechain_hpf_prev_input: Vec<f32>,
     sidechain_hpf_prev_output: Vec<f32>,
     attack_coeff: f32,
@@ -199,7 +204,7 @@ impl CompressorPlugin {
         makeup_gain_db: f32,
     ) -> Self {
         let sample_rate = 44100;
-        Self {
+        let mut plugin = Self {
             channels,
             sample_rate,
 
@@ -233,7 +238,10 @@ impl CompressorPlugin {
             param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
             sidechain_hpf_hz: 80.0,
 
+            cached_parameters: Vec::new(),
+
             envelope: vec![0.0; channels],
+            monitoring_levels: vec![0.0; channels],
             sidechain_hpf_prev_input: vec![0.0; channels],
             sidechain_hpf_prev_output: vec![0.0; channels],
             attack_coeff: 0.0,
@@ -244,7 +252,78 @@ impl CompressorPlugin {
             makeup_gain_smoother: Smoother::new(makeup_gain_db, 20.0, sample_rate),
             cache: RealTimeCache::new(CompressorData::new(channels)),
             cache_update_counter: 0,
-        }
+        };
+        plugin.rebuild_cached_parameters();
+        plugin
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                self.threshold_db,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            )
+            .with_description("Level above which compression starts (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
+                .with_description("Compression ratio (1:1 to 20:1)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
+                .with_description("Attack time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "release",
+                "Release",
+                self.release_ms,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_description("Release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float("knee", "Knee", self.knee_db, KNEE_MIN, KNEE_MAX)
+                .with_description("Soft knee width (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "makeup_gain",
+                "Makeup Gain",
+                self.makeup_gain_db,
+                MAKEUP_GAIN_MIN,
+                MAKEUP_GAIN_MAX,
+            )
+            .with_description("Output gain compensation (dB)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
+                .with_description("Dry/wet mix (0 = dry, 1 = compressed)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("auto_makeup", "Auto Makeup", self.auto_makeup)
+                .with_description("Automatically compensate for gain reduction")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
+                .with_description("Use linked sidechain for all channels")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "sidechain_hpf_hz",
+                "Sidechain HPF",
+                self.sidechain_hpf_hz,
+                SIDECHAIN_HPF_HZ_MIN,
+                SIDECHAIN_HPF_HZ_MAX,
+            )
+            .with_description("High-pass filter frequency for sidechain (Hz)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
+        ];
     }
 
     /// Create a new compressor plugin from configuration parameters
@@ -371,108 +450,63 @@ impl InPlacePlugin for CompressorPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float(
-                "threshold",
-                "Threshold",
-                THRESHOLD_DEFAULT,
-                THRESHOLD_MIN,
-                THRESHOLD_MAX,
-            )
-            .with_description("Level above which compression starts (dB)")
-            .with_group("Dynamics")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Compression ratio (1:1 to 20:1)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Attack time (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "release",
-                "Release",
-                RELEASE_DEFAULT,
-                RELEASE_MIN,
-                RELEASE_MAX,
-            )
-            .with_description("Release time (ms)")
-            .with_group("Timing")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
-                .with_description("Soft knee width (dB)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "makeup_gain",
-                "Makeup Gain",
-                MAKEUP_GAIN_DEFAULT,
-                MAKEUP_GAIN_MIN,
-                MAKEUP_GAIN_MAX,
-            )
-            .with_description("Output gain compensation (dB)")
-            .with_group("Output")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = compressed)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("auto_makeup", "Auto Makeup", AUTO_MAKEUP_DEFAULT)
-                .with_description("Automatically compensate for gain reduction")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Use linked sidechain for all channels")
-                .with_group("Channels")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "sidechain_hpf_hz",
-                "Sidechain HPF",
-                SIDECHAIN_HPF_HZ_DEFAULT,
-                SIDECHAIN_HPF_HZ_MIN,
-                SIDECHAIN_HPF_HZ_MAX,
-            )
-            .with_description("High-pass filter frequency for sidechain (Hz)")
-            .with_group("Sidechain")
-            .with_importance(ParameterImportance::FineTuning),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id == self.param_threshold {
-            let val = value.as_float().ok_or("Invalid threshold value")?;
-            self.threshold_db = val;
-            self.threshold_smoother.set_target(val);
+            let val = value.as_float().unwrap_or(THRESHOLD_DEFAULT);
+            if val.is_finite() {
+                self.threshold_db = val;
+                self.threshold_smoother.set_target(val);
+            }
         } else if id == self.param_ratio {
-            self.ratio = value.as_float().ok_or("Invalid ratio value")?.max(1.0);
+            let val = value.as_float().unwrap_or(RATIO_DEFAULT);
+            if val.is_finite() {
+                self.ratio = val.max(1.0);
+            }
         } else if id == self.param_attack {
-            self.attack_ms = value.as_float().ok_or("Invalid attack value")?;
-            self.update_coefficients();
+            let val = value.as_float().unwrap_or(ATTACK_DEFAULT);
+            if val.is_finite() {
+                self.attack_ms = val;
+                self.update_coefficients();
+            }
         } else if id == self.param_release {
-            self.release_ms = value.as_float().ok_or("Invalid release value")?;
-            self.update_coefficients();
+            let val = value.as_float().unwrap_or(RELEASE_DEFAULT);
+            if val.is_finite() {
+                self.release_ms = val;
+                self.update_coefficients();
+            }
         } else if id == self.param_knee {
-            self.knee_db = value.as_float().ok_or("Invalid knee value")?.max(0.0);
+            let val = value.as_float().unwrap_or(KNEE_DEFAULT);
+            if val.is_finite() {
+                self.knee_db = val.max(0.0);
+            }
         } else if id == self.param_makeup_gain {
-            let val = value.as_float().ok_or("Invalid makeup gain value")?;
-            self.makeup_gain_db = val;
-            self.makeup_gain_smoother.set_target(val);
+            let val = value.as_float().unwrap_or(MAKEUP_GAIN_DEFAULT);
+            if val.is_finite() {
+                self.makeup_gain_db = val;
+                self.makeup_gain_smoother.set_target(val);
+            }
         } else if id == self.param_mix {
-            self.mix = value.as_float().ok_or("Invalid mix value")?.clamp(0.0, 1.0);
+            let val = value.as_float().unwrap_or(MIX_DEFAULT);
+            if val.is_finite() {
+                self.mix = val.clamp(0.0, 1.0);
+            }
         } else if id == self.param_auto_makeup {
-            self.auto_makeup = value.as_bool().ok_or("Invalid auto makeup value")?;
+            self.auto_makeup = value.as_bool().unwrap_or(AUTO_MAKEUP_DEFAULT);
         } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().ok_or("Invalid link channels value")?;
+            self.link_channels = value.as_bool().unwrap_or(LINK_CHANNELS_DEFAULT);
         } else if id == self.param_sidechain_hpf_hz {
-            self.sidechain_hpf_hz = value
-                .as_float()
-                .ok_or("Invalid sidechain high-pass value")?
-                .max(0.0);
-            self.update_coefficients();
-        } else {
-            return Err(format!("Unknown parameter: {}", id));
+            let val = value.as_float().unwrap_or(SIDECHAIN_HPF_HZ_DEFAULT);
+            if val.is_finite() {
+                self.sidechain_hpf_hz = val.max(0.0);
+                self.update_coefficients();
+            }
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -524,10 +558,10 @@ impl InPlacePlugin for CompressorPlugin {
         enable_ftz_daz();
 
         let num_frames = context.num_frames;
-        
+
         let thresh = self.threshold_smoother.next_n(num_frames);
         let makeup_gain = self.makeup_gain_smoother.next_n(num_frames);
-        
+
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 
@@ -591,8 +625,15 @@ impl InPlacePlugin for CompressorPlugin {
         self.cache_update_counter += 1;
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
+
+            if self.link_channels {
+                self.monitoring_levels.fill(self.envelope[0]);
+            } else {
+                self.monitoring_levels.copy_from_slice(&self.envelope);
+            }
+
             self.cache.update(|d| {
-                d.update_gains(&self.envelope);
+                d.update_gains(&self.monitoring_levels);
             });
         }
 

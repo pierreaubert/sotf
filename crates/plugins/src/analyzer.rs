@@ -181,20 +181,22 @@ impl LoudnessData {
     /// Update channel peaks efficiently
     pub fn update_peaks(&mut self, new_peaks: &[f64]) {
         if let Some(mut_peaks) = Arc::get_mut(&mut self.channel_peaks)
-            && mut_peaks.len() == new_peaks.len() {
-                mut_peaks.copy_from_slice(new_peaks);
-                return;
-            }
+            && mut_peaks.len() == new_peaks.len()
+        {
+            mut_peaks.copy_from_slice(new_peaks);
+            return;
+        }
         self.channel_peaks = Arc::new(new_peaks.to_vec());
     }
 
     /// Update true peaks efficiently
     pub fn update_true_peaks(&mut self, new_tps: &[f64]) {
         if let Some(mut_tps) = Arc::get_mut(&mut self.true_peaks_dbtp)
-            && mut_tps.len() == new_tps.len() {
-                mut_tps.copy_from_slice(new_tps);
-                return;
-            }
+            && mut_tps.len() == new_tps.len()
+        {
+            mut_tps.copy_from_slice(new_tps);
+            return;
+        }
         self.true_peaks_dbtp = Arc::new(new_tps.to_vec());
     }
 }
@@ -236,20 +238,22 @@ impl SpectrumData {
     /// Update frequencies efficiently
     pub fn update_frequencies(&mut self, new_freqs: &[f32]) {
         if let Some(mut_freqs) = Arc::get_mut(&mut self.frequencies)
-            && mut_freqs.len() == new_freqs.len() {
-                mut_freqs.copy_from_slice(new_freqs);
-                return;
-            }
+            && mut_freqs.len() == new_freqs.len()
+        {
+            mut_freqs.copy_from_slice(new_freqs);
+            return;
+        }
         self.frequencies = Arc::new(new_freqs.to_vec());
     }
 
     /// Update magnitudes efficiently
     pub fn update_magnitudes(&mut self, new_mags: &[f32]) {
         if let Some(mut_mags) = Arc::get_mut(&mut self.magnitudes)
-            && mut_mags.len() == new_mags.len() {
-                mut_mags.copy_from_slice(new_mags);
-                return;
-            }
+            && mut_mags.len() == new_mags.len()
+        {
+            mut_mags.copy_from_slice(new_mags);
+            return;
+        }
         self.magnitudes = Arc::new(new_mags.to_vec());
     }
 }

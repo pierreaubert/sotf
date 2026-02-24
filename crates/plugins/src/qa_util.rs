@@ -53,17 +53,21 @@ pub fn assert_no_allocs<F: FnOnce()>(label: &str, f: F) {
 /// 3. Performance Benchmark
 pub fn run_standard_tests(plugin: &mut dyn Plugin, label: &str) {
     let sample_rate = 48000;
-    
+
     // Test 2: Latency Reporting
-    println!("
-[Test 2] Latency Reporting");
+    println!(
+        "
+[Test 2] Latency Reporting"
+    );
     let reported = plugin.latency_samples();
     println!("  Reported Latency: {} samples", reported);
     println!("  Latency: PASS");
 
     // Test 3: Real-time Safety (Zero Allocations)
-    println!("
-[Test 3] Real-time Safety (Zero Allocations)");
+    println!(
+        "
+[Test 3] Real-time Safety (Zero Allocations)"
+    );
     let rt_block_size = 512;
     let rt_input = vec![0.0_f32; rt_block_size * plugin.input_channels()];
     let mut rt_output = vec![0.0_f32; rt_block_size * plugin.output_channels()];
@@ -84,8 +88,10 @@ pub fn run_standard_tests(plugin: &mut dyn Plugin, label: &str) {
     println!("  Zero Allocations: PASS");
 
     // Test 4: Performance Benchmark
-    println!("
-[Test 4] Performance Benchmark");
+    println!(
+        "
+[Test 4] Performance Benchmark"
+    );
     let bench_frames = 48000 * 5; // 5 seconds of audio
     let bench_input = vec![0.1_f32; bench_frames * plugin.input_channels()];
     let mut bench_output = vec![0.0_f32; bench_frames * plugin.output_channels()];

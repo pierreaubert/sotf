@@ -1,4 +1,6 @@
-use sotf_plugins::{XtcPlugin, XtcPluginParams, UpmixerPlugin, UpmixerPluginParams, ProcessContext, Plugin};
+use sotf_plugins::{
+    Plugin, ProcessContext, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
+};
 use std::f32::consts::PI;
 
 #[test]
@@ -9,7 +11,7 @@ fn test_xtc_stft_roundtrip_gain() {
     params.fft_size = fft_size;
     params.bypass_xtc_filters = true; // Test OLA framework only
     params.auto_gain_enabled = false; // Disable auto-gain for pure OLA test
-    
+
     let mut plugin = XtcPlugin::new(params, sample_rate).unwrap();
     plugin.initialize(sample_rate).unwrap();
 
@@ -38,7 +40,11 @@ fn test_xtc_stft_roundtrip_gain() {
         max_diff = max_diff.max(diff_l).max(diff_r);
     }
 
-    assert!(max_diff < 1e-3, "XTC STFT roundtrip gain mismatch: max_diff = {}", max_diff);
+    assert!(
+        max_diff < 1e-3,
+        "XTC STFT roundtrip gain mismatch: max_diff = {}",
+        max_diff
+    );
 }
 
 #[test]
@@ -48,7 +54,7 @@ fn test_upmixer_stft_roundtrip_gain() {
     let mut params = UpmixerPluginParams::default();
     params.fft_size = fft_size;
     params.bypass_all_processing = true; // Test OLA framework only
-    
+
     let mut plugin = UpmixerPlugin::from_params(params);
     plugin.initialize(sample_rate).unwrap();
 
@@ -59,7 +65,7 @@ fn test_upmixer_stft_roundtrip_gain() {
         input[i * 2] = phase.sin() * 0.5;
         input[i * 2 + 1] = phase.cos() * 0.5;
     }
-    
+
     // Upmixer output can have many channels, but in bypass we check if original L/R are preserved
     let mut output = vec![0.0_f32; num_frames * plugin.output_channels()];
 
@@ -80,5 +86,9 @@ fn test_upmixer_stft_roundtrip_gain() {
         max_diff = max_diff.max(diff_l).max(diff_r);
     }
 
-    assert!(max_diff < 1e-3, "Upmixer STFT roundtrip gain mismatch: max_diff = {}", max_diff);
+    assert!(
+        max_diff < 1e-3,
+        "Upmixer STFT roundtrip gain mismatch: max_diff = {}",
+        max_diff
+    );
 }

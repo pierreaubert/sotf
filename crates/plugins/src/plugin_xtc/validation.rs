@@ -24,9 +24,9 @@
 
 use super::config::XtcPluginParams;
 use super::filters::{
-    compute_path_length, compute_xtc_filters_full, contralateral_shadow_angle,
-    head_shadowing_woodworth, pinna_resonance, pinna_resonance_contra,
-    woodworth_diffraction_path, XtcFilters, SPEED_OF_SOUND,
+    SPEED_OF_SOUND, XtcFilters, compute_path_length, compute_xtc_filters_full,
+    contralateral_shadow_angle, head_shadowing_woodworth, pinna_resonance, pinna_resonance_contra,
+    woodworth_diffraction_path,
 };
 use std::f32::consts::PI;
 
@@ -147,22 +147,17 @@ pub(crate) fn measure_cancellation_depth_db_with_filters(
 
     // Path lengths - same as compute_xtc_filters_symmetric
     let l_ipsi = compute_path_length(d, theta_rad, -x_offset);
-    let l_contra_geometric = compute_path_length(d, theta_rad, x_offset);
-    let diffraction_extra = a * (theta_rad + theta_rad.sin()); // woodworth_diffraction_path
-    let l_contra_full = l_contra_geometric + diffraction_extra;
+    let diffraction_extra = woodworth_diffraction_path(theta_rad, a);
+    let l_contra_full = l_ipsi + diffraction_extra;
 
     // Distance attenuation ratio
     let amplitude_ratio = l_ipsi / l_contra_full;
 
     // Geometric time difference
-    let delta_t_geometric = (l_contra_geometric - l_ipsi) / SPEED_OF_SOUND;
+    let delta_t = (l_contra_full - l_ipsi) / SPEED_OF_SOUND;
 
     // Contralateral shadow angle
     let contra_angle = contralateral_shadow_angle(theta_rad);
-
-    // Frequency-dependent diffraction delay (same as filter design)
-    let diffraction_delay = woodworth_diffraction_path(contra_angle, a) / SPEED_OF_SOUND;
-    let delta_t = delta_t_geometric + diffraction_delay;
 
     // Head shadowing (same as filter design)
     let g = head_shadowing_woodworth(freq_hz, contra_angle, a) * amplitude_ratio;
@@ -176,8 +171,16 @@ pub(crate) fn measure_cancellation_depth_db_with_filters(
     let h_contra_imag = g * phase.sin();
 
     // Pinna effects (same as filter design)
-    let pinna_ipsi = if params.pinna_model_enabled { pinna_resonance(freq_hz) } else { 1.0 };
-    let pinna_contra = if params.pinna_model_enabled { pinna_resonance_contra(freq_hz, params.speaker_angle_deg) } else { 1.0 };
+    let pinna_ipsi = if params.pinna_model_enabled {
+        pinna_resonance(freq_hz)
+    } else {
+        1.0
+    };
+    let pinna_contra = if params.pinna_model_enabled {
+        pinna_resonance_contra(freq_hz, params.speaker_angle_deg)
+    } else {
+        1.0
+    };
 
     // Apply pinna to get the final transfer functions
     // H_ipsi_shaped = 1.0 * pinna_ipsi
@@ -567,13 +570,17 @@ mod tests {
 
         // At minimum, we should have ITD and stability tests
         assert!(!report.results.is_empty());
-        assert!(report
-            .results
-            .iter()
-            .any(|r| r.metric_name.starts_with("ITD")));
-        assert!(report
-            .results
-            .iter()
-            .any(|r| r.metric_name.contains("Stability")));
+        assert!(
+            report
+                .results
+                .iter()
+                .any(|r| r.metric_name.starts_with("ITD"))
+        );
+        assert!(
+            report
+                .results
+                .iter()
+                .any(|r| r.metric_name.contains("Stability"))
+        );
     }
 }

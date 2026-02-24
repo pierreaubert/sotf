@@ -316,7 +316,11 @@ impl DecoderState {
                         self.frame_send_buffer[..frame_len]
                             .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                        let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
+                        let frame_data = take_frame_buffer(
+                            &mut self.frame_send_buffer,
+                            &self.recycle_rx,
+                            frame_len,
+                        );
 
                         let frame = AudioFrame::new(
                             frame_data,
@@ -342,7 +346,11 @@ impl DecoderState {
                             .copy_from_slice(&self.resampler_buffer[..chunk_len]);
                         self.resampler_buffer.drain(..chunk_len);
 
-                        let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, chunk_len);
+                        let frame_data = take_frame_buffer(
+                            &mut self.frame_send_buffer,
+                            &self.recycle_rx,
+                            chunk_len,
+                        );
 
                         let frame =
                             AudioFrame::new(frame_data, frame_size, channels, source_sample_rate);
@@ -434,7 +442,11 @@ impl DecoderState {
                             self.frame_send_buffer[..frame_len]
                                 .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                            let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
+                            let frame_data = take_frame_buffer(
+                                &mut self.frame_send_buffer,
+                                &self.recycle_rx,
+                                frame_len,
+                            );
 
                             let frame = AudioFrame::new(
                                 frame_data,
@@ -635,7 +647,8 @@ impl DecoderState {
                 self.frame_send_buffer[..frame_len]
                     .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
+                let frame_data =
+                    take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, frame_len);
 
                 // Send frame with TARGET sample rate
                 let frame = AudioFrame::new(
@@ -685,7 +698,8 @@ impl DecoderState {
         }
         self.frame_send_buffer[..silent_len].fill(0.0);
 
-        let frame_data = take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, silent_len);
+        let frame_data =
+            take_frame_buffer(&mut self.frame_send_buffer, &self.recycle_rx, silent_len);
 
         let frame = AudioFrame::new(frame_data, frame_size, 2, target_sample_rate);
         message_tx

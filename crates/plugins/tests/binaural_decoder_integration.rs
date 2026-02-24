@@ -73,7 +73,10 @@ fn test_binaural_with_minimal_sofa() {
         sample_rate: 44100,
     };
 
-    decoder.process(&input, &mut output, &context).unwrap();
+    // Process multiple blocks to overcome latency and let smoothers settle
+    for _ in 0..10 {
+        decoder.process(&input, &mut output, &context).unwrap();
+    }
 
     // Verify output is non-zero (actual spatialization happened)
     let rms_left: f32 = output.iter().step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
@@ -126,8 +129,10 @@ fn test_binaural_sample_rate_resampling() {
         sample_rate: 44100,
     };
 
-    // Should process without errors despite sample rate mismatch
-    decoder.process(&input, &mut output, &context).unwrap();
+    // Process multiple blocks to overcome latency
+    for _ in 0..10 {
+        decoder.process(&input, &mut output, &context).unwrap();
+    }
 
     // Verify output
     let rms: f32 = (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
@@ -172,7 +177,10 @@ fn test_binaural_lfe_handling() {
         sample_rate: 48000,
     };
 
-    decoder.process(&input, &mut output, &context).unwrap();
+    // Process multiple blocks to overcome latency
+    for _ in 0..10 {
+        decoder.process(&input, &mut output, &context).unwrap();
+    }
 
     // LFE should be mixed equally to both ears
     let rms_left: f32 = output.iter().step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
@@ -244,12 +252,15 @@ fn test_binaural_externalization() {
         sample_rate: 48000,
     };
 
-    decoder_no_ext
-        .process(&input, &mut output_no_ext, &context)
-        .unwrap();
-    decoder_with_ext
-        .process(&input, &mut output_with_ext, &context)
-        .unwrap();
+    // Process multiple blocks to overcome latency
+    for _ in 0..10 {
+        decoder_no_ext
+            .process(&input, &mut output_no_ext, &context)
+            .unwrap();
+        decoder_with_ext
+            .process(&input, &mut output_with_ext, &context)
+            .unwrap();
+    }
 
     // With externalization, the impulse response should be longer (early reflections)
     // Find the effective length (90% energy threshold)
@@ -377,7 +388,10 @@ fn test_binaural_atmos_7_1_4() {
         sample_rate: 48000,
     };
 
-    decoder.process(&input, &mut output, &context).unwrap();
+    // Process multiple blocks to overcome latency
+    for _ in 0..10 {
+        decoder.process(&input, &mut output, &context).unwrap();
+    }
 
     let rms: f32 = (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
     assert!(rms > 0.01, "Atmos processing produced insufficient output");
@@ -420,9 +434,11 @@ fn test_binaural_continuous_processing() {
 
         decoder.process(&input, &mut output, &context).unwrap();
 
-        // Verify each block produces valid output
-        let has_output = output.iter().any(|&x| x.abs() > 1e-6);
-        assert!(has_output, "Block {} produced no output", block);
+        // Verify output after initial latency (latency=512, block=256, so skip first 2 blocks)
+        if block > 2 {
+            let has_output = output.iter().any(|&x| x.abs() > 1e-6);
+            assert!(has_output, "Block {} produced no output", block);
+        }
     }
 
     fs::remove_file(sofa_path).ok();

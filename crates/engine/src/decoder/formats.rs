@@ -1,6 +1,7 @@
 use crate::decoder::error::{AudioDecoderError, AudioDecoderResult};
 use std::fs::File;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{CodecRegistry, Decoder, DecoderOptions};
@@ -12,37 +13,29 @@ use symphonia::core::probe::{Hint, Probe};
 
 use crate::decoder::core::{AudioDecoder, AudioSpec, DecodedAudio};
 
-/// Create a custom probe with all supported format readers registered
-fn create_probe() -> Probe {
+/// Shared probe with all supported format readers (initialized once)
+static PROBE: LazyLock<Probe> = LazyLock::new(|| {
     let mut probe = Probe::default();
-
-    // Register all format readers
-    // Note: AAC is supported both in MP4/M4A containers (via IsoMp4Reader)
-    // and as raw ADTS AAC files (via AdtsReader)
     probe.register_all::<symphonia_bundle_flac::FlacReader>();
     probe.register_all::<symphonia_bundle_mp3::MpaReader>();
     probe.register_all::<symphonia_format_riff::WavReader>();
     probe.register_all::<symphonia_format_ogg::OggReader>();
     probe.register_all::<symphonia_format_isomp4::IsoMp4Reader>();
     probe.register_all::<symphonia_codec_aac::AdtsReader>();
-
     probe
-}
+});
 
-/// Create a custom codec registry with all supported codecs
-fn create_codec_registry() -> CodecRegistry {
+/// Shared codec registry with all supported codecs (initialized once)
+static CODEC_REGISTRY: LazyLock<CodecRegistry> = LazyLock::new(|| {
     let mut registry = CodecRegistry::new();
-
-    // Register all codecs
     registry.register_all::<symphonia_bundle_flac::FlacDecoder>();
     registry.register_all::<symphonia_bundle_mp3::MpaDecoder>();
     registry.register_all::<symphonia_codec_pcm::PcmDecoder>();
     registry.register_all::<symphonia_codec_aac::AacDecoder>();
     registry.register_all::<symphonia_codec_alac::AlacDecoder>();
     registry.register_all::<symphonia_codec_vorbis::VorbisDecoder>();
-
     registry
-}
+});
 
 /// Unified Symphonia decoder implementation supporting all audio formats
 pub struct SymphoniaDecoder {
@@ -77,9 +70,8 @@ impl SymphoniaDecoder {
             hint.with_extension(extension);
         }
 
-        // Probe the file to determine format using our custom probe
-        let probe = create_probe();
-        let probe_result = probe
+        // Probe the file to determine format using our shared probe
+        let probe_result = PROBE
             .format(
                 &hint,
                 media_source,
@@ -107,9 +99,8 @@ impl SymphoniaDecoder {
         let track_id = track.id;
         let codec_params = track.codec_params.clone();
 
-        // Create decoder for this track using our custom codec registry
+        // Create decoder for this track using our shared codec registry
         let decoder_opts = DecoderOptions::default();
-        let codec_registry = create_codec_registry();
 
         // Extract audio specification
         let sample_rate = codec_params
@@ -125,7 +116,7 @@ impl SymphoniaDecoder {
             None => {
                 // Need to probe for channels - create temporary decoder
                 let mut temp_decoder =
-                    codec_registry
+                    CODEC_REGISTRY
                         .make(&codec_params, &decoder_opts)
                         .map_err(|e| {
                             AudioDecoderError::UnsupportedFormat(format!(
@@ -157,8 +148,7 @@ impl SymphoniaDecoder {
                 if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
                     hint.with_extension(extension);
                 }
-                let probe = create_probe();
-                let probe_result = probe
+                let probe_result = PROBE
                     .format(
                         &hint,
                         media_source,
@@ -170,7 +160,7 @@ impl SymphoniaDecoder {
 
                 // Recreate decoder for fresh state
                 let new_decoder =
-                    codec_registry
+                    CODEC_REGISTRY
                         .make(&codec_params, &decoder_opts)
                         .map_err(|e| {
                             AudioDecoderError::UnsupportedFormat(format!(
@@ -183,7 +173,7 @@ impl SymphoniaDecoder {
             }
             Some(channels) => {
                 // Channel info is available, use as is
-                let decoder = codec_registry
+                let decoder = CODEC_REGISTRY
                     .make(&codec_params, &decoder_opts)
                     .map_err(|e| {
                         AudioDecoderError::UnsupportedFormat(format!(

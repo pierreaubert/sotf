@@ -89,11 +89,12 @@ pub struct PndPlugin {
 
     cache: RealTimeCache<PndData>,
     cache_update_counter: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl PndPlugin {
     pub fn new(channels: usize) -> Self {
-        Self {
+        let mut p = Self {
             channels,
             sample_rate: 44100, // Default, updated in initialize
             analyzer: None,
@@ -128,7 +129,42 @@ impl PndPlugin {
             drift_smoothing: DRIFT_SMOOTHING_DEFAULT,
             cache: RealTimeCache::new(PndData::default()),
             cache_update_counter: 0,
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "correction_strength",
+                "Correction Strength",
+                self.correction_strength,
+                CORRECTION_STRENGTH_MIN,
+                CORRECTION_STRENGTH_MAX,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "analysis_window_ms",
+                "Analysis Window (ms)",
+                self.analysis_window_ms,
+                ANALYSIS_WINDOW_MS_MIN,
+                ANALYSIS_WINDOW_MS_MAX,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "drift_smoothing",
+                "Drift Smoothing",
+                self.drift_smoothing,
+                DRIFT_SMOOTHING_MIN,
+                DRIFT_SMOOTHING_MAX,
+            )
+            .with_group("Correction")
+            .with_importance(ParameterImportance::Useful),
+        ];
     }
 
     pub fn from_params(channels: usize, params: PndPluginParams) -> Self {
@@ -229,10 +265,11 @@ impl PndPlugin {
 
         // 5. Resample
         let max_output_frames = resampler.output_frames_max();
-        debug_assert!(self
-            .planar_output
-            .iter()
-            .all(|ch| ch.len() >= max_output_frames));
+        debug_assert!(
+            self.planar_output
+                .iter()
+                .all(|ch| ch.len() >= max_output_frames)
+        );
 
         let input_adapter =
             SequentialSliceOfVecs::new(&self.planar_input, self.channels, chunk_frames)
@@ -309,50 +346,33 @@ impl Plugin for PndPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float(
-                "correction_strength",
-                "Correction Strength",
-                CORRECTION_STRENGTH_DEFAULT,
-                CORRECTION_STRENGTH_MIN,
-                CORRECTION_STRENGTH_MAX,
-            )
-            .with_group("Correction")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "analysis_window_ms",
-                "Analysis Window (ms)",
-                ANALYSIS_WINDOW_MS_DEFAULT,
-                ANALYSIS_WINDOW_MS_MIN,
-                ANALYSIS_WINDOW_MS_MAX,
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "drift_smoothing",
-                "Drift Smoothing",
-                DRIFT_SMOOTHING_DEFAULT,
-                DRIFT_SMOOTHING_MIN,
-                DRIFT_SMOOTHING_MAX,
-            )
-            .with_group("Correction")
-            .with_importance(ParameterImportance::Useful),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
         if id == self.param_correction_strength {
-            self.correction_strength = value.as_float().ok_or("Invalid value")?;
-            self.correction_strength_smoother
-                .set_target(self.correction_strength);
+            let v = value.as_float().unwrap_or(CORRECTION_STRENGTH_DEFAULT);
+            if v.is_finite() {
+                self.correction_strength = v;
+                self.correction_strength_smoother
+                    .set_target(self.correction_strength);
+            }
         } else if id == self.param_analysis_window_ms {
-            self.analysis_window_ms = value.as_float().ok_or("Invalid value")?;
-            if let Some(analyzer) = &mut self.analyzer {
-                analyzer.update_analysis_window(self.analysis_window_ms);
+            let v = value.as_float().unwrap_or(ANALYSIS_WINDOW_MS_DEFAULT);
+            if v.is_finite() {
+                self.analysis_window_ms = v;
+                if let Some(analyzer) = &mut self.analyzer {
+                    analyzer.update_analysis_window(self.analysis_window_ms);
+                }
             }
         } else if id == self.param_drift_smoothing {
-            self.drift_smoothing = value.as_float().ok_or("Invalid value")?;
+            let v = value.as_float().unwrap_or(DRIFT_SMOOTHING_DEFAULT);
+            if v.is_finite() {
+                self.drift_smoothing = v;
+            }
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -451,7 +471,8 @@ impl Plugin for PndPlugin {
             let cap = self.output_ring.len();
             let first_part = drain_samples.min(cap - self.output_ring_read_pos);
             output[..first_part].copy_from_slice(
-                &self.output_ring[self.output_ring_read_pos..self.output_ring_read_pos + first_part],
+                &self.output_ring
+                    [self.output_ring_read_pos..self.output_ring_read_pos + first_part],
             );
             if drain_samples > first_part {
                 let second_part = drain_samples - first_part;
@@ -474,7 +495,8 @@ impl Plugin for PndPlugin {
         self.cache_update_counter += 1;
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
-            let (confidence, matched_partials, total_peaks) = if let Some(analyzer) = &self.analyzer {
+            let (confidence, matched_partials, total_peaks) = if let Some(analyzer) = &self.analyzer
+            {
                 (
                     analyzer.confidence(),
                     analyzer.matched_partials(),

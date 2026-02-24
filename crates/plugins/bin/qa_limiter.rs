@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_limiter::{LimiterPlugin, LimiterPluginParams};
-use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 
 #[global_allocator]
@@ -25,7 +25,10 @@ fn main() {
     println!("\n[Test 1] Ceiling Enforcement (Input +6dB, Thresh -1dB)");
     let num_frames = 4800;
     let mut buffer = generate_dc(sample_rate, 6.0, num_frames);
-    let ctx = ProcessContext { sample_rate, num_frames };
+    let ctx = ProcessContext {
+        sample_rate,
+        num_frames,
+    };
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer[1000..]); // Skip lookahead fill
     println!("  Ceiling: -1.00dB, Measured Peak: {:.2}dB", peak);

@@ -240,6 +240,8 @@ pub struct UpmixerPlugin {
     decor_base_phases_left: Vec<f32>,
     decor_base_phases_right: Vec<f32>,
     decor_lfo_phase: f32,
+    /// Precomputed per-bin LFO depth table (depends on sample_rate, fft_size, bandpass_hz, lfe_cutoff_hz)
+    cached_lfo_depth_table: Vec<f32>,
 
     // PCA State (per band)
     pca_cov_xx: Vec<f32>,
@@ -443,6 +445,7 @@ pub struct UpmixerPlugin {
 
     /// Initial latency counter to ensure OLA buffer is primed before output
     latency_filled: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl UpmixerPlugin {
@@ -629,7 +632,11 @@ impl UpmixerPlugin {
             param_height_hf_cap_hz: ParameterId::from("height_hf_cap_hz"),
             height_hf_cap_hz: default_height_hf_cap_hz(),
             param_height_transient_reduction: ParameterId::from("height_transient_reduction"),
-            height_transient_reduction: Smoother::new(default_height_transient_reduction(), 5.0, sample_rate),
+            height_transient_reduction: Smoother::new(
+                default_height_transient_reduction(),
+                5.0,
+                sample_rate,
+            ),
             param_height_direct_leak: ParameterId::from("height_direct_leak"),
             height_direct_leak: Smoother::new(default_height_direct_leak(), 5.0, sample_rate),
 
@@ -692,6 +699,7 @@ impl UpmixerPlugin {
             decor_base_phases_left: Vec::new(),
             decor_base_phases_right: Vec::new(),
             decor_lfo_phase: 0.0,
+            cached_lfo_depth_table: Vec::new(),
 
             pca_cov_xx: Vec::new(),
             pca_cov_yy: Vec::new(),
@@ -797,7 +805,7 @@ impl UpmixerPlugin {
             dialogue_probability: 0.0,
             decorrelation_strength: 1.0,
             prev_decorrelation_strength: -1.0, // Force initial computation
-            blended_decorrelation_filters: Vec::new(),
+            blended_decorrelation_filters: vec![vec![Complex::new(1.0, 0.0); fft_size / 2 + 1]; num_output_channels],
 
             lfe_cutoff_hz_smoother: Smoother::new(lfe_cutoff_hz, 5.0, sample_rate),
             bandpass_hz_smoother: Smoother::new(bandpass_hz, 5.0, sample_rate),
@@ -811,12 +819,568 @@ impl UpmixerPlugin {
             limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
             limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
             latency_filled: 0,
+            cached_parameters: Vec::new(),
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
         plugin.recalculate_panning_gains();
+        plugin.rebuild_cached_parameters();
 
         plugin
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_int(
+                "speaker_config",
+                "Configuration",
+                match self.speaker_config.id {
+                    "5.1" => 0,
+                    "7.1" => 1,
+                    "5.1.2" => 2,
+                    "5.1.4" => 3,
+                    "7.1.2" => 4,
+                    "7.1.4" => 5,
+                    "9.1.4" => 6,
+                    "9.1.6" => 7,
+                    "2.0" => 8,
+                    "5.0" => 9,
+                    _ => 0,
+                },
+                SPEAKER_CONFIG_MIN,
+                SPEAKER_CONFIG_MAX,
+            )
+            .with_description(
+                "Speaker configuration index.
+0=5.1 (default), 1=7.1, 2=5.1.2, 3=5.1.4,
+4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6,
+8=2.0, 9=5.0.
+Controls output layout and number of channels.",
+            )
+            .with_group("Output")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "gain_front_direct",
+                "Front Direct Gain",
+                self.gain_front_direct.target(),
+                GAIN_FRONT_DIRECT_MIN,
+                GAIN_FRONT_DIRECT_MAX,
+            )
+            .with_description(
+                "Front direct gain for non-height front speakers.
+Range: 0.0-2.0, default 1.0.
+Higher values make the front image more focused and dry;
+lower values rely more on ambient and surround energy.",
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "gain_front_ambient",
+                "Front Ambient Gain",
+                self.gain_front_ambient.target(),
+                GAIN_FRONT_AMBIENT_MIN,
+                GAIN_FRONT_AMBIENT_MAX,
+            )
+            .with_description(
+                "Decorrelated ambient gain routed to front speakers.
+Range: 0.0-2.0, default 0.5.
+Increase to widen and enliven the front stage;
+decrease for a more center-focused, direct front.",
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "gain_rear_ambient",
+                "Rear Ambient Gain",
+                self.gain_rear_ambient.target(),
+                GAIN_REAR_AMBIENT_MIN,
+                GAIN_REAR_AMBIENT_MAX,
+            )
+            .with_description(
+                "Ambient gain for surround and rear channels.
+Range: 0.0-2.0, default 1.0.
+Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "height_gain",
+                "Height Gain",
+                self.height_gain.target(),
+                GAIN_HEIGHT_MIN,
+                GAIN_HEIGHT_MAX,
+            )
+            .with_description(
+                "Gain for height/overhead channels (elevation > 0).
+Range: 0.0-2.0, default 1.0.
+0.0 disables height channels; higher values raise the contribution
+of height speakers relative to the bed layer.",
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "lfe_gain",
+                "LFE Gain",
+                self.lfe_gain.target(),
+                LFE_GAIN_MIN,
+                LFE_GAIN_MAX,
+            )
+            .with_description(
+                "Gain for LFE/subwoofer channel.
+Range: 0.0-2.0, default 1.0.
+Controls overall subwoofer level after the mains/LFE crossover.",
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "lfe_cutoff_hz",
+                "LFE Cutoff (Hz)",
+                self.lfe_cutoff_hz,
+                LFE_CUTOFF_HZ_MIN,
+                LFE_CUTOFF_HZ_MAX,
+            )
+            .with_description(
+                "Linkwitz-Riley crossover frequency between mains and LFE.
+Range: 20-180 Hz, default 120 Hz.
+Lower values keep more bass in mains; higher values route
+more low-frequency energy into the subwoofer.",
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "stereo_width",
+                "Stereo Width",
+                self.stereo_width.target(),
+                STEREO_WIDTH_MIN,
+                STEREO_WIDTH_MAX,
+            )
+            .with_description(
+                "Controls front stereo width for the direct component.
+Range: 0.0-1.0, default 0.5.
+0.0 keeps L/R wide; 1.0 collapses toward mono/center;
+intermediate values balance width and center focus.",
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "center_spread",
+                "Center Spread",
+                self.center_spread.target(),
+                CENTER_SPREAD_MIN,
+                CENTER_SPREAD_MAX,
+            )
+            .with_description(
+                "Controls how much direct energy is focused in the physical center vs L/R.
+Range: 0.0-1.0, default 0.0.
+0.0 sends coherent center energy to the C speaker;
+1.0 moves it into a phantom center across L/R.",
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "bandpass_hz",
+                "Upmix Crossover (Hz)",
+                self.bandpass_hz,
+                BANDPASS_HZ_MIN,
+                BANDPASS_HZ_MAX,
+            )
+            .with_description(
+                "Frequency above which upmixing to surrounds/height is applied.
+Range: 150-350 Hz, default 250 Hz.
+Below this frequency content stays mainly in fronts + LFE;
+above it participates in the direct/ambient upmix.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool(
+                "enable_subharmonic_synth",
+                "Sub-Harmonic Synth",
+                self.enable_subharmonic_synth,
+            )
+            .with_description(
+                "Enables optional sub-harmonic synthesis on the LFE.
+Default: off. When enabled, a low-frequency tone is added to the
+subwoofer, driven by the LFE envelope for extra rumble.",
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "subharmonic_gain",
+                "Sub-Harmonic Gain",
+                self.subharmonic_gain.target(),
+                SUBHARMONIC_GAIN_MIN,
+                SUBHARMONIC_GAIN_MAX,
+            )
+            .with_description(
+                "Gain for synthesized sub-harmonics when enabled.
+Range: 0.0-1.0, default 0.5.
+Controls how loud the synthesized low-frequency component is
+relative to the original LFE signal.",
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "enable_hr_direct",
+                "Multi-Resolution Analysis",
+                self.enable_hr_direct,
+            )
+            .with_description(
+                "Enables multi-resolution analysis for optimal time/frequency resolution.
+Default: ON. Uses short FFT (512 samples) for transients and long FFT (2048) for ambient.
+Adaptively blends based on transient detection for sharper attacks and smooth ambience.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "hr_sharpen",
+                "HR Sharpen",
+                self.hr_sharpen.target(),
+                HR_SHARPEN_MIN,
+                HR_SHARPEN_MAX,
+            )
+            .with_description(
+                "Depth control for the high-resolution direct path.
+Range: 0.0-1.0, default 1.0.
+0.0 effectively disables the HR contribution even if enabled;
+1.0 applies the full transient-driven HR emphasis and ducking
+of the main front field.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "safety_cap_db",
+                "Safety Cap (dB)",
+                self.safety_cap_db,
+                SAFETY_CAP_DB_MIN,
+                SAFETY_CAP_DB_MAX,
+            )
+            .with_description(
+                "Peak safety cap for the upmixer output.
+Range: 0.0-3.0 dB, default 3.0 dB.
+If a block's peak level after upmixing would exceed this value
+above unity, the block is scaled down to stay within the cap.",
+            )
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_int(
+                "decorrelation_mode",
+                "Decorrelation Mode",
+                self.decorrelation_mode as i32,
+                DECORRELATION_MODE_MIN,
+                DECORRELATION_MODE_MAX,
+            )
+            .with_description(
+                "Mode for ambient decorrelation.
+0 = Velvet Noise (Static, smooth, no artifacts) - Default
+1 = LFO Phase (Dynamic, subtle motion, may have metallic artifacts)",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            // Sub-harmonic synthesis parameters
+            Parameter::new_float(
+                "subharmonic_freq_hz",
+                "Sub-Harmonic Frequency",
+                self.subharmonic_freq_hz,
+                SUBHARMONIC_FREQ_HZ_MIN,
+                SUBHARMONIC_FREQ_HZ_MAX,
+            )
+            .with_description(
+                "Sub-harmonic synthesis frequency in Hz.
+Range: 20-80 Hz, default 40 Hz.
+Lower values produce deeper rumble, higher values are more audible.",
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "subharmonic_attack_ms",
+                "Sub-Harmonic Attack",
+                self.subharmonic_attack_ms,
+                SUBHARMONIC_ATTACK_MS_MIN,
+                SUBHARMONIC_ATTACK_MS_MAX,
+            )
+            .with_description(
+                "Sub-harmonic envelope attack time in milliseconds.
+Range: 1-100 ms, default 10 ms.
+Faster attack follows LFE transients more closely.",
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "subharmonic_release_ms",
+                "Sub-Harmonic Release",
+                self.subharmonic_release_ms,
+                SUBHARMONIC_RELEASE_MS_MIN,
+                SUBHARMONIC_RELEASE_MS_MAX,
+            )
+            .with_description(
+                "Sub-harmonic envelope release time in milliseconds.
+Range: 10-500 ms, default 50 ms.
+Longer release creates smoother decay.",
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::FineTuning),
+            // Decorrelation parameters
+            Parameter::new_float(
+                "decorrelation_lfo_rate_hz",
+                "Decorrelation LFO Rate",
+                self.decorrelation_lfo_rate_hz,
+                DECORRELATION_LFO_RATE_HZ_MIN,
+                DECORRELATION_LFO_RATE_HZ_MAX,
+            )
+            .with_description(
+                "LFO rate for decorrelation phase modulation.
+Range: 0.01-1.0 Hz, default 0.15 Hz.
+Higher values add more motion but may cause artifacts.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "velvet_noise_duration_ms",
+                "Velvet Noise Duration",
+                self.velvet_noise_duration_ms,
+                VELVET_NOISE_DURATION_MS_MIN,
+                VELVET_NOISE_DURATION_MS_MAX,
+            )
+            .with_description(
+                "Velvet noise decorrelator duration in milliseconds.
+Range: 10-100 ms, default 30 ms.
+Longer duration creates smoother diffusion.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "velvet_noise_density",
+                "Velvet Noise Density",
+                self.velvet_noise_density,
+                VELVET_NOISE_DENSITY_MIN,
+                VELVET_NOISE_DENSITY_MAX,
+            )
+            .with_description(
+                "Velvet noise pulse density (pulses per second).
+Range: 500-5000, default 2000.
+Higher density creates denser, smoother decorrelation.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
+            // Height channel parameters
+            Parameter::new_float(
+                "height_hf_cap_hz",
+                "Height HF Cap",
+                self.height_hf_cap_hz,
+                HEIGHT_HF_CAP_HZ_MIN,
+                HEIGHT_HF_CAP_HZ_MAX,
+            )
+            .with_description(
+                "High-frequency cap for height channels in Hz.
+Range: 8000-20000 Hz, default 16000 Hz.
+Limits extreme highs in overhead speakers.",
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "height_transient_reduction",
+                "Height Transient Reduction",
+                self.height_transient_reduction.target(),
+                HEIGHT_TRANSIENT_REDUCTION_MIN,
+                HEIGHT_TRANSIENT_REDUCTION_MAX,
+            )
+            .with_description(
+                "Transient reduction for height channels.
+Range: 0.0-1.0, default 0.6.
+Reduces height channel level during transients for coherence.",
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "height_direct_leak",
+                "Height Direct Leak",
+                self.height_direct_leak.target(),
+                HEIGHT_DIRECT_LEAK_MIN,
+                HEIGHT_DIRECT_LEAK_MAX,
+            )
+            .with_description(
+                "Direct signal leak into height channels.
+Range: 0.0-0.5, default 0.15.
+Allows some direct sound into overheads for air and presence.",
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::FineTuning),
+            // Surround routing parameters
+            Parameter::new_float(
+                "surround_direct_bleed",
+                "Surround Direct Bleed",
+                self.surround_direct_bleed.target(),
+                SURROUND_DIRECT_BLEED_MIN,
+                SURROUND_DIRECT_BLEED_MAX,
+            )
+            .with_description(
+                "Direct signal bleed into surround channels.
+Range: 0.0-1.0, default 0.50.
+Higher values create more cohesive surround image.",
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "rear_ambient_boost",
+                "Rear Ambient Boost",
+                self.rear_ambient_boost.target(),
+                REAR_AMBIENT_BOOST_MIN,
+                REAR_AMBIENT_BOOST_MAX,
+            )
+            .with_description(
+                "Ambient gain boost for rear channels.
+Range: 1.0-3.0x, default 1.5x.
+Increases envelopment from rear speakers.",
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "rear_late_reflection",
+                "Rear Late Reflection",
+                self.rear_late_reflection.target(),
+                REAR_LATE_REFLECTION_MIN,
+                REAR_LATE_REFLECTION_MAX,
+            )
+            .with_description(
+                "Late reflection level for rear height channels.
+Range: 0.0-0.5, default 0.10.
+Adds late reflections to rear heights for depth.",
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::FineTuning),
+            // Ambient parameters
+            Parameter::new_float(
+                "ambient_boost",
+                "Ambient Boost",
+                self.ambient_boost.target(),
+                AMBIENT_BOOST_MIN,
+                AMBIENT_BOOST_MAX,
+            )
+            .with_description(
+                "Ambient gain boost factor.
+Range: 0.5-2.0x, default 1.2x.
+Multiplier applied to coherence-derived ambient gain.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::Useful),
+            // Dialogue detection parameters
+            Parameter::new_float(
+                "dialogue_weight",
+                "Dialogue Weight",
+                self.dialogue_weight.target(),
+                DIALOGUE_WEIGHT_MIN,
+                DIALOGUE_WEIGHT_MAX,
+            )
+            .with_description(
+                "Maximum dialogue routing weight.
+Range: 0.0-1.0, default 0.4.
+Higher values route more detected dialogue to center.",
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "voice_freq_min_hz",
+                "Voice Freq Min",
+                self.voice_freq_min_hz,
+                VOICE_FREQ_MIN_HZ_MIN,
+                VOICE_FREQ_MIN_HZ_MAX,
+            )
+            .with_description(
+                "Voice detection frequency range minimum.
+Range: 200-800 Hz, default 500 Hz.
+Lower bound for dialogue detection analysis.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "voice_freq_max_hz",
+                "Voice Freq Max",
+                self.voice_freq_max_hz,
+                VOICE_FREQ_MAX_HZ_MIN,
+                VOICE_FREQ_MAX_HZ_MAX,
+            )
+            .with_description(
+                "Voice detection frequency range maximum.
+Range: 2000-5000 Hz, default 3000 Hz.
+Upper bound for dialogue detection analysis.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "dialogue_centroid_weight",
+                "Dialogue Centroid Weight",
+                self.dialogue_centroid_weight,
+                DIALOGUE_CENTROID_WEIGHT_MIN,
+                DIALOGUE_CENTROID_WEIGHT_MAX,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "dialogue_variance_weight",
+                "Dialogue Variance Weight",
+                self.dialogue_variance_weight,
+                DIALOGUE_VARIANCE_WEIGHT_MIN,
+                DIALOGUE_VARIANCE_WEIGHT_MAX,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "dialogue_coherence_weight",
+                "Dialogue Coherence Weight",
+                self.dialogue_coherence_weight,
+                DIALOGUE_COHERENCE_WEIGHT_MIN,
+                DIALOGUE_COHERENCE_WEIGHT_MAX,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            // ML vocal detection parameters
+            Parameter::new_bool(
+                "enable_ml_detection",
+                "ML Vocal Detection",
+                self.enable_ml_detection,
+            )
+            .with_description(
+                "Enable ML-based vocal detection using an ONNX model.
+Default: off. When enabled and a valid model path is set,
+replaces the heuristic dialogue detector with ML inference.
+Falls back to heuristic if model loading fails.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_string(
+                "ml_model_path",
+                "ML Model Path",
+                self.ml_model_path.clone(),
+            )
+            .with_description(
+                "Path to the ONNX model file for ML vocal detection.
+Must be a valid file path to an ONNX model with input shape [1, 40]
+and output shape [1, 1] (sigmoid probability).",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool(
+                "bypass_decorrelation",
+                "Bypass Decorrelation",
+                self.bypass_decorrelation,
+            )
+            .with_group("Diagnostic")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "bypass_transient_detection",
+                "Bypass Transient Detection",
+                self.bypass_transient_detection,
+            )
+            .with_group("Diagnostic")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "bypass_all_processing",
+                "Bypass All",
+                self.bypass_all_processing,
+            )
+            .with_group("Diagnostic")
+            .with_importance(ParameterImportance::Useful),
+        ];
     }
 
     /// Create a new upmixer plugin from configuration parameters
@@ -835,12 +1399,18 @@ impl UpmixerPlugin {
             params.enable_subharmonic_synth,
             params.subharmonic_gain,
         );
-        plugin.center_spread.set_target(params.center_spread.clamp(0.0, 1.0));
+        plugin
+            .center_spread
+            .set_target(params.center_spread.clamp(0.0, 1.0));
         plugin.enable_hr_direct = params.enable_hr_direct;
         plugin.hr_direct_envelope = if params.enable_hr_direct { 1.0 } else { 0.0 };
-        plugin.hr_sharpen.set_target(params.hr_sharpen.clamp(0.0, 1.0));
+        plugin
+            .hr_sharpen
+            .set_target(params.hr_sharpen.clamp(0.0, 1.0));
         plugin.safety_cap_db = params.safety_cap_db.max(0.0);
-        plugin.safety_cap_db_smoother.set_target(params.safety_cap_db.max(0.0));
+        plugin
+            .safety_cap_db_smoother
+            .set_target(params.safety_cap_db.max(0.0));
         plugin.update_safety_cap_cache();
         plugin.decorrelation_mode = params.decorrelation_mode;
 
@@ -856,20 +1426,36 @@ impl UpmixerPlugin {
 
         // Height channel parameters
         plugin.height_hf_cap_hz = params.height_hf_cap_hz.clamp(8000.0, 20000.0);
-        plugin.height_hf_cap_hz_smoother.set_target(params.height_hf_cap_hz.clamp(8000.0, 20000.0));
-        plugin.height_transient_reduction.set_target(params.height_transient_reduction.clamp(0.0, 1.0));
-        plugin.height_direct_leak.set_target(params.height_direct_leak.clamp(0.0, 0.5));
+        plugin
+            .height_hf_cap_hz_smoother
+            .set_target(params.height_hf_cap_hz.clamp(8000.0, 20000.0));
+        plugin
+            .height_transient_reduction
+            .set_target(params.height_transient_reduction.clamp(0.0, 1.0));
+        plugin
+            .height_direct_leak
+            .set_target(params.height_direct_leak.clamp(0.0, 0.5));
 
         // Surround routing parameters
-        plugin.surround_direct_bleed.set_target(params.surround_direct_bleed.clamp(0.0, 1.0));
-        plugin.rear_ambient_boost.set_target(params.rear_ambient_boost.clamp(1.0, 3.0));
-        plugin.rear_late_reflection.set_target(params.rear_late_reflection.clamp(0.0, 0.5));
+        plugin
+            .surround_direct_bleed
+            .set_target(params.surround_direct_bleed.clamp(0.0, 1.0));
+        plugin
+            .rear_ambient_boost
+            .set_target(params.rear_ambient_boost.clamp(1.0, 3.0));
+        plugin
+            .rear_late_reflection
+            .set_target(params.rear_late_reflection.clamp(0.0, 0.5));
 
         // Ambient/coherence parameters
-        plugin.ambient_boost.set_target(params.ambient_boost.clamp(0.5, 2.0));
+        plugin
+            .ambient_boost
+            .set_target(params.ambient_boost.clamp(0.5, 2.0));
 
         // Dialogue detection parameters
-        plugin.dialogue_weight.set_target(params.dialogue_weight.clamp(0.0, 1.0));
+        plugin
+            .dialogue_weight
+            .set_target(params.dialogue_weight.clamp(0.0, 1.0));
         plugin.voice_freq_min_hz = params.voice_freq_min_hz.clamp(200.0, 800.0);
         plugin.voice_freq_max_hz = params.voice_freq_max_hz.clamp(2000.0, 5000.0);
 
@@ -887,6 +1473,7 @@ impl UpmixerPlugin {
         plugin.bypass_transient_detection = params.bypass_transient_detection;
         plugin.bypass_all_processing = params.bypass_all_processing;
 
+        plugin.rebuild_cached_parameters();
         plugin
     }
 
@@ -935,832 +1522,290 @@ impl Plugin for UpmixerPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_int(
-                "speaker_config",
-                "Configuration",
-                SPEAKER_CONFIG_DEFAULT,
-                SPEAKER_CONFIG_MIN,
-                SPEAKER_CONFIG_MAX,
-            )
-            .with_description(
-                "Speaker configuration index.
-0=5.1 (default), 1=7.1, 2=5.1.2, 3=5.1.4,
-4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6,
-8=2.0, 9=5.0.
-Controls output layout and number of channels.",
-            )
-            .with_group("Output")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "gain_front_direct",
-                "Front Direct Gain",
-                GAIN_FRONT_DIRECT_DEFAULT,
-                GAIN_FRONT_DIRECT_MIN,
-                GAIN_FRONT_DIRECT_MAX,
-            )
-            .with_description(
-                "Front direct gain for non-height front speakers.
-Range: 0.0-2.0, default 1.0.
-Higher values make the front image more focused and dry;
-lower values rely more on ambient and surround energy.",
-            )
-            .with_group("Front")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "gain_front_ambient",
-                "Front Ambient Gain",
-                GAIN_FRONT_AMBIENT_DEFAULT,
-                GAIN_FRONT_AMBIENT_MIN,
-                GAIN_FRONT_AMBIENT_MAX,
-            )
-            .with_description(
-                "Decorrelated ambient gain routed to front speakers.
-Range: 0.0-2.0, default 0.5.
-Increase to widen and enliven the front stage;
-decrease for a more center-focused, direct front.",
-            )
-            .with_group("Front")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "gain_rear_ambient",
-                "Rear Ambient Gain",
-                GAIN_REAR_AMBIENT_DEFAULT,
-                GAIN_REAR_AMBIENT_MIN,
-                GAIN_REAR_AMBIENT_MAX,
-            )
-            .with_description(
-                "Ambient gain for surround and rear channels.
-Range: 0.0-2.0, default 1.0.
-Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
-            )
-            .with_group("Surround")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "height_gain",
-                "Height Gain",
-                GAIN_HEIGHT_DEFAULT,
-                GAIN_HEIGHT_MIN,
-                GAIN_HEIGHT_MAX,
-            )
-            .with_description(
-                "Gain for height/overhead channels (elevation > 0).
-Range: 0.0-2.0, default 1.0.
-0.0 disables height channels; higher values raise the contribution
-of height speakers relative to the bed layer.",
-            )
-            .with_group("Height")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "lfe_gain",
-                "LFE Gain",
-                LFE_GAIN_DEFAULT,
-                LFE_GAIN_MIN,
-                LFE_GAIN_MAX,
-            )
-            .with_description(
-                "Gain for LFE/subwoofer channel.
-Range: 0.0-2.0, default 1.0.
-Controls overall subwoofer level after the mains/LFE crossover.",
-            )
-            .with_group("LFE")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "lfe_cutoff_hz",
-                "LFE Cutoff (Hz)",
-                LFE_CUTOFF_HZ_DEFAULT,
-                LFE_CUTOFF_HZ_MIN,
-                LFE_CUTOFF_HZ_MAX,
-            )
-            .with_description(
-                "Linkwitz-Riley crossover frequency between mains and LFE.
-Range: 20-180 Hz, default 120 Hz.
-Lower values keep more bass in mains; higher values route
-more low-frequency energy into the subwoofer.",
-            )
-            .with_group("LFE")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "stereo_width",
-                "Stereo Width",
-                STEREO_WIDTH_DEFAULT,
-                STEREO_WIDTH_MIN,
-                STEREO_WIDTH_MAX,
-            )
-            .with_description(
-                "Controls front stereo width for the direct component.
-Range: 0.0-1.0, default 0.5.
-0.0 keeps L/R wide; 1.0 collapses toward mono/center;
-intermediate values balance width and center focus.",
-            )
-            .with_group("Front")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "center_spread",
-                "Center Spread",
-                CENTER_SPREAD_DEFAULT,
-                CENTER_SPREAD_MIN,
-                CENTER_SPREAD_MAX,
-            )
-            .with_description(
-                "Controls how much direct energy is focused in the physical center vs L/R.
-Range: 0.0-1.0, default 0.0.
-0.0 sends coherent center energy to the C speaker;
-1.0 moves it into a phantom center across L/R.",
-            )
-            .with_group("Front")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "bandpass_hz",
-                "Upmix Crossover (Hz)",
-                BANDPASS_HZ_DEFAULT,
-                BANDPASS_HZ_MIN,
-                BANDPASS_HZ_MAX,
-            )
-            .with_description(
-                "Frequency above which upmixing to surrounds/height is applied.
-Range: 150-350 Hz, default 250 Hz.
-Below this frequency content stays mainly in fronts + LFE;
-above it participates in the direct/ambient upmix.",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_bool(
-                "enable_subharmonic_synth",
-                "Sub-Harmonic Synth",
-                ENABLE_SUBHARMONIC_SYNTH_DEFAULT,
-            )
-            .with_description(
-                "Enables optional sub-harmonic synthesis on the LFE.
-Default: off. When enabled, a low-frequency tone is added to the
-subwoofer, driven by the LFE envelope for extra rumble.",
-            )
-            .with_group("LFE")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "subharmonic_gain",
-                "Sub-Harmonic Gain",
-                SUBHARMONIC_GAIN_DEFAULT,
-                SUBHARMONIC_GAIN_MIN,
-                SUBHARMONIC_GAIN_MAX,
-            )
-            .with_description(
-                "Gain for synthesized sub-harmonics when enabled.
-Range: 0.0-1.0, default 0.5.
-Controls how loud the synthesized low-frequency component is
-relative to the original LFE signal.",
-            )
-            .with_group("LFE")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "enable_hr_direct",
-                "Multi-Resolution Analysis",
-                ENABLE_HR_DIRECT_DEFAULT,
-            )
-            .with_description(
-                "Enables multi-resolution analysis for optimal time/frequency resolution.
-Default: ON. Uses short FFT (512 samples) for transients and long FFT (2048) for ambient.
-Adaptively blends based on transient detection for sharper attacks and smooth ambience.",
-            )
-            .with_group("Enhancement")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "hr_sharpen",
-                "HR Sharpen",
-                HR_SHARPEN_DEFAULT,
-                HR_SHARPEN_MIN,
-                HR_SHARPEN_MAX,
-            )
-            .with_description(
-                "Depth control for the high-resolution direct path.
-Range: 0.0-1.0, default 1.0.
-0.0 effectively disables the HR contribution even if enabled;
-1.0 applies the full transient-driven HR emphasis and ducking
-of the main front field.",
-            )
-            .with_group("Enhancement")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "safety_cap_db",
-                "Safety Cap (dB)",
-                SAFETY_CAP_DB_DEFAULT,
-                SAFETY_CAP_DB_MIN,
-                SAFETY_CAP_DB_MAX,
-            )
-            .with_description(
-                "Peak safety cap for the upmixer output.
-Range: 0.0-3.0 dB, default 3.0 dB.
-If a block's peak level after upmixing would exceed this value
-above unity, the block is scaled down to stay within the cap.",
-            )
-            .with_group("Output")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_int(
-                "decorrelation_mode",
-                "Decorrelation Mode",
-                DECORRELATION_MODE_DEFAULT,
-                DECORRELATION_MODE_MIN,
-                DECORRELATION_MODE_MAX,
-            )
-            .with_description(
-                "Mode for ambient decorrelation.
-0 = Velvet Noise (Static, smooth, no artifacts) - Default
-1 = LFO Phase (Dynamic, subtle motion, may have metallic artifacts)",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            // Sub-harmonic synthesis parameters
-            Parameter::new_float(
-                "subharmonic_freq_hz",
-                "Sub-Harmonic Frequency",
-                SUBHARMONIC_FREQ_HZ_DEFAULT,
-                SUBHARMONIC_FREQ_HZ_MIN,
-                SUBHARMONIC_FREQ_HZ_MAX,
-            )
-            .with_description(
-                "Sub-harmonic synthesis frequency in Hz.
-Range: 20-80 Hz, default 40 Hz.
-Lower values produce deeper rumble, higher values are more audible.",
-            )
-            .with_group("LFE")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "subharmonic_attack_ms",
-                "Sub-Harmonic Attack",
-                SUBHARMONIC_ATTACK_MS_DEFAULT,
-                SUBHARMONIC_ATTACK_MS_MIN,
-                SUBHARMONIC_ATTACK_MS_MAX,
-            )
-            .with_description(
-                "Sub-harmonic envelope attack time in milliseconds.
-Range: 1-100 ms, default 10 ms.
-Faster attack follows LFE transients more closely.",
-            )
-            .with_group("LFE")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "subharmonic_release_ms",
-                "Sub-Harmonic Release",
-                SUBHARMONIC_RELEASE_MS_DEFAULT,
-                SUBHARMONIC_RELEASE_MS_MIN,
-                SUBHARMONIC_RELEASE_MS_MAX,
-            )
-            .with_description(
-                "Sub-harmonic envelope release time in milliseconds.
-Range: 10-500 ms, default 50 ms.
-Longer release creates smoother decay.",
-            )
-            .with_group("LFE")
-            .with_importance(ParameterImportance::FineTuning),
-            // Decorrelation parameters
-            Parameter::new_float(
-                "decorrelation_lfo_rate_hz",
-                "Decorrelation LFO Rate",
-                DECORRELATION_LFO_RATE_HZ_DEFAULT,
-                DECORRELATION_LFO_RATE_HZ_MIN,
-                DECORRELATION_LFO_RATE_HZ_MAX,
-            )
-            .with_description(
-                "LFO rate for decorrelation phase modulation.
-Range: 0.01-1.0 Hz, default 0.15 Hz.
-Higher values add more motion but may cause artifacts.",
-            )
-            .with_group("Enhancement")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "velvet_noise_duration_ms",
-                "Velvet Noise Duration",
-                VELVET_NOISE_DURATION_MS_DEFAULT,
-                VELVET_NOISE_DURATION_MS_MIN,
-                VELVET_NOISE_DURATION_MS_MAX,
-            )
-            .with_description(
-                "Velvet noise decorrelator duration in milliseconds.
-Range: 10-100 ms, default 30 ms.
-Longer duration creates smoother diffusion.",
-            )
-            .with_group("Enhancement")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "velvet_noise_density",
-                "Velvet Noise Density",
-                VELVET_NOISE_DENSITY_DEFAULT,
-                VELVET_NOISE_DENSITY_MIN,
-                VELVET_NOISE_DENSITY_MAX,
-            )
-            .with_description(
-                "Velvet noise pulse density (pulses per second).
-Range: 500-5000, default 2000.
-Higher density creates denser, smoother decorrelation.",
-            )
-            .with_group("Enhancement")
-            .with_importance(ParameterImportance::FineTuning),
-            // Height channel parameters
-            Parameter::new_float(
-                "height_hf_cap_hz",
-                "Height HF Cap",
-                HEIGHT_HF_CAP_HZ_DEFAULT,
-                HEIGHT_HF_CAP_HZ_MIN,
-                HEIGHT_HF_CAP_HZ_MAX,
-            )
-            .with_description(
-                "High-frequency cap for height channels in Hz.
-Range: 8000-20000 Hz, default 16000 Hz.
-Limits extreme highs in overhead speakers.",
-            )
-            .with_group("Height")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "height_transient_reduction",
-                "Height Transient Reduction",
-                HEIGHT_TRANSIENT_REDUCTION_DEFAULT,
-                HEIGHT_TRANSIENT_REDUCTION_MIN,
-                HEIGHT_TRANSIENT_REDUCTION_MAX,
-            )
-            .with_description(
-                "Transient reduction for height channels.
-Range: 0.0-1.0, default 0.6.
-Reduces height channel level during transients for coherence.",
-            )
-            .with_group("Height")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "height_direct_leak",
-                "Height Direct Leak",
-                HEIGHT_DIRECT_LEAK_DEFAULT,
-                HEIGHT_DIRECT_LEAK_MIN,
-                HEIGHT_DIRECT_LEAK_MAX,
-            )
-            .with_description(
-                "Direct signal leak into height channels.
-Range: 0.0-0.5, default 0.15.
-Allows some direct sound into overheads for air and presence.",
-            )
-            .with_group("Height")
-            .with_importance(ParameterImportance::FineTuning),
-            // Surround routing parameters
-            Parameter::new_float(
-                "surround_direct_bleed",
-                "Surround Direct Bleed",
-                SURROUND_DIRECT_BLEED_DEFAULT,
-                SURROUND_DIRECT_BLEED_MIN,
-                SURROUND_DIRECT_BLEED_MAX,
-            )
-            .with_description(
-                "Direct signal bleed into surround channels.
-Range: 0.0-1.0, default 0.50.
-Higher values create more cohesive surround image.",
-            )
-            .with_group("Surround")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "rear_ambient_boost",
-                "Rear Ambient Boost",
-                REAR_AMBIENT_BOOST_DEFAULT,
-                REAR_AMBIENT_BOOST_MIN,
-                REAR_AMBIENT_BOOST_MAX,
-            )
-            .with_description(
-                "Ambient gain boost for rear channels.
-Range: 1.0-3.0x, default 1.5x.
-Increases envelopment from rear speakers.",
-            )
-            .with_group("Surround")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "rear_late_reflection",
-                "Rear Late Reflection",
-                REAR_LATE_REFLECTION_DEFAULT,
-                REAR_LATE_REFLECTION_MIN,
-                REAR_LATE_REFLECTION_MAX,
-            )
-            .with_description(
-                "Late reflection level for rear height channels.
-Range: 0.0-0.5, default 0.10.
-Adds late reflections to rear heights for depth.",
-            )
-            .with_group("Surround")
-            .with_importance(ParameterImportance::FineTuning),
-            // Ambient parameters
-            Parameter::new_float(
-                "ambient_boost",
-                "Ambient Boost",
-                AMBIENT_BOOST_DEFAULT,
-                AMBIENT_BOOST_MIN,
-                AMBIENT_BOOST_MAX,
-            )
-            .with_description(
-                "Ambient gain boost factor.
-Range: 0.5-2.0x, default 1.2x.
-Multiplier applied to coherence-derived ambient gain.",
-            )
-            .with_group("Enhancement")
-            .with_importance(ParameterImportance::Useful),
-            // Dialogue detection parameters
-            Parameter::new_float(
-                "dialogue_weight",
-                "Dialogue Weight",
-                DIALOGUE_WEIGHT_DEFAULT,
-                DIALOGUE_WEIGHT_MIN,
-                DIALOGUE_WEIGHT_MAX,
-            )
-            .with_description(
-                "Maximum dialogue routing weight.
-Range: 0.0-1.0, default 0.4.
-Higher values route more detected dialogue to center.",
-            )
-            .with_group("Enhancement")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "voice_freq_min_hz",
-                "Voice Freq Min",
-                VOICE_FREQ_MIN_HZ_DEFAULT,
-                VOICE_FREQ_MIN_HZ_MIN,
-                VOICE_FREQ_MIN_HZ_MAX,
-            )
-            .with_description(
-                "Voice detection frequency range minimum.
-Range: 200-800 Hz, default 500 Hz.
-Lower bound for dialogue detection analysis.",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "voice_freq_max_hz",
-                "Voice Freq Max",
-                VOICE_FREQ_MAX_HZ_DEFAULT,
-                VOICE_FREQ_MAX_HZ_MIN,
-                VOICE_FREQ_MAX_HZ_MAX,
-            )
-            .with_description(
-                "Voice detection frequency range maximum.
-Range: 2000-5000 Hz, default 3000 Hz.
-Upper bound for dialogue detection analysis.",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "dialogue_centroid_weight",
-                "Dialogue Centroid Weight",
-                DIALOGUE_CENTROID_WEIGHT_DEFAULT,
-                DIALOGUE_CENTROID_WEIGHT_MIN,
-                DIALOGUE_CENTROID_WEIGHT_MAX,
-            )
-            .with_description(
-                "Weight of spectral centroid score in dialogue detection.
-Range: 0.0-1.0, default 0.3.
-Weights are normalized internally so they always sum to 1.0.",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "dialogue_variance_weight",
-                "Dialogue Variance Weight",
-                DIALOGUE_VARIANCE_WEIGHT_DEFAULT,
-                DIALOGUE_VARIANCE_WEIGHT_MIN,
-                DIALOGUE_VARIANCE_WEIGHT_MAX,
-            )
-            .with_description(
-                "Weight of envelope variance score in dialogue detection.
-Range: 0.0-1.0, default 0.2.
-Weights are normalized internally so they always sum to 1.0.",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float(
-                "dialogue_coherence_weight",
-                "Dialogue Coherence Weight",
-                DIALOGUE_COHERENCE_WEIGHT_DEFAULT,
-                DIALOGUE_COHERENCE_WEIGHT_MIN,
-                DIALOGUE_COHERENCE_WEIGHT_MAX,
-            )
-            .with_description(
-                "Weight of voice-band coherence score in dialogue detection.
-Range: 0.0-1.0, default 0.5.
-Weights are normalized internally so they always sum to 1.0.",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            // ML vocal detection parameters
-            Parameter::new_bool(
-                "enable_ml_detection",
-                "ML Vocal Detection",
-                ENABLE_ML_DETECTION_DEFAULT,
-            )
-            .with_description(
-                "Enable ML-based vocal detection using an ONNX model.
-Default: off. When enabled and a valid model path is set,
-replaces the heuristic dialogue detector with ML inference.
-Falls back to heuristic if model loading fails.",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_string(
-                "ml_model_path",
-                "ML Model Path",
-                String::new(),
-            )
-            .with_description(
-                "Path to the ONNX model file for ML vocal detection.
-Must be a valid file path to an ONNX model with input shape [1, 40]
-and output shape [1, 1] (sigmoid probability).",
-            )
-            .with_group("Analysis")
-            .with_importance(ParameterImportance::FineTuning),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id == self.param_speaker_config {
-            if let Some(config_idx) = value.as_int() {
-                let config_id = match config_idx {
-                    0 => "5.1",
-                    1 => "7.1",
-                    2 => "5.1.2",
-                    3 => "5.1.4",
-                    4 => "7.1.2",
-                    5 => "7.1.4",
-                    6 => "9.1.4",
-                    7 => "9.1.6",
-                    8 => "2.0",
-                    9 => "5.0",
-                    _ => return Err("Invalid configuration index".to_string()),
-                };
-                return self.change_speaker_config(config_id);
-            }
+            let config_idx = value.as_int().ok_or_else(|| "speaker_config must be an integer".to_string())?;
+            let config_id = match config_idx {
+                0 => "5.1",
+                1 => "7.1",
+                2 => "5.1.2",
+                3 => "5.1.4",
+                4 => "7.1.2",
+                5 => "7.1.4",
+                6 => "9.1.4",
+                7 => "9.1.6",
+                8 => "2.0",
+                9 => "5.0",
+                _ => return Err("Invalid configuration index".to_string()),
+            };
+            return self.change_speaker_config(config_id);
         } else if id == self.param_gain_front_direct {
-            if let Some(gain) = value.as_float() {
+            let gain = value.as_float().ok_or_else(|| "gain_front_direct must be a float".to_string())?;
+            if gain.is_finite() {
                 self.gain_front_direct.set_target(gain);
-                return Ok(());
             }
         } else if id == self.param_gain_front_ambient {
-            if let Some(gain) = value.as_float() {
+            let gain = value.as_float().ok_or_else(|| "gain_front_ambient must be a float".to_string())?;
+            if gain.is_finite() {
                 self.gain_front_ambient.set_target(gain);
-                return Ok(());
             }
-        } else if id == self.param_gain_rear_ambient
-            && let Some(gain) = value.as_float()
-        {
-            self.gain_rear_ambient.set_target(gain);
-            return Ok(());
-        } else if id == self.param_height_gain
-            && let Some(gain) = value.as_float()
-        {
-            if (0.0..=2.0).contains(&gain) {
-                self.height_gain.set_target(gain);
-                return Ok(());
+        } else if id == self.param_gain_rear_ambient {
+            let gain = value.as_float().ok_or_else(|| "gain_rear_ambient must be a float".to_string())?;
+            if gain.is_finite() {
+                self.gain_rear_ambient.set_target(gain);
             }
-            return Err("Height gain must be between 0.0 and 2.0".to_string());
-        } else if id == self.param_lfe_gain
-            && let Some(gain) = value.as_float()
-        {
-            if (0.0..=2.0).contains(&gain) {
-                self.lfe_gain.set_target(gain);
-                return Ok(());
+        } else if id == self.param_height_gain {
+            let gain = value.as_float().ok_or_else(|| "height_gain must be a float".to_string())?;
+            if gain.is_finite() {
+                self.height_gain.set_target(gain.clamp(0.0, 2.0));
             }
-            return Err("LFE gain must be between 0.0 and 2.0".to_string());
-        } else if id == self.param_lfe_cutoff_hz
-            && let Some(cutoff) = value.as_float()
-        {
-            if (20.0..=180.0).contains(&cutoff) && cutoff < self.bandpass_hz {
+        } else if id == self.param_lfe_gain {
+            let gain = value.as_float().ok_or_else(|| "lfe_gain must be a float".to_string())?;
+            if gain.is_finite() {
+                self.lfe_gain.set_target(gain.clamp(0.0, 2.0));
+            }
+        } else if id == self.param_lfe_cutoff_hz {
+            let cutoff = value.as_float().ok_or_else(|| "lfe_cutoff_hz must be a float".to_string())?;
+            if cutoff.is_finite() && (20.0..=180.0).contains(&cutoff) && cutoff < self.bandpass_hz {
                 self.lfe_cutoff_hz_smoother.set_target(cutoff);
-                return Ok(());
             }
-            return Err(
-                "LFE cutoff must be 20-180 Hz and less than bandpass frequency".to_string(),
-            );
-        } else if id == self.param_stereo_width
-            && let Some(width) = value.as_float()
-        {
-            self.stereo_width.set_target(width.clamp(0.0, 1.0));
-            return Ok(());
-        } else if id == self.param_center_spread
-            && let Some(spread) = value.as_float()
-        {
-            self.center_spread.set_target(spread.clamp(0.0, 1.0));
-            return Ok(());
-        } else if id == self.param_bandpass_hz
-            && let Some(freq) = value.as_float()
-        {
-            if freq > self.lfe_cutoff_hz {
+        } else if id == self.param_stereo_width {
+            let width = value.as_float().ok_or_else(|| "stereo_width must be a float".to_string())?;
+            if width.is_finite() {
+                self.stereo_width.set_target(width.clamp(0.0, 1.0));
+            }
+        } else if id == self.param_center_spread {
+            let spread = value.as_float().ok_or_else(|| "center_spread must be a float".to_string())?;
+            if spread.is_finite() {
+                self.center_spread.set_target(spread.clamp(0.0, 1.0));
+            }
+        } else if id == self.param_bandpass_hz {
+            let freq = value.as_float().ok_or_else(|| "bandpass_hz must be a float".to_string())?;
+            if freq.is_finite() && freq > self.lfe_cutoff_hz {
                 self.bandpass_hz_smoother.set_target(freq);
-                return Ok(());
             }
-            return Err("Bandpass frequency must be greater than LFE cutoff".to_string());
         } else if id == self.param_enable_subharmonic_synth {
-            if let Some(enable) = value.as_bool() {
-                self.enable_subharmonic_synth = enable;
-                return Ok(());
+            self.enable_subharmonic_synth = value.as_bool().ok_or_else(|| "enable_subharmonic_synth must be a boolean".to_string())?;
+        } else if id == self.param_subharmonic_gain {
+            let gain = value.as_float().ok_or_else(|| "subharmonic_gain must be a float".to_string())?;
+            if gain.is_finite() {
+                self.subharmonic_gain.set_target(gain.clamp(0.0, 1.0));
             }
-        } else if id == self.param_subharmonic_gain
-            && let Some(gain) = value.as_float()
-        {
-            if (0.0..=1.0).contains(&gain) {
-                self.subharmonic_gain.set_target(gain);
-                return Ok(());
-            }
-            return Err("Sub-harmonic gain must be between 0.0 and 1.0".to_string());
         } else if id == self.param_enable_hr_direct {
-            if let Some(enable) = value.as_bool() {
-                self.enable_hr_direct = enable;
-                return Ok(());
+            self.enable_hr_direct = value.as_bool().ok_or_else(|| "enable_hr_direct must be a boolean".to_string())?;
+        } else if id == self.param_hr_sharpen {
+            let sharpen = value.as_float().ok_or_else(|| "hr_sharpen must be a float".to_string())?;
+            if sharpen.is_finite() {
+                self.hr_sharpen.set_target(sharpen.clamp(0.0, 1.0));
             }
-        } else if id == self.param_hr_sharpen
-            && let Some(sharpen) = value.as_float()
-        {
-            if (0.0..=1.0).contains(&sharpen) {
-                self.hr_sharpen.set_target(sharpen);
-                return Ok(());
-            }
-            return Err("HR sharpen must be between 0.0 and 1.0".to_string());
         } else if id == self.param_decorrelation_mode {
-            if let Some(mode) = value.as_int() {
-                if mode == 0 || mode == 1 {
-                    // Save current blended filters for crossfade
-                    if !self.blended_decorrelation_filters.is_empty() {
-                        self.prev_blended_filters_for_crossfade =
-                            self.blended_decorrelation_filters.clone();
-                        self.decorrelation_crossfade_remaining = 5;
+            let mode = value.as_int().ok_or_else(|| "decorrelation_mode must be an integer".to_string())?;
+            if mode == 0 || mode == 1 {
+                // Swap current → prev for crossfade (zero-alloc when prev is pre-allocated)
+                std::mem::swap(
+                    &mut self.prev_blended_filters_for_crossfade,
+                    &mut self.blended_decorrelation_filters,
+                );
+                // Ensure current filters have correct dimensions (reuse prev's old allocation or allocate)
+                let spec_size = self.fft_size / 2 + 1;
+                let num_ch = self.num_output_channels;
+                if self.blended_decorrelation_filters.len() != num_ch {
+                    self.blended_decorrelation_filters =
+                        vec![vec![Complex::new(1.0, 0.0); spec_size]; num_ch];
+                } else {
+                    for ch_filters in &mut self.blended_decorrelation_filters {
+                        ch_filters.fill(Complex::new(1.0, 0.0));
                     }
-                    self.decorrelation_mode = mode as usize;
-                    self.generate_decorrelation_filters();
-                    self.prev_decorrelation_strength = -1.0; // Force reblend
-                    return Ok(());
                 }
-                return Err("Invalid decorrelation mode".to_string());
+                self.decorrelation_crossfade_remaining = 5;
+                self.decorrelation_mode = mode as usize;
+                self.generate_decorrelation_filters();
+                self.prev_decorrelation_strength = -1.0; // Force reblend
             }
-        } else if id == self.param_safety_cap_db
-            && let Some(val) = value.as_float()
-        {
-            if (0.0..=3.0).contains(&val) {
-                self.safety_cap_db_smoother.set_target(val);
-                return Ok(());
+        } else if id == self.param_safety_cap_db {
+            let val = value.as_float().ok_or_else(|| "safety_cap_db must be a float".to_string())?;
+            if val.is_finite() {
+                self.safety_cap_db_smoother.set_target(val.clamp(0.0, 3.0));
             }
-            return Err("Safety cap must be between 0.0 and 3.0 dB".to_string());
         }
         // Sub-harmonic synthesis parameters
-        else if id == self.param_subharmonic_freq_hz
-            && let Some(val) = value.as_float()
-        {
-            self.subharmonic_freq_hz = val.clamp(20.0, 80.0);
-            self.recache_subharmonic_coeffs();
-            return Ok(());
-        } else if id == self.param_subharmonic_attack_ms
-            && let Some(val) = value.as_float()
-        {
-            self.subharmonic_attack_ms = val.clamp(1.0, 100.0);
-            self.recache_subharmonic_coeffs();
-            return Ok(());
-        } else if id == self.param_subharmonic_release_ms
-            && let Some(val) = value.as_float()
-        {
-            self.subharmonic_release_ms = val.clamp(10.0, 500.0);
-            self.recache_subharmonic_coeffs();
-            return Ok(());
+        else if id == self.param_subharmonic_freq_hz {
+            let val = value.as_float().ok_or_else(|| "subharmonic_freq_hz must be a float".to_string())?;
+            if val.is_finite() {
+                self.subharmonic_freq_hz = val.clamp(20.0, 80.0);
+                self.recache_subharmonic_coeffs();
+            }
+        } else if id == self.param_subharmonic_attack_ms {
+            let val = value.as_float().ok_or_else(|| "subharmonic_attack_ms must be a float".to_string())?;
+            if val.is_finite() {
+                self.subharmonic_attack_ms = val.clamp(1.0, 100.0);
+                self.recache_subharmonic_coeffs();
+            }
+        } else if id == self.param_subharmonic_release_ms {
+            let val = value.as_float().ok_or_else(|| "subharmonic_release_ms must be a float".to_string())?;
+            if val.is_finite() {
+                self.subharmonic_release_ms = val.clamp(10.0, 500.0);
+                self.recache_subharmonic_coeffs();
+            }
         }
         // Decorrelation parameters
-        else if id == self.param_decorrelation_lfo_rate_hz
-            && let Some(val) = value.as_float()
-        {
-            self.decorrelation_lfo_rate_hz = val.clamp(0.01, 1.0);
-            return Ok(());
-        } else if id == self.param_velvet_noise_duration_ms
-            && let Some(val) = value.as_float()
-        {
-            self.velvet_noise_duration_ms = val.clamp(10.0, 100.0);
-            // Regenerate velvet noise filters with new duration
-            if self.decorrelation_mode == 0 {
-                self.generate_velvet_noise_decorrelators();
+        else if id == self.param_decorrelation_lfo_rate_hz {
+            let val = value
+                .as_float()
+                .ok_or_else(|| "decorrelation_lfo_rate_hz must be a float".to_string())?;
+            if val.is_finite() {
+                self.decorrelation_lfo_rate_hz = val.clamp(0.01, 1.0);
             }
-            return Ok(());
-        } else if id == self.param_velvet_noise_density
-            && let Some(val) = value.as_float()
-        {
-            self.velvet_noise_density = val.clamp(500.0, 5000.0);
-            // Regenerate velvet noise filters with new density
-            if self.decorrelation_mode == 0 {
-                self.generate_velvet_noise_decorrelators();
+        } else if id == self.param_velvet_noise_duration_ms {
+            let val = value.as_float().ok_or_else(|| "velvet_noise_duration_ms must be a float".to_string())?;
+            if val.is_finite() {
+                self.velvet_noise_duration_ms = val.clamp(10.0, 100.0);
+                // Regenerate velvet noise filters with new duration
+                if self.decorrelation_mode == 0 {
+                    self.generate_velvet_noise_decorrelators();
+                }
             }
-            return Ok(());
+        } else if id == self.param_velvet_noise_density {
+            let val = value.as_float().ok_or_else(|| "velvet_noise_density must be a float".to_string())?;
+            if val.is_finite() {
+                self.velvet_noise_density = val.clamp(500.0, 5000.0);
+                // Regenerate velvet noise filters with new density
+                if self.decorrelation_mode == 0 {
+                    self.generate_velvet_noise_decorrelators();
+                }
+            }
         }
         // Height channel parameters
-        else if id == self.param_height_hf_cap_hz
-            && let Some(val) = value.as_float()
-        {
-            self.height_hf_cap_hz_smoother.set_target(val.clamp(8000.0, 20000.0));
-            return Ok(());
-        } else if id == self.param_height_transient_reduction
-            && let Some(val) = value.as_float()
-        {
-            self.height_transient_reduction.set_target(val.clamp(0.0, 1.0));
-            return Ok(());
-        } else if id == self.param_height_direct_leak
-            && let Some(val) = value.as_float()
-        {
-            self.height_direct_leak.set_target(val.clamp(0.0, 0.5));
-            return Ok(());
+        else if id == self.param_height_hf_cap_hz {
+            let val = value.as_float().ok_or_else(|| "height_hf_cap_hz must be a float".to_string())?;
+            if val.is_finite() {
+                self.height_hf_cap_hz_smoother
+                    .set_target(val.clamp(8000.0, 20000.0));
+            }
+        } else if id == self.param_height_transient_reduction {
+            let val = value
+                .as_float()
+                .ok_or_else(|| "height_transient_reduction must be a float".to_string())?;
+            if val.is_finite() {
+                self.height_transient_reduction
+                    .set_target(val.clamp(0.0, 1.0));
+            }
+        } else if id == self.param_height_direct_leak {
+            let val = value.as_float().ok_or_else(|| "height_direct_leak must be a float".to_string())?;
+            if val.is_finite() {
+                self.height_direct_leak.set_target(val.clamp(0.0, 0.5));
+            }
         }
         // Surround routing parameters
-        else if id == self.param_surround_direct_bleed
-            && let Some(val) = value.as_float()
-        {
-            self.surround_direct_bleed.set_target(val.clamp(0.0, 1.0));
-            return Ok(());
-        } else if id == self.param_rear_ambient_boost
-            && let Some(val) = value.as_float()
-        {
-            self.rear_ambient_boost.set_target(val.clamp(1.0, 3.0));
-            return Ok(());
-        } else if id == self.param_rear_late_reflection
-            && let Some(val) = value.as_float()
-        {
-            self.rear_late_reflection.set_target(val.clamp(0.0, 0.5));
-            return Ok(());
+        else if id == self.param_surround_direct_bleed {
+            let val = value.as_float().ok_or_else(|| "surround_direct_bleed must be a float".to_string())?;
+            if val.is_finite() {
+                self.surround_direct_bleed.set_target(val.clamp(0.0, 1.0));
+            }
+        } else if id == self.param_rear_ambient_boost {
+            let val = value.as_float().ok_or_else(|| "rear_ambient_boost must be a float".to_string())?;
+            if val.is_finite() {
+                self.rear_ambient_boost.set_target(val.clamp(1.0, 3.0));
+            }
+        } else if id == self.param_rear_late_reflection {
+            let val = value.as_float().ok_or_else(|| "rear_late_reflection must be a float".to_string())?;
+            if val.is_finite() {
+                self.rear_late_reflection.set_target(val.clamp(0.0, 0.5));
+            }
         }
         // Ambient parameters
-        else if id == self.param_ambient_boost
-            && let Some(val) = value.as_float()
-        {
-            self.ambient_boost.set_target(val.clamp(0.5, 2.0));
-            return Ok(());
+        else if id == self.param_ambient_boost {
+            let val = value.as_float().ok_or_else(|| "ambient_boost must be a float".to_string())?;
+            if val.is_finite() {
+                self.ambient_boost.set_target(val.clamp(0.5, 2.0));
+            }
         }
         // Dialogue detection parameters
-        else if id == self.param_dialogue_weight
-            && let Some(val) = value.as_float()
-        {
-            self.dialogue_weight.set_target(val.clamp(0.0, 1.0));
-            return Ok(());
-        } else if id == self.param_voice_freq_min_hz
-            && let Some(val) = value.as_float()
-        {
-            self.voice_freq_min_hz = val.clamp(200.0, 800.0);
-            self.recache_bin_indices();
-            return Ok(());
-        } else if id == self.param_voice_freq_max_hz
-            && let Some(val) = value.as_float()
-        {
-            self.voice_freq_max_hz = val.clamp(2000.0, 5000.0);
-            self.recache_bin_indices();
-            return Ok(());
-        } else if id == self.param_dialogue_centroid_weight
-            && let Some(val) = value.as_float()
-        {
-            self.dialogue_centroid_weight = val.clamp(0.0, 1.0);
-            self.recache_dialogue_weights();
-            return Ok(());
-        } else if id == self.param_dialogue_variance_weight
-            && let Some(val) = value.as_float()
-        {
-            self.dialogue_variance_weight = val.clamp(0.0, 1.0);
-            self.recache_dialogue_weights();
-            return Ok(());
-        } else if id == self.param_dialogue_coherence_weight
-            && let Some(val) = value.as_float()
-        {
-            self.dialogue_coherence_weight = val.clamp(0.0, 1.0);
-            self.recache_dialogue_weights();
-            return Ok(());
+        else if id == self.param_dialogue_weight {
+            let val = value.as_float().ok_or_else(|| "dialogue_weight must be a float".to_string())?;
+            if val.is_finite() {
+                self.dialogue_weight.set_target(val.clamp(0.0, 1.0));
+            }
+        } else if id == self.param_voice_freq_min_hz {
+            let val = value.as_float().ok_or_else(|| "voice_freq_min_hz must be a float".to_string())?;
+            if val.is_finite() {
+                self.voice_freq_min_hz = val.clamp(200.0, 800.0);
+                self.recache_bin_indices();
+            }
+        } else if id == self.param_voice_freq_max_hz {
+            let val = value.as_float().ok_or_else(|| "voice_freq_max_hz must be a float".to_string())?;
+            if val.is_finite() {
+                self.voice_freq_max_hz = val.clamp(2000.0, 5000.0);
+                self.recache_bin_indices();
+            }
+        } else if id == self.param_dialogue_centroid_weight {
+            let val = value.as_float().ok_or_else(|| "dialogue_centroid_weight must be a float".to_string())?;
+            if val.is_finite() {
+                self.dialogue_centroid_weight = val.clamp(0.0, 1.0);
+                self.recache_dialogue_weights();
+            }
+        } else if id == self.param_dialogue_variance_weight {
+            let val = value.as_float().ok_or_else(|| "dialogue_variance_weight must be a float".to_string())?;
+            if val.is_finite() {
+                self.dialogue_variance_weight = val.clamp(0.0, 1.0);
+                self.recache_dialogue_weights();
+            }
+        } else if id == self.param_dialogue_coherence_weight {
+            let val = value
+                .as_float()
+                .ok_or_else(|| "dialogue_coherence_weight must be a float".to_string())?;
+            if val.is_finite() {
+                self.dialogue_coherence_weight = val.clamp(0.0, 1.0);
+                self.recache_dialogue_weights();
+            }
         }
         // ML vocal detection parameters
         else if id == self.param_enable_ml_detection {
-            if let Some(enable) = value.as_bool() {
-                self.enable_ml_detection = enable;
-                self.try_start_ml_inference();
-                return Ok(());
-            }
+            let enable = value.as_bool().ok_or_else(|| "enable_ml_detection must be a boolean".to_string())?;
+            self.enable_ml_detection = enable;
+            self.try_start_ml_inference();
         } else if id == self.param_ml_model_path {
-            if let Some(path) = value.as_string() {
-                self.ml_model_path = path.to_string();
-                if self.enable_ml_detection {
-                    self.try_start_ml_inference();
-                }
-                return Ok(());
+            let path = value.as_string().ok_or_else(|| "ml_model_path must be a string".to_string())?;
+            self.ml_model_path = path.to_string();
+            if self.enable_ml_detection {
+                self.try_start_ml_inference();
             }
         } else if id == self.param_bypass_decorrelation {
-            if let Some(enable) = value.as_bool() {
-                // Save current blended filters for crossfade
-                if !self.blended_decorrelation_filters.is_empty() {
-                    self.prev_blended_filters_for_crossfade =
-                        self.blended_decorrelation_filters.clone();
-                    self.decorrelation_crossfade_remaining = 5;
+            let enable = value.as_bool().ok_or_else(|| "bypass_decorrelation must be a boolean".to_string())?;
+            // Swap current → prev for crossfade (zero-alloc when prev is pre-allocated)
+            std::mem::swap(
+                &mut self.prev_blended_filters_for_crossfade,
+                &mut self.blended_decorrelation_filters,
+            );
+            let spec_size = self.fft_size / 2 + 1;
+            let num_ch = self.num_output_channels;
+            if self.blended_decorrelation_filters.len() != num_ch {
+                self.blended_decorrelation_filters =
+                    vec![vec![Complex::new(1.0, 0.0); spec_size]; num_ch];
+            } else {
+                for ch_filters in &mut self.blended_decorrelation_filters {
+                    ch_filters.fill(Complex::new(1.0, 0.0));
                 }
-                self.bypass_decorrelation = enable;
-                self.generate_decorrelation_filters();
-                self.prev_decorrelation_strength = -1.0; // Force reblend
-                return Ok(());
             }
+            self.decorrelation_crossfade_remaining = 5;
+            self.bypass_decorrelation = enable;
+            self.generate_decorrelation_filters();
+            self.prev_decorrelation_strength = -1.0; // Force reblend
         } else if id == self.param_bypass_transient_detection {
-            if let Some(enable) = value.as_bool() {
-                self.bypass_transient_detection = enable;
-                return Ok(());
-            }
-        } else if id == self.param_bypass_all_processing
-            && let Some(enable) = value.as_bool()
-        {
-            self.bypass_all_processing = enable;
-            return Ok(());
+            self.bypass_transient_detection = value.as_bool().ok_or_else(|| "bypass_transient_detection must be a boolean".to_string())?;
+        } else if id == self.param_bypass_all_processing {
+            self.bypass_all_processing = value.as_bool().ok_or_else(|| "bypass_all_processing must be a boolean".to_string())?;
+        } else {
+            return Err(format!("Unknown parameter: {}", id));
         }
-        Err(format!("Unknown parameter: {}", id))
+
+        self.rebuild_cached_parameters();
+        Ok(())
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -1826,9 +1871,13 @@ and output shape [1, 1] (sigmoid probability).",
         }
         // Height channel parameters
         else if id == &self.param_height_hf_cap_hz {
-            Some(ParameterValue::Float(self.height_hf_cap_hz_smoother.target()))
+            Some(ParameterValue::Float(
+                self.height_hf_cap_hz_smoother.target(),
+            ))
         } else if id == &self.param_height_transient_reduction {
-            Some(ParameterValue::Float(self.height_transient_reduction.target()))
+            Some(ParameterValue::Float(
+                self.height_transient_reduction.target(),
+            ))
         } else if id == &self.param_height_direct_leak {
             Some(ParameterValue::Float(self.height_direct_leak.target()))
         }
@@ -1912,6 +1961,15 @@ and output shape [1, 1] (sigmoid probability).",
         // Generate per-channel decorrelation filters
         self.generate_per_channel_decorrelation_filters();
 
+        // Pre-allocate blended decorrelation filters to avoid hot-path allocation
+        let spectrum_size = self.fft_size / 2 + 1;
+        self.blended_decorrelation_filters =
+            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; self.num_output_channels];
+        self.prev_decorrelation_strength = -1.0; // Force recompute on first process()
+
+        // Precompute LFO depth table (per-bin, depends on sample_rate/fft_size/bandpass/lfe cutoff)
+        self.precompute_lfo_depth_table();
+
         // Precompute LR4 crossover gains for mains/LFE split
         self.update_crossover_gains();
 
@@ -1937,11 +1995,13 @@ and output shape [1, 1] (sigmoid probability).",
         self.rear_ambient_boost.set_time(time_ms, sample_rate);
         self.rear_late_reflection.set_time(time_ms, sample_rate);
         self.height_direct_leak.set_time(time_ms, sample_rate);
-        self.height_transient_reduction.set_time(time_ms, sample_rate);
+        self.height_transient_reduction
+            .set_time(time_ms, sample_rate);
         self.hr_sharpen.set_time(time_ms, sample_rate);
         self.lfe_cutoff_hz_smoother.set_time(time_ms, sample_rate);
         self.bandpass_hz_smoother.set_time(time_ms, sample_rate);
-        self.height_hf_cap_hz_smoother.set_time(time_ms, sample_rate);
+        self.height_hf_cap_hz_smoother
+            .set_time(time_ms, sample_rate);
         self.safety_cap_db_smoother.set_time(time_ms, sample_rate);
 
         self.limiter_attack_coeff = (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp();
@@ -2039,8 +2099,10 @@ and output shape [1, 1] (sigmoid probability).",
         self.prev_decorrelation_strength = -1.0;
 
         // Initialize height mask to floor value to avoid startup ramp artifact
-        self.height_band_gains.fill(frequency_domain::HEIGHT_MASK_FLOOR);
-        self.height_band_gains_prev.fill(frequency_domain::HEIGHT_MASK_FLOOR);
+        self.height_band_gains
+            .fill(frequency_domain::HEIGHT_MASK_FLOOR);
+        self.height_band_gains_prev
+            .fill(frequency_domain::HEIGHT_MASK_FLOOR);
         self.height_band_gains_temp.fill(0.0);
 
         // Reset energy correction smoothing to unity
@@ -2180,7 +2242,8 @@ and output shape [1, 1] (sigmoid probability).",
                     (input_samples - input_pos * 2).min(self.fft_size * 2 - self.input_buffer_fill);
 
                 if samples_to_copy > 0 {
-                    self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
+                    self.input_buffer
+                        [self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
                         .copy_from_slice(&input[input_pos * 2..input_pos * 2 + samples_to_copy]);
 
                     self.input_buffer_fill += samples_to_copy;
@@ -2214,21 +2277,15 @@ and output shape [1, 1] (sigmoid probability).",
 
                 // Advance positions
                 self.next_add_position = (self.next_add_position + self.hop_size) & mask;
-                
-                if self.latency_filled >= self.fft_size {
-                    self.output_accumulator_fill += self.hop_size;
-                } else {
-                    self.latency_filled += self.hop_size;
-                }
+
+                self.output_accumulator_fill += self.hop_size;
+                self.latency_filled += self.hop_size;
 
                 // Shift input buffer
                 let shift_amount = self.hop_size * 2;
                 self.input_buffer
-                    .copy_within(shift_amount..self.fft_size * 2, 0);
+                    .copy_within(shift_amount..self.input_buffer_fill, 0);
                 self.input_buffer_fill -= shift_amount;
-                
-                // Continue to check if we can process another block or drain output
-                continue;
             }
 
             // Step 3: Drain available output from ring buffer (flat interleaved)
@@ -2262,8 +2319,9 @@ and output shape [1, 1] (sigmoid probability).",
                         }
                     }
                     output_pos = context.num_frames;
+                } else {
+                    break;
                 }
-                break;
             }
         }
 

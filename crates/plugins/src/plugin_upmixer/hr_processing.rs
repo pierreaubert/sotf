@@ -90,9 +90,7 @@ impl UpmixerPlugin {
     /// Must be called after apply_vbap_panning_and_inverse_fft() and before
     /// extract_output_and_scale().
     pub(super) fn apply_hr_enhancement(&mut self, input: &[f32]) {
-        let hr_mix = (self.hr_transient_env
-            * self.hr_sharpen.current()
-            * self.hr_direct_envelope)
+        let hr_mix = (self.hr_transient_env * self.hr_sharpen.current() * self.hr_direct_envelope)
             .clamp(0.0, 1.0);
         if hr_mix < 0.01 || self.gain_front_direct.current() <= 0.0 {
             return;
@@ -117,8 +115,7 @@ impl UpmixerPlugin {
 
         for &ch in &self.cached_hr_active_channels {
             for i in 0..self.hr_fft_size {
-                self.time_out_channels[ch][center + i] +=
-                    self.hr_time_out_channels[ch][i] * scale;
+                self.time_out_channels[ch][center + i] += self.hr_time_out_channels[ch][i] * scale;
             }
         }
     }

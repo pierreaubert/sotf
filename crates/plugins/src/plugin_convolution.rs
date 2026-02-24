@@ -49,18 +49,20 @@ pub struct ConvolutionPlugin {
     state: Arc<ArcSwap<Option<ConvolutionState>>>,
     input_buffers: Vec<Vec<f32>>,
     input_fill: usize,
-    fdl: Vec<Vec<Vec<Complex<f32>>>>, // [channel][partition][bin]
-    fdl_head: usize,                  // ring buffer head for FDL (avoids rotate_right)
+    /// Flattened Frequency Domain Line (FDL): [partition * channels * FFT_SIZE + channel * FFT_SIZE + bin]
+    fdl_flat: Vec<Complex<f32>>,
+    fdl_head: usize, // ring buffer head for FDL (avoids rotate_right)
     output_accum: Vec<Vec<f32>>,
     // Pre-allocated scratch buffers (avoid heap allocs in audio callback)
     fft_spectrum: Vec<Complex<f32>>,
     fft_sum: Vec<Complex<f32>>,
     fft_scratch: Vec<Complex<f32>>,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl ConvolutionPlugin {
     pub fn new(channels: usize, sample_rate: u32) -> Self {
-        Self {
+        let mut p = Self {
             channels,
             sample_rate,
             ir_file: String::new(),
@@ -73,13 +75,36 @@ impl ConvolutionPlugin {
             state: Arc::new(ArcSwap::from_pointee(None)),
             input_buffers: vec![vec![0.0; PARTITION_SIZE]; channels],
             input_fill: 0,
-            fdl: vec![vec![]; channels],
+            fdl_flat: Vec::new(),
             fdl_head: 0,
             output_accum: vec![vec![0.0; FFT_SIZE]; channels],
             fft_spectrum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
             fft_sum: vec![Complex::new(0.0, 0.0); FFT_SIZE],
             fft_scratch: Vec::new(),
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        use super::param_specs::convolution::*;
+        self.cached_parameters = vec![
+            Parameter::new_float("mix", "Mix", self.mix_value, MIX_MIN, MIX_MAX)
+                .with_description("Dry/wet mix (0 = dry, 1 = convolved)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "gain_db",
+                "Gain",
+                self.gain_db_value,
+                GAIN_DB_MIN,
+                GAIN_DB_MAX,
+            )
+            .with_description("Output gain (dB)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
+        ];
     }
 
     pub fn from_params(
@@ -135,8 +160,7 @@ impl ConvolutionPlugin {
             fft_forward,
             fft_inverse,
         })));
-        self.fdl =
-            vec![vec![vec![Complex::new(0.0, 0.0); FFT_SIZE]; num_partitions]; self.channels];
+        self.fdl_flat = vec![Complex::new(0.0, 0.0); num_partitions * self.channels * FFT_SIZE];
         self.fdl_head = 0;
         self.fft_scratch = vec![Complex::new(0.0, 0.0); fft_scratch_len];
         self.ir_file = path.to_string();
@@ -179,27 +203,25 @@ impl InPlacePlugin for ConvolutionPlugin {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        use super::param_specs::convolution::*;
-        vec![
-            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = convolved)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("gain_db", "Gain", GAIN_DB_DEFAULT, GAIN_DB_MIN, GAIN_DB_MAX)
-                .with_description("Output gain (dB)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
-        ]
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
         if id == self.param_mix {
-            let val = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
-            self.mix_value = val;
-            self.mix.set_target(val);
+            let val = value.as_float().unwrap_or(1.0);
+            if val.is_finite() {
+                let val = val.clamp(0.0, 1.0);
+                self.mix_value = val;
+                self.mix.set_target(val);
+                self.rebuild_cached_parameters();
+            }
         } else if id == self.param_gain_db {
-            let val = value.as_float().ok_or("val")?;
-            self.gain_db_value = val;
-            self.gain_linear.set_target(10.0f32.powf(val / 20.0));
+            let val = value.as_float().unwrap_or(0.0);
+            if val.is_finite() {
+                self.gain_db_value = val;
+                self.gain_linear.set_target(10.0f32.powf(val / 20.0));
+                self.rebuild_cached_parameters();
+            }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -221,11 +243,7 @@ impl InPlacePlugin for ConvolutionPlugin {
         Ok(())
     }
     fn reset(&mut self) {
-        for ch in 0..self.channels {
-            for p in 0..self.fdl[ch].len() {
-                self.fdl[ch][p].fill(Complex::new(0.0, 0.0));
-            }
-        }
+        self.fdl_flat.fill(Complex::new(0.0, 0.0));
         self.fdl_head = 0;
     }
 
@@ -274,22 +292,33 @@ impl InPlacePlugin for ConvolutionPlugin {
                     for i in PARTITION_SIZE..FFT_SIZE {
                         self.fft_spectrum[i] = Complex::new(0.0, 0.0);
                     }
-                    state.fft_forward.process_with_scratch(&mut self.fft_spectrum, &mut self.fft_scratch);
+                    state
+                        .fft_forward
+                        .process_with_scratch(&mut self.fft_spectrum, &mut self.fft_scratch);
 
-                    self.fdl[ch][self.fdl_head].copy_from_slice(&self.fft_spectrum);
+                    let off_base = (self.fdl_head * self.channels + ch) * FFT_SIZE;
+                    self.fdl_flat[off_base..off_base + FFT_SIZE]
+                        .copy_from_slice(&self.fft_spectrum);
 
                     self.fft_sum.fill(Complex::new(0.0, 0.0));
-                    let ir_ch = if state.ir_channels == 1 { 0 } else { ch.min(state.ir_channels - 1) };
+                    let ir_ch = if state.ir_channels == 1 {
+                        0
+                    } else {
+                        ch.min(state.ir_channels - 1)
+                    };
                     for p in 0..num_partitions {
-                        let fdl_idx = (self.fdl_head + p) % num_partitions;
+                        let fdl_p = (self.fdl_head + p) % num_partitions;
+                        let fdl_off = (fdl_p * self.channels + ch) * FFT_SIZE;
                         complex_mul_add_simd(
                             &mut self.fft_sum,
-                            &self.fdl[ch][fdl_idx],
+                            &self.fdl_flat[fdl_off..fdl_off + FFT_SIZE],
                             &state.partitions[ir_ch][p],
                         );
                     }
-                    state.fft_inverse.process_with_scratch(&mut self.fft_sum, &mut self.fft_scratch);
-                    
+                    state
+                        .fft_inverse
+                        .process_with_scratch(&mut self.fft_sum, &mut self.fft_scratch);
+
                     for i in 0..FFT_SIZE {
                         self.output_accum[ch][i] += self.fft_sum[i].re * inv_n;
                     }
@@ -297,20 +326,22 @@ impl InPlacePlugin for ConvolutionPlugin {
 
                 // Apply to in-place buffer
                 for i in 0..PARTITION_SIZE {
-                    let frame_idx = in_pos - (PARTITION_SIZE - to_copy) + i;
-                    for ch in 0..self.channels {
-                        let idx = frame_idx * self.channels + ch;
-                        let dry = buffer[idx];
-                        buffer[idx] = dry * dry_g + self.output_accum[ch][i] * wet_g;
+                    if in_pos + i >= PARTITION_SIZE - to_copy {
+                        let frame_idx = in_pos + i - (PARTITION_SIZE - to_copy);
+                        for ch in 0..self.channels {
+                            let idx = frame_idx * self.channels + ch;
+                            let dry = buffer[idx];
+                            buffer[idx] = dry * dry_g + self.output_accum[ch][i] * wet_g;
+                        }
                     }
                 }
-                
+
                 for ch in 0..self.channels {
                     self.output_accum[ch].copy_within(PARTITION_SIZE..FFT_SIZE, 0);
                     self.output_accum[ch][PARTITION_SIZE..].fill(0.0);
                 }
                 self.input_fill = 0;
-                
+
                 self.mix.next_n(PARTITION_SIZE);
                 self.gain_linear.next_n(PARTITION_SIZE);
             }
@@ -319,7 +350,7 @@ impl InPlacePlugin for ConvolutionPlugin {
         flush_denormals_inplace(buffer);
         Ok(nf)
     }
-    
+
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         None
     }

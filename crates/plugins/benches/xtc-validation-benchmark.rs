@@ -5,12 +5,12 @@
 //! Run with:
 //!   cargo bench -p plugins --no-default-features -- xtc-validation
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use sotf_plugins::validation::{
-    measure_cancellation_depth_db, measure_cancellation_depth_spectrum, reference_ild_db,
-    reference_itd_ms, run_validation, CANCELLATION_DEPTH_TARGETS,
-};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sotf_plugins::XtcPluginParams;
+use sotf_plugins::validation::{
+    CANCELLATION_DEPTH_TARGETS, measure_cancellation_depth_db, measure_cancellation_depth_spectrum,
+    reference_ild_db, reference_itd_ms, run_validation,
+};
 
 fn bench_reference_itd(c: &mut Criterion) {
     let mut group = c.benchmark_group("xtc_reference_itd");

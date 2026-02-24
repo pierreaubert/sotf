@@ -123,14 +123,15 @@ impl UpmixerPlugin {
                 // Smooth envelope using soft threshold for click-free transitions
                 // Instead of hard threshold, use continuous envelope tracking
                 // that responds proportionally to input amplitude
-                let target_envelope = if !self.enable_subharmonic_synth || lfe_amp < threshold - soft_knee {
-                    0.0 // Force release when disabled or below threshold
-                } else if lfe_amp > threshold + soft_knee {
-                    1.0
-                } else {
-                    // Soft knee region: smooth transition
-                    0.5 + (lfe_amp - threshold) / (2.0 * soft_knee)
-                };
+                let target_envelope =
+                    if !self.enable_subharmonic_synth || lfe_amp < threshold - soft_knee {
+                        0.0 // Force release when disabled or below threshold
+                    } else if lfe_amp > threshold + soft_knee {
+                        1.0
+                    } else {
+                        // Soft knee region: smooth transition
+                        0.5 + (lfe_amp - threshold) / (2.0 * soft_knee)
+                    };
 
                 // Apply attack or release based on whether we're going up or down
                 let envelope_coeff = if target_envelope > self.subharmonic_envelope {

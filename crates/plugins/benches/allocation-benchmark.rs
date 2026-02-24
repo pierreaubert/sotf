@@ -25,9 +25,10 @@ use sotf_plugins::{
     ABComparePlugin, AutoGain, AutoGainParams, BandMergePlugin, BandSplitPlugin,
     ChannelMuteSoloPlugin, CompressorPlugin, CrossoverPlugin, DelayPlugin, DenoiserPlugin,
     EqPlugin, ExpanderPlugin, FletcherMunsonPlugin, FletcherMunsonPluginParams, GainPlugin,
-    GatePlugin, InPlacePlugin, LimiterPlugin, LoudnessCompensationPlugin, LoudnessMonitorPlugin,
-    MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin, Plugin, ProcessContext,
-    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams, XtcPlugin,
+    GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
+    LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
+    Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin,
+    UpmixerPluginParams, XtcPlugin,
     XtcPluginParams,
 };
 
@@ -275,7 +276,8 @@ fn test_channel_mute_solo_zero_alloc() {
 }
 
 fn test_loudness_compensation_zero_alloc() {
-    let mut plugin = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0));
+    let mut plugin =
+        InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(2, 200.0, 3.0, 6000.0, 2.0));
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
@@ -298,7 +300,7 @@ fn test_fletcher_munson_zero_alloc() {
         reference_level_db: -14.0,
         ..Default::default()
     };
-    let mut plugin = FletcherMunsonPlugin::from_params(2, params);
+    let mut plugin = FletcherMunsonPlugin::from_params(2, params).unwrap();
     Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
     let input = generate_test_buffer(BUFFER_SIZE, 2);
