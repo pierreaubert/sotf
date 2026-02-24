@@ -12,6 +12,21 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
 
+// ============================================================================
+// Constants
+// ============================================================================
+
+const DEFAULT_SAMPLE_RATE: u32 = 44100;
+const MEASUREMENT_THROTTLE: usize = 10;
+
+// Parameter limits
+const FREQ_MIN: f32 = 20.0;
+const FREQ_MAX: f32 = 20000.0;
+const Q_MIN: f32 = 0.1;
+const Q_MAX: f32 = 10.0;
+const GAIN_MIN: f32 = -24.0;
+const GAIN_MAX: f32 = 24.0;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BiquadFilterConfig {
     pub filter_type: String,
@@ -47,7 +62,7 @@ impl EqPlugin {
         for _ in 0..num_channels {
             channel_filters.push(filters.clone());
         }
-        let sample_rate = 44100;
+        let sample_rate = DEFAULT_SAMPLE_RATE;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate).expect("ag");
         let mut p = Self {
             num_channels,
@@ -77,13 +92,13 @@ impl EqPlugin {
                         &format!("band_{}_freq", i),
                         "Freq",
                         f.freq as f32,
-                        20.0,
-                        20000.0,
+                        FREQ_MIN,
+                        FREQ_MAX,
                     )
                     .with_group(&group),
                 );
                 params.push(
-                    Parameter::new_float(&format!("band_{}_q", i), "Q", f.q as f32, 0.1, 10.0)
+                    Parameter::new_float(&format!("band_{}_q", i), "Q", f.q as f32, Q_MIN, Q_MAX)
                         .with_group(&group),
                 );
                 params.push(
@@ -91,8 +106,8 @@ impl EqPlugin {
                         &format!("band_{}_gain", i),
                         "Gain",
                         f.db_gain as f32,
-                        -24.0,
-                        24.0,
+                        GAIN_MIN,
+                        GAIN_MAX,
                     )
                     .with_group(&group),
                 );
@@ -108,7 +123,7 @@ impl EqPlugin {
         if channel_filters.len() != num_channels {
             return Err("Count mismatch".into());
         }
-        let sample_rate = 44100;
+        let sample_rate = DEFAULT_SAMPLE_RATE;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate)?;
         let mut p = Self {
             num_channels,
@@ -229,11 +244,14 @@ impl InPlacePlugin for EqPlugin {
 
                 // Validate using a temporary parameter template
                 match field {
-                    "freq" => Parameter::new_float("freq", "Freq", 1000.0, 20.0, 20000.0)
-                        .validate(&value)?,
-                    "q" => Parameter::new_float("q", "Q", 1.0, 0.1, 10.0).validate(&value)?,
+                    "freq" => {
+                        Parameter::new_float("freq", "Freq", 1000.0, FREQ_MIN, FREQ_MAX)
+                            .validate(&value)?
+                    }
+                    "q" => Parameter::new_float("q", "Q", 1.0, Q_MIN, Q_MAX).validate(&value)?,
                     "gain" => {
-                        Parameter::new_float("gain", "Gain", 0.0, -24.0, 24.0).validate(&value)?
+                        Parameter::new_float("gain", "Gain", 0.0, GAIN_MIN, GAIN_MAX)
+                            .validate(&value)?
                     }
                     _ => return Err(format!("Unknown field: {}", field)),
                 }
@@ -318,7 +336,7 @@ impl InPlacePlugin for EqPlugin {
         // Throttled measurement
         self.cache_update_counter += 1;
         let mut do_measure = false;
-        if self.cache_update_counter >= 10 {
+        if self.cache_update_counter >= MEASUREMENT_THROTTLE {
             self.cache_update_counter = 0;
             do_measure = true;
         }
@@ -409,5 +427,61 @@ mod tests {
         .unwrap();
         // Check a sample after some settling
         assert!(b[100].abs() > i[100].abs());
+    }
+
+    #[test]
+    fn test_eq_processing_varied_buffers() {
+        use crate::{InPlacePluginAdapter, Plugin, test_varied_buffer_sizes};
+        let sample_rate = 48000.0;
+        let channels = 2;
+        let f = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            sample_rate,
+            1.0,
+            6.0,
+        )];
+        let mut inner = EqPlugin::new(channels, f);
+        inner.initialize(sample_rate as u32).unwrap();
+        let mut plugin = InPlacePluginAdapter::new(inner);
+
+        let mut signal_gen = crate::SignalGen::new_sine(sample_rate, 1000.0, 0.5);
+        let input = signal_gen.generate(4800 * channels);
+
+        let mut expected_output = vec![0.0; input.len()];
+        let ctx = ProcessContext {
+            sample_rate: sample_rate as u32,
+            num_frames: 4800,
+        };
+        plugin.process(&input, &mut expected_output, &ctx).unwrap();
+
+        plugin.reset();
+        test_varied_buffer_sizes(&mut plugin, sample_rate, &input, &expected_output);
+    }
+
+    #[test]
+    fn test_eq_rt_safety() {
+        use crate::{InPlacePluginAdapter, Plugin, assert_no_allocs};
+        let sample_rate = 48000;
+        let channels = 2;
+        let mut inner = EqPlugin::new(channels, vec![]);
+        inner.initialize(sample_rate).unwrap();
+        let mut plugin = InPlacePluginAdapter::new(inner);
+
+        let input = vec![0.1; 512 * channels];
+        let mut output = vec![0.0; 512 * channels];
+        let ctx = ProcessContext {
+            sample_rate,
+            num_frames: 512,
+        };
+
+        // Warm up
+        for _ in 0..10 {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        }
+
+        assert_no_allocs("EqPlugin::process", || {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        });
     }
 }
