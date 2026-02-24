@@ -1,7 +1,7 @@
 use sotf_plugins::plugin_multiband_compressor::{
     MultibandCompressorPlugin, MultibandCompressorPluginParams,
 };
-use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ParameterValue, ProcessContext};
 use std::f32::consts::PI;
 

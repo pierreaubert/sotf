@@ -1,7 +1,7 @@
 use sotf_plugins::plugin_loudness_compensation::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };
-use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 use std::f32::consts::PI;
 

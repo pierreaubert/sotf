@@ -1,6 +1,6 @@
 use sotf_plugins::Plugin;
 use sotf_plugins::plugin_ab_compare::ABComparePlugin;
-use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests};
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;

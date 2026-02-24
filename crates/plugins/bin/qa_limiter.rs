@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_limiter::{LimiterPlugin, LimiterPluginParams};
-use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 
 #[global_allocator]

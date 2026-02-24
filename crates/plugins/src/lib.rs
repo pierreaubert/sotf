@@ -42,8 +42,6 @@ pub mod plugin_pnd;
 pub mod plugin_resampler;
 pub mod plugin_upmixer;
 pub mod plugin_xtc;
-#[cfg(feature = "qa")]
-pub mod qa_util;
 pub mod test_utils;
 pub mod serialization;
 pub mod simd;
@@ -110,7 +108,10 @@ pub use plugin_upmixer::{
 };
 pub use plugin_xtc::{XtcPlugin, XtcPluginParams, validation};
 
-pub use test_utils::{BufferComparison, SignalGen, test_varied_buffer_sizes};
+pub use test_utils::{
+    assert_no_allocs, test_varied_buffer_sizes, BufferComparison, CountingAlloc, SignalGen,
+    run_standard_tests,
+};
 
 pub use simd::enable_ftz_daz;
 pub use sofa::{HrtfData, SofaFile, SourcePosition};
