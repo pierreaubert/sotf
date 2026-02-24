@@ -33,10 +33,10 @@
     - [x] Refactor `Compressor` unit tests to use `test_utils`
     - [x] Audit `crates/plugins/src/dynamics/compressor.rs` for magic numbers and complex loop edge cases
     - [x] Replace identified magic numbers with constants or derivations
-- [ ] Task: PEQ Audit & Migration (TDD)
-    - [ ] Refactor `PEQ` unit tests to use `test_utils`
-    - [ ] Audit `crates/plugins/src/eq/peq.rs` for magic numbers and complex loop edge cases
-    - [ ] Replace identified magic numbers with constants or derivations
+- [x] Task: PEQ Audit & Migration (TDD) 68857c9
+    - [x] Refactor `PEQ` unit tests to use `test_utils`
+    - [x] Audit `crates/plugins/src/eq/peq.rs` for magic numbers and complex loop edge cases
+    - [x] Replace identified magic numbers with constants or derivations
 - [ ] Task: Parameter Automation Tests (TDD)
     - [ ] Implement automated parameter ramp tests for `Compressor` and `PEQ`
     - [ ] Verify artifact-free transitions and smoothing
