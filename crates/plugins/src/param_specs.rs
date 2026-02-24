@@ -361,6 +361,9 @@ pub mod upmixer {
     pub const DIALOGUE_COHERENCE_WEIGHT_DEFAULT: f32 = 0.5;
     pub const DIALOGUE_COHERENCE_WEIGHT_MIN: f32 = 0.0;
     pub const DIALOGUE_COHERENCE_WEIGHT_MAX: f32 = 1.0;
+
+    // ML vocal detection
+    pub const ENABLE_ML_DETECTION_DEFAULT: bool = false;
 }
 
 // ============================================================================

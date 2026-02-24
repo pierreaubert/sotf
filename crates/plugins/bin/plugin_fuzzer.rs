@@ -1046,6 +1046,9 @@ impl PluginFuzzer for UpmixerFuzzer {
             dialogue_centroid_weight: 0.3,
             dialogue_variance_weight: 0.2,
             dialogue_coherence_weight: 0.5,
+            // ML vocal detection (disabled in fuzzer)
+            enable_ml_detection: false,
+            ml_model_path: String::new(),
             // Diagnostic bypass parameters
             bypass_decorrelation: false,
             bypass_transient_detection: false,

@@ -2024,6 +2024,7 @@ fn build_rack_mode_plugins(
                         bypass_decorrelation: false,
                         bypass_transient_detection: false,
                         bypass_all_processing: false,
+                        enable_ml_detection: false,
                     };
                 }
                 log::info!("Rack: Added Upmixer plugin ({})", plugins.upmixer.config);

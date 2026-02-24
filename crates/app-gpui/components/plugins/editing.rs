@@ -233,6 +233,7 @@ impl PluginEditingManager for App {
                     bypass_decorrelation,
                     bypass_transient_detection,
                     bypass_all_processing,
+                    enable_ml_detection,
                     ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
@@ -466,6 +467,10 @@ impl PluginEditingManager for App {
                         }
                         37 => {
                             *bypass_all_processing = !*bypass_all_processing;
+                            true
+                        }
+                        38 => {
+                            *enable_ml_detection = !*enable_ml_detection;
                             true
                         }
                         _ => false,
@@ -2018,6 +2023,7 @@ impl PluginEditingManager for App {
                     bypass_decorrelation,
                     bypass_transient_detection,
                     bypass_all_processing,
+                    enable_ml_detection,
                     ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
@@ -2229,6 +2235,10 @@ impl PluginEditingManager for App {
                         }
                         37 => {
                             *bypass_all_processing = value > 0.5;
+                            update_needed = true;
+                        }
+                        38 => {
+                            *enable_ml_detection = value > 0.5;
                             update_needed = true;
                         }
                         _ => {}
@@ -4516,7 +4526,7 @@ impl PluginEditingManager for App {
 // Helper function to get parameter count for a plugin
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
-        PluginSettings::Upmixer { .. } => 38, // 38 parameters as defined in ui_upmixer.rs and adjust_selected_param
+        PluginSettings::Upmixer { .. } => 39, // 39 parameters as defined in ui_upmixer.rs and adjust_selected_param
         PluginSettings::EQ { filters, .. } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz

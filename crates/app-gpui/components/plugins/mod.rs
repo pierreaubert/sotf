@@ -270,6 +270,7 @@ pub fn render_plugin_content(
             bypass_decorrelation,
             bypass_transient_detection,
             bypass_all_processing,
+            enable_ml_detection,
             ..
         } => render_upmixer_plugin(
             entity,
@@ -321,6 +322,7 @@ pub fn render_plugin_content(
                 bypass_decorrelation: *bypass_decorrelation,
                 bypass_transient_detection: *bypass_transient_detection,
                 bypass_all_processing: *bypass_all_processing,
+                enable_ml_detection: *enable_ml_detection,
                 // UI state
                 is_editing,
                 selected_param,

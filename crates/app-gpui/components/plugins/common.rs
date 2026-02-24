@@ -89,6 +89,7 @@ pub fn param_index_to_engine_param(
             bypass_decorrelation,
             bypass_transient_detection,
             bypass_all_processing,
+            enable_ml_detection,
             ..
         } => match param_idx {
             // param 0 = speaker_config: requires Structural (changes channel count)
@@ -196,6 +197,7 @@ pub fn param_index_to_engine_param(
             35 => Some(("bypass_decorrelation".to_string(), bypass_decorrelation.to_string())),
             36 => Some(("bypass_transient_detection".to_string(), bypass_transient_detection.to_string())),
             37 => Some(("bypass_all_processing".to_string(), bypass_all_processing.to_string())),
+            38 => Some(("enable_ml_detection".to_string(), enable_ml_detection.to_string())),
             _ => None,
         },
         PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {

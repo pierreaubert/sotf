@@ -6979,6 +6979,7 @@ dependencies = [
  "ndarray 0.17.2",
  "netcdf",
  "notify",
+ "ort",
  "proptest",
  "rand 0.9.2",
  "rayon",

@@ -59,6 +59,7 @@ symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 ebur128 = { workspace = true }
 rtrb = { workspace = true }
+ort = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
