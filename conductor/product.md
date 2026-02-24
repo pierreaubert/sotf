@@ -27,4 +27,4 @@ SotF (Sound of the Future) is an automatic EQ and audio processing engine for sp
 ## Technical Priorities
 - **Performance:** Multi-threaded architecture optimized for real-time DSP without buffer underruns or CPU spikes.
 - **Portability:** A unified codebase that builds and runs reliably on all major operating systems.
-- **Robustness:** A stable system architecture capable of long-term operation as a system-level audio service.
+- **Robustness:** A stable system architecture capable of long-term operation as a system-level audio service, enforced by high-confidence real-time safety checks.

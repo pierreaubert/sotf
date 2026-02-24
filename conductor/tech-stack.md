@@ -15,6 +15,11 @@
 - **Graphical (GPUI):** Built using the Zed GPUI framework for high-performance, GPU-accelerated UI rendering.
 - **Terminal (TUI):** Built using `ratatui` (via `crates/app-tui`) for an efficient keyboard-driven experience.
 
+## Testing & Quality Assurance
+- **Real-time Safety:** Internal `CountingAlloc` and `assert_no_allocs` utilities to detect heap allocations in audio threads.
+- **Benchmarking:** Integrated `Criterion` for micro-benchmarks, plus custom `PerformanceProfiler` for real-time budget tracking.
+- **Automated Validation:** Unified `test_utils` for sample-accurate IO verification and automated latency (PDL) detection.
+
 ## Mathematics & Optimization
 - **Linear Algebra:** `ndarray`, `blas-src`, `lapack-src` (with Accelerate/OpenBLAS/MKL depending on platform).
 - **Optimization:** Custom solvers (`math-de`, `math-solvers`) and potential integration with NLopt for acoustic fitting.
