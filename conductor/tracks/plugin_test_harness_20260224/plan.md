@@ -1,6 +1,6 @@
 # Implementation Plan: Enhanced Plugin Test Infrastructure
 
-## Phase 1: Internal Test Infrastructure (crates/plugins)
+## Phase 1: Internal Test Infrastructure (crates/plugins) [checkpoint: a7ceb28]
 - [x] Task: Create `crates/plugins/src/test_utils.rs` 8a96084
     - [x] Create `test_utils` module (as `cfg(test)`)
     - [x] Define shared `SignalGenerator` and `BufferComparison` utilities
@@ -9,7 +9,7 @@
     - [x] Implement `SignalGen` module
     - [x] Write tests for RMS and bit-accurate comparison
     - [x] Implement `BufferComparison` utilities
-- [ ] Task: Conductor - User Manual Verification 'Internal Test Infrastructure' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Internal Test Infrastructure' (Protocol in workflow.md) a7ceb28
 
 ## Phase 2: RT Safety & QA Refactoring
 - [ ] Task: RT Safety Enforcement (TDD)
