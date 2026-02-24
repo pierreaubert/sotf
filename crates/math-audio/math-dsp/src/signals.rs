@@ -223,6 +223,32 @@ pub fn gen_pink_noise(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
     signal
 }
 
+/// Generate an impulse signal (first sample is amplitude, rest are zero)
+///
+/// # Arguments
+/// * `amp` - Amplitude (0.0 to 1.0)
+/// * `sample_rate` - Sample rate in Hz
+/// * `duration` - Duration in seconds
+pub fn gen_impulse(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
+    let n_frames = frames_for(duration, sample_rate);
+    let mut signal = vec![0.0; n_frames];
+    if n_frames > 0 {
+        signal[0] = clip(amp);
+    }
+    signal
+}
+
+/// Generate a step signal (all samples are amplitude)
+///
+/// # Arguments
+/// * `amp` - Amplitude (0.0 to 1.0)
+/// * `sample_rate` - Sample rate in Hz
+/// * `duration` - Duration in seconds
+pub fn gen_step(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
+    let n_frames = frames_for(duration, sample_rate);
+    vec![clip(amp); n_frames]
+}
+
 /// Generate M-weighted noise
 ///
 /// Produces noise weighted according to ITU-R 468 standard.
@@ -605,6 +631,25 @@ mod tests {
         let signal = gen_pink_noise(0.5, 48000, 0.1);
         assert_eq!(signal.len(), 4800);
         assert!(signal.iter().any(|&x| x.abs() > 0.01));
+    }
+
+    #[test]
+    fn test_gen_impulse() {
+        let signal = gen_impulse(0.5, 48000, 0.1);
+        assert_eq!(signal.len(), 4800);
+        assert_eq!(signal[0], 0.5);
+        for i in 1..4800 {
+            assert_eq!(signal[i], 0.0);
+        }
+    }
+
+    #[test]
+    fn test_gen_step() {
+        let signal = gen_step(0.5, 48000, 0.1);
+        assert_eq!(signal.len(), 4800);
+        for i in 0..4800 {
+            assert_eq!(signal[i], 0.5);
+        }
     }
 
     #[test]
