@@ -12,9 +12,9 @@
 - [x] Task: Conductor - User Manual Verification 'Internal Test Infrastructure' (Protocol in workflow.md) a7ceb28
 
 ## Phase 2: RT Safety & QA Refactoring
-- [ ] Task: RT Safety Enforcement (TDD)
-    - [ ] Write a test that fails when a heap allocation occurs in `crates/plugins`
-    - [ ] Integrate `assert_no_alloc` or similar into the standard `cargo test` suite
+- [x] Task: RT Safety Enforcement (TDD) 4731c44
+    - [x] Write a test that fails when a heap allocation occurs in `crates/plugins`
+    - [x] Integrate `assert_no_alloc` or similar into the standard `cargo test` suite
 - [ ] Task: Refactor QA Suites (TDD)
     - [ ] Identify and refactor common validation patterns from `qa-*.rs` files
     - [ ] Migrate `qa-*.rs` logic into unified testing utilities within `crates/plugins`
