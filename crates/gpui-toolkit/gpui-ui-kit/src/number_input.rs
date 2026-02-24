@@ -654,8 +654,7 @@ impl RenderOnce for NumberInput {
         {
             let mut state = edit_state.borrow_mut();
             if state.editing && !is_focused {
-                let parsed =
-                    Self::parse_value_str(&state.text, self.unit.as_ref(), min, max);
+                let parsed = Self::parse_value_str(&state.text, self.unit.as_ref(), min, max);
                 // Clear editing state immediately (safe inside render)
                 state.editing = false;
                 state.text.clear();

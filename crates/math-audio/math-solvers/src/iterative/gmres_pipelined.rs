@@ -201,7 +201,10 @@ where
                     restarts,
                     residual: rel_residual,
                     converged: true,
-                    status: if inner_converged && rel_residual >= config.tolerance && abs_residual >= abs_tol {
+                    status: if inner_converged
+                        && rel_residual >= config.tolerance
+                        && abs_residual >= abs_tol
+                    {
                         SolverStatus::Breakdown
                     } else {
                         SolverStatus::Converged

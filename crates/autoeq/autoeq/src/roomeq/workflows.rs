@@ -799,9 +799,11 @@ pub fn optimize_stereo_2_1(
     ) as f64;
 
     // Sub: measure below crossover (full passband)
-    let sub_mean =
-        compute_average_response(&sub_freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32)))
-            as f64;
+    let sub_mean = compute_average_response(
+        &sub_freqs_f32,
+        &sub_spl_f32,
+        Some((20.0, final_xo_freq as f32)),
+    ) as f64;
 
     let sub_correction = main_mean - sub_mean;
     info!(
@@ -857,8 +859,7 @@ pub fn optimize_stereo_2_1(
         // "Do no harm" guard: discard Post-EQ if it makes the sub worse
         // (e.g., cardioid subs with steep low-frequency rolloff)
         let pre = compute_flat_loss(&sub_post, sub_min_score, final_xo_freq);
-        let eq_resp =
-            response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
+        let eq_resp = response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
         let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
         let post = compute_flat_loss(&sub_after_eq, sub_min_score, final_xo_freq);
         if post < pre {
@@ -866,7 +867,8 @@ pub fn optimize_stereo_2_1(
         } else {
             log::warn!(
                 "  Sub Post-EQ discarded: score regressed from {:.4} to {:.4}",
-                pre, post
+                pre,
+                post
             );
         }
     }
@@ -1555,8 +1557,7 @@ fn optimize_home_cinema_with_sub(
 
         // "Do no harm" guard: discard Post-EQ if it makes the sub worse
         let pre = compute_flat_loss(&sub_post, sub_min_score, final_xo_freq);
-        let eq_resp =
-            response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
+        let eq_resp = response::compute_peq_complex_response(&filters, &sub_post.freq, sample_rate);
         let sub_after_eq = response::apply_complex_response(&sub_post, &eq_resp);
         let post = compute_flat_loss(&sub_after_eq, sub_min_score, final_xo_freq);
         if post < pre {
@@ -1564,7 +1565,8 @@ fn optimize_home_cinema_with_sub(
         } else {
             log::warn!(
                 "  Sub Post-EQ discarded: score regressed from {:.4} to {:.4}",
-                pre, post
+                pre,
+                post
             );
         }
     }

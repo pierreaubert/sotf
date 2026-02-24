@@ -1,6 +1,7 @@
 use crate::database::MusicDatabase;
 use sotf_audio::replaygain;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -40,7 +41,7 @@ pub struct ReplayGainScanner {
 
 impl ReplayGainScanner {
     /// Create a new scanner with the given number of worker threads
-    pub fn new(num_threads: usize, db_path: PathBuf) -> Self {
+    pub fn new(num_threads: usize, db_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Self {
         let (task_tx, task_rx) = mpsc::channel::<PathBuf>();
         let (message_tx, message_rx) = mpsc::channel::<ScanMessage>();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
@@ -56,6 +57,7 @@ impl ReplayGainScanner {
             let stop_rx = Arc::clone(&stop_rx);
             let message_tx = message_tx.clone();
             let db_path = db_path.clone();
+            let pause_flag = Arc::clone(&pause_flag);
 
             let worker = thread::spawn(move || {
                 log::info!("[ReplayGain Worker {}] Started", worker_id);
@@ -78,6 +80,15 @@ impl ReplayGainScanner {
                     if stop_rx.lock().unwrap().try_recv().is_ok() {
                         log::info!("[ReplayGain Worker {}] Stopping", worker_id);
                         break;
+                    }
+
+                    // Wait while paused (check every 200ms, also check for stop)
+                    while pause_flag.load(Ordering::Relaxed) {
+                        if stop_rx.lock().unwrap().try_recv().is_ok() {
+                            log::info!("[ReplayGain Worker {}] Stopping while paused", worker_id);
+                            return;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
 
                     // Get next task
@@ -215,7 +226,7 @@ enum AlbumGainMessage {
 }
 
 /// Helper struct to manage ReplayGain scanning state
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ReplayGainScanManager {
     pub scanner: Option<Arc<ReplayGainScanner>>,
     pub in_progress: bool,
@@ -229,6 +240,9 @@ pub struct ReplayGainScanManager {
     pub album_gain_phase: AlbumGainPhase,
     pub album_gain_done: usize,
     pub album_gain_total: usize,
+
+    // Shared pause flag — scanners sleep while this is true
+    pause_flag: Arc<AtomicBool>,
 }
 
 impl Default for AlbumGainPhase {
@@ -237,9 +251,31 @@ impl Default for AlbumGainPhase {
     }
 }
 
+impl Default for ReplayGainScanManager {
+    fn default() -> Self {
+        Self::with_pause_flag(Arc::new(AtomicBool::new(false)))
+    }
+}
+
 impl ReplayGainScanManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_pause_flag(pause_flag: Arc<AtomicBool>) -> Self {
+        Self {
+            scanner: None,
+            in_progress: false,
+            total: 0,
+            processed: 0,
+            succeeded: 0,
+            failed: 0,
+            album_gain_rx: None,
+            album_gain_phase: AlbumGainPhase::Idle,
+            album_gain_done: 0,
+            album_gain_total: 0,
+            pause_flag,
+        }
     }
 
     /// Start scanning all tracks in the database that are missing replaygain data
@@ -275,7 +311,11 @@ impl ReplayGainScanManager {
             .unwrap_or(2);
 
         // Create scanner
-        let scanner = Arc::new(ReplayGainScanner::new(num_threads, db_path));
+        let scanner = Arc::new(ReplayGainScanner::new(
+            num_threads,
+            db_path,
+            Arc::clone(&self.pause_flag),
+        ));
 
         // Queue all tracks
         scanner.scan_tracks(tracks);
@@ -367,11 +407,7 @@ impl ReplayGainScanManager {
                             track_data.push((data.peak, data.gating_block_count, data.energy));
                         }
                         Err(e) => {
-                            log::warn!(
-                                "[AlbumGain] Failed to analyze {}: {}",
-                                path.display(),
-                                e
-                            );
+                            log::warn!("[AlbumGain] Failed to analyze {}: {}", path.display(), e);
                             album_failed = true;
                             break;
                         }

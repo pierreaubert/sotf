@@ -141,7 +141,10 @@ pub fn lu_factorize<T: ComplexField>(a: &Array2<T>) -> Result<LuFactorization<T>
 ///
 /// This is a convenience function that combines factorization and solve.
 #[cfg(feature = "ndarray-linalg")]
-pub fn lu_solve<T: ComplexField + ndarray_linalg::Lapack>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, LuError> {
+pub fn lu_solve<T: ComplexField + ndarray_linalg::Lapack>(
+    a: &Array2<T>,
+    b: &Array1<T>,
+) -> Result<Array1<T>, LuError> {
     a.solve_into(b.clone()).map_err(|_| LuError::SingularMatrix)
 }
 

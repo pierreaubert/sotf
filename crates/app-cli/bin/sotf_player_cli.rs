@@ -2021,6 +2021,9 @@ fn build_rack_mode_plugins(
                         dialogue_weight: 1.0,
                         voice_freq_min_hz: 85.0,
                         voice_freq_max_hz: 3000.0,
+                        dialogue_centroid_weight: 1.0,
+                        dialogue_variance_weight: 1.0,
+                        dialogue_coherence_weight: 1.0,
                         bypass_decorrelation: false,
                         bypass_transient_detection: false,
                         bypass_all_processing: false,
@@ -2081,6 +2084,7 @@ fn build_rack_mode_plugins(
                         filters: eq_filters,
                         channel_filters: None,
                         per_channel_mode: false,
+                        max_filters: 20,
                     };
                 }
                 log::info!("Rack: Added EQ plugin with {} filters", filters.len());
@@ -2225,12 +2229,24 @@ fn build_rack_mode_plugins(
                         head_shadow_cutoff_hz: plugins.xtc.head_shadow_cutoff_hz as f64,
                         head_shadow_slope_db_per_octave: plugins.xtc.head_shadow_slope as f64,
                         max_gain_db: 12.0,
+                        head_offset_x: 0.0,
+                        head_offset_z: 0.0,
+                        head_yaw_deg: 0.0,
+                        head_tracking_smooth_s: 0.1,
+                        spectral_normalization: false,
+                        room_reflections_enabled: false,
+                        room_ir_file: None,
+                        room_width_m: 4.0,
+                        room_depth_m: 5.0,
+                        wall_absorption: 0.3,
+                        reflection_beta_boost: 3.0,
                         bypass_xtc_filters: false,
                         bypass_spectral_normalization: false,
                         bypass_neumann_refinement: false,
                         auto_gain_enabled: true,
                         auto_gain_max_db: 12.0,
                         auto_gain_smoothing_ms: 100.0,
+                        pinna_model_enabled: false,
                     };
                 }
                 log::info!("Rack: Added XTC plugin");
@@ -2246,11 +2262,18 @@ fn build_rack_mode_plugins(
                         release_ms: plugins.denoiser.release_ms as f64,
                         low_latency: plugins.denoiser.low_latency,
                         polyphonic_detection: false,
+                        crack_sensitivity: 10.0,
+                        mcra_alpha_s: 0.9,
+                        mcra_alpha_p: 0.7,
+                        mcra_l: 50,
+                        mcra_delta: 5.0,
                         transparency: 0.0,
                         dd_enabled: false,
                         dd_alpha: 0.98,
                         psychoacoustic_masking: true,
+                        learn_noise: false,
                         use_captured_profile: false,
+                        clear_profile: false,
                     };
                 }
                 log::info!("Rack: Added Denoiser plugin");

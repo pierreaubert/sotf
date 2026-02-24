@@ -10,10 +10,20 @@ fn test_allpass_magnitude() {
     let test_freqs = [20.0, 100.0, 1000.0, 5000.0, 20000.0];
     for &f in &test_freqs {
         let mag_db = bq.log_result(f);
-        assert!((mag_db - 0.0).abs() < 1e-10, "Magnitude at {}Hz should be 0dB, got {}dB", f, mag_db);
-        
+        assert!(
+            (mag_db - 0.0).abs() < 1e-10,
+            "Magnitude at {}Hz should be 0dB, got {}dB",
+            f,
+            mag_db
+        );
+
         let mag_linear = bq.result(f);
-        assert!((mag_linear - 1.0).abs() < 1e-10, "Magnitude at {}Hz should be 1.0, got {}", f, mag_linear);
+        assert!(
+            (mag_linear - 1.0).abs() < 1e-10,
+            "Magnitude at {}Hz should be 1.0, got {}",
+            f,
+            mag_linear
+        );
     }
 }
 
@@ -26,10 +36,14 @@ fn test_allpass_phase() {
     // At center frequency, a second-order All-Pass filter has exactly 180 degrees phase shift
     // complex_response returns H(z) = (b0 + b1*z^-1 + b2*z^-2) / (1 + a1*z^-1 + a2*z^-2)
     let resp = bq.complex_response(freq);
-    
+
     // Phase should be -PI (or PI) at center frequency
     let phase = resp.arg();
-    assert!((phase.abs() - std::f64::consts::PI).abs() < 1e-10, "Phase at center freq should be PI, got {}", phase);
+    assert!(
+        (phase.abs() - std::f64::consts::PI).abs() < 1e-10,
+        "Phase at center freq should be PI, got {}",
+        phase
+    );
 }
 
 #[test]

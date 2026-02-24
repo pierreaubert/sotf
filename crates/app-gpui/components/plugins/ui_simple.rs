@@ -17,8 +17,8 @@ use gpui::*;
 use gpui_ui_kit::{
     Column, NumberInput, NumberInputSize, SelectionMode, Table, TableTheme, Toggle, ToggleSize,
 };
-use sotf_audio_player::ui_params::{TuiEditablePlugin, TuiParamType};
 use sotf_audio_player::PluginSettings;
+use sotf_audio_player::ui_params::{TuiEditablePlugin, TuiParamType};
 use std::collections::HashSet;
 
 /// Row data for the parameter table
@@ -142,16 +142,12 @@ pub fn render_simple_plugin_view(
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
                     let is_sel = selected_in_group_for_name.contains(&row_idx);
-                    div()
-                        .w_full()
-                        .flex()
-                        .justify_end()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(if is_sel { accent } else { text_primary })
-                                .child(row.name.clone()),
-                        )
+                    div().w_full().flex().justify_end().child(
+                        div()
+                            .text_sm()
+                            .text_color(if is_sel { accent } else { text_primary })
+                            .child(row.name.clone()),
+                    )
                 }),
         )
         .column(
@@ -278,11 +274,7 @@ pub fn render_simple_plugin_view(
                                     div()
                                         .text_sm()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .text_color(if is_sel {
-                                            accent
-                                        } else {
-                                            text_primary
-                                        })
+                                        .text_color(if is_sel { accent } else { text_primary })
                                         .child(row.value_str.clone()),
                                 )
                                 .into_any_element()

@@ -3,7 +3,7 @@
 //! Provides V-cycle, W-cycle, and F-cycle algorithms.
 
 use super::hierarchy::MultigridHierarchy;
-use super::smoother::{compute_residual, smooth, SmootherConfig};
+use super::smoother::{SmootherConfig, compute_residual, smooth};
 use super::transfer::{prolongate, restrict};
 use num_complex::Complex64;
 
@@ -369,7 +369,7 @@ mod tests {
         // Apply Dirichlet BCs to make the system non-singular
         use crate::assembly::HelmholtzProblem;
         use crate::boundary::apply_homogeneous_dirichlet;
-        use crate::multigrid::smoother::{residual_norm, smooth, SmootherConfig};
+        use crate::multigrid::smoother::{SmootherConfig, residual_norm, smooth};
 
         let mesh = unit_square_triangles(4);
         let k = Complex64::new(0.0, 0.0);

@@ -1029,9 +1029,8 @@ impl RenderOnce for Input {
                     // Retrieve stored text origin (set by a previous click on this element).
                     // On the very first click we have no stored origin, so we derive it:
                     // origin = click_x - char_pos * char_width, clamped so origin >= 0.
-                    let stored_origin = TEXT_ORIGINS.with(|o| {
-                        o.borrow().get(&id_for_click).copied()
-                    });
+                    let stored_origin =
+                        TEXT_ORIGINS.with(|o| o.borrow().get(&id_for_click).copied());
                     let char_pos_f = click_x / char_width;
                     let origin = stored_origin.unwrap_or_else(|| {
                         // Estimate: assume cursor lands at char_pos_f rounded
@@ -1043,7 +1042,8 @@ impl RenderOnce for Input {
                         o.borrow_mut().insert(id_for_click.clone(), origin);
                     });
 
-                    let char_pos = (((click_x - origin) / char_width).round() as usize).min(text_len);
+                    let char_pos =
+                        (((click_x - origin) / char_width).round() as usize).min(text_len);
 
                     // Single click: position cursor and begin drag selection
                     let was_editing = state.editing;
@@ -1070,10 +1070,10 @@ impl RenderOnce for Input {
                     let text_len = edit_text_for_move.chars().count();
                     let char_width = 8.0_f32;
                     let move_x: f32 = event.position.x.into();
-                    let origin = TEXT_ORIGINS.with(|o| {
-                        o.borrow().get(&id_for_move).copied().unwrap_or(0.0)
-                    });
-                    let char_pos = (((move_x - origin) / char_width).round() as usize).min(text_len);
+                    let origin =
+                        TEXT_ORIGINS.with(|o| o.borrow().get(&id_for_move).copied().unwrap_or(0.0));
+                    let char_pos =
+                        (((move_x - origin) / char_width).round() as usize).min(text_len);
                     state.update_selection(char_pos);
                     drop(state);
                     window.refresh();

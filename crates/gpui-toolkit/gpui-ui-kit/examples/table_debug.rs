@@ -1,7 +1,7 @@
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::table::{Column, PaginationState, SelectionMode, SortDirection, SortState, Table};
-use gpui_ui_kit::{HStack, MiniApp, MiniAppConfig, Text, ThemeExt, VStack, StackSpacing};
+use gpui_ui_kit::{HStack, MiniApp, MiniAppConfig, StackSpacing, Text, ThemeExt, VStack};
 use std::collections::HashSet;
 
 #[derive(Clone, Debug)]
@@ -87,8 +87,7 @@ impl Render for TableDebug {
                     .cell_render(|user: &User, _, _, _| user.id.to_string()),
             )
             .column(
-                Column::new("name", "Name")
-                    .cell_render(|user: &User, _, _, _| user.name.clone()),
+                Column::new("name", "Name").cell_render(|user: &User, _, _, _| user.name.clone()),
             )
             .column(
                 Column::new("email", "Email")

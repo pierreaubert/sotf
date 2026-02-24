@@ -74,9 +74,8 @@ pub fn assemble_adr_system(
             let s = slowness_values[row];
             let s_sq = s * s;
             let grad_tau = &eikonal.grad_tau[row];
-            let grad_tau_sq = grad_tau[0] * grad_tau[0]
-                + grad_tau[1] * grad_tau[1]
-                + grad_tau[2] * grad_tau[2];
+            let grad_tau_sq =
+                grad_tau[0] * grad_tau[0] + grad_tau[1] * grad_tau[1] + grad_tau[2] * grad_tau[2];
             let lap_tau = eikonal.laplacian_tau[row];
 
             let reaction = i_omega * Complex64::new(lap_tau, 0.0)
@@ -93,9 +92,8 @@ pub fn assemble_adr_system(
     // Using the stiffness matrix pattern with upwind-weighted values
     for row in 0..n_dofs {
         let grad_tau = &eikonal.grad_tau[row];
-        let gt_norm_sq = grad_tau[0] * grad_tau[0]
-            + grad_tau[1] * grad_tau[1]
-            + grad_tau[2] * grad_tau[2];
+        let gt_norm_sq =
+            grad_tau[0] * grad_tau[0] + grad_tau[1] * grad_tau[1] + grad_tau[2] * grad_tau[2];
 
         if gt_norm_sq < 1e-30 {
             continue;
@@ -166,8 +164,8 @@ pub fn solve_adr(
     max_iters: usize,
     tolerance: f64,
 ) -> Array1<Complex64> {
-    use math_audio_solvers::iterative::{GmresConfig, gmres_preconditioned};
     use math_audio_solvers::IluPreconditioner;
+    use math_audio_solvers::iterative::{GmresConfig, gmres_preconditioned};
 
     let config = GmresConfig {
         max_iterations: max_iters,
@@ -203,26 +201,27 @@ mod tests {
 
         for i in 0..n {
             let error = (recovered[i] - original[i]).norm();
-            assert!(
-                error < 1e-10,
-                "Roundtrip error at {}: {}",
-                i,
-                error
-            );
+            assert!(error < 1e-10, "Roundtrip error at {}: {}", i, error);
         }
     }
 
     fn stiffness_to_csr(s: &crate::assembly::StiffnessMatrix) -> CsrMatrix<Complex64> {
-        let triplets: Vec<(usize, usize, Complex64)> = s.rows.iter()
-            .zip(s.cols.iter()).zip(s.values.iter())
+        let triplets: Vec<(usize, usize, Complex64)> = s
+            .rows
+            .iter()
+            .zip(s.cols.iter())
+            .zip(s.values.iter())
             .map(|((&r, &c), &v)| (r, c, Complex64::new(v, 0.0)))
             .collect();
         CsrMatrix::from_triplets(s.dim, s.dim, triplets)
     }
 
     fn mass_to_csr(m: &crate::assembly::MassMatrix) -> CsrMatrix<Complex64> {
-        let triplets: Vec<(usize, usize, Complex64)> = m.rows.iter()
-            .zip(m.cols.iter()).zip(m.values.iter())
+        let triplets: Vec<(usize, usize, Complex64)> = m
+            .rows
+            .iter()
+            .zip(m.cols.iter())
+            .zip(m.values.iter())
             .map(|((&r, &c), &v)| (r, c, Complex64::new(v, 0.0)))
             .collect();
         CsrMatrix::from_triplets(m.dim, m.dim, triplets)

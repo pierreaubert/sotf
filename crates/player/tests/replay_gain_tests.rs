@@ -1,6 +1,7 @@
 use sotf_audio_player::MusicLibrary;
 /// Integration tests for ReplayGain scanning functionality
 use sotf_audio_player::database::MusicDatabase;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 mod fixtures;
@@ -13,7 +14,7 @@ fn test_replay_gain_scanner_creation() {
     let _db = Arc::new(MusicDatabase::open_for_testing(&db_path).expect("Failed to open database"));
 
     // Create scanner (new API: num_threads, db_path)
-    let scanner = ReplayGainScanner::new(2, db_path.clone());
+    let scanner = ReplayGainScanner::new(2, db_path.clone(), Arc::new(AtomicBool::new(false)));
 
     // Scanner should start successfully
     drop(scanner);
@@ -445,7 +446,7 @@ fn test_real_replay_gain_scanning() {
         .expect("Failed to get tracks");
 
     // Create scanner and scan the tracks (new API: num_threads, db_path)
-    let scanner = ReplayGainScanner::new(2, db_path.clone());
+    let scanner = ReplayGainScanner::new(2, db_path.clone(), Arc::new(AtomicBool::new(false)));
     scanner.scan_tracks(tracks_to_scan);
 
     // Wait for scanning to complete (with timeout)

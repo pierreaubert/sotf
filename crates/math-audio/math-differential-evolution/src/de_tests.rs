@@ -1,5 +1,5 @@
 use crate::{CallbackAction, DEConfigBuilder, DifferentialEvolution, PolishConfig, Strategy};
-use ndarray::{array, Array1};
+use ndarray::{Array1, array};
 use rand::SeedableRng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

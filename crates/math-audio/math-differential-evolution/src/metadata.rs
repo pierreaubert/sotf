@@ -3,8 +3,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        differential_evolution, run_recorded_differential_evolution, DEConfig, DEConfigBuilder,
-        Mutation, Strategy,
+        DEConfig, DEConfigBuilder, Mutation, Strategy, differential_evolution,
+        run_recorded_differential_evolution,
     };
     use math_audio_test_functions::{get_function_bounds_2d, get_function_bounds_vec, rosenbrock};
 

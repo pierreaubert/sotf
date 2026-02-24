@@ -6,15 +6,16 @@ use sotf_plugins::speaker_config::{
     MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
 };
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 // Import types from sibling modules
+use super::parameters::TuiEditablePlugin;
 use super::types::{
-    ArtistNode, ChannelGroup, ChannelInfo, ChannelFilter, FocusedPane, InputMode, LibraryViewMode,
-    LibrarySortOrder, MatrixEditMode, PendingParameterUpdate, QueueEntry, QueueItem, Screen,
+    ArtistNode, ChannelFilter, ChannelGroup, ChannelInfo, FocusedPane, InputMode, LibrarySortOrder,
+    LibraryViewMode, MatrixEditMode, PendingParameterUpdate, QueueEntry, QueueItem, Screen,
     TreeItem,
 };
-use super::parameters::TuiEditablePlugin;
 
 pub struct App {
     pub library: MusicLibrary,
@@ -43,9 +44,9 @@ pub struct App {
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
 
     // Channel conflict dialog state
-    pub channel_conflict_path: Option<PathBuf>,       // File pending playback
-    pub channel_conflict_selection: usize,             // Currently highlighted option (0-2)
-    pub channel_conflict_track_channels: usize,        // File's channel count
+    pub channel_conflict_path: Option<PathBuf>, // File pending playback
+    pub channel_conflict_selection: usize,      // Currently highlighted option (0-2)
+    pub channel_conflict_track_channels: usize, // File's channel count
 
     // Cached filtered results
     pub cached_filtered_albums: Vec<Album>,
@@ -111,6 +112,9 @@ pub struct App {
     pub selected_output_device_index: usize,
     pub current_output_device_name: Option<String>,
 
+    // Loading screen animation
+    pub loading_tick: u16,
+
     // Flags
     pub should_quit: bool,
     pub needs_rescan: bool,
@@ -126,6 +130,9 @@ pub struct App {
     pub maintenance_in_progress: bool,
     pub maintenance_progress_checked: usize,
     pub maintenance_progress_total: usize,
+
+    // Shared pause flag: true while playing, scanners sleep-loop on it
+    pub scanner_pause_flag: Arc<AtomicBool>,
 
     // ReplayGain scanner manager
     pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
@@ -180,6 +187,9 @@ impl App {
             );
             MusicLibrary::new()
         });
+
+        // Shared pause flag for all background scanners
+        let scanner_pause_flag = Arc::new(AtomicBool::new(false));
 
         Self {
             library,
@@ -245,6 +255,7 @@ impl App {
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
+            loading_tick: 0,
             should_quit: false,
             needs_rescan: false,
             needs_redraw: true,
@@ -255,11 +266,16 @@ impl App {
             maintenance_in_progress: false,
             maintenance_progress_checked: 0,
             maintenance_progress_total: 0,
-            replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
+            scanner_pause_flag: Arc::clone(&scanner_pause_flag),
+            replay_gain_manager: sotf_audio_player::ReplayGainScanManager::with_pause_flag(
+                Arc::clone(&scanner_pause_flag),
+            ),
             replay_gain_enabled: true,
             replay_gain_mode: super::types::ReplayGainMode::Track,
             replay_gain_preamp: 0.0,
-            waveform_manager: sotf_audio_player::WaveformScanManager::new(),
+            waveform_manager: sotf_audio_player::WaveformScanManager::with_pause_flag(
+                Arc::clone(&scanner_pause_flag),
+            ),
             last_loaded_preset: None,
             file_browser_items: Vec::new(),
             selected_file_index: 0,
@@ -289,7 +305,7 @@ impl App {
     }
 
     /// Update directory scan times from database
-    fn update_directory_scan_times(&mut self) {
+    pub fn update_directory_scan_times(&mut self) {
         self.library.update_directory_scan_times();
     }
 
@@ -603,8 +619,7 @@ impl App {
                 Some(_) => {
                     // Past last track → move to next album header
                     self.selected_queue_track_index = None;
-                    self.selected_queue_index =
-                        (self.selected_queue_index + 1) % self.queue.len();
+                    self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
                 }
             }
         } else {
@@ -638,8 +653,7 @@ impl App {
                 // If the previous album is expanded, land on its last track
                 let prev = &self.queue[self.selected_queue_index];
                 if prev.expanded && !prev.item.album.tracks.is_empty() {
-                    self.selected_queue_track_index =
-                        Some(prev.item.album.tracks.len() - 1);
+                    self.selected_queue_track_index = Some(prev.item.album.tracks.len() - 1);
                 } else {
                     self.selected_queue_track_index = None;
                 }
@@ -734,8 +748,11 @@ impl App {
             return;
         }
 
-        // Start background scanner
-        let scanner = sotf_audio_player::LibraryScanner::start(directories);
+        // Start background scanner (with pause support during playback)
+        let scanner = sotf_audio_player::LibraryScanner::start_with_pause(
+            directories,
+            Arc::clone(&self.scanner_pause_flag),
+        );
         self.library_scanner = Some(scanner);
 
         self.scan_in_progress = true;
@@ -767,8 +784,11 @@ impl App {
             return;
         }
 
-        // Start background scanner with force=true
-        let scanner = sotf_audio_player::LibraryScanner::start_force(directories);
+        // Start background scanner with force=true (with pause support during playback)
+        let scanner = sotf_audio_player::LibraryScanner::start_force_with_pause(
+            directories,
+            Arc::clone(&self.scanner_pause_flag),
+        );
         self.library_scanner = Some(scanner);
 
         self.scan_in_progress = true;
@@ -2455,9 +2475,7 @@ impl App {
             .unwrap_or("unknown");
         Ok(format!(
             "Applied {} EQ filters for '{}' to plugin slot {}",
-            n,
-            speaker,
-            target_idx
+            n, speaker, target_idx
         ))
     }
 
@@ -4893,8 +4911,18 @@ mod tests {
         let mut app = App::new(Theme::default());
         app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
         app.spinorama_eq.filters = vec![
-            SpinoramaBiquad { filter_type: "Peak".to_string(), freq: 1000.0, q: 1.5, db_gain: -3.0 },
-            SpinoramaBiquad { filter_type: "Lowshelf".to_string(), freq: 80.0, q: 0.7, db_gain: 2.0 },
+            SpinoramaBiquad {
+                filter_type: "Peak".to_string(),
+                freq: 1000.0,
+                q: 1.5,
+                db_gain: -3.0,
+            },
+            SpinoramaBiquad {
+                filter_type: "Lowshelf".to_string(),
+                freq: 80.0,
+                q: 0.7,
+                db_gain: 2.0,
+            },
         ];
 
         let result = app.apply_spinorama_to_plugin_chain();
@@ -4902,7 +4930,8 @@ mod tests {
 
         // An EQ plugin should now exist in the chain
         let has_eq = (0..app.plugin_chain.len()).any(|i| {
-            app.plugin_chain.get_plugin(i)
+            app.plugin_chain
+                .get_plugin(i)
                 .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
                 .unwrap_or(false)
         });
@@ -4915,19 +4944,25 @@ mod tests {
         let mut app = App::new(Theme::default());
         app.add_plugin(&PluginType::EQ);
         app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
-        app.spinorama_eq.filters = vec![
-            SpinoramaBiquad { filter_type: "Peak".to_string(), freq: 500.0, q: 2.0, db_gain: 1.5 },
-        ];
+        app.spinorama_eq.filters = vec![SpinoramaBiquad {
+            filter_type: "Peak".to_string(),
+            freq: 500.0,
+            q: 2.0,
+            db_gain: 1.5,
+        }];
 
         let result = app.apply_spinorama_to_plugin_chain();
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
         // Verify the EQ plugin has the new filter
-        let eq_idx = (0..app.plugin_chain.len()).find(|&i| {
-            app.plugin_chain.get_plugin(i)
-                .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
-                .unwrap_or(false)
-        }).expect("EQ plugin should exist");
+        let eq_idx = (0..app.plugin_chain.len())
+            .find(|&i| {
+                app.plugin_chain
+                    .get_plugin(i)
+                    .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
+                    .unwrap_or(false)
+            })
+            .expect("EQ plugin should exist");
 
         let plugin = app.plugin_chain.get_plugin(eq_idx).unwrap();
         if let PluginSettings::EQ { filters, .. } = &plugin.settings {

@@ -2,7 +2,7 @@
 //!
 //! Direct port of shape function computations from NC_3dFunctions.cpp.
 
-use ndarray::{array, Array1, Array2};
+use ndarray::{Array1, Array2, array};
 
 use crate::core::types::{Element, ElementType};
 

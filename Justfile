@@ -288,6 +288,7 @@ install-rustup:
 	~/.cargo/bin/cargo install cross
 	~/.cargo/bin/cargo install cargo-binstall
 	~/.cargo/bin/cargo binstall cargo-nextest --secure
+	~/.cargo/bin/cargo install samply
 
 # ----------------------------------------------------------------------
 # PUBLISH

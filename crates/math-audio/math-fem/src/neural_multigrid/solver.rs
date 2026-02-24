@@ -77,8 +77,7 @@ pub fn solve_neural_multigrid(
 
     // Step 1: Build wave hierarchy
     let hierarchy_start = Instant::now();
-    let wave_hierarchy =
-        WaveHierarchy::build(mesh.clone(), degree, k, config.damping_gamma);
+    let wave_hierarchy = WaveHierarchy::build(mesh.clone(), degree, k, config.damping_gamma);
     let hierarchy_time = hierarchy_start.elapsed();
 
     if config.verbosity > 0 {
@@ -149,14 +148,7 @@ pub fn solve_neural_multigrid(
 
     while iteration < config.max_iterations && residual_norm > tol {
         // Apply one Wave-ADR-NS V-cycle
-        wave_adr_cycle(
-            &wave_hierarchy,
-            0,
-            &mut x,
-            &rhs_vec,
-            &eikonal_sol,
-            config,
-        );
+        wave_adr_cycle(&wave_hierarchy, 0, &mut x, &rhs_vec, &eikonal_sol, config);
 
         // Re-apply Dirichlet BCs
         for &(node, value) in dirichlet_bcs {
@@ -223,40 +215,28 @@ fn wave_adr_cycle(
     // ---- Coarsest level: solve approximately ----
     if level == n_levels - 1 {
         let alpha = hierarchy.alpha_values[level];
-        chebyshev::chebyshev_smooth(
-            operator,
-            x,
-            b,
-            config.coarsest_chebyshev_iters,
-            alpha,
-        );
+        chebyshev::chebyshev_smooth(operator, x, b, config.coarsest_chebyshev_iters, alpha);
         return;
     }
 
     // ---- Pre-smoothing ----
     if level == 0 {
         // Finest level: 1 damped Jacobi iteration
-        let omega = chebyshev::optimal_jacobi_damping(
-            hierarchy.wavenumber,
-            hierarchy.h_values[level],
-        );
+        let omega =
+            chebyshev::optimal_jacobi_damping(hierarchy.wavenumber, hierarchy.h_values[level]);
         chebyshev::jacobi_damped_smooth(operator, x, b, omega);
     } else {
         // Intermediate levels: Chebyshev smoothing
         let alpha = hierarchy.alpha_values[level];
-        chebyshev::chebyshev_smooth(
-            operator,
-            x,
-            b,
-            config.chebyshev_iterations,
-            alpha,
-        );
+        chebyshev::chebyshev_smooth(operator, x, b, config.chebyshev_iterations, alpha);
     }
 
     // ---- Compute residual and restrict ----
     let residual = compute_residual(operator, x, b);
 
-    let restriction = hierarchy.restriction(level).expect("Missing restriction operator");
+    let restriction = hierarchy
+        .restriction(level)
+        .expect("Missing restriction operator");
     let r_coarse_vec = restriction.apply(residual.as_slice().unwrap());
     let r_coarse = Array1::from(r_coarse_vec);
 
@@ -264,10 +244,19 @@ fn wave_adr_cycle(
     let n_coarse = hierarchy.n_dofs(level + 1);
     let mut e_coarse = Array1::zeros(n_coarse);
 
-    wave_adr_cycle(hierarchy, level + 1, &mut e_coarse, &r_coarse, eikonal, config);
+    wave_adr_cycle(
+        hierarchy,
+        level + 1,
+        &mut e_coarse,
+        &r_coarse,
+        eikonal,
+        config,
+    );
 
     // ---- Prolongate and correct ----
-    let prolongation = hierarchy.prolongation(level).expect("Missing prolongation operator");
+    let prolongation = hierarchy
+        .prolongation(level)
+        .expect("Missing prolongation operator");
     let e_fine_vec = prolongation.apply(e_coarse.as_slice().unwrap());
 
     for (i, &correction) in e_fine_vec.iter().enumerate() {
@@ -278,22 +267,14 @@ fn wave_adr_cycle(
     if level == hierarchy.adr_level {
         // ADR correction level: Chebyshev + ADR correction
         let alpha = hierarchy.alpha_values[level];
-        chebyshev::chebyshev_smooth(
-            operator,
-            x,
-            b,
-            config.chebyshev_iterations,
-            alpha,
-        );
+        chebyshev::chebyshev_smooth(operator, x, b, config.chebyshev_iterations, alpha);
 
         // ADR correction
         apply_adr_correction(hierarchy, level, x, b, eikonal, config);
     } else if level == 0 {
         // Finest level: 1 damped Jacobi post-smoothing (mirrors pre-smoothing)
-        let omega = chebyshev::optimal_jacobi_damping(
-            hierarchy.wavenumber,
-            hierarchy.h_values[level],
-        );
+        let omega =
+            chebyshev::optimal_jacobi_damping(hierarchy.wavenumber, hierarchy.h_values[level]);
         chebyshev::jacobi_damped_smooth(operator, x, b, omega);
     } else {
         // Intermediate levels: Chebyshev post-smoothing
@@ -410,12 +391,13 @@ mod tests {
         let k_complex = Complex64::new(k, 0.0);
 
         // Assemble Helmholtz problem
-        let problem = HelmholtzProblem::assemble(
-            &mesh,
-            PolynomialDegree::P1,
-            k_complex,
-            |x, y, _z| Complex64::new((x * std::f64::consts::PI).sin() * (y * std::f64::consts::PI).sin(), 0.0),
-        );
+        let problem =
+            HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, |x, y, _z| {
+                Complex64::new(
+                    (x * std::f64::consts::PI).sin() * (y * std::f64::consts::PI).sin(),
+                    0.0,
+                )
+            });
 
         // Set Dirichlet BCs on all boundaries (u=0)
         let mut dirichlet_pairs = Vec::new();
@@ -466,8 +448,7 @@ mod tests {
         let k = 2.0;
 
         // Verify hierarchy builds correctly
-        let wave_hierarchy =
-            WaveHierarchy::build(mesh.clone(), PolynomialDegree::P1, k, 0.5);
+        let wave_hierarchy = WaveHierarchy::build(mesh.clone(), PolynomialDegree::P1, k, 0.5);
         assert!(wave_hierarchy.num_levels() >= 2);
         assert!(wave_hierarchy.adr_level >= 1);
         assert!(wave_hierarchy.adr_level < wave_hierarchy.num_levels());

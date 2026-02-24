@@ -243,7 +243,8 @@ pub fn compute_target_alignment(
 
     // Extract active SPL for channel and target
     let channel_spl: Array1<f64> = Array1::from(
-        curve.spl
+        curve
+            .spl
             .iter()
             .zip(mask.iter())
             .filter(|(_, m)| **m)
@@ -252,7 +253,8 @@ pub fn compute_target_alignment(
     );
 
     let target_spl: Array1<f64> = Array1::from(
-        target.spl
+        target
+            .spl
             .iter()
             .zip(mask.iter())
             .filter(|(_, m)| **m)
@@ -494,8 +496,7 @@ fn fit_shelf_gain_iterative(
         let (j_ls, j_hs) = build_jacobian_basis(freq, sample_rate, ls_gain, hs_gain);
 
         // Solve for corrections (flat basis Jacobian is trivially 1.0)
-        let (d_ls, d_hs, d_flat, _) =
-            solve_3x3_wls(&residual, &j_ls, &j_hs, &flat_basis, weights);
+        let (d_ls, d_hs, d_flat, _) = solve_3x3_wls(&residual, &j_ls, &j_hs, &flat_basis, weights);
 
         ls_gain += d_ls;
         hs_gain += d_hs;
@@ -887,9 +888,7 @@ mod tests {
         let log_end = 20000f64.log10();
         let freq: Array1<f64> = Array1::from(
             (0..n)
-                .map(|i| {
-                    10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64)
-                })
+                .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
                 .collect::<Vec<_>>(),
         );
 
@@ -926,19 +925,14 @@ mod tests {
             flat,
             (flat - true_flat).abs()
         );
-        assert!(
-            residual < 0.01,
-            "residual should be ~0, got {}",
-            residual
-        );
+        assert!(residual < 0.01, "residual should be ~0, got {}", residual);
 
         // Compare: linear-only solve should have higher residual
         let flat_basis = Array1::ones(n);
         let (ls_basis, hs_basis) = build_basis_vectors(&freq, SAMPLE_RATE);
         let (lin_ls, lin_hs, lin_flat, _) =
             solve_3x3_wls(&diff, &ls_basis, &hs_basis, &flat_basis, &weights);
-        let lin_response =
-            evaluate_shelf_response(&freq, SAMPLE_RATE, lin_ls, lin_hs, lin_flat);
+        let lin_response = evaluate_shelf_response(&freq, SAMPLE_RATE, lin_ls, lin_hs, lin_flat);
         let lin_residual_vec = &diff - &lin_response;
         let lin_rms = (lin_residual_vec
             .iter()

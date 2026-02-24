@@ -59,8 +59,10 @@ pub trait TuiEditablePlugin {
                     }
                 }
                 TuiParamType::Bool => {
-                    let is_true = current_str == "On" || current_str == "true"
-                        || current_str == "Linked" || current_str == "Soft"
+                    let is_true = current_str == "On"
+                        || current_str == "true"
+                        || current_str == "Linked"
+                        || current_str == "Soft"
                         || current_str == "1";
                     let want_true = value > 0.5;
                     if is_true != want_true {
@@ -101,7 +103,11 @@ impl TuiEditablePlugin for PluginSettings {
                 unit: "dB".into(),
                 group: "General".into(),
             }],
-            PluginSettings::EQ { filters: _, max_filters, .. } => {
+            PluginSettings::EQ {
+                filters: _,
+                max_filters,
+                ..
+            } => {
                 let mut descs = vec![TuiParamDescriptor {
                     name: "Max Filters".into(),
                     param_type: TuiParamType::Int {
@@ -249,305 +255,2222 @@ impl TuiEditablePlugin for PluginSettings {
                 },
             ],
             PluginSettings::Upmixer { .. } => vec![
-                TuiParamDescriptor { name: "Speaker Config".into(), param_type: TuiParamType::Choice { count: 10 }, unit: "".into(), group: "Output".into() },
+                TuiParamDescriptor {
+                    name: "Speaker Config".into(),
+                    param_type: TuiParamType::Choice { count: 10 },
+                    unit: "".into(),
+                    group: "Output".into(),
+                },
                 // Gains
-                TuiParamDescriptor { name: "Front Direct".into(), param_type: TuiParamType::Float { min: upmixer::GAIN_FRONT_DIRECT_MIN as f64, max: upmixer::GAIN_FRONT_DIRECT_MAX as f64, step: 0.05 }, unit: "x".into(), group: "Gains".into() },
-                TuiParamDescriptor { name: "Front Ambient".into(), param_type: TuiParamType::Float { min: upmixer::GAIN_FRONT_AMBIENT_MIN as f64, max: upmixer::GAIN_FRONT_AMBIENT_MAX as f64, step: 0.05 }, unit: "x".into(), group: "Gains".into() },
-                TuiParamDescriptor { name: "Rear Ambient".into(), param_type: TuiParamType::Float { min: upmixer::GAIN_REAR_AMBIENT_MIN as f64, max: upmixer::GAIN_REAR_AMBIENT_MAX as f64, step: 0.05 }, unit: "x".into(), group: "Gains".into() },
-                TuiParamDescriptor { name: "Height Gain".into(), param_type: TuiParamType::Float { min: upmixer::GAIN_HEIGHT_MIN as f64, max: upmixer::GAIN_HEIGHT_MAX as f64, step: 0.05 }, unit: "x".into(), group: "Gains".into() },
+                TuiParamDescriptor {
+                    name: "Front Direct".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::GAIN_FRONT_DIRECT_MIN as f64,
+                        max: upmixer::GAIN_FRONT_DIRECT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "Gains".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Front Ambient".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::GAIN_FRONT_AMBIENT_MIN as f64,
+                        max: upmixer::GAIN_FRONT_AMBIENT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "Gains".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Rear Ambient".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::GAIN_REAR_AMBIENT_MIN as f64,
+                        max: upmixer::GAIN_REAR_AMBIENT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "Gains".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Height Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::GAIN_HEIGHT_MIN as f64,
+                        max: upmixer::GAIN_HEIGHT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "Gains".into(),
+                },
                 // LFE
-                TuiParamDescriptor { name: "LFE Gain".into(), param_type: TuiParamType::Float { min: upmixer::LFE_GAIN_MIN as f64, max: upmixer::LFE_GAIN_MAX as f64, step: 0.05 }, unit: "x".into(), group: "LFE".into() },
-                TuiParamDescriptor { name: "LFE Cutoff".into(), param_type: TuiParamType::Float { min: upmixer::LFE_CUTOFF_HZ_MIN as f64, max: upmixer::LFE_CUTOFF_HZ_MAX as f64, step: 5.0 }, unit: "Hz".into(), group: "LFE".into() },
-                TuiParamDescriptor { name: "Subharmonic Synth".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "LFE".into() },
-                TuiParamDescriptor { name: "Sub Gain".into(), param_type: TuiParamType::Float { min: upmixer::SUBHARMONIC_GAIN_MIN as f64, max: upmixer::SUBHARMONIC_GAIN_MAX as f64, step: 0.05 }, unit: "x".into(), group: "LFE".into() },
-                TuiParamDescriptor { name: "Sub Freq".into(), param_type: TuiParamType::Float { min: upmixer::SUBHARMONIC_FREQ_HZ_MIN as f64, max: upmixer::SUBHARMONIC_FREQ_HZ_MAX as f64, step: 1.0 }, unit: "Hz".into(), group: "LFE".into() },
-                TuiParamDescriptor { name: "Sub Attack".into(), param_type: TuiParamType::Float { min: upmixer::SUBHARMONIC_ATTACK_MS_MIN as f64, max: upmixer::SUBHARMONIC_ATTACK_MS_MAX as f64, step: 1.0 }, unit: "ms".into(), group: "LFE".into() },
-                TuiParamDescriptor { name: "Sub Release".into(), param_type: TuiParamType::Float { min: upmixer::SUBHARMONIC_RELEASE_MS_MIN as f64, max: upmixer::SUBHARMONIC_RELEASE_MS_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "LFE".into() },
+                TuiParamDescriptor {
+                    name: "LFE Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::LFE_GAIN_MIN as f64,
+                        max: upmixer::LFE_GAIN_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "LFE".into(),
+                },
+                TuiParamDescriptor {
+                    name: "LFE Cutoff".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::LFE_CUTOFF_HZ_MIN as f64,
+                        max: upmixer::LFE_CUTOFF_HZ_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "LFE".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Subharmonic Synth".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "LFE".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Sub Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::SUBHARMONIC_GAIN_MIN as f64,
+                        max: upmixer::SUBHARMONIC_GAIN_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "LFE".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Sub Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::SUBHARMONIC_FREQ_HZ_MIN as f64,
+                        max: upmixer::SUBHARMONIC_FREQ_HZ_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "LFE".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Sub Attack".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::SUBHARMONIC_ATTACK_MS_MIN as f64,
+                        max: upmixer::SUBHARMONIC_ATTACK_MS_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "ms".into(),
+                    group: "LFE".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Sub Release".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::SUBHARMONIC_RELEASE_MS_MIN as f64,
+                        max: upmixer::SUBHARMONIC_RELEASE_MS_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "LFE".into(),
+                },
                 // Spatial
-                TuiParamDescriptor { name: "Stereo Width".into(), param_type: TuiParamType::Float { min: upmixer::STEREO_WIDTH_MIN as f64, max: upmixer::STEREO_WIDTH_MAX as f64, step: 0.05 }, unit: "".into(), group: "Spatial".into() },
-                TuiParamDescriptor { name: "Center Spread".into(), param_type: TuiParamType::Float { min: upmixer::CENTER_SPREAD_MIN as f64, max: upmixer::CENTER_SPREAD_MAX as f64, step: 0.05 }, unit: "".into(), group: "Spatial".into() },
-                TuiParamDescriptor { name: "Upmix Crossover".into(), param_type: TuiParamType::Float { min: upmixer::BANDPASS_HZ_MIN as f64, max: upmixer::BANDPASS_HZ_MAX as f64, step: 5.0 }, unit: "Hz".into(), group: "Spatial".into() },
+                TuiParamDescriptor {
+                    name: "Stereo Width".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::STEREO_WIDTH_MIN as f64,
+                        max: upmixer::STEREO_WIDTH_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Spatial".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Center Spread".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::CENTER_SPREAD_MIN as f64,
+                        max: upmixer::CENTER_SPREAD_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Spatial".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Upmix Crossover".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::BANDPASS_HZ_MIN as f64,
+                        max: upmixer::BANDPASS_HZ_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Spatial".into(),
+                },
                 // Enhancement
-                TuiParamDescriptor { name: "HR Direct".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Enhancement".into() },
-                TuiParamDescriptor { name: "HR Sharpen".into(), param_type: TuiParamType::Float { min: upmixer::HR_SHARPEN_MIN as f64, max: upmixer::HR_SHARPEN_MAX as f64, step: 0.05 }, unit: "".into(), group: "Enhancement".into() },
-                TuiParamDescriptor { name: "Ambient Boost".into(), param_type: TuiParamType::Float { min: upmixer::AMBIENT_BOOST_MIN as f64, max: upmixer::AMBIENT_BOOST_MAX as f64, step: 0.05 }, unit: "x".into(), group: "Enhancement".into() },
-                TuiParamDescriptor { name: "Decor Mode".into(), param_type: TuiParamType::Choice { count: 2 }, unit: "".into(), group: "Enhancement".into() },
-                TuiParamDescriptor { name: "Decor LFO Rate".into(), param_type: TuiParamType::Float { min: upmixer::DECORRELATION_LFO_RATE_HZ_MIN as f64, max: upmixer::DECORRELATION_LFO_RATE_HZ_MAX as f64, step: 0.01 }, unit: "Hz".into(), group: "Enhancement".into() },
-                TuiParamDescriptor { name: "Velvet Duration".into(), param_type: TuiParamType::Float { min: upmixer::VELVET_NOISE_DURATION_MS_MIN as f64, max: upmixer::VELVET_NOISE_DURATION_MS_MAX as f64, step: 1.0 }, unit: "ms".into(), group: "Enhancement".into() },
-                TuiParamDescriptor { name: "Velvet Density".into(), param_type: TuiParamType::Float { min: upmixer::VELVET_NOISE_DENSITY_MIN as f64, max: upmixer::VELVET_NOISE_DENSITY_MAX as f64, step: 100.0 }, unit: "".into(), group: "Enhancement".into() },
+                TuiParamDescriptor {
+                    name: "HR Direct".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Enhancement".into(),
+                },
+                TuiParamDescriptor {
+                    name: "HR Sharpen".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::HR_SHARPEN_MIN as f64,
+                        max: upmixer::HR_SHARPEN_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Enhancement".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Ambient Boost".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::AMBIENT_BOOST_MIN as f64,
+                        max: upmixer::AMBIENT_BOOST_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "Enhancement".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Decor Mode".into(),
+                    param_type: TuiParamType::Choice { count: 2 },
+                    unit: "".into(),
+                    group: "Enhancement".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Decor LFO Rate".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::DECORRELATION_LFO_RATE_HZ_MIN as f64,
+                        max: upmixer::DECORRELATION_LFO_RATE_HZ_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "Hz".into(),
+                    group: "Enhancement".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Velvet Duration".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::VELVET_NOISE_DURATION_MS_MIN as f64,
+                        max: upmixer::VELVET_NOISE_DURATION_MS_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Enhancement".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Velvet Density".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::VELVET_NOISE_DENSITY_MIN as f64,
+                        max: upmixer::VELVET_NOISE_DENSITY_MAX as f64,
+                        step: 100.0,
+                    },
+                    unit: "".into(),
+                    group: "Enhancement".into(),
+                },
                 // Height
-                TuiParamDescriptor { name: "Height HF Cap".into(), param_type: TuiParamType::Float { min: upmixer::HEIGHT_HF_CAP_HZ_MIN as f64, max: upmixer::HEIGHT_HF_CAP_HZ_MAX as f64, step: 100.0 }, unit: "Hz".into(), group: "Height".into() },
-                TuiParamDescriptor { name: "Height Trans Red".into(), param_type: TuiParamType::Float { min: upmixer::HEIGHT_TRANSIENT_REDUCTION_MIN as f64, max: upmixer::HEIGHT_TRANSIENT_REDUCTION_MAX as f64, step: 0.05 }, unit: "".into(), group: "Height".into() },
-                TuiParamDescriptor { name: "Height Direct Leak".into(), param_type: TuiParamType::Float { min: upmixer::HEIGHT_DIRECT_LEAK_MIN as f64, max: upmixer::HEIGHT_DIRECT_LEAK_MAX as f64, step: 0.01 }, unit: "".into(), group: "Height".into() },
+                TuiParamDescriptor {
+                    name: "Height HF Cap".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::HEIGHT_HF_CAP_HZ_MIN as f64,
+                        max: upmixer::HEIGHT_HF_CAP_HZ_MAX as f64,
+                        step: 100.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Height".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Height Trans Red".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::HEIGHT_TRANSIENT_REDUCTION_MIN as f64,
+                        max: upmixer::HEIGHT_TRANSIENT_REDUCTION_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Height".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Height Direct Leak".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::HEIGHT_DIRECT_LEAK_MIN as f64,
+                        max: upmixer::HEIGHT_DIRECT_LEAK_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Height".into(),
+                },
                 // Surround
-                TuiParamDescriptor { name: "Surround Bleed".into(), param_type: TuiParamType::Float { min: upmixer::SURROUND_DIRECT_BLEED_MIN as f64, max: upmixer::SURROUND_DIRECT_BLEED_MAX as f64, step: 0.05 }, unit: "".into(), group: "Surround".into() },
-                TuiParamDescriptor { name: "Rear Amb Boost".into(), param_type: TuiParamType::Float { min: upmixer::REAR_AMBIENT_BOOST_MIN as f64, max: upmixer::REAR_AMBIENT_BOOST_MAX as f64, step: 0.05 }, unit: "x".into(), group: "Surround".into() },
-                TuiParamDescriptor { name: "Rear Late Refl".into(), param_type: TuiParamType::Float { min: upmixer::REAR_LATE_REFLECTION_MIN as f64, max: upmixer::REAR_LATE_REFLECTION_MAX as f64, step: 0.01 }, unit: "".into(), group: "Surround".into() },
+                TuiParamDescriptor {
+                    name: "Surround Bleed".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::SURROUND_DIRECT_BLEED_MIN as f64,
+                        max: upmixer::SURROUND_DIRECT_BLEED_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Surround".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Rear Amb Boost".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::REAR_AMBIENT_BOOST_MIN as f64,
+                        max: upmixer::REAR_AMBIENT_BOOST_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "x".into(),
+                    group: "Surround".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Rear Late Refl".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::REAR_LATE_REFLECTION_MIN as f64,
+                        max: upmixer::REAR_LATE_REFLECTION_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Surround".into(),
+                },
                 // Dialogue
-                TuiParamDescriptor { name: "Dialogue Weight".into(), param_type: TuiParamType::Float { min: upmixer::DIALOGUE_WEIGHT_MIN as f64, max: upmixer::DIALOGUE_WEIGHT_MAX as f64, step: 0.05 }, unit: "".into(), group: "Dialogue".into() },
-                TuiParamDescriptor { name: "Voice Freq Min".into(), param_type: TuiParamType::Float { min: upmixer::VOICE_FREQ_MIN_HZ_MIN as f64, max: upmixer::VOICE_FREQ_MIN_HZ_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "Dialogue".into() },
-                TuiParamDescriptor { name: "Voice Freq Max".into(), param_type: TuiParamType::Float { min: upmixer::VOICE_FREQ_MAX_HZ_MIN as f64, max: upmixer::VOICE_FREQ_MAX_HZ_MAX as f64, step: 50.0 }, unit: "Hz".into(), group: "Dialogue".into() },
-                TuiParamDescriptor { name: "Diag Centroid W".into(), param_type: TuiParamType::Float { min: upmixer::DIALOGUE_CENTROID_WEIGHT_MIN as f64, max: upmixer::DIALOGUE_CENTROID_WEIGHT_MAX as f64, step: 0.05 }, unit: "".into(), group: "Dialogue".into() },
-                TuiParamDescriptor { name: "Diag Variance W".into(), param_type: TuiParamType::Float { min: upmixer::DIALOGUE_VARIANCE_WEIGHT_MIN as f64, max: upmixer::DIALOGUE_VARIANCE_WEIGHT_MAX as f64, step: 0.05 }, unit: "".into(), group: "Dialogue".into() },
-                TuiParamDescriptor { name: "Diag Coherence W".into(), param_type: TuiParamType::Float { min: upmixer::DIALOGUE_COHERENCE_WEIGHT_MIN as f64, max: upmixer::DIALOGUE_COHERENCE_WEIGHT_MAX as f64, step: 0.05 }, unit: "".into(), group: "Dialogue".into() },
+                TuiParamDescriptor {
+                    name: "Dialogue Weight".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::DIALOGUE_WEIGHT_MIN as f64,
+                        max: upmixer::DIALOGUE_WEIGHT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Dialogue".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Voice Freq Min".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::VOICE_FREQ_MIN_HZ_MIN as f64,
+                        max: upmixer::VOICE_FREQ_MIN_HZ_MAX as f64,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Dialogue".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Voice Freq Max".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::VOICE_FREQ_MAX_HZ_MIN as f64,
+                        max: upmixer::VOICE_FREQ_MAX_HZ_MAX as f64,
+                        step: 50.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Dialogue".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Diag Centroid W".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::DIALOGUE_CENTROID_WEIGHT_MIN as f64,
+                        max: upmixer::DIALOGUE_CENTROID_WEIGHT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Dialogue".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Diag Variance W".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::DIALOGUE_VARIANCE_WEIGHT_MIN as f64,
+                        max: upmixer::DIALOGUE_VARIANCE_WEIGHT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Dialogue".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Diag Coherence W".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::DIALOGUE_COHERENCE_WEIGHT_MIN as f64,
+                        max: upmixer::DIALOGUE_COHERENCE_WEIGHT_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Dialogue".into(),
+                },
                 // Output
-                TuiParamDescriptor { name: "Safety Cap".into(), param_type: TuiParamType::Float { min: upmixer::SAFETY_CAP_DB_MIN as f64, max: upmixer::SAFETY_CAP_DB_MAX as f64, step: 0.1 }, unit: "dB".into(), group: "Output".into() },
-                TuiParamDescriptor { name: "Bypass Decor".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
-                TuiParamDescriptor { name: "Bypass Transients".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
-                TuiParamDescriptor { name: "Bypass All".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
-                TuiParamDescriptor { name: "ML Detection".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
+                TuiParamDescriptor {
+                    name: "Safety Cap".into(),
+                    param_type: TuiParamType::Float {
+                        min: upmixer::SAFETY_CAP_DB_MIN as f64,
+                        max: upmixer::SAFETY_CAP_DB_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: "dB".into(),
+                    group: "Output".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bypass Decor".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Diagnostics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bypass Transients".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Diagnostics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bypass All".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Diagnostics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "ML Detection".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Diagnostics".into(),
+                },
             ],
             PluginSettings::Limiter { .. } => vec![
-                TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: limiter::THRESHOLD_MIN as f64, max: limiter::THRESHOLD_MAX as f64, step: 0.1 }, unit: "dB".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: limiter::RELEASE_MIN as f64, max: limiter::RELEASE_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Lookahead".into(), param_type: TuiParamType::Float { min: limiter::LOOKAHEAD_MIN as f64, max: limiter::LOOKAHEAD_MAX as f64, step: 0.5 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Soft Knee".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Mix".into(), param_type: TuiParamType::Float { min: limiter::MIX_MIN as f64, max: limiter::MIX_MAX as f64, step: 0.01 }, unit: "".into(), group: "Output".into() },
+                TuiParamDescriptor {
+                    name: "Threshold".into(),
+                    param_type: TuiParamType::Float {
+                        min: limiter::THRESHOLD_MIN as f64,
+                        max: limiter::THRESHOLD_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: "dB".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Release".into(),
+                    param_type: TuiParamType::Float {
+                        min: limiter::RELEASE_MIN as f64,
+                        max: limiter::RELEASE_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Lookahead".into(),
+                    param_type: TuiParamType::Float {
+                        min: limiter::LOOKAHEAD_MIN as f64,
+                        max: limiter::LOOKAHEAD_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Soft Knee".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Mix".into(),
+                    param_type: TuiParamType::Float {
+                        min: limiter::MIX_MIN as f64,
+                        max: limiter::MIX_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Output".into(),
+                },
             ],
             PluginSettings::Gate { .. } => vec![
-                TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: gate::THRESHOLD_MIN as f64, max: gate::THRESHOLD_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Ratio".into(), param_type: TuiParamType::Float { min: gate::RATIO_MIN as f64, max: gate::RATIO_MAX as f64, step: 0.1 }, unit: ":1".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Attack".into(), param_type: TuiParamType::Float { min: gate::ATTACK_MIN as f64, max: gate::ATTACK_MAX as f64, step: 0.1 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Hold".into(), param_type: TuiParamType::Float { min: gate::HOLD_MIN as f64, max: gate::HOLD_MAX as f64, step: 1.0 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: gate::RELEASE_MIN as f64, max: gate::RELEASE_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Mix".into(), param_type: TuiParamType::Float { min: gate::MIX_MIN as f64, max: gate::MIX_MAX as f64, step: 0.01 }, unit: "".into(), group: "Output".into() },
-                TuiParamDescriptor { name: "Link Channels".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Channels".into() },
-                TuiParamDescriptor { name: "Sidechain HPF".into(), param_type: TuiParamType::Float { min: gate::SIDECHAIN_HPF_HZ_MIN as f64, max: gate::SIDECHAIN_HPF_HZ_MAX as f64, step: 5.0 }, unit: "Hz".into(), group: "Sidechain".into() },
+                TuiParamDescriptor {
+                    name: "Threshold".into(),
+                    param_type: TuiParamType::Float {
+                        min: gate::THRESHOLD_MIN as f64,
+                        max: gate::THRESHOLD_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Ratio".into(),
+                    param_type: TuiParamType::Float {
+                        min: gate::RATIO_MIN as f64,
+                        max: gate::RATIO_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: ":1".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Attack".into(),
+                    param_type: TuiParamType::Float {
+                        min: gate::ATTACK_MIN as f64,
+                        max: gate::ATTACK_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Hold".into(),
+                    param_type: TuiParamType::Float {
+                        min: gate::HOLD_MIN as f64,
+                        max: gate::HOLD_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Release".into(),
+                    param_type: TuiParamType::Float {
+                        min: gate::RELEASE_MIN as f64,
+                        max: gate::RELEASE_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Mix".into(),
+                    param_type: TuiParamType::Float {
+                        min: gate::MIX_MIN as f64,
+                        max: gate::MIX_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Output".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Link Channels".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Channels".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Sidechain HPF".into(),
+                    param_type: TuiParamType::Float {
+                        min: gate::SIDECHAIN_HPF_HZ_MIN as f64,
+                        max: gate::SIDECHAIN_HPF_HZ_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Sidechain".into(),
+                },
             ],
             PluginSettings::Expander { .. } => vec![
-                TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: expander::THRESHOLD_MIN as f64, max: expander::THRESHOLD_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Ratio".into(), param_type: TuiParamType::Float { min: expander::RATIO_MIN as f64, max: expander::RATIO_MAX as f64, step: 0.1 }, unit: ":1".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Attack".into(), param_type: TuiParamType::Float { min: expander::ATTACK_MIN as f64, max: expander::ATTACK_MAX as f64, step: 0.1 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: expander::RELEASE_MIN as f64, max: expander::RELEASE_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Range".into(), param_type: TuiParamType::Float { min: expander::RANGE_MIN as f64, max: expander::RANGE_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Knee".into(), param_type: TuiParamType::Float { min: expander::KNEE_MIN as f64, max: expander::KNEE_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Hysteresis".into(), param_type: TuiParamType::Float { min: expander::HYSTERESIS_MIN as f64, max: expander::HYSTERESIS_MAX as f64, step: 0.1 }, unit: "dB".into(), group: "Dynamics".into() },
-                TuiParamDescriptor { name: "Hold".into(), param_type: TuiParamType::Float { min: expander::HOLD_MIN as f64, max: expander::HOLD_MAX as f64, step: 1.0 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Mix".into(), param_type: TuiParamType::Float { min: expander::MIX_MIN as f64, max: expander::MIX_MAX as f64, step: 0.01 }, unit: "".into(), group: "Output".into() },
-                TuiParamDescriptor { name: "Link Channels".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Channels".into() },
-                TuiParamDescriptor { name: "Sidechain HPF".into(), param_type: TuiParamType::Float { min: expander::SIDECHAIN_HPF_HZ_MIN as f64, max: expander::SIDECHAIN_HPF_HZ_MAX as f64, step: 5.0 }, unit: "Hz".into(), group: "Sidechain".into() },
+                TuiParamDescriptor {
+                    name: "Threshold".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::THRESHOLD_MIN as f64,
+                        max: expander::THRESHOLD_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Ratio".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::RATIO_MIN as f64,
+                        max: expander::RATIO_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: ":1".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Attack".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::ATTACK_MIN as f64,
+                        max: expander::ATTACK_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Release".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::RELEASE_MIN as f64,
+                        max: expander::RELEASE_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Range".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::RANGE_MIN as f64,
+                        max: expander::RANGE_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Knee".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::KNEE_MIN as f64,
+                        max: expander::KNEE_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Hysteresis".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::HYSTERESIS_MIN as f64,
+                        max: expander::HYSTERESIS_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: "dB".into(),
+                    group: "Dynamics".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Hold".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::HOLD_MIN as f64,
+                        max: expander::HOLD_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Mix".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::MIX_MIN as f64,
+                        max: expander::MIX_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Output".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Link Channels".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Channels".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Sidechain HPF".into(),
+                    param_type: TuiParamType::Float {
+                        min: expander::SIDECHAIN_HPF_HZ_MIN as f64,
+                        max: expander::SIDECHAIN_HPF_HZ_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Sidechain".into(),
+                },
             ],
             PluginSettings::MultibandCompressor { num_bands, .. } => {
                 let mut descs = vec![
-                    TuiParamDescriptor { name: "Bands".into(), param_type: TuiParamType::Int { min: multiband_compressor::NUM_BANDS_MIN as i32, max: multiband_compressor::NUM_BANDS_MAX as i32, step: 1 }, unit: "".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Preset".into(), param_type: TuiParamType::Int { min: multiband_compressor::CROSSOVER_PRESET_MIN, max: multiband_compressor::CROSSOVER_PRESET_MAX, step: 1 }, unit: "".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 1".into(), param_type: TuiParamType::Float { min: multiband_compressor::CROSSOVER_FREQ_1_MIN as f64, max: multiband_compressor::CROSSOVER_FREQ_1_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 2".into(), param_type: TuiParamType::Float { min: multiband_compressor::CROSSOVER_FREQ_2_MIN as f64, max: multiband_compressor::CROSSOVER_FREQ_2_MAX as f64, step: 50.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 3".into(), param_type: TuiParamType::Float { min: multiband_compressor::CROSSOVER_FREQ_3_MIN as f64, max: multiband_compressor::CROSSOVER_FREQ_3_MAX as f64, step: 100.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 4".into(), param_type: TuiParamType::Float { min: multiband_compressor::CROSSOVER_FREQ_4_MIN as f64, max: multiband_compressor::CROSSOVER_FREQ_4_MAX as f64, step: 100.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: multiband_compressor::THRESHOLD_MIN as f64, max: multiband_compressor::THRESHOLD_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Ratio".into(), param_type: TuiParamType::Float { min: multiband_compressor::RATIO_MIN as f64, max: multiband_compressor::RATIO_MAX as f64, step: 0.1 }, unit: ":1".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Attack".into(), param_type: TuiParamType::Float { min: multiband_compressor::ATTACK_MIN as f64, max: multiband_compressor::ATTACK_MAX as f64, step: 0.5 }, unit: "ms".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: multiband_compressor::RELEASE_MIN as f64, max: multiband_compressor::RELEASE_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Knee".into(), param_type: TuiParamType::Float { min: multiband_compressor::KNEE_MIN as f64, max: multiband_compressor::KNEE_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Mix".into(), param_type: TuiParamType::Float { min: multiband_compressor::MIX_MIN as f64, max: multiband_compressor::MIX_MAX as f64, step: 0.01 }, unit: "".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Link Channels".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Global".into() },
+                    TuiParamDescriptor {
+                        name: "Bands".into(),
+                        param_type: TuiParamType::Int {
+                            min: multiband_compressor::NUM_BANDS_MIN as i32,
+                            max: multiband_compressor::NUM_BANDS_MAX as i32,
+                            step: 1,
+                        },
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Preset".into(),
+                        param_type: TuiParamType::Int {
+                            min: multiband_compressor::CROSSOVER_PRESET_MIN,
+                            max: multiband_compressor::CROSSOVER_PRESET_MAX,
+                            step: 1,
+                        },
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 1".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::CROSSOVER_FREQ_1_MIN as f64,
+                            max: multiband_compressor::CROSSOVER_FREQ_1_MAX as f64,
+                            step: 10.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 2".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::CROSSOVER_FREQ_2_MIN as f64,
+                            max: multiband_compressor::CROSSOVER_FREQ_2_MAX as f64,
+                            step: 50.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 3".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::CROSSOVER_FREQ_3_MIN as f64,
+                            max: multiband_compressor::CROSSOVER_FREQ_3_MAX as f64,
+                            step: 100.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 4".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::CROSSOVER_FREQ_4_MIN as f64,
+                            max: multiband_compressor::CROSSOVER_FREQ_4_MAX as f64,
+                            step: 100.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Threshold".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::THRESHOLD_MIN as f64,
+                            max: multiband_compressor::THRESHOLD_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "dB".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Ratio".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::RATIO_MIN as f64,
+                            max: multiband_compressor::RATIO_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: ":1".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Attack".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::ATTACK_MIN as f64,
+                            max: multiband_compressor::ATTACK_MAX as f64,
+                            step: 0.5,
+                        },
+                        unit: "ms".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Release".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::RELEASE_MIN as f64,
+                            max: multiband_compressor::RELEASE_MAX as f64,
+                            step: 5.0,
+                        },
+                        unit: "ms".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Knee".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::KNEE_MIN as f64,
+                            max: multiband_compressor::KNEE_MAX as f64,
+                            step: 0.5,
+                        },
+                        unit: "dB".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Mix".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::MIX_MIN as f64,
+                            max: multiband_compressor::MIX_MAX as f64,
+                            step: 0.01,
+                        },
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Link Channels".into(),
+                        param_type: TuiParamType::Bool,
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
                 ];
                 for i in 0..*num_bands {
                     let g = format!("Band {}", i + 1);
-                    descs.push(TuiParamDescriptor { name: "Solo".into(), param_type: TuiParamType::Bool, unit: "".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Bypass".into(), param_type: TuiParamType::Bool, unit: "".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: multiband_compressor::THRESHOLD_MIN as f64, max: multiband_compressor::THRESHOLD_MAX as f64, step: 1.0 }, unit: "dB".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Ratio".into(), param_type: TuiParamType::Float { min: multiband_compressor::RATIO_MIN as f64, max: multiband_compressor::RATIO_MAX as f64, step: 0.1 }, unit: ":1".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Attack".into(), param_type: TuiParamType::Float { min: multiband_compressor::ATTACK_MIN as f64, max: multiband_compressor::ATTACK_MAX as f64, step: 0.5 }, unit: "ms".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: multiband_compressor::RELEASE_MIN as f64, max: multiband_compressor::RELEASE_MAX as f64, step: 5.0 }, unit: "ms".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Knee".into(), param_type: TuiParamType::Float { min: multiband_compressor::KNEE_MIN as f64, max: multiband_compressor::KNEE_MAX as f64, step: 0.5 }, unit: "dB".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Makeup Gain".into(), param_type: TuiParamType::Float { min: -24.0, max: 24.0, step: 0.5 }, unit: "dB".into(), group: g });
+                    descs.push(TuiParamDescriptor {
+                        name: "Solo".into(),
+                        param_type: TuiParamType::Bool,
+                        unit: "".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Bypass".into(),
+                        param_type: TuiParamType::Bool,
+                        unit: "".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Threshold".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::THRESHOLD_MIN as f64,
+                            max: multiband_compressor::THRESHOLD_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "dB".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Ratio".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::RATIO_MIN as f64,
+                            max: multiband_compressor::RATIO_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: ":1".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Attack".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::ATTACK_MIN as f64,
+                            max: multiband_compressor::ATTACK_MAX as f64,
+                            step: 0.5,
+                        },
+                        unit: "ms".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Release".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::RELEASE_MIN as f64,
+                            max: multiband_compressor::RELEASE_MAX as f64,
+                            step: 5.0,
+                        },
+                        unit: "ms".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Knee".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_compressor::KNEE_MIN as f64,
+                            max: multiband_compressor::KNEE_MAX as f64,
+                            step: 0.5,
+                        },
+                        unit: "dB".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Makeup Gain".into(),
+                        param_type: TuiParamType::Float {
+                            min: -24.0,
+                            max: 24.0,
+                            step: 0.5,
+                        },
+                        unit: "dB".into(),
+                        group: g,
+                    });
                 }
                 descs
             }
             PluginSettings::MultibandExpander { num_bands, .. } => {
                 let mut descs = vec![
-                    TuiParamDescriptor { name: "Bands".into(), param_type: TuiParamType::Int { min: multiband_expander::NUM_BANDS_MIN as i32, max: multiband_expander::NUM_BANDS_MAX as i32, step: 1 }, unit: "".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Preset".into(), param_type: TuiParamType::Int { min: multiband_expander::CROSSOVER_PRESET_MIN, max: multiband_expander::CROSSOVER_PRESET_MAX, step: 1 }, unit: "".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 1".into(), param_type: TuiParamType::Float { min: multiband_expander::CROSSOVER_FREQ_1_MIN as f64, max: multiband_expander::CROSSOVER_FREQ_1_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 2".into(), param_type: TuiParamType::Float { min: multiband_expander::CROSSOVER_FREQ_2_MIN as f64, max: multiband_expander::CROSSOVER_FREQ_2_MAX as f64, step: 50.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 3".into(), param_type: TuiParamType::Float { min: multiband_expander::CROSSOVER_FREQ_3_MIN as f64, max: multiband_expander::CROSSOVER_FREQ_3_MAX as f64, step: 100.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Crossover 4".into(), param_type: TuiParamType::Float { min: multiband_expander::CROSSOVER_FREQ_4_MIN as f64, max: multiband_expander::CROSSOVER_FREQ_4_MAX as f64, step: 100.0 }, unit: "Hz".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: multiband_expander::THRESHOLD_MIN as f64, max: multiband_expander::THRESHOLD_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Ratio".into(), param_type: TuiParamType::Float { min: multiband_expander::RATIO_MIN as f64, max: multiband_expander::RATIO_MAX as f64, step: 0.1 }, unit: ":1".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Attack".into(), param_type: TuiParamType::Float { min: multiband_expander::ATTACK_MIN as f64, max: multiband_expander::ATTACK_MAX as f64, step: 0.1 }, unit: "ms".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: multiband_expander::RELEASE_MIN as f64, max: multiband_expander::RELEASE_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Range".into(), param_type: TuiParamType::Float { min: multiband_expander::RANGE_MIN as f64, max: multiband_expander::RANGE_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Knee".into(), param_type: TuiParamType::Float { min: multiband_expander::KNEE_MIN as f64, max: multiband_expander::KNEE_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Hysteresis".into(), param_type: TuiParamType::Float { min: multiband_expander::HYSTERESIS_MIN as f64, max: multiband_expander::HYSTERESIS_MAX as f64, step: 0.1 }, unit: "dB".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Hold".into(), param_type: TuiParamType::Float { min: multiband_expander::HOLD_MIN as f64, max: multiband_expander::HOLD_MAX as f64, step: 1.0 }, unit: "ms".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Mix".into(), param_type: TuiParamType::Float { min: multiband_expander::MIX_MIN as f64, max: multiband_expander::MIX_MAX as f64, step: 0.01 }, unit: "".into(), group: "Global".into() },
-                    TuiParamDescriptor { name: "Link Channels".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Global".into() },
+                    TuiParamDescriptor {
+                        name: "Bands".into(),
+                        param_type: TuiParamType::Int {
+                            min: multiband_expander::NUM_BANDS_MIN as i32,
+                            max: multiband_expander::NUM_BANDS_MAX as i32,
+                            step: 1,
+                        },
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Preset".into(),
+                        param_type: TuiParamType::Int {
+                            min: multiband_expander::CROSSOVER_PRESET_MIN,
+                            max: multiband_expander::CROSSOVER_PRESET_MAX,
+                            step: 1,
+                        },
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 1".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::CROSSOVER_FREQ_1_MIN as f64,
+                            max: multiband_expander::CROSSOVER_FREQ_1_MAX as f64,
+                            step: 10.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 2".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::CROSSOVER_FREQ_2_MIN as f64,
+                            max: multiband_expander::CROSSOVER_FREQ_2_MAX as f64,
+                            step: 50.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 3".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::CROSSOVER_FREQ_3_MIN as f64,
+                            max: multiband_expander::CROSSOVER_FREQ_3_MAX as f64,
+                            step: 100.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Crossover 4".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::CROSSOVER_FREQ_4_MIN as f64,
+                            max: multiband_expander::CROSSOVER_FREQ_4_MAX as f64,
+                            step: 100.0,
+                        },
+                        unit: "Hz".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Threshold".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::THRESHOLD_MIN as f64,
+                            max: multiband_expander::THRESHOLD_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "dB".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Ratio".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::RATIO_MIN as f64,
+                            max: multiband_expander::RATIO_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: ":1".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Attack".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::ATTACK_MIN as f64,
+                            max: multiband_expander::ATTACK_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: "ms".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Release".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::RELEASE_MIN as f64,
+                            max: multiband_expander::RELEASE_MAX as f64,
+                            step: 5.0,
+                        },
+                        unit: "ms".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Range".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::RANGE_MIN as f64,
+                            max: multiband_expander::RANGE_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "dB".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Knee".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::KNEE_MIN as f64,
+                            max: multiband_expander::KNEE_MAX as f64,
+                            step: 0.5,
+                        },
+                        unit: "dB".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Hysteresis".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::HYSTERESIS_MIN as f64,
+                            max: multiband_expander::HYSTERESIS_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: "dB".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Hold".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::HOLD_MIN as f64,
+                            max: multiband_expander::HOLD_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "ms".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Mix".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::MIX_MIN as f64,
+                            max: multiband_expander::MIX_MAX as f64,
+                            step: 0.01,
+                        },
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
+                    TuiParamDescriptor {
+                        name: "Link Channels".into(),
+                        param_type: TuiParamType::Bool,
+                        unit: "".into(),
+                        group: "Global".into(),
+                    },
                 ];
                 for i in 0..*num_bands {
                     let g = format!("Band {}", i + 1);
-                    descs.push(TuiParamDescriptor { name: "Solo".into(), param_type: TuiParamType::Bool, unit: "".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Bypass".into(), param_type: TuiParamType::Bool, unit: "".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: multiband_expander::THRESHOLD_MIN as f64, max: multiband_expander::THRESHOLD_MAX as f64, step: 1.0 }, unit: "dB".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Ratio".into(), param_type: TuiParamType::Float { min: multiband_expander::RATIO_MIN as f64, max: multiband_expander::RATIO_MAX as f64, step: 0.1 }, unit: ":1".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Attack".into(), param_type: TuiParamType::Float { min: multiband_expander::ATTACK_MIN as f64, max: multiband_expander::ATTACK_MAX as f64, step: 0.1 }, unit: "ms".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: multiband_expander::RELEASE_MIN as f64, max: multiband_expander::RELEASE_MAX as f64, step: 5.0 }, unit: "ms".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Range".into(), param_type: TuiParamType::Float { min: multiband_expander::RANGE_MIN as f64, max: multiband_expander::RANGE_MAX as f64, step: 1.0 }, unit: "dB".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Knee".into(), param_type: TuiParamType::Float { min: multiband_expander::KNEE_MIN as f64, max: multiband_expander::KNEE_MAX as f64, step: 0.5 }, unit: "dB".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Hysteresis".into(), param_type: TuiParamType::Float { min: multiband_expander::HYSTERESIS_MIN as f64, max: multiband_expander::HYSTERESIS_MAX as f64, step: 0.1 }, unit: "dB".into(), group: g.clone() });
-                    descs.push(TuiParamDescriptor { name: "Hold".into(), param_type: TuiParamType::Float { min: multiband_expander::HOLD_MIN as f64, max: multiband_expander::HOLD_MAX as f64, step: 1.0 }, unit: "ms".into(), group: g });
+                    descs.push(TuiParamDescriptor {
+                        name: "Solo".into(),
+                        param_type: TuiParamType::Bool,
+                        unit: "".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Bypass".into(),
+                        param_type: TuiParamType::Bool,
+                        unit: "".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Threshold".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::THRESHOLD_MIN as f64,
+                            max: multiband_expander::THRESHOLD_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "dB".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Ratio".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::RATIO_MIN as f64,
+                            max: multiband_expander::RATIO_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: ":1".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Attack".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::ATTACK_MIN as f64,
+                            max: multiband_expander::ATTACK_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: "ms".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Release".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::RELEASE_MIN as f64,
+                            max: multiband_expander::RELEASE_MAX as f64,
+                            step: 5.0,
+                        },
+                        unit: "ms".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Range".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::RANGE_MIN as f64,
+                            max: multiband_expander::RANGE_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "dB".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Knee".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::KNEE_MIN as f64,
+                            max: multiband_expander::KNEE_MAX as f64,
+                            step: 0.5,
+                        },
+                        unit: "dB".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Hysteresis".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::HYSTERESIS_MIN as f64,
+                            max: multiband_expander::HYSTERESIS_MAX as f64,
+                            step: 0.1,
+                        },
+                        unit: "dB".into(),
+                        group: g.clone(),
+                    });
+                    descs.push(TuiParamDescriptor {
+                        name: "Hold".into(),
+                        param_type: TuiParamType::Float {
+                            min: multiband_expander::HOLD_MIN as f64,
+                            max: multiband_expander::HOLD_MAX as f64,
+                            step: 1.0,
+                        },
+                        unit: "ms".into(),
+                        group: g,
+                    });
                 }
                 descs
             }
             PluginSettings::LoudnessCompensation { .. } => vec![
-                TuiParamDescriptor { name: "Low Freq".into(), param_type: TuiParamType::Float { min: loudness_compensation::LOW_FREQ_MIN as f64, max: loudness_compensation::LOW_FREQ_MAX as f64, step: 5.0 }, unit: "Hz".into(), group: "Low".into() },
-                TuiParamDescriptor { name: "Low Gain".into(), param_type: TuiParamType::Float { min: loudness_compensation::LOW_GAIN_MIN as f64, max: loudness_compensation::LOW_GAIN_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Low".into() },
-                TuiParamDescriptor { name: "High Freq".into(), param_type: TuiParamType::Float { min: loudness_compensation::HIGH_FREQ_MIN as f64, max: loudness_compensation::HIGH_FREQ_MAX as f64, step: 100.0 }, unit: "Hz".into(), group: "High".into() },
-                TuiParamDescriptor { name: "High Gain".into(), param_type: TuiParamType::Float { min: loudness_compensation::HIGH_GAIN_MIN as f64, max: loudness_compensation::HIGH_GAIN_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "High".into() },
-                TuiParamDescriptor { name: "Auto Gain".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Max Auto Gain".into(), param_type: TuiParamType::Float { min: 0.0, max: 24.0, step: 1.0 }, unit: "dB".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Smoothing".into(), param_type: TuiParamType::Float { min: 1.0, max: 1000.0, step: 5.0 }, unit: "ms".into(), group: "Auto Gain".into() },
+                TuiParamDescriptor {
+                    name: "Low Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: loudness_compensation::LOW_FREQ_MIN as f64,
+                        max: loudness_compensation::LOW_FREQ_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Low".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Low Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: loudness_compensation::LOW_GAIN_MIN as f64,
+                        max: loudness_compensation::LOW_GAIN_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Low".into(),
+                },
+                TuiParamDescriptor {
+                    name: "High Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: loudness_compensation::HIGH_FREQ_MIN as f64,
+                        max: loudness_compensation::HIGH_FREQ_MAX as f64,
+                        step: 100.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "High".into(),
+                },
+                TuiParamDescriptor {
+                    name: "High Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: loudness_compensation::HIGH_GAIN_MIN as f64,
+                        max: loudness_compensation::HIGH_GAIN_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "High".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Auto Gain".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Max Auto Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: 0.0,
+                        max: 24.0,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: 1.0,
+                        max: 1000.0,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Auto Gain".into(),
+                },
             ],
             PluginSettings::FletcherMunson { .. } => vec![
-                TuiParamDescriptor { name: "Reference".into(), param_type: TuiParamType::Float { min: fletcher_munson::REFERENCE_LEVEL_DB_MIN as f64, max: fletcher_munson::REFERENCE_LEVEL_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Global".into() },
-                TuiParamDescriptor { name: "Enabled".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Global".into() },
-                TuiParamDescriptor { name: "Smoothing".into(), param_type: TuiParamType::Float { min: fletcher_munson::SMOOTHING_MS_MIN as f64, max: fletcher_munson::SMOOTHING_MS_MAX as f64, step: 1.0 }, unit: "ms".into(), group: "Global".into() },
-                TuiParamDescriptor { name: "Auto Gain".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Max Correction".into(), param_type: TuiParamType::Float { min: fletcher_munson::AUTO_GAIN_MAX_DB_MIN as f64, max: fletcher_munson::AUTO_GAIN_MAX_DB_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "AG Smoothing".into(), param_type: TuiParamType::Float { min: fletcher_munson::AUTO_GAIN_SMOOTHING_MS_MIN as f64, max: fletcher_munson::AUTO_GAIN_SMOOTHING_MS_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Auto Gain".into() },
+                TuiParamDescriptor {
+                    name: "Reference".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::REFERENCE_LEVEL_DB_MIN as f64,
+                        max: fletcher_munson::REFERENCE_LEVEL_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Global".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Enabled".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Global".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::SMOOTHING_MS_MIN as f64,
+                        max: fletcher_munson::SMOOTHING_MS_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Global".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Auto Gain".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Max Correction".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::AUTO_GAIN_MAX_DB_MIN as f64,
+                        max: fletcher_munson::AUTO_GAIN_MAX_DB_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "AG Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::AUTO_GAIN_SMOOTHING_MS_MIN as f64,
+                        max: fletcher_munson::AUTO_GAIN_SMOOTHING_MS_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Auto Gain".into(),
+                },
                 // Band 1
-                TuiParamDescriptor { name: "Band 1 Freq".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_FREQ_MIN, max: fletcher_munson::BAND_FREQ_MAX, step: 5.0 }, unit: "Hz".into(), group: "Band 1".into() },
-                TuiParamDescriptor { name: "Band 1 Q".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_Q_MIN, max: fletcher_munson::BAND_Q_MAX, step: 0.05 }, unit: "".into(), group: "Band 1".into() },
-                TuiParamDescriptor { name: "Band 1 Max".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_MAX_GAIN_MIN, max: fletcher_munson::BAND_MAX_GAIN_MAX, step: 0.5 }, unit: "dB".into(), group: "Band 1".into() },
-                TuiParamDescriptor { name: "Band 1 Slope".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_SLOPE_MIN, max: fletcher_munson::BAND_SLOPE_MAX, step: 0.01 }, unit: "".into(), group: "Band 1".into() },
+                TuiParamDescriptor {
+                    name: "Band 1 Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_FREQ_MIN,
+                        max: fletcher_munson::BAND_FREQ_MAX,
+                        step: 5.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Band 1".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 1 Q".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_Q_MIN,
+                        max: fletcher_munson::BAND_Q_MAX,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Band 1".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 1 Max".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_MAX_GAIN_MIN,
+                        max: fletcher_munson::BAND_MAX_GAIN_MAX,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Band 1".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 1 Slope".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_SLOPE_MIN,
+                        max: fletcher_munson::BAND_SLOPE_MAX,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Band 1".into(),
+                },
                 // Band 2
-                TuiParamDescriptor { name: "Band 2 Freq".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_FREQ_MIN, max: fletcher_munson::BAND_FREQ_MAX, step: 10.0 }, unit: "Hz".into(), group: "Band 2".into() },
-                TuiParamDescriptor { name: "Band 2 Q".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_Q_MIN, max: fletcher_munson::BAND_Q_MAX, step: 0.05 }, unit: "".into(), group: "Band 2".into() },
-                TuiParamDescriptor { name: "Band 2 Max".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_MAX_GAIN_MIN, max: fletcher_munson::BAND_MAX_GAIN_MAX, step: 0.5 }, unit: "dB".into(), group: "Band 2".into() },
-                TuiParamDescriptor { name: "Band 2 Slope".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_SLOPE_MIN, max: fletcher_munson::BAND_SLOPE_MAX, step: 0.01 }, unit: "".into(), group: "Band 2".into() },
+                TuiParamDescriptor {
+                    name: "Band 2 Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_FREQ_MIN,
+                        max: fletcher_munson::BAND_FREQ_MAX,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Band 2".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 2 Q".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_Q_MIN,
+                        max: fletcher_munson::BAND_Q_MAX,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Band 2".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 2 Max".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_MAX_GAIN_MIN,
+                        max: fletcher_munson::BAND_MAX_GAIN_MAX,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Band 2".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 2 Slope".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_SLOPE_MIN,
+                        max: fletcher_munson::BAND_SLOPE_MAX,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Band 2".into(),
+                },
                 // Band 3
-                TuiParamDescriptor { name: "Band 3 Freq".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_FREQ_MIN, max: fletcher_munson::BAND_FREQ_MAX, step: 50.0 }, unit: "Hz".into(), group: "Band 3".into() },
-                TuiParamDescriptor { name: "Band 3 Q".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_Q_MIN, max: fletcher_munson::BAND_Q_MAX, step: 0.05 }, unit: "".into(), group: "Band 3".into() },
-                TuiParamDescriptor { name: "Band 3 Max".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_MAX_GAIN_MIN, max: fletcher_munson::BAND_MAX_GAIN_MAX, step: 0.5 }, unit: "dB".into(), group: "Band 3".into() },
-                TuiParamDescriptor { name: "Band 3 Slope".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_SLOPE_MIN, max: fletcher_munson::BAND_SLOPE_MAX, step: 0.01 }, unit: "".into(), group: "Band 3".into() },
+                TuiParamDescriptor {
+                    name: "Band 3 Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_FREQ_MIN,
+                        max: fletcher_munson::BAND_FREQ_MAX,
+                        step: 50.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Band 3".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 3 Q".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_Q_MIN,
+                        max: fletcher_munson::BAND_Q_MAX,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Band 3".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 3 Max".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_MAX_GAIN_MIN,
+                        max: fletcher_munson::BAND_MAX_GAIN_MAX,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Band 3".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 3 Slope".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_SLOPE_MIN,
+                        max: fletcher_munson::BAND_SLOPE_MAX,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Band 3".into(),
+                },
                 // Band 4
-                TuiParamDescriptor { name: "Band 4 Freq".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_FREQ_MIN, max: fletcher_munson::BAND_FREQ_MAX, step: 100.0 }, unit: "Hz".into(), group: "Band 4".into() },
-                TuiParamDescriptor { name: "Band 4 Q".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_Q_MIN, max: fletcher_munson::BAND_Q_MAX, step: 0.05 }, unit: "".into(), group: "Band 4".into() },
-                TuiParamDescriptor { name: "Band 4 Max".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_MAX_GAIN_MIN, max: fletcher_munson::BAND_MAX_GAIN_MAX, step: 0.5 }, unit: "dB".into(), group: "Band 4".into() },
-                TuiParamDescriptor { name: "Band 4 Slope".into(), param_type: TuiParamType::Float { min: fletcher_munson::BAND_SLOPE_MIN, max: fletcher_munson::BAND_SLOPE_MAX, step: 0.01 }, unit: "".into(), group: "Band 4".into() },
+                TuiParamDescriptor {
+                    name: "Band 4 Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_FREQ_MIN,
+                        max: fletcher_munson::BAND_FREQ_MAX,
+                        step: 100.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Band 4".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 4 Q".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_Q_MIN,
+                        max: fletcher_munson::BAND_Q_MAX,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Band 4".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 4 Max".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_MAX_GAIN_MIN,
+                        max: fletcher_munson::BAND_MAX_GAIN_MAX,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Band 4".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Band 4 Slope".into(),
+                    param_type: TuiParamType::Float {
+                        min: fletcher_munson::BAND_SLOPE_MIN,
+                        max: fletcher_munson::BAND_SLOPE_MAX,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Band 4".into(),
+                },
             ],
             PluginSettings::BinauralDecoder { .. } => vec![
-                TuiParamDescriptor { name: "SOFA File".into(), param_type: TuiParamType::Choice { count: 0 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Input Channels".into(), param_type: TuiParamType::Int { min: 2, max: 16, step: 1 }, unit: "ch".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Optimization".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Externalization".into(), param_type: TuiParamType::Float { min: binaural::EXTERNALIZATION_MIN as f64, max: binaural::EXTERNALIZATION_MAX as f64, step: 0.05 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Near-field".into(), param_type: TuiParamType::Float { min: binaural::NEAR_FIELD_STRENGTH_MIN as f64, max: binaural::NEAR_FIELD_STRENGTH_MAX as f64, step: 0.05 }, unit: "".into(), group: "General".into() },
+                TuiParamDescriptor {
+                    name: "SOFA File".into(),
+                    param_type: TuiParamType::Choice { count: 0 },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Input Channels".into(),
+                    param_type: TuiParamType::Int {
+                        min: 2,
+                        max: 16,
+                        step: 1,
+                    },
+                    unit: "ch".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Optimization".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Externalization".into(),
+                    param_type: TuiParamType::Float {
+                        min: binaural::EXTERNALIZATION_MIN as f64,
+                        max: binaural::EXTERNALIZATION_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Near-field".into(),
+                    param_type: TuiParamType::Float {
+                        min: binaural::NEAR_FIELD_STRENGTH_MIN as f64,
+                        max: binaural::NEAR_FIELD_STRENGTH_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
             ],
             PluginSettings::Convolution { .. } => vec![
-                TuiParamDescriptor { name: "IR File".into(), param_type: TuiParamType::Choice { count: 0 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Mix".into(), param_type: TuiParamType::Float { min: convolution::MIX_MIN as f64, max: convolution::MIX_MAX as f64, step: 0.05 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Gain".into(), param_type: TuiParamType::Float { min: convolution::GAIN_DB_MIN as f64, max: convolution::GAIN_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "General".into() },
+                TuiParamDescriptor {
+                    name: "IR File".into(),
+                    param_type: TuiParamType::Choice { count: 0 },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Mix".into(),
+                    param_type: TuiParamType::Float {
+                        min: convolution::MIX_MIN as f64,
+                        max: convolution::MIX_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: convolution::GAIN_DB_MIN as f64,
+                        max: convolution::GAIN_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "General".into(),
+                },
             ],
             PluginSettings::XTC { .. } => vec![
-                TuiParamDescriptor { name: "Distance".into(), param_type: TuiParamType::Float { min: xtc::DISTANCE_M_MIN, max: xtc::DISTANCE_M_MAX, step: 0.05 }, unit: "m".into(), group: "Geometry".into() },
-                TuiParamDescriptor { name: "Speaker Angle".into(), param_type: TuiParamType::Float { min: xtc::SPEAKER_ANGLE_DEG_MIN, max: xtc::SPEAKER_ANGLE_DEG_MAX, step: 0.5 }, unit: "\u{00b0}".into(), group: "Geometry".into() },
-                TuiParamDescriptor { name: "Head Radius".into(), param_type: TuiParamType::Float { min: xtc::HEAD_RADIUS_M_MIN, max: xtc::HEAD_RADIUS_M_MAX, step: 0.001 }, unit: "m".into(), group: "Geometry".into() },
-                TuiParamDescriptor { name: "Head Offset X".into(), param_type: TuiParamType::Float { min: -0.5, max: 0.5, step: 0.01 }, unit: "m".into(), group: "Head Tracking".into() },
-                TuiParamDescriptor { name: "Head Offset Z".into(), param_type: TuiParamType::Float { min: -0.5, max: 0.5, step: 0.01 }, unit: "m".into(), group: "Head Tracking".into() },
-                TuiParamDescriptor { name: "Head Yaw".into(), param_type: TuiParamType::Float { min: -90.0, max: 90.0, step: 1.0 }, unit: "\u{00b0}".into(), group: "Head Tracking".into() },
-                TuiParamDescriptor { name: "Beta Base".into(), param_type: TuiParamType::Float { min: xtc::BETA_BASE_MIN, max: xtc::BETA_BASE_MAX, step: 0.001 }, unit: "".into(), group: "Beta".into() },
-                TuiParamDescriptor { name: "Beta Low Boost".into(), param_type: TuiParamType::Float { min: xtc::BETA_LOW_FREQ_BOOST_MIN, max: xtc::BETA_LOW_FREQ_BOOST_MAX, step: 0.5 }, unit: "".into(), group: "Beta".into() },
-                TuiParamDescriptor { name: "Beta High Boost".into(), param_type: TuiParamType::Float { min: xtc::BETA_HIGH_FREQ_BOOST_MIN, max: xtc::BETA_HIGH_FREQ_BOOST_MAX, step: 0.5 }, unit: "".into(), group: "Beta".into() },
-                TuiParamDescriptor { name: "Shadow Cutoff".into(), param_type: TuiParamType::Float { min: xtc::HEAD_SHADOW_CUTOFF_HZ_MIN, max: xtc::HEAD_SHADOW_CUTOFF_HZ_MAX, step: 50.0 }, unit: "Hz".into(), group: "Shadow".into() },
-                TuiParamDescriptor { name: "Shadow Slope".into(), param_type: TuiParamType::Float { min: xtc::HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MIN, max: xtc::HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MAX, step: 0.5 }, unit: "dB/oct".into(), group: "Shadow".into() },
-                TuiParamDescriptor { name: "Max Gain".into(), param_type: TuiParamType::Float { min: xtc::MAX_GAIN_DB_MIN, max: xtc::MAX_GAIN_DB_MAX, step: 1.0 }, unit: "dB".into(), group: "Filter".into() },
-                TuiParamDescriptor { name: "Spectral Norm".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Advanced".into() },
-                TuiParamDescriptor { name: "Pinna Model".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Advanced".into() },
-                TuiParamDescriptor { name: "Room Reflections".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Room".into() },
-                TuiParamDescriptor { name: "Room Width".into(), param_type: TuiParamType::Float { min: 2.0, max: 10.0, step: 0.1 }, unit: "m".into(), group: "Room".into() },
-                TuiParamDescriptor { name: "Room Depth".into(), param_type: TuiParamType::Float { min: 2.0, max: 15.0, step: 0.1 }, unit: "m".into(), group: "Room".into() },
-                TuiParamDescriptor { name: "Wall Absorption".into(), param_type: TuiParamType::Float { min: 0.0, max: 1.0, step: 0.05 }, unit: "".into(), group: "Room".into() },
-                TuiParamDescriptor { name: "Reflection Beta".into(), param_type: TuiParamType::Float { min: 1.0, max: 10.0, step: 0.1 }, unit: "".into(), group: "Room".into() },
-                TuiParamDescriptor { name: "Bypass XTC Filters".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostic".into() },
-                TuiParamDescriptor { name: "Bypass Spectral Norm".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostic".into() },
-                TuiParamDescriptor { name: "Bypass Neumann".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostic".into() },
-                TuiParamDescriptor { name: "Auto Gain".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "AG Max".into(), param_type: TuiParamType::Float { min: xtc::AUTO_GAIN_MAX_DB_MIN as f64, max: xtc::AUTO_GAIN_MAX_DB_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "AG Smoothing".into(), param_type: TuiParamType::Float { min: xtc::AUTO_GAIN_SMOOTHING_MS_MIN as f64, max: xtc::AUTO_GAIN_SMOOTHING_MS_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Auto Gain".into() },
+                TuiParamDescriptor {
+                    name: "Distance".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::DISTANCE_M_MIN,
+                        max: xtc::DISTANCE_M_MAX,
+                        step: 0.05,
+                    },
+                    unit: "m".into(),
+                    group: "Geometry".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Speaker Angle".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::SPEAKER_ANGLE_DEG_MIN,
+                        max: xtc::SPEAKER_ANGLE_DEG_MAX,
+                        step: 0.5,
+                    },
+                    unit: "\u{00b0}".into(),
+                    group: "Geometry".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Head Radius".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::HEAD_RADIUS_M_MIN,
+                        max: xtc::HEAD_RADIUS_M_MAX,
+                        step: 0.001,
+                    },
+                    unit: "m".into(),
+                    group: "Geometry".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Head Offset X".into(),
+                    param_type: TuiParamType::Float {
+                        min: -0.5,
+                        max: 0.5,
+                        step: 0.01,
+                    },
+                    unit: "m".into(),
+                    group: "Head Tracking".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Head Offset Z".into(),
+                    param_type: TuiParamType::Float {
+                        min: -0.5,
+                        max: 0.5,
+                        step: 0.01,
+                    },
+                    unit: "m".into(),
+                    group: "Head Tracking".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Head Yaw".into(),
+                    param_type: TuiParamType::Float {
+                        min: -90.0,
+                        max: 90.0,
+                        step: 1.0,
+                    },
+                    unit: "\u{00b0}".into(),
+                    group: "Head Tracking".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Beta Base".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::BETA_BASE_MIN,
+                        max: xtc::BETA_BASE_MAX,
+                        step: 0.001,
+                    },
+                    unit: "".into(),
+                    group: "Beta".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Beta Low Boost".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::BETA_LOW_FREQ_BOOST_MIN,
+                        max: xtc::BETA_LOW_FREQ_BOOST_MAX,
+                        step: 0.5,
+                    },
+                    unit: "".into(),
+                    group: "Beta".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Beta High Boost".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::BETA_HIGH_FREQ_BOOST_MIN,
+                        max: xtc::BETA_HIGH_FREQ_BOOST_MAX,
+                        step: 0.5,
+                    },
+                    unit: "".into(),
+                    group: "Beta".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Shadow Cutoff".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::HEAD_SHADOW_CUTOFF_HZ_MIN,
+                        max: xtc::HEAD_SHADOW_CUTOFF_HZ_MAX,
+                        step: 50.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Shadow".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Shadow Slope".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MIN,
+                        max: xtc::HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MAX,
+                        step: 0.5,
+                    },
+                    unit: "dB/oct".into(),
+                    group: "Shadow".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Max Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::MAX_GAIN_DB_MIN,
+                        max: xtc::MAX_GAIN_DB_MAX,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Filter".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Spectral Norm".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Advanced".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Pinna Model".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Advanced".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Room Reflections".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Room".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Room Width".into(),
+                    param_type: TuiParamType::Float {
+                        min: 2.0,
+                        max: 10.0,
+                        step: 0.1,
+                    },
+                    unit: "m".into(),
+                    group: "Room".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Room Depth".into(),
+                    param_type: TuiParamType::Float {
+                        min: 2.0,
+                        max: 15.0,
+                        step: 0.1,
+                    },
+                    unit: "m".into(),
+                    group: "Room".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Wall Absorption".into(),
+                    param_type: TuiParamType::Float {
+                        min: 0.0,
+                        max: 1.0,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Room".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Reflection Beta".into(),
+                    param_type: TuiParamType::Float {
+                        min: 1.0,
+                        max: 10.0,
+                        step: 0.1,
+                    },
+                    unit: "".into(),
+                    group: "Room".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bypass XTC Filters".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Diagnostic".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bypass Spectral Norm".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Diagnostic".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bypass Neumann".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Diagnostic".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Auto Gain".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "AG Max".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::AUTO_GAIN_MAX_DB_MIN as f64,
+                        max: xtc::AUTO_GAIN_MAX_DB_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "AG Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: xtc::AUTO_GAIN_SMOOTHING_MS_MIN as f64,
+                        max: xtc::AUTO_GAIN_SMOOTHING_MS_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Auto Gain".into(),
+                },
             ],
             PluginSettings::Denoiser { .. } => vec![
-                TuiParamDescriptor { name: "Reduction".into(), param_type: TuiParamType::Float { min: denoiser::REDUCTION_DB_MIN as f64, max: denoiser::REDUCTION_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Floor".into(), param_type: TuiParamType::Float { min: denoiser::FLOOR_DB_MIN as f64, max: denoiser::FLOOR_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Smoothing".into(), param_type: TuiParamType::Float { min: denoiser::SMOOTHING_MIN as f64, max: denoiser::SMOOTHING_MAX as f64, step: 0.01 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Attack".into(), param_type: TuiParamType::Float { min: denoiser::ATTACK_MS_MIN as f64, max: denoiser::ATTACK_MS_MAX as f64, step: 0.5 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Release".into(), param_type: TuiParamType::Float { min: denoiser::RELEASE_MS_MIN as f64, max: denoiser::RELEASE_MS_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "Timing".into() },
-                TuiParamDescriptor { name: "Low Latency".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Polyphonic".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Analysis".into() },
-                TuiParamDescriptor { name: "Crack Sens.".into(), param_type: TuiParamType::Float { min: 1.0, max: 100.0, step: 1.0 }, unit: "".into(), group: "Analysis".into() },
-                TuiParamDescriptor { name: "MCRA Alpha S".into(), param_type: TuiParamType::Float { min: 0.5, max: 0.99, step: 0.01 }, unit: "".into(), group: "Advanced".into() },
-                TuiParamDescriptor { name: "MCRA Alpha P".into(), param_type: TuiParamType::Float { min: 0.1, max: 0.99, step: 0.01 }, unit: "".into(), group: "Advanced".into() },
-                TuiParamDescriptor { name: "MCRA Window".into(), param_type: TuiParamType::Int { min: 10, max: 200, step: 1 }, unit: "fr".into(), group: "Advanced".into() },
-                TuiParamDescriptor { name: "MCRA Delta".into(), param_type: TuiParamType::Float { min: 1.0, max: 20.0, step: 0.5 }, unit: "".into(), group: "Advanced".into() },
-                TuiParamDescriptor { name: "Transparency".into(), param_type: TuiParamType::Float { min: denoiser::TRANSPARENCY_MIN as f64, max: denoiser::TRANSPARENCY_MAX as f64, step: 0.01 }, unit: "".into(), group: "Analysis".into() },
-                TuiParamDescriptor { name: "DD SNR".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Analysis".into() },
-                TuiParamDescriptor { name: "DD Alpha".into(), param_type: TuiParamType::Float { min: denoiser::DD_ALPHA_MIN as f64, max: denoiser::DD_ALPHA_MAX as f64, step: 0.001 }, unit: "".into(), group: "Analysis".into() },
-                TuiParamDescriptor { name: "Psychoacoustic".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Analysis".into() },
-                TuiParamDescriptor { name: "Learn Noise".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Noise Profile".into() },
-                TuiParamDescriptor { name: "Use Profile".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Noise Profile".into() },
-                TuiParamDescriptor { name: "Clear Profile".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Noise Profile".into() },
+                TuiParamDescriptor {
+                    name: "Reduction".into(),
+                    param_type: TuiParamType::Float {
+                        min: denoiser::REDUCTION_DB_MIN as f64,
+                        max: denoiser::REDUCTION_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Floor".into(),
+                    param_type: TuiParamType::Float {
+                        min: denoiser::FLOOR_DB_MIN as f64,
+                        max: denoiser::FLOOR_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: denoiser::SMOOTHING_MIN as f64,
+                        max: denoiser::SMOOTHING_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Attack".into(),
+                    param_type: TuiParamType::Float {
+                        min: denoiser::ATTACK_MS_MIN as f64,
+                        max: denoiser::ATTACK_MS_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Release".into(),
+                    param_type: TuiParamType::Float {
+                        min: denoiser::RELEASE_MS_MIN as f64,
+                        max: denoiser::RELEASE_MS_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Timing".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Low Latency".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Polyphonic".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Analysis".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Crack Sens.".into(),
+                    param_type: TuiParamType::Float {
+                        min: 1.0,
+                        max: 100.0,
+                        step: 1.0,
+                    },
+                    unit: "".into(),
+                    group: "Analysis".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MCRA Alpha S".into(),
+                    param_type: TuiParamType::Float {
+                        min: 0.5,
+                        max: 0.99,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Advanced".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MCRA Alpha P".into(),
+                    param_type: TuiParamType::Float {
+                        min: 0.1,
+                        max: 0.99,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Advanced".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MCRA Window".into(),
+                    param_type: TuiParamType::Int {
+                        min: 10,
+                        max: 200,
+                        step: 1,
+                    },
+                    unit: "fr".into(),
+                    group: "Advanced".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MCRA Delta".into(),
+                    param_type: TuiParamType::Float {
+                        min: 1.0,
+                        max: 20.0,
+                        step: 0.5,
+                    },
+                    unit: "".into(),
+                    group: "Advanced".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Transparency".into(),
+                    param_type: TuiParamType::Float {
+                        min: denoiser::TRANSPARENCY_MIN as f64,
+                        max: denoiser::TRANSPARENCY_MAX as f64,
+                        step: 0.01,
+                    },
+                    unit: "".into(),
+                    group: "Analysis".into(),
+                },
+                TuiParamDescriptor {
+                    name: "DD SNR".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Analysis".into(),
+                },
+                TuiParamDescriptor {
+                    name: "DD Alpha".into(),
+                    param_type: TuiParamType::Float {
+                        min: denoiser::DD_ALPHA_MIN as f64,
+                        max: denoiser::DD_ALPHA_MAX as f64,
+                        step: 0.001,
+                    },
+                    unit: "".into(),
+                    group: "Analysis".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Psychoacoustic".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Analysis".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Learn Noise".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Noise Profile".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Use Profile".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Noise Profile".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Clear Profile".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Noise Profile".into(),
+                },
             ],
             PluginSettings::Pnd { .. } => vec![
-                TuiParamDescriptor { name: "Correction".into(), param_type: TuiParamType::Float { min: pnd::CORRECTION_STRENGTH_MIN as f64, max: pnd::CORRECTION_STRENGTH_MAX as f64, step: 0.05 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Analysis Window".into(), param_type: TuiParamType::Float { min: pnd::ANALYSIS_WINDOW_MS_MIN as f64, max: pnd::ANALYSIS_WINDOW_MS_MAX as f64, step: 5.0 }, unit: "ms".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Drift Smoothing".into(), param_type: TuiParamType::Float { min: pnd::DRIFT_SMOOTHING_MIN as f64, max: pnd::DRIFT_SMOOTHING_MAX as f64, step: 0.001 }, unit: "".into(), group: "General".into() },
+                TuiParamDescriptor {
+                    name: "Correction".into(),
+                    param_type: TuiParamType::Float {
+                        min: pnd::CORRECTION_STRENGTH_MIN as f64,
+                        max: pnd::CORRECTION_STRENGTH_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Analysis Window".into(),
+                    param_type: TuiParamType::Float {
+                        min: pnd::ANALYSIS_WINDOW_MS_MIN as f64,
+                        max: pnd::ANALYSIS_WINDOW_MS_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Drift Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: pnd::DRIFT_SMOOTHING_MIN as f64,
+                        max: pnd::DRIFT_SMOOTHING_MAX as f64,
+                        step: 0.001,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
             ],
             PluginSettings::ABCompare { .. } => vec![
-                TuiParamDescriptor { name: "Mix (A/B)".into(), param_type: TuiParamType::Float { min: ab_compare::MIX_MIN, max: ab_compare::MIX_MAX, step: 0.05 }, unit: "".into(), group: "Mix".into() },
-                TuiParamDescriptor { name: "Mix Mode".into(), param_type: TuiParamType::Choice { count: 2 }, unit: "".into(), group: "Mix".into() },
-                TuiParamDescriptor { name: "Selected Path".into(), param_type: TuiParamType::Choice { count: 2 }, unit: "".into(), group: "Mix".into() },
-                TuiParamDescriptor { name: "Bypass".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Mix".into() },
-                TuiParamDescriptor { name: "Auto Gain".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Loudness Type".into(), param_type: TuiParamType::Choice { count: 2 }, unit: "".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Max Auto Gain".into(), param_type: TuiParamType::Float { min: ab_compare::MAX_AUTO_GAIN_DB_MIN, max: ab_compare::MAX_AUTO_GAIN_DB_MAX, step: 1.0 }, unit: "dB".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Gain Smoothing".into(), param_type: TuiParamType::Float { min: ab_compare::GAIN_SMOOTHING_MS_MIN, max: ab_compare::GAIN_SMOOTHING_MS_MAX, step: 5.0 }, unit: "ms".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Mix Transition".into(), param_type: TuiParamType::Float { min: ab_compare::MIX_TRANSITION_MS_MIN, max: ab_compare::MIX_TRANSITION_MS_MAX, step: 5.0 }, unit: "ms".into(), group: "Mix".into() },
+                TuiParamDescriptor {
+                    name: "Mix (A/B)".into(),
+                    param_type: TuiParamType::Float {
+                        min: ab_compare::MIX_MIN,
+                        max: ab_compare::MIX_MAX,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "Mix".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Mix Mode".into(),
+                    param_type: TuiParamType::Choice { count: 2 },
+                    unit: "".into(),
+                    group: "Mix".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Selected Path".into(),
+                    param_type: TuiParamType::Choice { count: 2 },
+                    unit: "".into(),
+                    group: "Mix".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bypass".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Mix".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Auto Gain".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Loudness Type".into(),
+                    param_type: TuiParamType::Choice { count: 2 },
+                    unit: "".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Max Auto Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: ab_compare::MAX_AUTO_GAIN_DB_MIN,
+                        max: ab_compare::MAX_AUTO_GAIN_DB_MAX,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Gain Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: ab_compare::GAIN_SMOOTHING_MS_MIN,
+                        max: ab_compare::GAIN_SMOOTHING_MS_MAX,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Mix Transition".into(),
+                    param_type: TuiParamType::Float {
+                        min: ab_compare::MIX_TRANSITION_MS_MIN,
+                        max: ab_compare::MIX_TRANSITION_MS_MAX,
+                        step: 5.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Mix".into(),
+                },
             ],
             PluginSettings::BandSplit { .. } => vec![
-                TuiParamDescriptor { name: "Frequency".into(), param_type: TuiParamType::Float { min: band_split::FREQUENCY_MIN, max: band_split::FREQUENCY_MAX, step: 10.0 }, unit: "Hz".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Type".into(), param_type: TuiParamType::Choice { count: 2 }, unit: "".into(), group: "General".into() },
+                TuiParamDescriptor {
+                    name: "Frequency".into(),
+                    param_type: TuiParamType::Float {
+                        min: band_split::FREQUENCY_MIN,
+                        max: band_split::FREQUENCY_MAX,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Type".into(),
+                    param_type: TuiParamType::Choice { count: 2 },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
             ],
-            PluginSettings::BandMerge { .. } => vec![
-                TuiParamDescriptor { name: "Bands".into(), param_type: TuiParamType::Int { min: band_merge::BANDS_MIN as i32, max: band_merge::BANDS_MAX as i32, step: 1 }, unit: "".into(), group: "General".into() },
-            ],
+            PluginSettings::BandMerge { .. } => vec![TuiParamDescriptor {
+                name: "Bands".into(),
+                param_type: TuiParamType::Int {
+                    min: band_merge::BANDS_MIN as i32,
+                    max: band_merge::BANDS_MAX as i32,
+                    step: 1,
+                },
+                unit: "".into(),
+                group: "General".into(),
+            }],
             PluginSettings::Downmix { .. } => vec![
-                TuiParamDescriptor { name: "Center Gain".into(), param_type: TuiParamType::Float { min: downmix::CENTER_GAIN_DB_MIN as f64, max: downmix::CENTER_GAIN_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Gains".into() },
-                TuiParamDescriptor { name: "Surround Gain".into(), param_type: TuiParamType::Float { min: downmix::SURROUND_GAIN_DB_MIN as f64, max: downmix::SURROUND_GAIN_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Gains".into() },
-                TuiParamDescriptor { name: "Height Gain".into(), param_type: TuiParamType::Float { min: downmix::HEIGHT_GAIN_DB_MIN as f64, max: downmix::HEIGHT_GAIN_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Gains".into() },
-                TuiParamDescriptor { name: "LFE Gain".into(), param_type: TuiParamType::Float { min: downmix::LFE_GAIN_DB_MIN as f64, max: downmix::LFE_GAIN_DB_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Gains".into() },
-                TuiParamDescriptor { name: "Phase Coherence".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Phase".into() },
-                TuiParamDescriptor { name: "Phase Blend Low".into(), param_type: TuiParamType::Float { min: downmix::PHASE_BLEND_LOW_HZ_MIN as f64, max: downmix::PHASE_BLEND_LOW_HZ_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "Phase".into() },
-                TuiParamDescriptor { name: "Phase Blend High".into(), param_type: TuiParamType::Float { min: downmix::PHASE_BLEND_HIGH_HZ_MIN as f64, max: downmix::PHASE_BLEND_HIGH_HZ_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "Phase".into() },
+                TuiParamDescriptor {
+                    name: "Center Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: downmix::CENTER_GAIN_DB_MIN as f64,
+                        max: downmix::CENTER_GAIN_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Gains".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Surround Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: downmix::SURROUND_GAIN_DB_MIN as f64,
+                        max: downmix::SURROUND_GAIN_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Gains".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Height Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: downmix::HEIGHT_GAIN_DB_MIN as f64,
+                        max: downmix::HEIGHT_GAIN_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Gains".into(),
+                },
+                TuiParamDescriptor {
+                    name: "LFE Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: downmix::LFE_GAIN_DB_MIN as f64,
+                        max: downmix::LFE_GAIN_DB_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Gains".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Phase Coherence".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Phase".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Phase Blend Low".into(),
+                    param_type: TuiParamType::Float {
+                        min: downmix::PHASE_BLEND_LOW_HZ_MIN as f64,
+                        max: downmix::PHASE_BLEND_LOW_HZ_MAX as f64,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Phase".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Phase Blend High".into(),
+                    param_type: TuiParamType::Float {
+                        min: downmix::PHASE_BLEND_HIGH_HZ_MIN as f64,
+                        max: downmix::PHASE_BLEND_HIGH_HZ_MAX as f64,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Phase".into(),
+                },
             ],
             PluginSettings::MonoToStereo { .. } => vec![
-                TuiParamDescriptor { name: "Width".into(), param_type: TuiParamType::Float { min: mono_to_stereo::STEREO_WIDTH_MIN as f64, max: mono_to_stereo::STEREO_WIDTH_MAX as f64, step: 0.05 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Haas Delay".into(), param_type: TuiParamType::Float { min: mono_to_stereo::HAAS_DELAY_MS_MIN as f64, max: mono_to_stereo::HAAS_DELAY_MS_MAX as f64, step: 0.1 }, unit: "ms".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Comp EQ".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "EQ".into() },
-                TuiParamDescriptor { name: "Comp EQ Depth".into(), param_type: TuiParamType::Float { min: mono_to_stereo::COMP_EQ_DEPTH_DB_MIN as f64, max: mono_to_stereo::COMP_EQ_DEPTH_DB_MAX as f64, step: 0.1 }, unit: "dB".into(), group: "EQ".into() },
-                TuiParamDescriptor { name: "Decor Low".into(), param_type: TuiParamType::Float { min: mono_to_stereo::DECOR_LOW_HZ_MIN as f64, max: mono_to_stereo::DECOR_LOW_HZ_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Decor High".into(), param_type: TuiParamType::Float { min: mono_to_stereo::DECOR_HIGH_HZ_MIN as f64, max: mono_to_stereo::DECOR_HIGH_HZ_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "General".into() },
+                TuiParamDescriptor {
+                    name: "Width".into(),
+                    param_type: TuiParamType::Float {
+                        min: mono_to_stereo::STEREO_WIDTH_MIN as f64,
+                        max: mono_to_stereo::STEREO_WIDTH_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Haas Delay".into(),
+                    param_type: TuiParamType::Float {
+                        min: mono_to_stereo::HAAS_DELAY_MS_MIN as f64,
+                        max: mono_to_stereo::HAAS_DELAY_MS_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: "ms".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Comp EQ".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "EQ".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Comp EQ Depth".into(),
+                    param_type: TuiParamType::Float {
+                        min: mono_to_stereo::COMP_EQ_DEPTH_DB_MIN as f64,
+                        max: mono_to_stereo::COMP_EQ_DEPTH_DB_MAX as f64,
+                        step: 0.1,
+                    },
+                    unit: "dB".into(),
+                    group: "EQ".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Decor Low".into(),
+                    param_type: TuiParamType::Float {
+                        min: mono_to_stereo::DECOR_LOW_HZ_MIN as f64,
+                        max: mono_to_stereo::DECOR_LOW_HZ_MAX as f64,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Decor High".into(),
+                    param_type: TuiParamType::Float {
+                        min: mono_to_stereo::DECOR_HIGH_HZ_MIN as f64,
+                        max: mono_to_stereo::DECOR_HIGH_HZ_MAX as f64,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "General".into(),
+                },
             ],
             PluginSettings::Crossfeed { .. } => vec![
-                TuiParamDescriptor { name: "Mode".into(), param_type: TuiParamType::Choice { count: 4 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Preset".into(), param_type: TuiParamType::Choice { count: 5 }, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Enabled".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "General".into() },
-                TuiParamDescriptor { name: "Mix".into(), param_type: TuiParamType::Float { min: crossfeed::MIX_MIN as f64, max: crossfeed::MIX_MAX as f64, step: 0.05 }, unit: "".into(), group: "General".into() },
+                TuiParamDescriptor {
+                    name: "Mode".into(),
+                    param_type: TuiParamType::Choice { count: 4 },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Preset".into(),
+                    param_type: TuiParamType::Choice { count: 5 },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Enabled".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "General".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Mix".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::MIX_MIN as f64,
+                        max: crossfeed::MIX_MAX as f64,
+                        step: 0.05,
+                    },
+                    unit: "".into(),
+                    group: "General".into(),
+                },
                 // Bauer
-                TuiParamDescriptor { name: "Bauer Cutoff".into(), param_type: TuiParamType::Float { min: crossfeed::BAUER_FCUT_MIN as f64, max: crossfeed::BAUER_FCUT_MAX as f64, step: 10.0 }, unit: "Hz".into(), group: "Bauer".into() },
-                TuiParamDescriptor { name: "Bauer Feed".into(), param_type: TuiParamType::Float { min: crossfeed::BAUER_FEED_MIN as f64, max: crossfeed::BAUER_FEED_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Bauer".into() },
+                TuiParamDescriptor {
+                    name: "Bauer Cutoff".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::BAUER_FCUT_MIN as f64,
+                        max: crossfeed::BAUER_FCUT_MAX as f64,
+                        step: 10.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Bauer".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Bauer Feed".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::BAUER_FEED_MIN as f64,
+                        max: crossfeed::BAUER_FEED_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Bauer".into(),
+                },
                 // Meier
-                TuiParamDescriptor { name: "Meier Level".into(), param_type: TuiParamType::Float { min: crossfeed::MEIER_LEVEL_MIN as f64, max: crossfeed::MEIER_LEVEL_MAX as f64, step: 1.0 }, unit: "%".into(), group: "Meier".into() },
+                TuiParamDescriptor {
+                    name: "Meier Level".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::MEIER_LEVEL_MIN as f64,
+                        max: crossfeed::MEIER_LEVEL_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "%".into(),
+                    group: "Meier".into(),
+                },
                 // Multiband
-                TuiParamDescriptor { name: "MB Low Freq".into(), param_type: TuiParamType::Float { min: crossfeed::MB_LOW_FREQ_MIN as f64, max: crossfeed::MB_LOW_FREQ_MAX as f64, step: 5.0 }, unit: "Hz".into(), group: "Multiband".into() },
-                TuiParamDescriptor { name: "MB Mid/High Freq".into(), param_type: TuiParamType::Float { min: crossfeed::MB_MID_HIGH_FREQ_MIN as f64, max: crossfeed::MB_MID_HIGH_FREQ_MAX as f64, step: 50.0 }, unit: "Hz".into(), group: "Multiband".into() },
-                TuiParamDescriptor { name: "MB Low Feed".into(), param_type: TuiParamType::Float { min: crossfeed::MB_LOW_FEED_MIN as f64, max: crossfeed::MB_LOW_FEED_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Multiband".into() },
-                TuiParamDescriptor { name: "MB Mid Feed".into(), param_type: TuiParamType::Float { min: crossfeed::MB_MID_FEED_MIN as f64, max: crossfeed::MB_MID_FEED_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Multiband".into() },
-                TuiParamDescriptor { name: "MB High Feed".into(), param_type: TuiParamType::Float { min: crossfeed::MB_HIGH_FEED_MIN as f64, max: crossfeed::MB_HIGH_FEED_MAX as f64, step: 0.5 }, unit: "dB".into(), group: "Multiband".into() },
+                TuiParamDescriptor {
+                    name: "MB Low Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::MB_LOW_FREQ_MIN as f64,
+                        max: crossfeed::MB_LOW_FREQ_MAX as f64,
+                        step: 5.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Multiband".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MB Mid/High Freq".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::MB_MID_HIGH_FREQ_MIN as f64,
+                        max: crossfeed::MB_MID_HIGH_FREQ_MAX as f64,
+                        step: 50.0,
+                    },
+                    unit: "Hz".into(),
+                    group: "Multiband".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MB Low Feed".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::MB_LOW_FEED_MIN as f64,
+                        max: crossfeed::MB_LOW_FEED_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Multiband".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MB Mid Feed".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::MB_MID_FEED_MIN as f64,
+                        max: crossfeed::MB_MID_FEED_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Multiband".into(),
+                },
+                TuiParamDescriptor {
+                    name: "MB High Feed".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::MB_HIGH_FEED_MIN as f64,
+                        max: crossfeed::MB_HIGH_FEED_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "dB".into(),
+                    group: "Multiband".into(),
+                },
                 // Auto Gain
-                TuiParamDescriptor { name: "Auto Gain".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Target LUFS".into(), param_type: TuiParamType::Float { min: crossfeed::AUTOGAIN_TARGET_MIN as f64, max: crossfeed::AUTOGAIN_TARGET_MAX as f64, step: 0.5 }, unit: "LUFS".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Max Gain".into(), param_type: TuiParamType::Float { min: crossfeed::AUTOGAIN_MAX_GAIN_MIN as f64, max: crossfeed::AUTOGAIN_MAX_GAIN_MAX as f64, step: 1.0 }, unit: "dB".into(), group: "Auto Gain".into() },
-                TuiParamDescriptor { name: "Smoothing".into(), param_type: TuiParamType::Float { min: crossfeed::AUTOGAIN_SMOOTHING_MIN as f64, max: crossfeed::AUTOGAIN_SMOOTHING_MAX as f64, step: 10.0 }, unit: "ms".into(), group: "Auto Gain".into() },
+                TuiParamDescriptor {
+                    name: "Auto Gain".into(),
+                    param_type: TuiParamType::Bool,
+                    unit: "".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Target LUFS".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::AUTOGAIN_TARGET_MIN as f64,
+                        max: crossfeed::AUTOGAIN_TARGET_MAX as f64,
+                        step: 0.5,
+                    },
+                    unit: "LUFS".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Max Gain".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::AUTOGAIN_MAX_GAIN_MIN as f64,
+                        max: crossfeed::AUTOGAIN_MAX_GAIN_MAX as f64,
+                        step: 1.0,
+                    },
+                    unit: "dB".into(),
+                    group: "Auto Gain".into(),
+                },
+                TuiParamDescriptor {
+                    name: "Smoothing".into(),
+                    param_type: TuiParamType::Float {
+                        min: crossfeed::AUTOGAIN_SMOOTHING_MIN as f64,
+                        max: crossfeed::AUTOGAIN_SMOOTHING_MAX as f64,
+                        step: 10.0,
+                    },
+                    unit: "ms".into(),
+                    group: "Auto Gain".into(),
+                },
             ],
             _ => vec![], // Placeholder for other types
         }
@@ -575,7 +2498,11 @@ impl TuiEditablePlugin for PluginSettings {
                     String::new()
                 }
             }
-            PluginSettings::EQ { filters, max_filters, .. } => {
+            PluginSettings::EQ {
+                filters,
+                max_filters,
+                ..
+            } => {
                 if index == 0 {
                     return format!("{}", max_filters);
                 }
@@ -666,7 +2593,12 @@ impl TuiEditablePlugin for PluginSettings {
                 4 => format!("{:.2}", height_gain),
                 5 => format!("{:.2}", lfe_gain),
                 6 => format!("{:.0}", lfe_cutoff_hz),
-                7 => (if *enable_subharmonic_synth { "On" } else { "Off" }).into(),
+                7 => (if *enable_subharmonic_synth {
+                    "On"
+                } else {
+                    "Off"
+                })
+                .into(),
                 8 => format!("{:.2}", subharmonic_gain),
                 9 => format!("{:.0}", subharmonic_freq_hz),
                 10 => format!("{:.1}", subharmonic_attack_ms),
@@ -699,7 +2631,12 @@ impl TuiEditablePlugin for PluginSettings {
                 33 => format!("{:.2}", dialogue_coherence_weight),
                 34 => format!("{:.1}", safety_cap_db),
                 35 => (if *bypass_decorrelation { "On" } else { "Off" }).into(),
-                36 => (if *bypass_transient_detection { "On" } else { "Off" }).into(),
+                36 => (if *bypass_transient_detection {
+                    "On"
+                } else {
+                    "Off"
+                })
+                .into(),
                 37 => (if *bypass_all_processing { "On" } else { "Off" }).into(),
                 38 => (if *enable_ml_detection { "On" } else { "Off" }).into(),
                 _ => String::new(),
@@ -764,15 +2701,17 @@ impl TuiEditablePlugin for PluginSettings {
                 near_field_strength,
                 ..
             } => match index {
-                0 => if sofa_file.is_empty() {
-                    "None".to_string()
-                } else {
-                    PathBuf::from(sofa_file)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string()
-                },
+                0 => {
+                    if sofa_file.is_empty() {
+                        "None".to_string()
+                    } else {
+                        PathBuf::from(sofa_file)
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string()
+                    }
+                }
                 1 => format!("{}", input_channels),
                 2 => (if *enable_optimization { "On" } else { "Off" }).into(),
                 3 => format!("{:.2}", externalization),
@@ -784,15 +2723,17 @@ impl TuiEditablePlugin for PluginSettings {
                 mix,
                 gain_db,
             } => match index {
-                0 => if ir_file.is_empty() {
-                    "None".to_string()
-                } else {
-                    PathBuf::from(ir_file)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string()
-                },
+                0 => {
+                    if ir_file.is_empty() {
+                        "None".to_string()
+                    } else {
+                        PathBuf::from(ir_file)
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string()
+                    }
+                }
                 1 => format!("{:.0}%", mix * 100.0),
                 2 => format!("{:.1}", gain_db),
                 _ => String::new(),
@@ -840,14 +2781,29 @@ impl TuiEditablePlugin for PluginSettings {
                 11 => format!("{:.1}", max_gain_db),
                 12 => (if *spectral_normalization { "On" } else { "Off" }).into(),
                 13 => (if *pinna_model_enabled { "On" } else { "Off" }).into(),
-                14 => (if *room_reflections_enabled { "On" } else { "Off" }).into(),
+                14 => (if *room_reflections_enabled {
+                    "On"
+                } else {
+                    "Off"
+                })
+                .into(),
                 15 => format!("{:.1}", room_width_m),
                 16 => format!("{:.1}", room_depth_m),
                 17 => format!("{:.2}", wall_absorption),
                 18 => format!("{:.1}", reflection_beta_boost),
                 19 => (if *bypass_xtc_filters { "On" } else { "Off" }).into(),
-                20 => (if *bypass_spectral_normalization { "On" } else { "Off" }).into(),
-                21 => (if *bypass_neumann_refinement { "On" } else { "Off" }).into(),
+                20 => (if *bypass_spectral_normalization {
+                    "On"
+                } else {
+                    "Off"
+                })
+                .into(),
+                21 => (if *bypass_neumann_refinement {
+                    "On"
+                } else {
+                    "Off"
+                })
+                .into(),
                 22 => (if *auto_gain_enabled { "On" } else { "Off" }).into(),
                 23 => format!("{:.1}", auto_gain_max_db),
                 24 => format!("{:.0}", auto_gain_smoothing_ms),
@@ -922,7 +2878,12 @@ impl TuiEditablePlugin for PluginSettings {
                 2 => (if *selected_path == 0 { "A" } else { "B" }).into(),
                 3 => (if *bypass { "Yes" } else { "No" }).into(),
                 4 => (if *auto_gain_enabled { "On" } else { "Off" }).into(),
-                5 => (if *loudness_type == 0 { "Momentary" } else { "ShortTerm" }).into(),
+                5 => (if *loudness_type == 0 {
+                    "Momentary"
+                } else {
+                    "ShortTerm"
+                })
+                .into(),
                 6 => format!("{:.1}", max_auto_gain_db),
                 7 => format!("{:.0}", gain_smoothing_ms),
                 8 => format!("{:.0}", mix_transition_ms),
@@ -1020,11 +2981,26 @@ impl TuiEditablePlugin for PluginSettings {
                         match param_in_band {
                             0 => (if band.solo { "On" } else { "Off" }).into(),
                             1 => (if band.bypass { "On" } else { "Off" }).into(),
-                            2 => band.threshold_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            3 => band.ratio.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            4 => band.attack_ms.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            5 => band.release_ms.map(|v| format!("{:.0}", v)).unwrap_or("Global".into()),
-                            6 => band.knee_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
+                            2 => band
+                                .threshold_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            3 => band
+                                .ratio
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            4 => band
+                                .attack_ms
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            5 => band
+                                .release_ms
+                                .map(|v| format!("{:.0}", v))
+                                .unwrap_or("Global".into()),
+                            6 => band
+                                .knee_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
                             7 => format!("{:.1}", band.makeup_gain_db),
                             _ => String::new(),
                         }
@@ -1083,14 +3059,38 @@ impl TuiEditablePlugin for PluginSettings {
                         match param_in_band {
                             0 => (if band.solo { "On" } else { "Off" }).into(),
                             1 => (if band.bypass { "On" } else { "Off" }).into(),
-                            2 => band.threshold_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            3 => band.ratio.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            4 => band.attack_ms.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            5 => band.release_ms.map(|v| format!("{:.0}", v)).unwrap_or("Global".into()),
-                            6 => band.range_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            7 => band.knee_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            8 => band.hysteresis_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            9 => band.hold_ms.map(|v| format!("{:.0}", v)).unwrap_or("Global".into()),
+                            2 => band
+                                .threshold_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            3 => band
+                                .ratio
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            4 => band
+                                .attack_ms
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            5 => band
+                                .release_ms
+                                .map(|v| format!("{:.0}", v))
+                                .unwrap_or("Global".into()),
+                            6 => band
+                                .range_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            7 => band
+                                .knee_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            8 => band
+                                .hysteresis_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            9 => band
+                                .hold_ms
+                                .map(|v| format!("{:.0}", v))
+                                .unwrap_or("Global".into()),
                             _ => String::new(),
                         }
                     } else {
@@ -1226,11 +3226,15 @@ impl TuiEditablePlugin for PluginSettings {
                     return true;
                 }
             }
-            PluginSettings::EQ { filters, max_filters, .. } => {
+            PluginSettings::EQ {
+                filters,
+                max_filters,
+                ..
+            } => {
                 if index == 0 {
                     let old_max = *max_filters;
                     *max_filters = ((*max_filters as i64) + delta as i64).clamp(1, 20) as usize;
-                    
+
                     if *max_filters > old_max {
                         // Add new default filters if we increased the limit
                         while filters.len() < *max_filters {
@@ -1390,47 +3394,169 @@ impl TuiEditablePlugin for PluginSettings {
                         *speaker_config = configs[new_idx].to_string();
                     }
                     // Gains
-                    1 => *gain_front_direct = (*gain_front_direct + delta * 0.05).clamp(GAIN_FRONT_DIRECT_MIN as f64, GAIN_FRONT_DIRECT_MAX as f64),
-                    2 => *gain_front_ambient = (*gain_front_ambient + delta * 0.05).clamp(GAIN_FRONT_AMBIENT_MIN as f64, GAIN_FRONT_AMBIENT_MAX as f64),
-                    3 => *gain_rear_ambient = (*gain_rear_ambient + delta * 0.05).clamp(GAIN_REAR_AMBIENT_MIN as f64, GAIN_REAR_AMBIENT_MAX as f64),
-                    4 => *height_gain = (*height_gain + delta * 0.05).clamp(GAIN_HEIGHT_MIN as f64, GAIN_HEIGHT_MAX as f64),
+                    1 => {
+                        *gain_front_direct = (*gain_front_direct + delta * 0.05)
+                            .clamp(GAIN_FRONT_DIRECT_MIN as f64, GAIN_FRONT_DIRECT_MAX as f64)
+                    }
+                    2 => {
+                        *gain_front_ambient = (*gain_front_ambient + delta * 0.05)
+                            .clamp(GAIN_FRONT_AMBIENT_MIN as f64, GAIN_FRONT_AMBIENT_MAX as f64)
+                    }
+                    3 => {
+                        *gain_rear_ambient = (*gain_rear_ambient + delta * 0.05)
+                            .clamp(GAIN_REAR_AMBIENT_MIN as f64, GAIN_REAR_AMBIENT_MAX as f64)
+                    }
+                    4 => {
+                        *height_gain = (*height_gain + delta * 0.05)
+                            .clamp(GAIN_HEIGHT_MIN as f64, GAIN_HEIGHT_MAX as f64)
+                    }
                     // LFE
-                    5 => *lfe_gain = (*lfe_gain + delta * 0.05).clamp(LFE_GAIN_MIN as f64, LFE_GAIN_MAX as f64),
-                    6 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(LFE_CUTOFF_HZ_MIN as f64, LFE_CUTOFF_HZ_MAX as f64),
+                    5 => {
+                        *lfe_gain = (*lfe_gain + delta * 0.05)
+                            .clamp(LFE_GAIN_MIN as f64, LFE_GAIN_MAX as f64)
+                    }
+                    6 => {
+                        *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0)
+                            .clamp(LFE_CUTOFF_HZ_MIN as f64, LFE_CUTOFF_HZ_MAX as f64)
+                    }
                     7 => *enable_subharmonic_synth = !*enable_subharmonic_synth,
-                    8 => *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(SUBHARMONIC_GAIN_MIN as f64, SUBHARMONIC_GAIN_MAX as f64),
-                    9 => *subharmonic_freq_hz = (*subharmonic_freq_hz + delta * 1.0).clamp(SUBHARMONIC_FREQ_HZ_MIN as f64, SUBHARMONIC_FREQ_HZ_MAX as f64),
-                    10 => *subharmonic_attack_ms = (*subharmonic_attack_ms + delta * 1.0).clamp(SUBHARMONIC_ATTACK_MS_MIN as f64, SUBHARMONIC_ATTACK_MS_MAX as f64),
-                    11 => *subharmonic_release_ms = (*subharmonic_release_ms + delta * 5.0).clamp(SUBHARMONIC_RELEASE_MS_MIN as f64, SUBHARMONIC_RELEASE_MS_MAX as f64),
+                    8 => {
+                        *subharmonic_gain = (*subharmonic_gain + delta * 0.05)
+                            .clamp(SUBHARMONIC_GAIN_MIN as f64, SUBHARMONIC_GAIN_MAX as f64)
+                    }
+                    9 => {
+                        *subharmonic_freq_hz = (*subharmonic_freq_hz + delta * 1.0).clamp(
+                            SUBHARMONIC_FREQ_HZ_MIN as f64,
+                            SUBHARMONIC_FREQ_HZ_MAX as f64,
+                        )
+                    }
+                    10 => {
+                        *subharmonic_attack_ms = (*subharmonic_attack_ms + delta * 1.0).clamp(
+                            SUBHARMONIC_ATTACK_MS_MIN as f64,
+                            SUBHARMONIC_ATTACK_MS_MAX as f64,
+                        )
+                    }
+                    11 => {
+                        *subharmonic_release_ms = (*subharmonic_release_ms + delta * 5.0).clamp(
+                            SUBHARMONIC_RELEASE_MS_MIN as f64,
+                            SUBHARMONIC_RELEASE_MS_MAX as f64,
+                        )
+                    }
                     // Spatial
-                    12 => *stereo_width = (*stereo_width + delta * 0.05).clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64),
-                    13 => *center_spread = (*center_spread + delta * 0.05).clamp(CENTER_SPREAD_MIN as f64, CENTER_SPREAD_MAX as f64),
-                    14 => *bandpass_hz = (*bandpass_hz + delta * 5.0).clamp(BANDPASS_HZ_MIN as f64, BANDPASS_HZ_MAX as f64),
+                    12 => {
+                        *stereo_width = (*stereo_width + delta * 0.05)
+                            .clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64)
+                    }
+                    13 => {
+                        *center_spread = (*center_spread + delta * 0.05)
+                            .clamp(CENTER_SPREAD_MIN as f64, CENTER_SPREAD_MAX as f64)
+                    }
+                    14 => {
+                        *bandpass_hz = (*bandpass_hz + delta * 5.0)
+                            .clamp(BANDPASS_HZ_MIN as f64, BANDPASS_HZ_MAX as f64)
+                    }
                     // Enhancement
                     15 => *enable_hr_direct = !*enable_hr_direct,
-                    16 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(HR_SHARPEN_MIN as f64, HR_SHARPEN_MAX as f64),
-                    17 => *ambient_boost = (*ambient_boost + delta * 0.05).clamp(AMBIENT_BOOST_MIN as f64, AMBIENT_BOOST_MAX as f64),
+                    16 => {
+                        *hr_sharpen = (*hr_sharpen + delta * 0.05)
+                            .clamp(HR_SHARPEN_MIN as f64, HR_SHARPEN_MAX as f64)
+                    }
+                    17 => {
+                        *ambient_boost = (*ambient_boost + delta * 0.05)
+                            .clamp(AMBIENT_BOOST_MIN as f64, AMBIENT_BOOST_MAX as f64)
+                    }
                     18 => *decorrelation_mode = (*decorrelation_mode + 1) % 2,
-                    19 => *decorrelation_lfo_rate_hz = (*decorrelation_lfo_rate_hz + delta * 0.01).clamp(DECORRELATION_LFO_RATE_HZ_MIN as f64, DECORRELATION_LFO_RATE_HZ_MAX as f64),
-                    20 => *velvet_noise_duration_ms = (*velvet_noise_duration_ms + delta * 1.0).clamp(VELVET_NOISE_DURATION_MS_MIN as f64, VELVET_NOISE_DURATION_MS_MAX as f64),
-                    21 => *velvet_noise_density = (*velvet_noise_density + delta * 100.0).clamp(VELVET_NOISE_DENSITY_MIN as f64, VELVET_NOISE_DENSITY_MAX as f64),
+                    19 => {
+                        *decorrelation_lfo_rate_hz = (*decorrelation_lfo_rate_hz + delta * 0.01)
+                            .clamp(
+                                DECORRELATION_LFO_RATE_HZ_MIN as f64,
+                                DECORRELATION_LFO_RATE_HZ_MAX as f64,
+                            )
+                    }
+                    20 => {
+                        *velvet_noise_duration_ms = (*velvet_noise_duration_ms + delta * 1.0).clamp(
+                            VELVET_NOISE_DURATION_MS_MIN as f64,
+                            VELVET_NOISE_DURATION_MS_MAX as f64,
+                        )
+                    }
+                    21 => {
+                        *velvet_noise_density = (*velvet_noise_density + delta * 100.0).clamp(
+                            VELVET_NOISE_DENSITY_MIN as f64,
+                            VELVET_NOISE_DENSITY_MAX as f64,
+                        )
+                    }
                     // Height
-                    22 => *height_hf_cap_hz = (*height_hf_cap_hz + delta * 100.0).clamp(HEIGHT_HF_CAP_HZ_MIN as f64, HEIGHT_HF_CAP_HZ_MAX as f64),
-                    23 => *height_transient_reduction = (*height_transient_reduction + delta * 0.05).clamp(HEIGHT_TRANSIENT_REDUCTION_MIN as f64, HEIGHT_TRANSIENT_REDUCTION_MAX as f64),
-                    24 => *height_direct_leak = (*height_direct_leak + delta * 0.01).clamp(HEIGHT_DIRECT_LEAK_MIN as f64, HEIGHT_DIRECT_LEAK_MAX as f64),
+                    22 => {
+                        *height_hf_cap_hz = (*height_hf_cap_hz + delta * 100.0)
+                            .clamp(HEIGHT_HF_CAP_HZ_MIN as f64, HEIGHT_HF_CAP_HZ_MAX as f64)
+                    }
+                    23 => {
+                        *height_transient_reduction = (*height_transient_reduction + delta * 0.05)
+                            .clamp(
+                                HEIGHT_TRANSIENT_REDUCTION_MIN as f64,
+                                HEIGHT_TRANSIENT_REDUCTION_MAX as f64,
+                            )
+                    }
+                    24 => {
+                        *height_direct_leak = (*height_direct_leak + delta * 0.01)
+                            .clamp(HEIGHT_DIRECT_LEAK_MIN as f64, HEIGHT_DIRECT_LEAK_MAX as f64)
+                    }
                     // Surround
-                    25 => *surround_direct_bleed = (*surround_direct_bleed + delta * 0.05).clamp(SURROUND_DIRECT_BLEED_MIN as f64, SURROUND_DIRECT_BLEED_MAX as f64),
-                    26 => *rear_ambient_boost = (*rear_ambient_boost + delta * 0.05).clamp(REAR_AMBIENT_BOOST_MIN as f64, REAR_AMBIENT_BOOST_MAX as f64),
-                    27 => *rear_late_reflection = (*rear_late_reflection + delta * 0.01).clamp(REAR_LATE_REFLECTION_MIN as f64, REAR_LATE_REFLECTION_MAX as f64),
+                    25 => {
+                        *surround_direct_bleed = (*surround_direct_bleed + delta * 0.05).clamp(
+                            SURROUND_DIRECT_BLEED_MIN as f64,
+                            SURROUND_DIRECT_BLEED_MAX as f64,
+                        )
+                    }
+                    26 => {
+                        *rear_ambient_boost = (*rear_ambient_boost + delta * 0.05)
+                            .clamp(REAR_AMBIENT_BOOST_MIN as f64, REAR_AMBIENT_BOOST_MAX as f64)
+                    }
+                    27 => {
+                        *rear_late_reflection = (*rear_late_reflection + delta * 0.01).clamp(
+                            REAR_LATE_REFLECTION_MIN as f64,
+                            REAR_LATE_REFLECTION_MAX as f64,
+                        )
+                    }
                     // Dialogue
-                    28 => *dialogue_weight = (*dialogue_weight + delta * 0.05).clamp(DIALOGUE_WEIGHT_MIN as f64, DIALOGUE_WEIGHT_MAX as f64),
-                    29 => *voice_freq_min_hz = (*voice_freq_min_hz + delta * 10.0).clamp(VOICE_FREQ_MIN_HZ_MIN as f64, VOICE_FREQ_MIN_HZ_MAX as f64),
-                    30 => *voice_freq_max_hz = (*voice_freq_max_hz + delta * 50.0).clamp(VOICE_FREQ_MAX_HZ_MIN as f64, VOICE_FREQ_MAX_HZ_MAX as f64),
-                    31 => *dialogue_centroid_weight = (*dialogue_centroid_weight + delta * 0.05).clamp(DIALOGUE_CENTROID_WEIGHT_MIN as f64, DIALOGUE_CENTROID_WEIGHT_MAX as f64),
-                    32 => *dialogue_variance_weight = (*dialogue_variance_weight + delta * 0.05).clamp(DIALOGUE_VARIANCE_WEIGHT_MIN as f64, DIALOGUE_VARIANCE_WEIGHT_MAX as f64),
-                    33 => *dialogue_coherence_weight = (*dialogue_coherence_weight + delta * 0.05).clamp(DIALOGUE_COHERENCE_WEIGHT_MIN as f64, DIALOGUE_COHERENCE_WEIGHT_MAX as f64),
+                    28 => {
+                        *dialogue_weight = (*dialogue_weight + delta * 0.05)
+                            .clamp(DIALOGUE_WEIGHT_MIN as f64, DIALOGUE_WEIGHT_MAX as f64)
+                    }
+                    29 => {
+                        *voice_freq_min_hz = (*voice_freq_min_hz + delta * 10.0)
+                            .clamp(VOICE_FREQ_MIN_HZ_MIN as f64, VOICE_FREQ_MIN_HZ_MAX as f64)
+                    }
+                    30 => {
+                        *voice_freq_max_hz = (*voice_freq_max_hz + delta * 50.0)
+                            .clamp(VOICE_FREQ_MAX_HZ_MIN as f64, VOICE_FREQ_MAX_HZ_MAX as f64)
+                    }
+                    31 => {
+                        *dialogue_centroid_weight = (*dialogue_centroid_weight + delta * 0.05)
+                            .clamp(
+                                DIALOGUE_CENTROID_WEIGHT_MIN as f64,
+                                DIALOGUE_CENTROID_WEIGHT_MAX as f64,
+                            )
+                    }
+                    32 => {
+                        *dialogue_variance_weight = (*dialogue_variance_weight + delta * 0.05)
+                            .clamp(
+                                DIALOGUE_VARIANCE_WEIGHT_MIN as f64,
+                                DIALOGUE_VARIANCE_WEIGHT_MAX as f64,
+                            )
+                    }
+                    33 => {
+                        *dialogue_coherence_weight = (*dialogue_coherence_weight + delta * 0.05)
+                            .clamp(
+                                DIALOGUE_COHERENCE_WEIGHT_MIN as f64,
+                                DIALOGUE_COHERENCE_WEIGHT_MAX as f64,
+                            )
+                    }
                     // Output
-                    34 => *safety_cap_db = (*safety_cap_db + delta * 0.1).clamp(SAFETY_CAP_DB_MIN as f64, SAFETY_CAP_DB_MAX as f64),
+                    34 => {
+                        *safety_cap_db = (*safety_cap_db + delta * 0.1)
+                            .clamp(SAFETY_CAP_DB_MIN as f64, SAFETY_CAP_DB_MAX as f64)
+                    }
                     35 => *bypass_decorrelation = !*bypass_decorrelation,
                     36 => *bypass_transient_detection = !*bypass_transient_detection,
                     37 => *bypass_all_processing = !*bypass_all_processing,
@@ -1473,13 +3599,28 @@ impl TuiEditablePlugin for PluginSettings {
             } => {
                 use sotf_plugins::param_specs::loudness_compensation::*;
                 match index {
-                    0 => *low_freq = (*low_freq + delta * 5.0).clamp(LOW_FREQ_MIN as f64, LOW_FREQ_MAX as f64),
-                    1 => *low_gain = (*low_gain + delta * 0.5).clamp(LOW_GAIN_MIN as f64, LOW_GAIN_MAX as f64),
-                    2 => *high_freq = (*high_freq + delta * 100.0).clamp(HIGH_FREQ_MIN as f64, HIGH_FREQ_MAX as f64),
-                    3 => *high_gain = (*high_gain + delta * 0.5).clamp(HIGH_GAIN_MIN as f64, HIGH_GAIN_MAX as f64),
+                    0 => {
+                        *low_freq = (*low_freq + delta * 5.0)
+                            .clamp(LOW_FREQ_MIN as f64, LOW_FREQ_MAX as f64)
+                    }
+                    1 => {
+                        *low_gain = (*low_gain + delta * 0.5)
+                            .clamp(LOW_GAIN_MIN as f64, LOW_GAIN_MAX as f64)
+                    }
+                    2 => {
+                        *high_freq = (*high_freq + delta * 100.0)
+                            .clamp(HIGH_FREQ_MIN as f64, HIGH_FREQ_MAX as f64)
+                    }
+                    3 => {
+                        *high_gain = (*high_gain + delta * 0.5)
+                            .clamp(HIGH_GAIN_MIN as f64, HIGH_GAIN_MAX as f64)
+                    }
                     4 => *auto_gain_enabled = !*auto_gain_enabled,
                     5 => *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0),
-                    6 => *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0).clamp(1.0, 1000.0),
+                    6 => {
+                        *auto_gain_smoothing_ms =
+                            (*auto_gain_smoothing_ms + delta * 5.0).clamp(1.0, 1000.0)
+                    }
                     _ => return false,
                 }
                 return true;
@@ -1815,53 +3956,80 @@ impl TuiEditablePlugin for PluginSettings {
                         match param_in_band {
                             0 => band.solo = !band.solo,
                             1 => band.bypass = !band.bypass,
-                            2 => { // threshold: toggle between Global/override
+                            2 => {
+                                // threshold: toggle between Global/override
                                 band.threshold_db = match band.threshold_db {
                                     None => Some(*threshold_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
+                                        if new_v < THRESHOLD_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX))
+                                        }
                                     }
                                 };
                             }
-                            3 => { // ratio
+                            3 => {
+                                // ratio
                                 band.ratio = match band.ratio {
                                     None => Some(*ratio as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
+                                        if new_v < RATIO_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(RATIO_MIN, RATIO_MAX))
+                                        }
                                     }
                                 };
                             }
-                            4 => { // attack
+                            4 => {
+                                // attack
                                 band.attack_ms = match band.attack_ms {
                                     None => Some(*attack_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
+                                        if new_v < ATTACK_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX))
+                                        }
                                     }
                                 };
                             }
-                            5 => { // release
+                            5 => {
+                                // release
                                 band.release_ms = match band.release_ms {
                                     None => Some(*release_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
+                                        if new_v < RELEASE_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX))
+                                        }
                                     }
                                 };
                             }
-                            6 => { // knee
+                            6 => {
+                                // knee
                                 band.knee_db = match band.knee_db {
                                     None => Some(*knee_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
+                                        if new_v < KNEE_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(KNEE_MIN, KNEE_MAX))
+                                        }
                                     }
                                 };
                             }
-                            7 => { // makeup gain
-                                band.makeup_gain_db = (band.makeup_gain_db + delta as f32 * 0.5).clamp(-24.0, 24.0);
+                            7 => {
+                                // makeup gain
+                                band.makeup_gain_db =
+                                    (band.makeup_gain_db + delta as f32 * 0.5).clamp(-24.0, 24.0);
                             }
                             _ => return false,
                         }
@@ -1951,75 +4119,115 @@ impl TuiEditablePlugin for PluginSettings {
                         match param_in_band {
                             0 => band.solo = !band.solo,
                             1 => band.bypass = !band.bypass,
-                            2 => { // threshold
+                            2 => {
+                                // threshold
                                 band.threshold_db = match band.threshold_db {
                                     None => Some(*threshold_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
+                                        if new_v < THRESHOLD_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX))
+                                        }
                                     }
                                 };
                             }
-                            3 => { // ratio
+                            3 => {
+                                // ratio
                                 band.ratio = match band.ratio {
                                     None => Some(*ratio as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
+                                        if new_v < RATIO_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(RATIO_MIN, RATIO_MAX))
+                                        }
                                     }
                                 };
                             }
-                            4 => { // attack
+                            4 => {
+                                // attack
                                 band.attack_ms = match band.attack_ms {
                                     None => Some(*attack_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
+                                        if new_v < ATTACK_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX))
+                                        }
                                     }
                                 };
                             }
-                            5 => { // release
+                            5 => {
+                                // release
                                 band.release_ms = match band.release_ms {
                                     None => Some(*release_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
+                                        if new_v < RELEASE_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX))
+                                        }
                                     }
                                 };
                             }
-                            6 => { // range
+                            6 => {
+                                // range
                                 band.range_db = match band.range_db {
                                     None => Some(*range_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < RANGE_MIN { None } else { Some(new_v.clamp(RANGE_MIN, RANGE_MAX)) }
+                                        if new_v < RANGE_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(RANGE_MIN, RANGE_MAX))
+                                        }
                                     }
                                 };
                             }
-                            7 => { // knee
+                            7 => {
+                                // knee
                                 band.knee_db = match band.knee_db {
                                     None => Some(*knee_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
+                                        if new_v < KNEE_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(KNEE_MIN, KNEE_MAX))
+                                        }
                                     }
                                 };
                             }
-                            8 => { // hysteresis
+                            8 => {
+                                // hysteresis
                                 band.hysteresis_db = match band.hysteresis_db {
                                     None => Some(*hysteresis_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < HYSTERESIS_MIN { None } else { Some(new_v.clamp(HYSTERESIS_MIN, HYSTERESIS_MAX)) }
+                                        if new_v < HYSTERESIS_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(HYSTERESIS_MIN, HYSTERESIS_MAX))
+                                        }
                                     }
                                 };
                             }
-                            9 => { // hold
+                            9 => {
+                                // hold
                                 band.hold_ms = match band.hold_ms {
                                     None => Some(*hold_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < HOLD_MIN { None } else { Some(new_v.clamp(HOLD_MIN, HOLD_MAX)) }
+                                        if new_v < HOLD_MIN {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(HOLD_MIN, HOLD_MAX))
+                                        }
                                     }
                                 };
                             }
@@ -2108,7 +4316,10 @@ impl TuiEditablePlugin for PluginSettings {
                     15 => *room_width_m = (*room_width_m + delta * 0.1).clamp(2.0, 10.0),
                     16 => *room_depth_m = (*room_depth_m + delta * 0.1).clamp(2.0, 15.0),
                     17 => *wall_absorption = (*wall_absorption + delta * 0.05).clamp(0.0, 1.0),
-                    18 => *reflection_beta_boost = (*reflection_beta_boost + delta * 0.1).clamp(1.0, 10.0),
+                    18 => {
+                        *reflection_beta_boost =
+                            (*reflection_beta_boost + delta * 0.1).clamp(1.0, 10.0)
+                    }
                     19 => *bypass_xtc_filters = !*bypass_xtc_filters,
                     20 => *bypass_spectral_normalization = !*bypass_spectral_normalization,
                     21 => *bypass_neumann_refinement = !*bypass_neumann_refinement,
@@ -2118,8 +4329,10 @@ impl TuiEditablePlugin for PluginSettings {
                             .clamp(AUTO_GAIN_MAX_DB_MIN as f64, AUTO_GAIN_MAX_DB_MAX as f64)
                     }
                     24 => {
-                        *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0)
-                            .clamp(AUTO_GAIN_SMOOTHING_MS_MIN as f64, AUTO_GAIN_SMOOTHING_MS_MAX as f64)
+                        *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0).clamp(
+                            AUTO_GAIN_SMOOTHING_MS_MIN as f64,
+                            AUTO_GAIN_SMOOTHING_MS_MAX as f64,
+                        )
                     }
                     _ => return false,
                 }
@@ -2311,33 +4524,77 @@ impl TuiEditablePlugin for PluginSettings {
                             .clamp(REFERENCE_LEVEL_DB_MIN as f64, REFERENCE_LEVEL_DB_MAX as f64)
                     }
                     1 => *enabled = !*enabled,
-                    2 => *smoothing_ms = (*smoothing_ms + delta).clamp(SMOOTHING_MS_MIN as f64, SMOOTHING_MS_MAX as f64),
+                    2 => {
+                        *smoothing_ms = (*smoothing_ms + delta)
+                            .clamp(SMOOTHING_MS_MIN as f64, SMOOTHING_MS_MAX as f64)
+                    }
                     3 => *auto_gain_enabled = !*auto_gain_enabled,
                     4 => {
                         *auto_gain_max_db = (*auto_gain_max_db + delta)
                             .clamp(AUTO_GAIN_MAX_DB_MIN as f64, AUTO_GAIN_MAX_DB_MAX as f64)
                     }
-                    5 => *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0).clamp(AUTO_GAIN_SMOOTHING_MS_MIN as f64, AUTO_GAIN_SMOOTHING_MS_MAX as f64),
+                    5 => {
+                        *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta * 5.0).clamp(
+                            AUTO_GAIN_SMOOTHING_MS_MIN as f64,
+                            AUTO_GAIN_SMOOTHING_MS_MAX as f64,
+                        )
+                    }
                     // Band 1
-                    6 => *band1_freq = (*band1_freq + delta * 5.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX),
+                    6 => {
+                        *band1_freq =
+                            (*band1_freq + delta * 5.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX)
+                    }
                     7 => *band1_q = (*band1_q + delta * 0.05).clamp(BAND_Q_MIN, BAND_Q_MAX),
-                    8 => *band1_max_gain = (*band1_max_gain + delta * 0.5).clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX),
-                    9 => *band1_slope = (*band1_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX),
+                    8 => {
+                        *band1_max_gain = (*band1_max_gain + delta * 0.5)
+                            .clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX)
+                    }
+                    9 => {
+                        *band1_slope =
+                            (*band1_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX)
+                    }
                     // Band 2
-                    10 => *band2_freq = (*band2_freq + delta * 10.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX),
+                    10 => {
+                        *band2_freq =
+                            (*band2_freq + delta * 10.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX)
+                    }
                     11 => *band2_q = (*band2_q + delta * 0.05).clamp(BAND_Q_MIN, BAND_Q_MAX),
-                    12 => *band2_max_gain = (*band2_max_gain + delta * 0.5).clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX),
-                    13 => *band2_slope = (*band2_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX),
+                    12 => {
+                        *band2_max_gain = (*band2_max_gain + delta * 0.5)
+                            .clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX)
+                    }
+                    13 => {
+                        *band2_slope =
+                            (*band2_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX)
+                    }
                     // Band 3
-                    14 => *band3_freq = (*band3_freq + delta * 50.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX),
+                    14 => {
+                        *band3_freq =
+                            (*band3_freq + delta * 50.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX)
+                    }
                     15 => *band3_q = (*band3_q + delta * 0.05).clamp(BAND_Q_MIN, BAND_Q_MAX),
-                    16 => *band3_max_gain = (*band3_max_gain + delta * 0.5).clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX),
-                    17 => *band3_slope = (*band3_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX),
+                    16 => {
+                        *band3_max_gain = (*band3_max_gain + delta * 0.5)
+                            .clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX)
+                    }
+                    17 => {
+                        *band3_slope =
+                            (*band3_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX)
+                    }
                     // Band 4
-                    18 => *band4_freq = (*band4_freq + delta * 100.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX),
+                    18 => {
+                        *band4_freq =
+                            (*band4_freq + delta * 100.0).clamp(BAND_FREQ_MIN, BAND_FREQ_MAX)
+                    }
                     19 => *band4_q = (*band4_q + delta * 0.05).clamp(BAND_Q_MIN, BAND_Q_MAX),
-                    20 => *band4_max_gain = (*band4_max_gain + delta * 0.5).clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX),
-                    21 => *band4_slope = (*band4_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX),
+                    20 => {
+                        *band4_max_gain = (*band4_max_gain + delta * 0.5)
+                            .clamp(BAND_MAX_GAIN_MIN, BAND_MAX_GAIN_MAX)
+                    }
+                    21 => {
+                        *band4_slope =
+                            (*band4_slope + delta * 0.01).clamp(BAND_SLOPE_MIN, BAND_SLOPE_MAX)
+                    }
                     _ => return false,
                 }
                 return true;
@@ -2449,10 +4706,8 @@ impl TuiEditablePlugin for PluginSettings {
                             .clamp(AUTOGAIN_MAX_GAIN_MIN as f64, AUTOGAIN_MAX_GAIN_MAX as f64)
                     }
                     15 => {
-                        *autogain_smoothing_ms = (*autogain_smoothing_ms + delta * 10.0).clamp(
-                            AUTOGAIN_SMOOTHING_MIN as f64,
-                            AUTOGAIN_SMOOTHING_MAX as f64,
-                        )
+                        *autogain_smoothing_ms = (*autogain_smoothing_ms + delta * 10.0)
+                            .clamp(AUTOGAIN_SMOOTHING_MIN as f64, AUTOGAIN_SMOOTHING_MAX as f64)
                     }
                     _ => return false,
                 }
@@ -2485,9 +4740,16 @@ impl TuiEditablePlugin for PluginSettings {
             }
             PluginSettings::Upmixer { .. } => match index {
                 0 => vec![
-                    "2.0".into(), "5.0".into(), "5.1".into(), "7.1".into(),
-                    "5.1.2".into(), "5.1.4".into(), "7.1.2".into(), "7.1.4".into(),
-                    "9.1.4".into(), "9.1.6".into(),
+                    "2.0".into(),
+                    "5.0".into(),
+                    "5.1".into(),
+                    "7.1".into(),
+                    "5.1.2".into(),
+                    "5.1.4".into(),
+                    "7.1.2".into(),
+                    "7.1.4".into(),
+                    "9.1.4".into(),
+                    "9.1.6".into(),
                 ],
                 18 => vec!["Velvet Noise".into(), "LFO Phase".into()],
                 _ => Vec::new(),
@@ -2504,12 +4766,28 @@ impl TuiEditablePlugin for PluginSettings {
             },
             PluginSettings::Crossfeed { .. } => match index {
                 0 => vec!["Off".into(), "Bauer".into(), "Meier".into(), "Mb".into()],
-                1 => vec!["Default".into(), "Cmoy".into(), "Meier".into(), "Mb".into(), "Off".into()],
+                1 => vec![
+                    "Default".into(),
+                    "Cmoy".into(),
+                    "Meier".into(),
+                    "Mb".into(),
+                    "Off".into(),
+                ],
                 _ => Vec::new(),
             },
             PluginSettings::SpectrumAnalyzer { .. } => match index {
-                4 => vec!["None".into(), "ThreeDbPerOctave".into(), "SixDbPerOctave".into(), "Pink".into()],
-                5 => vec!["Standard".into(), "OneKilohertz".into(), "TwoKilohertz".into(), "MinFreq".into()],
+                4 => vec![
+                    "None".into(),
+                    "ThreeDbPerOctave".into(),
+                    "SixDbPerOctave".into(),
+                    "Pink".into(),
+                ],
+                5 => vec![
+                    "Standard".into(),
+                    "OneKilohertz".into(),
+                    "TwoKilohertz".into(),
+                    "MinFreq".into(),
+                ],
                 _ => Vec::new(),
             },
             _ => Vec::new(),

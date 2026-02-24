@@ -22,6 +22,7 @@ use bliss_audio::{Analysis, AnalysisIndex, BlissError, BlissResult};
 use rubato::{Fft, FixedSync, Resampler};
 use sotf_audio::decoder::create_decoder;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -318,7 +319,7 @@ pub struct BlissScanner {
 
 impl BlissScanner {
     /// Create a new scanner with the given number of worker threads
-    pub fn new(num_threads: usize, db_path: PathBuf) -> Self {
+    pub fn new(num_threads: usize, db_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Self {
         let (task_tx, task_rx) = mpsc::channel::<PathBuf>();
         let (message_tx, message_rx) = mpsc::channel::<BlissScanMessage>();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
@@ -334,6 +335,7 @@ impl BlissScanner {
             let stop_rx = Arc::clone(&stop_rx);
             let message_tx = message_tx.clone();
             let db_path = db_path.clone();
+            let pause_flag = Arc::clone(&pause_flag);
 
             let worker = thread::spawn(move || {
                 log::info!("[Bliss Worker {}] Started", worker_id);
@@ -356,6 +358,15 @@ impl BlissScanner {
                     if stop_rx.lock().unwrap().try_recv().is_ok() {
                         log::info!("[Bliss Worker {}] Stopping", worker_id);
                         break;
+                    }
+
+                    // Wait while paused (check every 200ms, also check for stop)
+                    while pause_flag.load(Ordering::Relaxed) {
+                        if stop_rx.lock().unwrap().try_recv().is_ok() {
+                            log::info!("[Bliss Worker {}] Stopping while paused", worker_id);
+                            return;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(200));
                     }
 
                     // Get next task
@@ -459,16 +470,23 @@ pub struct BlissScanManager {
     pub processed: usize,
     pub succeeded: usize,
     pub failed: usize,
+
+    // Shared pause flag — scanners sleep while this is true
+    pause_flag: Arc<AtomicBool>,
 }
 
 impl Default for BlissScanManager {
     fn default() -> Self {
-        Self::new()
+        Self::with_pause_flag(Arc::new(AtomicBool::new(false)))
     }
 }
 
 impl BlissScanManager {
     pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_pause_flag(pause_flag: Arc<AtomicBool>) -> Self {
         Self {
             scanner: None,
             in_progress: false,
@@ -476,6 +494,7 @@ impl BlissScanManager {
             processed: 0,
             succeeded: 0,
             failed: 0,
+            pause_flag,
         }
     }
 
@@ -517,7 +536,11 @@ impl BlissScanManager {
         }
 
         let num_threads = num_cpus::get().clamp(1, 4); // Limit to 4 threads
-        let scanner = Arc::new(BlissScanner::new(num_threads, db_path));
+        let scanner = Arc::new(BlissScanner::new(
+            num_threads,
+            db_path,
+            Arc::clone(&self.pause_flag),
+        ));
 
         self.total = tracks.len();
         self.processed = 0;

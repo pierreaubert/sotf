@@ -23,6 +23,7 @@ pub struct LibraryScanner {
     _worker: JoinHandle<()>,
     message_rx: Arc<Mutex<Receiver<LibraryScanMessage>>>,
     cancellation_token: Arc<AtomicBool>,
+    pause_flag: Option<Arc<AtomicBool>>,
 }
 
 impl std::fmt::Debug for LibraryScanner {
@@ -31,6 +32,7 @@ impl std::fmt::Debug for LibraryScanner {
             .field("_worker", &"JoinHandle<()>")
             .field("message_rx", &"Arc<Mutex<Receiver<LibraryScanMessage>>>")
             .field("cancellation_token", &self.cancellation_token)
+            .field("pause_flag", &self.pause_flag)
             .finish()
     }
 }
@@ -42,7 +44,12 @@ impl LibraryScanner {
     /// The scan results are saved to the database, so after completion the caller
     /// should reload the library from the database.
     pub fn start(directories: Vec<PathBuf>) -> Self {
-        Self::start_with_options(directories, false)
+        Self::start_with_options(directories, false, None)
+    }
+
+    /// Start with a pause flag that suspends scanning during playback
+    pub fn start_with_pause(directories: Vec<PathBuf>, pause_flag: Arc<AtomicBool>) -> Self {
+        Self::start_with_options(directories, false, Some(pause_flag))
     }
 
     /// Start a new background library scan with force option
@@ -50,14 +57,28 @@ impl LibraryScanner {
     /// If `force` is true, all files will be rescanned regardless of modification time.
     /// ReplayGain values are preserved in the database (not overwritten).
     pub fn start_force(directories: Vec<PathBuf>) -> Self {
-        Self::start_with_options(directories, true)
+        Self::start_with_options(directories, true, None)
+    }
+
+    /// Start a force scan with a pause flag
+    pub fn start_force_with_pause(
+        directories: Vec<PathBuf>,
+        pause_flag: Arc<AtomicBool>,
+    ) -> Self {
+        Self::start_with_options(directories, true, Some(pause_flag))
     }
 
     /// Start a new background library scan with options
-    fn start_with_options(directories: Vec<PathBuf>, force: bool) -> Self {
+    fn start_with_options(
+        directories: Vec<PathBuf>,
+        force: bool,
+        pause_flag: Option<Arc<AtomicBool>>,
+    ) -> Self {
         let (message_tx, message_rx) = mpsc::channel::<LibraryScanMessage>();
         let cancellation_token = Arc::new(AtomicBool::new(false));
         let cancellation_token_clone = cancellation_token.clone();
+
+        let pause_flag_clone = pause_flag.clone();
 
         let worker = thread::spawn(move || {
             if force {
@@ -94,12 +115,13 @@ impl LibraryScanner {
             let last_track_count = Arc::new(Mutex::new(0usize));
             let scan_token = cancellation_token_clone.clone();
 
-            // Run the scan with progress callback
+            // Run the scan with progress callback and pause support
             // Use incremental=true (skip unchanged files) unless force is set
-            let result = library.scan_incremental_with_progress(
+            let result = library.scan_incremental_with_progress_and_pause(
                 !force,
                 Some(scan_token),
-                move |tracks, albums| {
+                pause_flag_clone,
+                &mut move |tracks, albums| {
                     // Update UI every 500 tracks
                     let should_update = {
                         let mut last = last_track_count.lock().unwrap();
@@ -147,6 +169,7 @@ impl LibraryScanner {
             _worker: worker,
             message_rx: Arc::new(Mutex::new(message_rx)),
             cancellation_token,
+            pause_flag,
         }
     }
 

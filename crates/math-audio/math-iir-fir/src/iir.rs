@@ -1772,7 +1772,10 @@ pub fn peq_linkwitzriley_highpass(order: usize, freq: f64, srate: f64) -> Peq {
 /// # Returns
 /// * PEQ containing the All-Pass filter section
 pub fn peq_allpass(freq: f64, srate: f64, q: f64) -> Peq {
-    vec![(1.0, Biquad::new(BiquadFilterType::AllPass, freq, srate, q, 0.0))]
+    vec![(
+        1.0,
+        Biquad::new(BiquadFilterType::AllPass, freq, srate, q, 0.0),
+    )]
 }
 
 /// Print a formatted table of the parametric EQ filters from a Peq.
@@ -1920,13 +1923,22 @@ mod peq_tests {
         // At crossover: each should be -6 dB
         let lp_resp = lp[0].1.complex_response(freq).norm().log10() * 20.0;
         let hp_resp = hp[0].1.complex_response(freq).norm().log10() * 20.0;
-        assert!((lp_resp - (-6.0)).abs() < 0.1, "LR12 LP at crossover: {lp_resp} dB");
-        assert!((hp_resp - (-6.0)).abs() < 0.1, "LR12 HP at crossover: {hp_resp} dB");
+        assert!(
+            (lp_resp - (-6.0)).abs() < 0.1,
+            "LR12 LP at crossover: {lp_resp} dB"
+        );
+        assert!(
+            (hp_resp - (-6.0)).abs() < 0.1,
+            "LR12 HP at crossover: {hp_resp} dB"
+        );
 
         // LR2 needs polarity inversion on HP for flat sum (order/2 is odd)
         let sum = lp[0].1.complex_response(freq) - hp[0].1.complex_response(freq);
         let sum_db = sum.norm().log10() * 20.0;
-        assert!(sum_db.abs() < 0.1, "LR12 sum at crossover (HP inverted): {sum_db} dB");
+        assert!(
+            sum_db.abs() < 0.1,
+            "LR12 sum at crossover (HP inverted): {sum_db} dB"
+        );
     }
 
     #[test]
@@ -1945,12 +1957,24 @@ mod peq_tests {
         }
 
         // At crossover: combined response should be -6 dB
-        let lp_mag: f64 = lp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
-        let hp_mag: f64 = hp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
+        let lp_mag: f64 = lp
+            .iter()
+            .map(|(_, bq)| bq.complex_response(freq).norm())
+            .product();
+        let hp_mag: f64 = hp
+            .iter()
+            .map(|(_, bq)| bq.complex_response(freq).norm())
+            .product();
         let lp_db = lp_mag.log10() * 20.0;
         let hp_db = hp_mag.log10() * 20.0;
-        assert!((lp_db - (-6.0)).abs() < 0.1, "LR24 LP at crossover: {lp_db} dB");
-        assert!((hp_db - (-6.0)).abs() < 0.1, "LR24 HP at crossover: {hp_db} dB");
+        assert!(
+            (lp_db - (-6.0)).abs() < 0.1,
+            "LR24 LP at crossover: {lp_db} dB"
+        );
+        assert!(
+            (hp_db - (-6.0)).abs() < 0.1,
+            "LR24 HP at crossover: {hp_db} dB"
+        );
     }
 
     #[test]
@@ -1972,17 +1996,35 @@ mod peq_tests {
         }
 
         // At crossover: combined response should be -6 dB
-        let lp_mag: f64 = lp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
-        let hp_mag: f64 = hp.iter().map(|(_, bq)| bq.complex_response(freq).norm()).product();
+        let lp_mag: f64 = lp
+            .iter()
+            .map(|(_, bq)| bq.complex_response(freq).norm())
+            .product();
+        let hp_mag: f64 = hp
+            .iter()
+            .map(|(_, bq)| bq.complex_response(freq).norm())
+            .product();
         let lp_db = lp_mag.log10() * 20.0;
         let hp_db = hp_mag.log10() * 20.0;
-        assert!((lp_db - (-6.0)).abs() < 0.1, "LR48 LP at crossover: {lp_db} dB");
-        assert!((hp_db - (-6.0)).abs() < 0.1, "LR48 HP at crossover: {hp_db} dB");
+        assert!(
+            (lp_db - (-6.0)).abs() < 0.1,
+            "LR48 LP at crossover: {lp_db} dB"
+        );
+        assert!(
+            (hp_db - (-6.0)).abs() < 0.1,
+            "LR48 HP at crossover: {hp_db} dB"
+        );
 
         // Verify steep rolloff: at 2x crossover freq, LP should be well below -40 dB
-        let lp_2x: f64 = lp.iter().map(|(_, bq)| bq.complex_response(freq * 2.0).norm()).product();
+        let lp_2x: f64 = lp
+            .iter()
+            .map(|(_, bq)| bq.complex_response(freq * 2.0).norm())
+            .product();
         let lp_2x_db = lp_2x.log10() * 20.0;
-        assert!(lp_2x_db < -40.0, "LR48 LP at 2x crossover: {lp_2x_db} dB (expected < -40)");
+        assert!(
+            lp_2x_db < -40.0,
+            "LR48 LP at 2x crossover: {lp_2x_db} dB (expected < -40)"
+        );
     }
 
     #[test]

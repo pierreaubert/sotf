@@ -298,7 +298,10 @@ fn test_auto_advance_across_albums() {
     // Last track of album 1 ends
     let next = simulate_auto_advance(true, false, &mut current_idx, &mut queue);
 
-    assert!(next.is_some(), "Should advance to first track of next album");
+    assert!(
+        next.is_some(),
+        "Should advance to first track of next album"
+    );
     assert_eq!(current_idx, Some(1), "Queue index should move to album 2");
     assert_eq!(queue[1].current_track_index, 0);
 }
@@ -325,7 +328,10 @@ fn test_no_auto_advance_when_paused() {
     let next = simulate_auto_advance(false, false, &mut current_idx, &mut queue);
 
     assert!(next.is_none(), "Should not advance when user paused");
-    assert_eq!(queue[0].current_track_index, 0, "Track index should not change");
+    assert_eq!(
+        queue[0].current_track_index, 0,
+        "Track index should not change"
+    );
 }
 
 #[test]
@@ -337,7 +343,10 @@ fn test_no_auto_advance_while_still_playing() {
     // Normal playback: both app and engine report playing
     let next = simulate_auto_advance(true, true, &mut current_idx, &mut queue);
 
-    assert!(next.is_none(), "Should not advance while track is still playing");
+    assert!(
+        next.is_none(),
+        "Should not advance while track is still playing"
+    );
     assert_eq!(queue[0].current_track_index, 0);
 }
 

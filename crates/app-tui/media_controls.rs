@@ -1,6 +1,4 @@
-use souvlaki::{
-    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig,
-};
+use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -93,7 +91,7 @@ fn init_macos_app() {
 /// Processes all queued events without blocking. No-op on non-macOS platforms.
 #[cfg(target_os = "macos")]
 pub fn pump_macos_event_loop() {
-    use core_foundation_sys::runloop::{kCFRunLoopDefaultMode, CFRunLoopRunInMode};
+    use core_foundation_sys::runloop::{CFRunLoopRunInMode, kCFRunLoopDefaultMode};
     use objc2_app_kit::{NSApplication, NSEventMask};
     use objc2_foundation::{NSDate, NSDefaultRunLoopMode};
 
@@ -102,8 +100,7 @@ pub fn pump_macos_event_loop() {
     //    Timeout 0.0 means return immediately if no sources are ready.
     // SAFETY: FFI call with valid static string and numeric args.
     loop {
-        let result =
-            unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, 1) };
+        let result = unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, 1) };
         // kCFRunLoopRunHandledSource = 4 — a source was processed, check for more
         if result != 4 {
             break;

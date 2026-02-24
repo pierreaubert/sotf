@@ -7,9 +7,7 @@
 //! Reference: Erlangga & Nabben (2008), Gaul et al. (2013).
 
 use crate::assembly::HelmholtzProblem;
-use math_audio_solvers::{
-    AmgConfig, AmgPreconditioner, CsrMatrix, DeflationSubspace, GmresConfig,
-};
+use math_audio_solvers::{AmgConfig, AmgPreconditioner, CsrMatrix, DeflationSubspace, GmresConfig};
 use ndarray::Array1;
 use num_complex::Complex64;
 
@@ -30,9 +28,7 @@ pub enum DeflationMethod {
 
 impl Default for DeflationMethod {
     fn default() -> Self {
-        Self::InverseIteration {
-            num_iterations: 5,
-        }
+        Self::InverseIteration { num_iterations: 5 }
     }
 }
 
@@ -59,9 +55,7 @@ impl DeflationConfig {
     pub fn for_frequency_sweep(num_vectors: usize) -> Self {
         Self {
             num_vectors,
-            method: DeflationMethod::InverseIteration {
-                num_iterations: 5,
-            },
+            method: DeflationMethod::InverseIteration { num_iterations: 5 },
         }
     }
 }
@@ -86,9 +80,13 @@ pub fn compute_deflation_subspace(
     config: &DeflationConfig,
 ) -> DeflationSubspace<Complex64> {
     match &config.method {
-        DeflationMethod::InverseIteration { num_iterations } => {
-            compute_inverse_iteration(problem, csr, wavenumber, config.num_vectors, *num_iterations)
-        }
+        DeflationMethod::InverseIteration { num_iterations } => compute_inverse_iteration(
+            problem,
+            csr,
+            wavenumber,
+            config.num_vectors,
+            *num_iterations,
+        ),
         DeflationMethod::HarmonicRitz => {
             unimplemented!("HarmonicRitz deflation method not yet implemented")
         }
@@ -218,9 +216,7 @@ mod tests {
         let csr = problem.matrix.to_csr();
         let config = DeflationConfig {
             num_vectors: 3,
-            method: DeflationMethod::InverseIteration {
-                num_iterations: 3,
-            },
+            method: DeflationMethod::InverseIteration { num_iterations: 3 },
         };
 
         let deflation = compute_deflation_subspace(&problem, &csr, 2.0, &config);

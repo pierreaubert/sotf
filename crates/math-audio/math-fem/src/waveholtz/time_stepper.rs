@@ -12,9 +12,7 @@
 
 use super::filter::CosineFilter;
 use crate::assembly::HelmholtzAssembler;
-use math_audio_solvers::{
-    AmgConfig, AmgPreconditioner, AmgSmoother, CgConfig, CsrMatrix, pcg, cg,
-};
+use math_audio_solvers::{AmgConfig, AmgPreconditioner, AmgSmoother, CgConfig, CsrMatrix, cg, pcg};
 use ndarray::Array1;
 use std::collections::HashMap;
 
@@ -52,7 +50,14 @@ impl WaveTimeStepper {
         cg_config: CgConfig<f64>,
         use_amg: bool,
     ) -> Self {
-        Self::new_with_boundaries(assembler, omega, steps_per_period, cg_config, use_amg, &HashMap::new())
+        Self::new_with_boundaries(
+            assembler,
+            omega,
+            steps_per_period,
+            cg_config,
+            use_amg,
+            &HashMap::new(),
+        )
     }
 
     /// Create a new time stepper with Robin/impedance boundary conditions
@@ -234,8 +239,7 @@ mod tests {
         assert!(
             result.converged,
             "CG should converge on A_impl (SPD). Residual: {:.2e} after {} iters",
-            result.residual,
-            result.iterations
+            result.residual, result.iterations
         );
     }
 
@@ -274,9 +278,6 @@ mod tests {
         // The filtered result should be related to the initial condition
         // (cosine filter extracts the ω-component of the time evolution)
         let result_norm: f64 = result.iter().map(|v| v * v).sum::<f64>().sqrt();
-        assert!(
-            result_norm > 1e-6,
-            "Filtered result should be non-trivial"
-        );
+        assert!(result_norm > 1e-6, "Filtered result should be non-trivial");
     }
 }

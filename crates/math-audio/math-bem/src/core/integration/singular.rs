@@ -586,9 +586,9 @@ pub fn generate_subelements(
                     // - The "previous" midpoint (between vertex (j-1)%num_vertices and j) is at
                     //   index ((j + num_vertices - 1) % num_vertices) + num_vertices
                     let j2 = if j == 0 {
-                        num_vertices + num_vertices - 1  // Last midpoint (between last vertex and vertex 0)
+                        num_vertices + num_vertices - 1 // Last midpoint (between last vertex and vertex 0)
                     } else {
-                        j - 1 + num_vertices  // Previous midpoint
+                        j - 1 + num_vertices // Previous midpoint
                     };
 
                     match element_type {
@@ -737,7 +737,7 @@ fn distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 /// provides a consistent measure regardless of element shape.
 fn estimate_element_size(element_coords: &Array2<f64>, element_type: ElementType) -> f64 {
     let num_nodes = element_type.num_nodes();
-    
+
     // Compute element area using cross product
     match element_type {
         ElementType::Tri3 => {
@@ -757,7 +757,8 @@ fn estimate_element_size(element_coords: &Array2<f64>, element_type: ElementType
                 v1[2] * v2[0] - v1[0] * v2[2],
                 v1[0] * v2[1] - v1[1] * v2[0],
             ];
-            let area = 0.5 * (cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]).sqrt();
+            let area =
+                0.5 * (cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]).sqrt();
             area.sqrt().max(1e-10)
         }
         ElementType::Quad4 => {
@@ -777,7 +778,7 @@ fn estimate_element_size(element_coords: &Array2<f64>, element_type: ElementType
                 v1[2] * v2[0] - v1[0] * v2[2],
                 v1[0] * v2[1] - v1[1] * v2[0],
             ];
-            
+
             let v3: [f64; 3] = [
                 element_coords[[3, 0]] - element_coords[[0, 0]],
                 element_coords[[3, 1]] - element_coords[[0, 1]],
@@ -788,9 +789,11 @@ fn estimate_element_size(element_coords: &Array2<f64>, element_type: ElementType
                 v2[2] * v3[0] - v2[0] * v3[2],
                 v2[0] * v3[1] - v2[1] * v3[0],
             ];
-            
-            let area1 = 0.5 * (cross1[0] * cross1[0] + cross1[1] * cross1[1] + cross1[2] * cross1[2]).sqrt();
-            let area2 = 0.5 * (cross2[0] * cross2[0] + cross2[1] * cross2[1] + cross2[2] * cross2[2]).sqrt();
+
+            let area1 = 0.5
+                * (cross1[0] * cross1[0] + cross1[1] * cross1[1] + cross1[2] * cross1[2]).sqrt();
+            let area2 = 0.5
+                * (cross2[0] * cross2[0] + cross2[1] * cross2[1] + cross2[2] * cross2[2]).sqrt();
             (area1 + area2).sqrt().max(1e-10)
         }
     }

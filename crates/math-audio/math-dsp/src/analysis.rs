@@ -822,8 +822,7 @@ pub fn analyze_recording(
             .fold(0.0_f32, |a, b| a.max(b));
         let ref_rms =
             (reference.iter().map(|&x| x * x).sum::<f32>() / reference.len() as f32).sqrt();
-        let rec_rms =
-            (recorded.iter().map(|&x| x * x).sum::<f32>() / recorded.len() as f32).sqrt();
+        let rec_rms = (recorded.iter().map(|&x| x * x).sum::<f32>() / recorded.len() as f32).sqrt();
 
         log::debug!(
             "[FFT Analysis] Reference: max={:.4}, RMS={:.4}",

@@ -465,7 +465,8 @@ impl RenderOnce for Slider {
                     cx.stop_propagation();
                     let click_x: f32 = event.position.x.into();
                     SLIDER_DRAG_STATE.with(|s| {
-                        s.borrow_mut().insert(drag_id_down.clone(), (click_x, current_value));
+                        s.borrow_mut()
+                            .insert(drag_id_down.clone(), (click_x, current_value));
                     });
                     // Fire on_change immediately so the thumb snaps to a reasonable
                     // position on click (use current value — caller can override).
@@ -476,9 +477,8 @@ impl RenderOnce for Slider {
                 let handler_drag = handler_rc.clone();
                 track = track.on_mouse_move(move |event, window, cx| {
                     if event.pressed_button == Some(MouseButton::Left) {
-                        let state = SLIDER_DRAG_STATE.with(|s| {
-                            s.borrow().get(&drag_id_move).copied()
-                        });
+                        let state =
+                            SLIDER_DRAG_STATE.with(|s| s.borrow().get(&drag_id_move).copied());
                         if let Some((click_x, value_at_click)) = state {
                             let current_x: f32 = event.position.x.into();
                             let delta_x = current_x - click_x;
@@ -497,7 +497,9 @@ impl RenderOnce for Slider {
 
                 // Mouse up: clear drag state.
                 track = track.on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
-                    SLIDER_DRAG_STATE.with(|s| { s.borrow_mut().remove(&drag_id_up); });
+                    SLIDER_DRAG_STATE.with(|s| {
+                        s.borrow_mut().remove(&drag_id_up);
+                    });
                 });
             }
 

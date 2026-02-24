@@ -1,9 +1,4 @@
 #![allow(clippy::collapsible_if)]
-pub mod autoeq;
-pub mod headphone_eq_types;
-pub mod recording_types;
-pub mod room_eq_types;
-pub mod spinorama_eq_types;
 /// Shared business logic for SOTF audio players (TUI, GPUI, etc.)
 ///
 /// This crate provides:
@@ -17,9 +12,11 @@ pub mod spinorama_eq_types;
 /// - Bliss audio analysis (`bliss`)
 /// - Music recommendation engine (`recommendation`)
 pub mod audio_device;
+pub mod autoeq;
 pub mod bliss;
 pub mod config;
 pub mod database;
+pub mod headphone_eq_types;
 pub mod level_meter;
 pub mod library;
 pub mod library_scanner;
@@ -27,6 +24,9 @@ pub mod play_tracker;
 pub mod player;
 pub mod plugin_graph;
 pub mod queue;
+pub mod recording_types;
+pub mod room_eq_types;
+pub mod spinorama_eq_types;
 // plugins module is now in engine
 pub mod recommendation;
 pub mod replay_gain_scanner;
@@ -38,24 +38,24 @@ pub mod ui_params;
 pub mod waveform_scanner;
 
 // Re-export commonly used types
+pub use audio_device::{AudioOutputDeviceState, is_virtual_device};
 pub use bliss::{BlissAnalysis, BlissScanManager, BlissScanMessage, BlissScanner};
 pub use config::AppConfig;
 pub use database::MusicDatabase;
+pub use level_meter::{ChannelGroup, ChannelInfo, build_level_meter_groups};
 pub use library::{
     Album, AlbumChannelType, ChannelFilter, DirectoryInfo, LibrarySortOrder, MusicLibrary,
     Playlist, PlaylistEntry, Track,
 };
 pub use library_scanner::{LibraryScanMessage, LibraryScanner};
+pub use library_stats::LibraryStats;
+pub use play_tracker::PlayTracker;
 pub use player::{PlaybackState, Player};
 pub use plugin_graph::{
     ConnectionDrag, GraphConnection, GraphNodeId, GraphSelection, NodeDrag, NodePosition,
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
-pub use audio_device::{is_virtual_device, AudioOutputDeviceState};
-pub use play_tracker::PlayTracker;
-pub use level_meter::{build_level_meter_groups, ChannelGroup, ChannelInfo};
 pub use queue::{Queue, QueueItem};
-pub use library_stats::LibraryStats;
 // Re-export plugins from engine
 pub use replay_gain_scanner::{
     AlbumGainPhase, ReplayGainMode, ReplayGainScanManager, ReplayGainScanner, ScanMessage,

@@ -1294,9 +1294,7 @@ impl RoomEqState {
     pub fn has_height_channels(&self) -> bool {
         self.channel_names().iter().any(|name| {
             let upper = name.to_uppercase();
-            Self::HEIGHT_CHANNELS
-                .iter()
-                .any(|&h| upper == h)
+            Self::HEIGHT_CHANNELS.iter().any(|&h| upper == h)
         })
     }
 

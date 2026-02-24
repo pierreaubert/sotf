@@ -3,7 +3,7 @@
 //! Shared between all app frontends (GPUI, TUI, etc.)
 
 use sotf_plugins::speaker_config::{
-    get_meter_groups, get_meter_groups_by_channels, make_fallback_channel, MeterGroupSpec,
+    MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
 };
 
 /// Channel group for level meter display
@@ -36,11 +36,7 @@ fn groups_from_specs(specs: &[MeterGroupSpec]) -> Vec<ChannelGroup> {
                 .map(|ch| ChannelInfo {
                     index: ch.index,
                     name: ch.label.to_string(),
-                    display_name: ch
-                        .display_chars
-                        .iter()
-                        .map(|s| (*s).to_string())
-                        .collect(),
+                    display_name: ch.display_chars.iter().map(|s| (*s).to_string()).collect(),
                 })
                 .collect(),
             muted: false,

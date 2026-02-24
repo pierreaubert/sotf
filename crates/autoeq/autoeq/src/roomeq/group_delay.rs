@@ -3,8 +3,8 @@
 //! This module provides algorithms for aligning speakers in the time domain:
 //! - `optimize_gd_iir`: Generates All-Pass filters to match GD slopes
 
-use crate::error::Result;
 use crate::Curve;
+use crate::error::Result;
 use log::debug;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use ndarray::Array1;

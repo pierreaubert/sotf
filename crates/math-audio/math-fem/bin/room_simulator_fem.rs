@@ -18,15 +18,14 @@
 
 use clap::{Parser, ValueEnum};
 use math_audio_fem::assembly::{
-    HelmholtzAssembler, HelmholtzProblem, assemble_boundary_mass, assemble_mass,
-    assemble_stiffness,
+    HelmholtzAssembler, HelmholtzProblem, assemble_boundary_mass, assemble_mass, assemble_stiffness,
 };
 use math_audio_fem::basis::PolynomialDegree;
 use math_audio_fem::mesh::{BoundaryType, ElementType, Mesh, Point};
+use math_audio_fem::schwarz_pml::{SchwarzPmlConfig, SchwarzVariant};
 use math_audio_fem::solver::{
     self, DeflationConfig, GmresConfigF64, ShiftedLaplacianConfig, SolverConfig, SolverType,
 };
-use math_audio_fem::schwarz_pml::{SchwarzPmlConfig, SchwarzVariant};
 use math_audio_fem::waveholtz::WaveHoltzConfig;
 use num_complex::Complex64;
 use rayon::prelude::*;
@@ -209,7 +208,10 @@ impl MemoryEstimate {
                 let r = 10; // default number of deflation vectors
                 let deflation_vecs = 2 * r * self.n_dofs * Self::COMPLEX_SIZE; // W + AW
                 let deflation_dense = r * r * Self::COMPLEX_SIZE; // E = W^H A W
-                amg_matrices + shifted_matrix * Self::COMPLEX_SIZE + deflation_vecs + deflation_dense
+                amg_matrices
+                    + shifted_matrix * Self::COMPLEX_SIZE
+                    + deflation_vecs
+                    + deflation_dense
             }
             SolverType::WaveHoltz => {
                 // WaveHoltz: A_impl and B_rhs real CSR matrices + AMG on A_impl
@@ -247,7 +249,9 @@ impl MemoryEstimate {
                 let stiffness_mass = 2 * hierarchy_ops; // K and M at each level
                 let eikonal_vecs = 5 * self.n_dofs * Self::F64_SIZE; // tau, grad(3), laplacian
                 let adr_workspace = self.n_dofs * Self::COMPLEX_SIZE * 4; // ADR matrix + vectors
-                n_levels * (hierarchy_ops + stiffness_mass) / n_levels + eikonal_vecs + adr_workspace
+                n_levels * (hierarchy_ops + stiffness_mass) / n_levels
+                    + eikonal_vecs
+                    + adr_workspace
             }
         }
     }
@@ -879,7 +883,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate boundary conditions for WaveHoltz, Schwarz-PML, NeuralMultigrid, and DeflatedSL (rigid only)
     if internal_solver_type == SolverType::WaveHoltz || is_schwarz_pml || is_nmg || is_deflated_sl {
-        let solver_label = if is_schwarz_pml { "Schwarz-PML" } else if is_nmg { "NeuralMultigrid" } else if is_deflated_sl { "DeflatedShiftedLaplacian" } else { "WaveHoltz" };
+        let solver_label = if is_schwarz_pml {
+            "Schwarz-PML"
+        } else if is_nmg {
+            "NeuralMultigrid"
+        } else if is_deflated_sl {
+            "DeflatedShiftedLaplacian"
+        } else {
+            "WaveHoltz"
+        };
         let b = &config.boundaries;
         let surfaces: &[(&str, &SurfaceConfig)] = &[
             ("floor", &b.floor),
@@ -1342,9 +1354,16 @@ fn run_fem_simulation(
 
     // Process frequencies - either with warm start or cold start
     // WaveHoltz, Schwarz-PML, and DeflatedSL don't support initial guesses, so skip warm start
-    let is_spml = matches!(solver_type, SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative);
+    let is_spml = matches!(
+        solver_type,
+        SolverType::SchwarzPmlAdditive | SolverType::SchwarzPmlMultiplicative
+    );
     let is_defl_sl = solver_type == SolverType::GmresDeflatedShiftedLaplacian;
-    let use_warm_start = warm_start && n_freqs > anchor_stride && solver_type != SolverType::WaveHoltz && !is_spml && !is_defl_sl;
+    let use_warm_start = warm_start
+        && n_freqs > anchor_stride
+        && solver_type != SolverType::WaveHoltz
+        && !is_spml
+        && !is_defl_sl;
     let mut all_results = if use_warm_start {
         run_hierarchical_solve(
             &mesh,
@@ -1889,7 +1908,8 @@ fn solve_single_frequency(
         // Neural Multigrid path: solve directly with mesh geometry
         let k_complex = Complex64::new(wavenumber, 0.0);
         let dirichlet_bcs: Vec<(usize, Complex64)> = Vec::new();
-        let nmg_config = math_audio_fem::neural_multigrid::NeuralMultigridConfig::for_wavenumber(wavenumber);
+        let nmg_config =
+            math_audio_fem::neural_multigrid::NeuralMultigridConfig::for_wavenumber(wavenumber);
 
         math_audio_fem::neural_multigrid::solve_neural_multigrid(
             mesh,
@@ -1938,13 +1958,13 @@ fn solve_single_frequency(
         // Deflated Shifted-Laplacian path: needs HelmholtzProblem for deflation subspace
         let k_complex = Complex64::new(wavenumber, 0.0);
         let source_fn = |_x: f64, _y: f64, _z: f64| Complex64::new(0.0, 0.0);
-        let mut problem = HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k_complex, source_fn);
+        let mut problem =
+            HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k_complex, source_fn);
         // Replace assembled RHS with our source-based RHS
         problem.rhs = rhs;
         let mut config = solver_config.clone();
         config.wavenumber = Some(wavenumber);
-        solver::solve(&problem, &config)
-            .expect("Deflated Shifted-Laplacian solver failed")
+        solver::solve(&problem, &config).expect("Deflated Shifted-Laplacian solver failed")
     } else {
         // Standard GMRES path
         let k = Complex64::new(wavenumber, 0.0);
@@ -1952,8 +1972,7 @@ fn solve_single_frequency(
         let csr = assembler.assemble(k, &boundary_coeffs);
         let rhs_array = ndarray::Array1::from(rhs);
 
-        solver::solve_csr_with_guess(&csr, &rhs_array, None, solver_config)
-            .expect("Solver failed")
+        solver::solve_csr_with_guess(&csr, &rhs_array, None, solver_config).expect("Solver failed")
     };
 
     // Evaluate pressure at all listening positions

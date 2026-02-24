@@ -40,8 +40,8 @@ pub use traits::{ComplexField, LinearOperator, Preconditioner};
 // Re-export iterative solvers
 pub use iterative::{
     BiCgstabConfig, BiCgstabSolution, CgConfig, CgSolution, CgsConfig, CgsSolution,
-    DeflationSubspace, GmresConfig, GmresSolution, bicgstab, cg, cgs, gmres,
-    gmres_deflated, gmres_deflated_preconditioned, pcg,
+    DeflationSubspace, GmresConfig, GmresSolution, bicgstab, cg, cgs, gmres, gmres_deflated,
+    gmres_deflated_preconditioned, pcg,
 };
 
 // Re-export direct solvers

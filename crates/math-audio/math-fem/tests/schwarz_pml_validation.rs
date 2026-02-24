@@ -13,20 +13,13 @@ use num_complex::Complex64;
 use std::f64::consts::PI;
 
 /// Helper: compute L2 error between Schwarz-PML solution and direct solution
-fn schwarz_vs_direct_error(
-    n: usize,
-    k: f64,
-    num_subdomains: usize,
-) -> (f64, usize) {
+fn schwarz_vs_direct_error(n: usize, k: f64, num_subdomains: usize) -> (f64, usize) {
     let mesh = unit_square_triangles(n);
     let wavenumber = Complex64::new(k, 0.0);
 
-    let problem = HelmholtzProblem::assemble(
-        &mesh,
-        PolynomialDegree::P1,
-        wavenumber,
-        |x, y, _| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0),
-    );
+    let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, wavenumber, |x, y, _| {
+        Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
+    });
 
     // Direct reference
     let direct_config = SolverConfig {
@@ -62,7 +55,8 @@ fn schwarz_vs_direct_error(
         &problem.rhs,
         &dirichlet_bcs,
         &config,
-    ).expect("Schwarz-PML should converge");
+    )
+    .expect("Schwarz-PML should converge");
 
     // Relative L2 error
     let direct_norm: f64 = direct_sol
@@ -94,10 +88,7 @@ fn test_schwarz_pml_vs_direct() {
     // Schwarz-PML with PML extensions solves a different local problem at each subdomain,
     // so we expect O(1) relative error in general — the key test is convergence, not exact match.
     // With enough overlap and fine mesh, the error should decrease.
-    assert!(
-        iterations > 0,
-        "Should require at least 1 iteration"
-    );
+    assert!(iterations > 0, "Should require at least 1 iteration");
     // Verify reasonable solution quality (not a divergent result)
     assert!(
         error < 10.0,
@@ -123,12 +114,10 @@ fn test_schwarz_pml_high_frequency_robustness() {
         let mesh = unit_square_triangles(n);
         let wavenumber = Complex64::new(k, 0.0);
 
-        let problem = HelmholtzProblem::assemble(
-            &mesh,
-            PolynomialDegree::P1,
-            wavenumber,
-            |x, y, _| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0),
-        );
+        let problem =
+            HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, wavenumber, |x, y, _| {
+                Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
+            });
 
         let mut dirichlet_bcs = Vec::new();
         for (i, node) in mesh.nodes.iter().enumerate() {
@@ -164,7 +153,9 @@ fn test_schwarz_pml_high_frequency_robustness() {
                 assert!(
                     sol.iterations < max_iters_allowed,
                     "k={}: Schwarz-PML took {} iterations (max allowed: {})",
-                    k, sol.iterations, max_iters_allowed
+                    k,
+                    sol.iterations,
+                    max_iters_allowed
                 );
             }
             Err(e) => {
@@ -181,8 +172,10 @@ fn test_schwarz_pml_high_frequency_robustness() {
         assert!(
             last_iters <= first_iters * 3.0 + 5.0,
             "Iteration counts should be bounded: first_k={} ({} iters), last_k={} ({} iters)",
-            results[0].0, results[0].1,
-            results[results.len() - 1].0, results[results.len() - 1].1,
+            results[0].0,
+            results[0].1,
+            results[results.len() - 1].0,
+            results[results.len() - 1].1,
         );
     }
 }
@@ -197,12 +190,9 @@ fn test_additive_vs_multiplicative_convergence() {
     let k = 3.0;
     let wavenumber = Complex64::new(k, 0.0);
 
-    let problem = HelmholtzProblem::assemble(
-        &mesh,
-        PolynomialDegree::P1,
-        wavenumber,
-        |x, y, _| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0),
-    );
+    let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, wavenumber, |x, y, _| {
+        Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
+    });
 
     let mut dirichlet_bcs = Vec::new();
     for (i, node) in mesh.nodes.iter().enumerate() {
@@ -229,19 +219,30 @@ fn test_additive_vs_multiplicative_convergence() {
     };
 
     let add_sol = solve_schwarz_pml(
-        &mesh, PolynomialDegree::P1, wavenumber,
-        &problem.rhs, &dirichlet_bcs, &additive_config,
-    ).expect("Additive should converge");
+        &mesh,
+        PolynomialDegree::P1,
+        wavenumber,
+        &problem.rhs,
+        &dirichlet_bcs,
+        &additive_config,
+    )
+    .expect("Additive should converge");
 
     let mult_sol = solve_schwarz_pml(
-        &mesh, PolynomialDegree::P1, wavenumber,
-        &problem.rhs, &dirichlet_bcs, &multiplicative_config,
-    ).expect("Multiplicative should converge");
+        &mesh,
+        PolynomialDegree::P1,
+        wavenumber,
+        &problem.rhs,
+        &dirichlet_bcs,
+        &multiplicative_config,
+    )
+    .expect("Multiplicative should converge");
 
     assert!(
         mult_sol.iterations <= add_sol.iterations + 5,
         "Multiplicative ({}) should converge no slower than additive ({})",
-        mult_sol.iterations, add_sol.iterations,
+        mult_sol.iterations,
+        add_sol.iterations,
     );
 }
 
@@ -255,12 +256,9 @@ fn test_schwarz_pml_vs_algebraic_schwarz() {
     let k = 5.0;
     let wavenumber = Complex64::new(k, 0.0);
 
-    let problem = HelmholtzProblem::assemble(
-        &mesh,
-        PolynomialDegree::P1,
-        wavenumber,
-        |x, y, _| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0),
-    );
+    let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, wavenumber, |x, y, _| {
+        Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
+    });
 
     // Algebraic Schwarz (GMRES preconditioner)
     let algebraic_config = SolverConfig {
@@ -269,7 +267,8 @@ fn test_schwarz_pml_vs_algebraic_schwarz() {
         schwarz_overlap: 2,
         ..Default::default()
     };
-    let algebraic_sol = solve(&problem, &algebraic_config).expect("Algebraic Schwarz should converge");
+    let algebraic_sol =
+        solve(&problem, &algebraic_config).expect("Algebraic Schwarz should converge");
 
     // PML-Schwarz
     let mut dirichlet_bcs = Vec::new();
@@ -292,8 +291,12 @@ fn test_schwarz_pml_vs_algebraic_schwarz() {
     };
 
     let pml_result = solve_schwarz_pml(
-        &mesh, PolynomialDegree::P1, wavenumber,
-        &problem.rhs, &dirichlet_bcs, &pml_config,
+        &mesh,
+        PolynomialDegree::P1,
+        wavenumber,
+        &problem.rhs,
+        &dirichlet_bcs,
+        &pml_config,
     );
 
     // Both should succeed
@@ -316,12 +319,9 @@ fn test_multiple_subdomain_counts() {
     let k = 3.0;
     let wavenumber = Complex64::new(k, 0.0);
 
-    let problem = HelmholtzProblem::assemble(
-        &mesh,
-        PolynomialDegree::P1,
-        wavenumber,
-        |x, y, _| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0),
-    );
+    let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, wavenumber, |x, y, _| {
+        Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
+    });
 
     let mut dirichlet_bcs = Vec::new();
     for (i, node) in mesh.nodes.iter().enumerate() {
@@ -346,14 +346,19 @@ fn test_multiple_subdomain_counts() {
         };
 
         let result = solve_schwarz_pml(
-            &mesh, PolynomialDegree::P1, wavenumber,
-            &problem.rhs, &dirichlet_bcs, &config,
+            &mesh,
+            PolynomialDegree::P1,
+            wavenumber,
+            &problem.rhs,
+            &dirichlet_bcs,
+            &config,
         );
 
         assert!(
             result.is_ok(),
             "{} subdomains: Schwarz-PML should converge: {:?}",
-            num_sub, result.err()
+            num_sub,
+            result.err()
         );
         let sol = result.unwrap();
         assert!(sol.converged, "{} subdomains: should converge", num_sub);
@@ -367,6 +372,7 @@ fn test_multiple_subdomain_counts() {
     assert!(
         iters_8 <= iters_2 * 4.0 + 10.0,
         "Iterations should not grow faster than linearly with num_subdomains: 2->{}, 8->{}",
-        all_iters[0].1, all_iters[2].1,
+        all_iters[0].1,
+        all_iters[2].1,
     );
 }

@@ -707,11 +707,7 @@ fn jitter_absorption_coefficient(rng: &mut SmallRng, base: f64, amount: f64) -> 
     value.max(0.02).min(0.9)
 }
 
-fn jitter_surface(
-    rng: &mut SmallRng,
-    surface: &SurfaceConfig,
-    amount: f64,
-) -> SurfaceConfig {
+fn jitter_surface(rng: &mut SmallRng, surface: &SurfaceConfig, amount: f64) -> SurfaceConfig {
     match surface {
         SurfaceConfig::Absorption { coefficient } => SurfaceConfig::Absorption {
             coefficient: jitter_absorption_coefficient(rng, *coefficient, amount),
@@ -720,11 +716,7 @@ fn jitter_surface(
     }
 }
 
-fn jitter_boundaries(
-    rng: &mut SmallRng,
-    base: &BoundaryConfig,
-    amount: f64,
-) -> BoundaryConfig {
+fn jitter_boundaries(rng: &mut SmallRng, base: &BoundaryConfig, amount: f64) -> BoundaryConfig {
     BoundaryConfig {
         floor: jitter_surface(rng, &base.floor, amount),
         ceiling: jitter_surface(rng, &base.ceiling, amount),
@@ -786,11 +778,7 @@ fn jitter_point_within_room(
     Point3D::new(x, y, z)
 }
 
-fn randomized_scenario_variant(
-    base: &Scenario,
-    variant_index: usize,
-    seed: u64,
-) -> Scenario {
+fn randomized_scenario_variant(base: &Scenario, variant_index: usize, seed: u64) -> Scenario {
     let mut rng = SmallRng::seed_from_u64(seed);
     let mut simulation = base.simulation.clone();
 
@@ -804,14 +792,8 @@ fn randomized_scenario_variant(
     let max_dz = room.height * 0.02;
 
     for source in &mut simulation.sources {
-        source.position = jitter_point_within_room(
-            &mut rng,
-            source.position,
-            max_dx,
-            max_dy,
-            max_dz,
-            &room,
-        );
+        source.position =
+            jitter_point_within_room(&mut rng, source.position, max_dx, max_dy, max_dz, &room);
     }
 
     let lp_max_dx = room.width * 0.04;
@@ -819,14 +801,7 @@ fn randomized_scenario_variant(
     let lp_max_dz = room.height * 0.03;
 
     for lp in &mut simulation.listening_positions {
-        *lp = jitter_point_within_room(
-            &mut rng,
-            *lp,
-            lp_max_dx,
-            lp_max_dy,
-            lp_max_dz,
-            &room,
-        );
+        *lp = jitter_point_within_room(&mut rng, *lp, lp_max_dx, lp_max_dy, lp_max_dz, &room);
     }
 
     simulation.boundaries = jitter_boundaries(&mut rng, &simulation.boundaries, 0.05);

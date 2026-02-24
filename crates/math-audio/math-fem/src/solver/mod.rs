@@ -23,9 +23,9 @@ use math_audio_solvers::iterative::{
     gmres_preconditioned_with_guess,
 };
 use math_audio_solvers::{
-    AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix,
-    DeflationSubspace, DiagonalPreconditioner, GmresConfig, IdentityPreconditioner,
-    IluColoringPreconditioner, IluFixedPointPreconditioner, IluPreconditioner, gmres, lu_solve,
+    AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix, DeflationSubspace,
+    DiagonalPreconditioner, GmresConfig, IdentityPreconditioner, IluColoringPreconditioner,
+    IluFixedPointPreconditioner, IluPreconditioner, gmres, lu_solve,
 };
 use ndarray::Array1;
 use num_complex::Complex64;
@@ -1616,7 +1616,8 @@ pub fn solve_deflated_with_subspace(
     amg_config.strong_threshold = 0.5;
     let precond = AmgPreconditioner::from_csr(&p_matrix, amg_config);
 
-    let result = gmres_deflated_preconditioned(&csr, &precond, deflation, &rhs, None, &config.gmres);
+    let result =
+        gmres_deflated_preconditioned(&csr, &precond, deflation, &rhs, None, &config.gmres);
 
     if !result.converged {
         return Err(SolverError::ConvergenceFailure(

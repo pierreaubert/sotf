@@ -280,7 +280,12 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(div().text_xs().text_color(theme.text_muted).child("Low Lat"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Low Lat"),
+                        )
                         .child(render_toggle_button(
                             entity.clone(),
                             plugin_idx,
@@ -290,7 +295,12 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(div().text_xs().text_color(theme.text_muted).child("Polyphonic"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Polyphonic"),
+                        )
                         .child(render_toggle_button(
                             entity.clone(),
                             plugin_idx,
@@ -310,7 +320,12 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(div().text_xs().text_color(theme.text_muted).child("Masking")),
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Masking"),
+                        ),
                 )
                 // Column 6: Profile
                 .child(
@@ -338,7 +353,12 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(div().text_xs().text_color(theme.text_muted).child("Use Prof"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Use Prof"),
+                        )
                         .child(render_toggle_button(
                             entity.clone(),
                             plugin_idx,

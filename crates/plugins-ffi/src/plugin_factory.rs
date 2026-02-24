@@ -2,7 +2,7 @@
 // Plugin Factory - Creates plugin instances from JSON configs
 // ============================================================================
 
-use sotf_plugins::{EqPlugin, EqPluginParams, Plugin};
+use sotf_plugins::{EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin};
 
 /// Create a plugin instance from plugin type and JSON config string
 pub fn create_plugin(
@@ -37,7 +37,7 @@ fn create_eq_plugin(
     // Create EQ plugin with default sample rate (will be updated in initialize())
     let plugin = EqPlugin::from_params(input_channels, 48000, params)?;
 
-    Ok(Box::new(plugin))
+    Ok(Box::new(InPlacePluginAdapter::new(plugin)))
 }
 
 #[cfg(test)]

@@ -175,11 +175,9 @@ impl PlayerView {
                         } else if let Some(ref err) = playback_state.last_error {
                             log::error!("[GPUI] Playback error: {}", err);
                             state.app.playback.is_playing = false;
-                            state.app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::error(format!(
-                                    "Playback error: {}",
-                                    err
-                                )));
+                            state.app.ui_state.toast_message = Some(
+                                crate::app::ToastMessage::error(format!("Playback error: {}", err)),
+                            );
                         } else if playback_state.engine_restarted {
                             log::info!(
                                 "[GPUI] Engine auto-restarted after crash, resuming playback"
@@ -628,8 +626,16 @@ impl PlayerView {
             .and_then(|item| item.current_track())
             .and_then(|track| track.channels)
             .unwrap_or(2) as usize;
-        state.app.plugin_state.plugin_chain.adapt_matrix_to_input(track_channels);
-        let mut output_channels = state.app.plugin_state.plugin_chain.output_channels_for_input(track_channels);
+        state
+            .app
+            .plugin_state
+            .plugin_chain
+            .adapt_matrix_to_input(track_channels);
+        let mut output_channels = state
+            .app
+            .plugin_state
+            .plugin_chain
+            .output_channels_for_input(track_channels);
 
         // Clamp output channels to device max — the playback thread will
         // downmix automatically when the processing chain outputs more
@@ -647,12 +653,16 @@ impl PlayerView {
 
         // Apply ReplayGain correction to the permanent Gain plugin
         let rg_gain = if state.app.replay_gain_enabled {
-            let track = state.app.playback.current_queue_index
+            let track = state
+                .app
+                .playback
+                .current_queue_index
                 .and_then(|idx| state.app.queue.get(idx))
                 .and_then(|item| item.current_track());
             let gain = match state.app.replay_gain_mode {
                 ReplayGainMode::Track => track.and_then(|t| t.replay_gain),
-                ReplayGainMode::Album => track.and_then(|t| t.album_gain)
+                ReplayGainMode::Album => track
+                    .and_then(|t| t.album_gain)
                     .or(track.and_then(|t| t.replay_gain)),
             };
             gain.map(|g| g + state.app.replay_gain_preamp as f64)

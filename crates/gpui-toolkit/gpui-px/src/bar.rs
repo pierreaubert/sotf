@@ -904,9 +904,7 @@ mod tests {
     fn test_bar_with_explicit_y_range() {
         let categories = vec!["A", "B", "C"];
         let values = vec![10.0, 25.0, 15.0];
-        let result = bar(&categories, &values)
-            .y_range(0.0, 50.0)
-            .build();
+        let result = bar(&categories, &values).y_range(0.0, 50.0).build();
         assert!(result.is_ok());
     }
 }

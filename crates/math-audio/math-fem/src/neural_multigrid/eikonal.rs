@@ -156,13 +156,7 @@ where
         for dir in &sweep_dirs {
             let order = sweep_order(&grid, dir);
             for &node_idx in &order {
-                let new_val = godunov_update(
-                    node_idx,
-                    &tau,
-                    &slowness,
-                    &grid,
-                    dim,
-                );
+                let new_val = godunov_update(node_idx, &tau, &slowness, &grid, dim);
                 if new_val < tau[node_idx] - 1e-14 {
                     tau[node_idx] = new_val;
                     changed = true;
@@ -306,11 +300,7 @@ fn find_nearest_node(mesh: &Mesh, source: [f64; 3]) -> usize {
     mesh.nodes
         .iter()
         .enumerate()
-        .min_by(|(_, a), (_, b)| {
-            src.distance(a)
-                .partial_cmp(&src.distance(b))
-                .unwrap()
-        })
+        .min_by(|(_, a), (_, b)| src.distance(a).partial_cmp(&src.distance(b)).unwrap())
         .map(|(i, _)| i)
         .unwrap_or(0)
 }
@@ -405,11 +395,7 @@ fn godunov_2d_update(t1: f64, t2: f64, s: f64, h1: f64, h2: f64) -> Option<f64> 
     let t = (sum_t + discriminant.sqrt()) / sum_inv;
 
     // Check causality: t must be >= both t_a and t_b
-    if t >= t_b {
-        Some(t)
-    } else {
-        None
-    }
+    if t >= t_b { Some(t) } else { None }
 }
 
 /// Compute gradient via weighted least-squares on mesh neighbors
@@ -490,8 +476,7 @@ fn compute_laplacian_fd(mesh: &Mesh, tau: &[f64], grid: &SweepGrid) -> Vec<f64> 
 
         for &nb in neighbors {
             let pn = &mesh.nodes[nb];
-            let dist_sq =
-                (pn.x - pi.x).powi(2) + (pn.y - pi.y).powi(2) + (pn.z - pi.z).powi(2);
+            let dist_sq = (pn.x - pi.x).powi(2) + (pn.y - pi.y).powi(2) + (pn.z - pi.z).powi(2);
 
             if dist_sq < 1e-30 {
                 continue;
@@ -588,14 +573,8 @@ mod tests {
     fn test_domain_center() {
         let mesh = unit_square_triangles(4);
         let center = domain_center(&mesh);
-        assert!(
-            (center[0] - 0.5).abs() < 1e-10,
-            "Center x should be 0.5"
-        );
-        assert!(
-            (center[1] - 0.5).abs() < 1e-10,
-            "Center y should be 0.5"
-        );
+        assert!((center[0] - 0.5).abs() < 1e-10, "Center x should be 0.5");
+        assert!((center[1] - 0.5).abs() < 1e-10, "Center y should be 0.5");
     }
 
     #[test]

@@ -108,26 +108,26 @@ fn run_multi_source_system() -> Result<(), Box<dyn std::error::Error>> {
     // Left main speaker with highpass (80Hz, 4th order)
     let left_main = Source::omnidirectional(Point3D::new(1.5, 0.5, 1.0), 0.7)
         .with_name("Left Main".to_string())
-    .with_crossover(CrossoverFilter::Highpass {
-        cutoff_freq: 80.0,
-        order: 4,
-    });
+        .with_crossover(CrossoverFilter::Highpass {
+            cutoff_freq: 80.0,
+            order: 4,
+        });
 
     // Right main speaker with highpass (80Hz, 4th order)
     let right_main = Source::omnidirectional(Point3D::new(3.5, 0.5, 1.0), 0.7)
         .with_name("Right Main".to_string())
-    .with_crossover(CrossoverFilter::Highpass {
-        cutoff_freq: 80.0,
-        order: 4,
-    });
+        .with_crossover(CrossoverFilter::Highpass {
+            cutoff_freq: 80.0,
+            order: 4,
+        });
 
     // Subwoofer with lowpass (80Hz, 4th order)
     let subwoofer = Source::omnidirectional(Point3D::new(2.5, 0.3, 0.3), 1.0)
         .with_name("Subwoofer".to_string())
-    .with_crossover(CrossoverFilter::Lowpass {
-        cutoff_freq: 80.0,
-        order: 4,
-    });
+        .with_crossover(CrossoverFilter::Lowpass {
+            cutoff_freq: 80.0,
+            order: 4,
+        });
 
     println!("Sources:");
     println!(

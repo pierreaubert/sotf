@@ -4,8 +4,8 @@
 //! Includes panic handling and config validation for robust fuzzing.
 
 use autoeq::roomeq::{
-    CrossoverConfig, DBAConfig, MultiSubGroup, OptimizerConfig, RoomConfig,
-    SpeakerConfig, SpeakerGroup, TargetCurveConfig,
+    CrossoverConfig, DBAConfig, MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerConfig,
+    SpeakerGroup, TargetCurveConfig,
 };
 use clap::Parser;
 use rand::Rng;

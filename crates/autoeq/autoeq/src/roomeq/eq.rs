@@ -2,10 +2,10 @@
 //!
 //! Provides per-channel PEQ optimization using autoeq's workflow.
 
+use crate::Curve;
 use crate::cli::{Args, PeqModel};
 use crate::loss::LossType;
 use crate::workflow::setup_objective_data;
-use crate::Curve;
 use clap::{Parser, ValueEnum};
 use log::debug;
 use math_audio_iir_fir::Biquad;
@@ -96,7 +96,10 @@ pub fn optimize_channel_eq(
                 Ok(curve) => curve,
                 Err(_) => {
                     // Fallback: If not a known predefined curve, treat name as a file path
-                    debug!("  Target '{}' not a predefined curve, trying as file path...", name);
+                    debug!(
+                        "  Target '{}' not a predefined curve, trying as file path...",
+                        name
+                    );
                     let target = crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
                     crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
                 }
@@ -270,4 +273,3 @@ pub fn optimize_channel_eq(
 
     Ok((filters, final_loss))
 }
-

@@ -1,6 +1,6 @@
 use ndarray::{Array1, Array2};
-use rand::seq::SliceRandom;
 use rand::Rng;
+use rand::seq::SliceRandom;
 
 pub(crate) fn init_latin_hypercube<R: Rng + ?Sized>(
     n: usize,

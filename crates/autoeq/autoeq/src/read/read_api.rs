@@ -403,7 +403,8 @@ fn is_target_trace_name(measurement: &str, curve_name: &str, candidate: &str) ->
         // Fallback heuristic for other measurement types
         log::debug!(
             "⚠️  Warning: unable to determine if trace name {} is a target for curve {}, using heuristic",
-            candidate, curve_name
+            candidate,
+            curve_name
         );
         candidate.contains("Listening Window")
             || candidate.contains("On Axis")

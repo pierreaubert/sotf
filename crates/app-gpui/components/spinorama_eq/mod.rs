@@ -930,9 +930,7 @@ impl PlayerView {
 
                                 // Check for phase result
                                 if !phase_done {
-                                    if let Some(has_phase) =
-                                        lock!(PHASE_CHECK_RESULT).take()
-                                    {
+                                    if let Some(has_phase) = lock!(PHASE_CHECK_RESULT).take() {
                                         let _ = state_entity.update(cx, |state, cx| {
                                             state
                                                 .app

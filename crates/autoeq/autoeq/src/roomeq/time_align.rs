@@ -149,10 +149,7 @@ pub fn estimate_arrival_from_phase(
     let sum_f: f64 = points.iter().map(|(f, _)| f).sum();
     let sum_phi: f64 = points.iter().map(|(_, p)| p.to_radians()).sum();
     let sum_f2: f64 = points.iter().map(|(f, _)| f * f).sum();
-    let sum_f_phi: f64 = points
-        .iter()
-        .map(|(f, p)| f * p.to_radians())
-        .sum();
+    let sum_f_phi: f64 = points.iter().map(|(f, p)| f * p.to_radians()).sum();
 
     let denom = n * sum_f2 - sum_f * sum_f;
     if denom.abs() < 1e-12 {
@@ -231,10 +228,7 @@ mod tests {
         let tau_ms = 5.0_f64;
         let tau_s = tau_ms / 1000.0;
         let freqs: Vec<f64> = (20..=2000).step_by(10).map(|f| f as f64).collect();
-        let phase_deg: Vec<f64> = freqs
-            .iter()
-            .map(|&f| -360.0 * f * tau_s)
-            .collect();
+        let phase_deg: Vec<f64> = freqs.iter().map(|&f| -360.0 * f * tau_s).collect();
 
         let curve = crate::Curve {
             freq: Array1::from_vec(freqs),
@@ -243,7 +237,10 @@ mod tests {
         };
 
         let estimated = estimate_arrival_from_phase(&curve, 200.0, 2000.0);
-        assert!(estimated.is_some(), "Should recover arrival time from phase");
+        assert!(
+            estimated.is_some(),
+            "Should recover arrival time from phase"
+        );
         let estimated = estimated.unwrap();
         assert!(
             (estimated - tau_ms).abs() < 0.1,

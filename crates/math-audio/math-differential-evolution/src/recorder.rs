@@ -1,6 +1,6 @@
 use crate::{CallbackAction, DEIntermediate};
 use ndarray::Array1;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::{BufWriter, Write};
 use std::sync::{Arc, Mutex};
 
@@ -316,7 +316,7 @@ impl OptimizationRecorder {
 #[cfg(test)]
 mod tests {
     use crate::{
-        recorder::OptimizationRecorder, run_recorded_differential_evolution, DEConfigBuilder,
+        DEConfigBuilder, recorder::OptimizationRecorder, run_recorded_differential_evolution,
     };
     use math_audio_test_functions::quadratic;
     use ndarray::Array1;
@@ -377,8 +377,10 @@ mod tests {
 
                 // Check header format
                 let header = lines[0];
-                assert!(header
-                    .starts_with("eval_id,generation,x0,x1,f_value,best_so_far,is_improvement"));
+                assert!(
+                    header
+                        .starts_with("eval_id,generation,x0,x1,f_value,best_so_far,is_improvement")
+                );
 
                 println!(
                     "Recording test passed - {} iterations recorded",

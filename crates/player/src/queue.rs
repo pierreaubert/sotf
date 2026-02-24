@@ -203,8 +203,7 @@ impl Queue {
         if current_idx > 0 {
             self.current_index = Some(current_idx - 1);
             if let Some(prev_item) = self.items.get_mut(current_idx - 1) {
-                prev_item.current_track_index =
-                    prev_item.album.tracks.len().saturating_sub(1);
+                prev_item.current_track_index = prev_item.album.tracks.len().saturating_sub(1);
                 return prev_item.current_track().map(|t| t.path.clone());
             }
         }
@@ -355,7 +354,13 @@ mod tests {
         assert_eq!(queue.len(), 1);
         assert_eq!(queue.current_index, Some(0));
         // Should now be on album B
-        assert!(queue.current_track_path().unwrap().to_string_lossy().contains("/B/"));
+        assert!(
+            queue
+                .current_track_path()
+                .unwrap()
+                .to_string_lossy()
+                .contains("/B/")
+        );
     }
 
     #[test]

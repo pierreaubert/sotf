@@ -32,12 +32,10 @@ fn test_table_creation() {
 
 #[test]
 fn test_table_with_sorting() {
-    let rows = vec![
-        TestItem {
-            id: 1,
-            name: "Item 1".to_string(),
-        },
-    ];
+    let rows = vec![TestItem {
+        id: 1,
+        name: "Item 1".to_string(),
+    }];
 
     let table = Table::new("table", rows)
         .column(Column::new("id", "ID").cell_render(|item: &TestItem, _, _, _| item.id.to_string()))
@@ -48,12 +46,10 @@ fn test_table_with_sorting() {
 
 #[test]
 fn test_table_with_selection() {
-    let rows = vec![
-        TestItem {
-            id: 1,
-            name: "Item 1".to_string(),
-        },
-    ];
+    let rows = vec![TestItem {
+        id: 1,
+        name: "Item 1".to_string(),
+    }];
 
     let table = Table::new("table", rows)
         .column(Column::new("id", "ID").cell_render(|item: &TestItem, _, _, _| item.id.to_string()))
@@ -65,12 +61,10 @@ fn test_table_with_selection() {
 
 #[test]
 fn test_table_with_pagination() {
-    let rows = vec![
-        TestItem {
-            id: 1,
-            name: "Item 1".to_string(),
-        },
-    ];
+    let rows = vec![TestItem {
+        id: 1,
+        name: "Item 1".to_string(),
+    }];
 
     let table = Table::new("table", rows)
         .column(Column::new("id", "ID").cell_render(|item: &TestItem, _, _, _| item.id.to_string()))

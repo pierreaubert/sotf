@@ -31,9 +31,7 @@ pub fn assemble_local_pml_system(
     let mut triplets: Vec<(usize, usize, Complex64)> = Vec::new();
 
     for elem_idx in 0..local_mesh.num_elements() {
-        let elem_triplets = assemble_element_pml(
-            local_mesh, elem_idx, degree, k_sq, pml_regions,
-        );
+        let elem_triplets = assemble_element_pml(local_mesh, elem_idx, degree, k_sq, pml_regions);
         triplets.extend(elem_triplets);
     }
 
@@ -248,10 +246,7 @@ fn map_to_physical_3d(shape_values: &[f64], coords: &[[f64; 3]]) -> [f64; 3] {
 /// Apply homogeneous Dirichlet BCs to a CSR matrix
 ///
 /// For each Dirichlet node: zero out the row, zero out the column, set diagonal to 1.
-fn apply_homogeneous_dirichlet(
-    csr: &mut CsrMatrix<Complex64>,
-    dirichlet_nodes: &HashSet<usize>,
-) {
+fn apply_homogeneous_dirichlet(csr: &mut CsrMatrix<Complex64>, dirichlet_nodes: &HashSet<usize>) {
     if dirichlet_nodes.is_empty() {
         return;
     }
@@ -301,13 +296,7 @@ mod tests {
         let mesh = unit_square_triangles(4);
         let dirichlet = HashSet::new();
 
-        let csr = assemble_local_pml_system(
-            &mesh,
-            PolynomialDegree::P1,
-            1.0,
-            &[],
-            &dirichlet,
-        );
+        let csr = assemble_local_pml_system(&mesh, PolynomialDegree::P1, 1.0, &[], &dirichlet);
 
         assert_eq!(csr.num_rows, mesh.num_nodes());
         assert!(csr.nnz() > 0);
@@ -319,13 +308,7 @@ mod tests {
         let pml = PmlRegion::x_positive(0.8, 0.2, 10.0, 5.0);
         let dirichlet = HashSet::new();
 
-        let csr = assemble_local_pml_system(
-            &mesh,
-            PolynomialDegree::P1,
-            5.0,
-            &[pml],
-            &dirichlet,
-        );
+        let csr = assemble_local_pml_system(&mesh, PolynomialDegree::P1, 5.0, &[pml], &dirichlet);
 
         // PML should introduce complex entries
         let has_complex = csr.values.iter().any(|v| v.im.abs() > 1e-15);
@@ -339,13 +322,7 @@ mod tests {
         dirichlet.insert(0);
         dirichlet.insert(1);
 
-        let csr = assemble_local_pml_system(
-            &mesh,
-            PolynomialDegree::P1,
-            1.0,
-            &[],
-            &dirichlet,
-        );
+        let csr = assemble_local_pml_system(&mesh, PolynomialDegree::P1, 1.0, &[], &dirichlet);
 
         // Dirichlet rows should have diagonal = 1 and all else zero
         for &node in &dirichlet {

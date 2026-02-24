@@ -6,8 +6,8 @@
 //!
 //! Reference: Galkowski et al. (2024, arXiv:2408.16580)
 
-use crate::mesh::Mesh;
 use crate::basis::PolynomialDegree;
+use crate::mesh::Mesh;
 use crate::schwarz_pml::config::{SchwarzPmlConfig, SchwarzVariant};
 use crate::schwarz_pml::decomposition::{
     SubdomainInfo, compute_partition_of_unity, decompose_domain, extract_local_mesh,
@@ -91,12 +91,12 @@ pub fn solve_schwarz_pml(
     // 4. Run Schwarz iteration
     let solve_start = Instant::now();
     let result = match config.variant {
-        SchwarzVariant::Additive => schwarz_additive(
-            mesh, rhs, &subdomains, &local_data, &pou_weights, config,
-        ),
-        SchwarzVariant::Multiplicative => schwarz_multiplicative(
-            mesh, rhs, &subdomains, &local_data, &pou_weights, config,
-        ),
+        SchwarzVariant::Additive => {
+            schwarz_additive(mesh, rhs, &subdomains, &local_data, &pou_weights, config)
+        }
+        SchwarzVariant::Multiplicative => {
+            schwarz_multiplicative(mesh, rhs, &subdomains, &local_data, &pou_weights, config)
+        }
     };
 
     let solve_time = solve_start.elapsed();
@@ -104,7 +104,11 @@ pub fn solve_schwarz_pml(
         match &result {
             Ok(sol) => println!(
                 "  [Schwarz-PML] {} in {} iterations (residual: {:.2e}, time: {:.1}ms)",
-                if sol.converged { "Converged" } else { "Did not converge" },
+                if sol.converged {
+                    "Converged"
+                } else {
+                    "Did not converge"
+                },
                 sol.iterations,
                 sol.residual,
                 solve_time.as_secs_f64() * 1000.0,
@@ -149,13 +153,8 @@ fn prepare_subdomain(
     let mut all_dirichlet = pml_dirichlet_nodes.clone();
     all_dirichlet.extend(&sub.overlap_boundary_nodes);
 
-    let system = assemble_local_pml_system(
-        &local_mesh,
-        degree,
-        k,
-        &sub.pml_regions,
-        &all_dirichlet,
-    );
+    let system =
+        assemble_local_pml_system(&local_mesh, degree, k, &sub.pml_regions, &all_dirichlet);
 
     LocalSubdomainData {
         system,
@@ -191,9 +190,7 @@ fn schwarz_additive(
 
         // Solve each subdomain independently
         for (j, (sub, ld)) in subdomains.iter().zip(local_data.iter()).enumerate() {
-            let local_rhs = build_local_rhs_with_overlap(
-                global_rhs, &u_global, sub, ld,
-            );
+            let local_rhs = build_local_rhs_with_overlap(global_rhs, &u_global, sub, ld);
 
             let u_local = solve_local_system(&ld.system, &local_rhs, &local_solver_config)?;
 
@@ -210,17 +207,25 @@ fn schwarz_additive(
         }
 
         // Check convergence: relative change
-        let diff_norm: f64 = u_new.iter().zip(u_global.iter())
+        let diff_norm: f64 = u_new
+            .iter()
+            .zip(u_global.iter())
             .map(|(a, b)| (a - b).norm().powi(2))
             .sum::<f64>()
             .sqrt();
-        let new_norm: f64 = u_new.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
+        let new_norm: f64 = u_new
+            .iter()
+            .map(|v| v.norm().powi(2))
+            .sum::<f64>()
+            .sqrt()
+            .max(1e-15);
         let rel_change = diff_norm / new_norm;
 
         if config.verbosity > 1 {
             println!(
                 "    [Schwarz-PML] iter {}: rel_change = {:.2e}",
-                iter + 1, rel_change
+                iter + 1,
+                rel_change
             );
         }
 
@@ -236,8 +241,16 @@ fn schwarz_additive(
         }
     }
 
-    let final_norm: f64 = u_global.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
-    Err(SolverError::ConvergenceFailure(config.max_iterations, final_norm))
+    let final_norm: f64 = u_global
+        .iter()
+        .map(|v| v.norm().powi(2))
+        .sum::<f64>()
+        .sqrt()
+        .max(1e-15);
+    Err(SolverError::ConvergenceFailure(
+        config.max_iterations,
+        final_norm,
+    ))
 }
 
 /// Multiplicative Schwarz iteration
@@ -267,9 +280,7 @@ fn schwarz_multiplicative(
 
         // Solve subdomains sequentially, updating u_global after each
         for (j, (sub, ld)) in subdomains.iter().zip(local_data.iter()).enumerate() {
-            let local_rhs = build_local_rhs_with_overlap(
-                global_rhs, &u_global, sub, ld,
-            );
+            let local_rhs = build_local_rhs_with_overlap(global_rhs, &u_global, sub, ld);
 
             let u_local = solve_local_system(&ld.system, &local_rhs, &local_solver_config)?;
 
@@ -281,7 +292,9 @@ fn schwarz_multiplicative(
                         // Replace this subdomain's contribution
                         // (For multiplicative, we need to be more careful about overlaps)
                         // Simple approach: weighted update
-                        u_global[global_idx] += weight * (u_local[local_idx] - restrict_global_to_local_node(&u_prev, sub, local_idx));
+                        u_global[global_idx] += weight
+                            * (u_local[local_idx]
+                                - restrict_global_to_local_node(&u_prev, sub, local_idx));
                         break;
                     }
                 }
@@ -289,17 +302,25 @@ fn schwarz_multiplicative(
         }
 
         // Check convergence: relative change
-        let diff_norm: f64 = u_global.iter().zip(u_prev.iter())
+        let diff_norm: f64 = u_global
+            .iter()
+            .zip(u_prev.iter())
             .map(|(a, b)| (a - b).norm().powi(2))
             .sum::<f64>()
             .sqrt();
-        let new_norm: f64 = u_global.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
+        let new_norm: f64 = u_global
+            .iter()
+            .map(|v| v.norm().powi(2))
+            .sum::<f64>()
+            .sqrt()
+            .max(1e-15);
         let rel_change = diff_norm / new_norm;
 
         if config.verbosity > 1 {
             println!(
                 "    [Schwarz-PML] iter {}: rel_change = {:.2e}",
-                iter + 1, rel_change
+                iter + 1,
+                rel_change
             );
         }
 
@@ -313,8 +334,16 @@ fn schwarz_multiplicative(
         }
     }
 
-    let final_norm: f64 = u_global.iter().map(|v| v.norm().powi(2)).sum::<f64>().sqrt().max(1e-15);
-    Err(SolverError::ConvergenceFailure(config.max_iterations, final_norm))
+    let final_norm: f64 = u_global
+        .iter()
+        .map(|v| v.norm().powi(2))
+        .sum::<f64>()
+        .sqrt()
+        .max(1e-15);
+    Err(SolverError::ConvergenceFailure(
+        config.max_iterations,
+        final_norm,
+    ))
 }
 
 /// Build the local RHS for a subdomain, incorporating overlap boundary conditions
@@ -374,8 +403,8 @@ fn solve_local_system(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::unit_square_triangles;
     use crate::assembly::HelmholtzProblem;
+    use crate::mesh::unit_square_triangles;
     use std::f64::consts::PI;
 
     #[test]
@@ -386,12 +415,10 @@ mod tests {
         let wavenumber = Complex64::new(k, 0.0);
 
         // Assemble global problem for RHS
-        let problem = HelmholtzProblem::assemble(
-            &mesh,
-            PolynomialDegree::P1,
-            wavenumber,
-            |x, y, _| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0),
-        );
+        let problem =
+            HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, wavenumber, |x, y, _| {
+                Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
+            });
 
         // All boundary nodes as Dirichlet = 0
         let mut dirichlet_bcs = Vec::new();
@@ -422,7 +449,11 @@ mod tests {
             &config,
         );
 
-        assert!(result.is_ok(), "Schwarz-PML should converge: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Schwarz-PML should converge: {:?}",
+            result.err()
+        );
         let sol = result.unwrap();
         assert!(sol.converged);
         assert!(sol.iterations < config.max_iterations);
@@ -434,12 +465,10 @@ mod tests {
         let k = 3.0;
         let wavenumber = Complex64::new(k, 0.0);
 
-        let problem = HelmholtzProblem::assemble(
-            &mesh,
-            PolynomialDegree::P1,
-            wavenumber,
-            |_, _, _| Complex64::new(1.0, 0.0),
-        );
+        let problem =
+            HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, wavenumber, |_, _, _| {
+                Complex64::new(1.0, 0.0)
+            });
 
         let mut dirichlet_bcs = Vec::new();
         for (i, node) in mesh.nodes.iter().enumerate() {
@@ -470,12 +499,20 @@ mod tests {
         };
 
         let add_result = solve_schwarz_pml(
-            &mesh, PolynomialDegree::P1, wavenumber,
-            &problem.rhs, &dirichlet_bcs, &additive_config,
+            &mesh,
+            PolynomialDegree::P1,
+            wavenumber,
+            &problem.rhs,
+            &dirichlet_bcs,
+            &additive_config,
         );
         let mult_result = solve_schwarz_pml(
-            &mesh, PolynomialDegree::P1, wavenumber,
-            &problem.rhs, &dirichlet_bcs, &multiplicative_config,
+            &mesh,
+            PolynomialDegree::P1,
+            wavenumber,
+            &problem.rhs,
+            &dirichlet_bcs,
+            &multiplicative_config,
         );
 
         // Both should converge

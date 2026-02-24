@@ -1826,7 +1826,12 @@ impl MusicDatabase {
     }
 
     /// Update album-level ReplayGain for a track
-    pub fn update_album_gain(&self, path: &Path, album_gain: f64, album_peak: f64) -> SqlResult<()> {
+    pub fn update_album_gain(
+        &self,
+        path: &Path,
+        album_gain: f64,
+        album_peak: f64,
+    ) -> SqlResult<()> {
         self.conn.execute(
             "UPDATE tracks SET album_gain = ?1, album_peak = ?2 WHERE path = ?3",
             params![album_gain, album_peak, path.to_str().unwrap()],
@@ -1839,17 +1844,17 @@ impl MusicDatabase {
     /// without album_gain.
     pub fn get_albums_without_album_gain(&self) -> SqlResult<Vec<(i64, Vec<PathBuf>)>> {
         // Find album_ids that have any track missing album_gain
-        let mut album_stmt = self.conn.prepare(
-            "SELECT DISTINCT album_id FROM tracks WHERE album_gain IS NULL",
-        )?;
+        let mut album_stmt = self
+            .conn
+            .prepare("SELECT DISTINCT album_id FROM tracks WHERE album_gain IS NULL")?;
         let album_ids: Vec<i64> = album_stmt
             .query_map([], |row| row.get(0))?
             .collect::<SqlResult<Vec<_>>>()?;
 
         // For each album, get all track paths (we need all tracks to compute album gain)
-        let mut track_stmt = self
-            .conn
-            .prepare("SELECT path FROM tracks WHERE album_id = ?1 ORDER BY disc_number, track_number")?;
+        let mut track_stmt = self.conn.prepare(
+            "SELECT path FROM tracks WHERE album_id = ?1 ORDER BY disc_number, track_number",
+        )?;
 
         let mut result = Vec::new();
         for album_id in album_ids {
@@ -3034,7 +3039,10 @@ mod tests {
         // MD5 of "hello world" is 5eb63bbbe01eeed093cb22bb8f5acdc3
         assert_eq!(
             hash,
-            [0x5e, 0xb6, 0x3b, 0xbb, 0xe0, 0x1e, 0xee, 0xd0, 0x93, 0xcb, 0x22, 0xbb, 0x8f, 0x5a, 0xcd, 0xc3]
+            [
+                0x5e, 0xb6, 0x3b, 0xbb, 0xe0, 0x1e, 0xee, 0xd0, 0x93, 0xcb, 0x22, 0xbb, 0x8f, 0x5a,
+                0xcd, 0xc3
+            ]
         );
 
         std::fs::remove_dir_all(&dir).ok();
@@ -3075,7 +3083,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(1));
         backup_existing_database(&db_path).unwrap();
         let count_after_third = count_backups(&test_dir);
-        assert_eq!(count_after_third, 2, "changed database should produce a new backup");
+        assert_eq!(
+            count_after_third, 2,
+            "changed database should produce a new backup"
+        );
 
         // Cleanup
         std::fs::remove_dir_all(&test_dir).ok();

@@ -16,7 +16,7 @@
 //!   cargo run --bin roomeq-qa-full --release -- --matrix    # show test matrix
 //!   cargo run --bin roomeq-qa-full --release -- --junit     # JUnit XML output
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
@@ -26,8 +26,8 @@ use std::thread;
 use clap::Parser;
 
 use autoeq::roomeq::{
-    merge_json_objects, optimize_room, CallbackAction, ProcessingMode, RoomConfig,
-    RoomOptimizationResult,
+    CallbackAction, ProcessingMode, RoomConfig, RoomOptimizationResult, merge_json_objects,
+    optimize_room,
 };
 
 // ---------------------------------------------------------------------------
@@ -347,7 +347,8 @@ fn build_test_matrix(
             for method in &methods {
                 // Apply mode filter
                 if let Some(f) = mode_filter
-                    && method.name() != f && f != "all"
+                    && method.name() != f
+                    && f != "all"
                 {
                     continue;
                 }
@@ -514,20 +515,23 @@ fn validate_result(
     for (name, ch_result) in &result.channel_results {
         let improved = ch_result.post_score < ch_result.pre_score;
         let has_biquads = !ch_result.biquads.is_empty();
-        let has_fir = ch_result
-            .fir_coeffs
-            .as_ref()
-            .is_some_and(|c| !c.is_empty());
+        let has_fir = ch_result.fir_coeffs.as_ref().is_some_and(|c| !c.is_empty());
 
         match method {
             ProcessingMethod::Iir => {
                 if improved && !has_biquads {
-                    failures.push(format!("channel '{}': IIR mode but no biquad filters", name));
+                    failures.push(format!(
+                        "channel '{}': IIR mode but no biquad filters",
+                        name
+                    ));
                 }
             }
             ProcessingMethod::Fir => {
                 if improved && !has_fir {
-                    failures.push(format!("channel '{}': FIR mode but no FIR coefficients", name));
+                    failures.push(format!(
+                        "channel '{}': FIR mode but no FIR coefficients",
+                        name
+                    ));
                 }
             }
             ProcessingMethod::Mixed => {
@@ -724,7 +728,16 @@ fn run_test_case(tc: &TestCase, maxeval: usize) -> TestResult {
 
     let validation_failures = validate_result(&result, tc.room_size(), tc.method);
 
-    TestResult::success(&name, &scenario, &solver, &method, pre, post, validation_failures, dur)
+    TestResult::success(
+        &name,
+        &scenario,
+        &solver,
+        &method,
+        pre,
+        post,
+        validation_failures,
+        dur,
+    )
 }
 
 // ---------------------------------------------------------------------------

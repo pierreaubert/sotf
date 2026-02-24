@@ -573,7 +573,8 @@ pub fn render_spectrum_analyzer_plugin(
                                 .p_2()
                                 .child(if let Some(data) = state.data {
                                     // Use real spectrum data
-                                    let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
+                                    let magnitudes: Arc<[f32]> =
+                                        Arc::from(data.magnitudes.as_ref().as_slice());
                                     SpectrumElement::new(magnitudes)
                                         .height(px(200.0))
                                         .frequency_range(state.min_freq, state.max_freq)

@@ -10,7 +10,7 @@
 //! since they already have an 80 Hz lowpass crossover.
 
 use crate::SimulationOutput;
-use math_audio_xem_common::{log_space, RoomSimulation};
+use math_audio_xem_common::{RoomSimulation, log_space};
 use num_complex::Complex64;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -130,11 +130,7 @@ fn surround_response_shape(freq: f64) -> f64 {
 
 fn center_response_shape(freq: f64) -> f64 {
     let base = speaker_response_shape(freq);
-    if freq < 300.0 {
-        base - 1.0
-    } else {
-        base
-    }
+    if freq < 300.0 { base - 1.0 } else { base }
 }
 
 fn speaker_response_shape_for_name(name: &str, freq: f64) -> f64 {

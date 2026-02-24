@@ -699,7 +699,7 @@ where
                         if best_c != usize::MAX {
                             triplets.push((i, fine_to_coarse[best_c], T::one()));
                         } else {
-                            // If absolutely no C-neighbors exist in the row, 
+                            // If absolutely no C-neighbors exist in the row,
                             // this indicates a disconnected component or extremely bad coarsening.
                             // We pick the first available coarse point as a last resort.
                             if !coarse_to_fine.is_empty() {

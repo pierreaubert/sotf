@@ -136,7 +136,7 @@ fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool
         PluginType::BandMerge => "⊤", // Merge - inverted T-junction
         PluginType::Downmix => "▼",   // Downmix - downward triangle
         PluginType::MonoToStereo => "⊕", // Mono to Stereo - circular plus
-        PluginType::Crossfeed => "⊞",   // Crossfeed - boxed plus
+        PluginType::Crossfeed => "⊞", // Crossfeed - boxed plus
     }
 }
 

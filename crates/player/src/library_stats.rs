@@ -231,9 +231,7 @@ impl LibraryStats {
     }
 
     /// Build track count ranges from distribution.
-    fn build_track_ranges(
-        distribution: &HashMap<usize, usize>,
-    ) -> Vec<(usize, usize, usize)> {
+    fn build_track_ranges(distribution: &HashMap<usize, usize>) -> Vec<(usize, usize, usize)> {
         let ranges = [
             (1, 5),
             (6, 10),

@@ -36,7 +36,9 @@ impl LinearOperator<f64> for WaveHoltzOperator {
 
     fn apply(&self, x: &Array1<f64>) -> Array1<f64> {
         // (I - W_hom) x = x - W(x, forcing=None)
-        let w_x = self.stepper.propagate_filtered(x, None, &self.filter, self.omega);
+        let w_x = self
+            .stepper
+            .propagate_filtered(x, None, &self.filter, self.omega);
         x - &w_x
     }
 
@@ -277,8 +279,7 @@ pub(crate) fn solve_waveholtz_from_problem(
     wh_config: &WaveHoltzConfig,
 ) -> Result<Solution, SolverError> {
     // Build assembler from problem's K and M
-    let mut assembler =
-        HelmholtzAssembler::from_matrices(&problem.stiffness, &problem.mass, &[]);
+    let mut assembler = HelmholtzAssembler::from_matrices(&problem.stiffness, &problem.mass, &[]);
 
     // Apply Dirichlet BCs to K/M so WaveHoltz sees them
     assembler.apply_dirichlet_nodes(&problem.dirichlet_nodes);

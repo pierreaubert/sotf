@@ -20,6 +20,7 @@ mod ui_band_split;
 mod ui_binaural;
 mod ui_compressor;
 mod ui_convolution;
+mod ui_crossfeed;
 mod ui_denoiser;
 mod ui_downmix;
 pub mod ui_eq;
@@ -37,10 +38,9 @@ mod ui_mono_to_stereo;
 mod ui_mute_solo;
 mod ui_pnd;
 mod ui_rack;
+mod ui_simple;
 mod ui_spectrum;
 mod ui_upmixer;
-mod ui_crossfeed;
-mod ui_simple;
 mod ui_xtc;
 
 pub use common::*;
@@ -58,6 +58,7 @@ pub use ui_band_split::render_band_split_plugin;
 pub use ui_binaural::render_binaural_plugin;
 pub use ui_compressor::render_compressor_plugin;
 pub use ui_convolution::render_convolution_plugin;
+pub use ui_crossfeed::render_crossfeed_plugin;
 pub use ui_denoiser::render_denoiser_plugin;
 pub use ui_downmix::render_downmix_plugin;
 pub use ui_eq::render_eq_plugin;
@@ -74,12 +75,11 @@ pub use ui_mono_to_stereo::render_mono_to_stereo_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
 pub use ui_pnd::render_pnd_plugin;
 pub use ui_rack::PluginDragInfo;
+pub use ui_simple::render_simple_plugin_view;
 pub use ui_spectrum::{
     MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin,
 };
 pub use ui_upmixer::render_upmixer_plugin;
-pub use ui_crossfeed::render_crossfeed_plugin;
-pub use ui_simple::render_simple_plugin_view;
 pub use ui_xtc::render_xtc_plugin;
 
 use crate::app::AppState;
@@ -573,24 +573,41 @@ pub fn render_plugin_content(
             ..
         } => {
             let selected_band_idx = selected_band_idx.min(*num_bands);
-            
+
             // If a band is selected (>0), we show its values if they exist, otherwise global
-            let (disp_threshold, disp_ratio, disp_attack, disp_release, disp_knee, disp_makeup, disp_solo, disp_bypass) = 
-                if selected_band_idx > 0 {
-                    let b = &bands[selected_band_idx - 1];
-                    (
-                        b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
-                        b.ratio.map(|v| v as f64).unwrap_or(*ratio),
-                        b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
-                        b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
-                        b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
-                        b.makeup_gain_db as f64,
-                        b.solo,
-                        b.bypass,
-                    )
-                } else {
-                    (*threshold_db, *ratio, *attack_ms, *release_ms, *knee_db, 0.0, false, false)
-                };
+            let (
+                disp_threshold,
+                disp_ratio,
+                disp_attack,
+                disp_release,
+                disp_knee,
+                disp_makeup,
+                disp_solo,
+                disp_bypass,
+            ) = if selected_band_idx > 0 {
+                let b = &bands[selected_band_idx - 1];
+                (
+                    b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
+                    b.ratio.map(|v| v as f64).unwrap_or(*ratio),
+                    b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
+                    b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
+                    b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
+                    b.makeup_gain_db as f64,
+                    b.solo,
+                    b.bypass,
+                )
+            } else {
+                (
+                    *threshold_db,
+                    *ratio,
+                    *attack_ms,
+                    *release_ms,
+                    *knee_db,
+                    0.0,
+                    false,
+                    false,
+                )
+            };
 
             render_mb_compressor_plugin(
                 entity.clone(),
@@ -643,24 +660,45 @@ pub fn render_plugin_content(
             let selected_band_idx = selected_band_idx.min(*num_bands);
 
             // If a band is selected (>0), we show its values if they exist, otherwise global
-            let (disp_threshold, disp_ratio, disp_attack, disp_release, disp_range, disp_knee, disp_hysteresis, disp_hold, disp_solo, disp_bypass) = 
-                if selected_band_idx > 0 {
-                    let b = &bands[selected_band_idx - 1];
-                    (
-                        b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
-                        b.ratio.map(|v| v as f64).unwrap_or(*ratio),
-                        b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
-                        b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
-                        b.range_db.map(|v| v as f64).unwrap_or(*range_db),
-                        b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
-                        b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
-                        b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
-                        b.solo,
-                        b.bypass,
-                    )
-                } else {
-                    (*threshold_db, *ratio, *attack_ms, *release_ms, *range_db, *knee_db, *hysteresis_db, *hold_ms, false, false)
-                };
+            let (
+                disp_threshold,
+                disp_ratio,
+                disp_attack,
+                disp_release,
+                disp_range,
+                disp_knee,
+                disp_hysteresis,
+                disp_hold,
+                disp_solo,
+                disp_bypass,
+            ) = if selected_band_idx > 0 {
+                let b = &bands[selected_band_idx - 1];
+                (
+                    b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
+                    b.ratio.map(|v| v as f64).unwrap_or(*ratio),
+                    b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
+                    b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
+                    b.range_db.map(|v| v as f64).unwrap_or(*range_db),
+                    b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
+                    b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
+                    b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
+                    b.solo,
+                    b.bypass,
+                )
+            } else {
+                (
+                    *threshold_db,
+                    *ratio,
+                    *attack_ms,
+                    *release_ms,
+                    *range_db,
+                    *knee_db,
+                    *hysteresis_db,
+                    *hold_ms,
+                    false,
+                    false,
+                )
+            };
 
             render_mb_expander_plugin(
                 entity.clone(),

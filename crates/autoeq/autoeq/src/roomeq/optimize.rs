@@ -2,6 +2,7 @@
 //!
 //! This module provides the primary public API for room optimization.
 
+use super::spectral_align;
 use crate::Curve;
 use crate::error::{AutoeqError, Result};
 use crate::read as load;
@@ -9,11 +10,10 @@ use crate::response;
 use log::{debug, info, warn};
 use math_audio_dsp::analysis::{compute_average_response, find_db_point};
 use math_audio_iir_fir::Biquad;
+use ndarray::Array1;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
-use ndarray::Array1;
-use super::spectral_align;
 
 use super::config::validate_room_config;
 use super::crossover;
@@ -112,8 +112,7 @@ fn post_generate_fir(
             if let Some(out_dir) = output_dir {
                 let filename = format!("{}_fir.wav", name);
                 let wav_path = out_dir.join(&filename);
-                if let Err(e) =
-                    crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
+                if let Err(e) = crate::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
                 {
                     warn!("Failed to save FIR WAV for {}: {}", name, e);
                 } else {
@@ -353,14 +352,12 @@ pub fn optimize_room(
                         ))
                     }
                 }
-                SystemModel::HomeCinema => {
-                    Some(super::workflows::optimize_home_cinema(
-                        config,
-                        sys,
-                        sample_rate,
-                        output_dir.unwrap_or(Path::new(".")),
-                    ))
-                }
+                SystemModel::HomeCinema => Some(super::workflows::optimize_home_cinema(
+                    config,
+                    sys,
+                    sample_rate,
+                    output_dir.unwrap_or(Path::new(".")),
+                )),
                 SystemModel::Custom => None, // Fall through to generic path
             };
 
@@ -390,9 +387,7 @@ pub fn optimize_room(
                     let delay_ms = result
                         .channels
                         .get(channel_name)
-                        .and_then(|chain| {
-                            chain.plugins.iter().find(|p| p.plugin_type == "delay")
-                        })
+                        .and_then(|chain| chain.plugins.iter().find(|p| p.plugin_type == "delay"))
                         .and_then(|p| p.parameters.get("delay_ms").and_then(|v| v.as_f64()))
                         .unwrap_or(0.0);
                     if let Some((pre_ir, post_ir)) =
@@ -402,7 +397,8 @@ pub fn optimize_room(
                             ch_result.fir_coeffs.as_deref(),
                             delay_ms,
                             sample_rate,
-                        ) && let Some(chain) = result.channels.get_mut(channel_name)
+                        )
+                        && let Some(chain) = result.channels.get_mut(channel_name)
                     {
                         chain.pre_ir = Some(pre_ir);
                         chain.post_ir = Some(post_ir);
@@ -549,11 +545,9 @@ pub fn optimize_room(
     let phase_ir_sync = channel_arrivals.is_empty() && channel_results.len() > 1;
     if phase_ir_sync {
         for (channel_name, result) in &channel_results {
-            if let Some(arrival_ms) = super::time_align::estimate_arrival_from_phase(
-                &result.initial_curve,
-                200.0,
-                2000.0,
-            ) {
+            if let Some(arrival_ms) =
+                super::time_align::estimate_arrival_from_phase(&result.initial_curve, 200.0, 2000.0)
+            {
                 channel_arrivals.insert(channel_name.clone(), arrival_ms);
             }
         }
@@ -563,7 +557,10 @@ pub fn optimize_room(
                 channel_arrivals.len()
             );
             for (name, arrival) in &channel_arrivals {
-                info!("  Channel '{}': phase-estimated arrival = {:.2} ms", name, arrival);
+                info!(
+                    "  Channel '{}': phase-estimated arrival = {:.2} ms",
+                    name, arrival
+                );
             }
         } else {
             // Clear partial arrivals — not enough channels have phase data
@@ -1223,93 +1220,94 @@ fn process_single_speaker(
     // ========================================================================
     // Fit shelves/gain to the target curve across the full 20Hz-20kHz range
     // to establish a balanced baseline before fine-grained optimization.
-    let (curve_for_optim, broadband_plugins, bb_mean_shift) =
-        if let Some(bb_config) = &room_config.optimizer.broadband_target_matching {
-            if bb_config.enabled {
-                info!("  Broadband Target Matching enabled...");
-                // 1. Construct the target curve (with tilt if configured, or flat)
-                let target = target_tilt_curve.clone().unwrap_or_else(|| {
-                    // Create a flat (0 dB) target curve matching the input frequency grid
-                    Curve {
-                        freq: curve.freq.clone(),
-                        spl: Array1::zeros(curve.freq.len()),
-                        phase: None,
-                    }
-                });
-
-                // 2. Compute alignment
-                if let Some(result) = spectral_align::compute_target_alignment(
-                    &curve,
-                    &target,
-                    20.0,
-                    20000.0,
-                    sample_rate,
-                ) {
-                    info!(
-                        "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
-                        result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
-                    );
-
-                    // 3. Create plugins
-                    let (eq_plugin, gain_plugin) =
-                        spectral_align::create_alignment_plugins(&result, sample_rate);
-                    
-                    let mut plugins = Vec::new();
-                    // NOTE: In the DSP chain, we probably want Gain then EQ, or vice versa.
-                    // spectral_align returns them as (Option<EQ>, Option<Gain>).
-                    if let Some(g) = gain_plugin {
-                        plugins.push(g);
-                    }
-                    if let Some(eq) = eq_plugin {
-                        plugins.push(eq);
-                    }
-
-                    // Simulate the broadband correction on the curve
-                    use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
-                    let mut filters = Vec::new();
-                    if result.lowshelf_gain_db.abs() > 1e-3 {
-                         filters.push(Biquad::new(
-                            BiquadFilterType::Lowshelf,
-                            spectral_align::LOWSHELF_FREQ,
-                            sample_rate,
-                            DEFAULT_Q_HIGH_LOW_SHELF,
-                            result.lowshelf_gain_db,
-                        ));
-                    }
-                    if result.highshelf_gain_db.abs() > 1e-3 {
-                         filters.push(Biquad::new(
-                            BiquadFilterType::Highshelf,
-                            spectral_align::HIGHSHELF_FREQ,
-                            sample_rate,
-                            DEFAULT_Q_HIGH_LOW_SHELF,
-                            result.highshelf_gain_db,
-                        ));
-                    }
-
-                    // 1. Gain
-                    let mut temp_curve = curve.clone();
-                    temp_curve.spl += result.flat_gain_db;
-                    
-                    // 2. Filters
-                    let final_curve = if !filters.is_empty() {
-                        let resp = response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
-                        response::apply_complex_response(&temp_curve, &resp)
-                    } else {
-                        temp_curve
-                    };
-
-                    (final_curve, plugins, result.flat_gain_db)
-                    
-                } else {
-                    (curve.clone(), Vec::new(), 0.0)
+    let (curve_for_optim, broadband_plugins, bb_mean_shift) = if let Some(bb_config) =
+        &room_config.optimizer.broadband_target_matching
+    {
+        if bb_config.enabled {
+            info!("  Broadband Target Matching enabled...");
+            // 1. Construct the target curve (with tilt if configured, or flat)
+            let target = target_tilt_curve.clone().unwrap_or_else(|| {
+                // Create a flat (0 dB) target curve matching the input frequency grid
+                Curve {
+                    freq: curve.freq.clone(),
+                    spl: Array1::zeros(curve.freq.len()),
+                    phase: None,
                 }
+            });
+
+            // 2. Compute alignment
+            if let Some(result) = spectral_align::compute_target_alignment(
+                &curve,
+                &target,
+                20.0,
+                20000.0,
+                sample_rate,
+            ) {
+                info!(
+                    "  Broadband correction: LS={:+.2}dB, HS={:+.2}dB, Gain={:+.2}dB",
+                    result.lowshelf_gain_db, result.highshelf_gain_db, result.flat_gain_db
+                );
+
+                // 3. Create plugins
+                let (eq_plugin, gain_plugin) =
+                    spectral_align::create_alignment_plugins(&result, sample_rate);
+
+                let mut plugins = Vec::new();
+                // NOTE: In the DSP chain, we probably want Gain then EQ, or vice versa.
+                // spectral_align returns them as (Option<EQ>, Option<Gain>).
+                if let Some(g) = gain_plugin {
+                    plugins.push(g);
+                }
+                if let Some(eq) = eq_plugin {
+                    plugins.push(eq);
+                }
+
+                // Simulate the broadband correction on the curve
+                use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
+                let mut filters = Vec::new();
+                if result.lowshelf_gain_db.abs() > 1e-3 {
+                    filters.push(Biquad::new(
+                        BiquadFilterType::Lowshelf,
+                        spectral_align::LOWSHELF_FREQ,
+                        sample_rate,
+                        DEFAULT_Q_HIGH_LOW_SHELF,
+                        result.lowshelf_gain_db,
+                    ));
+                }
+                if result.highshelf_gain_db.abs() > 1e-3 {
+                    filters.push(Biquad::new(
+                        BiquadFilterType::Highshelf,
+                        spectral_align::HIGHSHELF_FREQ,
+                        sample_rate,
+                        DEFAULT_Q_HIGH_LOW_SHELF,
+                        result.highshelf_gain_db,
+                    ));
+                }
+
+                // 1. Gain
+                let mut temp_curve = curve.clone();
+                temp_curve.spl += result.flat_gain_db;
+
+                // 2. Filters
+                let final_curve = if !filters.is_empty() {
+                    let resp =
+                        response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
+                    response::apply_complex_response(&temp_curve, &resp)
+                } else {
+                    temp_curve
+                };
+
+                (final_curve, plugins, result.flat_gain_db)
             } else {
                 (curve.clone(), Vec::new(), 0.0)
             }
         } else {
             (curve.clone(), Vec::new(), 0.0)
-        };
-    
+        }
+    } else {
+        (curve.clone(), Vec::new(), 0.0)
+    };
+
     // We must update the mean_spl because the broadband gain shifted it
     let mean_spl = mean_spl + bb_mean_shift;
 
@@ -1320,7 +1318,8 @@ fn process_single_speaker(
             // Check if we should force excess phase correction for GD-Opt on subwoofer
             let mut opt_config = room_config.optimizer.clone();
             if let Some(gd_opt) = &room_config.optimizer.gd_opt
-                && gd_opt.enabled && (channel_name == "lfe" || channel_name.starts_with("sub"))
+                && gd_opt.enabled
+                && (channel_name == "lfe" || channel_name.starts_with("sub"))
                 && let Some(fir) = &mut opt_config.fir
             {
                 fir.correct_excess_phase = true;
@@ -1381,7 +1380,6 @@ fn process_single_speaker(
                 None,
             );
             chain.plugins.push(convolution_plugin);
-
 
             let complex_resp =
                 response::compute_fir_complex_response(&coeffs, &curve.freq, sample_rate);
@@ -1477,9 +1475,7 @@ fn process_single_speaker(
                     channel_name == "lfe" || channel_name.starts_with("sub")
                 };
 
-                if is_sub
-                    && let Some(fir) = &mut opt_config.fir
-                {
+                if is_sub && let Some(fir) = &mut opt_config.fir {
                     fir.correct_excess_phase = true;
                     info!(
                         "  GD-Opt: Forcing excess phase correction for '{}'",
@@ -1928,9 +1924,7 @@ fn determine_optimization_bands(
             }
         }
 
-        if !xover_points.is_empty()
-            && idx < xover_points.len()
-        {
+        if !xover_points.is_empty() && idx < xover_points.len() {
             let f = xover_points[idx];
             return (f, f);
         }
@@ -2706,12 +2700,36 @@ fn compute_lr24_crossover_responses(
     let q = std::f64::consts::FRAC_1_SQRT_2; // Q = 0.7071 for Butterworth
 
     // Create biquad filters for lowpass (2 cascaded)
-    let lp1 = Biquad::new(BiquadFilterType::Lowpass, crossover_freq, sample_rate, q, 0.0);
-    let lp2 = Biquad::new(BiquadFilterType::Lowpass, crossover_freq, sample_rate, q, 0.0);
+    let lp1 = Biquad::new(
+        BiquadFilterType::Lowpass,
+        crossover_freq,
+        sample_rate,
+        q,
+        0.0,
+    );
+    let lp2 = Biquad::new(
+        BiquadFilterType::Lowpass,
+        crossover_freq,
+        sample_rate,
+        q,
+        0.0,
+    );
 
     // Create biquad filters for highpass (2 cascaded)
-    let hp1 = Biquad::new(BiquadFilterType::Highpass, crossover_freq, sample_rate, q, 0.0);
-    let hp2 = Biquad::new(BiquadFilterType::Highpass, crossover_freq, sample_rate, q, 0.0);
+    let hp1 = Biquad::new(
+        BiquadFilterType::Highpass,
+        crossover_freq,
+        sample_rate,
+        q,
+        0.0,
+    );
+    let hp2 = Biquad::new(
+        BiquadFilterType::Highpass,
+        crossover_freq,
+        sample_rate,
+        q,
+        0.0,
+    );
 
     let mut lp_resp = Vec::with_capacity(frequencies.len());
     let mut hp_resp = Vec::with_capacity(frequencies.len());

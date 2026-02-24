@@ -385,7 +385,11 @@ impl Select {
                             true
                         }
                         "down" | "up" if currently_open => {
-                            let delta = if event.keystroke.key == "down" { 1 } else { -1_i32 };
+                            let delta = if event.keystroke.key == "down" {
+                                1
+                            } else {
+                                -1_i32
+                            };
                             let new_idx = if let Some(idx) = current_highlight {
                                 let new = idx as i32 + delta;
                                 if new < 0 {
@@ -458,14 +462,11 @@ impl Select {
 
                 // L4 fix: scope option IDs to parent to avoid collision when
                 // multiple Select components exist on the same screen.
-                let option_id = ElementId::Name(
-                    SharedString::from(format!("{:?}-option-{}", dropdown_id_for_options, idx))
-                );
-                let mut option_el = div()
-                    .id(option_id)
-                    .px_3()
-                    .py(px(6.0))
-                    .cursor_pointer();
+                let option_id = ElementId::Name(SharedString::from(format!(
+                    "{:?}-option-{}",
+                    dropdown_id_for_options, idx
+                )));
+                let mut option_el = div().id(option_id).px_3().py(px(6.0)).cursor_pointer();
 
                 // Apply text size
                 option_el = match self.size {

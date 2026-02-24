@@ -248,7 +248,7 @@ pub enum LibrarySortOrder {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChannelFilter {
     #[default]
-    All,           // Show all albums
+    All, // Show all albums
     Mono,          // Only 1-channel albums
     Stereo,        // Only 2-channel albums
     Surround,      // 5.0/5.1 albums (5-6 channels)
@@ -828,6 +828,25 @@ impl MusicLibrary {
     where
         F: FnMut(usize, usize),
     {
+        self.scan_incremental_with_progress_and_pause(
+            incremental,
+            cancellation_token,
+            None,
+            &mut progress_callback,
+        )
+    }
+
+    /// Scan directories with optional incremental mode, progress reporting, and pause support
+    pub fn scan_incremental_with_progress_and_pause<F>(
+        &mut self,
+        incremental: bool,
+        cancellation_token: Option<Arc<AtomicBool>>,
+        pause_flag: Option<Arc<AtomicBool>>,
+        progress_callback: &mut F,
+    ) -> Result<(), Box<dyn std::error::Error>>
+    where
+        F: FnMut(usize, usize),
+    {
         let mut album_map: HashMap<String, Album> = HashMap::new();
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
@@ -867,6 +886,7 @@ impl MusicLibrary {
                 incremental,
                 &mut dir_stats,
                 cancellation_token.clone(),
+                pause_flag.clone(),
             )?;
 
             // Check cancellation after each directory
@@ -1065,6 +1085,7 @@ impl MusicLibrary {
         incremental: bool,
         dir_stats: &mut HashMap<PathBuf, (usize, usize)>,
         cancellation_token: Option<Arc<AtomicBool>>,
+        pause_flag: Option<Arc<AtomicBool>>,
     ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
@@ -1087,6 +1108,18 @@ impl MusicLibrary {
                 // Determine if we should check (using some counter might be better but atomic load is cheap on x86)
                 if token.load(Ordering::Relaxed) {
                     return Err("Scan cancelled".into());
+                }
+            }
+
+            // Wait while paused (check every 200ms, also check for cancellation)
+            if let Some(pf) = &pause_flag {
+                while pf.load(Ordering::Relaxed) {
+                    if let Some(token) = &cancellation_token {
+                        if token.load(Ordering::Relaxed) {
+                            return Err("Scan cancelled".into());
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
                 }
             }
 
@@ -1138,14 +1171,11 @@ impl MusicLibrary {
                                 // Use track title (or filename) as the standalone album name.
                                 // Prepend the parent directory name to disambiguate tracks
                                 // with identical titles in different folders.
-                                let track_name = metadata
-                                    .title
-                                    .clone()
-                                    .unwrap_or_else(|| {
-                                        path.file_stem()
-                                            .map(|s| s.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| "Unknown".to_string())
-                                    });
+                                let track_name = metadata.title.clone().unwrap_or_else(|| {
+                                    path.file_stem()
+                                        .map(|s| s.to_string_lossy().to_string())
+                                        .unwrap_or_else(|| "Unknown".to_string())
+                                });
                                 let parent_name = path
                                     .parent()
                                     .and_then(|p| p.file_name())
@@ -2515,7 +2545,11 @@ mod tests {
         let album_refs: Vec<&Album> = albums.iter().collect();
         let merged = group_and_merge_albums(album_refs);
 
-        assert_eq!(merged.len(), 2, "Standalone tracks with different titles must not merge");
+        assert_eq!(
+            merged.len(),
+            2,
+            "Standalone tracks with different titles must not merge"
+        );
     }
 
     #[test]

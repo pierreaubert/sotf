@@ -284,10 +284,7 @@ impl Player {
                         }
                     }
                 } else {
-                    log::error!(
-                        "[Player] Engine crashed again: {}. Giving up.",
-                        err
-                    );
+                    log::error!("[Player] Engine crashed again: {}. Giving up.", err);
                     self.engine_fatal_flag = true;
                 }
             }

@@ -54,11 +54,7 @@ pub struct SubdomainInfo {
 /// * `mesh` - The global mesh
 /// * `config` - Schwarz-PML configuration
 /// * `k` - Wavenumber (real part, for PML thickness calculation)
-pub fn decompose_domain(
-    mesh: &Mesh,
-    config: &SchwarzPmlConfig,
-    k: f64,
-) -> Vec<SubdomainInfo> {
+pub fn decompose_domain(mesh: &Mesh, config: &SchwarzPmlConfig, k: f64) -> Vec<SubdomainInfo> {
     let n = config.num_subdomains;
     assert!(n >= 2, "Need at least 2 subdomains");
 
@@ -143,8 +139,11 @@ pub fn decompose_domain(
                     k,
                     config.pml_target_reflection,
                 );
-                let mut pml = PmlRegion::x_negative(overlap_x_min, actual_pml_thickness, sigma_max, k);
-                pml.profile = PmlProfile::Polynomial { power: config.pml_power };
+                let mut pml =
+                    PmlRegion::x_negative(overlap_x_min, actual_pml_thickness, sigma_max, k);
+                pml.profile = PmlProfile::Polynomial {
+                    power: config.pml_power,
+                };
                 pml_regions.push(pml);
             }
         }
@@ -157,8 +156,11 @@ pub fn decompose_domain(
                     k,
                     config.pml_target_reflection,
                 );
-                let mut pml = PmlRegion::x_positive(overlap_x_max, actual_pml_thickness, sigma_max, k);
-                pml.profile = PmlProfile::Polynomial { power: config.pml_power };
+                let mut pml =
+                    PmlRegion::x_positive(overlap_x_max, actual_pml_thickness, sigma_max, k);
+                pml.profile = PmlProfile::Polynomial {
+                    power: config.pml_power,
+                };
                 pml_regions.push(pml);
             }
         }

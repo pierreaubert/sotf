@@ -980,9 +980,9 @@ where
         use mutant_best2::mutant_best2;
         use mutant_current_to_best1::mutant_current_to_best1;
         use mutant_current_to_pbest1;
+        use mutant_rand_to_best1::mutant_rand_to_best1;
         use mutant_rand1::mutant_rand1;
         use mutant_rand2::mutant_rand2;
-        use mutant_rand_to_best1::mutant_rand_to_best1;
         use parallel_eval::evaluate_trials_parallel;
         use std::sync::Arc;
 

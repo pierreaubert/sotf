@@ -359,7 +359,11 @@ fn render_mode_selector(
             div()
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(if is_selected { accent_color } else { text_muted })
+                .text_color(if is_selected {
+                    accent_color
+                } else {
+                    text_muted
+                })
                 .child("Mode"),
         )
         .child({
@@ -385,15 +389,13 @@ fn render_mode_selector(
                         } else {
                             FontWeight::NORMAL
                         })
-                        .when(is_active, |d| {
-                            d.bg(accent_color).text_color(text_on_accent)
-                        })
-                        .when(!is_active, |d| {
-                            d.bg(surface_color).text_color(text_primary)
-                        })
+                        .when(is_active, |d| d.bg(accent_color).text_color(text_on_accent))
+                        .when(!is_active, |d| d.bg(surface_color).text_color(text_primary))
                         .on_click(move |_, _window, cx| {
                             entity_c.update(cx, |state, _| {
-                                state.app.set_plugin_param(plugin_idx, param_idx, idx as f64);
+                                state
+                                    .app
+                                    .set_plugin_param(plugin_idx, param_idx, idx as f64);
                             });
                         })
                         .child(label),
@@ -455,7 +457,11 @@ fn render_preset_selector(
             div()
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(if is_selected { accent_color } else { text_muted })
+                .text_color(if is_selected {
+                    accent_color
+                } else {
+                    text_muted
+                })
                 .child("Preset"),
         )
         .child(
@@ -464,7 +470,9 @@ fn render_preset_selector(
                     .options(
                         presets
                             .iter()
-                            .map(|(_, label)| SelectOption::new(label.to_string(), label.to_string()))
+                            .map(|(_, label)| {
+                                SelectOption::new(label.to_string(), label.to_string())
+                            })
                             .collect(),
                     )
                     .selected(selected_label)
@@ -488,7 +496,9 @@ fn render_preset_selector(
                                 .position(|(_, l)| *l == value.as_ref())
                                 .unwrap_or(0);
                             entity.update(cx, |state, _| {
-                                state.app.set_plugin_param(plugin_idx, param_idx, idx as f64);
+                                state
+                                    .app
+                                    .set_plugin_param(plugin_idx, param_idx, idx as f64);
                                 state.app.crossfeed_preset_select_open = false;
                             });
                         }

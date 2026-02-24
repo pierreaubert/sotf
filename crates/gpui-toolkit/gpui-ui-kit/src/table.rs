@@ -10,11 +10,11 @@
 //! - Header and footer support
 //! - Styling via TableTheme
 
-use std::collections::HashSet;
-use gpui::prelude::*;
-use gpui::*;
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
+use gpui::prelude::*;
+use gpui::*;
+use std::collections::HashSet;
 
 /// Theme colors for table styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -172,7 +172,9 @@ impl<T> Column<T> {
         F: Fn(&mut Window, &mut App) -> E + 'static,
         E: IntoElement,
     {
-        self.header_render = Some(Box::new(move |window, cx| render(window, cx).into_any_element()));
+        self.header_render = Some(Box::new(move |window, cx| {
+            render(window, cx).into_any_element()
+        }));
         self
     }
 
@@ -182,7 +184,9 @@ impl<T> Column<T> {
         F: Fn(&mut Window, &mut App) -> E + 'static,
         E: IntoElement,
     {
-        self.footer_render = Some(Box::new(move |window, cx| render(window, cx).into_any_element()));
+        self.footer_render = Some(Box::new(move |window, cx| {
+            render(window, cx).into_any_element()
+        }));
         self
     }
 }
@@ -264,7 +268,10 @@ impl<T: 'static> Table<T> {
     }
 
     /// Set sort handler
-    pub fn on_sort(mut self, handler: impl Fn(&SortState, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_sort(
+        mut self,
+        handler: impl Fn(&SortState, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_sort = Some(Box::new(handler));
         self
     }
@@ -354,7 +361,9 @@ impl<T: 'static> Table<T> {
 
         for column in &self.columns {
             let column_id = column.id.clone();
-            let is_sorted = sort_state.as_ref().map_or(false, |s| s.column_id == column_id);
+            let is_sorted = sort_state
+                .as_ref()
+                .map_or(false, |s| s.column_id == column_id);
             let direction = if is_sorted {
                 sort_state.as_ref().map(|s| s.direction)
             } else {
@@ -391,9 +400,8 @@ impl<T: 'static> Table<T> {
                         Some(SortDirection::Ascending) => SortDirection::Descending,
                         _ => SortDirection::Ascending,
                     };
-                    header_cell = header_cell.on_mouse_down(
-                        MouseButton::Left,
-                        move |_event, window, cx| {
+                    header_cell =
+                        header_cell.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                             handler(
                                 &SortState {
                                     column_id: col_id.clone(),
@@ -402,8 +410,7 @@ impl<T: 'static> Table<T> {
                                 window,
                                 cx,
                             );
-                        },
-                    );
+                        });
                 }
 
                 // Sort icon
@@ -494,27 +501,24 @@ impl<T: 'static> Table<T> {
                 if let Some(ref handler) = on_selection_change {
                     let handler = handler.clone();
                     let current_selected = selected_indices.clone();
-                    row_el = row_el.on_mouse_down(
-                        MouseButton::Left,
-                        move |_event, window, cx| {
-                            let mut next_selected = current_selected.clone();
-                            match selection_mode {
-                                SelectionMode::Single => {
-                                    next_selected.clear();
+                    row_el = row_el.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                        let mut next_selected = current_selected.clone();
+                        match selection_mode {
+                            SelectionMode::Single => {
+                                next_selected.clear();
+                                next_selected.insert(row_idx);
+                            }
+                            SelectionMode::Multiple => {
+                                if next_selected.contains(&row_idx) {
+                                    next_selected.remove(&row_idx);
+                                } else {
                                     next_selected.insert(row_idx);
                                 }
-                                SelectionMode::Multiple => {
-                                    if next_selected.contains(&row_idx) {
-                                        next_selected.remove(&row_idx);
-                                    } else {
-                                        next_selected.insert(row_idx);
-                                    }
-                                }
-                                SelectionMode::None => {}
                             }
-                            handler(&next_selected, window, cx);
-                        },
-                    );
+                            SelectionMode::None => {}
+                        }
+                        handler(&next_selected, window, cx);
+                    });
                 }
             }
 
@@ -596,15 +600,13 @@ impl<T: 'static> Table<T> {
             // Page info
             let start_item = current_page * pagination.page_size + 1;
             let end_item = ((current_page + 1) * pagination.page_size).min(pagination.total_items);
-            pagination_bar = pagination_bar.child(
-                div()
-                    .text_xs()
-                    .text_color(theme.pagination_text)
-                    .child(format!(
+            pagination_bar =
+                pagination_bar.child(div().text_xs().text_color(theme.pagination_text).child(
+                    format!(
                         "Showing {} to {} of {} items",
                         start_item, end_item, pagination.total_items
-                    )),
-            );
+                    ),
+                ));
 
             // Controls
             let mut controls = div().flex().items_center().gap_2();
@@ -620,13 +622,16 @@ impl<T: 'static> Table<T> {
                 .text_color(theme.pagination_text);
 
             if current_page > 0 {
-                prev_btn = prev_btn.cursor_pointer().hover(|s| s.bg(theme.row_hover_bg));
+                prev_btn = prev_btn
+                    .cursor_pointer()
+                    .hover(|s| s.bg(theme.row_hover_bg));
                 if let Some(ref handler) = on_page_change {
                     let handler = handler.clone();
                     let prev_page = current_page - 1;
-                    prev_btn = prev_btn.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                        handler(&prev_page, window, cx);
-                    });
+                    prev_btn =
+                        prev_btn.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                            handler(&prev_page, window, cx);
+                        });
                 }
             } else {
                 prev_btn = prev_btn.opacity(0.5);
@@ -652,13 +657,16 @@ impl<T: 'static> Table<T> {
                 .text_color(theme.pagination_text);
 
             if current_page + 1 < total_pages {
-                next_btn = next_btn.cursor_pointer().hover(|s| s.bg(theme.row_hover_bg));
+                next_btn = next_btn
+                    .cursor_pointer()
+                    .hover(|s| s.bg(theme.row_hover_bg));
                 if let Some(ref handler) = on_page_change {
                     let handler = handler.clone();
                     let next_page = current_page + 1;
-                    next_btn = next_btn.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                        handler(&next_page, window, cx);
-                    });
+                    next_btn =
+                        next_btn.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                            handler(&next_page, window, cx);
+                        });
                 }
             } else {
                 next_btn = next_btn.opacity(0.5);
@@ -676,7 +684,10 @@ impl<T: 'static> Table<T> {
 impl<T: 'static> RenderOnce for Table<T> {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
-        let theme = self.theme.clone().unwrap_or_else(|| TableTheme::from(&global_theme));
+        let theme = self
+            .theme
+            .clone()
+            .unwrap_or_else(|| TableTheme::from(&global_theme));
         self.build(theme, window, cx)
     }
 }

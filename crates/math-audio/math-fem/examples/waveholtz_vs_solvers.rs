@@ -38,12 +38,8 @@ fn main() {
         let omega = k;
 
         // Direct solver (reference)
-        let problem = HelmholtzProblem::assemble(
-            &mesh,
-            PolynomialDegree::P1,
-            Complex64::new(k, 0.0),
-            source,
-        );
+        let problem =
+            HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, Complex64::new(k, 0.0), source);
 
         let direct_start = Instant::now();
         let direct_config = SolverConfig {

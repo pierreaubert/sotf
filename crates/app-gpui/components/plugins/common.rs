@@ -175,10 +175,7 @@ pub fn param_index_to_engine_param(
                 "rear_late_reflection".to_string(),
                 format!("{}", rear_late_reflection),
             )),
-            28 => Some((
-                "ambient_boost".to_string(),
-                format!("{}", ambient_boost),
-            )),
+            28 => Some(("ambient_boost".to_string(), format!("{}", ambient_boost))),
             29 => Some((
                 "dialogue_weight".to_string(),
                 format!("{}", dialogue_weight),
@@ -191,13 +188,34 @@ pub fn param_index_to_engine_param(
                 "voice_freq_max_hz".to_string(),
                 format!("{}", voice_freq_max_hz),
             )),
-            32 => Some(("dialogue_centroid_weight".to_string(), format!("{}", dialogue_centroid_weight))),
-            33 => Some(("dialogue_variance_weight".to_string(), format!("{}", dialogue_variance_weight))),
-            34 => Some(("dialogue_coherence_weight".to_string(), format!("{}", dialogue_coherence_weight))),
-            35 => Some(("bypass_decorrelation".to_string(), bypass_decorrelation.to_string())),
-            36 => Some(("bypass_transient_detection".to_string(), bypass_transient_detection.to_string())),
-            37 => Some(("bypass_all_processing".to_string(), bypass_all_processing.to_string())),
-            38 => Some(("enable_ml_detection".to_string(), enable_ml_detection.to_string())),
+            32 => Some((
+                "dialogue_centroid_weight".to_string(),
+                format!("{}", dialogue_centroid_weight),
+            )),
+            33 => Some((
+                "dialogue_variance_weight".to_string(),
+                format!("{}", dialogue_variance_weight),
+            )),
+            34 => Some((
+                "dialogue_coherence_weight".to_string(),
+                format!("{}", dialogue_coherence_weight),
+            )),
+            35 => Some((
+                "bypass_decorrelation".to_string(),
+                bypass_decorrelation.to_string(),
+            )),
+            36 => Some((
+                "bypass_transient_detection".to_string(),
+                bypass_transient_detection.to_string(),
+            )),
+            37 => Some((
+                "bypass_all_processing".to_string(),
+                bypass_all_processing.to_string(),
+            )),
+            38 => Some((
+                "enable_ml_detection".to_string(),
+                enable_ml_detection.to_string(),
+            )),
             _ => None,
         },
         PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {
@@ -239,7 +257,10 @@ pub fn param_index_to_engine_param(
                 "polyphonic_detection".to_string(),
                 polyphonic_detection.to_string(),
             )),
-            7 => Some(("crack_sensitivity".to_string(), format!("{}", crack_sensitivity))),
+            7 => Some((
+                "crack_sensitivity".to_string(),
+                format!("{}", crack_sensitivity),
+            )),
             8 => Some(("mcra_alpha_s".to_string(), format!("{}", mcra_alpha_s))),
             9 => Some(("mcra_alpha_p".to_string(), format!("{}", mcra_alpha_p))),
             10 => Some(("mcra_l".to_string(), format!("{}", mcra_l))),
@@ -636,8 +657,7 @@ pub fn param_index_to_engine_param(
             _ => None,
         },
         PluginSettings::BinauralDecoder {
-            externalization,
-            ..
+            externalization, ..
         } => match param_idx {
             // sofa_file (0) and input_channels (1) require structural update
             0 | 1 => None,
@@ -693,24 +713,69 @@ pub fn param_index_to_engine_param(
             4 => Some(("head_offset_z".to_string(), format!("{}", head_offset_z))),
             5 => Some(("head_yaw_deg".to_string(), format!("{}", head_yaw_deg))),
             6 => Some(("beta_base".to_string(), format!("{}", beta_base))),
-            7 => Some(("beta_low_freq_boost".to_string(), format!("{}", beta_low_freq_boost))),
-            8 => Some(("beta_high_freq_boost".to_string(), format!("{}", beta_high_freq_boost))),
-            9 => Some(("head_shadow_cutoff_hz".to_string(), format!("{}", head_shadow_cutoff_hz))),
-            10 => Some(("head_shadow_slope_db_per_octave".to_string(), format!("{}", head_shadow_slope_db_per_octave))),
+            7 => Some((
+                "beta_low_freq_boost".to_string(),
+                format!("{}", beta_low_freq_boost),
+            )),
+            8 => Some((
+                "beta_high_freq_boost".to_string(),
+                format!("{}", beta_high_freq_boost),
+            )),
+            9 => Some((
+                "head_shadow_cutoff_hz".to_string(),
+                format!("{}", head_shadow_cutoff_hz),
+            )),
+            10 => Some((
+                "head_shadow_slope_db_per_octave".to_string(),
+                format!("{}", head_shadow_slope_db_per_octave),
+            )),
             11 => Some(("max_gain_db".to_string(), format!("{}", max_gain_db))),
-            12 => Some(("spectral_normalization".to_string(), format!("{}", spectral_normalization))),
-            13 => Some(("pinna_model_enabled".to_string(), format!("{}", pinna_model_enabled))),
-            14 => Some(("room_reflections_enabled".to_string(), format!("{}", room_reflections_enabled))),
+            12 => Some((
+                "spectral_normalization".to_string(),
+                format!("{}", spectral_normalization),
+            )),
+            13 => Some((
+                "pinna_model_enabled".to_string(),
+                format!("{}", pinna_model_enabled),
+            )),
+            14 => Some((
+                "room_reflections_enabled".to_string(),
+                format!("{}", room_reflections_enabled),
+            )),
             15 => Some(("room_width_m".to_string(), format!("{}", room_width_m))),
             16 => Some(("room_depth_m".to_string(), format!("{}", room_depth_m))),
-            17 => Some(("wall_absorption".to_string(), format!("{}", wall_absorption))),
-            18 => Some(("reflection_beta_boost".to_string(), format!("{}", reflection_beta_boost))),
-            19 => Some(("bypass_xtc_filters".to_string(), format!("{}", bypass_xtc_filters))),
-            20 => Some(("bypass_spectral_normalization".to_string(), format!("{}", bypass_spectral_normalization))),
-            21 => Some(("bypass_neumann_refinement".to_string(), format!("{}", bypass_neumann_refinement))),
-            22 => Some(("auto_gain_enabled".to_string(), format!("{}", auto_gain_enabled))),
-            23 => Some(("auto_gain_max_db".to_string(), format!("{}", auto_gain_max_db))),
-            24 => Some(("auto_gain_smoothing_ms".to_string(), format!("{}", auto_gain_smoothing_ms))),
+            17 => Some((
+                "wall_absorption".to_string(),
+                format!("{}", wall_absorption),
+            )),
+            18 => Some((
+                "reflection_beta_boost".to_string(),
+                format!("{}", reflection_beta_boost),
+            )),
+            19 => Some((
+                "bypass_xtc_filters".to_string(),
+                format!("{}", bypass_xtc_filters),
+            )),
+            20 => Some((
+                "bypass_spectral_normalization".to_string(),
+                format!("{}", bypass_spectral_normalization),
+            )),
+            21 => Some((
+                "bypass_neumann_refinement".to_string(),
+                format!("{}", bypass_neumann_refinement),
+            )),
+            22 => Some((
+                "auto_gain_enabled".to_string(),
+                format!("{}", auto_gain_enabled),
+            )),
+            23 => Some((
+                "auto_gain_max_db".to_string(),
+                format!("{}", auto_gain_max_db),
+            )),
+            24 => Some((
+                "auto_gain_smoothing_ms".to_string(),
+                format!("{}", auto_gain_smoothing_ms),
+            )),
             _ => None,
         },
         PluginSettings::ABCompare {

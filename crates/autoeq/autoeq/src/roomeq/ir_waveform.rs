@@ -32,7 +32,8 @@ pub fn compute_channel_ir_waveforms(
     // Interpolate SPL and unwrapped phase from log-spaced measurement to linear grid
     let unwrapped_phase = super::phase_utils::unwrap_phase_degrees(phase_deg);
     let freq_vec: Vec<f64> = initial_curve.freq.to_vec();
-    let spl_grid = interpolate_to_linear_grid(&freq_vec, &initial_curve.spl.to_vec(), &linear_freqs);
+    let spl_grid =
+        interpolate_to_linear_grid(&freq_vec, &initial_curve.spl.to_vec(), &linear_freqs);
     let phase_grid =
         interpolate_to_linear_grid(&freq_vec, &unwrapped_phase.to_vec(), &linear_freqs);
 
@@ -53,7 +54,8 @@ pub fn compute_channel_ir_waveforms(
 
     // Build post-IR spectrum: pre * biquad chain * fir * delay
     let freqs_arr = ndarray::Array1::from(linear_freqs.clone());
-    let peq_response = crate::response::compute_peq_complex_response(biquads, &freqs_arr, sample_rate);
+    let peq_response =
+        crate::response::compute_peq_complex_response(biquads, &freqs_arr, sample_rate);
     let mut post_spectrum: Vec<Complex64> = pre_spectrum
         .iter()
         .zip(peq_response.iter())
@@ -61,7 +63,8 @@ pub fn compute_channel_ir_waveforms(
         .collect();
 
     if let Some(coeffs) = fir_coeffs {
-        let fir_response = crate::response::compute_fir_complex_response(coeffs, &freqs_arr, sample_rate);
+        let fir_response =
+            crate::response::compute_fir_complex_response(coeffs, &freqs_arr, sample_rate);
         for (h, h_fir) in post_spectrum.iter_mut().zip(fir_response.iter()) {
             *h *= h_fir;
         }
@@ -78,10 +81,7 @@ pub fn compute_channel_ir_waveforms(
     let post_ir_raw = spectrum_to_impulse_response(&post_spectrum, FFT_SIZE);
 
     // Normalize both by pre-IR peak
-    let pre_peak = pre_ir_raw
-        .iter()
-        .map(|&x| x.abs())
-        .fold(0.0_f64, f64::max);
+    let pre_peak = pre_ir_raw.iter().map(|&x| x.abs()).fold(0.0_f64, f64::max);
 
     if pre_peak < 1e-12 {
         return None;
@@ -138,7 +138,9 @@ fn interpolate_to_linear_grid(
             let log_f = f.max(1e-6).log10();
 
             // Binary search for bracketing interval
-            let idx = log_freq.partition_point(|&lf| lf <= log_f).saturating_sub(1);
+            let idx = log_freq
+                .partition_point(|&lf| lf <= log_f)
+                .saturating_sub(1);
             let i0 = idx.min(n - 2);
             let i1 = i0 + 1;
 
@@ -201,7 +203,10 @@ mod tests {
 
         let sample_rate = 48000.0;
         let result = compute_channel_ir_waveforms(&curve, &[], None, 0.0, sample_rate);
-        assert!(result.is_some(), "should return Some when phase data present");
+        assert!(
+            result.is_some(),
+            "should return Some when phase data present"
+        );
 
         let (pre_ir, _) = result.unwrap();
 
@@ -272,6 +277,9 @@ mod tests {
         };
 
         let result = compute_channel_ir_waveforms(&curve, &[], None, 0.0, 48000.0);
-        assert!(result.is_none(), "should return None when phase data absent");
+        assert!(
+            result.is_none(),
+            "should return None when phase data absent"
+        );
     }
 }

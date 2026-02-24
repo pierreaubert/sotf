@@ -21,11 +21,12 @@ fn main() {
     // Known analytical solution: u(x,y) = cos(k*x) on unit square with Neumann BCs
     // RHS: f = (k² - k²) cos(kx) = 0 for exact eigenfunction
     // Use a smooth source instead to get a non-trivial solution
-    let source = |x: f64, y: f64| -> f64 {
-        (PI * x).sin() * (PI * y).sin()
-    };
+    let source = |x: f64, y: f64| -> f64 { (PI * x).sin() * (PI * y).sin() };
 
-    println!("{:>8} {:>10} {:>12} {:>12} {:>8}", "n", "DOFs", "WH Error", "Rate", "Iters");
+    println!(
+        "{:>8} {:>10} {:>12} {:>12} {:>8}",
+        "n", "DOFs", "WH Error", "Rate", "Iters"
+    );
     println!("{}", "-".repeat(55));
 
     let mut prev_error = 0.0;

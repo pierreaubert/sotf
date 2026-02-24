@@ -113,8 +113,10 @@ pub const PEQ_MODEL_OPTIONS: &[(&str, &str)] = &[
 ];
 
 /// Mixed mode crossover type options
-pub const MIXED_CROSSOVER_TYPE_OPTIONS: &[(&str, &str)] =
-    &[("LR24", "Linkwitz-Riley 24dB"), ("LR48", "Linkwitz-Riley 48dB")];
+pub const MIXED_CROSSOVER_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("LR24", "Linkwitz-Riley 24dB"),
+    ("LR48", "Linkwitz-Riley 48dB"),
+];
 
 /// Mixed mode FIR band options
 pub const MIXED_FIR_BAND_OPTIONS: &[(&str, &str)] = &[

@@ -444,17 +444,26 @@ impl PluginEditingManager for App {
                         }
                         32 => {
                             *dialogue_centroid_weight = (*dialogue_centroid_weight + delta * 0.05)
-                                .clamp(DIALOGUE_CENTROID_WEIGHT_MIN as f64, DIALOGUE_CENTROID_WEIGHT_MAX as f64);
+                                .clamp(
+                                    DIALOGUE_CENTROID_WEIGHT_MIN as f64,
+                                    DIALOGUE_CENTROID_WEIGHT_MAX as f64,
+                                );
                             true
                         }
                         33 => {
                             *dialogue_variance_weight = (*dialogue_variance_weight + delta * 0.05)
-                                .clamp(DIALOGUE_VARIANCE_WEIGHT_MIN as f64, DIALOGUE_VARIANCE_WEIGHT_MAX as f64);
+                                .clamp(
+                                    DIALOGUE_VARIANCE_WEIGHT_MIN as f64,
+                                    DIALOGUE_VARIANCE_WEIGHT_MAX as f64,
+                                );
                             true
                         }
                         34 => {
-                            *dialogue_coherence_weight = (*dialogue_coherence_weight + delta * 0.05)
-                                .clamp(DIALOGUE_COHERENCE_WEIGHT_MIN as f64, DIALOGUE_COHERENCE_WEIGHT_MAX as f64);
+                            *dialogue_coherence_weight =
+                                (*dialogue_coherence_weight + delta * 0.05).clamp(
+                                    DIALOGUE_COHERENCE_WEIGHT_MIN as f64,
+                                    DIALOGUE_COHERENCE_WEIGHT_MAX as f64,
+                                );
                             true
                         }
                         35 => {
@@ -912,23 +921,31 @@ impl PluginEditingManager for App {
                                 true
                             }
                             2 => {
-                                *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
-                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                                *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0).clamp(
+                                    CROSSOVER_FREQ_1_MIN as f64,
+                                    CROSSOVER_FREQ_1_MAX as f64,
+                                );
                                 true
                             }
                             3 => {
-                                *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
-                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                                *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0).clamp(
+                                    CROSSOVER_FREQ_2_MIN as f64,
+                                    CROSSOVER_FREQ_2_MAX as f64,
+                                );
                                 true
                             }
                             4 => {
-                                *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
-                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                                *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0).clamp(
+                                    CROSSOVER_FREQ_3_MIN as f64,
+                                    CROSSOVER_FREQ_3_MAX as f64,
+                                );
                                 true
                             }
                             5 => {
-                                *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
-                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                                *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0).clamp(
+                                    CROSSOVER_FREQ_4_MIN as f64,
+                                    CROSSOVER_FREQ_4_MAX as f64,
+                                );
                                 true
                             }
                             6 => {
@@ -937,8 +954,8 @@ impl PluginEditingManager for App {
                                 true
                             }
                             7 => {
-                                *ratio =
-                                    (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                                *ratio = (*ratio + delta * 0.1)
+                                    .clamp(RATIO_MIN as f64, RATIO_MAX as f64);
                                 true
                             }
                             8 => {
@@ -971,266 +988,358 @@ impl PluginEditingManager for App {
                         let local_idx = param_idx % 100;
                         if let Some(band) = bands.get_mut(band_idx) {
                             match local_idx {
-                                6 => { // threshold override
+                                6 => {
+                                    // threshold override
                                     band.threshold_db = match band.threshold_db {
                                         None => Some(*threshold_db as f32),
                                         Some(v) => {
                                             let new_v = v + delta as f32;
-                                            if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
+                                            if new_v < THRESHOLD_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX))
+                                            }
                                         }
                                     };
                                     true
                                 }
-                                7 => { // ratio override
+                                7 => {
+                                    // ratio override
                                     band.ratio = match band.ratio {
                                         None => Some(*ratio as f32),
                                         Some(v) => {
                                             let new_v = v + delta as f32 * 0.1;
-                                            if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
+                                            if new_v < RATIO_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(RATIO_MIN, RATIO_MAX))
+                                            }
                                         }
                                     };
                                     true
                                 }
-                                8 => { // attack override
+                                8 => {
+                                    // attack override
                                     band.attack_ms = match band.attack_ms {
                                         None => Some(*attack_ms as f32),
                                         Some(v) => {
                                             let new_v = v + delta as f32 * 0.5;
-                                            if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
+                                            if new_v < ATTACK_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX))
+                                            }
                                         }
                                     };
                                     true
                                 }
-                                9 => { // release override
+                                9 => {
+                                    // release override
                                     band.release_ms = match band.release_ms {
                                         None => Some(*release_ms as f32),
                                         Some(v) => {
                                             let new_v = v + delta as f32 * 5.0;
-                                            if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
+                                            if new_v < RELEASE_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX))
+                                            }
                                         }
                                     };
                                     true
                                 }
-                                10 => { // knee override
+                                10 => {
+                                    // knee override
                                     band.knee_db = match band.knee_db {
                                         None => Some(*knee_db as f32),
                                         Some(v) => {
                                             let new_v = v + delta as f32 * 0.1;
-                                            if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
+                                            if new_v < KNEE_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(KNEE_MIN, KNEE_MAX))
+                                            }
                                         }
                                     };
                                     true
                                 }
-                                13 => { // makeup gain
-                                    band.makeup_gain_db = (band.makeup_gain_db + delta as f32 * 0.5).clamp(-24.0, 24.0);
+                                13 => {
+                                    // makeup gain
+                                    band.makeup_gain_db = (band.makeup_gain_db
+                                        + delta as f32 * 0.5)
+                                        .clamp(-24.0, 24.0);
                                     true
                                 }
-                                14 => { band.bypass = !band.bypass; true }
-                                15 => { band.solo = !band.solo; true }
+                                14 => {
+                                    band.bypass = !band.bypass;
+                                    true
+                                }
+                                15 => {
+                                    band.solo = !band.solo;
+                                    true
+                                }
                                 _ => false,
                             }
-                        } else { false }
+                        } else {
+                            false
+                        }
                     }
                 }
-                                PluginSettings::MultibandExpander {
-                                    num_bands,
-                                    crossover_preset,
-                                    crossover_freq_1,
-                                    crossover_freq_2,
-                                    crossover_freq_3,
-                                    crossover_freq_4,
-                                    threshold_db,
-                                    ratio,
-                                    attack_ms,
-                                    release_ms,
-                                    range_db,
-                                    knee_db,
-                                    hysteresis_db,
-                                    hold_ms,
-                                    mix,
-                                    link_channels,
-                                    bands,
-                                } => {
-                                    use sotf_audio_player::param_specs::multiband_expander::*;
-                                    if param_idx < 100 {
-                                        match param_idx {
-                                            0 => {
-                                                let new_bands = ((*num_bands as i64) + delta as i64)
-                                                    .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
-                                                    as usize;
-                                                *num_bands = new_bands;
-                                                bands.resize_with(new_bands, Default::default);
-                                                channel_count_changed = true;
-                                                true
+                PluginSettings::MultibandExpander {
+                    num_bands,
+                    crossover_preset,
+                    crossover_freq_1,
+                    crossover_freq_2,
+                    crossover_freq_3,
+                    crossover_freq_4,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    range_db,
+                    knee_db,
+                    hysteresis_db,
+                    hold_ms,
+                    mix,
+                    link_channels,
+                    bands,
+                } => {
+                    use sotf_audio_player::param_specs::multiband_expander::*;
+                    if param_idx < 100 {
+                        match param_idx {
+                            0 => {
+                                let new_bands = ((*num_bands as i64) + delta as i64)
+                                    .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
+                                    as usize;
+                                *num_bands = new_bands;
+                                bands.resize_with(new_bands, Default::default);
+                                channel_count_changed = true;
+                                true
+                            }
+                            1 => {
+                                *crossover_preset = ((*crossover_preset as i64) + delta as i64)
+                                    .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
+                                    as i32;
+                                true
+                            }
+                            2 => {
+                                *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0).clamp(
+                                    CROSSOVER_FREQ_1_MIN as f64,
+                                    CROSSOVER_FREQ_1_MAX as f64,
+                                );
+                                true
+                            }
+                            3 => {
+                                *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0).clamp(
+                                    CROSSOVER_FREQ_2_MIN as f64,
+                                    CROSSOVER_FREQ_2_MAX as f64,
+                                );
+                                true
+                            }
+                            4 => {
+                                *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0).clamp(
+                                    CROSSOVER_FREQ_3_MIN as f64,
+                                    CROSSOVER_FREQ_3_MAX as f64,
+                                );
+                                true
+                            }
+                            5 => {
+                                *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0).clamp(
+                                    CROSSOVER_FREQ_4_MIN as f64,
+                                    CROSSOVER_FREQ_4_MAX as f64,
+                                );
+                                true
+                            }
+                            6 => {
+                                *threshold_db = (*threshold_db + delta)
+                                    .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                                true
+                            }
+                            7 => {
+                                *ratio = (*ratio + delta * 0.1)
+                                    .clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                                true
+                            }
+                            8 => {
+                                *attack_ms = (*attack_ms + delta * 0.1)
+                                    .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                                true
+                            }
+                            9 => {
+                                *release_ms = (*release_ms + delta * 10.0)
+                                    .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                                true
+                            }
+                            10 => {
+                                *range_db =
+                                    (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64);
+                                true
+                            }
+                            11 => {
+                                *knee_db = (*knee_db + delta * 0.1)
+                                    .clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                                true
+                            }
+                            12 => {
+                                *hysteresis_db = (*hysteresis_db + delta * 0.1)
+                                    .clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
+                                true
+                            }
+                            13 => {
+                                *hold_ms = (*hold_ms + delta * 5.0)
+                                    .clamp(HOLD_MIN as f64, HOLD_MAX as f64);
+                                true
+                            }
+                            14 => {
+                                *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                                true
+                            }
+                            15 => {
+                                *link_channels = !*link_channels;
+                                true
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        let band_idx = (param_idx / 100) - 1;
+                        let local_idx = param_idx % 100;
+                        if let Some(band) = bands.get_mut(band_idx) {
+                            match local_idx {
+                                6 => {
+                                    // threshold override
+                                    band.threshold_db = match band.threshold_db {
+                                        None => Some(*threshold_db as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32;
+                                            if new_v < THRESHOLD_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX))
                                             }
-                                            1 => {
-                                                *crossover_preset = ((*crossover_preset as i64) + delta as i64)
-                                                    .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
-                                                    as i32;
-                                                true
-                                            }
-                                            2 => {
-                                                *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
-                                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
-                                                true
-                                            }
-                                            3 => {
-                                                *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
-                                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
-                                                true
-                                            }
-                                            4 => {
-                                                *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
-                                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
-                                                true
-                                            }
-                                            5 => {
-                                                *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
-                                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
-                                                true
-                                            }
-                                            6 => {
-                                                *threshold_db = (*threshold_db + delta)
-                                                    .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
-                                                true
-                                            }
-                                            7 => {
-                                                *ratio =
-                                                    (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
-                                                true
-                                            }
-                                            8 => {
-                                                *attack_ms = (*attack_ms + delta * 0.1)
-                                                    .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
-                                                true
-                                            }
-                                            9 => {
-                                                *release_ms = (*release_ms + delta * 10.0)
-                                                    .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
-                                                true
-                                            }
-                                            10 => {
-                                                *range_db =
-                                                    (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64);
-                                                true
-                                            }
-                                            11 => {
-                                                *knee_db = (*knee_db + delta * 0.1)
-                                                    .clamp(KNEE_MIN as f64, KNEE_MAX as f64);
-                                                true
-                                            }
-                                            12 => {
-                                                *hysteresis_db = (*hysteresis_db + delta * 0.1)
-                                                    .clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
-                                                true
-                                            }
-                                            13 => {
-                                                *hold_ms =
-                                                    (*hold_ms + delta * 5.0).clamp(HOLD_MIN as f64, HOLD_MAX as f64);
-                                                true
-                                            }
-                                            14 => {
-                                                *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
-                                                true
-                                            }
-                                            15 => {
-                                                *link_channels = !*link_channels;
-                                                true
-                                            }
-                                            _ => false,
                                         }
-                                    } else {
-                                        let band_idx = (param_idx / 100) - 1;
-                                        let local_idx = param_idx % 100;
-                                        if let Some(band) = bands.get_mut(band_idx) {
-                                            match local_idx {
-                                                6 => { // threshold override
-                                                    band.threshold_db = match band.threshold_db {
-                                                        None => Some(*threshold_db as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32;
-                                                            if new_v < THRESHOLD_MIN { None } else { Some(new_v.clamp(THRESHOLD_MIN, THRESHOLD_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                7 => { // ratio override
-                                                    band.ratio = match band.ratio {
-                                                        None => Some(*ratio as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32 * 0.1;
-                                                            if new_v < RATIO_MIN { None } else { Some(new_v.clamp(RATIO_MIN, RATIO_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                8 => { // attack override
-                                                    band.attack_ms = match band.attack_ms {
-                                                        None => Some(*attack_ms as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32 * 0.1;
-                                                            if new_v < ATTACK_MIN { None } else { Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                9 => { // release override
-                                                    band.release_ms = match band.release_ms {
-                                                        None => Some(*release_ms as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32 * 10.0;
-                                                            if new_v < RELEASE_MIN { None } else { Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                10 => { // range override
-                                                    band.range_db = match band.range_db {
-                                                        None => Some(*range_db as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32;
-                                                            if new_v < RANGE_MIN { None } else { Some(new_v.clamp(RANGE_MIN, RANGE_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                11 => { // knee override
-                                                    band.knee_db = match band.knee_db {
-                                                        None => Some(*knee_db as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32 * 0.1;
-                                                            if new_v < KNEE_MIN { None } else { Some(new_v.clamp(KNEE_MIN, KNEE_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                12 => { // hysteresis override
-                                                    band.hysteresis_db = match band.hysteresis_db {
-                                                        None => Some(*hysteresis_db as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32 * 0.1;
-                                                            if new_v < HYSTERESIS_MIN { None } else { Some(new_v.clamp(HYSTERESIS_MIN, HYSTERESIS_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                13 => { // hold override
-                                                    band.hold_ms = match band.hold_ms {
-                                                        None => Some(*hold_ms as f32),
-                                                        Some(v) => {
-                                                            let new_v = v + delta as f32 * 5.0;
-                                                            if new_v < HOLD_MIN { None } else { Some(new_v.clamp(HOLD_MIN, HOLD_MAX)) }
-                                                        }
-                                                    };
-                                                    true
-                                                }
-                                                14 => { band.bypass = !band.bypass; true }
-                                                15 => { band.solo = !band.solo; true }
-                                                _ => false,
-                                            }
-                                        } else { false }
-                                    }
+                                    };
+                                    true
                                 }
+                                7 => {
+                                    // ratio override
+                                    band.ratio = match band.ratio {
+                                        None => Some(*ratio as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 0.1;
+                                            if new_v < RATIO_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(RATIO_MIN, RATIO_MAX))
+                                            }
+                                        }
+                                    };
+                                    true
+                                }
+                                8 => {
+                                    // attack override
+                                    band.attack_ms = match band.attack_ms {
+                                        None => Some(*attack_ms as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 0.1;
+                                            if new_v < ATTACK_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(ATTACK_MIN, ATTACK_MAX))
+                                            }
+                                        }
+                                    };
+                                    true
+                                }
+                                9 => {
+                                    // release override
+                                    band.release_ms = match band.release_ms {
+                                        None => Some(*release_ms as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 10.0;
+                                            if new_v < RELEASE_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(RELEASE_MIN, RELEASE_MAX))
+                                            }
+                                        }
+                                    };
+                                    true
+                                }
+                                10 => {
+                                    // range override
+                                    band.range_db = match band.range_db {
+                                        None => Some(*range_db as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32;
+                                            if new_v < RANGE_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(RANGE_MIN, RANGE_MAX))
+                                            }
+                                        }
+                                    };
+                                    true
+                                }
+                                11 => {
+                                    // knee override
+                                    band.knee_db = match band.knee_db {
+                                        None => Some(*knee_db as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 0.1;
+                                            if new_v < KNEE_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(KNEE_MIN, KNEE_MAX))
+                                            }
+                                        }
+                                    };
+                                    true
+                                }
+                                12 => {
+                                    // hysteresis override
+                                    band.hysteresis_db = match band.hysteresis_db {
+                                        None => Some(*hysteresis_db as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 0.1;
+                                            if new_v < HYSTERESIS_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(HYSTERESIS_MIN, HYSTERESIS_MAX))
+                                            }
+                                        }
+                                    };
+                                    true
+                                }
+                                13 => {
+                                    // hold override
+                                    band.hold_ms = match band.hold_ms {
+                                        None => Some(*hold_ms as f32),
+                                        Some(v) => {
+                                            let new_v = v + delta as f32 * 5.0;
+                                            if new_v < HOLD_MIN {
+                                                None
+                                            } else {
+                                                Some(new_v.clamp(HOLD_MIN, HOLD_MAX))
+                                            }
+                                        }
+                                    };
+                                    true
+                                }
+                                14 => {
+                                    band.bypass = !band.bypass;
+                                    true
+                                }
+                                15 => {
+                                    band.solo = !band.solo;
+                                    true
+                                }
+                                _ => false,
+                            }
+                        } else {
+                            false
+                        }
+                    }
+                }
                 PluginSettings::XTC {
                     distance_m,
                     speaker_angle_deg,
@@ -1337,7 +1446,8 @@ impl PluginEditingManager for App {
                         true
                     }
                     18 => {
-                        *reflection_beta_boost = (*reflection_beta_boost + delta * 0.1).clamp(1.0, 10.0);
+                        *reflection_beta_boost =
+                            (*reflection_beta_boost + delta * 0.1).clamp(1.0, 10.0);
                         true
                     }
                     19 => {
@@ -1929,11 +2039,10 @@ impl PluginEditingManager for App {
                             true
                         }
                         15 => {
-                            *autogain_smoothing_ms = (*autogain_smoothing_ms + delta * 10.0)
-                                .clamp(
-                                    AUTOGAIN_SMOOTHING_MIN as f64,
-                                    AUTOGAIN_SMOOTHING_MAX as f64,
-                                );
+                            *autogain_smoothing_ms = (*autogain_smoothing_ms + delta * 10.0).clamp(
+                                AUTOGAIN_SMOOTHING_MIN as f64,
+                                AUTOGAIN_SMOOTHING_MAX as f64,
+                            );
                             true
                         }
                         _ => false,
@@ -2214,15 +2323,24 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         32 => {
-                            *dialogue_centroid_weight = value.clamp(DIALOGUE_CENTROID_WEIGHT_MIN as f64, DIALOGUE_CENTROID_WEIGHT_MAX as f64);
+                            *dialogue_centroid_weight = value.clamp(
+                                DIALOGUE_CENTROID_WEIGHT_MIN as f64,
+                                DIALOGUE_CENTROID_WEIGHT_MAX as f64,
+                            );
                             update_needed = true;
                         }
                         33 => {
-                            *dialogue_variance_weight = value.clamp(DIALOGUE_VARIANCE_WEIGHT_MIN as f64, DIALOGUE_VARIANCE_WEIGHT_MAX as f64);
+                            *dialogue_variance_weight = value.clamp(
+                                DIALOGUE_VARIANCE_WEIGHT_MIN as f64,
+                                DIALOGUE_VARIANCE_WEIGHT_MAX as f64,
+                            );
                             update_needed = true;
                         }
                         34 => {
-                            *dialogue_coherence_weight = value.clamp(DIALOGUE_COHERENCE_WEIGHT_MIN as f64, DIALOGUE_COHERENCE_WEIGHT_MAX as f64);
+                            *dialogue_coherence_weight = value.clamp(
+                                DIALOGUE_COHERENCE_WEIGHT_MIN as f64,
+                                DIALOGUE_COHERENCE_WEIGHT_MAX as f64,
+                            );
                             update_needed = true;
                         }
                         35 => {
@@ -2618,32 +2736,41 @@ impl PluginEditingManager for App {
                                 update_needed = true;
                             }
                             1 => {
-                                *crossover_preset =
-                                    (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                                *crossover_preset = (value as i32)
+                                    .clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
                                 update_needed = true;
                             }
                             2 => {
-                                *crossover_freq_1 = value
-                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                                *crossover_freq_1 = value.clamp(
+                                    CROSSOVER_FREQ_1_MIN as f64,
+                                    CROSSOVER_FREQ_1_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             3 => {
-                                *crossover_freq_2 = value
-                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                                *crossover_freq_2 = value.clamp(
+                                    CROSSOVER_FREQ_2_MIN as f64,
+                                    CROSSOVER_FREQ_2_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             4 => {
-                                *crossover_freq_3 = value
-                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                                *crossover_freq_3 = value.clamp(
+                                    CROSSOVER_FREQ_3_MIN as f64,
+                                    CROSSOVER_FREQ_3_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             5 => {
-                                *crossover_freq_4 = value
-                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                                *crossover_freq_4 = value.clamp(
+                                    CROSSOVER_FREQ_4_MIN as f64,
+                                    CROSSOVER_FREQ_4_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             6 => {
-                                *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                                *threshold_db =
+                                    value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
                                 update_needed = true;
                             }
                             7 => {
@@ -2677,14 +2804,38 @@ impl PluginEditingManager for App {
                         let local_idx = param_idx % 100;
                         if let Some(band) = bands.get_mut(band_idx) {
                             match local_idx {
-                                6 => { band.threshold_db = Some(value as f32); update_needed = true; }
-                                7 => { band.ratio = Some(value as f32); update_needed = true; }
-                                8 => { band.attack_ms = Some(value as f32); update_needed = true; }
-                                9 => { band.release_ms = Some(value as f32); update_needed = true; }
-                                10 => { band.knee_db = Some(value as f32); update_needed = true; }
-                                13 => { band.makeup_gain_db = value as f32; update_needed = true; }
-                                14 => { band.bypass = value > 0.5; update_needed = true; }
-                                15 => { band.solo = value > 0.5; update_needed = true; }
+                                6 => {
+                                    band.threshold_db = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                7 => {
+                                    band.ratio = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                8 => {
+                                    band.attack_ms = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                9 => {
+                                    band.release_ms = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                10 => {
+                                    band.knee_db = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                13 => {
+                                    band.makeup_gain_db = value as f32;
+                                    update_needed = true;
+                                }
+                                14 => {
+                                    band.bypass = value > 0.5;
+                                    update_needed = true;
+                                }
+                                15 => {
+                                    band.solo = value > 0.5;
+                                    update_needed = true;
+                                }
                                 _ => {}
                             }
                         }
@@ -2719,32 +2870,41 @@ impl PluginEditingManager for App {
                                 update_needed = true;
                             }
                             1 => {
-                                *crossover_preset =
-                                    (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                                *crossover_preset = (value as i32)
+                                    .clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
                                 update_needed = true;
                             }
                             2 => {
-                                *crossover_freq_1 = value
-                                    .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                                *crossover_freq_1 = value.clamp(
+                                    CROSSOVER_FREQ_1_MIN as f64,
+                                    CROSSOVER_FREQ_1_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             3 => {
-                                *crossover_freq_2 = value
-                                    .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                                *crossover_freq_2 = value.clamp(
+                                    CROSSOVER_FREQ_2_MIN as f64,
+                                    CROSSOVER_FREQ_2_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             4 => {
-                                *crossover_freq_3 = value
-                                    .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                                *crossover_freq_3 = value.clamp(
+                                    CROSSOVER_FREQ_3_MIN as f64,
+                                    CROSSOVER_FREQ_3_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             5 => {
-                                *crossover_freq_4 = value
-                                    .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                                *crossover_freq_4 = value.clamp(
+                                    CROSSOVER_FREQ_4_MIN as f64,
+                                    CROSSOVER_FREQ_4_MAX as f64,
+                                );
                                 update_needed = true;
                             }
                             6 => {
-                                *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                                *threshold_db =
+                                    value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
                                 update_needed = true;
                             }
                             7 => {
@@ -2791,16 +2951,46 @@ impl PluginEditingManager for App {
                         let local_idx = param_idx % 100;
                         if let Some(band) = bands.get_mut(band_idx) {
                             match local_idx {
-                                6 => { band.threshold_db = Some(value as f32); update_needed = true; }
-                                7 => { band.ratio = Some(value as f32); update_needed = true; }
-                                8 => { band.attack_ms = Some(value as f32); update_needed = true; }
-                                9 => { band.release_ms = Some(value as f32); update_needed = true; }
-                                10 => { band.range_db = Some(value as f32); update_needed = true; }
-                                11 => { band.knee_db = Some(value as f32); update_needed = true; }
-                                12 => { band.hysteresis_db = Some(value as f32); update_needed = true; }
-                                13 => { band.hold_ms = Some(value as f32); update_needed = true; }
-                                14 => { band.bypass = value > 0.5; update_needed = true; }
-                                15 => { band.solo = value > 0.5; update_needed = true; }
+                                6 => {
+                                    band.threshold_db = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                7 => {
+                                    band.ratio = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                8 => {
+                                    band.attack_ms = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                9 => {
+                                    band.release_ms = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                10 => {
+                                    band.range_db = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                11 => {
+                                    band.knee_db = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                12 => {
+                                    band.hysteresis_db = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                13 => {
+                                    band.hold_ms = Some(value as f32);
+                                    update_needed = true;
+                                }
+                                14 => {
+                                    band.bypass = value > 0.5;
+                                    update_needed = true;
+                                }
+                                15 => {
+                                    band.solo = value > 0.5;
+                                    update_needed = true;
+                                }
                                 _ => {}
                             }
                         }
@@ -3013,8 +3203,8 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         12 => {
-                            *transparency =
-                                (value / 100.0).clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64);
+                            *transparency = (value / 100.0)
+                                .clamp(TRANSPARENCY_MIN as f64, TRANSPARENCY_MAX as f64);
                             update_needed = true;
                         }
                         13 => {

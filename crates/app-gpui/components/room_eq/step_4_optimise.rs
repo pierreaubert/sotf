@@ -290,7 +290,11 @@ impl PlayerView {
                                 if channel_names.is_empty() {
                                     "None".to_string()
                                 } else {
-                                    format!("{} ({})", channel_names.len(), channel_names.join(", "))
+                                    format!(
+                                        "{} ({})",
+                                        channel_names.len(),
+                                        channel_names.join(", ")
+                                    )
                                 },
                             ))
                             // Mode & Algorithm
@@ -412,22 +416,26 @@ impl PlayerView {
                                             .width(px(250.0))
                                             .sortable(false)
                                             .resizable(false)
-                                            .cell_render(move |pair: &(String, String), _, _, _| {
-                                                Text::new(pair.0.clone())
-                                                    .size(TextSize::Xs)
-                                                    .color(label_color)
-                                            }),
+                                            .cell_render(
+                                                move |pair: &(String, String), _, _, _| {
+                                                    Text::new(pair.0.clone())
+                                                        .size(TextSize::Xs)
+                                                        .color(label_color)
+                                                },
+                                            ),
                                     )
                                     .column(
                                         Column::new("value", "Value")
                                             .sortable(false)
                                             .resizable(false)
-                                            .cell_render(move |pair: &(String, String), _, _, _| {
-                                                Text::new(pair.1.clone())
-                                                    .size(TextSize::Xs)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(value_color)
-                                            }),
+                                            .cell_render(
+                                                move |pair: &(String, String), _, _, _| {
+                                                    Text::new(pair.1.clone())
+                                                        .size(TextSize::Xs)
+                                                        .weight(TextWeight::Semibold)
+                                                        .color(value_color)
+                                                },
+                                            ),
                                     )
                                     .alternating_rows(true)
                                     .theme(table_theme),

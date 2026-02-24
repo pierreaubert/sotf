@@ -1,8 +1,8 @@
 use crate::app::{App, InputMode, MatrixEditMode, Screen};
 use crate::media_controls::TuiMediaControls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use souvlaki::MediaControlEvent;
 use sotf_audio_player::{PluginSettings, PluginType};
+use souvlaki::MediaControlEvent;
 use std::time::Duration;
 
 // Sub-modules for event handling
@@ -98,9 +98,7 @@ pub fn handle_media_control_event(
             app.is_playing = false;
             Some(PlayerCommand::Stop)
         }
-        MediaControlEvent::SetPosition(pos) => {
-            Some(PlayerCommand::Seek(pos.0.as_secs_f64()))
-        }
+        MediaControlEvent::SetPosition(pos) => Some(PlayerCommand::Seek(pos.0.as_secs_f64())),
         MediaControlEvent::SetVolume(vol) => {
             let clamped = vol.clamp(0.0, 1.0) as f32;
             app.volume = clamped;
@@ -244,6 +242,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 FocusedPane::Main => {
                     // Cycle through screens, then switch to Meters pane
                     app.current_screen = match app.current_screen {
+                        Screen::Loading => Screen::Loading, // Stay on loading
                         Screen::Library => Screen::Queue,
                         Screen::Queue => Screen::Plugins,
                         Screen::Plugins => Screen::Devices,
@@ -433,6 +432,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 
         // Screen-specific controls
         _ => match app.current_screen {
+            Screen::Loading => None, // Ignore keys during loading
             Screen::Library => handle_library_keys(app, key),
             Screen::Queue => handle_queue_keys(app, key),
             Screen::Plugins => handle_plugins_keys(app, key),
@@ -1514,22 +1514,22 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
 fn configure_sub_screen_prev(s: crate::app::ConfigureSubScreen) -> crate::app::ConfigureSubScreen {
     use crate::app::ConfigureSubScreen;
     match s {
-        ConfigureSubScreen::Directories  => ConfigureSubScreen::SpinoramaEq,
-        ConfigureSubScreen::Recording    => ConfigureSubScreen::Directories,
-        ConfigureSubScreen::RoomEq       => ConfigureSubScreen::Recording,
-        ConfigureSubScreen::HeadphoneEq  => ConfigureSubScreen::RoomEq,
-        ConfigureSubScreen::SpinoramaEq  => ConfigureSubScreen::HeadphoneEq,
+        ConfigureSubScreen::Directories => ConfigureSubScreen::SpinoramaEq,
+        ConfigureSubScreen::Recording => ConfigureSubScreen::Directories,
+        ConfigureSubScreen::RoomEq => ConfigureSubScreen::Recording,
+        ConfigureSubScreen::HeadphoneEq => ConfigureSubScreen::RoomEq,
+        ConfigureSubScreen::SpinoramaEq => ConfigureSubScreen::HeadphoneEq,
     }
 }
 
 fn configure_sub_screen_next(s: crate::app::ConfigureSubScreen) -> crate::app::ConfigureSubScreen {
     use crate::app::ConfigureSubScreen;
     match s {
-        ConfigureSubScreen::Directories  => ConfigureSubScreen::Recording,
-        ConfigureSubScreen::Recording    => ConfigureSubScreen::RoomEq,
-        ConfigureSubScreen::RoomEq       => ConfigureSubScreen::HeadphoneEq,
-        ConfigureSubScreen::HeadphoneEq  => ConfigureSubScreen::SpinoramaEq,
-        ConfigureSubScreen::SpinoramaEq  => ConfigureSubScreen::Directories,
+        ConfigureSubScreen::Directories => ConfigureSubScreen::Recording,
+        ConfigureSubScreen::Recording => ConfigureSubScreen::RoomEq,
+        ConfigureSubScreen::RoomEq => ConfigureSubScreen::HeadphoneEq,
+        ConfigureSubScreen::HeadphoneEq => ConfigureSubScreen::SpinoramaEq,
+        ConfigureSubScreen::SpinoramaEq => ConfigureSubScreen::Directories,
     }
 }
 
@@ -1563,11 +1563,26 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 return None;
             }
             // Number keys still jump directly to a tab
-            KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories;  return None; }
-            KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording;    return None; }
-            KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq;       return None; }
-            KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;  return None; }
-            KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;  return None; }
+            KeyCode::Char('1') => {
+                app.configure_sub_screen = ConfigureSubScreen::Directories;
+                return None;
+            }
+            KeyCode::Char('2') => {
+                app.configure_sub_screen = ConfigureSubScreen::Recording;
+                return None;
+            }
+            KeyCode::Char('3') => {
+                app.configure_sub_screen = ConfigureSubScreen::RoomEq;
+                return None;
+            }
+            KeyCode::Char('4') => {
+                app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;
+                return None;
+            }
+            KeyCode::Char('5') => {
+                app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;
+                return None;
+            }
             _ => return None,
         }
     }
@@ -1590,11 +1605,26 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         ConfigureSubScreen::Directories => {
             // Number keys 1-5 still switch sub-screens from Directories
             match key.code {
-                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
-                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
-                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
-                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
-                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                KeyCode::Char('1') => {
+                    app.configure_sub_screen = ConfigureSubScreen::Directories;
+                    return None;
+                }
+                KeyCode::Char('2') => {
+                    app.configure_sub_screen = ConfigureSubScreen::Recording;
+                    return None;
+                }
+                KeyCode::Char('3') => {
+                    app.configure_sub_screen = ConfigureSubScreen::RoomEq;
+                    return None;
+                }
+                KeyCode::Char('4') => {
+                    app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;
+                    return None;
+                }
+                KeyCode::Char('5') => {
+                    app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;
+                    return None;
+                }
                 _ => {}
             }
             return handle_directory_keys(app, key);
@@ -1619,10 +1649,10 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
 fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
-        SpinoramaStep::Select       => SpinoramaStep::Select, // no wrap
-        SpinoramaStep::Configure    => SpinoramaStep::Select,
-        SpinoramaStep::Optimize     => SpinoramaStep::Configure,
-        SpinoramaStep::Results      => SpinoramaStep::Optimize,
+        SpinoramaStep::Select => SpinoramaStep::Select, // no wrap
+        SpinoramaStep::Configure => SpinoramaStep::Select,
+        SpinoramaStep::Optimize => SpinoramaStep::Configure,
+        SpinoramaStep::Results => SpinoramaStep::Optimize,
         SpinoramaStep::UpdatePlugin => SpinoramaStep::Results,
     }
 }
@@ -1630,10 +1660,10 @@ fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaSte
 fn spinorama_step_next(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
-        SpinoramaStep::Select       => SpinoramaStep::Configure,
-        SpinoramaStep::Configure    => SpinoramaStep::Optimize,
-        SpinoramaStep::Optimize     => SpinoramaStep::Results,
-        SpinoramaStep::Results      => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::Select => SpinoramaStep::Configure,
+        SpinoramaStep::Configure => SpinoramaStep::Optimize,
+        SpinoramaStep::Optimize => SpinoramaStep::Results,
+        SpinoramaStep::Results => SpinoramaStep::UpdatePlugin,
         SpinoramaStep::UpdatePlugin => SpinoramaStep::UpdatePlugin, // no wrap
     }
 }
@@ -1766,7 +1796,9 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         SpinoramaStep::Optimize => match key.code {
             KeyCode::Enter => {
                 match &app.spinorama_eq.opt_status {
-                    OptimizationStatus::Idle | OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
+                    OptimizationStatus::Idle
+                    | OptimizationStatus::Failed
+                    | OptimizationStatus::Cancelled => {
                         spawn_spinorama_optimization(app);
                     }
                     OptimizationStatus::Completed => {
@@ -1849,8 +1881,11 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
         5 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
         6 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
         7 => {
-            c.peq_model =
-                cycle_string(&c.peq_model, &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"], delta);
+            c.peq_model = cycle_string(
+                &c.peq_model,
+                &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"],
+                delta,
+            );
         }
         // ── Optimization ──
         8 => {
@@ -1959,7 +1994,9 @@ fn spawn_spinorama_speaker_load() {
         .clone();
 
     // Clear any stale result from a previous load
-    if let Ok(mut g) = result_slot.lock() { *g = None; }
+    if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
 
     // Spawn background thread
     let slot = result_slot.clone();
@@ -1980,13 +2017,7 @@ static SPEAKERS_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<Vec<String>,
     std::sync::OnceLock::new();
 
 static OPT_RESULT: std::sync::OnceLock<
-    Arc<
-        Mutex<
-            Option<
-                Result<sotf_audio_player::autoeq::SpeakerOptimizationResult, String>,
-            >,
-        >,
-    >,
+    Arc<Mutex<Option<Result<sotf_audio_player::autoeq::SpeakerOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
 static OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f32)>>>> =
     std::sync::OnceLock::new();
@@ -2110,8 +2141,12 @@ fn spawn_spinorama_optimization(app: &mut App) {
         .clone();
 
     // Clear any stale result from a previous run
-    if let Ok(mut g) = result_slot2.lock() { *g = None; }
-    if let Ok(mut g) = progress_slot2.lock() { *g = None; }
+    if let Ok(mut g) = result_slot2.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = progress_slot2.lock() {
+        *g = None;
+    }
 
     std::thread::spawn(move || {
         use sotf_audio_player::autoeq::{
@@ -2178,18 +2213,17 @@ fn spawn_spinorama_optimization(app: &mut App) {
         };
 
         let progress_slot3 = progress_slot2.clone();
-        let callback: sotf_audio_player::autoeq::SpeakerOptimizationCallback =
-            Box::new(move |p| {
-                let pct = if p.max_iterations > 0 {
-                    p.iteration as f32 / p.max_iterations as f32
-                } else {
-                    0.0
-                };
-                if let Ok(mut guard) = progress_slot3.lock() {
-                    *guard = Some((p.iteration, p.max_iterations, p.loss, pct));
-                }
-                CallbackAction::Continue
-            });
+        let callback: sotf_audio_player::autoeq::SpeakerOptimizationCallback = Box::new(move |p| {
+            let pct = if p.max_iterations > 0 {
+                p.iteration as f32 / p.max_iterations as f32
+            } else {
+                0.0
+            };
+            if let Ok(mut guard) = progress_slot3.lock() {
+                *guard = Some((p.iteration, p.max_iterations, p.loss, pct));
+            }
+            CallbackAction::Continue
+        });
 
         let result = run_speaker_optimization_with_callback(&config, Some(callback));
         if let Ok(mut guard) = result_slot2.lock() {
@@ -2206,9 +2240,9 @@ fn headphone_eq_step_prev(s: crate::app::HeadphoneEqStep) -> crate::app::Headpho
     use crate::app::HeadphoneEqStep;
     match s {
         HeadphoneEqStep::SelectFile => HeadphoneEqStep::SelectFile, // no wrap
-        HeadphoneEqStep::Configure  => HeadphoneEqStep::SelectFile,
-        HeadphoneEqStep::Optimize   => HeadphoneEqStep::Configure,
-        HeadphoneEqStep::Results    => HeadphoneEqStep::Optimize,
+        HeadphoneEqStep::Configure => HeadphoneEqStep::SelectFile,
+        HeadphoneEqStep::Optimize => HeadphoneEqStep::Configure,
+        HeadphoneEqStep::Results => HeadphoneEqStep::Optimize,
     }
 }
 
@@ -2216,14 +2250,14 @@ fn headphone_eq_step_next(s: crate::app::HeadphoneEqStep) -> crate::app::Headpho
     use crate::app::HeadphoneEqStep;
     match s {
         HeadphoneEqStep::SelectFile => HeadphoneEqStep::Configure,
-        HeadphoneEqStep::Configure  => HeadphoneEqStep::Optimize,
-        HeadphoneEqStep::Optimize   => HeadphoneEqStep::Results,
-        HeadphoneEqStep::Results    => HeadphoneEqStep::Results, // no wrap
+        HeadphoneEqStep::Configure => HeadphoneEqStep::Optimize,
+        HeadphoneEqStep::Optimize => HeadphoneEqStep::Results,
+        HeadphoneEqStep::Results => HeadphoneEqStep::Results, // no wrap
     }
 }
 
 fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::{HeadphoneEqStep, HEADPHONE_TARGET_PRESETS};
+    use crate::app::{HEADPHONE_TARGET_PRESETS, HeadphoneEqStep};
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 
     // Esc goes up one level
@@ -2262,18 +2296,30 @@ fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComman
         HeadphoneEqStep::SelectFile => {
             if app.headphone_eq.editing_measurement {
                 match key.code {
-                    KeyCode::Enter => { app.headphone_eq.editing_measurement = false; }
-                    KeyCode::Backspace => { app.headphone_eq.measurement_path.pop(); }
-                    KeyCode::Char(c) => { app.headphone_eq.measurement_path.push(c); }
+                    KeyCode::Enter => {
+                        app.headphone_eq.editing_measurement = false;
+                    }
+                    KeyCode::Backspace => {
+                        app.headphone_eq.measurement_path.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.headphone_eq.measurement_path.push(c);
+                    }
                     _ => {}
                 }
                 return None;
             }
             if app.headphone_eq.editing_custom_target {
                 match key.code {
-                    KeyCode::Enter => { app.headphone_eq.editing_custom_target = false; }
-                    KeyCode::Backspace => { app.headphone_eq.custom_target_path.pop(); }
-                    KeyCode::Char(c) => { app.headphone_eq.custom_target_path.push(c); }
+                    KeyCode::Enter => {
+                        app.headphone_eq.editing_custom_target = false;
+                    }
+                    KeyCode::Backspace => {
+                        app.headphone_eq.custom_target_path.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.headphone_eq.custom_target_path.push(c);
+                    }
                     _ => {}
                 }
                 return None;
@@ -2287,16 +2333,24 @@ fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComman
                     }
                 }
                 KeyCode::Down => {
-                    let max = if app.headphone_eq.target_preset == "custom" { 2 } else { 1 };
+                    let max = if app.headphone_eq.target_preset == "custom" {
+                        2
+                    } else {
+                        1
+                    };
                     if app.headphone_eq.selected_field < max {
                         app.headphone_eq.selected_field += 1;
                     }
                 }
                 KeyCode::Enter => {
                     match app.headphone_eq.selected_field {
-                        0 => { app.headphone_eq.editing_measurement = true; }
+                        0 => {
+                            app.headphone_eq.editing_measurement = true;
+                        }
                         1 => {} // target preset cycles with Left/Right
-                        2 => { app.headphone_eq.editing_custom_target = true; }
+                        2 => {
+                            app.headphone_eq.editing_custom_target = true;
+                        }
                         _ => {}
                     }
                 }
@@ -2309,7 +2363,11 @@ fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComman
                             delta,
                         );
                         // Clamp selected_field if "custom" row disappeared
-                        let max = if app.headphone_eq.target_preset == "custom" { 2 } else { 1 };
+                        let max = if app.headphone_eq.target_preset == "custom" {
+                            2
+                        } else {
+                            1
+                        };
                         if app.headphone_eq.selected_field > max {
                             app.headphone_eq.selected_field = max;
                         }
@@ -2360,7 +2418,9 @@ fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComman
         HeadphoneEqStep::Optimize => match key.code {
             KeyCode::Enter => {
                 match &app.headphone_eq.opt_status {
-                    OptimizationStatus::Idle | OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
+                    OptimizationStatus::Idle
+                    | OptimizationStatus::Failed
+                    | OptimizationStatus::Cancelled => {
                         spawn_headphone_eq_optimization(app);
                     }
                     OptimizationStatus::Completed => {
@@ -2413,8 +2473,11 @@ fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
         5 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
         6 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
         7 => {
-            c.peq_model =
-                cycle_string(&c.peq_model, &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"], delta);
+            c.peq_model = cycle_string(
+                &c.peq_model,
+                &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"],
+                delta,
+            );
         }
         8 => {
             use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
@@ -2458,13 +2521,7 @@ fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
 }
 
 static HEADPHONE_OPT_RESULT: std::sync::OnceLock<
-    Arc<
-        Mutex<
-            Option<
-                Result<sotf_audio_player::autoeq::HeadphoneOptimizationResult, String>,
-            >,
-        >,
-    >,
+    Arc<Mutex<Option<Result<sotf_audio_player::autoeq::HeadphoneOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
 
 pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
@@ -2563,7 +2620,9 @@ fn spawn_headphone_eq_optimization(app: &mut App) {
         .clone();
 
     // Clear stale result
-    if let Ok(mut g) = result_slot.lock() { *g = None; }
+    if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
 
     std::thread::spawn(move || {
         let result = sotf_audio_player::autoeq::headphone::run_headphone_optimization(
@@ -2584,9 +2643,7 @@ fn spawn_headphone_eq_optimization(app: &mut App) {
 // ============================================================================
 
 fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use sotf_audio_player::recording_types::{
-        ChannelRecordingState, RecordingStep,
-    };
+    use sotf_audio_player::recording_types::{ChannelRecordingState, RecordingStep};
 
     // Esc goes up one level
     if key.code == KeyCode::Esc {
@@ -2621,18 +2678,30 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         RecordingStep::Config => {
             if app.recording.editing_output_dir {
                 match key.code {
-                    KeyCode::Enter => { app.recording.editing_output_dir = false; }
-                    KeyCode::Backspace => { app.recording.output_directory.pop(); }
-                    KeyCode::Char(c) => { app.recording.output_directory.push(c); }
+                    KeyCode::Enter => {
+                        app.recording.editing_output_dir = false;
+                    }
+                    KeyCode::Backspace => {
+                        app.recording.output_directory.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.recording.output_directory.push(c);
+                    }
                     _ => {}
                 }
                 return None;
             }
             if app.recording.editing_mic_cal {
                 match key.code {
-                    KeyCode::Enter => { app.recording.editing_mic_cal = false; }
-                    KeyCode::Backspace => { app.recording.mic_calibration_path.pop(); }
-                    KeyCode::Char(c) => { app.recording.mic_calibration_path.push(c); }
+                    KeyCode::Enter => {
+                        app.recording.editing_mic_cal = false;
+                    }
+                    KeyCode::Backspace => {
+                        app.recording.mic_calibration_path.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.recording.mic_calibration_path.push(c);
+                    }
                     _ => {}
                 }
                 return None;
@@ -2649,13 +2718,15 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                         app.recording.selected_field += 1;
                     }
                 }
-                KeyCode::Enter => {
-                    match app.recording.selected_field {
-                        8 => { app.recording.editing_output_dir = true; }
-                        9 => { app.recording.editing_mic_cal = true; }
-                        _ => {}
+                KeyCode::Enter => match app.recording.selected_field {
+                    8 => {
+                        app.recording.editing_output_dir = true;
                     }
-                }
+                    9 => {
+                        app.recording.editing_mic_cal = true;
+                    }
+                    _ => {}
+                },
                 KeyCode::Left | KeyCode::Right => {
                     let delta = if key.code == KeyCode::Right { 1i32 } else { -1 };
                     adjust_recording_field(app, delta);
@@ -2693,9 +2764,12 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 // Record current channel (placeholder - actual recording needs audio engine)
                 if let Some(ch_idx) = app.recording.current_channel {
                     if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
-                        if ch.state == ChannelRecordingState::Empty || ch.state == ChannelRecordingState::Error {
+                        if ch.state == ChannelRecordingState::Empty
+                            || ch.state == ChannelRecordingState::Error
+                        {
                             ch.state = ChannelRecordingState::Recording;
-                            app.recording.status_message = format!("Recording channel {}...", ch.channel_name);
+                            app.recording.status_message =
+                                format!("Recording channel {}...", ch.channel_name);
                             // TODO: Spawn actual recording via engine
                         }
                     }
@@ -2703,7 +2777,11 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 None
             }
             KeyCode::Tab => {
-                let has_done = app.recording.channel_recordings.iter().any(|ch| ch.state == ChannelRecordingState::Done);
+                let has_done = app
+                    .recording
+                    .channel_recordings
+                    .iter()
+                    .any(|ch| ch.state == ChannelRecordingState::Done);
                 if has_done {
                     app.recording.step = RecordingStep::Evaluating;
                 }
@@ -2724,7 +2802,12 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 None
             }
             KeyCode::Down => {
-                let completed = app.recording.channel_recordings.iter().filter(|ch| ch.state == ChannelRecordingState::Done).count();
+                let completed = app
+                    .recording
+                    .channel_recordings
+                    .iter()
+                    .filter(|ch| ch.state == ChannelRecordingState::Done)
+                    .count();
                 if app.recording.selected_channel_view + 1 < completed {
                     app.recording.selected_channel_view += 1;
                 }
@@ -2748,8 +2831,12 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                         app.recording.editing_save_name = false;
                         save_recordings(app);
                     }
-                    KeyCode::Backspace => { app.recording.save_name.pop(); }
-                    KeyCode::Char(c) => { app.recording.save_name.push(c); }
+                    KeyCode::Backspace => {
+                        app.recording.save_name.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.recording.save_name.push(c);
+                    }
                     _ => {}
                 }
                 return None;
@@ -2800,8 +2887,15 @@ fn adjust_recording_field(app: &mut App, delta: i32) {
         2 => {
             // Cycle speaker config
             let configs = SpeakerConfiguration::all();
-            let idx = configs.iter().position(|c| *c == app.recording.playback_config.speaker_configuration).unwrap_or(0);
-            let new_idx = if delta > 0 { (idx + 1) % configs.len() } else { (idx + configs.len() - 1) % configs.len() };
+            let idx = configs
+                .iter()
+                .position(|c| *c == app.recording.playback_config.speaker_configuration)
+                .unwrap_or(0);
+            let new_idx = if delta > 0 {
+                (idx + 1) % configs.len()
+            } else {
+                (idx + configs.len() - 1) % configs.len()
+            };
             let new_config = configs[new_idx];
             app.recording.playback_config.speaker_configuration = new_config;
             // Update channel mappings for new config
@@ -2810,27 +2904,41 @@ fn adjust_recording_field(app: &mut App, delta: i32) {
         3 => {
             // Cycle signal type
             let types = RecordingSignalType::all();
-            let idx = types.iter().position(|t| *t == app.recording.signal_type).unwrap_or(0);
-            let new_idx = if delta > 0 { (idx + 1) % types.len() } else { (idx + types.len() - 1) % types.len() };
+            let idx = types
+                .iter()
+                .position(|t| *t == app.recording.signal_type)
+                .unwrap_or(0);
+            let new_idx = if delta > 0 {
+                (idx + 1) % types.len()
+            } else {
+                (idx + types.len() - 1) % types.len()
+            };
             app.recording.signal_type = types[new_idx];
         }
         4 => {
-            app.recording.signal_duration_secs = (app.recording.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
+            app.recording.signal_duration_secs =
+                (app.recording.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
         }
         5 => {
-            app.recording.signal_level_db = (app.recording.signal_level_db + delta as f32).clamp(-40.0, 0.0);
+            app.recording.signal_level_db =
+                (app.recording.signal_level_db + delta as f32).clamp(-40.0, 0.0);
         }
         6 => {
-            app.recording.sweep_start_freq = (app.recording.sweep_start_freq + delta as f32 * 10.0).clamp(10.0, 1000.0);
+            app.recording.sweep_start_freq =
+                (app.recording.sweep_start_freq + delta as f32 * 10.0).clamp(10.0, 1000.0);
         }
         7 => {
-            app.recording.sweep_end_freq = (app.recording.sweep_end_freq + delta as f32 * 1000.0).clamp(1000.0, 24000.0);
+            app.recording.sweep_end_freq =
+                (app.recording.sweep_end_freq + delta as f32 * 1000.0).clamp(1000.0, 24000.0);
         }
         _ => {}
     }
 }
 
-fn update_channel_mappings_for_config(app: &mut App, config: sotf_audio_player::recording_types::SpeakerConfiguration) {
+fn update_channel_mappings_for_config(
+    app: &mut App,
+    config: sotf_audio_player::recording_types::SpeakerConfiguration,
+) {
     use sotf_audio_player::recording_types::ChannelMapping;
 
     let names = config.default_channel_names();
@@ -2894,13 +3002,11 @@ fn save_recordings(app: &mut App) {
     // Build measurements file
     let channels: Vec<ChannelMeasurement> = completed
         .iter()
-        .map(|ch| {
-            ChannelMeasurement {
-                channel_name: ch.channel_name.clone(),
-                measurement: ch.result.clone().unwrap(),
-                is_group: false,
-                group_drivers: Vec::new(),
-            }
+        .map(|ch| ChannelMeasurement {
+            channel_name: ch.channel_name.clone(),
+            measurement: ch.result.clone().unwrap(),
+            is_group: false,
+            group_drivers: Vec::new(),
         })
         .collect();
 
@@ -2993,8 +3099,12 @@ fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                         app.room_eq.editing_file_path = false;
                         load_room_eq_measurements(app);
                     }
-                    KeyCode::Backspace => { app.room_eq.file_path.pop(); }
-                    KeyCode::Char(c) => { app.room_eq.file_path.push(c); }
+                    KeyCode::Backspace => {
+                        app.room_eq.file_path.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.room_eq.file_path.push(c);
+                    }
                     _ => {}
                 }
                 return None;
@@ -3048,7 +3158,9 @@ fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         RoomEqStep::Optimize => match key.code {
             KeyCode::Enter => {
                 match &app.room_eq.opt_status {
-                    OptimizationStatus::Idle | OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
+                    OptimizationStatus::Idle
+                    | OptimizationStatus::Failed
+                    | OptimizationStatus::Cancelled => {
                         spawn_room_eq_optimization(app);
                     }
                     OptimizationStatus::Completed => {
@@ -3106,8 +3218,12 @@ fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                         app.room_eq.editing_export_path = false;
                         export_room_eq_results(app);
                     }
-                    KeyCode::Backspace => { app.room_eq.export_path.pop(); }
-                    KeyCode::Char(c) => { app.room_eq.export_path.push(c); }
+                    KeyCode::Backspace => {
+                        app.room_eq.export_path.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.room_eq.export_path.push(c);
+                    }
                     _ => {}
                 }
                 return None;
@@ -3133,9 +3249,7 @@ fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 const ROOM_EQ_FIELD_COUNT: usize = 24;
 
 fn adjust_room_eq_field(app: &mut App, delta: i32) {
-    use sotf_audio_player::room_eq_types::{
-        MultiSpeakerMode, RoomEqOptimizationMode,
-    };
+    use sotf_audio_player::room_eq_types::{MultiSpeakerMode, RoomEqOptimizationMode};
 
     let c = &mut app.room_eq.config;
     match app.room_eq.selected_field {
@@ -3151,8 +3265,11 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
         5 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
         6 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
         7 => {
-            c.peq_model =
-                cycle_string(&c.peq_model, &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"], delta);
+            c.peq_model = cycle_string(
+                &c.peq_model,
+                &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"],
+                delta,
+            );
         }
         // Optimization
         8 => {
@@ -3177,13 +3294,24 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
         15 => {
             let modes = RoomEqOptimizationMode::all();
             let idx = modes.iter().position(|m| *m == c.mode).unwrap_or(0);
-            let new_idx = if delta > 0 { (idx + 1) % modes.len() } else { (idx + modes.len() - 1) % modes.len() };
+            let new_idx = if delta > 0 {
+                (idx + 1) % modes.len()
+            } else {
+                (idx + modes.len() - 1) % modes.len()
+            };
             c.mode = modes[new_idx];
         }
         16 => {
             let modes = MultiSpeakerMode::all();
-            let idx = modes.iter().position(|m| *m == c.multi_speaker_mode).unwrap_or(0);
-            let new_idx = if delta > 0 { (idx + 1) % modes.len() } else { (idx + modes.len() - 1) % modes.len() };
+            let idx = modes
+                .iter()
+                .position(|m| *m == c.multi_speaker_mode)
+                .unwrap_or(0);
+            let new_idx = if delta > 0 {
+                (idx + 1) % modes.len()
+            } else {
+                (idx + modes.len() - 1) % modes.len()
+            };
             c.multi_speaker_mode = modes[new_idx];
         }
         // Target Tilt
@@ -3191,10 +3319,16 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
         18 => c.target_tilt.slope = (c.target_tilt.slope + delta as f64 * 0.1).clamp(-3.0, 0.0),
         // Excursion Protection
         19 => c.excursion_protection.enabled = !c.excursion_protection.enabled,
-        20 => c.excursion_protection.manual_f3_hz = (c.excursion_protection.manual_f3_hz + delta as f64 * 5.0).clamp(20.0, 200.0),
+        20 => {
+            c.excursion_protection.manual_f3_hz =
+                (c.excursion_protection.manual_f3_hz + delta as f64 * 5.0).clamp(20.0, 200.0)
+        }
         // Schroeder Split
         21 => c.schroeder_split.enabled = !c.schroeder_split.enabled,
-        22 => c.schroeder_split.schroeder_freq = (c.schroeder_split.schroeder_freq + delta as f64 * 10.0).clamp(100.0, 1000.0),
+        22 => {
+            c.schroeder_split.schroeder_freq =
+                (c.schroeder_split.schroeder_freq + delta as f64 * 10.0).clamp(100.0, 1000.0)
+        }
         // Phase Alignment
         23 => c.phase_alignment.enabled = !c.phase_alignment.enabled,
         _ => {}
@@ -3229,16 +3363,10 @@ fn load_room_eq_measurements(app: &mut App) {
 }
 
 static ROOM_OPT_RESULT: std::sync::OnceLock<
-    Arc<
-        Mutex<
-            Option<
-                Result<sotf_audio_player::autoeq::RoomOptimizationResult, String>,
-            >,
-        >,
-    >,
+    Arc<Mutex<Option<Result<sotf_audio_player::autoeq::RoomOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
 static ROOM_OPT_PROGRESS: std::sync::OnceLock<
-    Arc<Mutex<Option<sotf_audio_player::autoeq::RoomOptimizationProgress>>>
+    Arc<Mutex<Option<sotf_audio_player::autoeq::RoomOptimizationProgress>>>,
 > = std::sync::OnceLock::new();
 
 pub fn poll_room_eq_optimization(app: &mut App) -> bool {
@@ -3357,8 +3485,12 @@ fn spawn_room_eq_optimization(app: &mut App) {
         .clone();
 
     // Clear stale results
-    if let Ok(mut g) = result_slot.lock() { *g = None; }
-    if let Ok(mut g) = progress_slot.lock() { *g = None; }
+    if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = progress_slot.lock() {
+        *g = None;
+    }
 
     std::thread::spawn(move || {
         use sotf_audio_player::autoeq::{
@@ -3369,8 +3501,18 @@ fn spawn_room_eq_optimization(app: &mut App) {
         let speaker_curves: Vec<(String, autoeq::Curve)> = measurements
             .iter()
             .map(|m| {
-                let freq: Vec<f64> = m.measurement.frequencies.iter().map(|&f| f as f64).collect();
-                let spl: Vec<f64> = m.measurement.magnitude_db.iter().map(|&db| db as f64).collect();
+                let freq: Vec<f64> = m
+                    .measurement
+                    .frequencies
+                    .iter()
+                    .map(|&f| f as f64)
+                    .collect();
+                let spl: Vec<f64> = m
+                    .measurement
+                    .magnitude_db
+                    .iter()
+                    .map(|&db| db as f64)
+                    .collect();
                 let curve = autoeq::Curve {
                     freq: ndarray::Array1::from(freq),
                     spl: ndarray::Array1::from(spl),
@@ -3405,13 +3547,12 @@ fn spawn_room_eq_optimization(app: &mut App) {
         let room_config = build_room_config_from_curves(&speaker_curves, optimizer);
 
         let progress_slot2 = progress_slot.clone();
-        let callback: sotf_audio_player::autoeq::RoomOptimizationCallback =
-            Box::new(move |p| {
-                if let Ok(mut guard) = progress_slot2.lock() {
-                    *guard = Some(p.clone());
-                }
-                autoeq::roomeq::CallbackAction::Continue
-            });
+        let callback: sotf_audio_player::autoeq::RoomOptimizationCallback = Box::new(move |p| {
+            if let Ok(mut guard) = progress_slot2.lock() {
+                *guard = Some(p.clone());
+            }
+            autoeq::roomeq::CallbackAction::Continue
+        });
 
         let result = run_room_optimization(&room_config, 48000.0, Some(callback));
         if let Ok(mut guard) = result_slot.lock() {
@@ -3464,7 +3605,7 @@ pub enum PlayerCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{HeadphoneEqStep, SpinoramaStep, HEADPHONE_TARGET_PRESETS};
+    use crate::app::{HEADPHONE_TARGET_PRESETS, HeadphoneEqStep, SpinoramaStep};
     use crate::theme::Theme;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use sotf_audio_player::recording_types::{

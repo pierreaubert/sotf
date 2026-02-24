@@ -8,6 +8,7 @@
 
 use crate::metal_view::MetalView;
 use gpui::{Application, TextSystem};
+use std::rc::Rc;
 use parking_lot::Mutex;
 use std::ffi::c_void;
 use std::sync::Arc;
@@ -80,9 +81,9 @@ impl EmbeddedView {
         // GPUI requires main thread access
         // Use catch_unwind to handle the panic gracefully
         std::panic::catch_unwind(|| {
-            // Create a headless GPUI application to access the text system
+            // Create a GPUI application to access the text system
             // Note: This doesn't call run(), so it won't block
-            let app = Application::headless();
+            let app = Application::with_platform(Rc::new(gpui_macos::MacPlatform::new(false)));
             let text_system = app.text_system();
 
             // The application will be dropped here, but the text system

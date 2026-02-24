@@ -7,7 +7,9 @@ use math_audio_fem::assembly::{HelmholtzAssembler, HelmholtzProblem};
 use math_audio_fem::basis::PolynomialDegree;
 use math_audio_fem::mesh::unit_square_triangles;
 use math_audio_fem::solver::{SolverConfig, SolverType, solve};
-use math_audio_fem::waveholtz::{WaveHoltzConfig, solve_waveholtz, solve_waveholtz_multi_frequency};
+use math_audio_fem::waveholtz::{
+    WaveHoltzConfig, solve_waveholtz, solve_waveholtz_multi_frequency,
+};
 use ndarray::Array1;
 use num_complex::Complex64;
 use std::f64::consts::PI;

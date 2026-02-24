@@ -11,7 +11,7 @@
 use math_audio_fem::assembly::HelmholtzProblem;
 use math_audio_fem::basis::PolynomialDegree;
 use math_audio_fem::boundary::{DirichletBC, apply_dirichlet};
-use math_audio_fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahedra, Mesh};
+use math_audio_fem::mesh::{Mesh, annular_mesh_triangles, spherical_shell_mesh_tetrahedra};
 use math_audio_fem::neural_multigrid::{NeuralMultigridConfig, solve_neural_multigrid};
 use math_audio_fem::schwarz_pml::{SchwarzPmlConfig, SchwarzVariant, solve_schwarz_pml};
 use math_audio_fem::solver::{

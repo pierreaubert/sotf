@@ -8,7 +8,7 @@ use super::room_eq::{AutoEqField, OptimizationStatus};
 
 // Re-export shared domain types from player crate
 pub use sotf_audio_player::spinorama_eq_types::{
-    SpinoramaBiquad, SpinoramaEqResult, SpinoramaOptimizerConfig, SpinoramaOptimizationMode,
+    SpinoramaBiquad, SpinoramaEqResult, SpinoramaOptimizationMode, SpinoramaOptimizerConfig,
     SpinoramaStep, SpinoramaTargetCurve,
 };
 

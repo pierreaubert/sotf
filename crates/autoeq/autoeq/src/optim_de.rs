@@ -79,7 +79,10 @@ pub fn setup_de_common(
 
         log::debug!(
             "DE Setup: {}, pop_size={}, max_iter={}, maxeval={}",
-            params_desc, pop_size, max_iter, maxeval
+            params_desc,
+            pop_size,
+            max_iter,
+            maxeval
         );
         log::debug!(
             "  Penalty weights: ceiling={:.1e}, spacing={:.1e}, mingain={:.1e}",
@@ -89,7 +92,9 @@ pub fn setup_de_common(
         );
         log::debug!(
             "  Constraints: max_db={:.1}, min_spacing={:.3} oct, min_db={:.1}",
-            penalty_data.max_db, penalty_data.min_spacing_oct, penalty_data.min_db
+            penalty_data.max_db,
+            penalty_data.min_spacing_oct,
+            penalty_data.min_db
         );
     }
 
@@ -125,7 +130,11 @@ pub fn create_de_callback(
         if !qa_mode && (tracker.just_started_stalling() || tracker.stall_at_interval(25)) {
             log::debug!(
                 "{} iter {:4}  fitness={:.6e} {} conv={:.3e}",
-                name, intermediate.iter, intermediate.fun, improvement, intermediate.convergence
+                name,
+                intermediate.iter,
+                intermediate.fun,
+                improvement,
+                intermediate.convergence
             );
         }
 

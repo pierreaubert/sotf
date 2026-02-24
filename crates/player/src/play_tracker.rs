@@ -41,11 +41,7 @@ impl PlayTracker {
     /// Check if the current track has been playing for 30+ seconds and record it.
     /// `duration` is the current playback position in seconds (for the database record).
     /// Returns the path of the recorded track if a play was just recorded.
-    pub fn check_and_record(
-        &mut self,
-        db: &MusicDatabase,
-        duration: u64,
-    ) -> Option<PathBuf> {
+    pub fn check_and_record(&mut self, db: &MusicDatabase, duration: u64) -> Option<PathBuf> {
         if self.already_recorded {
             return None;
         }

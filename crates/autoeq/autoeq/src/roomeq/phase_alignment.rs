@@ -7,8 +7,8 @@
 //! Uses golden section search for efficient 1D optimization of delay, combined with
 //! optional A-weighting for perceptually-relevant energy computation.
 
-use crate::error::{AutoeqError, Result};
 use crate::Curve;
+use crate::error::{AutoeqError, Result};
 use log::{debug, info};
 use ndarray::Array1;
 use num_complex::Complex64;

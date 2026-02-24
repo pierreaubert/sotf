@@ -3,8 +3,8 @@ use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::line;
 use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState};
+use gpui_px::line;
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Card, HStack, Progress, ProgressSize,
     ProgressVariant, StackSpacing, Text, TextSize, TextWeight, VStack,

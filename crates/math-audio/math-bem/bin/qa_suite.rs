@@ -34,8 +34,8 @@ use math_audio_bem::core::assembly::tbem::build_tbem_system_with_beta;
 use math_audio_bem::core::incident::IncidentField;
 use math_audio_bem::core::mesh::generators::generate_icosphere_mesh;
 use math_audio_bem::core::solver::{
-    direct::lu_solve, gmres_solve_tbem_with_ilu, solve_bicgstab, solve_cgs, BiCgstabConfig,
-    CgsConfig, DenseOperator, GmresConfig,
+    BiCgstabConfig, CgsConfig, DenseOperator, GmresConfig, direct::lu_solve,
+    gmres_solve_tbem_with_ilu, solve_bicgstab, solve_cgs,
 };
 use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};
 use math_audio_bem::testing::ValidationResult;

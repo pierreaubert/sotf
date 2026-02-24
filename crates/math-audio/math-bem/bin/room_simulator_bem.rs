@@ -22,7 +22,7 @@
 //!   cargo run --release --bin room_simulator_bem -- --help
 
 use math_audio_bem::core::solver::{
-    gmres_solve_fmm_batched_with_ilu, gmres_solve_with_ilu, GmresConfig,
+    GmresConfig, gmres_solve_fmm_batched_with_ilu, gmres_solve_with_ilu,
 };
 use math_audio_bem::room_acoustics::*;
 // Re-import FMM solver types from room_acoustics (they're re-exported from solver.rs)

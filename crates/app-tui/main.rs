@@ -4,21 +4,22 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use souvlaki::{MediaPlayback, MediaPosition};
 use sotf_audio::run_preflight_checks;
-use sotf_audio_player::{Player, PluginSettings, PluginType};
+use sotf_audio_player::{MusicLibrary, Player, PluginSettings, PluginType};
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 use sotf_audio_player_tui::events::{
     AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
-    poll_headphone_eq_optimization, poll_room_eq_optimization,
-    poll_spinorama_optimization, poll_spinorama_speaker_load,
+    poll_headphone_eq_optimization, poll_room_eq_optimization, poll_spinorama_optimization,
+    poll_spinorama_speaker_load,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::theme;
 use sotf_audio_player_tui::ui;
+use souvlaki::{MediaPlayback, MediaPosition};
 use std::fs::OpenOptions;
 use std::io;
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::time::Duration;
 
 #[derive(Parser, Debug)]
@@ -94,6 +95,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(theme);
     let mut player = Player::new();
 
+    // Show loading screen immediately
+    app.current_screen = Screen::Loading;
+    terminal.draw(|f| ui::draw(f, &mut app))?;
+
     // Set initial volume
     player.set_volume(app.volume)?;
 
@@ -139,22 +144,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.add_directory_quiet(dir);
     }
 
-    // Load from database if no scan is requested
+    // Load library from database in a background thread so we can animate the
+    // loading screen. The library is moved to the thread and moved back when done.
     let db_is_empty = if !args.scan {
-        if let Err(e) = app.load_library_from_database() {
-            log::warn!("Failed to load library from database: {}", e);
-            true // Treat as empty if load fails
-        } else {
-            let album_count = app.library.albums.len();
-            log::info!("Loaded library from database: {} albums", album_count);
+        // Take the library (with its DB connection) for background loading
+        let mut library = std::mem::replace(&mut app.library, MusicLibrary::new());
+        let (tx, rx) = mpsc::channel();
 
-            // Start background waveform scan for tracks without waveform data
-            if let Err(e) = app.start_waveform_scan() {
-                log::warn!("Failed to start waveform scan: {}", e);
+        std::thread::spawn(move || {
+            let result = library.load_from_database().map_err(|e| e.to_string());
+            let _ = tx.send((library, result));
+        });
+
+        // Animate loading screen while waiting for the library to load
+        let mut db_empty = true;
+        loop {
+            app.loading_tick = app.loading_tick.wrapping_add(1);
+            terminal.draw(|f| ui::draw(f, &mut app))?;
+
+            match rx.try_recv() {
+                Ok((loaded_library, result)) => {
+                    app.library = loaded_library;
+                    if let Err(e) = &result {
+                        log::warn!("Failed to load library from database: {}", e);
+                        db_empty = true;
+                    } else {
+                        let album_count = app.library.albums.len();
+                        log::info!("Loaded library from database: {} albums", album_count);
+                        app.rebuild_artist_tree();
+                        app.update_directory_scan_times();
+
+                        if let Err(e) = app.start_waveform_scan() {
+                            log::warn!("Failed to start waveform scan: {}", e);
+                        }
+                        db_empty = album_count == 0;
+                    }
+                    break;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    log::error!("Library loading thread panicked");
+                    // Restore a fresh library with database
+                    app.library = MusicLibrary::with_database().unwrap_or_else(|_| MusicLibrary::new());
+                    break;
+                }
             }
 
-            album_count == 0
+            std::thread::sleep(Duration::from_millis(40));
         }
+        db_empty
     } else {
         false // Explicit scan requested
     };
@@ -200,7 +238,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(mc)
         }
         Err(e) => {
-            log::warn!("Media controls unavailable: {}. Continuing without them.", e);
+            log::warn!(
+                "Media controls unavailable: {}. Continuing without them.",
+                e
+            );
             None
         }
     };
@@ -240,9 +281,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
         }
 
         // Handle events
-        if let Some(event) =
-            handle_events(Duration::from_millis(100), media_controls.as_ref())?
-        {
+        if let Some(event) = handle_events(Duration::from_millis(100), media_controls.as_ref())? {
             app.needs_redraw = true;
             match event {
                 AppEvent::Key(key) => {
@@ -285,6 +324,12 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                     let state = player.get_playback_state();
 
+                    // Pause background scanners while playing to avoid CPU starvation
+                    app.scanner_pause_flag.store(
+                        app.is_playing && state.is_playing,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
+
                     // Update app state
                     app.position_secs = state.position_secs;
                     // Read loudness from cache using plugin chain's engine index
@@ -314,8 +359,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     if state.engine_fatal {
                         log::error!("[TUI] Engine crashed fatally, cannot auto-restart");
                         app.error_message = Some(
-                            "Audio engine crashed. Please play a new track to restart."
-                                .to_string(),
+                            "Audio engine crashed. Please play a new track to restart.".to_string(),
                         );
                         app.input_mode = InputMode::ShowError;
                         app.is_playing = false;
@@ -338,15 +382,18 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         if let Some(path) = app.next_track() {
                             log::info!("[TUI] Auto-advancing to: {:?}", path);
 
-                            let track_channels = app
-                                .current_track()
-                                .and_then(|t| t.channels)
-                                .unwrap_or(2) as usize;
+                            let track_channels =
+                                app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
                             // Check for upmixer + non-stereo conflict
                             if track_channels != 2
-                                && let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer)
-                                && app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled)
+                                && let Some(upmixer_idx) =
+                                    app.plugin_chain.find_plugin_index(&PluginType::Upmixer)
+                                && app
+                                    .plugin_chain
+                                    .plugins()
+                                    .get(upmixer_idx)
+                                    .is_some_and(|p| p.enabled)
                             {
                                 log::info!(
                                     "[TUI] Auto-advance channel conflict: {}ch file with upmixer enabled",
@@ -583,16 +630,17 @@ fn handle_player_command(
             // Load album images when starting playback
             app.load_album_images();
 
-            let track_channels = app
-                .current_track()
-                .and_then(|t| t.channels)
-                .unwrap_or(2) as usize;
+            let track_channels = app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
             // Check for upmixer + non-stereo conflict before attempting playback.
             // The upmixer only accepts stereo (2ch) input.
             if track_channels != 2
                 && let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer)
-                && app.plugin_chain.plugins().get(upmixer_idx).is_some_and(|p| p.enabled)
+                && app
+                    .plugin_chain
+                    .plugins()
+                    .get(upmixer_idx)
+                    .is_some_and(|p| p.enabled)
             {
                 log::info!(
                     "[TUI] Channel conflict: {}ch file with upmixer enabled",
@@ -689,9 +737,7 @@ fn update_media_controls(
         None => (None, None),
     };
 
-    let duration = track
-        .and_then(|t| t.duration_secs)
-        .map(Duration::from_secs);
+    let duration = track.and_then(|t| t.duration_secs).map(Duration::from_secs);
 
     // Build cover URL from album art path (file:// URL for macOS)
     let cover_url_owned = app

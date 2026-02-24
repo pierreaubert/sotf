@@ -21,6 +21,7 @@ env_logger = { workspace = true }
 
 # GPUI framework for UI
 gpui = { workspace = true }
+gpui_macos = { workspace = true }
 
 # Audio player types and UI
 player = { workspace = true }

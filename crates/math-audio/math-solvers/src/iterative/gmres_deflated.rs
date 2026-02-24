@@ -7,8 +7,8 @@
 //! Reference: Erlangga & Nabben (2008), Gaul et al. (2013).
 
 use crate::blas_helpers::{axpy, inner_product, vector_norm};
-use crate::direct::lu::{LuFactorization, lu_factorize};
 use crate::direct::LuError;
+use crate::direct::lu::{LuFactorization, lu_factorize};
 use crate::traits::{ComplexField, LinearOperator, Preconditioner};
 use ndarray::{Array1, Array2};
 use num_traits::{Float, FromPrimitive, One, ToPrimitive, Zero};
@@ -360,13 +360,14 @@ where
                 // Apply recovery and coarse correction: x = Q(x̂) + x_c
                 let x = deflation.apply_recovery(&x_hat, operator) + &x_c;
 
-                let status =
-                    if inner_converged && rel_residual >= config.tolerance && abs_residual >= abs_tol
-                    {
-                        crate::traits::SolverStatus::Breakdown
-                    } else {
-                        crate::traits::SolverStatus::Converged
-                    };
+                let status = if inner_converged
+                    && rel_residual >= config.tolerance
+                    && abs_residual >= abs_tol
+                {
+                    crate::traits::SolverStatus::Breakdown
+                } else {
+                    crate::traits::SolverStatus::Converged
+                };
 
                 return GmresSolution {
                     x,
@@ -484,31 +485,19 @@ mod tests {
         let a = CsrMatrix::from_dense(&dense, 1e-15);
 
         // Deflate first eigenvector
-        let w1 = array![
-            Complex64::new(1.0, 0.0),
-            Complex64::ZERO,
-            Complex64::ZERO
-        ];
+        let w1 = array![Complex64::new(1.0, 0.0), Complex64::ZERO, Complex64::ZERO];
         let deflation = DeflationSubspace::new(vec![w1], &a).unwrap();
 
         assert_eq!(deflation.num_vectors(), 1);
 
         // P(e1) should be zero (eigenvector is fully deflated)
-        let e1 = array![
-            Complex64::new(1.0, 0.0),
-            Complex64::ZERO,
-            Complex64::ZERO
-        ];
+        let e1 = array![Complex64::new(1.0, 0.0), Complex64::ZERO, Complex64::ZERO];
         let pe1 = deflation.apply_left_projector(&e1);
         let pe1_norm: f64 = pe1.iter().map(|v| v.norm_sqr()).sum::<f64>().sqrt();
         assert!(pe1_norm < 1e-12, "Deflated eigenvector should be zero");
 
         // P(e2) should still be nonzero
-        let e2 = array![
-            Complex64::ZERO,
-            Complex64::new(1.0, 0.0),
-            Complex64::ZERO
-        ];
+        let e2 = array![Complex64::ZERO, Complex64::new(1.0, 0.0), Complex64::ZERO];
         let pe2 = deflation.apply_left_projector(&e2);
         let pe2_norm: f64 = pe2.iter().map(|v| v.norm_sqr()).sum::<f64>().sqrt();
         assert!(pe2_norm > 0.5, "Non-deflated vector should remain");
@@ -608,7 +597,10 @@ mod tests {
         };
 
         let sol = gmres_deflated_preconditioned(&a, &precond, &deflation, &b, None, &config);
-        assert!(sol.converged, "Deflated preconditioned GMRES should converge");
+        assert!(
+            sol.converged,
+            "Deflated preconditioned GMRES should converge"
+        );
 
         // Verify solution
         let ax = a.matvec(&sol.x);
@@ -671,7 +663,11 @@ mod tests {
 
         // x_c should be the exact solution A⁻¹b = [2, 3]
         let ax_c = a.matvec(&x_c);
-        let error: f64 = (&ax_c - &b).iter().map(|e| e.norm_sqr()).sum::<f64>().sqrt();
+        let error: f64 = (&ax_c - &b)
+            .iter()
+            .map(|e| e.norm_sqr())
+            .sum::<f64>()
+            .sqrt();
         assert!(error < 1e-10, "Coarse correction should be exact solution");
     }
 

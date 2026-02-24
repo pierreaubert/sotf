@@ -613,7 +613,7 @@ impl<T: ComplexField> CsrMatrix<T> {
         let tol = T::Real::from_f64(1e-15).unwrap();
 
         let mut triplets: Vec<(usize, usize, T)> = Vec::with_capacity(self.nnz() * 2);
-        
+
         // Workspace for Gustavson's algorithm
         let mut sparse_accumulator = vec![T::zero(); n];
         let mut active_indices = Vec::with_capacity(n);

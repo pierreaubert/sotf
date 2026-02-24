@@ -1063,11 +1063,8 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |v, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        let config = &mut state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config;
+                        let config =
+                            &mut state.app.measurement_state.room_eq_state.optimizer_config;
                         if v {
                             config.seed = Some(config.seed.unwrap_or(42));
                         } else {
@@ -1284,12 +1281,10 @@ impl PlayerView {
                     VStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(if !has_phase_data {
-                            Text::new(
-                                "Only IIR mode is available (no phase data in measurements).",
-                            )
-                            .size(TextSize::Xs)
-                            .color(theme.text_muted)
-                            .into_any_element()
+                            Text::new("Only IIR mode is available (no phase data in measurements).")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted)
+                                .into_any_element()
                         } else {
                             Text::new(
                                 "Choose the type of filters to generate for your room correction.",
