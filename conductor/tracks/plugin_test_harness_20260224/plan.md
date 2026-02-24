@@ -29,10 +29,10 @@
 - [x] Task: Conductor - User Manual Verification 'Benchmarking & Performance Refinement' (Protocol in workflow.md) a80369b
 
 ## Phase 4: Integration & Magic Number Audit
-- [ ] Task: Compressor Audit & Migration (TDD)
-    - [ ] Refactor `Compressor` unit tests to use `test_utils`
-    - [ ] Audit `crates/plugins/src/dynamics/compressor.rs` for magic numbers and complex loop edge cases
-    - [ ] Replace identified magic numbers with constants or derivations
+- [x] Task: Compressor Audit & Migration (TDD) 68b4197
+    - [x] Refactor `Compressor` unit tests to use `test_utils`
+    - [x] Audit `crates/plugins/src/dynamics/compressor.rs` for magic numbers and complex loop edge cases
+    - [x] Replace identified magic numbers with constants or derivations
 - [ ] Task: PEQ Audit & Migration (TDD)
     - [ ] Refactor `PEQ` unit tests to use `test_utils`
     - [ ] Audit `crates/plugins/src/eq/peq.rs` for magic numbers and complex loop edge cases
