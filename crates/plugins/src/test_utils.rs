@@ -1,4 +1,5 @@
 //! Testing utilities for audio plugins.
+use crate::parameters::{ParameterId, ParameterValue};
 use crate::plugin::{Plugin, ProcessContext};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::f32::consts::PI;
@@ -502,4 +503,49 @@ pub fn benchmark_plugin_full(
     });
 
     group.finish();
+}
+
+/// A utility to test parameter automation ramps.
+pub fn test_parameter_ramp(
+    plugin: &mut dyn Plugin,
+    param_id: &ParameterId,
+    start_val: f32,
+    end_val: f32,
+    duration_frames: usize,
+    sample_rate: f64,
+) {
+    let channels = plugin.input_channels();
+    let input = vec![0.5; duration_frames * channels];
+    let mut output = vec![0.0; duration_frames * plugin.output_channels()];
+    
+    // We'll process in small blocks to allow parameter updates at block boundaries
+    let block_size = 64;
+    let mut frames_processed = 0;
+    
+    while frames_processed < duration_frames {
+        let num_frames = (block_size).min(duration_frames - frames_processed);
+        
+        // Calculate current ramp value
+        let progress = frames_processed as f32 / duration_frames as f32;
+        let val = start_val + (end_val - start_val) * progress;
+        
+        plugin.set_parameter(param_id.clone(), ParameterValue::Float(val)).unwrap();
+        
+        let ctx = ProcessContext {
+            sample_rate: sample_rate as u32,
+            num_frames,
+        };
+        
+        let in_slice = &input[frames_processed * channels..(frames_processed + num_frames) * channels];
+        let out_slice = &mut output[frames_processed * plugin.output_channels()..(frames_processed + num_frames) * plugin.output_channels()];
+        
+        plugin.process(in_slice, out_slice, &ctx).unwrap();
+        frames_processed += num_frames;
+    }
+    
+    // Check for artifacts (sudden jumps in output)
+    for i in 1..output.len() {
+        let diff = (output[i] - output[i-1]).abs();
+        assert!(diff < 0.1, "Artifact detected at sample {}: jump of {}", i, diff);
+    }
 }
