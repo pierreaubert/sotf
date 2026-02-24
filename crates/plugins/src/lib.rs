@@ -110,7 +110,7 @@ pub use plugin_upmixer::{
 };
 pub use plugin_xtc::{XtcPlugin, XtcPluginParams, validation};
 
-pub use test_utils::{BufferComparison, SignalGenerator, test_varied_buffer_sizes};
+pub use test_utils::{BufferComparison, SignalGen, test_varied_buffer_sizes};
 
 pub use simd::enable_ftz_daz;
 pub use sofa::{HrtfData, SofaFile, SourcePosition};

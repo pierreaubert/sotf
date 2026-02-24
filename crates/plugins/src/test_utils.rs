@@ -3,7 +3,7 @@ use crate::plugin::{Plugin, ProcessContext};
 use std::f32::consts::PI;
 
 /// A simple signal generator for testing.
-pub struct SignalGenerator {
+pub struct SignalGen {
     sample_rate: f64,
     phase: f64,
     frequency: f64,
@@ -18,7 +18,7 @@ enum SignalType {
     Step,
 }
 
-impl SignalGenerator {
+impl SignalGen {
     pub fn new_sine(sample_rate: f64, frequency: f64, amplitude: f32) -> Self {
         Self {
             sample_rate,
