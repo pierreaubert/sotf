@@ -1,0 +1,8 @@
+{
+  "track_id": "plugin_test_harness_20260224",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-02-24T12:00:00Z",
+  "updated_at": "2026-02-24T12:00:00Z",
+  "description": "Building a better test harness for the audio plugins."
+}
