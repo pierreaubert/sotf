@@ -1,9 +1,9 @@
 # Implementation Plan: Enhanced Plugin Test Infrastructure
 
 ## Phase 1: Internal Test Infrastructure (crates/plugins)
-- [ ] Task: Create `crates/plugins/src/test_utils.rs`
-    - [ ] Create `test_utils` module (as `cfg(test)`)
-    - [ ] Define shared `SignalGenerator` and `BufferComparison` utilities
+- [x] Task: Create `crates/plugins/src/test_utils.rs` 8a96084
+    - [x] Create `test_utils` module (as `cfg(test)`)
+    - [x] Define shared `SignalGenerator` and `BufferComparison` utilities
 - [ ] Task: Signal & IO Utilities (TDD)
     - [ ] Write tests for sine, noise, and impulse generators
     - [ ] Implement `SignalGen` module
