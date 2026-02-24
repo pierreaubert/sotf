@@ -21,9 +21,9 @@
 - [x] Task: Conductor - User Manual Verification 'RT Safety & QA Refactoring' (Protocol in workflow.md) 32b31e6
 
 ## Phase 3: Benchmarking & Performance Refinement
-- [ ] Task: Benchmark Refactoring (TDD)
-    - [ ] Refactor existing benchmarks in `crates/plugins/benches` to use unified profiling utilities
-    - [ ] Add automated latency (PDL) detection to benchmarks
+- [x] Task: Benchmark Refactoring (TDD) 6574a33
+    - [x] Refactor existing benchmarks in `crates/plugins/benches` to use unified profiling utilities
+    - [x] Add automated latency (PDL) detection to benchmarks
 - [ ] Task: Performance & Profiling (TDD)
     - [ ] Implement performance report generator for plugins
 - [ ] Task: Conductor - User Manual Verification 'Benchmarking & Performance Refinement' (Protocol in workflow.md)
