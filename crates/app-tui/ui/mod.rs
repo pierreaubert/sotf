@@ -1,3 +1,5 @@
+mod utilities;
+
 use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem};
 use ratatui::{
     Frame,
@@ -13,6 +15,28 @@ use ratatui::{
 use sotf_audio_player::{
     PluginSettings, PluginType, detect_matrix_preset, get_channel_label, linear_to_db_string,
 };
+
+/// Draw a standardized help box with keybindings for the given screen.
+fn draw_help_box(f: &mut Frame, area: Rect, app: &App, screen: Screen) {
+    let bindings = utilities::get_keybindings_for_screen(screen);
+    let help_text = bindings
+        .iter()
+        .map(|(key, desc)| format!("{}={}", key, desc))
+        .collect::<Vec<_>>()
+        .join("  |  ");
+
+    draw_help_box_with_text(f, area, app, &help_text);
+}
+
+/// Draw a help box with custom text.
+fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text: &str) {
+    let help = Paragraph::new(text)
+        .style(Style::default().fg(app.theme.title_color))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL).title("Help"));
+
+    f.render_widget(help, area);
+}
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
 fn format_channel_count(n: u32) -> String {
@@ -504,17 +528,17 @@ fn draw_library_screen(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(3), // Help box
             Constraint::Length(3), // Search box
             Constraint::Min(0),    // Album list
         ])
         .split(area);
 
-    // Search box
-    draw_search_box(f, chunks[0], app);
+    draw_help_box(f, chunks[0], app, Screen::Library);
+    draw_search_box(f, chunks[1], app);
 
-    // Album list
     let is_focused = app.current_screen == Screen::Library;
-    draw_album_list(f, chunks[1], app, is_focused);
+    draw_album_list(f, chunks[2], app, is_focused);
 }
 
 fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
@@ -574,13 +598,12 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
 
     // Build title with colored sorting and filtering
     let base_title_style = Style::default().fg(app.theme.fg_secondary);
-    let suffix = format!(" [c/5-9]{})", counts_str);
     let title_spans = vec![
-        Span::styled("Search Albums ('/' search | Sort: ", base_title_style),
+        Span::styled("Search Albums | Sort: ", base_title_style),
         Span::styled(sort_order_str, Style::default().fg(app.theme.border_color)),
-        Span::styled(" [s/1-4] | Filter: ", base_title_style),
+        Span::styled(" | Filter: ", base_title_style),
         Span::styled(&filter_str, Style::default().fg(app.theme.border_color)),
-        Span::styled(suffix, base_title_style),
+        Span::styled(counts_str, base_title_style),
     ];
     let title = Line::from(title_spans);
 
@@ -961,6 +984,19 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     let is_focused = app.current_screen == Screen::Queue;
 
+    // Vertical split: help box on top, content below
+    let vchunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Help box
+            Constraint::Min(0),    // Queue content
+        ])
+        .split(area);
+
+    draw_help_box(f, vchunks[0], app, Screen::Queue);
+
+    let content_area = vchunks[1];
+
     // Check if we have album images to display
     let has_images = !app.album_images.is_empty();
 
@@ -972,10 +1008,10 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
                 Constraint::Percentage(60), // Queue list
                 Constraint::Percentage(40), // Album art
             ])
-            .split(area);
+            .split(content_area);
         (chunks[0], Some(chunks[1]))
     } else {
-        (area, None)
+        (content_area, None)
     };
 
     let mut items: Vec<ListItem> = Vec::new();
@@ -1073,12 +1109,9 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let title = if app.queue.is_empty() {
-        "Queue (empty) - Add albums from library".to_string()
+        "Queue (empty)".to_string()
     } else {
-        format!(
-            "Queue ({}) - Enter: play album, 'p' play, SPACE pause, 'n' next, 'b' prev, 'l'/'h' expand, 'd' remove",
-            app.queue.len()
-        )
+        format!("Queue ({})", app.queue.len())
     };
 
     let border_type = if is_focused {
@@ -1290,17 +1323,23 @@ fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
-    // Split vertically: command bar on top, plugin panels below
+    // Split vertically: help box on top, plugin panels below
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Command bar
+            Constraint::Length(3), // Help box
             Constraint::Min(0),    // Plugin panels
         ])
         .split(area);
 
-    // Draw command bar
-    draw_plugin_command_bar(f, vchunks[0], app);
+    // Draw help box with contextual text
+    if app.input_mode == InputMode::AddPlugin {
+        draw_help_box_with_text(f, vchunks[0], app, "↑/↓=navigate  Enter=add  Esc=cancel");
+    } else if app.plugin_chain.is_empty() {
+        draw_help_box_with_text(f, vchunks[0], app, "'a'=add plugins  's'=save  'l'=load");
+    } else {
+        draw_help_box(f, vchunks[0], app, Screen::Plugins);
+    }
 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -1315,29 +1354,6 @@ fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
 
     // Available plugins list
     draw_available_plugins(f, chunks[1], app);
-}
-
-fn draw_plugin_command_bar(f: &mut Frame, area: Rect, app: &App) {
-    let help_text = if app.input_mode == InputMode::AddPlugin {
-        " ↑/↓=navigate  Enter=add  Esc=cancel"
-    } else if app.plugin_chain.is_empty() {
-        " 'a'=add plugins  's'=save  'l'=load"
-    } else {
-        " 'e'=edit  't'=toggle  'd'=remove  '↑/↓'=move  'a'=add  's'=save  'l'=load"
-    };
-
-    let bar = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "Commands:",
-            Style::default()
-                .fg(app.theme.accent_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(help_text, Style::default().fg(app.theme.fg_secondary)),
-    ]))
-    .alignment(ratatui::layout::Alignment::Center);
-
-    f.render_widget(bar, area);
 }
 
 fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
@@ -1454,14 +1470,7 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    // Info box
-    let info_text = "Select output device with ↑/↓, press Enter or Space to apply";
-    let info = Paragraph::new(info_text)
-        .style(Style::default().fg(app.theme.title_color))
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Help"));
-
-    f.render_widget(info, chunks[0]);
+    draw_help_box(f, chunks[0], app, Screen::Devices);
 
     // Device list
     let items: Vec<ListItem> = app
@@ -1506,10 +1515,7 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     let title = if app.output_devices.is_empty() {
         "Output Devices (none found)".to_string()
     } else {
-        format!(
-            "Output Devices ({}) - Use ↑/↓ to select, Enter to apply",
-            app.output_devices.len()
-        )
+        format!("Output Devices ({})", app.output_devices.len())
     };
 
     let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
@@ -1523,10 +1529,13 @@ fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(3), // Help box
             Constraint::Length(3), // Sub-navigation bar
             Constraint::Min(0),    // Content area
         ])
         .split(area);
+
+    draw_help_box(f, chunks[0], app, Screen::Configure);
 
     // Sub-navigation tabs
     let sub_screens = [
@@ -1556,15 +1565,15 @@ fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
 
     let sub_nav = Paragraph::new(Line::from(spans))
         .block(Block::default().borders(Borders::ALL).title("Configure"));
-    f.render_widget(sub_nav, chunks[0]);
+    f.render_widget(sub_nav, chunks[1]);
 
     // Content area
     match app.configure_sub_screen {
-        ConfigureSubScreen::Directories => draw_directory_manager(f, chunks[1], app),
-        ConfigureSubScreen::Recording => draw_recording_screen(f, chunks[1], app),
-        ConfigureSubScreen::RoomEq => draw_room_eq_screen(f, chunks[1], app),
-        ConfigureSubScreen::HeadphoneEq => draw_headphone_eq_screen(f, chunks[1], app),
-        ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, chunks[1], app),
+        ConfigureSubScreen::Directories => draw_directory_manager(f, chunks[2], app),
+        ConfigureSubScreen::Recording => draw_recording_screen(f, chunks[2], app),
+        ConfigureSubScreen::RoomEq => draw_room_eq_screen(f, chunks[2], app),
+        ConfigureSubScreen::HeadphoneEq => draw_headphone_eq_screen(f, chunks[2], app),
+        ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, chunks[2], app),
     }
 }
 

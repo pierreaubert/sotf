@@ -849,6 +849,7 @@ impl App {
                         log::error!("Failed to reload library after scan: {}", e);
                     }
                     self.rebuild_artist_tree();
+                    self.request_filter_update();
 
                     // Start background waveform scan for new tracks
                     if let Err(e) = self.start_waveform_scan() {
