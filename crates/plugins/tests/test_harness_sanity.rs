@@ -33,6 +33,36 @@ mod tests {
         mean /= buffer.len() as f32;
         // Mean of white noise should be roughly 0
         assert!(mean.abs() < 0.1);
+
+        // Check determinism
+        let mut gen2 = SignalGen::new_white_noise(1.0);
+        let buf2 = gen2.generate(1000);
+        assert_eq!(buffer, buf2);
+    }
+
+    #[test]
+    fn test_pink_noise_generator() {
+        let mut signal_gen = SignalGen::new_pink_noise(1.0);
+        let buffer = signal_gen.generate(1000);
+        assert_eq!(buffer.len(), 1000);
+        assert!(buffer.iter().any(|&s| s != 0.0));
+
+        // Check determinism
+        let mut gen2 = SignalGen::new_pink_noise(1.0);
+        let buf2 = gen2.generate(1000);
+        assert_eq!(buffer, buf2);
+    }
+
+    #[test]
+    fn test_log_sweep_generator() {
+        let mut signal_gen = SignalGen::new_log_sweep(48000.0, 20.0, 20000.0, 1.0, 1.0);
+        let buffer = signal_gen.generate(48000);
+        assert_eq!(buffer.len(), 48000);
+        assert!(buffer.iter().any(|&s| s != 0.0));
+        
+        // Check that it stops after duration
+        let tail = signal_gen.generate(100);
+        assert!(tail.iter().all(|&s| s == 0.0));
     }
 
     #[test]
@@ -40,7 +70,7 @@ mod tests {
         let mut signal_gen = SignalGen::new_impulse();
         let buffer = signal_gen.generate(10);
         
-        assert_eq!(buffer[0], 1.0);
+        assert!((buffer[0] - 1.0).abs() < 1e-5);
         for i in 1..10 {
             assert_eq!(buffer[i], 0.0);
         }
@@ -52,7 +82,7 @@ mod tests {
         let buffer = signal_gen.generate(10);
         
         for i in 0..10 {
-            assert_eq!(buffer[i], 1.0);
+            assert!((buffer[i] - 1.0).abs() < 1e-5);
         }
     }
 

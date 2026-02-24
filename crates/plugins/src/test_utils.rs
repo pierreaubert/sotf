@@ -2,61 +2,88 @@
 use crate::plugin::{Plugin, ProcessContext};
 use std::f32::consts::PI;
 
-/// A simple signal generator for testing.
+/// A simple stateful signal generator for testing.
+/// Uses deterministic logic matching math-dsp.
 pub struct SignalGen {
     sample_rate: f64,
     phase: f64,
     frequency: f64,
     amplitude: f32,
     gen_type: SignalType,
+    // State for noise generators
+    seed: u64,
+    // State for pink noise (Voss-McCartney)
+    pink_state: [f32; 7],
+    // State for sweep
+    sweep_t: f64,
+    sweep_f_end: f64,
+    sweep_duration: f64,
 }
 
 enum SignalType {
     Sine,
     WhiteNoise,
+    PinkNoise,
     Impulse,
     Step,
+    LogSweep,
 }
 
 impl SignalGen {
     pub fn new_sine(sample_rate: f64, frequency: f64, amplitude: f32) -> Self {
+        Self::new(sample_rate, amplitude, SignalType::Sine, frequency)
+    }
+
+    pub fn new_white_noise(amplitude: f32) -> Self {
+        Self::new(0.0, amplitude, SignalType::WhiteNoise, 0.0)
+    }
+
+    pub fn new_pink_noise(amplitude: f32) -> Self {
+        Self::new(0.0, amplitude, SignalType::PinkNoise, 0.0)
+    }
+
+    pub fn new_impulse() -> Self {
+        Self::new(0.0, 1.0, SignalType::Impulse, 0.0)
+    }
+
+    pub fn new_step() -> Self {
+        Self::new(0.0, 1.0, SignalType::Step, 0.0)
+    }
+
+    pub fn new_log_sweep(sample_rate: f64, f_start: f64, f_end: f64, duration: f64, amplitude: f32) -> Self {
+        let mut signal_gen = Self::new(sample_rate, amplitude, SignalType::LogSweep, f_start);
+        signal_gen.sweep_f_end = f_end;
+        signal_gen.sweep_duration = duration;
+        signal_gen
+    }
+
+    fn new(sample_rate: f64, amplitude: f32, gen_type: SignalType, frequency: f64) -> Self {
         Self {
             sample_rate,
             phase: 0.0,
             frequency,
             amplitude,
-            gen_type: SignalType::Sine,
+            gen_type,
+            seed: 1234567890,
+            pink_state: [0.0; 7],
+            sweep_t: 0.0,
+            sweep_f_end: 0.0,
+            sweep_duration: 0.0,
         }
     }
 
-    pub fn new_white_noise(amplitude: f32) -> Self {
-        Self {
-            sample_rate: 0.0, // Not needed for noise
-            phase: 0.0,
-            frequency: 0.0,
-            amplitude,
-            gen_type: SignalType::WhiteNoise,
-        }
+    /// Clip a sample to prevent overflow in PCM conversion
+    #[inline]
+    fn clip(x: f32) -> f32 {
+        x.clamp(-0.999_999, 0.999_999)
     }
 
-    pub fn new_impulse() -> Self {
-        Self {
-            sample_rate: 0.0,
-            phase: 0.0,
-            frequency: 0.0,
-            amplitude: 1.0,
-            gen_type: SignalType::Impulse,
-        }
-    }
-
-    pub fn new_step() -> Self {
-        Self {
-            sample_rate: 0.0,
-            phase: 0.0,
-            frequency: 0.0,
-            amplitude: 1.0,
-            gen_type: SignalType::Step,
-        }
+    fn next_white(&mut self) -> f32 {
+        // Simple LCG random number generator for deterministic output
+        // LCG constants from Numerical Recipes
+        self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        let random_u32 = (self.seed & 0xFFFFFFFF) as u32;
+        (random_u32 as f32 / u32::MAX as f32) * 2.0 - 1.0
     }
 
     pub fn generate(&mut self, num_samples: usize) -> Vec<f32> {
@@ -66,20 +93,48 @@ impl SignalGen {
                 SignalType::Sine => {
                     let s = (self.phase * 2.0 * PI as f64).sin() as f32 * self.amplitude;
                     self.phase = (self.phase + self.frequency / self.sample_rate) % 1.0;
-                    s
+                    Self::clip(s)
                 }
                 SignalType::WhiteNoise => {
-                    (rand::random::<f32>() * 2.0 - 1.0) * self.amplitude
+                    Self::clip(self.next_white() * self.amplitude)
+                }
+                SignalType::PinkNoise => {
+                    let white = self.next_white();
+                    let b = &mut self.pink_state;
+                    b[0] = 0.99886 * b[0] + white * 0.0555179;
+                    b[1] = 0.99332 * b[1] + white * 0.0750759;
+                    b[2] = 0.96900 * b[2] + white * 0.153_852;
+                    b[3] = 0.86650 * b[3] + white * 0.3104856;
+                    b[4] = 0.55000 * b[4] + white * 0.5329522;
+                    b[5] = -0.7616 * b[5] - white * 0.0168980;
+
+                    let pink = b[0] + b[1] + b[2] + b[3] + b[4] + b[5] + b[6] + white * 0.5362;
+                    b[6] = white * 0.115926;
+
+                    const PINK_NORM: f32 = 1.0 / 1.744;
+                    Self::clip(self.amplitude * pink * PINK_NORM)
                 }
                 SignalType::Impulse => {
                     if self.phase == 0.0 {
                         self.phase = 1.0;
-                        self.amplitude
+                        Self::clip(self.amplitude)
                     } else {
                         0.0
                     }
                 }
-                SignalType::Step => self.amplitude,
+                SignalType::Step => Self::clip(self.amplitude),
+                SignalType::LogSweep => {
+                    if self.sweep_t >= self.sweep_duration {
+                        0.0
+                    } else {
+                        let k = (self.sweep_f_end / self.frequency).ln() / self.sweep_duration;
+                        let coefficient = 2.0 * PI as f64 * self.frequency / k;
+                        let phase = coefficient * ((k * self.sweep_t).exp() - 1.0);
+                        let s = (phase.sin() as f32) * self.amplitude;
+                        self.sweep_t += 1.0 / self.sample_rate;
+                        Self::clip(s)
+                    }
+                }
             };
             buffer.push(sample);
         }
