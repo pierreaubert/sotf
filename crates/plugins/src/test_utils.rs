@@ -215,6 +215,31 @@ pub fn test_varied_buffer_sizes<P: Plugin>(
     }
 }
 
+/// Generate a DC buffer at a specific dB level.
+pub fn generate_dc(db: f32, num_samples: usize) -> Vec<f32> {
+    let amp = 10.0f32.powf(db / 20.0);
+    vec![amp; num_samples]
+}
+
+/// Measure the peak level of a buffer in dB.
+pub fn measure_peak_db(buffer: &[f32]) -> f32 {
+    let peak = buffer.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    20.0 * peak.max(1e-10).log10()
+}
+
+/// Measure the RMS level of a buffer in dB.
+pub fn measure_rms_db(buffer: &[f32]) -> f32 {
+    if buffer.is_empty() {
+        return -100.0;
+    }
+    let mut sum_sq = 0.0;
+    for &s in buffer {
+        sum_sq += s * s;
+    }
+    let rms = (sum_sq / buffer.len() as f32).sqrt();
+    20.0 * rms.max(1e-10).log10()
+}
+
 // ============================================================================
 // Counting Allocator for Real-time Safety Verification
 // ============================================================================

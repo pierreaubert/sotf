@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_mono_to_stereo::{MonoToStereoPlugin, MonoToStereoPluginParams};
-use sotf_plugins::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
 use sotf_plugins::{Plugin, ProcessContext};
 use std::f32::consts::PI;
 

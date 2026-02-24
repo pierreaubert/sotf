@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_compressor::{CompressorPlugin, CompressorPluginParams};
-use sotf_plugins::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 
 #[global_allocator]
@@ -28,7 +28,7 @@ fn main() {
 
     // Test 1: Unity Gain below threshold
     println!("\n[Test 1] Below Threshold (-30dB)");
-    let mut buffer = generate_dc(sample_rate, -30.0, 4800);
+    let mut buffer = generate_dc(-30.0, 4800);
     let ctx = ProcessContext {
         sample_rate,
         num_frames: 4800,
@@ -42,7 +42,7 @@ fn main() {
     // Overshoot = 10dB. GR = 10 * (1 - 1/4) = 7.5dB. Output should be -10 - 7.5 = -17.5dB
     println!("\n[Test 2] Ratio Accuracy (Input -10dB, Thresh -20dB, Ratio 4:1)");
     let num_frames = 48000; // 1 second
-    let mut buffer = generate_dc(sample_rate, -10.0, num_frames);
+    let mut buffer = generate_dc(-10.0, num_frames);
     inner.reset();
 
     let block_size = 4096;
@@ -70,12 +70,4 @@ fn main() {
     println!("\n[ALL PASS] Compressor QA Complete.");
 }
 
-fn generate_dc(_sr: u32, db: f32, frames: usize) -> Vec<f32> {
-    let amp = 10.0f32.powf(db / 20.0);
-    vec![amp; frames]
-}
 
-fn measure_peak_db(buffer: &[f32]) -> f32 {
-    let peak = buffer.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-    20.0 * peak.max(1e-10).log10()
-}

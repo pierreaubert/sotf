@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_expander::{ExpanderPlugin, ExpanderPluginParams};
-use sotf_plugins::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 
 #[global_allocator]
@@ -29,7 +29,7 @@ fn main() {
 
     // Test 1: Open Gate (Input above threshold)
     println!("\n[Test 1] Open State (Input -10dB, Thresh -20dB)");
-    let mut buffer = generate_dc(sample_rate, -10.0, 4800);
+    let mut buffer = generate_dc(-10.0, 4800);
     let ctx = ProcessContext {
         sample_rate,
         num_frames: 4800,
@@ -43,7 +43,7 @@ fn main() {
     // Difference = 20dB. Expansion = 20 * (1 - 1/2) = 10dB. Output should be -40 - 10 = -50dB
     println!("\n[Test 2] Expansion Accuracy (Input -40dB, Thresh -20dB, Ratio 2:1)");
     let num_frames = 48000;
-    let mut buffer = generate_dc(sample_rate, -40.0, num_frames);
+    let mut buffer = generate_dc(-40.0, num_frames);
     inner.reset();
 
     let block_size = 4096;
@@ -69,7 +69,7 @@ fn main() {
     inner
         .set_parameter("range".into(), sotf_plugins::ParameterValue::Float(10.0))
         .unwrap();
-    let mut buffer = generate_dc(sample_rate, -60.0, num_frames);
+    let mut buffer = generate_dc(-60.0, num_frames);
     inner.reset();
 
     let mut pos = 0;
@@ -96,12 +96,4 @@ fn main() {
     println!("\n[ALL PASS] Expander QA Complete.");
 }
 
-fn generate_dc(_sr: u32, db: f32, frames: usize) -> Vec<f32> {
-    let amp = 10.0f32.powf(db / 20.0);
-    vec![amp; frames]
-}
 
-fn measure_peak_db(buffer: &[f32]) -> f32 {
-    let peak = buffer.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-    20.0 * peak.max(1e-10).log10()
-}

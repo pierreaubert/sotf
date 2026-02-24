@@ -1,7 +1,7 @@
 use sotf_plugins::plugin_multiband_compressor::{
     MultibandCompressorPlugin, MultibandCompressorPluginParams,
 };
-use sotf_plugins::{CountingAlloc, run_standard_tests};
+use sotf_plugins::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ParameterValue, ProcessContext};
 use std::f32::consts::PI;
 
@@ -87,7 +87,3 @@ fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {
         .collect()
 }
 
-fn measure_peak_db(buffer: &[f32]) -> f32 {
-    let peak = buffer.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
-    20.0 * peak.max(1e-10).log10()
-}
