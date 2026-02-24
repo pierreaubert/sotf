@@ -371,20 +371,20 @@ pub fn run_standard_tests(plugin: &mut dyn Plugin, label: &str) {
 }
 
 /// A utility to automatically detect the internal latency (PDL) of a plugin.
-pub fn detect_latency<P: Plugin>(plugin: &mut P, sample_rate: f64) -> usize {
+pub fn detect_latency(plugin: &mut dyn Plugin, sample_rate: f64) -> usize {
     let channels = plugin.input_channels();
     let block_size = 128;
     let total_frames = 48000; // 1 second should be enough
     let mut input = vec![0.0; total_frames * channels];
-    
+
     // Create an impulse at frame 0
     for c in 0..channels {
         input[c] = 1.0;
     }
-    
+
     let mut output = vec![0.0; total_frames * plugin.output_channels()];
     plugin.reset();
-    
+
     let mut frames_processed = 0;
     while frames_processed < total_frames {
         let num_frames = (block_size).min(total_frames - frames_processed);
@@ -392,14 +392,16 @@ pub fn detect_latency<P: Plugin>(plugin: &mut P, sample_rate: f64) -> usize {
             sample_rate: sample_rate as u32,
             num_frames,
         };
-        
-        let in_slice = &input[frames_processed * channels..(frames_processed + num_frames) * channels];
-        let out_slice = &mut output[frames_processed * plugin.output_channels()..(frames_processed + num_frames) * plugin.output_channels()];
-        
+
+        let in_slice =
+            &input[frames_processed * channels..(frames_processed + num_frames) * channels];
+        let out_slice = &mut output[frames_processed * plugin.output_channels()
+            ..(frames_processed + num_frames) * plugin.output_channels()];
+
         plugin.process(in_slice, out_slice, &ctx).unwrap();
         frames_processed += num_frames;
     }
-    
+
     // Find the first non-zero sample in any output channel
     for f in 0..total_frames {
         for c in 0..plugin.output_channels() {
@@ -408,7 +410,7 @@ pub fn detect_latency<P: Plugin>(plugin: &mut P, sample_rate: f64) -> usize {
             }
         }
     }
-    
+
     0
 }
 
@@ -430,11 +432,11 @@ impl PerformanceProfiler {
         }
     }
 
-    pub fn profile<P: Plugin>(&self, plugin: &mut P, duration_sec: f64) -> f64 {
+    pub fn profile(&self, plugin: &mut dyn Plugin, duration_sec: f64) -> f64 {
         let total_frames = (duration_sec * self.sample_rate) as usize;
         let input = vec![0.1; total_frames * self.channels];
         let mut output = vec![0.0; total_frames * plugin.output_channels()];
-        
+
         let start = Instant::now();
         let mut frames_processed = 0;
         while frames_processed < total_frames {
@@ -443,10 +445,12 @@ impl PerformanceProfiler {
                 sample_rate: self.sample_rate as u32,
                 num_frames,
             };
-            
-            let in_slice = &input[frames_processed * self.channels..(frames_processed + num_frames) * self.channels];
-            let out_slice = &mut output[frames_processed * plugin.output_channels()..(frames_processed + num_frames) * plugin.output_channels()];
-            
+
+            let in_slice =
+                &input[frames_processed * self.channels..(frames_processed + num_frames) * self.channels];
+            let out_slice = &mut output[frames_processed * plugin.output_channels()
+                ..(frames_processed + num_frames) * plugin.output_channels()];
+
             plugin.process(in_slice, out_slice, &ctx).unwrap();
             frames_processed += num_frames;
         }
@@ -458,21 +462,21 @@ impl PerformanceProfiler {
 
 /// Extensions for Criterion to easily benchmark plugins.
 #[cfg(feature = "qa")]
-pub fn benchmark_plugin_full<P: Plugin>(
+pub fn benchmark_plugin_full(
     c: &mut criterion::Criterion,
     name: &str,
-    mut plugin: P,
+    mut plugin: Box<dyn Plugin>,
     sample_rate: f64,
 ) {
     let mut group = c.benchmark_group(name);
 
     // 1. Detect Latency
-    let latency = detect_latency(&mut plugin, sample_rate);
+    let latency = detect_latency(plugin.as_mut(), sample_rate);
     println!("  [{}] Detected Latency: {} samples", name, latency);
 
     // 2. High-level Profiling (CPU usage %)
     let profiler = PerformanceProfiler::new(name, sample_rate, plugin.input_channels(), 512);
-    let cpu = profiler.profile(&mut plugin, 1.0);
+    let cpu = profiler.profile(plugin.as_mut(), 1.0);
     println!("  [{}] Estimated CPU Usage: {:.4}%", name, cpu);
 
     // 3. Micro-benchmarking (Criterion)
