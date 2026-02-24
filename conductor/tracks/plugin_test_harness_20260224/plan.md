@@ -37,7 +37,7 @@
     - [x] Refactor `PEQ` unit tests to use `test_utils`
     - [x] Audit `crates/plugins/src/eq/peq.rs` for magic numbers and complex loop edge cases
     - [x] Replace identified magic numbers with constants or derivations
-- [ ] Task: Parameter Automation Tests (TDD)
-    - [ ] Implement automated parameter ramp tests for `Compressor` and `PEQ`
-    - [ ] Verify artifact-free transitions and smoothing
+- [x] Task: Parameter Automation Tests (TDD) d6b9a0c
+    - [x] Implement automated parameter ramp tests for `Compressor` and `PEQ`
+    - [x] Verify artifact-free transitions and smoothing
 - [ ] Task: Conductor - User Manual Verification 'Integration & Magic Number Audit' (Protocol in workflow.md)
