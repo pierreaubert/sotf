@@ -45,5 +45,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 ---
 
-- [ ] **Track: Building a better test harness for the audio plugins.**
+- [x] **Track: Building a better test harness for the audio plugins.**
 *Link: [./tracks/plugin_test_harness_20260224/](./tracks/plugin_test_harness_20260224/)*
