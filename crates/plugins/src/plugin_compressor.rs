@@ -30,6 +30,17 @@ use std::any::Any;
 use std::sync::Arc;
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const DEFAULT_SMOOTHING_TIME_MS: f32 = 20.0;
+const DEFAULT_SAMPLE_RATE: u32 = 44100;
+const CACHE_UPDATE_THROTTLE: usize = 10;
+const EPSILON: f32 = 1e-10;
+const DB_CONVERSION_FACTOR: f32 = 20.0;
+const AUTO_MAKEUP_OVERSHOOT_FACTOR: f32 = 0.5;
+
+// ============================================================================
 // Configuration
 // ============================================================================
 
@@ -140,6 +151,7 @@ pub struct CompressorPluginParams {
 pub struct CompressorPlugin {
     channels: usize,
     sample_rate: u32,
+    smoothing_time_ms: f32,
 
     // Parameters
     param_threshold: ParameterId,
@@ -203,10 +215,11 @@ impl CompressorPlugin {
         knee_db: f32,
         makeup_gain_db: f32,
     ) -> Self {
-        let sample_rate = 44100;
+        let sample_rate = DEFAULT_SAMPLE_RATE;
         let mut plugin = Self {
             channels,
             sample_rate,
+            smoothing_time_ms: DEFAULT_SMOOTHING_TIME_MS,
 
             param_threshold: ParameterId::from("threshold"),
             threshold_db,
@@ -248,13 +261,21 @@ impl CompressorPlugin {
             release_coeff: 0.0,
             sidechain_hpf_alpha: 0.0,
 
-            threshold_smoother: Smoother::new(threshold_db, 20.0, sample_rate),
-            makeup_gain_smoother: Smoother::new(makeup_gain_db, 20.0, sample_rate),
+            threshold_smoother: Smoother::new(threshold_db, DEFAULT_SMOOTHING_TIME_MS, sample_rate),
+            makeup_gain_smoother: Smoother::new(makeup_gain_db, DEFAULT_SMOOTHING_TIME_MS, sample_rate),
             cache: RealTimeCache::new(CompressorData::new(channels)),
             cache_update_counter: 0,
         };
         plugin.rebuild_cached_parameters();
         plugin
+    }
+
+    /// Set smoothing time for parameters (useful for testing)
+    pub fn with_smoothing_time(mut self, time_ms: f32) -> Self {
+        self.smoothing_time_ms = time_ms;
+        self.threshold_smoother.set_time(time_ms, self.sample_rate);
+        self.makeup_gain_smoother.set_time(time_ms, self.sample_rate);
+        self
     }
 
     fn rebuild_cached_parameters(&mut self) {
@@ -431,7 +452,8 @@ impl CompressorPlugin {
         // One-pole smoothing for the envelope
         self.envelope[channel] = target_gr + coeff * (self.envelope[channel] - target_gr);
 
-        let wet_gain_linear = fast_pow10(-self.envelope[channel] / 20.0) * makeup_gain_linear;
+        let wet_gain_linear =
+            fast_pow10(-self.envelope[channel] / DB_CONVERSION_FACTOR) * makeup_gain_linear;
 
         let wet = input_sample * wet_gain_linear;
         dry_mix * input_sample + wet_mix * wet
@@ -538,8 +560,10 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.threshold_smoother.set_time(20.0, sample_rate);
-        self.makeup_gain_smoother.set_time(20.0, sample_rate);
+        self.threshold_smoother
+            .set_time(self.smoothing_time_ms, sample_rate);
+        self.makeup_gain_smoother
+            .set_time(self.smoothing_time_ms, sample_rate);
         self.update_coefficients();
         Ok(())
     }
@@ -568,12 +592,12 @@ impl InPlacePlugin for CompressorPlugin {
         let auto_makeup_db = if self.auto_makeup {
             let ratio = self.ratio.max(1.0);
             let compression_slope = 1.0 - 1.0 / ratio;
-            let avg_overshoot = (-thresh).max(0.0) * 0.5;
+            let avg_overshoot = (-thresh).max(0.0) * AUTO_MAKEUP_OVERSHOOT_FACTOR;
             avg_overshoot * compression_slope
         } else {
             0.0
         };
-        let makeup_gain_linear = fast_pow10((makeup_gain + auto_makeup_db) / 20.0);
+        let makeup_gain_linear = fast_pow10((makeup_gain + auto_makeup_db) / DB_CONVERSION_FACTOR);
 
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
@@ -584,7 +608,7 @@ impl InPlacePlugin for CompressorPlugin {
                     detection_level = detection_level.max(filtered.abs());
                 }
 
-                let input_db = 20.0 * fast_log10(detection_level.max(1e-10));
+                let input_db = DB_CONVERSION_FACTOR * fast_log10(detection_level.max(EPSILON));
                 let target_gr = self.calculate_gain_reduction(input_db, thresh);
 
                 for ch in 0..self.channels {
@@ -606,7 +630,8 @@ impl InPlacePlugin for CompressorPlugin {
                     let sample_idx = frame * self.channels + ch;
                     let input_sample = buffer[sample_idx];
                     let filtered = self.apply_sidechain_filter(ch, input_sample);
-                    let input_db = 20.0 * fast_log10(filtered.abs().max(1e-10));
+                    let input_db =
+                        DB_CONVERSION_FACTOR * fast_log10(filtered.abs().max(EPSILON));
                     let target_gr = self.calculate_gain_reduction(input_db, thresh);
 
                     buffer[sample_idx] = self.apply_gain_for_channel(
@@ -623,7 +648,7 @@ impl InPlacePlugin for CompressorPlugin {
 
         // Update diagnostic cache (throttled)
         self.cache_update_counter += 1;
-        if self.cache_update_counter >= 10 {
+        if self.cache_update_counter >= CACHE_UPDATE_THROTTLE {
             self.cache_update_counter = 0;
 
             if self.link_channels {
@@ -710,5 +735,58 @@ mod tests {
 
         assert_eq!(mix, Some(ParameterValue::Float(0.5)));
         assert_eq!(sidechain, Some(ParameterValue::Float(120.0)));
+    }
+
+    #[test]
+    fn test_compressor_processing_varied_buffers() {
+        use crate::{InPlacePluginAdapter, Plugin, test_varied_buffer_sizes};
+        let sample_rate = 48000.0;
+        let channels = 2;
+        let mut inner = CompressorPlugin::new(channels, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0)
+            .with_smoothing_time(0.0);
+        inner.initialize(sample_rate as u32).unwrap();
+        let mut plugin = InPlacePluginAdapter::new(inner);
+
+        // Generate a 1 second sine wave at -10dB (above threshold)
+        let mut signal_gen = crate::SignalGen::new_sine(sample_rate, 1000.0, 0.316); // -10dB approx
+        let input = signal_gen.generate(4800 * channels); // 100ms is enough for CI
+        
+        // Generate reference output with standard block size
+        let mut expected_output = vec![0.0; input.len()];
+        let ctx = ProcessContext {
+            sample_rate: sample_rate as u32,
+            num_frames: 4800,
+        };
+        plugin.process(&input, &mut expected_output, &ctx).unwrap();
+        
+        // Reset and test varied buffer sizes
+        plugin.reset();
+        test_varied_buffer_sizes(&mut plugin, sample_rate, &input, &expected_output);
+    }
+
+    #[test]
+    fn test_compressor_rt_safety() {
+        use crate::{InPlacePluginAdapter, Plugin, assert_no_allocs};
+        let sample_rate = 48000;
+        let channels = 2;
+        let mut inner = CompressorPlugin::new(channels, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0);
+        inner.initialize(sample_rate).unwrap();
+        let mut plugin = InPlacePluginAdapter::new(inner);
+
+        let input = vec![0.1; 512 * channels];
+        let mut output = vec![0.0; 512 * channels];
+        let ctx = ProcessContext {
+            sample_rate,
+            num_frames: 512,
+        };
+
+        // Warm up
+        for _ in 0..10 {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        }
+
+        assert_no_allocs("CompressorPlugin::process", || {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        });
     }
 }

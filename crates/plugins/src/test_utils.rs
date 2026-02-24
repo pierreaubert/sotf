@@ -188,6 +188,7 @@ pub fn test_varied_buffer_sizes<P: Plugin>(
     let total_frames = input.len() / num_channels_in;
 
     for &block_size in &buffer_sizes {
+        plugin.reset();
         let mut output = vec![0.0; expected_output.len()];
         let mut frames_processed = 0;
 
