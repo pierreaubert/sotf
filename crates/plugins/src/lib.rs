@@ -109,8 +109,9 @@ pub use plugin_upmixer::{
 pub use plugin_xtc::{XtcPlugin, XtcPluginParams, validation};
 
 pub use test_utils::{
-    assert_no_allocs, generate_dc, measure_peak_db, measure_rms_db, run_standard_tests,
-    test_varied_buffer_sizes, BufferComparison, CountingAlloc, SignalGen,
+    assert_no_allocs, benchmark_plugin_full, detect_latency, generate_dc, measure_peak_db,
+    measure_rms_db, run_standard_tests, test_varied_buffer_sizes, BufferComparison,
+    CountingAlloc, PerformanceProfiler, SignalGen,
 };
 
 pub use simd::enable_ftz_daz;

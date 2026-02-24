@@ -12,7 +12,7 @@ path = "src/lib.rs"
 default = ["sofa_support"]
 hal = ["driver-hal"]
 sofa_support = ["dep:netcdf"]
-qa = []
+qa = ["dep:criterion"]
 
 [dependencies]
 tokio = { workspace = true }
@@ -43,6 +43,7 @@ math-iir-fir = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 thiserror = { workspace = true }
+criterion = { workspace = true, optional = true }
 
 # Audio decoding/encoding
 symphonia = { workspace = true }

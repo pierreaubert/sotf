@@ -1,16 +1,13 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use sotf_plugins::{CompressorPlugin, CompressorPluginParams};
-use sotf_plugins::{InPlacePlugin, ProcessContext};
+use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, benchmark_plugin_full};
 
 fn benchmark_compressor(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Compressor");
-
-    // Setup
     let channels = 2;
     let sample_rate = 48000;
-    let buffer_size = 1024;
 
-    let mut plugin = CompressorPlugin::new(
+    // 1. Linked Compressor
+    let mut inner = CompressorPlugin::new(
         channels, -20.0, // Threshold
         4.0,   // Ratio
         5.0,   // Attack
@@ -18,28 +15,11 @@ fn benchmark_compressor(c: &mut Criterion) {
         6.0,   // Knee
         0.0,   // Makeup
     );
-    plugin.initialize(sample_rate).unwrap();
+    inner.initialize(sample_rate).unwrap();
+    let plugin = InPlacePluginAdapter::new(inner);
+    benchmark_plugin_full(c, "Compressor_Linked", plugin, sample_rate as f64);
 
-    let mut buffer = vec![0.0; buffer_size * channels];
-    // Fill with some data
-    for i in 0..buffer.len() {
-        buffer[i] = (i as f32 / buffer.len() as f32).sin();
-    }
-
-    let context = ProcessContext {
-        sample_rate: sample_rate,
-        num_frames: buffer_size,
-    };
-
-    group.bench_function("process_stereo_linked", |b| {
-        b.iter(|| {
-            plugin
-                .process_in_place(black_box(&mut buffer), black_box(&context))
-                .unwrap();
-        })
-    });
-
-    // Unlink channels
+    // 2. Unlinked Compressor
     let params = CompressorPluginParams {
         link_channels: false,
         threshold_db: -20.0,
@@ -52,18 +32,10 @@ fn benchmark_compressor(c: &mut Criterion) {
         auto_makeup: false,
         sidechain_hpf_hz: 80.0,
     };
-    let mut plugin_unlinked = CompressorPlugin::from_params(channels, params);
-    plugin_unlinked.initialize(sample_rate).unwrap();
-
-    group.bench_function("process_stereo_unlinked", |b| {
-        b.iter(|| {
-            plugin_unlinked
-                .process_in_place(black_box(&mut buffer), black_box(&context))
-                .unwrap();
-        })
-    });
-
-    group.finish();
+    let mut inner_unlinked = CompressorPlugin::from_params(channels, params);
+    inner_unlinked.initialize(sample_rate).unwrap();
+    let plugin_unlinked = InPlacePluginAdapter::new(inner_unlinked);
+    benchmark_plugin_full(c, "Compressor_Unlinked", plugin_unlinked, sample_rate as f64);
 }
 
 criterion_group!(benches, benchmark_compressor);

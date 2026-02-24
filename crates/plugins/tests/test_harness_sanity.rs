@@ -110,4 +110,28 @@ mod tests {
         assert!(BufferComparison::compare_bit_accurate(&buf1, &buf2));
         assert!(!BufferComparison::compare_bit_accurate(&buf1, &buf3));
     }
+
+    #[test]
+    fn test_detect_latency_zero() {
+        use sotf_plugins::{GainPlugin, InPlacePlugin, InPlacePluginAdapter, detect_latency};
+        let mut inner = GainPlugin::new(2, 0.0);
+        inner.initialize(48000).unwrap();
+        let mut plugin = InPlacePluginAdapter::new(inner);
+        
+        let latency = detect_latency(&mut plugin, 48000.0);
+        assert_eq!(latency, 0);
+    }
+
+    #[test]
+    fn test_performance_profiler() {
+        use sotf_plugins::{GainPlugin, InPlacePlugin, InPlacePluginAdapter, PerformanceProfiler};
+        let mut inner = GainPlugin::new(2, 0.0);
+        inner.initialize(48000).unwrap();
+        let mut plugin = InPlacePluginAdapter::new(inner);
+        
+        let profiler = PerformanceProfiler::new("Gain", 48000.0, 2, 512);
+        let cpu = profiler.profile(&mut plugin, 0.1);
+        assert!(cpu >= 0.0);
+        assert!(cpu < 100.0); // Should be very low for Gain
+    }
 }
