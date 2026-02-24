@@ -44,6 +44,7 @@ pub mod plugin_upmixer;
 pub mod plugin_xtc;
 #[cfg(feature = "qa")]
 pub mod qa_util;
+pub mod test_utils;
 pub mod serialization;
 pub mod simd;
 pub mod smoothing;
@@ -108,6 +109,8 @@ pub use plugin_upmixer::{
     default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
 pub use plugin_xtc::{XtcPlugin, XtcPluginParams, validation};
+
+pub use test_utils::{BufferComparison, SignalGenerator, test_varied_buffer_sizes};
 
 pub use simd::enable_ftz_daz;
 pub use sofa::{HrtfData, SofaFile, SourcePosition};
