@@ -24,8 +24,8 @@
 - [x] Task: Benchmark Refactoring (TDD) 6574a33
     - [x] Refactor existing benchmarks in `crates/plugins/benches` to use unified profiling utilities
     - [x] Add automated latency (PDL) detection to benchmarks
-- [ ] Task: Performance & Profiling (TDD)
-    - [ ] Implement performance report generator for plugins
+- [x] Task: Performance & Profiling (TDD) 926f7a6
+    - [x] Implement performance report generator for plugins
 - [ ] Task: Conductor - User Manual Verification 'Benchmarking & Performance Refinement' (Protocol in workflow.md)
 
 ## Phase 4: Integration & Magic Number Audit
