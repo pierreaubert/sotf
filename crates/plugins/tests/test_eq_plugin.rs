@@ -136,9 +136,19 @@ fn test_eq_plugin_filter_update() {
     // Let's just recreate it or use trait methods if possible.
     // For this test, I'll just use the trait parameters if available or access inner via unsafe/re-wrapping.
     // Better: fix EqPlugin to support set_filters via parameters? It already does!
-    
-    plugin.set_parameter(sotf_plugins::ParameterId::from("band_0_freq"), sotf_plugins::ParameterValue::Float(2000.0)).unwrap();
-    plugin.set_parameter(sotf_plugins::ParameterId::from("band_0_gain"), sotf_plugins::ParameterValue::Float(-6.0)).unwrap();
+
+    plugin
+        .set_parameter(
+            sotf_plugins::ParameterId::from("band_0_freq"),
+            sotf_plugins::ParameterValue::Float(2000.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            sotf_plugins::ParameterId::from("band_0_gain"),
+            sotf_plugins::ParameterValue::Float(-6.0),
+        )
+        .unwrap();
 
     // Process with new filter
     let mut output2 = vec![0.0_f32; num_frames * 2];

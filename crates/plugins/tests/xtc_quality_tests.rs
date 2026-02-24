@@ -1,4 +1,4 @@
-use sotf_plugins::{XtcPlugin, XtcPluginParams, ProcessContext, Plugin};
+use sotf_plugins::{Plugin, ProcessContext, XtcPlugin, XtcPluginParams};
 use std::f32::consts::PI;
 
 #[test]
@@ -10,7 +10,7 @@ fn test_xtc_saturation_fix() {
     params.auto_gain_enabled = true;
     params.max_gain_db = 12.0; // Allow significant filter gain
     params.auto_gain_max_db = 24.0; // Allow significant reduction
-    
+
     let mut plugin = XtcPlugin::new(params, sample_rate).unwrap();
     plugin.initialize(sample_rate).unwrap();
 
@@ -24,7 +24,7 @@ fn test_xtc_saturation_fix() {
         input[i * 2] = sample;
         input[i * 2 + 1] = sample;
     }
-    
+
     let mut output = vec![0.0_f32; num_frames * 2];
 
     let context = ProcessContext {
@@ -38,11 +38,17 @@ fn test_xtc_saturation_fix() {
     let skip = (num_blocks - 10) * fft_size;
     let mut max_peak = 0.0_f32;
     for i in skip..num_frames {
-        max_peak = max_peak.max(output[i * 2].abs()).max(output[i * 2 + 1].abs());
+        max_peak = max_peak
+            .max(output[i * 2].abs())
+            .max(output[i * 2 + 1].abs());
     }
-    
+
     println!("XTC max peak after settle: {:.4}", max_peak);
-    
+
     // Peak should be below 1.0 (actually below 0.95 due to limiter)
-    assert!(max_peak <= 0.96, "XTC still saturating: max_peak = {}", max_peak);
+    assert!(
+        max_peak <= 0.96,
+        "XTC still saturating: max_peak = {}",
+        max_peak
+    );
 }

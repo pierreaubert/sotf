@@ -37,9 +37,7 @@ fn test_xtc_processing() {
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Check for some energy in Right channel (cancellation signal)
-    let right_energy: f32 = output.iter().step_by(2).skip(1)
-        .map(|&x| x.powi(2))
-        .sum();
+    let right_energy: f32 = output.iter().step_by(2).skip(1).map(|&x| x.powi(2)).sum();
 
     assert!(
         right_energy > 0.1,

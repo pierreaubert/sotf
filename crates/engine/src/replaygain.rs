@@ -149,16 +149,22 @@ pub fn analyze_file_extended<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Repl
     let mut peak = 0.0f64;
     for ch in 0..channels {
         let ch_peak = ebur128.sample_peak(ch).map_err(|e| {
-            AudioDecoderError::DecodingFailed(format!("Failed to get peak for channel {}: {:?}", ch, e))
+            AudioDecoderError::DecodingFailed(format!(
+                "Failed to get peak for channel {}: {:?}",
+                ch, e
+            ))
         })?;
         peak = peak.max(ch_peak);
     }
 
     let gain = REPLAYGAIN2_REFERENCE_LUFS - loudness;
 
-    let (gating_block_count, energy) = ebur128.gating_block_count_and_energy().ok_or_else(|| {
-        AudioDecoderError::DecodingFailed("Failed to get gating block count and energy".to_string())
-    })?;
+    let (gating_block_count, energy) =
+        ebur128.gating_block_count_and_energy().ok_or_else(|| {
+            AudioDecoderError::DecodingFailed(
+                "Failed to get gating block count and energy".to_string(),
+            )
+        })?;
 
     Ok(ReplayGainTrackData {
         gain,

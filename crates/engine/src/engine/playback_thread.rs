@@ -245,7 +245,13 @@ fn run_playback_thread(
     let mut conversion_buffer = Vec::with_capacity(4096);
 
     // Build cpal stream
-    let mut stream = build_output_stream(&device, &config, Arc::clone(&state), event_tx.clone(), consumer)?;
+    let mut stream = build_output_stream(
+        &device,
+        &config,
+        Arc::clone(&state),
+        event_tx.clone(),
+        consumer,
+    )?;
 
     // Start stream
     stream
@@ -351,8 +357,7 @@ fn run_playback_thread(
                         let (new_producer, new_consumer) =
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
-                        let new_state =
-                            Arc::new(PlaybackState::new(new_buffer_capacity));
+                        let new_state = Arc::new(PlaybackState::new(new_buffer_capacity));
 
                         // Drain any frames that arrived during setup
                         while message_rx.try_recv().is_ok() {
@@ -484,8 +489,7 @@ fn run_playback_thread(
                         let (new_producer, new_consumer) =
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
-                        let new_state =
-                            Arc::new(PlaybackState::new(new_buffer_capacity));
+                        let new_state = Arc::new(PlaybackState::new(new_buffer_capacity));
 
                         // Continuously drain frames during rebuild - they may have wrong channel count
                         // Use a closure to drain and count
@@ -684,12 +688,24 @@ fn run_playback_thread(
                             lc[2] = C_COEFF * norm;
                             rc[2] = C_COEFF * norm;
                         }
-                        if sl_idx < n { lc[sl_idx] = SURROUND_COEFF * norm; }
-                        if sr_idx < n { rc[sr_idx] = SURROUND_COEFF * norm; }
-                        if bl_idx < n { lc[bl_idx] = BACK_COEFF * norm; }
-                        if br_idx < n { rc[br_idx] = BACK_COEFF * norm; }
-                        if tfl_idx < n { lc[tfl_idx] = HEIGHT_COEFF * norm; }
-                        if tfr_idx < n { rc[tfr_idx] = HEIGHT_COEFF * norm; }
+                        if sl_idx < n {
+                            lc[sl_idx] = SURROUND_COEFF * norm;
+                        }
+                        if sr_idx < n {
+                            rc[sr_idx] = SURROUND_COEFF * norm;
+                        }
+                        if bl_idx < n {
+                            lc[bl_idx] = BACK_COEFF * norm;
+                        }
+                        if br_idx < n {
+                            rc[br_idx] = BACK_COEFF * norm;
+                        }
+                        if tfl_idx < n {
+                            lc[tfl_idx] = HEIGHT_COEFF * norm;
+                        }
+                        if tfr_idx < n {
+                            rc[tfr_idx] = HEIGHT_COEFF * norm;
+                        }
 
                         let lc = &lc[..n];
                         let rc = &rc[..n];

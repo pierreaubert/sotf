@@ -45,13 +45,14 @@ pub struct DelayPlugin {
     buffer: Vec<f32>,
     write_pos: usize,
     max_samples: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl DelayPlugin {
     pub fn new(channels: usize, delay_ms: f32, feedback: f32, mix: f32) -> Self {
         let sr = 44100;
         let max_samples = (MAX_DELAY_MS * 0.001 * sr as f32) as usize + 2;
-        Self {
+        let mut p = Self {
             channels,
             sample_rate: sr,
             param_delay_ms: ParameterId::from("delay_ms"),
@@ -66,7 +67,18 @@ impl DelayPlugin {
             buffer: vec![0.0; max_samples * channels],
             write_pos: 0,
             max_samples,
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float("delay_ms", "Delay Time", self.delay_ms, 0.1, MAX_DELAY_MS),
+            Parameter::new_float("feedback", "Feedback", self.feedback, 0.0, 0.95),
+            Parameter::new_float("mix", "Mix", self.mix, 0.0, 1.0),
+        ];
     }
 
     pub fn from_params(channels: usize, params: DelayPluginParams) -> Self {
@@ -82,25 +94,33 @@ impl InPlacePlugin for DelayPlugin {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float("delay_ms", "Delay Time", 100.0, 0.1, MAX_DELAY_MS),
-            Parameter::new_float("feedback", "Feedback", 0.3, 0.0, 0.95),
-            Parameter::new_float("mix", "Mix", 0.5, 0.0, 1.0),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id == self.param_delay_ms {
-            self.delay_ms = value.as_float().ok_or("val")?;
-            self.delay_smoother
-                .set_target(self.delay_ms * self.sample_rate as f32 / 1000.0);
+            let v = value.as_float().ok_or_else(|| "delay_ms must be a float".to_string())?;
+            if v.is_finite() {
+                self.delay_ms = v;
+                self.delay_smoother
+                    .set_target(self.delay_ms * self.sample_rate as f32 / 1000.0);
+            }
         } else if id == self.param_feedback {
-            self.feedback = value.as_float().ok_or("val")?;
-            self.feedback_smoother.set_target(self.feedback);
+            let v = value.as_float().ok_or_else(|| "feedback must be a float".to_string())?;
+            if v.is_finite() {
+                self.feedback = v;
+                self.feedback_smoother.set_target(self.feedback);
+            }
         } else if id == self.param_mix {
-            self.mix = value.as_float().ok_or("val")?;
-            self.mix_smoother.set_target(self.mix);
+            let v = value.as_float().ok_or_else(|| "mix must be a float".to_string())?;
+            if v.is_finite() {
+                self.mix = v;
+                self.mix_smoother.set_target(self.mix);
+            }
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -142,7 +162,7 @@ impl InPlacePlugin for DelayPlugin {
     ) -> PluginResult<usize> {
         enable_ftz_daz();
         let num_frames = context.num_frames;
-        
+
         let delay_samples = self.delay_smoother.next_n(num_frames);
         let fb = self.feedback_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
@@ -168,7 +188,7 @@ impl InPlacePlugin for DelayPlugin {
             }
             self.write_pos = (self.write_pos + 1) % self.max_samples;
         }
-        
+
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

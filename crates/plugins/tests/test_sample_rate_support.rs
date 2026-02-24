@@ -297,7 +297,8 @@ fn test_plugin_chain_multi_sample_rate() {
             3.0,
         )];
         let eq = EqPlugin::new(2, filters);
-        host.add_plugin(Box::new(InPlacePluginAdapter::new(eq))).unwrap();
+        host.add_plugin(Box::new(InPlacePluginAdapter::new(eq)))
+            .unwrap();
 
         let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
         host.add_plugin(Box::new(InPlacePluginAdapter::new(compressor)))

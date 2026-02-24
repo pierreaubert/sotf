@@ -431,6 +431,17 @@ def create_eq_figure(
     return fig
 
 
+_IR_FLOOR_DB = -80.0
+
+
+def _to_db(amplitude: list[float]) -> list[float]:
+    """Convert linear amplitude to dB, floored at _IR_FLOOR_DB."""
+    return [
+        max(20.0 * math.log10(abs(a)), _IR_FLOOR_DB) if abs(a) > 1e-10 else _IR_FLOOR_DB
+        for a in amplitude
+    ]
+
+
 def create_ir_figure(
     channel_name: str,
     pre_ir: dict | None,
@@ -438,6 +449,8 @@ def create_ir_figure(
     display_ms: float = 100.0,
 ) -> go.Figure | None:
     """Create a Plotly figure showing pre- and post-correction impulse responses.
+
+    Includes a Linear / dB toggle button.
 
     Args:
         channel_name: Name of the channel.
@@ -450,30 +463,81 @@ def create_ir_figure(
 
     fig = go.Figure()
 
+    # Pre-compute linear and dB y-data for each trace
+    linear_y: list[list[float]] = []
+    db_y: list[list[float]] = []
+
     if pre_ir:
+        lin = pre_ir["amplitude"]
         fig.add_trace(
             go.Scatter(
                 x=pre_ir["time_ms"],
-                y=pre_ir["amplitude"],
+                y=lin,
                 mode="lines",
                 name="Before EQ",
                 line=dict(color="rgba(255, 100, 100, 0.8)", width=1),
             )
         )
+        linear_y.append(lin)
+        db_y.append(_to_db(lin))
 
     if post_ir:
+        lin = post_ir["amplitude"]
         fig.add_trace(
             go.Scatter(
                 x=post_ir["time_ms"],
-                y=post_ir["amplitude"],
+                y=lin,
                 mode="lines",
                 name="After EQ",
                 line=dict(color="rgba(100, 200, 100, 0.9)", width=1),
             )
         )
+        linear_y.append(lin)
+        db_y.append(_to_db(lin))
 
-    # 0 reference line
+    # 0 / floor reference line (index = len of traces so far)
     fig.add_hline(y=0, line=dict(color="rgba(150, 150, 150, 0.4)", width=1, dash="dash"))
+
+    # Toggle buttons: Linear ↔ dB
+    updatemenus = [
+        dict(
+            type="buttons",
+            direction="right",
+            active=0,
+            x=0.0,
+            xanchor="left",
+            y=1.15,
+            yanchor="top",
+            buttons=[
+                dict(
+                    label="Linear",
+                    method="update",
+                    args=[
+                        {"y": linear_y},
+                        {
+                            "yaxis.title.text": "Amplitude (normalized)",
+                            "yaxis.range": [-1.1, 1.1],
+                            "yaxis.dtick": 0.5,
+                        },
+                    ],
+                ),
+                dict(
+                    label="dB",
+                    method="update",
+                    args=[
+                        {"y": db_y},
+                        {
+                            "yaxis.title.text": "Amplitude (dB)",
+                            "yaxis.range": [_IR_FLOOR_DB, 6],
+                            "yaxis.dtick": 10,
+                        },
+                    ],
+                ),
+            ],
+            showactive=True,
+            font=dict(size=10),
+        )
+    ]
 
     fig.update_layout(
         title=dict(text=f"Impulse Response: {channel_name}", font=dict(size=14)),
@@ -488,12 +552,14 @@ def create_ir_figure(
             tickfont=dict(size=10),
             gridcolor="rgba(128, 128, 128, 0.2)",
             range=[-1.1, 1.1],
+            dtick=0.5,
         ),
         legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        margin=dict(l=60, r=40, t=60, b=60),
-        height=350,
+        margin=dict(l=60, r=40, t=80, b=60),
+        height=380,
+        updatemenus=updatemenus,
     )
 
     return fig

@@ -76,8 +76,10 @@ pub use plugin_compressor::{
     default_sidechain_hpf_hz as compressor_default_sidechain_hpf_hz,
 };
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
+pub use plugin_crossfeed::{
+    CrossfeedMode, CrossfeedPlugin, CrossfeedPluginParams, CrossfeedPreset,
+};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
-pub use plugin_crossfeed::{CrossfeedPlugin, CrossfeedPluginParams, CrossfeedMode, CrossfeedPreset};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
@@ -105,7 +107,7 @@ pub use plugin_upmixer::{
     default_safety_cap_db as upmixer_default_safety_cap_db,
     default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
-pub use plugin_xtc::{validation, XtcPlugin, XtcPluginParams};
+pub use plugin_xtc::{XtcPlugin, XtcPluginParams, validation};
 
 pub use simd::enable_ftz_daz;
 pub use sofa::{HrtfData, SofaFile, SourcePosition};

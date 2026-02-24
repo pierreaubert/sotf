@@ -17,7 +17,7 @@ qa-plugin-fuzzer: qa-plugin-fuzzer-simple qa-plugin-fuzzer-1ch qa-plugin-fuzzer-
 [group('qa-plugins')]
 qa-plugin-fuzzer-simple:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_*.wav; do \
-		for plugin in gain eq compressor limiter gate delay loudness_monitor abcompare crossfeed expander mbcomp mbexp matrix mutesolo denoiser spectrum pnd; do \
+		for plugin in gain eq compressor limiter gate delay loudness_monitor abcompare expander mbcomp mbexp matrix mutesolo denoiser spectrum pnd; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
 			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
 		done; \
@@ -35,7 +35,7 @@ qa-plugin-fuzzer-1ch:
 [group('qa-plugins')]
 qa-plugin-fuzzer-2ch:
 	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_ch2_*.wav; do \
-		for plugin in fletcher upmixer xtc; do \
+		for plugin in fletcher upmixer xtc crossfeed; do \
 			echo "=== Fuzzing plugin: $plugin with $file ==="; \
 			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
 		done; \

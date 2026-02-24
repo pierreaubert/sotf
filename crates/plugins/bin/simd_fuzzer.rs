@@ -140,22 +140,25 @@ fn scalar_flush_denormals(samples: &mut [f32]) {
 
 fn rand_complex_vec(rng: &mut StdRng, len: usize, range: f32) -> Vec<Complex<f32>> {
     (0..len)
-        .map(|_| Complex::new(rng.random_range(-range..range), rng.random_range(-range..range)))
+        .map(|_| {
+            Complex::new(
+                rng.random_range(-range..range),
+                rng.random_range(-range..range),
+            )
+        })
         .collect()
 }
 
 fn rand_f32_vec(rng: &mut StdRng, len: usize, range: f32) -> Vec<f32> {
-    (0..len)
-        .map(|_| rng.random_range(-range..range))
-        .collect()
+    (0..len).map(|_| rng.random_range(-range..range)).collect()
 }
 
 /// Pick a random buffer size that exercises SIMD boundaries
 fn rand_size(rng: &mut StdRng) -> usize {
     // Mix of aligned and unaligned sizes, small and large
     let choices = [
-        1, 2, 3, 4, 5, 7, 8, 9, 13, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255,
-        256, 257, 511, 512, 513, 1023, 1024, 1025, 2048, 4096,
+        1, 2, 3, 4, 5, 7, 8, 9, 13, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 255, 256,
+        257, 511, 512, 513, 1023, 1024, 1025, 2048, 4096,
     ];
     choices[rng.random_range(0..choices.len())]
 }
@@ -523,9 +526,7 @@ fn fuzz_apply_per_channel_gain(rng: &mut StdRng, iterations: usize) -> usize {
         let range = rand_value_range(rng);
 
         let data = rand_f32_vec(rng, size, range);
-        let gains: Vec<f32> = (0..channels)
-            .map(|_| rng.random_range(-5.0..5.0))
-            .collect();
+        let gains: Vec<f32> = (0..channels).map(|_| rng.random_range(-5.0..5.0)).collect();
         let max_gain = gains.iter().map(|g| g.abs()).fold(0.0_f32, f32::max);
 
         let mut simd_dst = data.clone();
@@ -559,8 +560,7 @@ fn fuzz_compute_covariance(rng: &mut StdRng, iterations: usize) -> usize {
         let start = rng.random_range(0..size - 1);
         let end = rng.random_range(start + 1..=size);
 
-        let (simd_xx, simd_yy, simd_xy) =
-            simd::compute_covariance_simd(&left, &right, start, end);
+        let (simd_xx, simd_yy, simd_xy) = simd::compute_covariance_simd(&left, &right, start, end);
         let (scalar_xx, scalar_yy, scalar_xy) =
             scalar_compute_covariance(&left, &right, start, end);
 
@@ -602,10 +602,10 @@ fn fuzz_flush_denormals(rng: &mut StdRng, iterations: usize) -> usize {
                 let kind = rng.random_range(0..5);
                 match kind {
                     0 => 0.0,
-                    1 => rng.random_range(-1.0..1.0),            // normal
-                    2 => rng.random_range(1e-35..1e-31),         // denormal-ish
-                    3 => rng.random_range(-1e-31..-1e-35),       // negative denormal
-                    _ => rng.random_range(-100.0..100.0),        // large normal
+                    1 => rng.random_range(-1.0..1.0),      // normal
+                    2 => rng.random_range(1e-35..1e-31),   // denormal-ish
+                    3 => rng.random_range(-1e-31..-1e-35), // negative denormal
+                    _ => rng.random_range(-100.0..100.0),  // large normal
                 }
             })
             .collect();
@@ -691,7 +691,9 @@ fn main() {
 
     if functions.is_empty() {
         eprintln!("No functions matching filter '{}'", args.function.unwrap());
-        eprintln!("Available: complex_mul_add, complex_mul, complex_mul_inplace, scale_add, blend, window_mul, window_mul_inplace, deinterleave_stereo, apply_gain, apply_per_channel_gain, compute_covariance, flush_denormals");
+        eprintln!(
+            "Available: complex_mul_add, complex_mul, complex_mul_inplace, scale_add, blend, window_mul, window_mul_inplace, deinterleave_stereo, apply_gain, apply_per_channel_gain, compute_covariance, flush_denormals"
+        );
         std::process::exit(1);
     }
 

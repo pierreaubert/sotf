@@ -3741,7 +3741,13 @@ impl PluginChain {
                         file_channels,
                         file_channels
                     );
-                    resize_matrix(matrix, *input_channels, *output_channels, file_channels, file_channels);
+                    resize_matrix(
+                        matrix,
+                        *input_channels,
+                        *output_channels,
+                        file_channels,
+                        file_channels,
+                    );
                     *input_channels = file_channels;
                     *output_channels = file_channels;
                     channel_states.resize(file_channels, sotf_plugins::ChannelState::default());
@@ -4424,7 +4430,11 @@ mod tests {
             let mut matrix = vec![0.0f32; in_ch * out_ch];
             apply_matrix_preset(in_ch, out_ch, &mut matrix, "Identity");
             let detected = detect_matrix_preset(in_ch, out_ch, &matrix);
-            assert_eq!(detected, "Identity", "{}x{} identity roundtrip failed", in_ch, out_ch);
+            assert_eq!(
+                detected, "Identity",
+                "{}x{} identity roundtrip failed",
+                in_ch, out_ch
+            );
         }
     }
 
@@ -4448,12 +4458,23 @@ mod tests {
 
             // Every available preset should be reachable
             for preset in &presets {
-                assert!(seen.contains(&preset.to_string()),
-                    "{} not reachable for {}x{}, cycle: {:?}", preset, in_ch, out_ch, seen);
+                assert!(
+                    seen.contains(&preset.to_string()),
+                    "{} not reachable for {}x{}, cycle: {:?}",
+                    preset,
+                    in_ch,
+                    out_ch,
+                    seen
+                );
             }
             // No "Custom" should appear (all valid presets should round-trip)
-            assert!(!seen.contains(&"Custom".to_string()),
-                "Custom appeared in cycle for {}x{}: {:?}", in_ch, out_ch, seen);
+            assert!(
+                !seen.contains(&"Custom".to_string()),
+                "Custom appeared in cycle for {}x{}: {:?}",
+                in_ch,
+                out_ch,
+                seen
+            );
         }
     }
 }

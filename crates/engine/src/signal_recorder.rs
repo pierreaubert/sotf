@@ -252,8 +252,8 @@ pub fn record_and_analyze(
 ) -> Result<crate::signal_analysis::AnalysisResult, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use std::sync::Mutex;
     use std::sync::Arc;
+    use std::sync::Mutex;
     use std::thread::sleep;
     use std::time::Duration;
 

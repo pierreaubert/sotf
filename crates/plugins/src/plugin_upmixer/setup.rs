@@ -4,6 +4,7 @@
 
 use super::UpmixerPlugin;
 use crate::plugin::{Plugin, PluginResult};
+use rustfft::num_complex::Complex;
 use crate::speaker_config::{
     calculate_panning_gain, calculate_panning_gain_with_wraparound, get_speaker_config,
 };
@@ -18,6 +19,7 @@ impl UpmixerPlugin {
             // Same channel count, just update config and panning gains
             self.speaker_config = new_config;
             self.recalculate_panning_gains();
+            self.rebuild_cached_parameters();
             return Ok(());
         }
 
@@ -35,10 +37,15 @@ impl UpmixerPlugin {
         self.output_accumulator = vec![0.0; accumulator_frames * self.num_output_channels];
         self.output_accumulator_mask = accumulator_frames - 1;
         self.output_block = vec![0.0; self.fft_size * self.num_output_channels];
-        self.blended_decorrelation_filters.clear();
+        // Re-allocate blended decorrelation filters for new channel count
+        let spectrum_size = self.fft_size / 2 + 1;
+        self.blended_decorrelation_filters =
+            vec![vec![Complex::new(1.0, 0.0); spectrum_size]; self.num_output_channels];
+        self.prev_decorrelation_strength = -1.0; // Force recompute
 
         self.recalculate_panning_gains();
         self.reset();
+        self.rebuild_cached_parameters();
 
         Ok(())
     }

@@ -224,8 +224,10 @@ impl DawHost {
         plugin.initialize(self.sample_rate)?;
         let input_channels = plugin.input_channels();
         let output_channels = plugin.output_channels();
-        self.nodes
-            .insert(id, GraphNode::new(id, name, input_channels, output_channels));
+        self.nodes.insert(
+            id,
+            GraphNode::new(id, name, input_channels, output_channels),
+        );
         // Grow plugins vec to accommodate the new id
         if id >= self.plugins.len() {
             self.plugins.resize_with(id + 1, || None);
@@ -497,7 +499,11 @@ impl DawHost {
             if let Some(ref cm) = e.channel_map {
                 let ms = nf * cm.len();
                 if cmb.len() < ms {
-                    return Err(format!("Channel map buffer too small: {} < {}", cmb.len(), ms));
+                    return Err(format!(
+                        "Channel map buffer too small: {} < {}",
+                        cmb.len(),
+                        ms
+                    ));
                 }
                 for f in 0..nf {
                     for (di, &si) in cm.iter().enumerate() {

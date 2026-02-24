@@ -171,7 +171,8 @@ impl AutoGain {
 
     pub fn measure_input(&mut self, input: &[f32]) -> Result<(), String> {
         self.input_monitor.add_frames(input)?;
-        self.input_monitor.update_loudness_data(&mut self.input_data);
+        self.input_monitor
+            .update_loudness_data(&mut self.input_data);
         self.last_input_lufs = if self.loudness_type == AutoGainLoudnessType::Momentary {
             self.input_data.momentary_lufs
         } else {
@@ -183,7 +184,8 @@ impl AutoGain {
 
     pub fn measure_output(&mut self, output: &[f32]) -> Result<(), String> {
         self.output_monitor.add_frames(output)?;
-        self.output_monitor.update_loudness_data(&mut self.output_data);
+        self.output_monitor
+            .update_loudness_data(&mut self.output_data);
         self.last_output_lufs = if self.loudness_type == AutoGainLoudnessType::Momentary {
             self.output_data.momentary_lufs
         } else {
@@ -210,14 +212,15 @@ impl AutoGain {
         }
         let target_db = self.gain_smoother.advance();
         let target_linear = fast_pow10(target_db / 20.0);
-        
+
         // Asymmetric smoothing in linear domain
         let coeff = if target_linear < self.current_gain_linear {
             self.attack_coeff
         } else {
             self.release_coeff
         };
-        self.current_gain_linear = target_linear + coeff * (self.current_gain_linear - target_linear);
+        self.current_gain_linear =
+            target_linear + coeff * (self.current_gain_linear - target_linear);
         self.current_gain_linear
     }
 
@@ -228,14 +231,15 @@ impl AutoGain {
         }
         let target_db = self.gain_smoother.next_n(n);
         let target_linear = fast_pow10(target_db / 20.0);
-        
+
         // Block-based asymmetric smoothing approximation
         let coeff = if target_linear < self.current_gain_linear {
             self.attack_coeff.powi(n as i32)
         } else {
             self.release_coeff.powi(n as i32)
         };
-        self.current_gain_linear = target_linear + coeff * (self.current_gain_linear - target_linear);
+        self.current_gain_linear =
+            target_linear + coeff * (self.current_gain_linear - target_linear);
     }
 
     pub fn current_gain_db(&self) -> f32 {
@@ -265,7 +269,7 @@ impl AutoGain {
             return;
         }
         crate::simd::enable_ftz_daz();
-        
+
         let target_db = self.gain_smoother.target();
         let target_linear = fast_pow10(target_db / 20.0);
 
@@ -284,14 +288,15 @@ impl AutoGain {
             } else {
                 self.release_coeff
             };
-            self.current_gain_linear = target_linear + coeff * (self.current_gain_linear - target_linear);
-            
+            self.current_gain_linear =
+                target_linear + coeff * (self.current_gain_linear - target_linear);
+
             let gain = self.current_gain_linear;
             for ch in 0..self.num_channels {
                 output[frame * self.num_channels + ch] *= gain;
             }
         }
-        
+
         self.gain_smoother.next_n(num_frames);
     }
 
@@ -350,7 +355,8 @@ mod tests {
                 max_gain_db: 12.0,
                 smoothing_ms: 50.0,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         // Target: match input loudness.
         // Input: 0.5 amplitude sine wave.
@@ -359,13 +365,14 @@ mod tests {
 
         let block_size = 1024;
         let num_blocks = 50; // Enough for convergence at 50ms smoothing
-        
+
         let current_signal_gain = 0.5_f32; // -6dB attenuation in the "effect"
 
         for block in 0..num_blocks {
             let mut input = vec![0.0_f32; block_size * 2];
             for i in 0..block_size {
-                let phase = 2.0 * std::f32::consts::PI * 1000.0 * (block * block_size + i) as f32 / sample_rate as f32;
+                let phase = 2.0 * std::f32::consts::PI * 1000.0 * (block * block_size + i) as f32
+                    / sample_rate as f32;
                 input[i * 2] = phase.sin() * 0.5;
                 input[i * 2 + 1] = phase.sin() * 0.5;
             }
@@ -380,14 +387,18 @@ mod tests {
 
             // FEED-FORWARD measurement (on uncompensated output)
             ag.measure_output(&output).unwrap();
-            
+
             // Apply compensation
             ag.apply_compensation(&mut output, block_size);
 
             if block == num_blocks - 1 {
                 let gain_db = ag.current_gain_db();
                 // Should be close to +6.0 dB
-                assert!((gain_db - 6.0).abs() < 0.5, "AutoGain did not converge to +6dB, got {}dB", gain_db);
+                assert!(
+                    (gain_db - 6.0).abs() < 0.5,
+                    "AutoGain did not converge to +6dB, got {}dB",
+                    gain_db
+                );
             }
         }
     }
@@ -404,7 +415,8 @@ mod tests {
                 max_gain_db: 12.0,
                 smoothing_ms: 20.0, // Reasonably fast smoothing
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let block_size = 1024;
         let num_blocks = 150;
@@ -413,7 +425,8 @@ mod tests {
         for block in 0..num_blocks {
             let mut input = vec![0.0_f32; block_size * 2];
             for i in 0..block_size {
-                let phase = 2.0 * std::f32::consts::PI * 440.0 * (block * block_size + i) as f32 / sample_rate as f32;
+                let phase = 2.0 * std::f32::consts::PI * 440.0 * (block * block_size + i) as f32
+                    / sample_rate as f32;
                 input[i * 2] = phase.sin() * 0.5;
                 input[i * 2 + 1] = phase.sin() * 0.5;
             }
@@ -427,16 +440,21 @@ mod tests {
 
             ag.measure_output(&output).unwrap();
             ag.apply_compensation(&mut output, block_size);
-            
+
             gains.push(ag.current_gain_db());
         }
 
         // Check last 30 blocks for stability (no oscillations > 0.2 dB)
         // EBU R128 momentary loudness has a 400ms window, so it needs time to settle.
-        let stable_part = &gains[num_blocks-30..];
+        let stable_part = &gains[num_blocks - 30..];
         let min_gain = stable_part.iter().fold(f32::INFINITY, |a, &b| a.min(b));
         let max_gain = stable_part.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-        
-        assert!(max_gain - min_gain < 0.2, "AutoGain is oscillating: range {}dB. Last gains: {:?}", max_gain - min_gain, stable_part);
+
+        assert!(
+            max_gain - min_gain < 0.2,
+            "AutoGain is oscillating: range {}dB. Last gains: {:?}",
+            max_gain - min_gain,
+            stable_part
+        );
     }
 }

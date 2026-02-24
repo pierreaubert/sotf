@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_compressor::{CompressorPlugin, CompressorPluginParams};
-use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 
 #[global_allocator]
@@ -29,7 +29,10 @@ fn main() {
     // Test 1: Unity Gain below threshold
     println!("\n[Test 1] Below Threshold (-30dB)");
     let mut buffer = generate_dc(sample_rate, -30.0, 4800);
-    let ctx = ProcessContext { sample_rate, num_frames: 4800 };
+    let ctx = ProcessContext {
+        sample_rate,
+        num_frames: 4800,
+    };
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Target: -30.00dB, Measured: {:.2}dB", peak);
@@ -41,16 +44,21 @@ fn main() {
     let num_frames = 48000; // 1 second
     let mut buffer = generate_dc(sample_rate, -10.0, num_frames);
     inner.reset();
-    
+
     let block_size = 4096;
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx_block = ProcessContext { sample_rate, num_frames: end - pos };
-        inner.process_in_place(&mut buffer[pos..end], &ctx_block).unwrap();
+        let ctx_block = ProcessContext {
+            sample_rate,
+            num_frames: end - pos,
+        };
+        inner
+            .process_in_place(&mut buffer[pos..end], &ctx_block)
+            .unwrap();
         pos = end;
     }
-    
+
     let peak = measure_peak_db(&buffer[num_frames - 4800..]);
     println!("  Expected: -17.50dB, Measured: {:.2}dB", peak);
     assert!((peak + 17.5).abs() < 0.1);

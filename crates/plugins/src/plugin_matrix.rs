@@ -24,6 +24,7 @@ pub struct MatrixPlugin {
     channel_state_smoothers: Vec<Smoother>,
     active_connections: Vec<(usize, usize, usize)>,
     ch_gains_buffer: Vec<f32>,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl MatrixPlugin {
@@ -46,8 +47,10 @@ impl MatrixPlugin {
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
+            cached_parameters: Vec::new(),
         };
         plugin.update_active_connections();
+        plugin.rebuild_cached_parameters();
         plugin
     }
 
@@ -77,8 +80,10 @@ impl MatrixPlugin {
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
+            cached_parameters: Vec::new(),
         };
         plugin.update_active_connections();
+        plugin.rebuild_cached_parameters();
 
         let off_diag: Vec<_> = plugin
             .active_connections
@@ -126,9 +131,47 @@ impl MatrixPlugin {
             channel_state_smoothers: Vec::new(),
             active_connections: Vec::new(),
             ch_gains_buffer: Vec::new(),
+            cached_parameters: Vec::new(),
         };
         plugin.update_active_connections();
+        plugin.rebuild_cached_parameters();
         Ok(plugin)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        let mut params = Vec::new();
+        let num_inputs = self.num_inputs();
+        let num_outputs = self.num_outputs();
+
+        for out_ch in 0..num_outputs {
+            for in_ch in 0..num_inputs {
+                params.push(Parameter::new_float(
+                    &format!("gain_{}_{}", in_ch, out_ch),
+                    &format!("Gain In {} Out {}", in_ch, out_ch),
+                    0.0,
+                    -144.0,
+                    24.0,
+                ));
+            }
+            params.push(Parameter::new_bool(
+                &format!("mute_{}", out_ch),
+                &format!("Mute {}", out_ch),
+                false,
+            ));
+            params.push(Parameter::new_bool(
+                &format!("dim_{}", out_ch),
+                &format!("Dim {}", out_ch),
+                false,
+            ));
+        }
+
+        params.push(Parameter::new_string(
+            "channel_states",
+            "Channel States",
+            "[]".to_string(),
+        ));
+
+        self.cached_parameters = params;
     }
 
     fn update_active_connections(&mut self) {
@@ -274,38 +317,47 @@ impl Plugin for MatrixPlugin {
         self.physical_output_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        Vec::new()
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
         let id_str = id.0.as_str();
         if id_str.starts_with("gain_") {
             let parts: Vec<&str> = id_str.split('_').collect();
-            let in_ch = parts[1].parse::<usize>().map_err(|_| "in")?;
-            let out_ch = parts[2].parse::<usize>().map_err(|_| "out")?;
-            return self.set_gain(in_ch, out_ch, value.as_float().ok_or("val")?);
+            let in_ch = parts[1].parse::<usize>().map_err(|_| "Invalid input channel".to_string())?;
+            let out_ch = parts[2].parse::<usize>().map_err(|_| "Invalid output channel".to_string())?;
+            let v = value.as_float().ok_or_else(|| format!("{} must be a float", id_str))?;
+            if v.is_finite() {
+                self.set_gain(in_ch, out_ch, v)?;
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
+            return Ok(());
         }
         if let Some(rest) = id_str.strip_prefix("mute_") {
-            let ch = rest.parse::<usize>().map_err(|_| "Invalid ch")?;
+            let ch = rest.parse::<usize>().map_err(|_| "Invalid channel index".to_string())?;
             if ch < self.num_outputs() {
                 if self.channel_states.len() <= ch {
                     self.channel_states
                         .resize(self.num_outputs(), ChannelState::default());
                 }
-                self.channel_states[ch].muted = value.as_bool().ok_or("Invalid bool")?;
+                self.channel_states[ch].muted = value.as_bool().ok_or_else(|| format!("{} must be a boolean", id_str))?;
                 self.ensure_channel_state_smoothers();
+                self.rebuild_cached_parameters();
                 return Ok(());
             }
         }
         if let Some(rest) = id_str.strip_prefix("dim_") {
-            let ch = rest.parse::<usize>().map_err(|_| "Invalid ch")?;
+            let ch = rest.parse::<usize>().map_err(|_| "Invalid channel index".to_string())?;
             if ch < self.num_outputs() {
                 if self.channel_states.len() <= ch {
                     self.channel_states
                         .resize(self.num_outputs(), ChannelState::default());
                 }
-                self.channel_states[ch].dimmed = value.as_bool().ok_or("Invalid bool")?;
+                self.channel_states[ch].dimmed = value.as_bool().ok_or_else(|| format!("{} must be a boolean", id_str))?;
                 self.ensure_channel_state_smoothers();
+                self.rebuild_cached_parameters();
                 return Ok(());
             }
         }
@@ -315,6 +367,7 @@ impl Plugin for MatrixPlugin {
                 serde_json::from_str(json_str).map_err(|e| e.to_string())?;
             self.channel_states = states;
             self.ensure_channel_state_smoothers();
+            self.rebuild_cached_parameters();
             return Ok(());
         }
         Ok(())
@@ -378,14 +431,15 @@ impl Plugin for MatrixPlugin {
         if self.ch_gains_buffer.len() < buffer_size {
             self.ch_gains_buffer.resize(buffer_size, 1.0f32);
         }
-        
+
         // Fill buffer with 1.0 default (in case some channels have no smoother)
         self.ch_gains_buffer[..buffer_size].fill(1.0);
 
         for ch in 0..self.channel_state_smoothers.len() {
             if ch < out_channels {
                 for frame in 0..num_frames {
-                    self.ch_gains_buffer[frame * out_channels + ch] = self.channel_state_smoothers[ch].advance();
+                    self.ch_gains_buffer[frame * out_channels + ch] =
+                        self.channel_state_smoothers[ch].advance();
                 }
             }
         }
@@ -520,18 +574,38 @@ mod tests {
             center
         );
         // Other channels should be silent
-        assert!(output[last_frame_start + 1].abs() < TOLERANCE, "Right should be silent");
-        assert!(output[last_frame_start + 3].abs() < TOLERANCE, "LS should be silent");
-        assert!(output[last_frame_start + 4].abs() < TOLERANCE, "RS should be silent");
-        assert!(output[last_frame_start + 5].abs() < TOLERANCE, "LFE should be silent");
+        assert!(
+            output[last_frame_start + 1].abs() < TOLERANCE,
+            "Right should be silent"
+        );
+        assert!(
+            output[last_frame_start + 3].abs() < TOLERANCE,
+            "LS should be silent"
+        );
+        assert!(
+            output[last_frame_start + 4].abs() < TOLERANCE,
+            "RS should be silent"
+        );
+        assert!(
+            output[last_frame_start + 5].abs() < TOLERANCE,
+            "LFE should be silent"
+        );
     }
 
     #[test]
     fn test_channel_states_mute_via_parameter() {
         let mut plugin = MatrixPlugin::new(2, 2);
         let states = vec![
-            ChannelState { muted: true, soloed: false, dimmed: false },
-            ChannelState { muted: false, soloed: false, dimmed: false },
+            ChannelState {
+                muted: true,
+                soloed: false,
+                dimmed: false,
+            },
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: false,
+            },
         ];
         let json = serde_json::to_string(&states).unwrap();
         plugin
@@ -542,16 +616,32 @@ mod tests {
             .unwrap();
 
         let last = process_converged(&mut plugin, 2);
-        assert!(last[0].abs() < TOLERANCE, "Ch0 should be muted, got {}", last[0]);
-        assert!((last[1] - 1.0).abs() < TOLERANCE, "Ch1 should pass through, got {}", last[1]);
+        assert!(
+            last[0].abs() < TOLERANCE,
+            "Ch0 should be muted, got {}",
+            last[0]
+        );
+        assert!(
+            (last[1] - 1.0).abs() < TOLERANCE,
+            "Ch1 should pass through, got {}",
+            last[1]
+        );
     }
 
     #[test]
     fn test_channel_states_solo_via_parameter() {
         let mut plugin = MatrixPlugin::new(2, 2);
         let states = vec![
-            ChannelState { muted: false, soloed: true, dimmed: false },
-            ChannelState { muted: false, soloed: false, dimmed: false },
+            ChannelState {
+                muted: false,
+                soloed: true,
+                dimmed: false,
+            },
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: false,
+            },
         ];
         let json = serde_json::to_string(&states).unwrap();
         plugin
@@ -562,16 +652,30 @@ mod tests {
             .unwrap();
 
         let last = process_converged(&mut plugin, 2);
-        assert!((last[0] - 1.0).abs() < TOLERANCE, "Ch0 (soloed) should pass through");
-        assert!(last[1].abs() < TOLERANCE, "Ch1 (not soloed) should be silent");
+        assert!(
+            (last[0] - 1.0).abs() < TOLERANCE,
+            "Ch0 (soloed) should pass through"
+        );
+        assert!(
+            last[1].abs() < TOLERANCE,
+            "Ch1 (not soloed) should be silent"
+        );
     }
 
     #[test]
     fn test_channel_states_dim_via_parameter() {
         let mut plugin = MatrixPlugin::new(2, 2);
         let states = vec![
-            ChannelState { muted: false, soloed: false, dimmed: true },
-            ChannelState { muted: false, soloed: false, dimmed: false },
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: true,
+            },
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: false,
+            },
         ];
         let json = serde_json::to_string(&states).unwrap();
         plugin
@@ -582,7 +686,10 @@ mod tests {
             .unwrap();
 
         let last = process_converged(&mut plugin, 2);
-        assert!((last[0] - 0.1).abs() < TOLERANCE, "Ch0 should be dimmed to 0.1");
+        assert!(
+            (last[0] - 0.1).abs() < TOLERANCE,
+            "Ch0 should be dimmed to 0.1"
+        );
         assert!((last[1] - 1.0).abs() < TOLERANCE, "Ch1 should pass through");
     }
 
@@ -590,8 +697,16 @@ mod tests {
     fn test_channel_states_get_parameter() {
         let mut plugin = MatrixPlugin::new(2, 2);
         let states = vec![
-            ChannelState { muted: true, soloed: false, dimmed: false },
-            ChannelState { muted: false, soloed: false, dimmed: true },
+            ChannelState {
+                muted: true,
+                soloed: false,
+                dimmed: false,
+            },
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: true,
+            },
         ];
         let json = serde_json::to_string(&states).unwrap();
         plugin
@@ -601,7 +716,9 @@ mod tests {
             )
             .unwrap();
 
-        let got = plugin.get_parameter(&ParameterId::from("channel_states")).unwrap();
+        let got = plugin
+            .get_parameter(&ParameterId::from("channel_states"))
+            .unwrap();
         let got_str = got.as_string().unwrap();
         let got_states: Vec<ChannelState> = serde_json::from_str(got_str).unwrap();
         assert_eq!(got_states.len(), 2);

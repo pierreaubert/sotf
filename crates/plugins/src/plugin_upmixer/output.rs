@@ -77,12 +77,13 @@ impl UpmixerPlugin {
         self.prev_safety_scale = end_scale;
 
         let threshold = 0.95_f32;
+        let inv_fft_size = 1.0 / self.fft_size as f32;
 
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
 
             // Step 1: Apply fixed STFT scale and block-level safety scale
-            let t = i as f32 / self.fft_size as f32;
+            let t = i as f32 * inv_fft_size;
             let block_safety_scale = start_scale + t * (end_scale - start_scale);
             let base_scale = combined_scale * block_safety_scale;
 
@@ -96,7 +97,11 @@ impl UpmixerPlugin {
             }
 
             // Step 3: Update per-sample limiter envelope
-            let target_gr = if peak > threshold { threshold / peak } else { 1.0 };
+            let target_gr = if peak > threshold {
+                threshold / peak
+            } else {
+                1.0
+            };
             if target_gr < self.limiter_envelope {
                 // Fast attack
                 self.limiter_envelope =

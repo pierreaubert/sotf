@@ -10,7 +10,7 @@
 //! compensates for reflections.
 
 use super::config::XtcPluginParams;
-use super::filters::{head_shadowing_woodworth, SPEED_OF_SOUND};
+use super::filters::{SPEED_OF_SOUND, head_shadowing_woodworth};
 use realfft::{RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;

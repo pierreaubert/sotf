@@ -5,7 +5,7 @@
 
 use super::config::XtcPluginParams;
 use super::reflections::{
-    build_reflection_data_image_source, build_reflection_data_ir, RoomReflectionData,
+    RoomReflectionData, build_reflection_data_image_source, build_reflection_data_ir,
 };
 use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
@@ -74,9 +74,8 @@ pub(crate) fn compute_geometry_cache(
     let x_offset = params.head_offset_x;
 
     let l_ipsi = compute_path_length(d, theta_rad, -x_offset);
-    let l_contra_geometric = compute_path_length(d, theta_rad, x_offset);
     let diffraction_extra = woodworth_diffraction_path(theta_rad, a);
-    let l_contra_full = l_contra_geometric + diffraction_extra;
+    let l_contra_full = l_ipsi + diffraction_extra;
     let amplitude_ratio = l_ipsi / l_contra_full;
     let delay_ipsi = l_ipsi / SPEED_OF_SOUND;
     let delay_contra = l_contra_full / SPEED_OF_SOUND;
@@ -97,18 +96,18 @@ pub(crate) fn compute_geometry_cache(
         let theta_right = theta_rad - yaw_rad;
 
         let l_left_ipsi = compute_path_length(d, theta_left, -x_offset);
-        let l_left_contra_geometric = compute_path_length(d, theta_right, -x_offset);
-        let diffraction_left = woodworth_diffraction_path(theta_right, a);
-        let l_left_contra_full = l_left_contra_geometric + diffraction_left;
+        let l_left_contra_ipsi = compute_path_length(d, theta_right, x_offset); // distance from right speaker to right ear
+        let diffraction_left = woodworth_diffraction_path(theta_right.abs(), a);
+        let l_left_contra_full = l_left_contra_ipsi + diffraction_left;
         let amplitude_ratio_left = l_left_ipsi / l_left_contra_full;
         let delay_left_ipsi = l_left_ipsi / SPEED_OF_SOUND;
         let delay_left_contra = l_left_contra_full / SPEED_OF_SOUND;
         let angle_left_contra = contralateral_shadow_angle(theta_right.abs());
 
         let l_right_ipsi = compute_path_length(d, theta_right, x_offset);
-        let l_right_contra_geometric = compute_path_length(d, theta_left, x_offset);
-        let diffraction_right = woodworth_diffraction_path(theta_left, a);
-        let l_right_contra_full = l_right_contra_geometric + diffraction_right;
+        let l_right_contra_ipsi = compute_path_length(d, theta_left, -x_offset); // distance from left speaker to left ear
+        let diffraction_right = woodworth_diffraction_path(theta_left.abs(), a);
+        let l_right_contra_full = l_right_contra_ipsi + diffraction_right;
         let amplitude_ratio_right = l_right_ipsi / l_right_contra_full;
         let delay_right_ipsi = l_right_ipsi / SPEED_OF_SOUND;
         let delay_right_contra = l_right_contra_full / SPEED_OF_SOUND;
@@ -334,18 +333,20 @@ fn compute_xtc_filters_asymmetric_with_cache(
         let g_ll =
             head_shadowing_woodworth(freq, asym.angle_left_contra, a) * asym.amplitude_ratio_left;
         let phase_ll_contra = -2.0 * PI * freq * delta_t_left;
-        let h_ll_contra =
-            Complex::new(g_ll * phase_ll_contra.cos(), g_ll * phase_ll_contra.sin()) * pinna_left_contra;
+        let h_ll_contra = Complex::new(g_ll * phase_ll_contra.cos(), g_ll * phase_ll_contra.sin())
+            * pinna_left_contra;
 
         // Right ear: ipsi speaker is right speaker, contra is left speaker
         let h_rr_ipsi = Complex::new(1.0, 0.0) * pinna_ipsi;
-        let pinna_right_contra = pinna_right_contra_lut.as_deref().map_or(1.0, |lut| lut[bin]);
+        let pinna_right_contra = pinna_right_contra_lut
+            .as_deref()
+            .map_or(1.0, |lut| lut[bin]);
         let delta_t_right = delay_right_contra - delay_right_ipsi;
         let g_rr =
             head_shadowing_woodworth(freq, asym.angle_right_contra, a) * asym.amplitude_ratio_right;
         let phase_rr_contra = -2.0 * PI * freq * delta_t_right;
-        let h_rr_contra =
-            Complex::new(g_rr * phase_rr_contra.cos(), g_rr * phase_rr_contra.sin()) * pinna_right_contra;
+        let h_rr_contra = Complex::new(g_rr * phase_rr_contra.cos(), g_rr * phase_rr_contra.sin())
+            * pinna_right_contra;
 
         // Integrate room reflections: add reflection contributions to transfer functions
         let (h_ll_ipsi_final, h_ll_contra_final, h_rr_ipsi_final, h_rr_contra_final) =
@@ -502,7 +503,13 @@ fn compute_xtc_filters_symmetric_with_cache(
         };
 
         // Use shared 2x2 inverse computation with gain clamping
-        let (mut w_ll, mut w_lr) = compute_2x2_inverse(h_ipsi_final, h_contra_final, beta, max_gain_linear, params.bypass_neumann_refinement);
+        let (mut w_ll, mut w_lr) = compute_2x2_inverse(
+            h_ipsi_final,
+            h_contra_final,
+            beta,
+            max_gain_linear,
+            params.bypass_neumann_refinement,
+        );
 
         // Per-bin spectral normalization: target unity gain for the estimated ear response.
         // This compensates for attenuation introduced by regularization (beta),
@@ -630,23 +637,28 @@ fn compute_full_2x2_inverse(
     // A_01 = h_ll* * h_lr + h_rl* * h_rr
     // A_10 = h_lr* * h_ll + h_rr* * h_rl = A_01*
     // A_11 = h_lr* * h_lr + h_rr* * h_rr + beta
-    
+
     let a_00 = h_ll.norm_sqr() + h_rl.norm_sqr() + beta;
     let a_01 = h_ll.conj() * h_lr + h_rl.conj() * h_rr;
     let a_10 = a_01.conj();
     let a_11 = h_lr.norm_sqr() + h_rr.norm_sqr() + beta;
-    
+
     // 2. Compute inv(A) = (1/det) * [[a_11, -a_01], [-a_10, a_00]]
     let det = a_00 * a_11 - a_01.norm_sqr();
     if det.abs() < 1e-10 {
-        return (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0), Complex::new(0.0, 0.0), Complex::new(1.0, 0.0));
+        return (
+            Complex::new(1.0, 0.0),
+            Complex::new(0.0, 0.0),
+            Complex::new(0.0, 0.0),
+            Complex::new(1.0, 0.0),
+        );
     }
-    
+
     let inv_a_00 = a_11 / det;
     let inv_a_01 = -a_01 / det;
     let inv_a_10 = -a_10 / det;
     let inv_a_11 = a_00 / det;
-    
+
     // 3. W = inv(A) * C^H
     // C^H = [[h_ll*, h_rl*],
     //        [h_lr*, h_rr*]]
@@ -655,18 +667,18 @@ fn compute_full_2x2_inverse(
     // W_lr = inv_a_00 * h_rl* + inv_a_01 * h_rr*
     // W_rl = inv_a_10 * h_ll* + inv_a_11 * h_lr*
     // W_rr = inv_a_10 * h_rl* + inv_a_11 * h_rr*
-    
+
     let w_ll = inv_a_00 * h_ll.conj() + inv_a_01 * h_lr.conj();
     let w_lr = inv_a_00 * h_rl.conj() + inv_a_01 * h_rr.conj();
     let w_rl = inv_a_10 * h_ll.conj() + inv_a_11 * h_lr.conj();
     let w_rr = inv_a_10 * h_rl.conj() + inv_a_11 * h_rr.conj();
-    
+
     // 4. Soft-limit magnitudes
     let w_ll = soft_limit_complex_magnitude(w_ll, max_gain_linear);
     let w_lr = soft_limit_complex_magnitude(w_lr, max_gain_linear);
     let w_rl = soft_limit_complex_magnitude(w_rl, max_gain_linear);
     let w_rr = soft_limit_complex_magnitude(w_rr, max_gain_linear);
-    
+
     (w_ll, w_lr, w_rl, w_rr)
 }
 
@@ -901,8 +913,7 @@ pub(crate) fn build_pinna_contra_lut(
     freq_per_bin: f32,
     speaker_angle_deg: f32,
 ) -> Vec<f32> {
-    let angle_factor =
-        1.0 - ((90.0 + speaker_angle_deg) / 180.0).clamp(0.0, 1.0);
+    let angle_factor = 1.0 - ((90.0 + speaker_angle_deg) / 180.0).clamp(0.0, 1.0);
 
     // Pre-compute all peak_linear constants
     let peak_ear = 10.0_f32.powf(10.0_f32 / 20.0); // +10 dB (angle-independent)

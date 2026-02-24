@@ -221,10 +221,7 @@ impl SofaFile {
     /// * `Err(String)` - Error message if loading failed
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
         let path_ref = path.as_ref();
-        let ext = path_ref
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path_ref.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
             "hrtfdb" | "sqlite" | "db" => Self::load_sqlite(path_ref),
             #[cfg(feature = "sofa_support")]

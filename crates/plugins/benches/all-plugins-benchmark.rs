@@ -612,7 +612,7 @@ fn benchmark_loudness(c: &mut Criterion) {
             reference_level_db: -14.0,
             ..Default::default()
         };
-        let mut plugin = FletcherMunsonPlugin::from_params(CHANNELS, params);
+        let mut plugin = FletcherMunsonPlugin::from_params(CHANNELS, params).unwrap();
         Plugin::initialize(&mut plugin, SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);
@@ -637,7 +637,9 @@ fn benchmark_loudness(c: &mut Criterion) {
 
     // Loudness Compensation (implements Plugin, not InPlacePlugin)
     {
-        let mut plugin = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(CHANNELS, 200.0, 3.0, 6000.0, 2.0));
+        let mut plugin = InPlacePluginAdapter::new(LoudnessCompensationPlugin::new(
+            CHANNELS, 200.0, 3.0, 6000.0, 2.0,
+        ));
         plugin.initialize(SAMPLE_RATE).unwrap();
 
         let input = generate_test_buffer(BUFFER_SIZE, CHANNELS);

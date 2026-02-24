@@ -38,6 +38,7 @@ pub struct EqPlugin {
     auto_gain: AutoGain,
     cache: RealTimeCache<AutoGainData>,
     cache_update_counter: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl EqPlugin {
@@ -48,14 +49,56 @@ impl EqPlugin {
         }
         let sample_rate = 44100;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate).expect("ag");
-        Self {
+        let mut p = Self {
             num_channels,
             filters: channel_filters,
             sample_rate,
             auto_gain,
             cache: RealTimeCache::new(AutoGainData::default()),
             cache_update_counter: 0,
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        let mut params = vec![Parameter::new_bool(
+            "auto_gain_enabled",
+            "Auto Gain",
+            self.auto_gain.is_enabled(),
+        )];
+
+        if !self.filters.is_empty() {
+            for (i, f) in self.filters[0].iter().enumerate() {
+                let group = format!("Band {}", i + 1);
+                params.push(
+                    Parameter::new_float(
+                        &format!("band_{}_freq", i),
+                        "Freq",
+                        f.freq as f32,
+                        20.0,
+                        20000.0,
+                    )
+                    .with_group(&group),
+                );
+                params.push(
+                    Parameter::new_float(&format!("band_{}_q", i), "Q", f.q as f32, 0.1, 10.0)
+                        .with_group(&group),
+                );
+                params.push(
+                    Parameter::new_float(
+                        &format!("band_{}_gain", i),
+                        "Gain",
+                        f.db_gain as f32,
+                        -24.0,
+                        24.0,
+                    )
+                    .with_group(&group),
+                );
+            }
         }
+        self.cached_parameters = params;
     }
 
     pub fn new_per_channel(
@@ -67,14 +110,17 @@ impl EqPlugin {
         }
         let sample_rate = 44100;
         let auto_gain = AutoGain::new_default(num_channels, sample_rate)?;
-        Ok(Self {
+        let mut p = Self {
             num_channels,
             filters: channel_filters,
             sample_rate,
             auto_gain,
             cache: RealTimeCache::new(AutoGainData::default()),
             cache_update_counter: 0,
-        })
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
     }
 
     pub fn from_params(
@@ -98,7 +144,7 @@ impl EqPlugin {
                 .map_err(|e| e.to_string())
         };
         let auto_gain = AutoGain::new(num_channels, sample_rate, params.auto_gain)?;
-        if let Some(cfgs) = params.channel_filters {
+        let mut eq = if let Some(cfgs) = params.channel_filters {
             if cfgs.len() != num_channels {
                 return Err("Mismatched chains".into());
             }
@@ -110,14 +156,15 @@ impl EqPlugin {
                         .collect::<Result<Vec<_>, _>>()?,
                 );
             }
-            Ok(Self {
+            Self {
                 num_channels,
                 filters: channel_filters,
                 sample_rate,
                 auto_gain,
                 cache: RealTimeCache::new(AutoGainData::default()),
                 cache_update_counter: 0,
-            })
+                cached_parameters: Vec::new(),
+            }
         } else {
             let filters = params
                 .filters
@@ -128,15 +175,18 @@ impl EqPlugin {
             for _ in 0..num_channels {
                 channel_filters.push(filters.clone());
             }
-            Ok(Self {
+            Self {
                 num_channels,
                 filters: channel_filters,
                 sample_rate,
                 auto_gain,
                 cache: RealTimeCache::new(AutoGainData::default()),
                 cache_update_counter: 0,
-            })
-        }
+                cached_parameters: Vec::new(),
+            }
+        };
+        eq.rebuild_cached_parameters();
+        Ok(eq)
     }
 
     pub fn set_filters(&mut self, filters: Vec<Biquad>) {
@@ -163,49 +213,54 @@ impl InPlacePlugin for EqPlugin {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        let mut params = vec![Parameter::new_bool(
-            "auto_gain_enabled",
-            "Auto Gain",
-            self.auto_gain.is_enabled(),
-        )];
-        
-        // Expose first channel filters as parameters if all channels are identical
-        // This is a common case for stereo EQ
-        if !self.filters.is_empty() {
-            for (i, f) in self.filters[0].iter().enumerate() {
-                let group = format!("Band {}", i + 1);
-                params.push(Parameter::new_float(&format!("band_{}_freq", i), "Freq", f.freq as f32, 20.0, 20000.0).with_group(&group));
-                params.push(Parameter::new_float(&format!("band_{}_q", i), "Q", f.q as f32, 0.1, 10.0).with_group(&group));
-                params.push(Parameter::new_float(&format!("band_{}_gain", i), "Gain", f.db_gain as f32, -24.0, 24.0).with_group(&group));
-            }
-        }
-        
-        params
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         let name = id.0.as_str();
         if name == "auto_gain_enabled" {
+            Parameter::new_bool("auto_gain_enabled", "Auto Gain", true).validate(&value)?;
             self.auto_gain.set_enabled(value.as_bool().unwrap_or(true));
+            self.rebuild_cached_parameters();
         } else if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
                 let b_idx = parts[1].parse::<usize>().unwrap_or(0);
                 let field = parts[2];
-                for ch in 0..self.num_channels {
-                    if let Some(f) = self.filters[ch].get_mut(b_idx) {
-                        let mut freq = f.freq;
-                        let mut q = f.q;
-                        let mut db_gain = f.db_gain;
-                        match field {
-                            "freq" => freq = value.as_float().unwrap_or(1000.0) as f64,
-                            "q" => q = value.as_float().unwrap_or(1.0) as f64,
-                            "gain" => db_gain = value.as_float().unwrap_or(0.0) as f64,
-                            _ => {}
-                        }
-                        *f = Biquad::new(f.filter_type, freq, f.srate, q, db_gain);
+
+                // Validate using a temporary parameter template
+                match field {
+                    "freq" => Parameter::new_float("freq", "Freq", 1000.0, 20.0, 20000.0)
+                        .validate(&value)?,
+                    "q" => Parameter::new_float("q", "Q", 1.0, 0.1, 10.0).validate(&value)?,
+                    "gain" => {
+                        Parameter::new_float("gain", "Gain", 0.0, -24.0, 24.0).validate(&value)?
                     }
+                    _ => return Err(format!("Unknown field: {}", field)),
+                }
+
+                if let Some(v) = value.as_float() {
+                    if !v.is_finite() {
+                        return Err("Value is not finite".into());
+                    }
+                    for ch in 0..self.num_channels {
+                        if let Some(f) = self.filters[ch].get_mut(b_idx) {
+                            let mut freq = f.freq;
+                            let mut q = f.q;
+                            let mut db_gain = f.db_gain;
+                            match field {
+                                "freq" => freq = v as f64,
+                                "q" => q = v as f64,
+                                "gain" => db_gain = v as f64,
+                                _ => {}
+                            }
+                            *f = Biquad::new(f.filter_type, freq, f.srate, q, db_gain);
+                        }
+                    }
+                    self.rebuild_cached_parameters();
                 }
             }
+        } else {
+            return Err(format!("Unknown parameter: {}", id));
         }
         Ok(())
     }
@@ -223,7 +278,7 @@ impl InPlacePlugin for EqPlugin {
                         "freq" => Some(ParameterValue::Float(f.freq as f32)),
                         "q" => Some(ParameterValue::Float(f.q as f32)),
                         "gain" => Some(ParameterValue::Float(f.db_gain as f32)),
-                        _ => None
+                        _ => None,
                     };
                 }
             }
@@ -239,7 +294,9 @@ impl InPlacePlugin for EqPlugin {
                 *f = Biquad::new(f.filter_type, f.freq, sample_rate as f64, f.q, f.db_gain);
             }
         }
-        self.auto_gain.set_sample_rate(sample_rate).map_err(|e| e.to_string())?;
+        self.auto_gain
+            .set_sample_rate(sample_rate)
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
     fn reset(&mut self) {
@@ -288,9 +345,9 @@ impl InPlacePlugin for EqPlugin {
                 *d = ag_data;
             });
         }
-        
+
         self.auto_gain.apply_compensation(buffer, num_frames);
-        
+
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }

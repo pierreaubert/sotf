@@ -26,12 +26,14 @@ use sotf_plugins::{
     InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
     LoudnessCompensationPluginParams, LoudnessMonitorPlugin, MatrixPlugin, MonoToStereoPlugin,
     MonoToStereoPluginParams, MultibandCompressorPlugin, MultibandCompressorPluginParams,
-    MultibandExpanderPlugin, MultibandExpanderPluginParams, PndPlugin, PndPluginParams, Plugin,
+    MultibandExpanderPlugin, MultibandExpanderPluginParams, Plugin, PndPlugin, PndPluginParams,
     RoomModel, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams,
     XtcPlugin, XtcPluginParams,
 };
 use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use symphonia::core::audio::{AudioBufferRef, SampleBuffer, SignalSpec};
 use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
@@ -93,6 +95,7 @@ struct AbnormalityReport {
     has_clipping: bool,
     has_denormals: bool,
     is_silent: bool,
+    has_timeout: bool,
     max_value: f32,
     min_value: f32,
     dc_offset: f32,
@@ -110,11 +113,15 @@ impl AbnormalityReport {
             || self.has_clipping
             || self.has_denormals
             || self.is_silent
+            || self.has_timeout
     }
 
     fn print(&self) {
         println!("\n[ISSUE FOUND] Iteration {}", self.iteration);
         println!("  Parameters: {}", self.parameters);
+        if self.has_timeout {
+            println!("  - Processing TIMEOUT (possible infinite loop)");
+        }
         if self.has_nan {
             println!("  - Contains NaN values");
         }
@@ -155,7 +162,28 @@ fn detect_abnormalities(
     parameters: String,
     max_value_threshold: f32,
     max_dc_threshold: f32,
+    has_timeout: bool,
 ) -> AbnormalityReport {
+    if has_timeout {
+        return AbnormalityReport {
+            iteration,
+            has_nan: false,
+            has_inf: false,
+            has_extreme_values: false,
+            has_dc_offset: false,
+            has_clipping: false,
+            has_denormals: false,
+            is_silent: false,
+            has_timeout: true,
+            max_value: 0.0,
+            min_value: 0.0,
+            dc_offset: 0.0,
+            clipping_error_db: None,
+            denormal_count: 0,
+            parameters,
+        };
+    }
+
     let mut has_nan = false;
     let mut has_inf = false;
     let mut has_extreme_values = false;
@@ -223,6 +251,7 @@ fn detect_abnormalities(
         has_clipping,
         has_denormals,
         is_silent,
+        has_timeout: false,
         max_value,
         min_value,
         dc_offset,
@@ -1092,7 +1121,8 @@ impl PluginFuzzer for FletcherMunsonFuzzer {
             reference_level_db,
             ..Default::default()
         };
-        let plugin = FletcherMunsonPlugin::from_params(channels, params);
+        let plugin = FletcherMunsonPlugin::from_params(channels, params)
+            .expect("Failed to create FletcherMunsonPlugin");
 
         let desc = format!(
             "playback_vol={:.1}dB ref_level={:.1}dB",
@@ -1172,7 +1202,15 @@ impl PluginFuzzer for XtcFuzzer {
 
         let desc = format!(
             "angle={:.1} dist={:.2}m head_r={:.3}m beta={:.4} max_g={:.1}dB fft={} x={:.2} z={:.2} yaw={:.1}",
-            speaker_angle_deg, distance_m, head_radius_m, beta_base, max_gain_db, fft_size, head_offset_x, head_offset_z, head_yaw_deg
+            speaker_angle_deg,
+            distance_m,
+            head_radius_m,
+            beta_base,
+            max_gain_db,
+            fft_size,
+            head_offset_x,
+            head_offset_z,
+            head_yaw_deg
         );
 
         (Box::new(plugin), desc)
@@ -1234,7 +1272,7 @@ impl PluginFuzzer for ConvolutionFuzzer {
 
         let plugin = ConvolutionPlugin::from_params(channels, self.sample_rate, params.clone())
             .expect("Failed to create ConvolutionPlugin");
-        
+
         let desc = format!("ir_len={} mix={:.2}", ir_len, params.mix);
 
         (Box::new(InPlacePluginAdapter::new(plugin)), desc)
@@ -1299,7 +1337,12 @@ impl PluginFuzzer for DownmixFuzzer {
 
         let desc = format!(
             "in_ch={} c_g={:.1} s_g={:.1} h_g={:.1} lfe_g={:.1} phase={}",
-            channels, params.center_gain_db, params.surround_gain_db, params.height_gain_db, params.lfe_gain_db, params.phase_coherence
+            channels,
+            params.center_gain_db,
+            params.surround_gain_db,
+            params.height_gain_db,
+            params.lfe_gain_db,
+            params.phase_coherence
         );
 
         (Box::new(plugin), desc)
@@ -1327,9 +1370,13 @@ impl PluginFuzzer for CrossfeedFuzzer {
             ..Default::default()
         };
 
-        let plugin = CrossfeedPlugin::new(params.clone()).expect("Failed to create CrossfeedPlugin");
+        let plugin =
+            CrossfeedPlugin::new(params.clone()).expect("Failed to create CrossfeedPlugin");
 
-        let desc = format!("mode={:?} mix={:.2} bauer_f={:.0}Hz", mode, params.mix, params.bauer_fcut_hz);
+        let desc = format!(
+            "mode={:?} mix={:.2} bauer_f={:.0}Hz",
+            mode, params.mix, params.bauer_fcut_hz
+        );
 
         (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
@@ -1347,7 +1394,10 @@ impl PluginFuzzer for MonoToStereoFuzzer {
 
         let plugin = MonoToStereoPlugin::from_params(1, params.clone());
 
-        let desc = format!("width={:.2} comp={:.1}dB", params.stereo_width, params.comp_eq_depth_db);
+        let desc = format!(
+            "width={:.2} comp={:.1}dB",
+            params.stereo_width, params.comp_eq_depth_db
+        );
 
         (Box::new(plugin), desc)
     }
@@ -1365,7 +1415,10 @@ impl PluginFuzzer for PndFuzzer {
 
         let plugin = PndPlugin::from_params(channels, params.clone());
 
-        let desc = format!("strength={:.2} window={:.1}ms", params.correction_strength, params.analysis_window_ms);
+        let desc = format!(
+            "strength={:.2} window={:.1}ms",
+            params.correction_strength, params.analysis_window_ms
+        );
 
         (Box::new(plugin), desc)
     }
@@ -1382,7 +1435,8 @@ impl PluginFuzzer for ABCompareFuzzer {
             ..Default::default()
         };
 
-        let plugin = ABComparePlugin::from_params(channels, params).expect("Failed to create ABComparePlugin");
+        let plugin = ABComparePlugin::from_params(channels, params)
+            .expect("Failed to create ABComparePlugin");
 
         let desc = format!("selected_path={}", selected_path);
 
@@ -1394,7 +1448,8 @@ struct LoudnessMonitorFuzzer;
 
 impl PluginFuzzer for LoudnessMonitorFuzzer {
     fn create_plugin(&self, channels: usize, _rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
-        let plugin = LoudnessMonitorPlugin::new(channels).expect("Failed to create LoudnessMonitorPlugin");
+        let plugin =
+            LoudnessMonitorPlugin::new(channels).expect("Failed to create LoudnessMonitorPlugin");
         let desc = "loudness_monitor".to_string();
         (Box::new(plugin), desc)
     }
@@ -1422,7 +1477,9 @@ fn get_fuzzer(plugin_name: &str, sample_rate: u32) -> Result<Box<dyn PluginFuzze
         "fletcher_munson" | "fletcher" => Ok(Box::new(FletcherMunsonFuzzer)),
         "spectrum" | "spectrum_analyzer" => Ok(Box::new(SpectrumAnalyzerFuzzer)),
         "xtc" => Ok(Box::new(XtcFuzzer { sample_rate })),
-        "binaural" => Ok(Box::new(BinauralFuzzer { _sample_rate: sample_rate })),
+        "binaural" => Ok(Box::new(BinauralFuzzer {
+            _sample_rate: sample_rate,
+        })),
         "convolution" | "conv" => Ok(Box::new(ConvolutionFuzzer { sample_rate })),
         "bandsplit" => Ok(Box::new(BandSplitFuzzer)),
         "bandmerge" => Ok(Box::new(BandMergeFuzzer)),
@@ -1533,6 +1590,7 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
         "original_file".to_string(),
         args.max_value,
         args.max_dc_offset,
+        false,
     );
 
     if original_report.has_issues() {
@@ -1564,7 +1622,7 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
     for &target_rate in &TARGET_RATES {
         println!("  Resampling to {} Hz...", target_rate);
         let resampled = resample_audio(&audio_data, channels, sample_rate, target_rate);
-        audio_versions.push((target_rate, resampled));
+        audio_versions.push((target_rate, Arc::new(resampled)));
     }
     println!();
 
@@ -1631,29 +1689,56 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
             // Get output channel count (may differ from input for plugins like upmixer)
             let output_channels = host.output_channels();
 
-            // Process audio
+            // Process audio with timeout to detect infinite loops
             let output_samples = test_num_frames * output_channels;
-            let mut output = vec![0.0; output_samples];
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut host_worker = host;
+            let audio_data_worker = test_audio_data.clone();
 
-            // Split into chunks if needed (process in blocks of 4096 frames)
-            const BLOCK_SIZE: usize = 4096;
-            let mut pos = 0;
-
-            while pos < test_num_frames {
-                let frames_to_process = (test_num_frames - pos).min(BLOCK_SIZE);
-
-                let input_slice =
-                    &test_audio_data[pos * channels..(pos + frames_to_process) * channels];
-                let output_slice =
-                    &mut output[pos * output_channels..(pos + frames_to_process) * output_channels];
-
-                if let Err(e) = host.process(input_slice, output_slice) {
-                    eprintln!("\nError processing audio: {}", e);
-                    return None;
+            std::thread::spawn(move || {
+                let mut output_worker = vec![0.0; output_samples];
+                const BLOCK_SIZE: usize = 4096;
+                let mut pos = 0;
+                while pos < test_num_frames {
+                    let frames_to_process = (test_num_frames - pos).min(BLOCK_SIZE);
+                    let input_slice =
+                        &audio_data_worker[pos * channels..(pos + frames_to_process) * channels];
+                    let output_slice = &mut output_worker
+                        [pos * output_channels..(pos + frames_to_process) * output_channels];
+                    if let Err(e) = host_worker.process(input_slice, output_slice) {
+                        eprintln!("\nError processing audio: {}", e);
+                        return;
+                    }
+                    pos += frames_to_process;
                 }
+                let _ = tx.send(output_worker);
+            });
 
-                pos += frames_to_process;
-            }
+            let mut output = match rx.recv_timeout(std::time::Duration::from_secs(15)) {
+                Ok(out) => out,
+                Err(_) => {
+                    let mut param_desc = format!("{} @{}Hz", params_desc, test_sample_rate);
+                    param_desc.push_str(" [TIMEOUT]");
+                    let report = detect_abnormalities(
+                        &[],
+                        i,
+                        param_desc,
+                        args.max_value,
+                        args.max_dc_offset,
+                        true,
+                    );
+
+                    // Print immediately when found
+                    let stdout = std::io::stdout();
+                    let mut handle = stdout.lock();
+                    writeln!(handle, "\n[ISSUE FOUND] Iteration {}", report.iteration).ok();
+                    writeln!(handle, "  Parameters: {}", report.parameters).ok();
+                    writeln!(handle, "  - Processing TIMEOUT (possible infinite loop)").ok();
+                    drop(handle);
+
+                    return Some(report);
+                }
+            };
 
             // Apply gain compensation to isolate numerical issues from gain changes
             // This is especially important for compressor/limiter plugins
@@ -1664,16 +1749,24 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
             if gain_compensation_db > 0.1 {
                 param_desc.push_str(&format!(" (normalized -{:.1}dB)", gain_compensation_db));
             }
-            let report =
-                detect_abnormalities(&output, i, param_desc, args.max_value, args.max_dc_offset);
+            let report = detect_abnormalities(
+                &output,
+                i,
+                param_desc,
+                args.max_value,
+                args.max_dc_offset,
+                false,
+            );
 
             if report.has_issues() {
                 // Print immediately when found (with lock for clean output)
-                use std::io::Write;
                 let stdout = std::io::stdout();
                 let mut handle = stdout.lock();
                 writeln!(handle, "\n[ISSUE FOUND] Iteration {}", report.iteration).ok();
                 writeln!(handle, "  Parameters: {}", report.parameters).ok();
+                if report.has_timeout {
+                    writeln!(handle, "  - Processing TIMEOUT (possible infinite loop)").ok();
+                }
                 if report.has_nan {
                     writeln!(handle, "  - Contains NaN values").ok();
                 }
@@ -1738,7 +1831,11 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
         let clip_count = issues_found.iter().filter(|r| r.has_clipping).count();
         let denormal_count = issues_found.iter().filter(|r| r.has_denormals).count();
         let silent_count = issues_found.iter().filter(|r| r.is_silent).count();
+        let timeout_count = issues_found.iter().filter(|r| r.has_timeout).count();
 
+        if timeout_count > 0 {
+            println!("  - Timeouts (deadlocks): {}", timeout_count);
+        }
         if nan_count > 0 {
             println!("  - NaN values: {}", nan_count);
         }

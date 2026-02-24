@@ -16,12 +16,12 @@ mod tests;
 pub use config::*;
 use factory::build_path_from_config;
 
+use crate::analyzer::RealTimeCache;
 use crate::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use crate::host::DawHost;
 use crate::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use crate::smoothing::Smoother;
-use crate::analyzer::RealTimeCache;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
@@ -87,6 +87,7 @@ pub struct ABComparePlugin {
 
     cache: RealTimeCache<ABCompareData>,
     cache_update_counter: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl ABComparePlugin {
@@ -114,7 +115,7 @@ impl ABComparePlugin {
 
         let mix_smoother = Smoother::new(params.mix, params.mix_transition_ms, sample_rate);
 
-        Ok(Self {
+        let mut p = Self {
             num_channels,
             sample_rate,
             host_a,
@@ -134,7 +135,85 @@ impl ABComparePlugin {
             last_peak_b: 0.0,
             cache: RealTimeCache::new(ABCompareData::default()),
             cache_update_counter: 0,
-        })
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float("mix", "A/B Mix", self.mix, -1.0, 1.0)
+                .with_description("Mix between A and B: -1.0 = A, 0.0 = 50/50, +1.0 = B")
+                .with_group("Mix Control")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_int(
+                "mix_mode",
+                "Mix Mode",
+                match self.mix_mode {
+                    MixMode::Potentiometer => 0,
+                    MixMode::Binary => 1,
+                },
+                0,
+                1,
+            )
+            .with_description("0 = Potentiometer (continuous), 1 = Binary (A/B switch)")
+            .with_group("Mix Control")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_int("selected_path", "Selected Path", self.selected_path, 0, 1)
+                .with_description("0 = A, 1 = B (only used in binary mode)")
+                .with_group("Mix Control")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_bool("bypass", "Bypass", self.bypass)
+                .with_description("Bypass A/B processing, output original input")
+                .with_group("Mix Control")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_bool("auto_gain_enabled", "Auto Gain", self.auto_gain.is_enabled())
+                .with_description("Automatically match loudness between A and B")
+                .with_group("Loudness Matching")
+                .with_importance(ParameterImportance::Critical),
+            Parameter::new_int(
+                "loudness_type",
+                "Loudness Type",
+                match self.auto_gain.loudness_type() {
+                    AutoGainLoudnessType::Momentary => 0,
+                    AutoGainLoudnessType::ShortTerm => 1,
+                },
+                0,
+                1,
+            )
+            .with_description("0 = Momentary (400ms), 1 = Short-term (3s)")
+            .with_group("Loudness Matching")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("max_auto_gain_db", "Max Auto Gain", self.auto_gain.max_gain_db(), 0.0, 24.0)
+                .with_description("Maximum loudness correction in dB")
+                .with_group("Loudness Matching")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float("gain_smoothing_ms", "Gain Smoothing", self.auto_gain.smoothing_ms(), 10.0, 500.0)
+                .with_description("Auto-gain smoothing time in milliseconds")
+                .with_group("Loudness Matching")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float("mix_transition_ms", "Mix Transition", self.mix_transition_ms, 5.0, 500.0)
+                .with_description("A/B transition smoothing time in milliseconds")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_string(
+                "path_a_config",
+                "Path A Config",
+                serde_json::to_string(&self.path_a_config).unwrap_or_else(|_| r#"{"type":"None"}"#.to_string()),
+            )
+            .with_description("JSON configuration for path A")
+            .with_group("Configuration")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_string(
+                "path_b_config",
+                "Path B Config",
+                serde_json::to_string(&self.path_b_config).unwrap_or_else(|_| r#"{"type":"None"}"#.to_string()),
+            )
+            .with_description("JSON configuration for path B")
+            .with_group("Configuration")
+            .with_importance(ParameterImportance::Critical),
+        ];
     }
 
     /// Rebuild path A from config
@@ -171,121 +250,66 @@ impl Plugin for ABComparePlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float("mix", "A/B Mix", 0.0, -1.0, 1.0)
-                .with_description("Mix between A and B: -1.0 = A, 0.0 = 50/50, +1.0 = B")
-                .with_group("Mix Control")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_int("mix_mode", "Mix Mode", 0, 0, 1)
-                .with_description("0 = Potentiometer (continuous), 1 = Binary (A/B switch)")
-                .with_group("Mix Control")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_int("selected_path", "Selected Path", 0, 0, 1)
-                .with_description("0 = A, 1 = B (only used in binary mode)")
-                .with_group("Mix Control")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_bool("bypass", "Bypass", false)
-                .with_description("Bypass A/B processing, output original input")
-                .with_group("Mix Control")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_bool("auto_gain_enabled", "Auto Gain", true)
-                .with_description("Automatically match loudness between A and B")
-                .with_group("Loudness Matching")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_int("loudness_type", "Loudness Type", 0, 0, 1)
-                .with_description("0 = Momentary (400ms), 1 = Short-term (3s)")
-                .with_group("Loudness Matching")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("max_auto_gain_db", "Max Auto Gain", 12.0, 0.0, 24.0)
-                .with_description("Maximum loudness correction in dB")
-                .with_group("Loudness Matching")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float("gain_smoothing_ms", "Gain Smoothing", 100.0, 10.0, 500.0)
-                .with_description("Auto-gain smoothing time in milliseconds")
-                .with_group("Loudness Matching")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float("mix_transition_ms", "Mix Transition", 50.0, 5.0, 500.0)
-                .with_description("A/B transition smoothing time in milliseconds")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_string(
-                "path_a_config",
-                "Path A Config",
-                r#"{"type":"None"}"#.to_string(),
-            )
-            .with_description("JSON configuration for path A")
-            .with_group("Configuration")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_string(
-                "path_b_config",
-                "Path B Config",
-                r#"{"type":"None"}"#.to_string(),
-            )
-            .with_description("JSON configuration for path B")
-            .with_group("Configuration")
-            .with_importance(ParameterImportance::Critical),
-        ]
+        self.cached_parameters.clone()
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
         match id.0.as_str() {
             "mix" => {
-                if let ParameterValue::Float(v) = value {
+                let v = value.as_float().ok_or_else(|| "mix must be a float".to_string())?;
+                if v.is_finite() {
                     self.mix = v.clamp(-1.0, 1.0);
                     self.mix_smoother.set_target(self.mix);
                 }
             }
             "mix_mode" => {
-                if let ParameterValue::Int(v) = value {
-                    self.mix_mode = if v == 0 {
-                        MixMode::Potentiometer
-                    } else {
-                        MixMode::Binary
-                    };
-                }
+                let v = value.as_int().ok_or_else(|| "mix_mode must be an integer".to_string())?;
+                self.mix_mode = if v == 0 {
+                    MixMode::Potentiometer
+                } else {
+                    MixMode::Binary
+                };
             }
             "selected_path" => {
-                if let ParameterValue::Int(v) = value {
-                    self.selected_path = v.clamp(0, 1);
-                    // Update mix target for binary mode
-                    if self.mix_mode == MixMode::Binary {
-                        let target = if self.selected_path == 0 { -1.0 } else { 1.0 };
-                        self.mix_smoother.set_target(target);
-                    }
+                let v = value.as_int().ok_or_else(|| "selected_path must be an integer".to_string())?;
+                self.selected_path = v.clamp(0, 1);
+                // Update mix target for binary mode
+                if self.mix_mode == MixMode::Binary {
+                    let target = if self.selected_path == 0 { -1.0 } else { 1.0 };
+                    self.mix_smoother.set_target(target);
                 }
             }
             "bypass" => {
-                if let ParameterValue::Bool(v) = value {
-                    self.bypass = v;
-                }
+                self.bypass = value.as_bool().ok_or_else(|| "bypass must be a boolean".to_string())?;
             }
             "auto_gain_enabled" => {
-                if let ParameterValue::Bool(v) = value {
-                    self.auto_gain.set_enabled(v);
-                }
+                self.auto_gain.set_enabled(value.as_bool().ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?);
             }
             "loudness_type" => {
-                if let ParameterValue::Int(v) = value {
-                    let loudness_type = if v == 0 {
-                        AutoGainLoudnessType::Momentary
-                    } else {
-                        AutoGainLoudnessType::ShortTerm
-                    };
-                    self.auto_gain.set_loudness_type(loudness_type);
-                }
+                let v = value.as_int().ok_or_else(|| "loudness_type must be an integer".to_string())?;
+                let loudness_type = if v == 0 {
+                    AutoGainLoudnessType::Momentary
+                } else {
+                    AutoGainLoudnessType::ShortTerm
+                };
+                self.auto_gain.set_loudness_type(loudness_type);
             }
             "max_auto_gain_db" => {
-                if let ParameterValue::Float(v) = value {
+                let v = value.as_float().ok_or_else(|| "max_auto_gain_db must be a float".to_string())?;
+                if v.is_finite() {
                     self.auto_gain.set_max_gain_db(v.clamp(0.0, 24.0));
                 }
             }
             "gain_smoothing_ms" => {
-                if let ParameterValue::Float(v) = value {
+                let v = value.as_float().ok_or_else(|| "gain_smoothing_ms must be a float".to_string())?;
+                if v.is_finite() {
                     self.auto_gain.set_smoothing_ms(v.clamp(10.0, 500.0));
                 }
             }
             "mix_transition_ms" => {
-                if let ParameterValue::Float(v) = value {
+                let v = value.as_float().ok_or_else(|| "mix_transition_ms must be a float".to_string())?;
+                if v.is_finite() {
                     self.mix_transition_ms = v.clamp(5.0, 500.0);
                     self.mix_smoother
                         .set_time(self.mix_transition_ms, self.sample_rate);
@@ -309,6 +333,7 @@ impl Plugin for ABComparePlugin {
             }
             _ => return Err(format!("Unknown parameter: {}", id.0)),
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
 
@@ -375,6 +400,20 @@ impl Plugin for ABComparePlugin {
         // Clear buffers
         self.buffer_a.clear();
         self.buffer_b.clear();
+
+        // Update diagnostic cache immediately with reset values
+        let data = ABCompareData {
+            loudness_a_lufs: f64::NEG_INFINITY,
+            loudness_b_lufs: f64::NEG_INFINITY,
+            auto_gain_db: 0.0,
+            peak_a: 0.0,
+            peak_b: 0.0,
+            current_mix: self.mix_smoother.current(),
+            bypass_active: self.bypass,
+        };
+        self.cache.update(|d| {
+            *d = data;
+        });
     }
 
     fn process(
@@ -424,8 +463,11 @@ impl Plugin for ABComparePlugin {
         // B's output is the "output to compensate"
         self.cache_update_counter += 1;
         let mut do_measure = false;
-        if self.cache_update_counter >= 10 {
-            self.cache_update_counter = 0;
+        // Measure on the first block and then every 10 blocks
+        if self.cache_update_counter >= 10 || self.cache_update_counter == 1 {
+            if self.cache_update_counter >= 10 {
+                self.cache_update_counter = 0;
+            }
             do_measure = true;
         }
 

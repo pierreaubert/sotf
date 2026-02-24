@@ -77,17 +77,17 @@ pub struct DownmixPlugin {
     coeff_smoothers: Vec<Smoother>,
     lfe_channels: Vec<usize>,
     lfe_lpf_idx: Vec<Option<usize>>,
-    
+
     fft_forward: Arc<dyn RealToComplex<f32>>,
     fft_inverse: Arc<dyn ComplexToReal<f32>>,
-    
+
     analysis_window: Vec<f32>,
     output_scale: f32,
-    
+
     /// Flat input buffer: [channel * FFT_SIZE + sample]
     input_buffer: Vec<f32>,
     input_fill: usize,
-    
+
     output_accumulator: Vec<f32>,
     output_accumulator_mask: usize,
     output_accumulator_fill: usize,
@@ -98,13 +98,13 @@ pub struct DownmixPlugin {
     fft_output: Vec<Complex<f32>>,
     out_freq_l: Vec<Complex<f32>>,
     out_freq_r: Vec<Complex<f32>>,
-    
+
     fft_input_buf: Vec<f32>,
     ifft_input_buf: Vec<Complex<f32>>,
     ifft_output_buf: Vec<f32>,
-    
+
     lfe_lpf: Vec<[Biquad; 2]>,
-    
+
     center_gain_db: f32,
     surround_gain_db: f32,
     height_gain_db: f32,
@@ -112,12 +112,13 @@ pub struct DownmixPlugin {
     phase_coherence: bool,
     phase_blend_low_hz: f32,
     phase_blend_high_hz: f32,
-    
+
     param_center_gain_db: ParameterId,
     param_surround_gain_db: ParameterId,
     param_height_gain_db: ParameterId,
     param_lfe_gain_db: ParameterId,
     param_phase_coherence: ParameterId,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl DownmixPlugin {
@@ -126,7 +127,7 @@ impl DownmixPlugin {
         let fft_forward = planner.plan_fft_forward(FFT_SIZE);
         let fft_inverse = planner.plan_fft_inverse(FFT_SIZE);
         let num_bins = FFT_SIZE / 2 + 1;
-        
+
         let analysis_window: Vec<f32> = (0..FFT_SIZE)
             .map(|i| {
                 let x = i as f32 / FFT_SIZE as f32;
@@ -137,7 +138,7 @@ impl DownmixPlugin {
         // 75% overlap dual-window scaling: Sum(w^2) = (N/H) * (3/8) * N = 1.5 * N
         let output_scale = 1.0 / (FFT_SIZE as f32 * 1.5);
 
-        Self {
+        let mut p = Self {
             input_ch: input_channels,
             sample_rate: 44100,
             speaker_config: get_speaker_config_by_channels(input_channels),
@@ -175,7 +176,45 @@ impl DownmixPlugin {
             param_height_gain_db: ParameterId::from("height_gain_db"),
             param_lfe_gain_db: ParameterId::from("lfe_gain_db"),
             param_phase_coherence: ParameterId::from("phase_coherence"),
-        }
+            cached_parameters: Vec::new(),
+        };
+        p.compute_coefficients(true);
+        p.rebuild_cached_parameters();
+        p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "center_gain_db",
+                "Center Gain",
+                self.center_gain_db,
+                CENTER_GAIN_DB_MIN,
+                CENTER_GAIN_DB_MAX,
+            ),
+            Parameter::new_float(
+                "surround_gain_db",
+                "Surround Gain",
+                self.surround_gain_db,
+                SURROUND_GAIN_DB_MIN,
+                SURROUND_GAIN_DB_MAX,
+            ),
+            Parameter::new_float(
+                "height_gain_db",
+                "Height Gain",
+                self.height_gain_db,
+                HEIGHT_GAIN_DB_MIN,
+                HEIGHT_GAIN_DB_MAX,
+            ),
+            Parameter::new_float(
+                "lfe_gain_db",
+                "LFE Gain",
+                self.lfe_gain_db,
+                LFE_GAIN_DB_MIN,
+                LFE_GAIN_DB_MAX,
+            ),
+            Parameter::new_bool("phase_coherence", "Phase Coherence", self.phase_coherence),
+        ];
     }
 
     pub fn from_params(params: DownmixPluginParams) -> Self {
@@ -188,13 +227,14 @@ impl DownmixPlugin {
         plugin.phase_blend_low_hz = params.phase_blend_low_hz;
         plugin.phase_blend_high_hz = params.phase_blend_high_hz;
         plugin.compute_coefficients(true);
+        plugin.rebuild_cached_parameters();
         plugin
     }
 
     fn compute_coefficients(&mut self, reset: bool) {
         let mut new_coeffs = Vec::with_capacity(self.input_ch);
         self.lfe_channels.clear();
-        
+
         // Linear gains from dB
         let c_lin = 10.0_f32.powf(self.center_gain_db / 20.0);
         let s_lin = 10.0_f32.powf(self.surround_gain_db / 20.0);
@@ -213,7 +253,7 @@ impl DownmixPlugin {
                 } else {
                     let azimuth = s.azimuth.abs();
                     let elevation = s.elevation.abs();
-                    
+
                     if elevation > 10.0 {
                         // Height channels
                         let ang = (s.azimuth.to_radians() + std::f32::consts::FRAC_PI_2) * 0.5;
@@ -231,10 +271,16 @@ impl DownmixPlugin {
                         // Front L/R
                         if s.azimuth > 0.0 {
                             // Left side (e.g. +30°)
-                            new_coeffs.push(DownmixCoeffs { left_gain: 1.0, right_gain: 0.0 });
+                            new_coeffs.push(DownmixCoeffs {
+                                left_gain: 1.0,
+                                right_gain: 0.0,
+                            });
                         } else {
                             // Right side (e.g. -30°)
-                            new_coeffs.push(DownmixCoeffs { left_gain: 0.0, right_gain: 1.0 });
+                            new_coeffs.push(DownmixCoeffs {
+                                left_gain: 0.0,
+                                right_gain: 1.0,
+                            });
                         }
                     } else {
                         // Surround channels (Side/Rear)
@@ -250,7 +296,10 @@ impl DownmixPlugin {
                         } else {
                             (s_lin * 0.707, s_lin * 0.707)
                         };
-                        new_coeffs.push(DownmixCoeffs { left_gain: lg, right_gain: rg });
+                        new_coeffs.push(DownmixCoeffs {
+                            left_gain: lg,
+                            right_gain: rg,
+                        });
                     }
                 }
             }
@@ -258,19 +307,28 @@ impl DownmixPlugin {
             // Generic downmix: linear panned based on channel index
             for ch in 0..self.input_ch {
                 if self.input_ch == 1 {
-                    new_coeffs.push(DownmixCoeffs { left_gain: 0.707, right_gain: 0.707 });
+                    new_coeffs.push(DownmixCoeffs {
+                        left_gain: 0.707,
+                        right_gain: 0.707,
+                    });
                 } else {
                     let t = ch as f32 / (self.input_ch - 1).max(1) as f32;
-                    new_coeffs.push(DownmixCoeffs { left_gain: 1.0 - t, right_gain: t });
+                    new_coeffs.push(DownmixCoeffs {
+                        left_gain: 1.0 - t,
+                        right_gain: t,
+                    });
                 }
             }
         }
 
         // Normalization: Only normalize if the sum of gains exceeds a safe threshold (e.g., 2.0)
         // This prevents massive attenuation while still protecting against extreme clipping.
-        let max_sum = new_coeffs.iter().map(|c| c.left_gain).sum::<f32>()
+        let max_sum = new_coeffs
+            .iter()
+            .map(|c| c.left_gain)
+            .sum::<f32>()
             .max(new_coeffs.iter().map(|c| c.right_gain).sum::<f32>());
-        
+
         let norm_threshold = 2.0;
         if max_sum > norm_threshold {
             let scale = norm_threshold / max_sum;
@@ -291,8 +349,16 @@ impl DownmixPlugin {
         self.target_coeffs = new_coeffs;
         if self.coeff_smoothers.is_empty() {
             for c in &self.target_coeffs {
-                self.coeff_smoothers.push(Smoother::new(c.left_gain, PARAM_SMOOTH_MS, self.sample_rate));
-                self.coeff_smoothers.push(Smoother::new(c.right_gain, PARAM_SMOOTH_MS, self.sample_rate));
+                self.coeff_smoothers.push(Smoother::new(
+                    c.left_gain,
+                    PARAM_SMOOTH_MS,
+                    self.sample_rate,
+                ));
+                self.coeff_smoothers.push(Smoother::new(
+                    c.right_gain,
+                    PARAM_SMOOTH_MS,
+                    self.sample_rate,
+                ));
             }
         } else {
             for (i, c) in self.target_coeffs.iter().enumerate() {
@@ -342,7 +408,10 @@ impl DownmixPlugin {
                 self.fft_input_buf[i] = self.input_buffer[ch_offset + i] * self.analysis_window[i];
             }
             self.fft_forward
-                .process(&mut self.fft_input_buf, &mut self.fft_output[fft_offset..fft_offset + num_bins])
+                .process(
+                    &mut self.fft_input_buf,
+                    &mut self.fft_output[fft_offset..fft_offset + num_bins],
+                )
                 .unwrap();
         }
 
@@ -356,8 +425,12 @@ impl DownmixPlugin {
             let gr = self.coeff_smoothers[ch * 2 + 1].current();
             let fft_offset = ch * num_bins;
             let channel_fft = &self.fft_output[fft_offset..fft_offset + num_bins];
-            
-            for (cfi, (ol, or_)) in channel_fft.iter().zip(self.out_freq_l.iter_mut().zip(self.out_freq_r.iter_mut())).take(num_bins) {
+
+            for (cfi, (ol, or_)) in channel_fft
+                .iter()
+                .zip(self.out_freq_l.iter_mut().zip(self.out_freq_r.iter_mut()))
+                .take(num_bins)
+            {
                 *ol += *cfi * gl;
                 *or_ += *cfi * gr;
             }
@@ -383,7 +456,7 @@ impl DownmixPlugin {
                     let mut max_mag_r = -1.0f32;
                     let mut dominant_phase_l = 0.0f32;
                     let mut dominant_phase_r = 0.0f32;
-                    
+
                     let mut mag_sum_l = 0.0f32;
                     let mut mag_sum_r = 0.0f32;
 
@@ -391,10 +464,10 @@ impl DownmixPlugin {
                         let gl = self.coeff_smoothers[ch * 2].current();
                         let gr = self.coeff_smoothers[ch * 2 + 1].current();
                         let val = self.fft_output[ch * num_bins + bin];
-                        
+
                         let mag_l = val.norm() * gl;
                         let mag_r = val.norm() * gr;
-                        
+
                         mag_sum_l += mag_l;
                         mag_sum_r += mag_r;
 
@@ -410,7 +483,7 @@ impl DownmixPlugin {
 
                     let aligned_l = Complex::from_polar(mag_sum_l, dominant_phase_l);
                     let aligned_r = Complex::from_polar(mag_sum_r, dominant_phase_r);
-                    
+
                     self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - blend) + aligned_l * blend;
                     self.out_freq_r[bin] = self.out_freq_r[bin] * (1.0 - blend) + aligned_r * blend;
                 }
@@ -421,7 +494,9 @@ impl DownmixPlugin {
         self.out_freq_l[0].im = 0.0;
         self.out_freq_l[num_bins - 1].im = 0.0;
         self.ifft_input_buf.copy_from_slice(&self.out_freq_l);
-        self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
+        self.fft_inverse
+            .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
+            .unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             // Apply synthesis window
@@ -432,7 +507,9 @@ impl DownmixPlugin {
         self.out_freq_r[0].im = 0.0;
         self.out_freq_r[num_bins - 1].im = 0.0;
         self.ifft_input_buf.copy_from_slice(&self.out_freq_r);
-        self.fft_inverse.process(&mut self.ifft_input_buf, &mut self.ifft_output_buf).unwrap();
+        self.fft_inverse
+            .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
+            .unwrap();
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
             // Apply synthesis window
@@ -447,7 +524,8 @@ impl DownmixPlugin {
 
 impl Plugin for DownmixPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Downmix", "2.0.0", "SotF").with_description("Phase-coherent surround-to-stereo downmixer")
+        PluginInfo::new("Downmix", "2.0.0", "SotF")
+            .with_description("Phase-coherent surround-to-stereo downmixer")
     }
     fn input_channels(&self) -> usize {
         self.input_ch
@@ -456,52 +534,91 @@ impl Plugin for DownmixPlugin {
         2
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float("center_gain_db", "Center Gain", self.center_gain_db, CENTER_GAIN_DB_MIN, CENTER_GAIN_DB_MAX),
-            Parameter::new_float("surround_gain_db", "Surround Gain", self.surround_gain_db, SURROUND_GAIN_DB_MIN, SURROUND_GAIN_DB_MAX),
-            Parameter::new_float("height_gain_db", "Height Gain", self.height_gain_db, HEIGHT_GAIN_DB_MIN, HEIGHT_GAIN_DB_MAX),
-            Parameter::new_float("lfe_gain_db", "LFE Gain", self.lfe_gain_db, LFE_GAIN_DB_MIN, LFE_GAIN_DB_MAX),
-            Parameter::new_bool("phase_coherence", "Phase Coherence", self.phase_coherence),
-        ]
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id == self.param_center_gain_db {
-            self.center_gain_db = value.as_float().ok_or("val")?;
+            let v = value.as_float().unwrap_or(CENTER_GAIN_DB_DEFAULT);
+            if v.is_finite() {
+                self.center_gain_db = v;
+            }
         } else if id == self.param_surround_gain_db {
-            self.surround_gain_db = value.as_float().ok_or("val")?;
+            let v = value.as_float().unwrap_or(SURROUND_GAIN_DB_DEFAULT);
+            if v.is_finite() {
+                self.surround_gain_db = v;
+            }
         } else if id == self.param_height_gain_db {
-            self.height_gain_db = value.as_float().ok_or("val")?;
+            let v = value.as_float().unwrap_or(HEIGHT_GAIN_DB_DEFAULT);
+            if v.is_finite() {
+                self.height_gain_db = v;
+            }
         } else if id == self.param_lfe_gain_db {
-            self.lfe_gain_db = value.as_float().ok_or("val")?;
+            let v = value.as_float().unwrap_or(LFE_GAIN_DB_DEFAULT);
+            if v.is_finite() {
+                self.lfe_gain_db = v;
+            }
         } else if id == self.param_phase_coherence {
-            self.phase_coherence = value.as_bool().ok_or("val")?;
+            self.phase_coherence = value.as_bool().unwrap_or(PHASE_COHERENCE_DEFAULT);
         } else {
-            return Err("unknown".into());
+            return Err(format!("Unknown parameter: {}", id));
         }
         self.compute_coefficients(false);
+        self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        if id == &self.param_center_gain_db { Some(ParameterValue::Float(self.center_gain_db)) }
-        else if id == &self.param_surround_gain_db { Some(ParameterValue::Float(self.surround_gain_db)) }
-        else if id == &self.param_height_gain_db { Some(ParameterValue::Float(self.height_gain_db)) }
-        else if id == &self.param_lfe_gain_db { Some(ParameterValue::Float(self.lfe_gain_db)) }
-        else if id == &self.param_phase_coherence { Some(ParameterValue::Bool(self.phase_coherence)) }
-        else { None }
+        if id == &self.param_center_gain_db {
+            Some(ParameterValue::Float(self.center_gain_db))
+        } else if id == &self.param_surround_gain_db {
+            Some(ParameterValue::Float(self.surround_gain_db))
+        } else if id == &self.param_height_gain_db {
+            Some(ParameterValue::Float(self.height_gain_db))
+        } else if id == &self.param_lfe_gain_db {
+            Some(ParameterValue::Float(self.lfe_gain_db))
+        } else if id == &self.param_phase_coherence {
+            Some(ParameterValue::Bool(self.phase_coherence))
+        } else {
+            None
+        }
     }
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.lfe_lpf = self.lfe_channels.iter().map(|_| {
-            [
-                Biquad::new(BiquadFilterType::Lowpass, 120.0, sample_rate as f64, 0.707, 0.0),
-                Biquad::new(BiquadFilterType::Lowpass, 120.0, sample_rate as f64, 0.707, 0.0),
-            ]
-        }).collect();
-        for s in &mut self.coeff_smoothers { s.set_time(PARAM_SMOOTH_MS, sample_rate); }
+        self.lfe_lpf = self
+            .lfe_channels
+            .iter()
+            .map(|_| {
+                [
+                    Biquad::new(
+                        BiquadFilterType::Lowpass,
+                        120.0,
+                        sample_rate as f64,
+                        0.707,
+                        0.0,
+                    ),
+                    Biquad::new(
+                        BiquadFilterType::Lowpass,
+                        120.0,
+                        sample_rate as f64,
+                        0.707,
+                        0.0,
+                    ),
+                ]
+            })
+            .collect();
+        for s in &mut self.coeff_smoothers {
+            s.set_time(PARAM_SMOOTH_MS, sample_rate);
+        }
         self.compute_coefficients(true);
         Ok(())
     }
-    fn process(&mut self, input: &[f32], output: &mut [f32], context: &ProcessContext) -> Result<usize, String> {
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
         let num_frames = context.num_frames;
         if !self.phase_coherence {
             self.process_simple(input, output, num_frames);
@@ -530,7 +647,8 @@ impl Plugin for DownmixPlugin {
                             }
                         } else {
                             for i in 0..to_copy {
-                                self.input_buffer[ch_offset + self.input_fill + i] = src[i * self.input_ch];
+                                self.input_buffer[ch_offset + self.input_fill + i] =
+                                    src[i * self.input_ch];
                             }
                         }
                     }
@@ -588,12 +706,28 @@ impl Plugin for DownmixPlugin {
         self.output_accumulator_fill = 0;
         self.next_add_position = 0;
         self.output_read_position = 0;
-        self.lfe_lpf = self.lfe_channels.iter().map(|_| {
-            [
-                Biquad::new(BiquadFilterType::Lowpass, 120.0, self.sample_rate as f64, 0.707, 0.0),
-                Biquad::new(BiquadFilterType::Lowpass, 120.0, self.sample_rate as f64, 0.707, 0.0),
-            ]
-        }).collect();
+        self.lfe_lpf = self
+            .lfe_channels
+            .iter()
+            .map(|_| {
+                [
+                    Biquad::new(
+                        BiquadFilterType::Lowpass,
+                        120.0,
+                        self.sample_rate as f64,
+                        0.707,
+                        0.0,
+                    ),
+                    Biquad::new(
+                        BiquadFilterType::Lowpass,
+                        120.0,
+                        self.sample_rate as f64,
+                        0.707,
+                        0.0,
+                    ),
+                ]
+            })
+            .collect();
         for (i, c) in self.target_coeffs.iter().enumerate() {
             self.coeff_smoothers[i * 2].reset(c.left_gain);
             self.coeff_smoothers[i * 2 + 1].reset(c.right_gain);

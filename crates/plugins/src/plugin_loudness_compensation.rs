@@ -103,6 +103,7 @@ pub struct LoudnessCompensationPlugin {
     comp_gain_smoother: Vec<Smoother>,
     cache: RealTimeCache<AutoGainData>,
     cache_update_counter: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl LoudnessCompensationPlugin {
@@ -128,9 +129,56 @@ impl LoudnessCompensationPlugin {
                 .collect(),
             cache: RealTimeCache::new(AutoGainData::default()),
             cache_update_counter: 0,
+            cached_parameters: Vec::new(),
         };
         p.rebuild_filters();
+        p.rebuild_cached_parameters();
         p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![
+            Parameter::new_float(
+                "low_gain",
+                "Bass Boost",
+                self.low_gain,
+                LOW_GAIN_MIN,
+                LOW_GAIN_MAX,
+            )
+            .with_description("Low-frequency shelf gain (dB)")
+            .with_group("Gain")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "high_gain",
+                "Treble Boost",
+                self.high_gain,
+                HIGH_GAIN_MIN,
+                HIGH_GAIN_MAX,
+            )
+            .with_description("High-frequency shelf gain (dB)")
+            .with_group("Gain")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "low_freq",
+                "Low Frequency",
+                self.low_freq,
+                LOW_FREQ_MIN,
+                LOW_FREQ_MAX,
+            )
+            .with_description("Low shelf center frequency (Hz)")
+            .with_group("Frequency")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "high_freq",
+                "High Frequency",
+                self.high_freq,
+                HIGH_FREQ_MIN,
+                HIGH_FREQ_MAX,
+            )
+            .with_description("High shelf center frequency (Hz)")
+            .with_group("Frequency")
+            .with_importance(ParameterImportance::Useful),
+        ];
     }
 
     fn rebuild_filters(&mut self) {
@@ -197,6 +245,7 @@ impl LoudnessCompensationPlugin {
                 },
             )?);
         }
+        p.rebuild_cached_parameters();
         Ok(p)
     }
 }
@@ -209,65 +258,39 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float(
-                "low_gain",
-                "Bass Boost",
-                LOW_GAIN_DEFAULT,
-                LOW_GAIN_MIN,
-                LOW_GAIN_MAX,
-            )
-            .with_description("Low-frequency shelf gain (dB)")
-            .with_group("Gain")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "high_gain",
-                "Treble Boost",
-                HIGH_GAIN_DEFAULT,
-                HIGH_GAIN_MIN,
-                HIGH_GAIN_MAX,
-            )
-            .with_description("High-frequency shelf gain (dB)")
-            .with_group("Gain")
-            .with_importance(ParameterImportance::Critical),
-            Parameter::new_float(
-                "low_freq",
-                "Low Frequency",
-                LOW_FREQ_DEFAULT,
-                LOW_FREQ_MIN,
-                LOW_FREQ_MAX,
-            )
-            .with_description("Low shelf center frequency (Hz)")
-            .with_group("Frequency")
-            .with_importance(ParameterImportance::Useful),
-            Parameter::new_float(
-                "high_freq",
-                "High Frequency",
-                HIGH_FREQ_DEFAULT,
-                HIGH_FREQ_MIN,
-                HIGH_FREQ_MAX,
-            )
-            .with_description("High shelf center frequency (Hz)")
-            .with_group("Frequency")
-            .with_importance(ParameterImportance::Useful),
-        ]
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+
         if id.0 == "low_gain" {
-            self.low_gain = value.as_float().ok_or("val")?;
-            self.rebuild_filters();
+            let v = value.as_float().unwrap_or(LOW_GAIN_DEFAULT);
+            if v.is_finite() {
+                self.low_gain = v;
+                self.rebuild_filters();
+            }
         } else if id.0 == "high_gain" {
-            self.high_gain = value.as_float().ok_or("val")?;
-            self.rebuild_filters();
+            let v = value.as_float().unwrap_or(HIGH_GAIN_DEFAULT);
+            if v.is_finite() {
+                self.high_gain = v;
+                self.rebuild_filters();
+            }
         } else if id.0 == "low_freq" {
-            self.low_freq = value.as_float().ok_or("val")?;
-            self.rebuild_filters();
+            let v = value.as_float().unwrap_or(LOW_FREQ_DEFAULT);
+            if v.is_finite() {
+                self.low_freq = v;
+                self.rebuild_filters();
+            }
         } else if id.0 == "high_freq" {
-            self.high_freq = value.as_float().ok_or("val")?;
-            self.rebuild_filters();
+            let v = value.as_float().unwrap_or(HIGH_FREQ_DEFAULT);
+            if v.is_finite() {
+                self.high_freq = v;
+                self.rebuild_filters();
+            }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
@@ -339,7 +362,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             }
             ag.apply_compensation(buffer, nf);
         }
-        
+
         flush_denormals_inplace(buffer);
         Ok(nf)
     }

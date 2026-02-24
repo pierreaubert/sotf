@@ -136,10 +136,12 @@ fn compute_correlation_interleaved(samples: &[f32], channels: usize) -> Option<f
 pub struct LoudnessMonitorPlugin {
     num_channels: usize,
     sample_rate: u32,
+    enabled: bool,
     producer: rtrb::Producer<f32>,
     consumer: Consumer<f32>,
     cache: RealTimeCache<LoudnessData>,
     monitor: LoudnessMonitor,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl LoudnessMonitorPlugin {
@@ -148,14 +150,22 @@ impl LoudnessMonitorPlugin {
         let (p, c) = RingBuffer::new(sr as usize * 2);
         let monitor = LoudnessMonitor::new(num_channels as u32, sr)?;
         let cache = RealTimeCache::new(LoudnessData::new(num_channels));
-        Ok(Self {
+        let mut p = Self {
             num_channels,
             sample_rate: sr,
+            enabled: true,
             producer: p,
             consumer: c,
             cache,
             monitor,
-        })
+            cached_parameters: Vec::new(),
+        };
+        p.rebuild_cached_parameters();
+        Ok(p)
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        self.cached_parameters = vec![Parameter::new_bool("enabled", "Enabled", self.enabled)];
     }
 }
 
@@ -170,13 +180,22 @@ impl Plugin for LoudnessMonitorPlugin {
         self.num_channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        Vec::new()
+        self.cached_parameters.clone()
     }
-    fn set_parameter(&mut self, _: ParameterId, _: ParameterValue) -> PluginResult<()> {
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        self.validate_parameter(&id, &value)?;
+        if id.0 == "enabled" {
+            self.enabled = value.as_bool().unwrap_or(true);
+            self.rebuild_cached_parameters();
+        }
         Ok(())
     }
-    fn get_parameter(&self, _: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        if id.0 == "enabled" {
+            Some(ParameterValue::Bool(self.enabled))
+        } else {
+            None
+        }
     }
     fn initialize(&mut self, sr: u32) -> PluginResult<()> {
         self.sample_rate = sr;
@@ -196,6 +215,9 @@ impl Plugin for LoudnessMonitorPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         output.copy_from_slice(input);
+        if !self.enabled {
+            return Ok(context.num_frames);
+        }
         for &s in input {
             let _ = self.producer.push(s);
         }

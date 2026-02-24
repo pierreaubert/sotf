@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_delay::{DelayPlugin, DelayPluginParams};
-use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 
 #[global_allocator]
@@ -24,16 +24,22 @@ fn main() {
     let num_frames = 1000;
     let mut buffer = vec![0.0; num_frames];
     buffer[0] = 1.0; // Impulse
-    
-    let ctx = ProcessContext { sample_rate, num_frames };
+
+    let ctx = ProcessContext {
+        sample_rate,
+        num_frames,
+    };
     inner.process_in_place(&mut buffer, &ctx).unwrap();
-    
+
     // Find impulse in output
     let mut impulse_pos = 0;
     for (i, &s) in buffer.iter().enumerate() {
-        if s > 0.5 { impulse_pos = i; break; }
+        if s > 0.5 {
+            impulse_pos = i;
+            break;
+        }
     }
-    
+
     println!("  Impulse Position: {} samples", impulse_pos);
     assert_eq!(impulse_pos, 480);
     println!("  Impulse Position: PASS");

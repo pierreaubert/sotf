@@ -1,8 +1,8 @@
 use super::*;
 use filters::{
-    compute_beta, compute_beta_smooth, compute_xtc_filters_full,
-    head_shadowing_filter, head_shadowing_woodworth,
-    sanitize_filter, soft_limit_complex_magnitude, woodworth_diffraction_path,
+    compute_beta, compute_beta_smooth, compute_xtc_filters_full, head_shadowing_filter,
+    head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
+    woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
@@ -145,7 +145,10 @@ fn test_invalid_fft_size() {
 #[test]
 fn test_energy_preservation() {
     let params = XtcPluginParams::default();
-    assert!(params.auto_gain_enabled, "auto_gain should be enabled by default");
+    assert!(
+        params.auto_gain_enabled,
+        "auto_gain should be enabled by default"
+    );
     let mut plugin = XtcPlugin::new(params, 48000).unwrap();
     plugin.initialize(48000).unwrap();
 
@@ -391,12 +394,14 @@ fn test_yaw_angle_asymmetry() {
 
     // Check that filters are actually asymmetric at mid frequencies
     let bin_1khz = (1000.0 * fft_size as f32 / 48000.0) as usize;
-    
-    println!("Yaw Test 1kHz - LL: {}, RR: {}, LR: {}, RL: {}", 
-        filters.filter_ll[bin_1khz].norm(), 
+
+    println!(
+        "Yaw Test 1kHz - LL: {}, RR: {}, LR: {}, RL: {}",
+        filters.filter_ll[bin_1khz].norm(),
         filter_rr[bin_1khz].norm(),
         filters.filter_lr[bin_1khz].norm(),
-        filter_rl[bin_1khz].norm());
+        filter_rl[bin_1khz].norm()
+    );
 
     // filter_lr and filter_rl should be different with yaw
     let diff_cross = (filters.filter_lr[bin_1khz] - filter_rl[bin_1khz]).norm();
@@ -406,7 +411,7 @@ fn test_yaw_angle_asymmetry() {
         diff_cross
     );
 
-    // filter_ll and filter_rr should also be different with yaw, but 
+    // filter_ll and filter_rr should also be different with yaw, but
     // the difference is much smaller than for cross filters as they are both 'ipsi'.
     let diff_diag = (filters.filter_ll[bin_1khz] - filter_rr[bin_1khz]).norm();
     assert!(
@@ -861,7 +866,6 @@ fn test_sanitize_filter() {
 /// always produces larger (or equal) output magnitude, and never exceeds max.
 #[test]
 fn test_soft_limit_monotonicity() {
-
     let max_mag = 2.0_f32; // 6 dB
     let mut prev_out_mag = 0.0_f32;
 
@@ -896,7 +900,6 @@ fn test_soft_limit_monotonicity() {
 /// Test that soft_limit_complex_magnitude preserves phase
 #[test]
 fn test_soft_limit_preserves_phase() {
-
     let max_mag = 2.0_f32;
 
     // Test several phases at a magnitude that triggers the soft knee

@@ -84,21 +84,25 @@ impl MultibandExpanderData {
 
     pub fn update(&mut self, atten: &[f32], open: &[bool], levels: &[f32], xovers: &[f32]) {
         if let Some(mut_atten) = Arc::get_mut(&mut self.attenuation_db)
-            && mut_atten.len() == atten.len() {
-                mut_atten.copy_from_slice(atten);
-            }
+            && mut_atten.len() == atten.len()
+        {
+            mut_atten.copy_from_slice(atten);
+        }
         if let Some(mut_open) = Arc::get_mut(&mut self.is_open)
-            && mut_open.len() == open.len() {
-                mut_open.copy_from_slice(open);
-            }
+            && mut_open.len() == open.len()
+        {
+            mut_open.copy_from_slice(open);
+        }
         if let Some(mut_levels) = Arc::get_mut(&mut self.band_levels_db)
-            && mut_levels.len() == levels.len() {
-                mut_levels.copy_from_slice(levels);
-            }
+            && mut_levels.len() == levels.len()
+        {
+            mut_levels.copy_from_slice(levels);
+        }
         if let Some(mut_xovers) = Arc::get_mut(&mut self.crossover_frequencies)
-            && mut_xovers.len() == xovers.len() {
-                mut_xovers.copy_from_slice(xovers);
-            }
+            && mut_xovers.len() == xovers.len()
+        {
+            mut_xovers.copy_from_slice(xovers);
+        }
     }
 }
 
@@ -197,6 +201,7 @@ pub struct MultibandExpanderPlugin {
     is_open_buffer: Vec<bool>,
     cache: RealTimeCache<MultibandExpanderData>,
     cache_update_counter: usize,
+    cached_parameters: Vec<Parameter>,
 }
 
 impl MultibandExpanderPlugin {
@@ -255,10 +260,123 @@ impl MultibandExpanderPlugin {
             is_open_buffer: vec![false; nb],
             cache: RealTimeCache::new(MultibandExpanderData::new(nb, channels)),
             cache_update_counter: 0,
+            cached_parameters: Vec::new(),
         };
         p.build_crossovers();
         p.update_coefficients();
+        p.rebuild_cached_parameters();
         p
+    }
+
+    fn rebuild_cached_parameters(&mut self) {
+        let mut params = vec![
+            Parameter::new_int(
+                "num_bands",
+                "Bands",
+                self.num_bands as i32,
+                NUM_BANDS_MIN as i32,
+                NUM_BANDS_MAX as i32,
+            )
+            .with_group("General")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
+                .with_group("General")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
+                .with_group("General")
+                .with_importance(ParameterImportance::Useful),
+        ];
+
+        // Crossover frequencies
+        for i in 0..(self.num_bands - 1) {
+            let name = format!("crossover_freq_{}", i + 1);
+            let label = format!("X-Over {}", i + 1);
+            params.push(
+                Parameter::new_float(&name, &label, self.crossover_frequencies[i], 20.0, 20000.0)
+                    .with_group("Crossover"),
+            );
+        }
+
+        // Global dynamics (defaults for bands)
+        params.extend(vec![
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                self.threshold_db,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            )
+            .with_group("Global Dynamics"),
+            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
+                .with_group("Global Dynamics"),
+            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
+                .with_group("Global Dynamics"),
+            Parameter::new_float(
+                "release",
+                "Release",
+                self.release_ms,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_group("Global Dynamics"),
+        ]);
+
+        // Per-band dynamics
+        for i in 0..self.num_bands {
+            let group = format!("Band {}", i + 1);
+            let bp = &self.band_params[i];
+
+            params.push(
+                Parameter::new_float(
+                    &format!("band_{}_threshold", i),
+                    "Threshold",
+                    bp.threshold_db.unwrap_or(self.threshold_db),
+                    THRESHOLD_MIN,
+                    THRESHOLD_MAX,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("band_{}_ratio", i),
+                    "Ratio",
+                    bp.ratio.unwrap_or(self.ratio),
+                    RATIO_MIN,
+                    RATIO_MAX,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("band_{}_attack", i),
+                    "Attack",
+                    bp.attack_ms.unwrap_or(self.attack_ms),
+                    ATTACK_MIN,
+                    ATTACK_MAX,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("band_{}_release", i),
+                    "Release",
+                    bp.release_ms.unwrap_or(self.release_ms),
+                    RELEASE_MIN,
+                    RELEASE_MAX,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_bool(&format!("band_{}_solo", i), "Solo", bp.solo)
+                    .with_group(&group),
+            );
+            params.push(
+                Parameter::new_bool(&format!("band_{}_bypass", i), "Bypass", bp.bypass)
+                    .with_group(&group),
+            );
+        }
+
+        self.cached_parameters = params;
     }
     pub fn from_params(channels: usize, params: MultibandExpanderPluginParams) -> Self {
         Self::with_params(channels, params)
@@ -321,143 +439,189 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         self.channels
     }
     fn parameters(&self) -> Vec<Parameter> {
-        let mut params = vec![
-            Parameter::new_int("num_bands", "Bands", self.num_bands as i32, NUM_BANDS_MIN as i32, NUM_BANDS_MAX as i32)
-                .with_group("General")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
-                .with_group("General")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
-                .with_group("General")
-                .with_importance(ParameterImportance::Useful),
-        ];
-
-        // Crossover frequencies
-        for i in 0..(self.num_bands - 1) {
-            let name = format!("crossover_freq_{}", i + 1);
-            let label = format!("X-Over {}", i + 1);
-            params.push(Parameter::new_float(
-                &name,
-                &label,
-                self.crossover_frequencies[i],
-                20.0,
-                20000.0,
-            ).with_group("Crossover"));
-        }
-
-        // Global dynamics (defaults for bands)
-        params.extend(vec![
-            Parameter::new_float("threshold", "Threshold", self.threshold_db, THRESHOLD_MIN, THRESHOLD_MAX)
-                .with_group("Global Dynamics"),
-            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
-                .with_group("Global Dynamics"),
-            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
-                .with_group("Global Dynamics"),
-            Parameter::new_float("release", "Release", self.release_ms, RELEASE_MIN, RELEASE_MAX)
-                .with_group("Global Dynamics"),
-        ]);
-
-        // Per-band dynamics
-        for i in 0..self.num_bands {
-            let group = format!("Band {}", i + 1);
-            let bp = &self.band_params[i];
-            
-            params.push(Parameter::new_float(&format!("band_{}_threshold", i), "Threshold", bp.threshold_db.unwrap_or(self.threshold_db), THRESHOLD_MIN, THRESHOLD_MAX).with_group(&group));
-            params.push(Parameter::new_float(&format!("band_{}_ratio", i), "Ratio", bp.ratio.unwrap_or(self.ratio), RATIO_MIN, RATIO_MAX).with_group(&group));
-            params.push(Parameter::new_float(&format!("band_{}_attack", i), "Attack", bp.attack_ms.unwrap_or(self.attack_ms), ATTACK_MIN, ATTACK_MAX).with_group(&group));
-            params.push(Parameter::new_float(&format!("band_{}_release", i), "Release", bp.release_ms.unwrap_or(self.release_ms), RELEASE_MIN, RELEASE_MAX).with_group(&group));
-            params.push(Parameter::new_bool(&format!("band_{}_solo", i), "Solo", bp.solo).with_group(&group));
-            params.push(Parameter::new_bool(&format!("band_{}_bypass", i), "Bypass", bp.bypass).with_group(&group));
-        }
-
-        params
+        self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         let name = &id.0;
-        
+
         if name == "num_bands" {
-            let nb = value.as_int().ok_or("val")? as usize;
+            let nb = value.as_int().ok_or_else(|| "Bands must be an integer".to_string())? as usize;
+            let nb = nb.clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
             if nb != self.num_bands {
-                self.num_bands = nb.clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
-                // Re-init happens in initialize() or build_crossovers()
+                self.num_bands = nb;
                 self.build_crossovers();
-                // Ensure band_params has enough entries
                 while self.band_params.len() < self.num_bands {
                     self.band_params.push(BandExpanderParams::default());
                 }
+                while self.band_expanders.len() < self.num_bands {
+                    self.band_expanders.push(BandExpander {
+                        envelope: vec![0.0; self.channels],
+                        gate_state: vec![GateState::Open; self.channels],
+                        hold_counter: vec![0; self.channels],
+                        attack_coeff: 0.0,
+                        release_coeff: 0.0,
+                    });
+                }
+                self.band_levels_db.resize(self.num_bands, -100.0);
+                self.attenuation_flattened
+                    .resize(self.num_bands * self.channels, 0.0);
+                self.is_open_buffer.resize(self.num_bands, false);
+                self.update_coefficients();
             }
-        } else if name == "link_channels" {
-            self.link_channels = value.as_bool().ok_or("val")?;
+            self.rebuild_cached_parameters();
+            return Ok(());
+        }
+
+        self.validate_parameter(&id, &value)?;
+
+        if name == "link_channels" {
+            self.link_channels = value.as_bool().ok_or_else(|| "link_channels must be a boolean".to_string())?;
         } else if name == "mix" {
-            self.mix = value.as_float().ok_or("val")?.clamp(0.0, 1.0);
-            self.mix_smoother.set_target(self.mix);
+            let v = value.as_float().ok_or_else(|| "mix must be a float".to_string())?;
+            if v.is_finite() {
+                self.mix = v.clamp(0.0, 1.0);
+                self.mix_smoother.set_target(self.mix);
+            }
         } else if name.starts_with("crossover_freq_") {
-            let idx = name.replace("crossover_freq_", "").parse::<usize>().map(|i| i - 1).unwrap_or(0);
+            let idx = name
+                .replace("crossover_freq_", "")
+                .parse::<usize>()
+                .map_err(|e| format!("Invalid crossover index: {}", e))?
+                .checked_sub(1)
+                .ok_or_else(|| "Crossover index must be at least 1".to_string())?;
+
             if idx < self.xover_smoothers.len() {
-                let f = value.as_float().ok_or("val")?;
-                self.crossover_frequencies[idx] = f;
-                self.xover_smoothers[idx].set_target(f);
+                let f = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                if f.is_finite() {
+                    self.crossover_frequencies[idx] = f;
+                    self.xover_smoothers[idx].set_target(f);
+                }
+            } else {
+                return Err(format!("Crossover index {} out of range", idx + 1));
             }
         } else if name == "threshold" {
-            self.threshold_db = value.as_float().ok_or("val")?;
-            self.threshold_smoother.set_target(self.threshold_db);
+            let v = value.as_float().ok_or_else(|| "threshold must be a float".to_string())?;
+            if v.is_finite() {
+                self.threshold_db = v;
+                self.threshold_smoother.set_target(self.threshold_db);
+            }
         } else if name == "ratio" {
-            self.ratio = value.as_float().ok_or("val")?.max(1.0);
+            let v = value.as_float().ok_or_else(|| "ratio must be a float".to_string())?;
+            if v.is_finite() {
+                self.ratio = v.max(1.0);
+            }
         } else if name == "attack" {
-            self.attack_ms = value.as_float().ok_or("val")?;
-            self.update_coefficients();
+            let v = value.as_float().ok_or_else(|| "attack must be a float".to_string())?;
+            if v.is_finite() {
+                self.attack_ms = v;
+                self.update_coefficients();
+            }
         } else if name == "release" {
-            self.release_ms = value.as_float().ok_or("val")?;
-            self.update_coefficients();
+            let v = value.as_float().ok_or_else(|| "release must be a float".to_string())?;
+            if v.is_finite() {
+                self.release_ms = v;
+                self.update_coefficients();
+            }
         } else if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
-                let b_idx = parts[1].parse::<usize>().unwrap_or(0);
+                let b_idx = parts[1].parse::<usize>().map_err(|e| format!("Invalid band index: {}", e))?;
                 if b_idx < self.num_bands {
                     let field = parts[2];
                     let bp = &mut self.band_params[b_idx];
                     match field {
-                        "threshold" => bp.threshold_db = Some(value.as_float().ok_or("val")?),
-                        "ratio" => bp.ratio = Some(value.as_float().ok_or("val")?),
+                        "threshold" => {
+                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.threshold_db = Some(v);
+                            }
+                        }
+                        "ratio" => {
+                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.ratio = Some(v);
+                            }
+                        }
                         "attack" => {
-                            bp.attack_ms = Some(value.as_float().ok_or("val")?);
-                            self.update_coefficients();
-                        },
+                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.attack_ms = Some(v);
+                                self.update_coefficients();
+                            }
+                        }
                         "release" => {
-                            bp.release_ms = Some(value.as_float().ok_or("val")?);
-                            self.update_coefficients();
-                        },
-                        "solo" => bp.solo = value.as_bool().ok_or("val")?,
-                        "bypass" => bp.bypass = value.as_bool().ok_or("val")?,
+                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.release_ms = Some(v);
+                                self.update_coefficients();
+                            }
+                        }
+                        "solo" => bp.solo = value.as_bool().ok_or_else(|| format!("{} must be a boolean", name))?,
+                        "bypass" => bp.bypass = value.as_bool().ok_or_else(|| format!("{} must be a boolean", name))?,
                         _ => return Err(format!("Unknown band field: {}", field)),
                     }
+                } else {
+                    return Err(format!("Band index {} out of range", b_idx));
                 }
             }
         } else {
             // Support legacy names or other fields
             match name.as_str() {
-                "knee" => self.knee_db = value.as_float().ok_or("val")?,
-                "range" => self.range_db = value.as_float().ok_or("val")?,
-                "hysteresis" => self.hysteresis_db = value.as_float().ok_or("val")?,
-                "hold" => self.hold_ms = value.as_float().ok_or("val")?,
+                "knee" => {
+                    let v = value.as_float().ok_or_else(|| "knee must be a float".to_string())?;
+                    if v.is_finite() {
+                        self.knee_db = v;
+                    }
+                }
+                "range" => {
+                    let v = value.as_float().ok_or_else(|| "range must be a float".to_string())?;
+                    if v.is_finite() {
+                        self.range_db = v;
+                    }
+                }
+                "hysteresis" => {
+                    let v = value.as_float().ok_or_else(|| "hysteresis must be a float".to_string())?;
+                    if v.is_finite() {
+                        self.hysteresis_db = v;
+                    }
+                }
+                "hold" => {
+                    let v = value.as_float().ok_or_else(|| "hold must be a float".to_string())?;
+                    if v.is_finite() {
+                        self.hold_ms = v;
+                    }
+                }
                 _ => return Err(format!("Unknown parameter: {}", id)),
             }
         }
+        self.rebuild_cached_parameters();
         Ok(())
     }
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         let name = &id.0;
-        if name == "num_bands" { Some(ParameterValue::Int(self.num_bands as i32)) }
-        else if name == "link_channels" { Some(ParameterValue::Bool(self.link_channels)) }
-        else if name == "mix" { Some(ParameterValue::Float(self.mix)) }
-        else if name == "threshold" { Some(ParameterValue::Float(self.threshold_db)) }
-        else if name == "ratio" { Some(ParameterValue::Float(self.ratio)) }
-        else if name == "attack" { Some(ParameterValue::Float(self.attack_ms)) }
-        else if name == "release" { Some(ParameterValue::Float(self.release_ms)) }
-        else if name.starts_with("crossover_freq_") {
-            let idx = name.replace("crossover_freq_", "").parse::<usize>().map(|i| i - 1).unwrap_or(0);
-            self.crossover_frequencies.get(idx).map(|&f| ParameterValue::Float(f))
+        if name == "num_bands" {
+            Some(ParameterValue::Int(self.num_bands as i32))
+        } else if name == "link_channels" {
+            Some(ParameterValue::Bool(self.link_channels))
+        } else if name == "mix" {
+            Some(ParameterValue::Float(self.mix))
+        } else if name == "threshold" {
+            Some(ParameterValue::Float(self.threshold_db))
+        } else if name == "ratio" {
+            Some(ParameterValue::Float(self.ratio))
+        } else if name == "attack" {
+            Some(ParameterValue::Float(self.attack_ms))
+        } else if name == "release" {
+            Some(ParameterValue::Float(self.release_ms))
+        } else if name.starts_with("crossover_freq_") {
+            let idx = name
+                .replace("crossover_freq_", "")
+                .parse::<usize>()
+                .map(|i| i - 1)
+                .unwrap_or(0);
+            self.crossover_frequencies
+                .get(idx)
+                .map(|&f| ParameterValue::Float(f))
         } else if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
@@ -466,16 +630,26 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     let field = parts[2];
                     let bp = &self.band_params[b_idx];
                     match field {
-                        "threshold" => Some(ParameterValue::Float(bp.threshold_db.unwrap_or(self.threshold_db))),
+                        "threshold" => Some(ParameterValue::Float(
+                            bp.threshold_db.unwrap_or(self.threshold_db),
+                        )),
                         "ratio" => Some(ParameterValue::Float(bp.ratio.unwrap_or(self.ratio))),
-                        "attack" => Some(ParameterValue::Float(bp.attack_ms.unwrap_or(self.attack_ms))),
-                        "release" => Some(ParameterValue::Float(bp.release_ms.unwrap_or(self.release_ms))),
+                        "attack" => Some(ParameterValue::Float(
+                            bp.attack_ms.unwrap_or(self.attack_ms),
+                        )),
+                        "release" => Some(ParameterValue::Float(
+                            bp.release_ms.unwrap_or(self.release_ms),
+                        )),
                         "solo" => Some(ParameterValue::Bool(bp.solo)),
                         "bypass" => Some(ParameterValue::Bool(bp.bypass)),
                         _ => None,
                     }
-                } else { None }
-            } else { None }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             match name.as_str() {
                 "knee" => Some(ParameterValue::Float(self.knee_db)),
@@ -495,13 +669,13 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         for s in &mut self.xover_smoothers {
             *s = LogSmoother::new(s.target(), 50.0, sr);
         }
-        
+
         // Pre-allocate buffers for real-time safety
         let max_frames = 4096; // Standard max block size
         let stride = max_frames * self.channels;
         self.band_buffers.resize(self.num_bands * stride, 0.0);
         self.dry_buffer.resize(max_frames * self.channels, 0.0);
-        
+
         Ok(())
     }
     fn reset(&mut self) {
@@ -520,7 +694,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         enable_ftz_daz();
         let nf = context.num_frames;
         let stride = nf * self.channels;
-        
+
         // Ensure buffers are large enough (usually a no-op due to initialize)
         if self.dry_buffer.len() < buffer.len() {
             self.dry_buffer.resize(buffer.len(), 0.0);
@@ -528,7 +702,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         if self.band_buffers.len() < self.num_bands * stride {
             self.band_buffers.resize(self.num_bands * stride, 0.0);
         }
-        
+
         self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
 
         // 1. Update crossovers
@@ -565,11 +739,15 @@ impl InPlacePlugin for MultibandExpanderPlugin {
 
         let g_th = self.threshold_smoother.next_n(nf);
         let g_mix = self.mix_smoother.next_n(nf);
-        
+
         let mut any_solo = false;
         for b in 0..self.num_bands {
             if let Some(p) = self.band_params.get(b)
-                && p.solo { any_solo = true; break; }
+                && p.solo
+            {
+                any_solo = true;
+                break;
+            }
         }
 
         // 3. Dynamic Processing per Band
@@ -577,14 +755,14 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             let bp = self.band_params.get(b);
             let is_bypassed = bp.map(|p| p.bypass).unwrap_or(false);
             let is_muted = any_solo && !bp.map(|p| p.solo).unwrap_or(false);
-            
+
             if is_muted {
                 let off = b * stride;
                 self.band_buffers[off..off + stride].fill(0.0);
                 self.band_levels_db[b] = -100.0;
                 continue;
             }
-            
+
             if is_bypassed {
                 // Keep band signal as is, but still track levels
                 let off = b * stride;
@@ -600,9 +778,13 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             let rat = bp.and_then(|p| p.ratio).unwrap_or(self.ratio);
             let kn = bp.and_then(|p| p.knee_db).unwrap_or(self.knee_db);
             let rg = bp.and_then(|p| p.range_db).unwrap_or(self.range_db);
-            let hys = bp.and_then(|p| p.hysteresis_db).unwrap_or(self.hysteresis_db);
-            let hs = (bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms) * 0.001 * self.sample_rate as f32) as usize;
-            
+            let hys = bp
+                .and_then(|p| p.hysteresis_db)
+                .unwrap_or(self.hysteresis_db);
+            let hs = (bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms)
+                * 0.001
+                * self.sample_rate as f32) as usize;
+
             let bexp = &mut self.band_expanders[b];
             let off = b * stride;
             let mut band_max_abs = 0.0f32;
@@ -614,7 +796,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         det = det.max(self.band_buffers[off + frame * self.channels + ch].abs());
                     }
                 }
-                
+
                 let idb = if self.link_channels {
                     20.0 * fast_log10(det.max(1e-10))
                 } else {
@@ -625,8 +807,12 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     let idx = off + frame * self.channels + ch;
                     let sample_abs = self.band_buffers[idx].abs();
                     band_max_abs = band_max_abs.max(sample_abs);
-                    
-                    let db = if self.link_channels { idb } else { 20.0 * fast_log10(sample_abs.max(1e-10)) };
+
+                    let db = if self.link_channels {
+                        idb
+                    } else {
+                        20.0 * fast_log10(sample_abs.max(1e-10))
+                    };
 
                     let target = match bexp.gate_state[ch] {
                         GateState::Open => {
@@ -634,7 +820,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                                 bexp.gate_state[ch] = GateState::Hold;
                                 bexp.hold_counter[ch] = hs;
                                 0.0
-                            } else { 0.0 }
+                            } else {
+                                0.0
+                            }
                         }
                         GateState::Hold => {
                             if db >= th {
@@ -646,7 +834,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                             } else if db < th - hys {
                                 bexp.gate_state[ch] = GateState::Closing;
                                 Self::calculate_expansion_attenuation(db, th, rat, kn, rg)
-                            } else { 0.0 }
+                            } else {
+                                0.0
+                            }
                         }
                         GateState::Closing => {
                             if db >= th {
@@ -657,7 +847,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                             }
                         }
                     };
-                    
+
                     let c = if target > bexp.envelope[ch] {
                         bexp.release_coeff
                     } else {
@@ -687,9 +877,13 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         if self.cache_update_counter >= 10 {
             self.cache_update_counter = 0;
             for b in 0..self.num_bands {
-                self.is_open_buffer[b] = self.band_expanders[b].gate_state.iter().any(|&s| s != GateState::Closing);
+                self.is_open_buffer[b] = self.band_expanders[b]
+                    .gate_state
+                    .iter()
+                    .any(|&s| s != GateState::Closing);
                 for ch in 0..self.channels {
-                    self.attenuation_flattened[b * self.channels + ch] = self.band_expanders[b].envelope[ch];
+                    self.attenuation_flattened[b * self.channels + ch] =
+                        self.band_expanders[b].envelope[ch];
                 }
             }
             let levels = &self.band_levels_db;
@@ -699,7 +893,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 d.update(&self.attenuation_flattened, open, levels, xovers);
             });
         }
-        
+
         flush_denormals_inplace(buffer);
         Ok(nf)
     }

@@ -1,5 +1,5 @@
 use sotf_plugins::plugin_expander::{ExpanderPlugin, ExpanderPluginParams};
-use sotf_plugins::qa_util::{run_standard_tests, CountingAlloc};
+use sotf_plugins::qa_util::{CountingAlloc, run_standard_tests};
 use sotf_plugins::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 
 #[global_allocator]
@@ -30,7 +30,10 @@ fn main() {
     // Test 1: Open Gate (Input above threshold)
     println!("\n[Test 1] Open State (Input -10dB, Thresh -20dB)");
     let mut buffer = generate_dc(sample_rate, -10.0, 4800);
-    let ctx = ProcessContext { sample_rate, num_frames: 4800 };
+    let ctx = ProcessContext {
+        sample_rate,
+        num_frames: 4800,
+    };
     inner.process_in_place(&mut buffer, &ctx).unwrap();
     let peak = measure_peak_db(&buffer);
     println!("  Target: -10.00dB, Measured: {:.2}dB", peak);
@@ -42,34 +45,46 @@ fn main() {
     let num_frames = 48000;
     let mut buffer = generate_dc(sample_rate, -40.0, num_frames);
     inner.reset();
-    
+
     let block_size = 4096;
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx_block = ProcessContext { sample_rate, num_frames: end - pos };
-        inner.process_in_place(&mut buffer[pos..end], &ctx_block).unwrap();
+        let ctx_block = ProcessContext {
+            sample_rate,
+            num_frames: end - pos,
+        };
+        inner
+            .process_in_place(&mut buffer[pos..end], &ctx_block)
+            .unwrap();
         pos = end;
     }
-    
+
     let peak = measure_peak_db(&buffer[num_frames - 4800..]);
     println!("  Expected: -50.00dB, Measured: {:.2}dB", peak);
     assert!((peak + 50.0).abs() < 0.1);
 
     // Test 3: Range Limit (Range 10dB)
     println!("\n[Test 3] Range Limitation (Range 10dB)");
-    inner.set_parameter("range".into(), sotf_plugins::ParameterValue::Float(10.0)).unwrap();
+    inner
+        .set_parameter("range".into(), sotf_plugins::ParameterValue::Float(10.0))
+        .unwrap();
     let mut buffer = generate_dc(sample_rate, -60.0, num_frames);
     inner.reset();
-    
+
     let mut pos = 0;
     while pos < num_frames {
         let end = (pos + block_size).min(num_frames);
-        let ctx_block = ProcessContext { sample_rate, num_frames: end - pos };
-        inner.process_in_place(&mut buffer[pos..end], &ctx_block).unwrap();
+        let ctx_block = ProcessContext {
+            sample_rate,
+            num_frames: end - pos,
+        };
+        inner
+            .process_in_place(&mut buffer[pos..end], &ctx_block)
+            .unwrap();
         pos = end;
     }
-    
+
     let peak = measure_peak_db(&buffer[num_frames - 4800..]);
     println!("  Expected: -70.00dB, Measured: {:.2}dB", peak);
     assert!((peak + 70.0).abs() < 0.1);
