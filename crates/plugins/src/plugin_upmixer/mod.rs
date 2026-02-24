@@ -31,6 +31,8 @@ mod config;
 mod decorrelation;
 mod detection;
 mod fft;
+mod ml_features;
+mod ml_inference;
 mod frequency_domain;
 mod height;
 mod hr_processing;
@@ -210,6 +212,14 @@ pub struct UpmixerPlugin {
     dialogue_variance_weight: f32,
     param_dialogue_coherence_weight: ParameterId,
     dialogue_coherence_weight: f32,
+
+    // ML vocal detection parameters
+    param_enable_ml_detection: ParameterId,
+    enable_ml_detection: bool,
+    param_ml_model_path: ParameterId,
+    ml_model_path: String,
+    mfcc_extractor: Option<ml_features::MfccExtractor>,
+    ml_inference_handle: Option<ml_inference::MlInferenceHandle>,
 
     // Diagnostic bypass parameters
     param_bypass_decorrelation: ParameterId,
@@ -650,6 +660,14 @@ impl UpmixerPlugin {
             param_dialogue_coherence_weight: ParameterId::from("dialogue_coherence_weight"),
             dialogue_coherence_weight: default_dialogue_coherence_weight(),
 
+            // ML vocal detection parameters
+            param_enable_ml_detection: ParameterId::from("enable_ml_detection"),
+            enable_ml_detection: false,
+            param_ml_model_path: ParameterId::from("ml_model_path"),
+            ml_model_path: String::new(),
+            mfcc_extractor: None,
+            ml_inference_handle: None,
+
             // Diagnostic bypass parameters
             param_bypass_decorrelation: ParameterId::from("bypass_decorrelation"),
             bypass_decorrelation: default_bypass_decorrelation(),
@@ -860,12 +878,38 @@ impl UpmixerPlugin {
         plugin.dialogue_variance_weight = params.dialogue_variance_weight.clamp(0.0, 1.0);
         plugin.dialogue_coherence_weight = params.dialogue_coherence_weight.clamp(0.0, 1.0);
 
+        // ML vocal detection parameters
+        plugin.enable_ml_detection = params.enable_ml_detection;
+        plugin.ml_model_path = params.ml_model_path;
+
         // Diagnostic bypass parameters
         plugin.bypass_decorrelation = params.bypass_decorrelation;
         plugin.bypass_transient_detection = params.bypass_transient_detection;
         plugin.bypass_all_processing = params.bypass_all_processing;
 
         plugin
+    }
+
+    /// Try to start the ML inference thread if enabled and model path is set.
+    /// Logs a warning and falls back to heuristic if it fails.
+    fn try_start_ml_inference(&mut self) {
+        // Shut down any existing handle first
+        self.ml_inference_handle = None;
+
+        if !self.enable_ml_detection || self.ml_model_path.is_empty() {
+            return;
+        }
+
+        match ml_inference::MlInferenceHandle::new(&self.ml_model_path) {
+            Ok(handle) => {
+                log::info!("ML vocal detection started with model: {}", self.ml_model_path);
+                self.ml_inference_handle = Some(handle);
+            }
+            Err(e) => {
+                log::warn!("Failed to start ML vocal detection, falling back to heuristic: {}", e);
+                self.ml_inference_handle = None;
+            }
+        }
     }
 }
 
@@ -1397,6 +1441,32 @@ Weights are normalized internally so they always sum to 1.0.",
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::FineTuning),
+            // ML vocal detection parameters
+            Parameter::new_bool(
+                "enable_ml_detection",
+                "ML Vocal Detection",
+                ENABLE_ML_DETECTION_DEFAULT,
+            )
+            .with_description(
+                "Enable ML-based vocal detection using an ONNX model.
+Default: off. When enabled and a valid model path is set,
+replaces the heuristic dialogue detector with ML inference.
+Falls back to heuristic if model loading fails.",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_string(
+                "ml_model_path",
+                "ML Model Path",
+                String::new(),
+            )
+            .with_description(
+                "Path to the ONNX model file for ML vocal detection.
+Must be a valid file path to an ONNX model with input shape [1, 40]
+and output shape [1, 1] (sigmoid probability).",
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
 
@@ -1650,6 +1720,22 @@ Weights are normalized internally so they always sum to 1.0.",
             self.dialogue_coherence_weight = val.clamp(0.0, 1.0);
             self.recache_dialogue_weights();
             return Ok(());
+        }
+        // ML vocal detection parameters
+        else if id == self.param_enable_ml_detection {
+            if let Some(enable) = value.as_bool() {
+                self.enable_ml_detection = enable;
+                self.try_start_ml_inference();
+                return Ok(());
+            }
+        } else if id == self.param_ml_model_path {
+            if let Some(path) = value.as_string() {
+                self.ml_model_path = path.to_string();
+                if self.enable_ml_detection {
+                    self.try_start_ml_inference();
+                }
+                return Ok(());
+            }
         } else if id == self.param_bypass_decorrelation {
             if let Some(enable) = value.as_bool() {
                 // Save current blended filters for crossfade
@@ -1771,6 +1857,12 @@ Weights are normalized internally so they always sum to 1.0.",
             Some(ParameterValue::Float(self.dialogue_variance_weight))
         } else if id == &self.param_dialogue_coherence_weight {
             Some(ParameterValue::Float(self.dialogue_coherence_weight))
+        }
+        // ML vocal detection parameters
+        else if id == &self.param_enable_ml_detection {
+            Some(ParameterValue::Bool(self.enable_ml_detection))
+        } else if id == &self.param_ml_model_path {
+            Some(ParameterValue::String(self.ml_model_path.clone()))
         } else if id == &self.param_bypass_decorrelation {
             Some(ParameterValue::Bool(self.bypass_decorrelation))
         } else if id == &self.param_bypass_transient_detection {
@@ -1866,6 +1958,12 @@ Weights are normalized internally so they always sum to 1.0.",
         // Cache sub-harmonic envelope coefficients that depend on sample_rate
         self.recache_subharmonic_coeffs();
 
+        // Initialize MFCC extractor (always created — cheap and needed if ML is toggled on later)
+        self.mfcc_extractor = Some(ml_features::MfccExtractor::new(sample_rate, self.fft_size));
+
+        // Start ML inference thread if enabled
+        self.try_start_ml_inference();
+
         Ok(())
     }
 
@@ -1949,6 +2047,11 @@ Weights are normalized internally so they always sum to 1.0.",
         self.energy_correction_per_bin.fill(1.0);
         self.energy_correction_temp.fill(1.0);
         self.energy_correction_prev.fill(1.0);
+
+        // Reset MFCC extractor state
+        if let Some(ref mut extractor) = self.mfcc_extractor {
+            extractor.reset();
+        }
     }
 
     fn process(

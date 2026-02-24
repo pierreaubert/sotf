@@ -75,6 +75,8 @@ pub struct UpmixerRenderState<'a> {
     pub bypass_decorrelation: bool,
     pub bypass_transient_detection: bool,
     pub bypass_all_processing: bool,
+    // ML vocal detection
+    pub enable_ml_detection: bool,
     // UI state
     pub is_editing: bool,
     pub selected_param: usize,
@@ -121,6 +123,7 @@ mod param_idx {
     pub const BYPASS_DECORRELATION: usize = 35;
     pub const BYPASS_TRANSIENT_DETECTION: usize = 36;
     pub const BYPASS_ALL_PROCESSING: usize = 37;
+    pub const ENABLE_ML_DETECTION: usize = 38;
 }
 
 /// Render the upmixer plugin controls
@@ -946,6 +949,16 @@ fn render_diagnostic_box(
             "Bypass All",
             state.bypass_all_processing,
             param_idx::BYPASS_ALL_PROCESSING,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "ML Detection",
+            state.enable_ml_detection,
+            param_idx::ENABLE_ML_DETECTION,
             state.selected_param,
             state.is_editing,
             theme,

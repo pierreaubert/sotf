@@ -1139,6 +1139,9 @@ pub enum PluginSettings {
         bypass_transient_detection: bool,
         #[serde(default)] // false
         bypass_all_processing: bool,
+        // ML vocal detection
+        #[serde(default)] // false
+        enable_ml_detection: bool,
     },
     Compressor {
         threshold_db: f64,
@@ -1801,6 +1804,7 @@ impl PluginSettings {
                 bypass_decorrelation,
                 bypass_transient_detection,
                 bypass_all_processing,
+                enable_ml_detection,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -1842,6 +1846,7 @@ impl PluginSettings {
                     "bypass_decorrelation": bypass_decorrelation,
                     "bypass_transient_detection": bypass_transient_detection,
                     "bypass_all_processing": bypass_all_processing,
+                    "enable_ml_detection": enable_ml_detection,
                 }),
             ),
             Self::Compressor {
@@ -2484,6 +2489,8 @@ impl PluginSettings {
                 bypass_decorrelation: false,
                 bypass_transient_detection: false,
                 bypass_all_processing: false,
+                // ML vocal detection
+                enable_ml_detection: upmixer_specs::ENABLE_ML_DETECTION_DEFAULT,
             },
             PluginType::Compressor => Self::Compressor {
                 threshold_db: -20.0,
@@ -4172,6 +4179,7 @@ mod tests {
                 bypass_decorrelation: false,
                 bypass_transient_detection: false,
                 bypass_all_processing: false,
+                enable_ml_detection: false,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -4243,6 +4251,7 @@ mod tests {
                 bypass_decorrelation: false,
                 bypass_transient_detection: false,
                 bypass_all_processing: false,
+                enable_ml_detection: false,
             };
         }
 

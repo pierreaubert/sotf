@@ -4,3 +4,7 @@ plotly
 scipy
 jupyterlab
 pyright
+torch
+onnx
+onnxruntime
+yt-dlp

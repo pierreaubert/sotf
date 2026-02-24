@@ -130,6 +130,15 @@ pub fn default_voice_freq_max_hz() -> f32 {
     3000.0
 }
 
+// ML vocal detection defaults
+pub fn default_enable_ml_detection() -> bool {
+    false
+}
+
+pub fn default_ml_model_path() -> String {
+    String::new()
+}
+
 // Diagnostic bypass parameters (for isolating audio artifacts)
 pub fn default_bypass_decorrelation() -> bool {
     false
@@ -298,6 +307,15 @@ pub struct UpmixerPluginParams {
     #[serde(default = "default_dialogue_coherence_weight")]
     pub dialogue_coherence_weight: f32,
 
+    // ML vocal detection parameters
+    /// Enable ML-based vocal detection (requires ml_model_path to be set)
+    #[serde(default = "default_enable_ml_detection")]
+    pub enable_ml_detection: bool,
+
+    /// Path to ONNX model file for ML vocal detection
+    #[serde(default = "default_ml_model_path")]
+    pub ml_model_path: String,
+
     // Diagnostic bypass parameters (for isolating audio artifacts)
     /// Bypass decorrelation filters (sets all to identity/no phase change)
     /// Use this to test if decorrelation is causing audio artifacts
@@ -354,6 +372,8 @@ impl Default for UpmixerPluginParams {
             dialogue_centroid_weight: default_dialogue_centroid_weight(),
             dialogue_variance_weight: default_dialogue_variance_weight(),
             dialogue_coherence_weight: default_dialogue_coherence_weight(),
+            enable_ml_detection: default_enable_ml_detection(),
+            ml_model_path: default_ml_model_path(),
             bypass_decorrelation: default_bypass_decorrelation(),
             bypass_transient_detection: default_bypass_transient_detection(),
             bypass_all_processing: default_bypass_all_processing(),

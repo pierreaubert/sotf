@@ -1,12 +1,61 @@
 // ============================================================================
-// Dialogue Detection
+// Dialogue Detection (Heuristic + ML dispatch)
 // ============================================================================
 
 use super::UpmixerPlugin;
 
 impl UpmixerPlugin {
+    /// Main dialogue detection entry point.
+    ///
+    /// If ML detection is enabled and the inference thread has produced a result,
+    /// uses the ML V_prob (with the same smoothing). Otherwise falls back to the
+    /// heuristic detector.
+    ///
+    /// Also computes MFCC features and sends them to the inference thread when active.
     #[inline]
     pub(super) fn detect_dialogue(&mut self) -> f32 {
+        // If ML detection is active, compute features and send to inference thread
+        let ml_v_prob = if self.enable_ml_detection && self.ml_inference_handle.is_some() {
+            // Compute MFCC features from existing FFT data
+            if let Some(ref mut extractor) = self.mfcc_extractor {
+                let features =
+                    *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
+                if let Some(ref mut handle) = self.ml_inference_handle {
+                    handle.send_features(&features);
+                    handle.read_v_prob()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        match ml_v_prob {
+            Some(v_prob) => {
+                // Use ML probability with the same smoothing as heuristic
+                let p_alpha = if v_prob > self.dialogue_probability {
+                    0.1
+                } else {
+                    0.05
+                };
+                self.dialogue_probability +=
+                    p_alpha * (v_prob - self.dialogue_probability);
+                self.dialogue_probability
+            }
+            None => {
+                // Fall back to heuristic detection
+                self.detect_dialogue_heuristic()
+            }
+        }
+    }
+
+    /// Heuristic dialogue detection using spectral centroid, envelope variance,
+    /// and voice-band coherence.
+    #[inline]
+    fn detect_dialogue_heuristic(&mut self) -> f32 {
         let spectrum_size = self.fft_size / 2 + 1;
         let freq_per_bin = self.cached_freq_per_bin;
 

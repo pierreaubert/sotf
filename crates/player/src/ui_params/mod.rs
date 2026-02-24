@@ -295,6 +295,7 @@ impl TuiEditablePlugin for PluginSettings {
                 TuiParamDescriptor { name: "Bypass Decor".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
                 TuiParamDescriptor { name: "Bypass Transients".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
                 TuiParamDescriptor { name: "Bypass All".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
+                TuiParamDescriptor { name: "ML Detection".into(), param_type: TuiParamType::Bool, unit: "".into(), group: "Diagnostics".into() },
             ],
             PluginSettings::Limiter { .. } => vec![
                 TuiParamDescriptor { name: "Threshold".into(), param_type: TuiParamType::Float { min: limiter::THRESHOLD_MIN as f64, max: limiter::THRESHOLD_MAX as f64, step: 0.1 }, unit: "dB".into(), group: "Dynamics".into() },
@@ -656,6 +657,7 @@ impl TuiEditablePlugin for PluginSettings {
                 bypass_decorrelation,
                 bypass_transient_detection,
                 bypass_all_processing,
+                enable_ml_detection,
             } => match index {
                 0 => speaker_config.clone(),
                 1 => format!("{:.2}", gain_front_direct),
@@ -699,6 +701,7 @@ impl TuiEditablePlugin for PluginSettings {
                 35 => (if *bypass_decorrelation { "On" } else { "Off" }).into(),
                 36 => (if *bypass_transient_detection { "On" } else { "Off" }).into(),
                 37 => (if *bypass_all_processing { "On" } else { "Off" }).into(),
+                38 => (if *enable_ml_detection { "On" } else { "Off" }).into(),
                 _ => String::new(),
             },
             PluginSettings::Limiter {
@@ -1365,6 +1368,7 @@ impl TuiEditablePlugin for PluginSettings {
                 bypass_decorrelation,
                 bypass_transient_detection,
                 bypass_all_processing,
+                enable_ml_detection,
             } => {
                 use sotf_plugins::param_specs::upmixer::*;
                 // Indices MUST match get_descriptors() order
@@ -1430,6 +1434,7 @@ impl TuiEditablePlugin for PluginSettings {
                     35 => *bypass_decorrelation = !*bypass_decorrelation,
                     36 => *bypass_transient_detection = !*bypass_transient_detection,
                     37 => *bypass_all_processing = !*bypass_all_processing,
+                    38 => *enable_ml_detection = !*enable_ml_detection,
                     _ => return false,
                 }
                 return true;

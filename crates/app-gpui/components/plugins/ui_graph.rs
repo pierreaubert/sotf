@@ -1314,6 +1314,7 @@ impl PlayerView {
                 bypass_decorrelation,
                 bypass_transient_detection,
                 bypass_all_processing,
+                enable_ml_detection,
                 ..
             } => render_upmixer_plugin(
                 entity,
@@ -1357,6 +1358,7 @@ impl PlayerView {
                     bypass_decorrelation: *bypass_decorrelation,
                     bypass_transient_detection: *bypass_transient_detection,
                     bypass_all_processing: *bypass_all_processing,
+                    enable_ml_detection: *enable_ml_detection,
                     is_editing: false,
                     selected_param: 0,
                     config_open: false,
