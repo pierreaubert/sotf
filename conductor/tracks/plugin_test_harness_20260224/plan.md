@@ -4,11 +4,11 @@
 - [x] Task: Create `crates/plugins/src/test_utils.rs` 8a96084
     - [x] Create `test_utils` module (as `cfg(test)`)
     - [x] Define shared `SignalGenerator` and `BufferComparison` utilities
-- [ ] Task: Signal & IO Utilities (TDD)
-    - [ ] Write tests for sine, noise, and impulse generators
-    - [ ] Implement `SignalGen` module
-    - [ ] Write tests for RMS and bit-accurate comparison
-    - [ ] Implement `BufferComparison` utilities
+- [x] Task: Signal & IO Utilities (TDD) f05e008
+    - [x] Write tests for sine, noise, and impulse generators
+    - [x] Implement `SignalGen` module
+    - [x] Write tests for RMS and bit-accurate comparison
+    - [x] Implement `BufferComparison` utilities
 - [ ] Task: Conductor - User Manual Verification 'Internal Test Infrastructure' (Protocol in workflow.md)
 
 ## Phase 2: RT Safety & QA Refactoring
