@@ -15,9 +15,9 @@
 - [x] Task: RT Safety Enforcement (TDD) 4731c44
     - [x] Write a test that fails when a heap allocation occurs in `crates/plugins`
     - [x] Integrate `assert_no_alloc` or similar into the standard `cargo test` suite
-- [ ] Task: Refactor QA Suites (TDD)
-    - [ ] Identify and refactor common validation patterns from `qa-*.rs` files
-    - [ ] Migrate `qa-*.rs` logic into unified testing utilities within `crates/plugins`
+- [x] Task: Refactor QA Suites (TDD) f727666
+    - [x] Identify and refactor common validation patterns from `qa-*.rs` files
+    - [x] Migrate `qa-*.rs` logic into unified testing utilities within `crates/plugins`
 - [ ] Task: Conductor - User Manual Verification 'RT Safety & QA Refactoring' (Protocol in workflow.md)
 
 ## Phase 3: Benchmarking & Performance Refinement
