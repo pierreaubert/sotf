@@ -302,7 +302,7 @@ codegen-units = 256
 lto = true
 codegen-units = 1
 panic = "unwind"  # Changed from "abort" to allow tests to run
-debug = true # Keeps debug symbols for profiling
+# debug = true # Keeps debug symbols for profiling
 
 [patch.'https://github.com/zed-industries/font-kit']
 zed-font-kit = { path = "crates/zed-font-kit" }

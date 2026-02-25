@@ -29,8 +29,11 @@ import os
 import sys
 import time
 import wave
+from concurrent.futures import ProcessPoolExecutor
+from typing import Any
 
 import numpy as np
+import scipy.sparse
 import torch
 import torch.nn as nn
 
@@ -62,6 +65,29 @@ FEATURE_SIZE = NUM_MFCCS + NUM_MFCCS  # 20 MFCCs + 20 deltas
 FFT_SIZE = 2048
 HOP_SIZE = FFT_SIZE // 2  # 1024, 50% overlap
 SAMPLE_RATE = 44100
+
+# Pre-computed Hann window (module-level, matches Rust: w[n] = 0.5*(1 - cos(2*pi*n/N)))
+_HANN_WINDOW = 0.5 * (1.0 - np.cos(2.0 * np.pi * np.arange(FFT_SIZE) / FFT_SIZE))
+_HANN_WINDOW *= 1.0 / np.sqrt(2.0)  # headroom scale
+
+# ---------------------------------------------------------------------------
+# Silero VAD model cache — load once, reuse everywhere
+# ---------------------------------------------------------------------------
+_silero_cache: tuple[Any, tuple[Any, ...]] | None = None
+
+
+def _get_silero() -> tuple[Any, tuple[Any, ...]]:
+    global _silero_cache
+    if _silero_cache is None:
+        model, utils = torch.hub.load(
+            repo_or_dir="snakers4/silero-vad",
+            model="silero_vad",
+            force_reload=False,
+            onnx=False,
+            trust_repo=True,
+        )
+        _silero_cache = (model, utils)
+    return _silero_cache
 
 
 # ============================================================================
@@ -108,9 +134,10 @@ class MfccExtractor:
         # Convert Hz to FFT bin indices (fractional)
         bin_points = hz_points * fft_size / sample_rate
 
-        # Build sparse triangular filters (same logic as Rust)
-        # Store as list of lists of (bin_index, weight) per band
-        self.mel_filters: list[list[tuple[int, float]]] = []
+        # Build sparse triangular filters as CSR matrix for vectorized compute()
+        rows: list[int] = []
+        cols: list[int] = []
+        vals: list[float] = []
 
         for band in range(NUM_MEL_BANDS):
             left = bin_points[band]
@@ -120,7 +147,6 @@ class MfccExtractor:
             bin_start = int(np.floor(left))
             bin_end = min(int(np.ceil(right)), spectrum_size - 1)
 
-            pairs: list[tuple[int, float]] = []
             for b in range(bin_start, bin_end + 1):
                 bin_f = float(b)
                 if bin_f <= left:
@@ -133,9 +159,15 @@ class MfccExtractor:
                     weight = 0.0
 
                 if weight > 0.0:
-                    pairs.append((b, weight))
+                    rows.append(band)
+                    cols.append(b)
+                    vals.append(weight)
 
-            self.mel_filters.append(pairs)
+        self.mel_filter_matrix = scipy.sparse.csr_matrix(
+            (vals, (rows, cols)),
+            shape=(NUM_MEL_BANDS, spectrum_size),
+            dtype=np.float64,
+        )
 
         # Pre-compute DCT-II matrix: dct[k][n] = cos(PI * k * (n + 0.5) / N)
         # This is unnormalized — NOT scipy's ortho-normalized DCT
@@ -161,13 +193,8 @@ class MfccExtractor:
         Returns:
             features: array of shape (FEATURE_SIZE,) = 20 MFCCs + 20 deltas
         """
-        # Step 1: Apply mel filterbank (sparse dot products)
-        mel_energies = np.zeros(NUM_MEL_BANDS, dtype=np.float64)
-        for band_idx, pairs in enumerate(self.mel_filters):
-            energy = 0.0
-            for (b, w) in pairs:
-                energy += power_spectrum[b] * w
-            mel_energies[band_idx] = energy
+        # Step 1: Apply mel filterbank (sparse matrix-vector multiply)
+        mel_energies = self.mel_filter_matrix @ power_spectrum
 
         # Step 2: Log compression (natural log, floor 1e-10)
         log_mel = np.log(mel_energies + 1e-10)
@@ -260,16 +287,6 @@ def extract_features_from_wav(path: str) -> np.ndarray:
     """
     samples = load_wav_mono_44100(path)
 
-    # Hann window matching Rust: w[n] = 0.5 * (1 - cos(2*pi*n/N)) with N = FFT_SIZE
-    window = np.array([
-        0.5 * (1.0 - np.cos(2.0 * np.pi * i / FFT_SIZE))
-        for i in range(FFT_SIZE)
-    ], dtype=np.float64)
-
-    # Headroom scale: 1/sqrt(2) — matches fft.rs
-    headroom = 1.0 / np.sqrt(2.0)
-    window *= headroom
-
     extractor = MfccExtractor(SAMPLE_RATE, FFT_SIZE)
     features_list = []
 
@@ -278,8 +295,8 @@ def extract_features_from_wav(path: str) -> np.ndarray:
     while pos + FFT_SIZE <= len(samples):
         frame = samples[pos:pos + FFT_SIZE].astype(np.float64)
 
-        # Apply window
-        windowed = frame * window
+        # Apply pre-computed Hann window (module-level)
+        windowed = frame * _HANN_WINDOW
 
         # Forward FFT (real-to-complex, unnormalized like RustFFT)
         spectrum = np.fft.rfft(windowed)
@@ -331,77 +348,86 @@ def labels_for_segments(
         label_val = 1.0 if label == "vocal" else 0.0
         segments.append((start_sec, end_sec, label_val))
 
-    # Sort by start time for efficient lookup
-    segments.sort(key=lambda x: x[0])
+    if not segments:
+        return labels
 
-    for i in range(num_frames):
-        frame_center_sec = (i * HOP_SIZE + FFT_SIZE / 2) / SAMPLE_RATE
-        for start_sec, end_sec, label_val in segments:
-            if start_sec <= frame_center_sec <= end_sec:
-                labels[i] = label_val
-                break
+    # Precompute all frame center times as numpy array
+    frame_indices = np.arange(num_frames)
+    times = (frame_indices * HOP_SIZE + FFT_SIZE / 2) / SAMPLE_RATE
+
+    # Vectorized: boolean mask per segment
+    for start_sec, end_sec, label_val in segments:
+        mask = (times >= start_sec) & (times <= end_sec)
+        labels[mask] = label_val
 
     return labels
 
 
-def load_manifest(tsv_path: str) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Load features and labels from a TSV manifest file.
+def _process_manifest_entry(
+    entry: tuple[str, str, str],
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Process a single manifest entry: extract features + labels. Thread-safe."""
+    wav_path, label_type, label_value = entry
 
-    Manifest format (tab-separated, no header):
-        wav_path\\tlabel_type\\tlabel_value
+    if not os.path.exists(wav_path):
+        return None
 
-    label_type is "whole_file" or "segments".
-    For whole_file: label_value is "vocal" or "non_vocal".
-    For segments: label_value is "start-end:label,..." pairs.
+    features = extract_features_from_wav(wav_path)
+    if len(features) == 0:
+        return None
 
-    Returns: (features, labels) arrays
-    """
+    if label_type == "whole_file":
+        label_val = 1.0 if label_value == "vocal" else 0.0
+        labels = np.full(len(features), label_val, dtype=np.float32)
+    elif label_type == "segments":
+        labels = labels_for_segments(len(features), label_value)
+    else:
+        return None
+
+    return (features, labels)
+
+
+def _parse_manifest_entries(tsv_path: str) -> list[tuple[str, str, str]]:
+    """Parse a TSV manifest into (wav_path, label_type, label_value) tuples."""
+    entries: list[tuple[str, str, str]] = []
+    with open(tsv_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                print(f"  WARNING: Malformed line: {line[:80]}")
+                continue
+            entries.append((parts[0], parts[1], parts[2]))
+    return entries
+
+
+def _process_entries(
+    entries: list[tuple[str, str, str]], label: str = "",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Process manifest entries in parallel. Returns (features, labels)."""
     all_features: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
     total_files = 0
     skipped = 0
 
-    with open(tsv_path, encoding="utf-8") as f:
-        lines = [line.strip() for line in f if line.strip()]
+    if label:
+        print(f"  Processing {len(entries)} {label} files...")
+    else:
+        print(f"  Processing {len(entries)} files...")
 
-    print(f"  Loading {len(lines)} entries from {tsv_path}...")
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as pool:
+        results = list(pool.map(_process_manifest_entry, entries))
 
-    for line in lines:
-        parts = line.split("\t")
-        if len(parts) < 3:
-            print(f"  WARNING: Malformed line: {line[:80]}")
+    for result in results:
+        if result is None:
             skipped += 1
             continue
-
-        wav_path, label_type, label_value = parts[0], parts[1], parts[2]
-
-        if not os.path.exists(wav_path):
-            skipped += 1
-            continue
-
-        features = extract_features_from_wav(wav_path)
-        if len(features) == 0:
-            skipped += 1
-            continue
-
-        total_files += 1
-
-        if label_type == "whole_file":
-            label_val = 1.0 if label_value == "vocal" else 0.0
-            labels = np.full(len(features), label_val, dtype=np.float32)
-        elif label_type == "segments":
-            labels = labels_for_segments(len(features), label_value)
-        else:
-            print(f"  WARNING: Unknown label_type '{label_type}', skipping")
-            skipped += 1
-            continue
-
+        features, labels = result
         all_features.append(features)
         all_labels.append(labels)
-
-        if total_files % 100 == 0:
-            print(f"    Processed {total_files} files...")
+        total_files += 1
 
     if not all_features:
         return np.zeros((0, FEATURE_SIZE), dtype=np.float32), np.zeros(0, dtype=np.float32)
@@ -417,6 +443,45 @@ def load_manifest(tsv_path: str) -> tuple[np.ndarray, np.ndarray]:
         print(f"  Skipped {skipped} entries (missing files or errors)")
 
     return features, labels
+
+
+def load_manifest(tsv_path: str) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Load features and labels from a TSV manifest file.
+
+    Returns: (features, labels) arrays
+    """
+    entries = _parse_manifest_entries(tsv_path)
+    print(f"  Loading {len(entries)} entries from {tsv_path}...")
+    return _process_entries(entries)
+
+
+def load_manifest_with_holdout(
+    tsv_path: str, holdout: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Load manifest and split by file into train and holdout sets.
+
+    Returns: (train_features, train_labels, holdout_features, holdout_labels)
+    """
+    entries = _parse_manifest_entries(tsv_path)
+    print(f"  Loading {len(entries)} entries from {tsv_path} (holdout={holdout:.0%})...")
+
+    np.random.seed(42)
+    indices = np.arange(len(entries))
+    np.random.shuffle(indices)
+    n_holdout = max(1, int(len(entries) * holdout))
+
+    holdout_idx = set(indices[:n_holdout].tolist())
+    train_entries = [entries[i] for i in range(len(entries)) if i not in holdout_idx]
+    holdout_entries = [entries[i] for i in holdout_idx]
+
+    print(f"  Split: {len(train_entries)} train files, {len(holdout_entries)} holdout files")
+
+    train_feat, train_lab = _process_entries(train_entries, "train")
+    holdout_feat, holdout_lab = _process_entries(holdout_entries, "holdout")
+
+    return train_feat, train_lab, holdout_feat, holdout_lab
 
 
 # ============================================================================
@@ -444,14 +509,8 @@ def generate_labels_silero(path: str, num_frames: int) -> np.ndarray:
 
     Returns: binary labels of shape (num_frames,)
     """
-    # Load model
-    model, utils = torch.hub.load(
-        repo_or_dir="snakers4/silero-vad",
-        model="silero_vad",
-        force_reload=False,
-        onnx=False,
-        trust_repo=True,
-    )
+    # Use cached model
+    model, utils = _get_silero()
     (get_speech_timestamps, _, _read_audio, _, _) = utils
 
     # Load audio ourselves (bypasses torchaudio/torchcodec dependency)
@@ -462,18 +521,17 @@ def generate_labels_silero(path: str, num_frames: int) -> np.ndarray:
         wav_16k, model, sampling_rate=16000, threshold=0.5
     )
 
-    # Convert speech timestamps to a binary mask at our MFCC frame rate
-    # Each MFCC frame center is at (frame_idx * HOP_SIZE + FFT_SIZE/2) / SAMPLE_RATE seconds
+    # Precompute all frame center times
+    frame_indices = np.arange(num_frames)
+    times = (frame_indices * HOP_SIZE + FFT_SIZE / 2) / SAMPLE_RATE
+
     labels = np.zeros(num_frames, dtype=np.float32)
 
     for ts in speech_timestamps:
         start_sec = ts["start"] / 16000.0
         end_sec = ts["end"] / 16000.0
-
-        for i in range(num_frames):
-            frame_center_sec = (i * HOP_SIZE + FFT_SIZE / 2) / SAMPLE_RATE
-            if start_sec <= frame_center_sec <= end_sec:
-                labels[i] = 1.0
+        mask = (times >= start_sec) & (times <= end_sec)
+        labels[mask] = 1.0
 
     return labels
 
@@ -484,20 +542,23 @@ def generate_labels_silero(path: str, num_frames: int) -> np.ndarray:
 
 class VocalDetector(nn.Module):
     """
-    Tiny MLP for vocal detection.
-    Linear(40, 32) -> ReLU -> Linear(32, 16) -> ReLU -> Linear(16, 1)
-    1857 parameters total.
+    MLP for vocal detection. Architecture configurable via hidden_sizes.
+    Default: [128, 64] → Linear(40,128)->ReLU->Linear(128,64)->ReLU->Linear(64,1)
     """
 
-    def __init__(self):
+    def __init__(self, hidden_sizes: list[int] | None = None):
         super().__init__()
-        self.layers = nn.Sequential(
-            nn.Linear(FEATURE_SIZE, 32),   # 40*32 + 32 = 1312
-            nn.ReLU(),
-            nn.Linear(32, 16),             # 32*16 + 16 = 528
-            nn.ReLU(),
-            nn.Linear(16, 1),              # 16*1 + 1 = 17
-        )                                  # Total: 1857
+        if hidden_sizes is None:
+            hidden_sizes = [128, 64]
+
+        layers: list[nn.Module] = []
+        prev = FEATURE_SIZE
+        for h in hidden_sizes:
+            layers.append(nn.Linear(prev, h))
+            layers.append(nn.ReLU())
+            prev = h
+        layers.append(nn.Linear(prev, 1))
+        self.layers = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layers(x)
@@ -522,6 +583,7 @@ class VocalDetectorWithSigmoid(nn.Module):
 def train_model(
     features: np.ndarray,
     labels: np.ndarray,
+    hidden_sizes: list[int] | None = None,
     num_epochs: int = 100,
     patience: int = 10,
     val_split: float = 0.2,
@@ -548,6 +610,14 @@ def train_model(
     np.random.shuffle(train_idx)
     np.random.shuffle(val_idx)
 
+    # MPS has too much kernel-launch overhead for a 1857-param model.
+    # CPU + large batches is faster: the entire dataset fits in cache.
+    device = torch.device("cpu")
+
+    # Scale batch size to dataset: fewer Python loop iterations, better vectorization
+    effective_batch = max(batch_size, min(len(train_idx) // 64, 8192))
+    print(f"  Using device: CPU (batch_size={effective_batch})")
+
     X_train = torch.from_numpy(features[train_idx])
     y_train = torch.from_numpy(labels[train_idx]).unsqueeze(1)
     X_val = torch.from_numpy(features[val_idx])
@@ -564,7 +634,7 @@ def train_model(
     else:
         pos_weight = torch.tensor([1.0])
 
-    model = VocalDetector()
+    model = VocalDetector(hidden_sizes)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -576,11 +646,11 @@ def train_model(
         # Training
         model.train()
         perm = torch.randperm(len(X_train))
-        train_loss = 0.0
+        epoch_loss = torch.tensor(0.0)
         n_batches = 0
 
-        for i in range(0, len(X_train), batch_size):
-            idx = perm[i:i + batch_size]
+        for i in range(0, len(X_train), effective_batch):
+            idx = perm[i:i + effective_batch]
             xb = X_train[idx]
             yb = y_train[idx]
 
@@ -590,10 +660,10 @@ def train_model(
             loss.backward()
             optimizer.step()
 
-            train_loss += loss.item()
+            epoch_loss += loss.detach()
             n_batches += 1
 
-        train_loss /= max(n_batches, 1)
+        train_loss = (epoch_loss / max(n_batches, 1)).item()
 
         # Validation
         model.eval()
@@ -655,7 +725,7 @@ def export_onnx(model: VocalDetector, path: str):
         path,
         input_names=["input"],
         output_names=["output"],
-        dynamic_axes=None,  # fixed shapes
+        dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         opset_version=18,
         do_constant_folding=True,
     )
@@ -671,8 +741,8 @@ def export_onnx(model: VocalDetector, path: str):
     out = sess.get_outputs()[0]
     assert inp.name == "input", f"Expected input name 'input', got '{inp.name}'"
     assert out.name == "output", f"Expected output name 'output', got '{out.name}'"
-    assert inp.shape == [1, FEATURE_SIZE], f"Expected input shape [1, {FEATURE_SIZE}], got {inp.shape}"
-    assert out.shape == [1, 1], f"Expected output shape [1, 1], got {out.shape}"
+    assert inp.shape[1] == FEATURE_SIZE, f"Expected input dim 1 = {FEATURE_SIZE}, got {inp.shape}"
+    assert out.shape[1] == 1, f"Expected output dim 1 = 1, got {out.shape}"
 
     # Range check: sigmoid output must be in [0, 1]
     test_input = np.random.randn(1, FEATURE_SIZE).astype(np.float32)
@@ -704,28 +774,34 @@ def export_onnx(model: VocalDetector, path: str):
 # Main
 # ============================================================================
 
+def _process_demo_file(filename: str) -> tuple[str, np.ndarray, np.ndarray] | None:
+    """Process a single demo file: extract features + Silero labels. Thread-safe."""
+    path = os.path.join(AUDIO_DIR, filename)
+    if not os.path.exists(path):
+        return None
+
+    features = extract_features_from_wav(path)
+    if len(features) == 0:
+        return None
+
+    labels = generate_labels_silero(path, len(features))
+    return (filename, features, labels)
+
+
 def load_demo_data() -> tuple[np.ndarray, np.ndarray]:
     """Load features and Silero VAD labels from bundled demo audio files."""
     all_features: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
 
-    for filename in AUDIO_FILES:
-        path = os.path.join(AUDIO_DIR, filename)
-        if not os.path.exists(path):
-            print(f"  WARNING: {filename} not found, skipping")
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as pool:
+        results = list(pool.map(_process_demo_file, AUDIO_FILES))
+
+    for result in results:
+        if result is None:
             continue
-
-        features = extract_features_from_wav(path)
-        if len(features) == 0:
-            print(f"  WARNING: {filename} produced 0 frames, skipping")
-            continue
-
-        print(f"  {filename}: {len(features)} frames", end="")
-
-        labels = generate_labels_silero(path, len(features))
+        filename, features, labels = result
         vocal_pct = labels.mean() * 100
-        print(f" ({vocal_pct:.0f}% vocal)")
-
+        print(f"  {filename}: {len(features)} frames ({vocal_pct:.0f}% vocal)")
         all_features.append(features)
         all_labels.append(labels)
 
@@ -751,10 +827,31 @@ def parse_args() -> argparse.Namespace:
         metavar="TSV",
         help="TSV manifest files from prepare_musan.py / prepare_ava_speech.py",
     )
+    group.add_argument(
+        "--eval",
+        nargs="+",
+        metavar="TSV",
+        help="Evaluate an existing ONNX model against manifest TSV files",
+    )
     parser.add_argument(
         "--include-demo",
         action="store_true",
         help="Also include demo data when using --data-dirs",
+    )
+    parser.add_argument(
+        "--hidden",
+        nargs="+",
+        type=int,
+        default=[128, 64],
+        metavar="N",
+        help="Hidden layer sizes (default: 128 64). E.g. --hidden 256 128 64",
+    )
+    parser.add_argument(
+        "--holdout",
+        type=float,
+        default=0.0,
+        metavar="FRAC",
+        help="Hold out a fraction of manifest files (by file, not frame) for eval after training (e.g. 0.2)",
     )
     parser.add_argument(
         "--output",
@@ -764,8 +861,94 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def evaluate_onnx(onnx_path: str, tsv_paths: list[str]) -> None:
+    """Evaluate an ONNX model against manifest TSVs, reporting per-file and aggregate metrics."""
+    import onnxruntime as ort
+
+    if not os.path.exists(onnx_path):
+        print(f"ERROR: ONNX model not found: {onnx_path}")
+        sys.exit(1)
+
+    sess = ort.InferenceSession(onnx_path)
+    print(f"Loaded model: {onnx_path}")
+
+    all_preds: list[np.ndarray] = []
+    all_labels: list[np.ndarray] = []
+
+    for tsv_path in tsv_paths:
+        print(f"\nEvaluating against: {tsv_path}")
+        features, labels = load_manifest(tsv_path)
+        if len(features) == 0:
+            print("  No data loaded, skipping.")
+            continue
+
+        # Detect if model supports batched inference
+        inp_shape = sess.get_inputs()[0].shape
+        dynamic_batch = not isinstance(inp_shape[0], int) or inp_shape[0] != 1
+
+        preds = np.empty(len(features), dtype=np.float32)
+        if dynamic_batch:
+            chunk_size = 65536
+            for i in range(0, len(features), chunk_size):
+                chunk = features[i:i + chunk_size]
+                out = sess.run(None, {"input": chunk})[0]
+                preds[i:i + len(chunk)] = out[:, 0]
+        else:
+            for i in range(len(features)):
+                out = sess.run(None, {"input": features[i:i + 1]})[0]
+                preds[i] = out[0, 0]
+                if i % 500_000 == 0 and i > 0:
+                    print(f"    {i}/{len(features)} frames...")
+
+        binary_preds = (preds > 0.5).astype(np.float32)
+
+        tp = ((binary_preds == 1) & (labels == 1)).sum()
+        fp = ((binary_preds == 1) & (labels == 0)).sum()
+        fn = ((binary_preds == 0) & (labels == 1)).sum()
+        tn = ((binary_preds == 0) & (labels == 0)).sum()
+
+        accuracy = (tp + tn) / max(tp + fp + fn + tn, 1)
+        precision = tp / max(tp + fp, 1)
+        recall = tp / max(tp + fn, 1)
+        f1 = 2 * precision * recall / max(precision + recall, 1e-10)
+
+        print(f"  Frames:    {len(labels)} ({int(labels.sum())} vocal, {int(len(labels) - labels.sum())} non-vocal)")
+        print(f"  Accuracy:  {accuracy:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall:    {recall:.4f}")
+        print(f"  F1:        {f1:.4f}")
+        print(f"  Confusion: TP={tp}  FP={fp}  FN={fn}  TN={tn}")
+
+        all_preds.append(binary_preds)
+        all_labels.append(labels)
+
+    if len(all_preds) > 1:
+        preds_cat = np.concatenate(all_preds)
+        labels_cat = np.concatenate(all_labels)
+        tp = ((preds_cat == 1) & (labels_cat == 1)).sum()
+        fp = ((preds_cat == 1) & (labels_cat == 0)).sum()
+        fn = ((preds_cat == 0) & (labels_cat == 1)).sum()
+        tn = ((preds_cat == 0) & (labels_cat == 0)).sum()
+        accuracy = (tp + tn) / max(tp + fp + fn + tn, 1)
+        precision = tp / max(tp + fp, 1)
+        recall = tp / max(tp + fn, 1)
+        f1 = 2 * precision * recall / max(precision + recall, 1e-10)
+        print(f"\n  AGGREGATE ({len(labels_cat)} frames):")
+        print(f"  Accuracy:  {accuracy:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall:    {recall:.4f}")
+        print(f"  F1:        {f1:.4f}")
+
+
 def main() -> None:
     args = parse_args()
+
+    if args.eval:
+        print("=" * 60)
+        print("Vocal Detector Evaluation")
+        print("=" * 60)
+        evaluate_onnx(args.output, args.eval)
+        return
 
     print("=" * 60)
     print("Vocal Detector Training Pipeline")
@@ -790,16 +973,28 @@ def main() -> None:
                   f"{len(demo_labels) - int(demo_labels.sum())} non-vocal)")
         step += 1
 
+    holdout_features_list: list[np.ndarray] = []
+    holdout_labels_list: list[np.ndarray] = []
+
     if args.data_dirs:
         print(f"\n[{step}/4] Loading manifest data...")
         for tsv_path in args.data_dirs:
             if not os.path.exists(tsv_path):
                 print(f"  ERROR: Manifest not found: {tsv_path}")
                 sys.exit(1)
-            manifest_features, manifest_labels = load_manifest(tsv_path)
-            if len(manifest_features) > 0:
-                all_features.append(manifest_features)
-                all_labels.append(manifest_labels)
+            if args.holdout > 0:
+                tf, tl, hf, hl = load_manifest_with_holdout(tsv_path, args.holdout)
+                if len(tf) > 0:
+                    all_features.append(tf)
+                    all_labels.append(tl)
+                if len(hf) > 0:
+                    holdout_features_list.append(hf)
+                    holdout_labels_list.append(hl)
+            else:
+                manifest_features, manifest_labels = load_manifest(tsv_path)
+                if len(manifest_features) > 0:
+                    all_features.append(manifest_features)
+                    all_labels.append(manifest_labels)
         step += 1
 
     if not all_features:
@@ -811,19 +1006,23 @@ def main() -> None:
 
     total_frames = len(features)
     total_vocal = int(labels.sum())
-    print(f"\n  Total: {total_frames} frames ({total_vocal} vocal, "
+    print(f"\n  Total train: {total_frames} frames ({total_vocal} vocal, "
           f"{total_frames - total_vocal} non-vocal)")
 
     # Step 2: Train model
+    hidden = args.hidden
     print(f"\n[{step}/4] Training VocalDetector model...")
     param_count = sum(
-        p.numel() for p in VocalDetector().parameters()
+        p.numel() for p in VocalDetector(hidden).parameters()
     )
-    print(f"  Architecture: Linear(40,32)->ReLU->Linear(32,16)->ReLU->Linear(16,1)")
+    arch = "->ReLU->".join(
+        [f"Linear({a},{b})" for a, b in zip([FEATURE_SIZE] + hidden, hidden + [1])]
+    )
+    print(f"  Architecture: {arch}")
     print(f"  Parameters:   {param_count}")
     step += 1
 
-    model = train_model(features, labels)
+    model = train_model(features, labels, hidden_sizes=hidden)
 
     # Step 3: Export and validate
     output_path = args.output
@@ -834,7 +1033,39 @@ def main() -> None:
         os.makedirs(output_dir, exist_ok=True)
     export_onnx(model, output_path)
 
-    print(f"\nDone! Model saved to: {output_path}")
+    print(f"\nModel saved to: {output_path}")
+
+    # Step 4 (optional): Evaluate on holdout set
+    if holdout_features_list:
+        holdout_feat = np.concatenate(holdout_features_list)
+        holdout_lab = np.concatenate(holdout_labels_list)
+
+        print(f"\n[Holdout Evaluation]")
+        model.eval()
+        wrapped = VocalDetectorWithSigmoid(model)
+        wrapped.eval()
+        with torch.no_grad():
+            preds = wrapped(torch.from_numpy(holdout_feat))
+            preds = preds[:, 0].numpy()
+
+        binary_preds = (preds > 0.5).astype(np.float32)
+        tp = ((binary_preds == 1) & (holdout_lab == 1)).sum()
+        fp = ((binary_preds == 1) & (holdout_lab == 0)).sum()
+        fn = ((binary_preds == 0) & (holdout_lab == 1)).sum()
+        tn = ((binary_preds == 0) & (holdout_lab == 0)).sum()
+
+        accuracy = (tp + tn) / max(tp + fp + fn + tn, 1)
+        precision = tp / max(tp + fp, 1)
+        recall = tp / max(tp + fn, 1)
+        f1 = 2 * precision * recall / max(precision + recall, 1e-10)
+
+        print(f"  Frames:    {len(holdout_lab)} ({int(holdout_lab.sum())} vocal, "
+              f"{int(len(holdout_lab) - holdout_lab.sum())} non-vocal)")
+        print(f"  Accuracy:  {accuracy:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall:    {recall:.4f}")
+        print(f"  F1:        {f1:.4f}")
+        print(f"  Confusion: TP={tp}  FP={fp}  FN={fn}  TN={tn}")
 
 
 if __name__ == "__main__":
