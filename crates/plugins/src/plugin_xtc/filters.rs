@@ -385,7 +385,9 @@ fn compute_xtc_filters_asymmetric_with_cache(
         // Per-bin spectral normalization: target unity gain for the estimated ear response.
         if params.spectral_normalization && !params.bypass_spectral_normalization {
             // Left Ear response for unit Left Input (L_in = 1, R_in = 0)
-            let ear_l = w_ll * h_ll_ipsi_final + w_lr * h_ll_contra_final;
+            // Speakers emit: out_L = w_ll, out_R = w_rl
+            // Left ear hears: h_ipsi * w_ll + h_contra * w_rl
+            let ear_l = w_ll * h_ll_ipsi_final + w_rl * h_ll_contra_final;
             let mag_l = ear_l.norm();
             if mag_l > 0.01 {
                 let gain_l = 1.0 + 0.9 * ((1.0 / mag_l).clamp(0.5, 4.0) - 1.0);
@@ -394,7 +396,9 @@ fn compute_xtc_filters_asymmetric_with_cache(
             }
 
             // Right Ear response for unit Right Input (L_in = 0, R_in = 1)
-            let ear_r = w_rl * h_rr_contra_final + w_rr * h_rr_ipsi_final;
+            // Speakers emit: out_L = w_lr, out_R = w_rr
+            // Right ear hears: h_contra * w_lr + h_ipsi * w_rr
+            let ear_r = w_lr * h_rr_contra_final + w_rr * h_rr_ipsi_final;
             let mag_r = ear_r.norm();
             if mag_r > 0.01 {
                 let gain_r = 1.0 + 0.9 * ((1.0 / mag_r).clamp(0.5, 4.0) - 1.0);

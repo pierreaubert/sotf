@@ -306,9 +306,12 @@ impl Plugin for MonoToStereoPlugin {
 
             let to_drain = self.output_accumulator_fill.min(nf - output_pos);
             if to_drain > 0 {
-                // Decorrelation energy correction factor (sqrt(Sum(w^2)/Sum(w^4)))
-                // For 75% overlap Hann, this is approximately 1.17.
-                let decor_gain = 1.17;
+                // Dual-window OLA energy correction for decorrelated signal.
+                // Random-phase decorrelation spreads energy uniformly in time,
+                // so the synthesis window attenuates it more than the coherent path.
+                // Factor = COLA / sqrt(sum(w^4)/hop) = 1.5 / sqrt(35/32) ≈ 1.434
+                // for Hann window with 75% overlap.
+                let decor_gain = (72.0_f32 / 35.0).sqrt();
 
                 for i in 0..to_drain {
                     let read_idx = (self.output_read_position + i) & mask;
@@ -426,5 +429,58 @@ mod tests {
             "Output should not be zero in the middle of the stream"
         );
         assert!(any_differ, "L and R should differ at width=1.0");
+    }
+
+    /// Test L/R energy balance at width=1.0 using broadband noise.
+    /// A single sine is unstable because the random-phase decorrelation filter
+    /// shifts a tonal signal by a random amount, causing large OLA variance.
+    /// Broadband content averages across many bins and gives a stable ratio.
+    #[test]
+    fn test_mono_to_stereo_lr_energy_balance() {
+        let mut p = MonoToStereoPlugin::new();
+        p.initialize(48000).unwrap();
+        p.stereo_width.reset(1.0);
+        let total_frames = FFT_SIZE * 32;
+        // Sum of many sines for broadband coverage (300–15000 Hz decorrelation band)
+        let input: Vec<f32> = (0..total_frames)
+            .map(|i| {
+                let t = i as f32 / 48000.0;
+                let mut s = 0.0_f32;
+                let mut freq = 200.0;
+                while freq < 16000.0 {
+                    s += (2.0 * std::f32::consts::PI * freq * t).sin();
+                    freq *= 1.07; // ~40 frequencies, roughly 1/3 octave spacing
+                }
+                s * 0.02 // scale to avoid clipping
+            })
+            .collect();
+        let mut output = vec![0.0; total_frames * 2];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: total_frames,
+            },
+        )
+        .unwrap();
+
+        // Skip warmup, measure steady-state RMS
+        let start = FFT_SIZE * 10;
+        let end = FFT_SIZE * 28;
+        let mut rms_l = 0.0_f64;
+        let mut rms_r = 0.0_f64;
+        for frame in start..end {
+            rms_l += (output[frame * 2] as f64).powi(2);
+            rms_r += (output[frame * 2 + 1] as f64).powi(2);
+        }
+        let n = (end - start) as f64;
+        rms_l = (rms_l / n).sqrt();
+        rms_r = (rms_r / n).sqrt();
+        let ratio_db = 20.0 * (rms_r / rms_l).log10();
+        assert!(
+            ratio_db.abs() < 1.0,
+            "L/R energy imbalance at width=1.0: {ratio_db:.2} dB (L_rms={rms_l:.6}, R_rms={rms_r:.6})"
+        );
     }
 }

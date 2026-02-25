@@ -1,8 +1,8 @@
 use super::*;
 use filters::{
-    compute_beta, compute_beta_smooth, compute_xtc_filters_full, head_shadowing_filter,
-    head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
-    woodworth_diffraction_path,
+    compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters_full,
+    head_shadowing_filter, head_shadowing_woodworth, sanitize_filter,
+    soft_limit_complex_magnitude, woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
@@ -1005,5 +1005,65 @@ fn test_bypass_neumann_refinement() {
         diff > 1e-6,
         "Bypassing Neumann refinement should produce different filters, diff = {}",
         diff
+    );
+}
+
+/// Test that asymmetric spectral normalization actually improves the ear response
+/// toward unity. At yaw≠0, the w_lr/w_rl coefficients differ, so the spectral
+/// normalization must use the correct cross-filter for each ear's response.
+#[test]
+fn test_asymmetric_spectral_norm_improves_ear_response() {
+    use rustfft::num_complex::Complex;
+    use std::f32::consts::PI;
+
+    let num_bins = 513; // FFT_SIZE=1024
+
+    // Filters WITHOUT spectral normalization
+    let mut params_off = XtcPluginParams::default();
+    params_off.head_yaw_deg = 15.0;
+    params_off.spectral_normalization = false;
+    params_off.room_reflections_enabled = false;
+    let filters_off = compute_xtc_filters_full(&params_off, 48000, num_bins);
+
+    // Filters WITH spectral normalization
+    let mut params_on = XtcPluginParams::default();
+    params_on.head_yaw_deg = 15.0;
+    params_on.spectral_normalization = true;
+    params_on.bypass_spectral_normalization = false;
+    params_on.room_reflections_enabled = false;
+    let filters_on = compute_xtc_filters_full(&params_on, 48000, num_bins);
+
+    assert!(!filters_off.is_symmetric && !filters_on.is_symmetric);
+
+    let cache = compute_geometry_cache(&params_on, 48000, num_bins);
+    let asym = cache.asymmetric.as_ref().unwrap();
+
+    let bin_lo = (500.0 / cache.freq_per_bin) as usize;
+    let bin_hi = (4000.0 / cache.freq_per_bin) as usize;
+    let mut dev_off = 0.0_f64;
+    let mut dev_on = 0.0_f64;
+
+    for bin in bin_lo..=bin_hi {
+        let freq = bin as f32 * cache.freq_per_bin;
+        let h_ipsi = Complex::new(1.0_f32, 0.0);
+        let dt = asym.delay_left_contra - asym.delay_left_ipsi;
+        let g = head_shadowing_woodworth(freq, asym.angle_left_contra, asym.a)
+            * asym.amplitude_ratio_left;
+        let phase = -2.0 * PI * freq * dt;
+        let h_contra = Complex::new(g * phase.cos(), g * phase.sin());
+
+        // Correct ear response: h_ipsi * w_ll + h_contra * w_rl
+        let ear_off = filters_off.filter_ll[bin] * h_ipsi
+            + filters_off.filter_rl.as_ref().unwrap()[bin] * h_contra;
+        let ear_on = filters_on.filter_ll[bin] * h_ipsi
+            + filters_on.filter_rl.as_ref().unwrap()[bin] * h_contra;
+
+        dev_off += (ear_off.norm() as f64 - 1.0).powi(2);
+        dev_on += (ear_on.norm() as f64 - 1.0).powi(2);
+    }
+
+    assert!(
+        dev_on < dev_off,
+        "Spectral normalization should improve ear response. dev_off={dev_off:.6}, dev_on={dev_on:.6}"
     );
 }
