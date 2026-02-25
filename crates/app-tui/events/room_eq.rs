@@ -5,155 +5,211 @@ use crate::app::App;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::sync::{Arc, Mutex};
 
-pub(crate) fn room_eq_step_prev(s: sotf_audio_player::room_eq_types::RoomEqStep) -> sotf_audio_player::room_eq_types::RoomEqStep {
-    use sotf_audio_player::room_eq_types::RoomEqStep;
-    match s {
-        RoomEqStep::SelectFile => RoomEqStep::SelectFile, // no wrap
-        RoomEqStep::Configure => RoomEqStep::SelectFile,
-        RoomEqStep::Optimize => RoomEqStep::Configure,
-        RoomEqStep::Results => RoomEqStep::Optimize,
-    }
-}
-
-pub(crate) fn room_eq_step_next(s: sotf_audio_player::room_eq_types::RoomEqStep) -> sotf_audio_player::room_eq_types::RoomEqStep {
-    use sotf_audio_player::room_eq_types::RoomEqStep;
-    match s {
-        RoomEqStep::SelectFile => RoomEqStep::Configure,
-        RoomEqStep::Configure => RoomEqStep::Optimize,
-        RoomEqStep::Optimize => RoomEqStep::Results,
-        RoomEqStep::Results => RoomEqStep::Results, // no wrap
-    }
-}
-
 pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
 
     // Esc goes up one level
     if key.code == KeyCode::Esc {
         match app.room_eq.step {
-            RoomEqStep::SelectFile => {
-                app.configure_tab_focused = true;
+            RoomEqStep::LoadData => {
+                if app.room_eq.editing_file_path {
+                    app.room_eq.editing_file_path = false;
+                } else {
+                    app.configure_tab_focused = true;
+                }
             }
-            _ => {
-                app.room_eq.step = room_eq_step_prev(app.room_eq.step);
+            RoomEqStep::Configure => {
+                app.room_eq.step = RoomEqStep::LoadData;
+            }
+            RoomEqStep::Optimize => {
+                app.room_eq.step = RoomEqStep::Configure;
+            }
+            RoomEqStep::Review => {
+                app.room_eq.step = RoomEqStep::Optimize;
+            }
+            RoomEqStep::Export => {
+                if app.room_eq.editing_export_path {
+                    app.room_eq.editing_export_path = false;
+                } else {
+                    app.room_eq.step = RoomEqStep::Review;
+                }
             }
         }
         return None;
     }
 
-    // Step navigation via Left/Right (except in Configure step)
-    if app.room_eq.step != RoomEqStep::Configure {
+    // Step navigation via Left/Right (except when editing text or in Configure step)
+    let editing = app.room_eq.editing_file_path || app.room_eq.editing_export_path;
+    if !editing && app.room_eq.step != RoomEqStep::Configure {
         if key.code == KeyCode::Left {
-            app.room_eq.step = room_eq_step_prev(app.room_eq.step);
+            if let Some(prev) = app.room_eq.step.previous() {
+                app.room_eq.step = prev;
+            }
             return None;
         }
         if key.code == KeyCode::Right {
-            app.room_eq.step = room_eq_step_next(app.room_eq.step);
+            if let Some(next) = app.room_eq.step.next() {
+                app.room_eq.step = next;
+            }
             return None;
         }
     }
 
     match app.room_eq.step {
-        RoomEqStep::SelectFile => match key.code {
-            KeyCode::Up => {
-                if app.room_eq.selected_field > 0 {
-                    app.room_eq.selected_field -= 1;
-                } else {
-                    app.configure_tab_focused = true;
-                }
-            }
-            KeyCode::Down => {
-                if app.room_eq.selected_field < 1 {
-                    app.room_eq.selected_field += 1;
-                }
-            }
-            KeyCode::Enter => {
-                match app.room_eq.selected_field {
-                    0 => {
-                        // Open file browser for measurement file
-                        app.current_browser_dir = std::path::PathBuf::from(&app.room_eq.measurement_path);
-                        app.refresh_file_browser();
+        RoomEqStep::LoadData => {
+            if app.room_eq.editing_file_path {
+                match key.code {
+                    KeyCode::Enter => {
+                        app.room_eq.editing_file_path = false;
+                        load_room_eq_measurements(app);
                     }
-                    1 => {
-                        // Select room name or preset
+                    KeyCode::Backspace => {
+                        app.room_eq.file_path.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.room_eq.file_path.push(c);
                     }
                     _ => {}
                 }
+                return None;
             }
-            KeyCode::Tab => {
-                if !app.room_eq.measurement_path.is_empty() {
-                    app.room_eq.step = RoomEqStep::Configure;
+            match key.code {
+                KeyCode::Enter => {
+                    app.room_eq.editing_file_path = true;
                 }
+                KeyCode::Tab => {
+                    if !app.room_eq.channel_measurements.is_empty() {
+                        app.room_eq.step = RoomEqStep::Configure;
+                    }
+                }
+                _ => {}
             }
-            _ => {}
-        },
+            None
+        }
 
         RoomEqStep::Configure => match key.code {
             KeyCode::Up => {
                 if app.room_eq.selected_field > 0 {
                     app.room_eq.selected_field -= 1;
-                } else {
-                    app.configure_tab_focused = true;
                 }
+                None
             }
             KeyCode::Down => {
-                if app.room_eq.selected_field < 24 {
+                if app.room_eq.selected_field < ROOM_EQ_FIELD_COUNT - 1 {
                     app.room_eq.selected_field += 1;
                 }
+                None
             }
             KeyCode::Left | KeyCode::Char('-') => {
                 adjust_room_eq_field(app, -1);
+                None
             }
             KeyCode::Right | KeyCode::Char('+') => {
                 adjust_room_eq_field(app, 1);
+                None
             }
             KeyCode::Enter | KeyCode::Tab => {
                 app.room_eq.step = RoomEqStep::Optimize;
+                None
             }
             KeyCode::BackTab => {
-                app.room_eq.step = RoomEqStep::SelectFile;
+                app.room_eq.step = RoomEqStep::LoadData;
+                None
             }
-            _ => {}
+            _ => None,
         },
 
         RoomEqStep::Optimize => match key.code {
             KeyCode::Enter => {
                 match &app.room_eq.opt_status {
-                    OptimizationStatus::Idle | OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
+                    OptimizationStatus::Idle
+                    | OptimizationStatus::Failed
+                    | OptimizationStatus::Cancelled => {
                         spawn_room_eq_optimization(app);
                     }
                     OptimizationStatus::Completed => {
-                        app.room_eq.step = RoomEqStep::Results;
+                        app.room_eq.step = RoomEqStep::Review;
                     }
                     OptimizationStatus::Running => {}
                 }
+                None
             }
             KeyCode::Tab => {
                 if app.room_eq.opt_status == OptimizationStatus::Completed {
-                    app.room_eq.step = RoomEqStep::Results;
+                    app.room_eq.step = RoomEqStep::Review;
                 } else {
                     app.room_eq.step = RoomEqStep::Configure;
                 }
+                None
             }
             KeyCode::BackTab => {
                 app.room_eq.step = RoomEqStep::Configure;
+                None
             }
-            _ => {}
+            _ => None,
         },
 
-        RoomEqStep::Results => match key.code {
-            KeyCode::Enter => {
-                export_room_eq_results(app);
+        RoomEqStep::Review => match key.code {
+            KeyCode::Up => {
+                if app.room_eq.selected_channel > 0 {
+                    app.room_eq.selected_channel -= 1;
+                }
+                None
+            }
+            KeyCode::Down => {
+                if !app.room_eq.channel_results.is_empty()
+                    && app.room_eq.selected_channel < app.room_eq.channel_results.len() - 1
+                {
+                    app.room_eq.selected_channel += 1;
+                }
+                None
+            }
+            KeyCode::Tab => {
+                app.room_eq.step = RoomEqStep::Export;
+                None
             }
             KeyCode::BackTab => {
                 app.room_eq.step = RoomEqStep::Optimize;
+                None
             }
-            _ => {}
+            _ => None,
         },
-    }
 
-    None
+        RoomEqStep::Export => {
+            if app.room_eq.editing_export_path {
+                match key.code {
+                    KeyCode::Enter => {
+                        app.room_eq.editing_export_path = false;
+                        export_room_eq_results(app);
+                    }
+                    KeyCode::Backspace => {
+                        app.room_eq.export_path.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.room_eq.export_path.push(c);
+                    }
+                    _ => {}
+                }
+                return None;
+            }
+            match key.code {
+                KeyCode::Enter => {
+                    app.room_eq.editing_export_path = true;
+                }
+                KeyCode::Tab => {
+                    app.room_eq.step = RoomEqStep::LoadData;
+                }
+                KeyCode::BackTab => {
+                    app.room_eq.step = RoomEqStep::Review;
+                }
+                _ => {}
+            }
+            None
+        }
+    }
 }
+
+const ROOM_EQ_FIELD_COUNT: usize = 9;
 
 fn adjust_room_eq_field(app: &mut App, delta: i32) {
     let c = &mut app.room_eq.config;
@@ -178,8 +234,7 @@ fn adjust_room_eq_field(app: &mut App, delta: i32) {
 }
 
 fn load_room_eq_measurements(app: &mut App) {
-    // Load measurement data from file
-    let path = &app.room_eq.measurement_path;
+    let path = &app.room_eq.file_path;
     if path.is_empty() {
         app.room_eq.load_error = Some("No measurement file selected".to_string());
         return;
@@ -260,7 +315,6 @@ fn spawn_room_eq_optimization(app: &mut App) {
     app.room_eq.opt_iteration = 0;
     app.room_eq.opt_loss = 0.0;
 
-    // Spawn background optimization task
     let _result_slot = OPT_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
@@ -276,7 +330,6 @@ fn export_room_eq_results(app: &mut App) {
         return;
     }
 
-    // Serialize channel results as JSON
     let json = match serde_json::to_string_pretty(&app.room_eq.channel_results) {
         Ok(j) => j,
         Err(e) => {

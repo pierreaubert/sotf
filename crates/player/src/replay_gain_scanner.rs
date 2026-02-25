@@ -147,15 +147,24 @@ impl ReplayGainScanner {
                             });
                         }
                         Err(e) => {
+                            let error_msg = e.to_string();
                             log::error!(
                                 "[ReplayGain Worker {}] Failed to analyze {}: {}",
                                 worker_id,
                                 path.display(),
-                                e
+                                error_msg
                             );
+                            if let Err(db_err) = db.mark_replay_gain_error(&path, &error_msg) {
+                                log::error!(
+                                    "[ReplayGain Worker {}] Failed to persist error for {}: {}",
+                                    worker_id,
+                                    path.display(),
+                                    db_err
+                                );
+                            }
                             let _ = message_tx.send(ScanMessage::Error {
                                 path: path.clone(),
-                                error: e.to_string(),
+                                error: error_msg,
                             });
                         }
                     }
@@ -279,6 +288,20 @@ impl ReplayGainScanManager {
     }
 
     /// Start scanning all tracks in the database that are missing replaygain data
+    /// Clear all existing ReplayGain data and rescan every track.
+    pub fn start_force_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+        if self.in_progress {
+            return Ok("Scan already in progress".to_string());
+        }
+
+        let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
+        let db = MusicDatabase::open(&db_path)?;
+        db.clear_all_replay_gain()?;
+        log::info!("Cleared all ReplayGain data for force rescan");
+
+        self.start_scan()
+    }
+
     pub fn start_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         // Skip if already in progress
         if self.in_progress {

@@ -177,6 +177,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Err(e) = app.start_waveform_scan() {
                             log::warn!("Failed to start waveform scan: {}", e);
                         }
+                        if let Err(e) = app.start_bliss_scan() {
+                            log::warn!("Failed to start bliss scan: {}", e);
+                        }
                         db_empty = album_count == 0;
                     }
                     break;
@@ -324,9 +327,10 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                     let state = player.get_playback_state();
 
-                    // Pause background scanners while playing to avoid CPU starvation
+                    // Pause background scanners while playing to avoid CPU starvation,
+                    // unless the user explicitly started a scan.
                     app.scanner_pause_flag.store(
-                        app.is_playing && state.is_playing,
+                        app.is_playing && state.is_playing && !app.scanner_pause_override,
                         std::sync::atomic::Ordering::Relaxed,
                     );
 
@@ -346,6 +350,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         || app.maintenance_in_progress
                         || app.replay_gain_manager.in_progress
                         || app.waveform_manager.in_progress
+                        || app.bliss_manager.in_progress
                     {
                         app.needs_redraw = true;
                     }
@@ -544,6 +549,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                     // Check waveform scan progress
                     app.check_waveform_progress();
+
+                    // Check bliss scan progress
+                    app.check_bliss_progress();
                 }
                 AppEvent::Resize => {
                     // Terminal resized, will redraw on next iteration

@@ -11,5 +11,5 @@ pub use types::{
     ConfigureSubScreen, FocusedPane, HEADPHONE_TARGET_PRESETS, HeadphoneEqStep,
     HeadphoneEqTuiState, InputMode, LibrarySortOrder, LibraryViewMode, MatrixEditMode,
     PendingParameterUpdate, QueueEntry, QueueItem, RecordingTuiState, ReplayGainMode,
-    RoomEqTuiState, Screen, SpinoramaEqTuiState, SpinoramaStep, TreeItem,
+    RoomEqTuiState, Screen, SpinUpdateSubStep, SpinoramaEqTuiState, SpinoramaStep, TreeItem,
 };

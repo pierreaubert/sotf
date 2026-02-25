@@ -44,13 +44,20 @@ pub enum SpinoramaStep {
 impl SpinoramaStep {
     pub fn label(self) -> &'static str {
         match self {
-            SpinoramaStep::Select => "1:Select",
-            SpinoramaStep::Configure => "2:Configure",
-            SpinoramaStep::Optimize => "3:Optimize",
-            SpinoramaStep::Results => "4:Results",
-            SpinoramaStep::UpdatePlugin => "5:Update Plugin",
+            SpinoramaStep::Select => "Select",
+            SpinoramaStep::Configure => "Configure",
+            SpinoramaStep::Optimize => "Optimize",
+            SpinoramaStep::Results => "Results",
+            SpinoramaStep::UpdatePlugin => "Update Plugin",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpinUpdateSubStep {
+    #[default]
+    Ready,
+    ConfirmOverwrite,
 }
 
 /// TUI state for the Spinorama EQ wizard
@@ -87,6 +94,10 @@ pub struct SpinoramaEqTuiState {
     pub curve_filter_response: Vec<f64>,
     // Optimization loss history: (iteration, loss)
     pub loss_history: Vec<(usize, f64)>,
+    // Step 5: update plugin confirmation
+    pub update_substep: SpinUpdateSubStep,
+    /// (slot_index, filter_count) of existing EQ to overwrite
+    pub update_existing_eq_info: Option<(usize, usize)>,
 }
 
 impl Default for SpinoramaEqTuiState {
@@ -126,6 +137,8 @@ impl Default for SpinoramaEqTuiState {
             curve_corrected: Vec::new(),
             curve_filter_response: Vec::new(),
             loss_history: Vec::new(),
+            update_substep: SpinUpdateSubStep::Ready,
+            update_existing_eq_info: None,
         }
     }
 }
@@ -160,10 +173,10 @@ pub enum HeadphoneEqStep {
 impl HeadphoneEqStep {
     pub fn label(self) -> &'static str {
         match self {
-            HeadphoneEqStep::SelectFile => "1:File",
-            HeadphoneEqStep::Configure => "2:Configure",
-            HeadphoneEqStep::Optimize => "3:Optimize",
-            HeadphoneEqStep::Results => "4:Results",
+            HeadphoneEqStep::SelectFile => "File",
+            HeadphoneEqStep::Configure => "Configure",
+            HeadphoneEqStep::Optimize => "Optimize",
+            HeadphoneEqStep::Results => "Results",
         }
     }
 }
@@ -332,6 +345,7 @@ pub struct RecordingTuiState {
     // Step 4: save
     pub save_name: String,
     pub editing_save_name: bool,
+    pub selected_save_field: usize,
     pub save_error: Option<String>,
     pub save_success: bool,
 }
@@ -364,6 +378,7 @@ impl Default for RecordingTuiState {
             selected_channel_view: 0,
             save_name: String::new(),
             editing_save_name: false,
+            selected_save_field: 0,
             save_error: None,
             save_success: false,
         }

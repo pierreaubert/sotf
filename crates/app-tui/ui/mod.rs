@@ -786,11 +786,19 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(3),                   // Help box
             Constraint::Length(3),                   // Input box
             Constraint::Length(autocomplete_height), // Autocomplete suggestions
-            Constraint::Min(0),                      // Directory list
+            Constraint::Min(0),                      // Directory list + status
         ])
         .split(area);
+
+    // Help box with scan keybindings
+    let help_text = "a=Add dir | s/S=Scan | r/R=ReplayGain | b/B=Bliss | w/W=Waveform (uppercase=force)";
+    let help_box = Paragraph::new(help_text)
+        .style(Style::default().fg(app.theme.fg_secondary))
+        .block(Block::default().borders(Borders::ALL).title("Help"));
+    f.render_widget(help_box, chunks[0]);
 
     // Input box for adding directories
     let input_style = if app.input_mode == InputMode::AddDirectory {
@@ -811,7 +819,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
             .title("Add Directory"),
     );
 
-    f.render_widget(input_box, chunks[0]);
+    f.render_widget(input_box, chunks[1]);
 
     // Show autocomplete suggestions if in add directory mode
     if app.input_mode == InputMode::AddDirectory && !app.autocomplete_suggestions.is_empty() {
@@ -841,9 +849,23 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
             )),
         );
 
-        f.render_widget(suggestions_list, chunks[1]);
+        f.render_widget(suggestions_list, chunks[2]);
     }
 
+    // Split remaining area: directory list on top, status below
+    let dir_status_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),      // Directory list
+            Constraint::Length(6),   // Status (4 lines + 2 border)
+        ])
+        .split(chunks[3]);
+
+    draw_directory_list(f, dir_status_chunks[0], app);
+    draw_directory_status(f, dir_status_chunks[1], app);
+}
+
+fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
     // Directory list with tree view
     let tree_items = app.get_directory_tree_items();
 
@@ -947,22 +969,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    // Update title to show scan progress if scanning
-    let title = if app.scan_in_progress {
-        format!(
-            "Directories - Scanning: {}T/{}A",
-            app.scan_progress_tracks, app.scan_progress_albums
-        )
-    } else if let Some(msg) = &app.status_message {
-        // Show scan results in title if available
-        if msg.contains("Scan complete") {
-            format!("Directories - {}", msg)
-        } else {
-            "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'R'=force scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
-        }
-    } else {
-        "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'R'=force scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
-    };
+    let title = "Directories";
 
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
@@ -978,7 +985,109 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     state.select(Some(app.selected_directory_index));
 
     use ratatui::widgets::StatefulWidget;
-    StatefulWidget::render(list, chunks[2], f.buffer_mut(), &mut state);
+    StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
+}
+
+fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
+    let paused = app
+        .scanner_pause_flag
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let pause_tag = if paused { " [paused]" } else { "" };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // ReplayGain
+    if app.replay_gain_manager.in_progress {
+        let rg_text = if app.replay_gain_manager.album_gain_phase
+            == sotf_audio_player::AlbumGainPhase::Scanning
+        {
+            format!(
+                "album {}/{}",
+                app.replay_gain_manager.album_gain_done,
+                app.replay_gain_manager.album_gain_total,
+            )
+        } else {
+            let pct = if app.replay_gain_manager.total > 0 {
+                app.replay_gain_manager.processed as f32 / app.replay_gain_manager.total as f32 * 100.0
+            } else { 0.0 };
+            format!(
+                "{}/{} ({:.0}%){}",
+                app.replay_gain_manager.processed,
+                app.replay_gain_manager.total,
+                pct,
+                pause_tag,
+            )
+        };
+        lines.push(Line::from(vec![
+            Span::styled("ReplayGain  ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled(rg_text, Style::default().fg(app.theme.accent_warning)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("ReplayGain  ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
+        ]));
+    }
+
+    // Waveform
+    if app.waveform_manager.in_progress {
+        let pct = if app.waveform_manager.total > 0 {
+            app.waveform_manager.processed as f32 / app.waveform_manager.total as f32 * 100.0
+        } else { 0.0 };
+        lines.push(Line::from(vec![
+            Span::styled("Waveform    ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled(
+                format!("{}/{} ({:.0}%){}", app.waveform_manager.processed, app.waveform_manager.total, pct, pause_tag),
+                Style::default().fg(app.theme.accent_warning),
+            ),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("Waveform    ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
+        ]));
+    }
+
+    // Bliss
+    if app.bliss_manager.in_progress {
+        let pct = if app.bliss_manager.total > 0 {
+            app.bliss_manager.processed as f32 / app.bliss_manager.total as f32 * 100.0
+        } else { 0.0 };
+        lines.push(Line::from(vec![
+            Span::styled("Bliss       ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled(
+                format!("{}/{} ({:.0}%){}", app.bliss_manager.processed, app.bliss_manager.total, pct, pause_tag),
+                Style::default().fg(app.theme.accent_warning),
+            ),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("Bliss       ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
+        ]));
+    }
+
+    // Library scan
+    if app.scan_in_progress {
+        lines.push(Line::from(vec![
+            Span::styled("Library     ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled(
+                format!("{} tracks / {} albums{}", app.scan_progress_tracks, app.scan_progress_albums, pause_tag),
+                Style::default().fg(app.theme.accent_warning),
+            ),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled("Library     ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
+        ]));
+    }
+
+    let status = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Status"));
+
+    f.render_widget(status, area);
 }
 
 fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
@@ -1598,7 +1707,7 @@ fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         RecordingStep::Evaluating,
         RecordingStep::Saving,
     ];
-    let step_labels = ["1:Config", "2:Capture", "3:Evaluate", "4:Save"];
+    let step_labels = ["Config", "Capture", "Evaluate", "Save"];
     let tab_titles: Vec<Line> = steps
         .iter()
         .zip(step_labels.iter())
@@ -2736,7 +2845,7 @@ fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Loss chart or hint
             if s.loss_history.len() >= 2 {
-                draw_loss_chart(f, inner[2], app, &s.loss_history);
+                draw_loss_chart(f, inner[2], app, &s.loss_history, s.opt_max_iter);
             } else {
                 let hint = match &s.opt_status {
                     OptimizationStatus::Idle => " Enter=start  BackTab=back to configure",
@@ -2855,6 +2964,7 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         SpinoramaStep::Configure,
         SpinoramaStep::Optimize,
         SpinoramaStep::Results,
+        SpinoramaStep::UpdatePlugin,
     ];
     let mut spans = vec![Span::raw(" ")];
     for step in &steps {
@@ -3006,8 +3116,8 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ),
                 (
                     Some(21),
-                    "Asymmetric Loss",
-                    bool_str(c.asymmetric_loss).to_string(),
+                    "Loss Function",
+                    c.loss_function.clone(),
                 ),
                 (None, "── Convergence ──", String::new()),
                 (Some(22), "Tolerance", format!("{:.0e}", c.tolerance)),
@@ -3151,12 +3261,12 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Loss history chart (if data available), else hint
             if s.loss_history.len() >= 2 {
-                draw_loss_chart(f, inner[2], app, &s.loss_history);
+                draw_loss_chart(f, inner[2], app, &s.loss_history, s.opt_max_iter);
             } else {
                 let hint = match &s.opt_status {
                     OptimizationStatus::Idle => " Enter=start  Tab=back to configure",
                     OptimizationStatus::Running => " Optimization running...",
-                    OptimizationStatus::Completed => " Enter or Tab=view results",
+                    OptimizationStatus::Completed => " Enter=re-run  Tab=view results",
                     OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
                         " Enter=retry  Tab=back to configure"
                     }
@@ -3177,33 +3287,35 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         .block(Block::default().borders(Borders::ALL).title("Results"));
                 f.render_widget(msg, chunks[1]);
             } else {
-                // Split: chart on left, filter table on right
-                let cols = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+                // Vertical split: summary + chart on top, filter table on bottom
+                let table_height = (s.filters.len() as u16 + 3).min(15); // rows + header + borders, capped
+                let rows_layout = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(3),           // summary
+                        Constraint::Min(8),              // freq response chart
+                        Constraint::Length(table_height), // filter table
+                    ])
                     .split(chunks[1]);
 
-                // Left: summary + freq response chart
-                let left = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(3), Constraint::Min(0)])
-                    .split(cols[0]);
-
                 let summary = format!(
-                    " {} filters  |  Loss: {:.6} → {:.6}  |  Δ {:.4}",
+                    " {} filters  |  Loss: {:.4} → {:.4} (Δ {:.4})  |  Score: {:.2} → {:.2} (Δ {:+.2})",
                     s.filters.len(),
                     s.pre_loss,
                     s.post_loss,
-                    s.pre_loss - s.post_loss
+                    s.pre_loss - s.post_loss,
+                    -s.pre_loss,
+                    -s.post_loss,
+                    s.pre_loss - s.post_loss,
                 );
                 let summary_para = Paragraph::new(summary)
                     .style(Style::default().fg(app.theme.accent_success))
                     .block(Block::default().borders(Borders::ALL).title("Summary"));
-                f.render_widget(summary_para, left[0]);
+                f.render_widget(summary_para, rows_layout[0]);
 
-                draw_freq_response_chart(f, left[1], app, s);
+                draw_freq_response_chart(f, rows_layout[1], app, s);
 
-                // Right: filter table
+                // Bottom: filter table
                 let header_cells = ["#", "Type", "Freq", "Q", "dB"].iter().map(|h| {
                     Cell::from(*h).style(
                         Style::default()
@@ -3241,11 +3353,12 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 )
                 .header(header_row)
                 .block(Block::default().borders(Borders::ALL).title("PEQ Filters"));
-                f.render_widget(table, cols[1]);
+                f.render_widget(table, rows_layout[2]);
             }
         }
 
         SpinoramaStep::UpdatePlugin => {
+            use crate::app::SpinUpdateSubStep;
             let has_results = !s.filters.is_empty();
             let speaker = s.selected_speaker.as_deref().unwrap_or("(none)");
 
@@ -3263,32 +3376,58 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 Line::from(""),
             ];
 
-            if has_results {
-                lines.push(Line::from(vec![Span::styled(
-                    format!("  {} PEQ filters ready to apply", s.filters.len()),
-                    Style::default().fg(app.theme.accent_success),
-                )]));
-                lines.push(Line::from(""));
-                lines.push(Line::from(vec![Span::styled(
-                    "  Press Enter to apply filters to the EQ plugin in the rack.",
-                    Style::default().fg(app.theme.fg_primary),
-                )]));
-                lines.push(Line::from(vec![Span::styled(
-                    "  If no EQ plugin exists it will be added automatically.",
-                    Style::default().fg(app.theme.fg_secondary),
-                )]));
-            } else {
-                lines.push(Line::from(vec![Span::styled(
-                    "  No optimization results yet. Run optimization first.",
-                    Style::default().fg(app.theme.accent_error),
-                )]));
-            }
+            match s.update_substep {
+                SpinUpdateSubStep::Ready => {
+                    if has_results {
+                        lines.push(Line::from(vec![Span::styled(
+                            format!("  {} PEQ filters ready to apply", s.filters.len()),
+                            Style::default().fg(app.theme.accent_success),
+                        )]));
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(vec![Span::styled(
+                            "  Press Enter to apply filters to the EQ plugin in the rack.",
+                            Style::default().fg(app.theme.fg_primary),
+                        )]));
+                        lines.push(Line::from(vec![Span::styled(
+                            "  If no EQ plugin exists it will be added automatically.",
+                            Style::default().fg(app.theme.fg_secondary),
+                        )]));
+                    } else {
+                        lines.push(Line::from(vec![Span::styled(
+                            "  No optimization results yet. Run optimization first.",
+                            Style::default().fg(app.theme.accent_error),
+                        )]));
+                    }
 
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![Span::styled(
-                " Enter=apply to rack  Tab=back to Select  BackTab=back to Results",
-                Style::default().fg(app.theme.fg_secondary),
-            )]));
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![Span::styled(
+                        " Enter=apply to rack  Tab=back to Select  BackTab=back to Results",
+                        Style::default().fg(app.theme.fg_secondary),
+                    )]));
+                }
+                SpinUpdateSubStep::ConfirmOverwrite => {
+                    if let Some((slot, count)) = s.update_existing_eq_info {
+                        lines.push(Line::from(vec![Span::styled(
+                            format!("  Existing EQ in slot {} has {} filter(s).", slot, count),
+                            Style::default().fg(app.theme.accent_warning),
+                        )]));
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(vec![Span::styled(
+                            "  Save current preset before overwriting?",
+                            Style::default().fg(app.theme.fg_primary).add_modifier(Modifier::BOLD),
+                        )]));
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(vec![
+                            Span::styled("  y", Style::default().fg(app.theme.accent_success).add_modifier(Modifier::BOLD)),
+                            Span::styled(" = save preset then apply   ", Style::default().fg(app.theme.fg_secondary)),
+                            Span::styled("n", Style::default().fg(app.theme.accent_error).add_modifier(Modifier::BOLD)),
+                            Span::styled(" = apply without saving   ", Style::default().fg(app.theme.fg_secondary)),
+                            Span::styled("Esc", Style::default().fg(app.theme.fg_secondary).add_modifier(Modifier::BOLD)),
+                            Span::styled(" = cancel", Style::default().fg(app.theme.fg_secondary)),
+                        ]));
+                    }
+                }
+            }
 
             let para = Paragraph::new(lines).block(
                 Block::default()
@@ -3300,60 +3439,94 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-fn draw_loss_chart(f: &mut Frame, area: Rect, app: &App, history: &[(usize, f64)]) {
+fn draw_loss_chart(
+    f: &mut Frame,
+    area: Rect,
+    app: &App,
+    history: &[(usize, f64)],
+    max_iterations: usize,
+) {
     if history.len() < 2 {
         return;
     }
 
     let max_iter = history.last().map(|h| h.0).unwrap_or(1) as f64;
+    let x_bound = (max_iterations as f64).max(max_iter);
     let min_loss = history.iter().map(|h| h.1).fold(f64::INFINITY, f64::min);
     let max_loss = history
         .iter()
         .map(|h| h.1)
         .fold(f64::NEG_INFINITY, f64::max);
-    let loss_range = (max_loss - min_loss).max(1e-9);
+    let y_lo = 0.0;
+    let y_hi = max_loss * 1.05;
 
     // Downsample to at most 200 points for chart performance
-    let step = (history.len() / 200).max(1);
-    let data: Vec<(f64, f64)> = history
+    let ds_step = (history.len() / 200).max(1);
+    let loss_data: Vec<(f64, f64)> = history
         .iter()
-        .step_by(step)
+        .step_by(ds_step)
         .map(|(iter, loss)| (*iter as f64, *loss))
         .collect();
 
-    let dataset = Dataset::default()
-        .name("Loss")
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::default().fg(app.theme.accent_primary))
-        .data(&data);
+    // Iteration progress line: maps iteration count → loss y-range
+    // Shows a diagonal from (0, y_hi) to (max_iterations, y_lo)
+    let iter_data: Vec<(f64, f64)> = history
+        .iter()
+        .step_by(ds_step)
+        .map(|(iter, _)| {
+            let frac = *iter as f64 / x_bound;
+            (*iter as f64, y_hi - frac * (y_hi - y_lo))
+        })
+        .collect();
+
+    let datasets = vec![
+        Dataset::default()
+            .name("Loss")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(app.theme.accent_primary))
+            .data(&loss_data),
+        Dataset::default()
+            .name("Iter%")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .data(&iter_data),
+    ];
 
     let x_labels = vec![
         Span::raw("0"),
-        Span::raw(format!("{:.0}", max_iter / 2.0)),
-        Span::raw(format!("{:.0}", max_iter)),
+        Span::raw(format!("{:.0}", x_bound / 2.0)),
+        Span::raw(format!("{:.0}", x_bound)),
     ];
     let y_labels = vec![
-        Span::raw(format!("{:.4}", min_loss)),
-        Span::raw(format!("{:.4}", min_loss + loss_range / 2.0)),
+        Span::raw("0"),
+        Span::raw(format!("{:.4}", y_hi / 2.0)),
         Span::raw(format!("{:.4}", max_loss)),
     ];
 
-    let chart = Chart::new(vec![dataset])
-        .block(Block::default().borders(Borders::ALL).title("Loss History"))
+    let pct = if max_iterations > 0 {
+        (max_iter / x_bound * 100.0) as u32
+    } else {
+        0
+    };
+    let title = format!("Loss History  ({}% of {} iter)", pct, max_iterations);
+
+    let chart = Chart::new(datasets)
+        .block(Block::default().borders(Borders::ALL).title(title))
         .x_axis(
             Axis::default()
                 .title("Iteration")
                 .style(Style::default().fg(app.theme.fg_secondary))
                 .labels(x_labels)
-                .bounds([0.0, max_iter]),
+                .bounds([0.0, x_bound]),
         )
         .y_axis(
             Axis::default()
                 .title("Loss")
                 .style(Style::default().fg(app.theme.fg_secondary))
                 .labels(y_labels)
-                .bounds([min_loss - loss_range * 0.05, max_loss + loss_range * 0.05]),
+                .bounds([y_lo, y_hi]),
         );
 
     f.render_widget(chart, area);
@@ -3405,7 +3578,7 @@ fn draw_freq_response_chart(
         .map(|(f, v)| (*f, *v))
         .collect();
 
-    // Compute y bounds across all curves
+    // Compute y bounds across all curves with tight padding for better zoom
     let all_vals = s
         .curve_input
         .iter()
@@ -3413,7 +3586,8 @@ fn draw_freq_response_chart(
         .chain(s.curve_filter_response.iter());
     let y_min = all_vals.clone().copied().fold(f64::INFINITY, f64::min);
     let y_max = all_vals.copied().fold(f64::NEG_INFINITY, f64::max);
-    let y_pad = ((y_max - y_min) * 0.1).max(1.0);
+    let y_bound_lo = y_min.floor();
+    let y_bound_hi = y_max.ceil();
 
     let x_min = freqs.first().copied().unwrap_or(20.0);
     let x_max = freqs.last().copied().unwrap_or(20000.0);
@@ -3446,9 +3620,9 @@ fn draw_freq_response_chart(
         Span::raw(format!("{:.0}", x_max)),
     ];
     let y_labels = vec![
-        Span::raw(format!("{:.0}", y_min)),
-        Span::raw(format!("{:.0}", (y_min + y_max) / 2.0)),
-        Span::raw(format!("{:.0}", y_max)),
+        Span::raw(format!("{:.0}", y_bound_lo)),
+        Span::raw(format!("{:.0}", (y_bound_lo + y_bound_hi) / 2.0)),
+        Span::raw(format!("{:.0}", y_bound_hi)),
     ];
 
     let chart = Chart::new(datasets)
@@ -3469,7 +3643,7 @@ fn draw_freq_response_chart(
                 .title("dB")
                 .style(Style::default().fg(app.theme.fg_secondary))
                 .labels(y_labels)
-                .bounds([y_min - y_pad, y_max + y_pad]),
+                .bounds([y_bound_lo, y_bound_hi]),
         );
 
     f.render_widget(chart, area);
@@ -4456,6 +4630,12 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
                 ));
             }
         }
+        if app.bliss_manager.in_progress {
+            scanner_parts.push(format!(
+                "Bliss {}/{}",
+                app.bliss_manager.processed, app.bliss_manager.total
+            ));
+        }
         if app.scan_in_progress {
             scanner_parts.push(format!("Library {}", app.scan_progress_tracks));
         }
@@ -4476,42 +4656,11 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 
-    status_spans.push(Span::raw("Keys: "));
     status_spans.push(Span::styled(
-        "TAB",
+        "?",
         Style::default().fg(app.theme.accent_primary),
     ));
-    status_spans.push(Span::raw("=Next "));
-    status_spans.push(Span::styled(
-        "L",
-        Style::default().fg(app.theme.accent_primary),
-    ));
-    status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled(
-        "D",
-        Style::default().fg(app.theme.accent_primary),
-    ));
-    status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled(
-        "Q",
-        Style::default().fg(app.theme.accent_primary),
-    ));
-    status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled(
-        "P",
-        Style::default().fg(app.theme.accent_primary),
-    ));
-    status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled(
-        "O",
-        Style::default().fg(app.theme.accent_primary),
-    ));
-    status_spans.push(Span::raw("=Screens "));
-    status_spans.push(Span::styled(
-        "ESC/%-Q",
-        Style::default().fg(app.theme.accent_error),
-    ));
-    status_spans.push(Span::raw("=Quit "));
+    status_spans.push(Span::raw("=Help"));
 
     let status_text = Line::from(status_spans);
 

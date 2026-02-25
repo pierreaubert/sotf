@@ -59,7 +59,9 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
             match key.code {
                 KeyCode::Up => {
-                    if app.recording.selected_field > 0 {
+                    if app.recording.selected_field == 0 {
+                        app.configure_tab_focused = true;
+                    } else {
                         app.recording.selected_field -= 1;
                     }
                 }
@@ -108,7 +110,13 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             KeyCode::Enter => {
                 if let Some(idx) = app.recording.current_channel {
                     if let Some(rec) = app.recording.channel_recordings.get_mut(idx) {
-                        rec.toggle();
+                        use sotf_audio_player::recording_types::ChannelRecordingState;
+                        rec.state = match rec.state {
+                            ChannelRecordingState::Empty => ChannelRecordingState::Recording,
+                            ChannelRecordingState::Recording => ChannelRecordingState::Done,
+                            ChannelRecordingState::Done => ChannelRecordingState::Empty,
+                            ChannelRecordingState::Error => ChannelRecordingState::Empty,
+                        };
                     }
                 }
                 None
@@ -155,11 +163,11 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::Char(c) if app.recording.editing_save_name => {
-                app.recording.session_name.push(c);
+                app.recording.save_name.push(c);
                 None
             }
             KeyCode::Backspace if app.recording.editing_save_name => {
-                app.recording.session_name.pop();
+                app.recording.save_name.pop();
                 None
             }
             _ => None,
@@ -168,87 +176,128 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 }
 
 fn adjust_recording_field(app: &mut App, delta: i32) {
-    use sotf_audio_player::recording_types::SpeakerConfiguration;
+    use sotf_audio_player::recording_types::{RecordingSignalType, SpeakerConfiguration};
     match app.recording.selected_field {
         0 => {
-            // Channel count
-            let configs = [
-                SpeakerConfiguration::Mono,
-                SpeakerConfiguration::Stereo,
-                SpeakerConfiguration::ThreePoint0,
-                SpeakerConfiguration::FiveOne,
-                SpeakerConfiguration::SevenOne,
-            ];
-            if let Some(idx) = configs.iter().position(|&c| c == app.recording.config) {
-                let new_idx = (idx as i32 + delta).max(0).min((configs.len() - 1) as i32) as usize;
-                app.recording.config = configs[new_idx];
+            // Playback device
+            let count = app.recording.available_playback_devices.len();
+            if count > 0 {
+                let idx = app.recording.selected_playback_idx as i32 + delta;
+                app.recording.selected_playback_idx = idx.max(0).min((count - 1) as i32) as usize;
             }
         }
-        1..=7 => {
-            // Channel mappings - adjust indices
-            if let Some(rec) = app.recording.channel_recordings.get_mut(app.recording.selected_field - 1) {
-                rec.adjust_input_index(delta);
+        1 => {
+            // Recording device
+            let count = app.recording.available_recording_devices.len();
+            if count > 0 {
+                let idx = app.recording.selected_recording_idx as i32 + delta;
+                app.recording.selected_recording_idx = idx.max(0).min((count - 1) as i32) as usize;
             }
+        }
+        2 => {
+            // Speaker configuration
+            let configs = SpeakerConfiguration::all();
+            if let Some(idx) = configs
+                .iter()
+                .position(|&c| c == app.recording.playback_config.speaker_configuration)
+            {
+                let new_idx = (idx as i32 + delta).max(0).min((configs.len() - 1) as i32) as usize;
+                app.recording.playback_config.speaker_configuration = configs[new_idx];
+                // Update channel mappings to match new config
+                let names = app
+                    .recording
+                    .playback_config
+                    .speaker_configuration
+                    .default_channel_names();
+                app.recording.playback_config.channel_mappings = names
+                    .iter()
+                    .enumerate()
+                    .map(|(i, name)| {
+                        sotf_audio_player::recording_types::ChannelMapping::single(i, *name)
+                    })
+                    .collect();
+                app.recording.playback_config.sync_channel_count();
+            }
+        }
+        3 => {
+            // Signal type
+            let types = RecordingSignalType::all();
+            if let Some(idx) = types.iter().position(|&t| t == app.recording.signal_type) {
+                let new_idx = (idx as i32 + delta).max(0).min((types.len() - 1) as i32) as usize;
+                app.recording.signal_type = types[new_idx];
+            }
+        }
+        4 => {
+            // Duration
+            app.recording.signal_duration_secs =
+                (app.recording.signal_duration_secs + delta as f32 * 0.5).max(0.5);
+        }
+        5 => {
+            // Level dB
+            app.recording.signal_level_db =
+                (app.recording.signal_level_db + delta as f32).clamp(-60.0, 0.0);
+        }
+        6 => {
+            // Sweep start freq
+            app.recording.sweep_start_freq =
+                (app.recording.sweep_start_freq + delta as f32 * 5.0).max(5.0);
+        }
+        7 => {
+            // Sweep end freq
+            app.recording.sweep_end_freq =
+                (app.recording.sweep_end_freq + delta as f32 * 500.0).max(100.0);
         }
         _ => {}
     }
 }
 
-pub fn update_channel_mappings_for_config(
-    app: &mut App,
-    config: sotf_audio_player::recording_types::SpeakerConfiguration,
-) {
-    app.recording.config = config;
-    init_recording_channels(app);
-}
-
 pub fn init_recording_channels(app: &mut App) {
-    use sotf_audio_player::recording_types::{ChannelRecordingState, SpeakerConfiguration};
+    use sotf_audio_player::recording_types::{ChannelRecording, ChannelRecordingState};
 
-    let channel_count = match app.recording.config {
-        SpeakerConfiguration::Empty => 0,
-        SpeakerConfiguration::Mono => 1,
-        SpeakerConfiguration::Stereo => 2,
-        SpeakerConfiguration::ThreePoint0 => 3,
-        SpeakerConfiguration::FiveOne => 6,
-        SpeakerConfiguration::SevenOne => 8,
-    };
+    let names = app
+        .recording
+        .playback_config
+        .speaker_configuration
+        .default_channel_names();
 
-    app.recording.channels.clear();
-    for i in 0..channel_count {
-        app.recording.channels.push(sotf_audio_player::recording_types::ChannelMapping {
-            index: i,
-            input_index: i,
-            label: format!("Ch {}", i + 1),
-            state: ChannelRecordingState::NotStarted,
-        });
-    }
+    app.recording.channel_recordings = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| ChannelRecording {
+            channel_index: i,
+            channel_name: name.to_string(),
+            state: ChannelRecordingState::Empty,
+            result: None,
+        })
+        .collect();
 
-    app.recording.channel_recordings.clear();
-    app.recording.current_channel = if channel_count > 0 { Some(0) } else { None };
+    app.recording.current_channel = if !names.is_empty() { Some(0) } else { None };
 }
 
 pub fn can_save_recordings(app: &App) -> bool {
     use sotf_audio_player::recording_types::ChannelRecordingState;
 
-    if app.recording.channels.is_empty() {
+    if app.recording.channel_recordings.is_empty() {
         return false;
     }
 
-    if app.recording.session_name.contains('/') || app.recording.session_name.contains('\\') {
+    if app.recording.save_name.contains('/') || app.recording.save_name.contains('\\') {
         return false;
     }
 
-    app.recording.channels.iter().all(|ch| ch.state == ChannelRecordingState::Completed)
+    app.recording
+        .channel_recordings
+        .iter()
+        .all(|ch| ch.state == ChannelRecordingState::Done)
 }
 
 fn save_recordings(app: &mut App) {
     use sotf_audio_player::recording_types::RecordingStep;
 
     let output_dir = &app.recording.output_directory;
-    let session_name = &app.recording.session_name;
+    let save_name = &app.recording.save_name;
 
-    if output_dir.is_empty() || session_name.is_empty() {
+    if output_dir.is_empty() || save_name.is_empty() {
         app.recording.save_error = Some("Output dir and session name required".to_string());
         return;
     }

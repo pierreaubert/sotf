@@ -48,7 +48,13 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 app.spinorama_eq.step = SpinoramaStep::Optimize;
             }
             SpinoramaStep::UpdatePlugin => {
-                app.spinorama_eq.step = SpinoramaStep::Results;
+                use crate::app::SpinUpdateSubStep;
+                if app.spinorama_eq.update_substep == SpinUpdateSubStep::ConfirmOverwrite {
+                    app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
+                    app.spinorama_eq.update_existing_eq_info = None;
+                } else {
+                    app.spinorama_eq.step = SpinoramaStep::Results;
+                }
             }
         }
         return None;
@@ -101,9 +107,10 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::Char('r') => {
-                // Trigger speaker list load
-                app.spinorama_eq.loading_speakers = true;
+                // Retry speaker list load (e.g. after error)
                 app.spinorama_eq.speakers_error = None;
+                app.spinorama_eq.available_speakers.clear();
+                app.spinorama_eq.loading_speakers = true;
                 spawn_spinorama_speaker_load();
                 None
             }
@@ -142,6 +149,11 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 None
             }
             KeyCode::Enter | KeyCode::Tab => {
+                // Reset optimization state so user can re-run with new parameters
+                app.spinorama_eq.opt_status = OptimizationStatus::Idle;
+                app.spinorama_eq.loss_history.clear();
+                app.spinorama_eq.opt_progress = 0.0;
+                app.spinorama_eq.opt_iteration = 0;
                 app.spinorama_eq.step = SpinoramaStep::Optimize;
                 None
             }
@@ -155,11 +167,11 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         SpinoramaStep::Optimize => match key.code {
             KeyCode::Enter => {
                 match &app.spinorama_eq.opt_status {
-                    OptimizationStatus::Idle | OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
+                    OptimizationStatus::Idle
+                    | OptimizationStatus::Failed
+                    | OptimizationStatus::Cancelled
+                    | OptimizationStatus::Completed => {
                         spawn_spinorama_optimization(app);
-                    }
-                    OptimizationStatus::Completed => {
-                        app.spinorama_eq.step = SpinoramaStep::Results;
                     }
                     OptimizationStatus::Running => {}
                 }
@@ -192,23 +204,90 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             _ => None,
         },
 
-        SpinoramaStep::UpdatePlugin => match key.code {
-            KeyCode::Enter => {
-                match app.apply_spinorama_to_plugin_chain() {
-                    Ok(msg) => app.status_message = Some(msg),
-                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
-                }
-                None
+        SpinoramaStep::UpdatePlugin => {
+            use crate::app::SpinUpdateSubStep;
+            match app.spinorama_eq.update_substep {
+                SpinUpdateSubStep::Ready => match key.code {
+                    KeyCode::Enter => {
+                        // Check if an existing EQ has filters
+                        if let Some((slot, count)) = app.find_last_eq_info() {
+                            if count > 0 {
+                                app.spinorama_eq.update_existing_eq_info = Some((slot, count));
+                                app.spinorama_eq.update_substep = SpinUpdateSubStep::ConfirmOverwrite;
+                            } else {
+                                // Existing EQ but empty — apply directly
+                                match app.apply_spinorama_to_plugin_chain() {
+                                    Ok(msg) => app.status_message = Some(msg),
+                                    Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                                }
+                            }
+                        } else {
+                            // No existing EQ — apply directly (will insert one)
+                            match app.apply_spinorama_to_plugin_chain() {
+                                Ok(msg) => app.status_message = Some(msg),
+                                Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                            }
+                        }
+                        None
+                    }
+                    KeyCode::Tab => {
+                        app.spinorama_eq.step = SpinoramaStep::Select;
+                        None
+                    }
+                    KeyCode::BackTab => {
+                        app.spinorama_eq.step = SpinoramaStep::Results;
+                        None
+                    }
+                    _ => None,
+                },
+                SpinUpdateSubStep::ConfirmOverwrite => match key.code {
+                    KeyCode::Char('y') => {
+                        // Auto-save preset before overwriting
+                        if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
+                            let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+                            let filename = format!("pre-spinorama-{}.json", timestamp);
+                            match app.plugin_chain.save_to_file(&presets_dir, &filename) {
+                                Ok(_) => {
+                                    app.status_message = Some(format!("Saved backup: {}", filename));
+                                    log::info!("Auto-saved preset before spinorama overwrite: {}", filename);
+                                }
+                                Err(e) => {
+                                    app.status_message = Some(format!("Backup failed: {}", e));
+                                    log::error!("Failed to auto-save preset: {}", e);
+                                    // Reset and don't apply
+                                    app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
+                                    app.spinorama_eq.update_existing_eq_info = None;
+                                    return None;
+                                }
+                            }
+                        }
+                        // Apply
+                        match app.apply_spinorama_to_plugin_chain() {
+                            Ok(msg) => app.status_message = Some(msg),
+                            Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                        }
+                        app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
+                        app.spinorama_eq.update_existing_eq_info = None;
+                        None
+                    }
+                    KeyCode::Char('n') => {
+                        // Apply without saving
+                        match app.apply_spinorama_to_plugin_chain() {
+                            Ok(msg) => app.status_message = Some(msg),
+                            Err(e) => app.status_message = Some(format!("Error: {}", e)),
+                        }
+                        app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
+                        app.spinorama_eq.update_existing_eq_info = None;
+                        None
+                    }
+                    KeyCode::Esc => {
+                        app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
+                        app.spinorama_eq.update_existing_eq_info = None;
+                        None
+                    }
+                    _ => None,
+                },
             }
-            KeyCode::Tab => {
-                app.spinorama_eq.step = SpinoramaStep::Select;
-                None
-            }
-            KeyCode::BackTab => {
-                app.spinorama_eq.step = SpinoramaStep::Results;
-                None
-            }
-            _ => None,
         },
     }
 }
@@ -285,7 +364,13 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
         // ── Constraints ──
         19 => c.spacing_weight = (c.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
         20 => c.min_spacing_oct = (c.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
-        21 => c.asymmetric_loss = !c.asymmetric_loss,
+        21 => {
+            c.loss_function = cycle_string(
+                &c.loss_function,
+                &["flat", "flat-asymmetric", "score"],
+                delta,
+            );
+        }
         // ── Convergence ──
         22 => {
             c.tolerance = if delta > 0 {
@@ -332,7 +417,22 @@ static OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f3
     std::sync::OnceLock::new();
 
 /// Poll speaker-load result on every tick. Returns true if the UI needs a redraw.
+/// Also auto-triggers speaker list loading when entering the Select step.
 pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
+    use crate::app::{ConfigureSubScreen, Screen, SpinoramaStep};
+
+    // Auto-load speakers when on Select step with empty list
+    if !app.spinorama_eq.loading_speakers
+        && app.spinorama_eq.available_speakers.is_empty()
+        && app.spinorama_eq.speakers_error.is_none()
+        && app.current_screen == Screen::Configure
+        && app.configure_sub_screen == ConfigureSubScreen::SpinoramaEq
+        && app.spinorama_eq.step == SpinoramaStep::Select
+    {
+        app.spinorama_eq.loading_speakers = true;
+        spawn_spinorama_speaker_load();
+    }
+
     if !app.spinorama_eq.loading_speakers {
         return false;
     }
@@ -484,7 +584,7 @@ fn spawn_spinorama_optimization(app: &mut App) {
     let psychoacoustic = c.psychoacoustic;
     let spacing_weight = c.spacing_weight;
     let min_spacing_oct = c.min_spacing_oct;
-    let asymmetric_loss = c.asymmetric_loss;
+    let loss_function = c.loss_function.clone();
     let tolerance = c.tolerance;
     let atolerance = c.atolerance;
     let sample_rate = c.sample_rate;
@@ -539,11 +639,12 @@ fn spawn_spinorama_optimization(app: &mut App) {
             "ls-pk-hs" => autoeq::PeqModel::LsPkHs,
             _ => autoeq::PeqModel::Pk,
         };
-        // Map loss type based on asymmetric_loss flag
-        args.loss = if asymmetric_loss {
-            autoeq::LossType::SpeakerFlatAsymmetric
-        } else {
-            autoeq::LossType::SpeakerFlat
+        // Map loss function string to LossType enum
+        args.loss = match loss_function.as_str() {
+            "flat" => autoeq::LossType::SpeakerFlat,
+            "flat-asymmetric" => autoeq::LossType::SpeakerFlatAsymmetric,
+            "score" => autoeq::LossType::SpeakerScore,
+            other => panic!("Unknown loss function: {}", other),
         };
         // Psychoacoustic smoothing not directly on Args — handled via smooth settings
         let _ = psychoacoustic; // TODO: map when autoeq supports it directly

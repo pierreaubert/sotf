@@ -133,6 +133,8 @@ pub struct App {
 
     // Shared pause flag: true while playing, scanners sleep-loop on it
     pub scanner_pause_flag: Arc<AtomicBool>,
+    // When true, don't auto-pause scanners even during playback
+    pub scanner_pause_override: bool,
 
     // ReplayGain scanner manager
     pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
@@ -142,9 +144,11 @@ pub struct App {
     pub replay_gain_mode: super::types::ReplayGainMode,
     pub replay_gain_preamp: f32,
 
-    // Waveform scanner progress
     // Waveform scanner manager
     pub waveform_manager: sotf_audio_player::WaveformScanManager,
+
+    // Bliss audio analysis scanner manager
+    pub bliss_manager: sotf_audio_player::BlissScanManager,
 
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
@@ -267,6 +271,7 @@ impl App {
             maintenance_progress_checked: 0,
             maintenance_progress_total: 0,
             scanner_pause_flag: Arc::clone(&scanner_pause_flag),
+            scanner_pause_override: false,
             replay_gain_manager: sotf_audio_player::ReplayGainScanManager::with_pause_flag(
                 Arc::clone(&scanner_pause_flag),
             ),
@@ -274,6 +279,9 @@ impl App {
             replay_gain_mode: super::types::ReplayGainMode::Track,
             replay_gain_preamp: 0.0,
             waveform_manager: sotf_audio_player::WaveformScanManager::with_pause_flag(
+                Arc::clone(&scanner_pause_flag),
+            ),
+            bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(
                 Arc::clone(&scanner_pause_flag),
             ),
             last_loaded_preset: None,
@@ -758,6 +766,7 @@ impl App {
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
+        self.scanner_pause_override = true;
         self.status_message = Some("Starting library scan...".to_string());
         log::info!("Started background library scan");
     }
@@ -794,6 +803,7 @@ impl App {
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
+        self.scanner_pause_override = true;
         self.status_message = Some("Starting FORCE library scan (all files)...".to_string());
         log::info!("Started FORCE background library scan");
     }
@@ -851,16 +861,21 @@ impl App {
                     self.rebuild_artist_tree();
                     self.request_filter_update();
 
-                    // Start background waveform scan for new tracks
+                    // Start background scans for new tracks
                     if let Err(e) = self.start_waveform_scan() {
                         log::warn!("Failed to start waveform scan: {}", e);
                     }
+                    if let Err(e) = self.start_bliss_scan() {
+                        log::warn!("Failed to start bliss scan: {}", e);
+                    }
+                    self.clear_pause_override_if_idle();
                 }
                 LibraryScanMessage::Error { message } => {
                     self.scan_in_progress = false;
                     self.library_scanner = None;
                     self.status_message = Some(format!("Scan failed: {}", message));
                     log::error!("Library scan failed: {}", message);
+                    self.clear_pause_override_if_idle();
                 }
             }
         }
@@ -1010,8 +1025,18 @@ impl App {
     pub fn start_replay_gain_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let msg = self.replay_gain_manager.start_scan()?;
         if self.replay_gain_manager.in_progress {
-            self.status_message = Some(msg);
+            self.scanner_pause_override = true;
         }
+        self.status_message = Some(msg);
+        Ok(())
+    }
+
+    pub fn start_force_replay_gain_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let msg = self.replay_gain_manager.start_force_scan()?;
+        if self.replay_gain_manager.in_progress {
+            self.scanner_pause_override = true;
+        }
+        self.status_message = Some(msg);
         Ok(())
     }
 
@@ -1030,6 +1055,26 @@ impl App {
                 self.replay_gain_manager.total,
                 self.replay_gain_manager.failed
             ));
+
+            // Reload library so in-memory tracks get the new gain values
+            if let Err(e) = self.library.load_from_database() {
+                log::error!("Failed to reload library after ReplayGain scan: {}", e);
+            }
+            self.rebuild_artist_tree();
+            self.request_filter_update();
+            self.refresh_queue_metadata();
+            self.clear_pause_override_if_idle();
+        }
+    }
+
+    /// Clear the pause override once no user-initiated scans are running.
+    fn clear_pause_override_if_idle(&mut self) {
+        if !self.scan_in_progress
+            && !self.replay_gain_manager.in_progress
+            && !self.waveform_manager.in_progress
+            && !self.bliss_manager.in_progress
+        {
+            self.scanner_pause_override = false;
         }
     }
 
@@ -1038,12 +1083,100 @@ impl App {
         self.waveform_manager.start_scan()
     }
 
+    pub fn start_force_waveform_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.waveform_manager.start_force_scan()?;
+        if self.waveform_manager.in_progress {
+            self.scanner_pause_override = true;
+        }
+        self.status_message = Some("Force waveform rescan started...".to_string());
+        Ok(())
+    }
+
     /// Check progress of waveform scan
     pub fn check_waveform_progress(&mut self) {
         if !self.waveform_manager.in_progress {
             return;
         }
+        let was_in_progress = self.waveform_manager.in_progress;
         self.waveform_manager.update();
+
+        if was_in_progress && !self.waveform_manager.in_progress {
+            // Reload library so in-memory tracks get waveform data
+            if let Err(e) = self.library.load_from_database() {
+                log::error!("Failed to reload library after waveform scan: {}", e);
+            }
+            self.rebuild_artist_tree();
+            self.request_filter_update();
+            self.refresh_queue_metadata();
+            self.clear_pause_override_if_idle();
+        }
+    }
+
+    pub fn start_force_bliss_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let msg = self.bliss_manager.start_force_scan()?;
+        if self.bliss_manager.in_progress {
+            self.scanner_pause_override = true;
+        }
+        self.status_message = Some(msg);
+        Ok(())
+    }
+
+    /// Start background bliss audio analysis for tracks without bliss data
+    pub fn start_bliss_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let msg = self.bliss_manager.start_scan()?;
+        if self.bliss_manager.in_progress {
+            self.scanner_pause_override = true;
+        }
+        self.status_message = Some(msg);
+        Ok(())
+    }
+
+    /// Check progress of bliss scan
+    pub fn check_bliss_progress(&mut self) {
+        if !self.bliss_manager.in_progress {
+            return;
+        }
+        let was_in_progress = self.bliss_manager.in_progress;
+        self.bliss_manager.update();
+
+        if was_in_progress && !self.bliss_manager.in_progress {
+            log::info!(
+                "Bliss scan complete: {}/{} succeeded, {} failed",
+                self.bliss_manager.succeeded,
+                self.bliss_manager.total,
+                self.bliss_manager.failed
+            );
+            self.status_message = Some(format!(
+                "Bliss scan complete: {}/{} succeeded, {} failed",
+                self.bliss_manager.succeeded,
+                self.bliss_manager.total,
+                self.bliss_manager.failed
+            ));
+            self.clear_pause_override_if_idle();
+        }
+    }
+
+    /// Refresh metadata (replay gain, waveform, etc.) on queued tracks
+    /// from the freshly reloaded library.
+    fn refresh_queue_metadata(&mut self) {
+        for entry in &mut self.queue {
+            let album = &mut entry.item.album;
+            // Find the matching library album by id
+            let lib_album = album.id.and_then(|id| {
+                self.library.albums.iter().find(|a| a.id == Some(id))
+            });
+            if let Some(lib_album) = lib_album {
+                for track in &mut album.tracks {
+                    if let Some(lib_track) = lib_album.tracks.iter().find(|t| t.path == track.path) {
+                        track.replay_gain = lib_track.replay_gain;
+                        track.replay_peak = lib_track.replay_peak;
+                        track.album_gain = lib_track.album_gain;
+                        track.album_peak = lib_track.album_peak;
+                        track.waveform = lib_track.waveform.clone();
+                    }
+                }
+            }
+        }
     }
 
     /// Save current app state to config file
@@ -1356,6 +1489,12 @@ impl App {
 
             // Skip artists with no visible albums
             if visible_albums.is_empty() {
+                continue;
+            }
+
+            // Single album/track: show directly without expand/collapse
+            if visible_albums.len() == 1 {
+                items.push(TreeItem::Album { index: visible_albums[0] });
                 continue;
             }
 
@@ -2399,8 +2538,23 @@ impl App {
         }
     }
 
+    /// Returns `(slot_index, filter_count)` for the last non-permanent EQ plugin, or `None`.
+    pub fn find_last_eq_info(&self) -> Option<(usize, usize)> {
+        use sotf_audio_player::PluginSettings;
+        (0..self.plugin_chain.len()).rev().find_map(|i| {
+            if let Some(p) = self.plugin_chain.get_plugin(i) {
+                if !p.is_permanent() {
+                    if let PluginSettings::EQ { filters, .. } = &p.settings {
+                        return Some((i, filters.len()));
+                    }
+                }
+            }
+            None
+        })
+    }
+
     /// Apply Spinorama EQ results to the plugin chain.
-    /// Finds the first non-permanent EQ plugin and updates its filters.
+    /// Finds the last non-permanent EQ plugin and updates its filters.
     /// If no EQ plugin exists, one is inserted at the user-plugin slot.
     /// Returns a success message or an error string.
     pub fn apply_spinorama_to_plugin_chain(&mut self) -> Result<String, String> {
@@ -2433,8 +2587,8 @@ impl App {
 
         let n = eq_filters.len();
 
-        // Find the first non-permanent EQ plugin
-        let eq_idx = (0..self.plugin_chain.len()).find(|&i| {
+        // Find the last non-permanent EQ plugin
+        let eq_idx = (0..self.plugin_chain.len()).rev().find(|&i| {
             if let Some(p) = self.plugin_chain.get_plugin(i) {
                 !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. })
             } else {
@@ -4940,10 +5094,25 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_spinorama_to_plugin_chain_updates_existing_eq() {
+    fn test_apply_spinorama_to_plugin_chain_updates_last_eq() {
         use sotf_audio_player::spinorama_eq_types::SpinoramaBiquad;
         let mut app = App::new(Theme::default());
+        // Add two EQ plugins — spinorama should target the last one
         app.add_plugin(&PluginType::EQ);
+        app.add_plugin(&PluginType::EQ);
+
+        // Record indices of both EQ plugins
+        let eq_indices: Vec<usize> = (0..app.plugin_chain.len())
+            .filter(|&i| {
+                app.plugin_chain
+                    .get_plugin(i)
+                    .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(eq_indices.len(), 2, "Expected two EQ plugins");
+        let last_eq_idx = eq_indices[1];
+
         app.spinorama_eq.selected_speaker = Some("Test Speaker".to_string());
         app.spinorama_eq.filters = vec![SpinoramaBiquad {
             filter_type: "Peak".to_string(),
@@ -4955,22 +5124,23 @@ mod tests {
         let result = app.apply_spinorama_to_plugin_chain();
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
-        // Verify the EQ plugin has the new filter
-        let eq_idx = (0..app.plugin_chain.len())
-            .find(|&i| {
-                app.plugin_chain
-                    .get_plugin(i)
-                    .map(|p| !p.is_permanent() && matches!(p.settings, PluginSettings::EQ { .. }))
-                    .unwrap_or(false)
-            })
-            .expect("EQ plugin should exist");
-
-        let plugin = app.plugin_chain.get_plugin(eq_idx).unwrap();
+        // Verify the LAST EQ plugin was updated (not the first)
+        let plugin = app.plugin_chain.get_plugin(last_eq_idx).unwrap();
         if let PluginSettings::EQ { filters, .. } = &plugin.settings {
             assert_eq!(filters.len(), 1);
             assert!((filters[0].frequency - 500.0).abs() < 0.01);
         } else {
             panic!("Expected EQ plugin settings");
+        }
+
+        // First EQ should still have default filters (unchanged)
+        let first_plugin = app.plugin_chain.get_plugin(eq_indices[0]).unwrap();
+        if let PluginSettings::EQ { filters, .. } = &first_plugin.settings {
+            // Default EQ has no filters with freq 500
+            assert!(
+                filters.is_empty() || filters.iter().all(|f| (f.frequency - 500.0).abs() > 0.01),
+                "First EQ should not have been modified"
+            );
         }
     }
 

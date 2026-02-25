@@ -634,9 +634,29 @@ fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
             let _ = app.clean_library_database();
             None
         }
-        KeyCode::Char('R') => {
-            // Start ReplayGain scan for all tracks
+        KeyCode::Char('r') => {
+            // Start ReplayGain scan for tracks missing data
             let _ = app.start_replay_gain_scan();
+            None
+        }
+        KeyCode::Char('R') => {
+            // Force ReplayGain rescan of all tracks
+            let _ = app.start_force_replay_gain_scan();
+            None
+        }
+        KeyCode::Char('b') => {
+            // Start Bliss audio analysis scan
+            let _ = app.start_bliss_scan();
+            None
+        }
+        KeyCode::Char('B') => {
+            // Force Bliss rescan of all tracks
+            let _ = app.start_force_bliss_scan();
+            None
+        }
+        KeyCode::Char('W') => {
+            // Force waveform rescan of all tracks
+            let _ = app.start_force_waveform_scan();
             None
         }
         KeyCode::Char('S') => {
@@ -1635,12 +1655,42 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
             return handle_spinorama_keys(app, key);
         }
         ConfigureSubScreen::HeadphoneEq => {
+            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
+                _ => {}
+            }
             return handle_headphone_eq_keys(app, key);
         }
         ConfigureSubScreen::RoomEq => {
+            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
+                _ => {}
+            }
             return handle_room_eq_keys(app, key);
         }
         ConfigureSubScreen::Recording => {
+            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
+                _ => {}
+            }
             return handle_recording_keys(app, key);
         }
     }
@@ -1742,9 +1792,10 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 None
             }
             KeyCode::Char('r') => {
-                // Trigger speaker list load
-                app.spinorama_eq.loading_speakers = true;
+                // Retry speaker list load (e.g. after error)
                 app.spinorama_eq.speakers_error = None;
+                app.spinorama_eq.available_speakers.clear();
+                app.spinorama_eq.loading_speakers = true;
                 spawn_spinorama_speaker_load();
                 None
             }
@@ -1783,6 +1834,11 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 None
             }
             KeyCode::Enter | KeyCode::Tab => {
+                // Reset optimization state so user can re-run with new parameters
+                app.spinorama_eq.opt_status = OptimizationStatus::Idle;
+                app.spinorama_eq.loss_history.clear();
+                app.spinorama_eq.opt_progress = 0.0;
+                app.spinorama_eq.opt_iteration = 0;
                 app.spinorama_eq.step = SpinoramaStep::Optimize;
                 None
             }
@@ -1798,11 +1854,9 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 match &app.spinorama_eq.opt_status {
                     OptimizationStatus::Idle
                     | OptimizationStatus::Failed
-                    | OptimizationStatus::Cancelled => {
+                    | OptimizationStatus::Cancelled
+                    | OptimizationStatus::Completed => {
                         spawn_spinorama_optimization(app);
-                    }
-                    OptimizationStatus::Completed => {
-                        app.spinorama_eq.step = SpinoramaStep::Results;
                     }
                     OptimizationStatus::Running => {}
                 }
@@ -1931,7 +1985,13 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
         // ── Constraints ──
         19 => c.spacing_weight = (c.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
         20 => c.min_spacing_oct = (c.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
-        21 => c.asymmetric_loss = !c.asymmetric_loss,
+        21 => {
+            c.loss_function = cycle_string(
+                &c.loss_function,
+                &["flat", "flat-asymmetric", "score"],
+                delta,
+            );
+        }
         // ── Convergence ──
         22 => {
             c.tolerance = if delta > 0 {
@@ -1963,7 +2023,20 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
 }
 
 /// Poll speaker-load result on every tick. Returns true if the UI needs a redraw.
+/// Also auto-triggers speaker list loading when entering the Select step.
 pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
+    // Auto-load speakers when on Select step with empty list
+    if !app.spinorama_eq.loading_speakers
+        && app.spinorama_eq.available_speakers.is_empty()
+        && app.spinorama_eq.speakers_error.is_none()
+        && app.current_screen == Screen::Configure
+        && app.configure_sub_screen == crate::app::ConfigureSubScreen::SpinoramaEq
+        && app.spinorama_eq.step == crate::app::SpinoramaStep::Select
+    {
+        app.spinorama_eq.loading_speakers = true;
+        spawn_spinorama_speaker_load();
+    }
+
     if !app.spinorama_eq.loading_speakers {
         return false;
     }
@@ -2128,7 +2201,7 @@ fn spawn_spinorama_optimization(app: &mut App) {
     let psychoacoustic = c.psychoacoustic;
     let spacing_weight = c.spacing_weight;
     let min_spacing_oct = c.min_spacing_oct;
-    let asymmetric_loss = c.asymmetric_loss;
+    let loss_function = c.loss_function.clone();
     let tolerance = c.tolerance;
     let atolerance = c.atolerance;
     let sample_rate = c.sample_rate;
@@ -2187,11 +2260,12 @@ fn spawn_spinorama_optimization(app: &mut App) {
             "ls-pk-hs" => autoeq::PeqModel::LsPkHs,
             _ => autoeq::PeqModel::Pk,
         };
-        // Map loss type based on asymmetric_loss flag
-        args.loss = if asymmetric_loss {
-            autoeq::LossType::SpeakerFlatAsymmetric
-        } else {
-            autoeq::LossType::SpeakerFlat
+        // Map loss function string to LossType enum
+        args.loss = match loss_function.as_str() {
+            "flat" => autoeq::LossType::SpeakerFlat,
+            "flat-asymmetric" => autoeq::LossType::SpeakerFlatAsymmetric,
+            "score" => autoeq::LossType::SpeakerScore,
+            other => panic!("Unknown loss function: {}", other),
         };
         // Psychoacoustic smoothing not directly on Args — handled via smooth settings
         let _ = psychoacoustic; // TODO: map when autoeq supports it directly
@@ -2709,7 +2783,9 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
 
             match key.code {
                 KeyCode::Up => {
-                    if app.recording.selected_field > 0 {
+                    if app.recording.selected_field == 0 {
+                        app.configure_tab_focused = true;
+                    } else {
                         app.recording.selected_field -= 1;
                     }
                 }

@@ -178,7 +178,8 @@ pub struct SpinoramaOptimizerConfig {
     pub tolerance: f64,
     pub atolerance: f64,
     pub psychoacoustic: bool,
-    pub asymmetric_loss: bool,
+    /// Loss function: "flat", "flat-asymmetric", or "score"
+    pub loss_function: String,
 }
 
 impl Default for SpinoramaOptimizerConfig {
@@ -212,7 +213,7 @@ impl Default for SpinoramaOptimizerConfig {
             tolerance: 0.00001,
             atolerance: 0.00001,
             psychoacoustic: true,
-            asymmetric_loss: true,
+            loss_function: "flat-asymmetric".to_string(),
         }
     }
 }

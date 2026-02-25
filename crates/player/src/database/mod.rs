@@ -129,7 +129,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 16;
+        const LATEST_VERSION: i64 = 17;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -1243,6 +1243,30 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 17: Add scanner error columns for tracking failures
+        migrations.insert(
+            17,
+            Migration {
+                description: "Add error columns for replay_gain, waveform, and bliss scanners",
+                apply: |db| {
+                    db.conn.execute(
+                        "ALTER TABLE tracks ADD COLUMN replay_gain_error TEXT",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "ALTER TABLE tracks ADD COLUMN waveform_error TEXT",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "ALTER TABLE tracks ADD COLUMN bliss_error TEXT",
+                        [],
+                    )?;
+                    log::info!("Added scanner error columns to tracks table");
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -1707,6 +1731,33 @@ impl MusicDatabase {
         Ok(directories)
     }
 
+    /// Get aggregate scanner statistics across all tracks.
+    /// Returns (total, rg_done, rg_errors, wf_done, wf_errors, bliss_done, bliss_errors).
+    pub fn get_scanner_stats(&self) -> SqlResult<(usize, usize, usize, usize, usize, usize, usize)> {
+        self.conn.query_row(
+            "SELECT COUNT(*) as total,
+                    COUNT(replay_gain) as rg_done,
+                    COUNT(replay_gain_error) as rg_err,
+                    COUNT(waveform) as wf_done,
+                    COUNT(waveform_error) as wf_err,
+                    COUNT(bliss_analyzed_at) as bliss_done,
+                    COUNT(bliss_error) as bliss_err
+             FROM tracks",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as usize,
+                    row.get::<_, i64>(1)? as usize,
+                    row.get::<_, i64>(2)? as usize,
+                    row.get::<_, i64>(3)? as usize,
+                    row.get::<_, i64>(4)? as usize,
+                    row.get::<_, i64>(5)? as usize,
+                    row.get::<_, i64>(6)? as usize,
+                ))
+            },
+        )
+    }
+
     /// Remove tracks that no longer exist on disk
     pub fn clean_missing_files(&mut self) -> SqlResult<usize> {
         self.clean_missing_files_with_progress(|_, _| {})
@@ -1809,11 +1860,65 @@ impl MusicDatabase {
         Ok(())
     }
 
+    /// Clear all ReplayGain data so a full rescan can be performed.
+    pub fn clear_all_replay_gain(&self) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET replay_gain = NULL, replay_peak = NULL, album_gain = NULL, album_peak = NULL, replay_gain_error = NULL",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Clear all waveform data so a full rescan can be performed.
+    pub fn clear_all_waveform(&self) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET waveform = NULL, waveform_error = NULL",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Clear all bliss analysis data so a full rescan can be performed.
+    pub fn clear_all_bliss(&self) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET bliss_tempo = NULL, bliss_zcr = NULL, bliss_loudness = NULL, bliss_features = NULL, bliss_analyzed_at = NULL, bliss_error = NULL",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Mark a track as having a ReplayGain scan error
+    pub fn mark_replay_gain_error(&self, path: &Path, error: &str) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET replay_gain_error = ?1 WHERE path = ?2",
+            params![error, path.to_str().unwrap()],
+        )?;
+        Ok(())
+    }
+
+    /// Mark a track as having a waveform scan error
+    pub fn mark_waveform_error(&self, path: &Path, error: &str) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET waveform_error = ?1 WHERE path = ?2",
+            params![error, path.to_str().unwrap()],
+        )?;
+        Ok(())
+    }
+
+    /// Mark a track as having a bliss scan error
+    pub fn mark_bliss_error(&self, path: &Path, error: &str) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET bliss_error = ?1 WHERE path = ?2",
+            params![error, path.to_str().unwrap()],
+        )?;
+        Ok(())
+    }
+
     /// Get tracks that don't have ReplayGain values yet
     pub fn get_tracks_without_replay_gain(&self) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT path FROM tracks WHERE replay_gain IS NULL OR replay_peak IS NULL")?;
+            .prepare("SELECT path FROM tracks WHERE (replay_gain IS NULL OR replay_peak IS NULL) AND replay_gain_error IS NULL")?;
 
         let paths = stmt
             .query_map([], |row| {
@@ -1885,7 +1990,7 @@ impl MusicDatabase {
     pub fn get_tracks_without_waveform(&self) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT path FROM tracks WHERE waveform IS NULL")?;
+            .prepare("SELECT path FROM tracks WHERE waveform IS NULL AND waveform_error IS NULL")?;
 
         let paths = stmt
             .query_map([], |row| {
@@ -1930,7 +2035,7 @@ impl MusicDatabase {
     pub fn get_tracks_without_bliss(&self) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT path FROM tracks WHERE bliss_analyzed_at IS NULL")?;
+            .prepare("SELECT path FROM tracks WHERE bliss_analyzed_at IS NULL AND bliss_error IS NULL")?;
 
         let paths = stmt
             .query_map([], |row| {

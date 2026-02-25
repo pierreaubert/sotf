@@ -67,7 +67,7 @@ impl PlayerView {
             smooth: config.smooth,
             smooth_n: config.smooth_n,
             psychoacoustic: config.psychoacoustic,
-            asymmetric_loss: config.asymmetric_loss,
+            asymmetric_loss: config.loss_function == "flat-asymmetric",
             spacing_weight: config.spacing_weight,
             min_spacing_oct: config.min_spacing_oct,
             ..Default::default()
@@ -578,7 +578,11 @@ impl PlayerView {
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
-                            .asymmetric_loss = value;
+                            .loss_function = if value {
+                                "flat-asymmetric".to_string()
+                            } else {
+                                "flat".to_string()
+                            };
                     });
                 }
             });

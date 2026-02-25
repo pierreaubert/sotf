@@ -417,15 +417,24 @@ impl BlissScanner {
                             });
                         }
                         Err(e) => {
+                            let error_msg = e.to_string();
                             log::debug!(
                                 "[Bliss Worker {}] Failed to analyze {}: {}",
                                 worker_id,
                                 path.display(),
-                                e
+                                error_msg
                             );
+                            if let Err(db_err) = db.mark_bliss_error(&path, &error_msg) {
+                                log::error!(
+                                    "[Bliss Worker {}] Failed to persist error for {}: {}",
+                                    worker_id,
+                                    path.display(),
+                                    db_err
+                                );
+                            }
                             let _ = message_tx.send(BlissScanMessage::Error {
                                 path,
-                                error: e.to_string(),
+                                error: error_msg,
                             });
                         }
                     }
@@ -496,6 +505,20 @@ impl BlissScanManager {
             failed: 0,
             pause_flag,
         }
+    }
+
+    /// Clear all bliss data and rescan every track.
+    pub fn start_force_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+        if self.in_progress {
+            return Ok("Bliss scan already in progress".to_string());
+        }
+
+        let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
+        let db = MusicDatabase::open(&db_path)?;
+        db.clear_all_bliss()?;
+        log::info!("Cleared all bliss data for force rescan");
+
+        self.start_scan()
     }
 
     /// Start scanning all tracks in the database that are missing bliss analysis data

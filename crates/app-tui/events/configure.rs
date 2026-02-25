@@ -102,12 +102,42 @@ pub fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             return super::spinorama::handle_spinorama_keys(app, key);
         }
         ConfigureSubScreen::HeadphoneEq => {
+            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
+                _ => {}
+            }
             return super::headphone_eq::handle_headphone_eq_keys(app, key);
         }
         ConfigureSubScreen::RoomEq => {
+            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
+                _ => {}
+            }
             return super::room_eq::handle_room_eq_keys(app, key);
         }
         ConfigureSubScreen::Recording => {
+            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
+            match key.code {
+                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
+                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
+                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
+                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
+                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
+                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
+                _ => {}
+            }
             return super::recording::handle_recording_keys(app, key);
         }
     }

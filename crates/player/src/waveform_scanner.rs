@@ -138,15 +138,24 @@ impl WaveformScanner {
                             });
                         }
                         Err(e) => {
+                            let error_msg = e.to_string();
                             log::error!(
                                 "[Waveform Worker {}] Failed to analyze {}: {}",
                                 worker_id,
                                 path.display(),
-                                e
+                                error_msg
                             );
+                            if let Err(db_err) = db.mark_waveform_error(&path, &error_msg) {
+                                log::error!(
+                                    "[Waveform Worker {}] Failed to persist error for {}: {}",
+                                    worker_id,
+                                    path.display(),
+                                    db_err
+                                );
+                            }
                             let _ = message_tx.send(WaveformScanMessage::Error {
                                 path: path.clone(),
-                                error: e.to_string(),
+                                error: error_msg,
                             });
                         }
                     }
@@ -235,6 +244,20 @@ impl WaveformScanManager {
         }
     }
 
+    /// Clear all waveform data and rescan every track.
+    pub fn start_force_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.in_progress {
+            return Ok(());
+        }
+
+        let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
+        let db = MusicDatabase::open(&db_path)?;
+        db.clear_all_waveform()?;
+        log::info!("Cleared all waveform data for force rescan");
+
+        self.start_scan()
+    }
+
     /// Start scanning all tracks in the database that are missing waveform data
     pub fn start_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Skip if already in progress
@@ -318,8 +341,21 @@ impl WaveformScanManager {
                         total,
                         failed
                     );
+                    return;
                 }
             }
+        }
+
+        // Workers don't send Complete — detect completion from counters
+        if self.total > 0 && self.processed >= self.total {
+            log::info!(
+                "Waveform scan complete: {}/{} succeeded, {} failed",
+                self.succeeded,
+                self.total,
+                self.failed
+            );
+            self.in_progress = false;
+            self.scanner = None;
         }
     }
 
