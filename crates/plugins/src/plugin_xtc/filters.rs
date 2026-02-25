@@ -696,9 +696,6 @@ pub(crate) fn soft_limit_complex_magnitude(c: Complex<f32>, max_mag: f32) -> Com
         return c;
     }
 
-    // Map the excess above knee_start through tanh for smooth saturation.
-    // tanh(x) approaches 1.0 asymptotically, so:
-    //   new_mag = knee_start + (max_mag - knee_start) * tanh((mag - knee_start) / (max_mag - knee_start))
     let headroom = max_mag - knee_start;
     let excess = mag - knee_start;
     let new_mag = knee_start + headroom * (excess / headroom).tanh();

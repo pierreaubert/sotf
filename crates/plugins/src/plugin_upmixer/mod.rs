@@ -21,6 +21,7 @@ use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
+use math_audio_dsp::fast_math::fast_pow10;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::sync::Arc;
@@ -400,6 +401,7 @@ pub struct UpmixerPlugin {
     hr_direct_envelope: f32,
 
     hr_transient_env: f32,
+    height_transient_env_slow: f32,
     hr_energy_smooth: f32,
     /// Previous frame magnitude spectrum for spectral flux calculation
     prev_magnitude_spectrum: Vec<f32>,
@@ -435,13 +437,6 @@ pub struct UpmixerPlugin {
     decorrelation_crossfade_remaining: usize,
     /// Saved blended filters for cross-fading during decorrelation transitions
     prev_blended_filters_for_crossfade: Vec<Vec<Complex<f32>>>,
-
-    /// Per-sample limiter envelope (0.0..=1.0). Smooth attack and release.
-    limiter_envelope: f32,
-    /// Per-sample attack coefficient for the limiter (~0.2ms time constant).
-    limiter_attack_coeff: f32,
-    /// Per-sample release coefficient for the limiter (~50ms release).
-    limiter_release_coeff: f32,
 
     /// Initial latency counter to ensure OLA buffer is primed before output
     latency_filled: usize,
@@ -719,12 +714,12 @@ impl UpmixerPlugin {
             height_freq_weights: vec![0.0; spectrum_size],
 
             safety_cap_linear: if default_safety_cap_db() > 0.0 {
-                10.0_f32.powf(default_safety_cap_db() / 20.0)
+                fast_pow10(default_safety_cap_db() / 20.0)
             } else {
                 1.0
             },
             safety_cap_min_scale: if default_safety_cap_db() > 0.0 {
-                10.0_f32.powf(-default_safety_cap_db() / 20.0)
+                fast_pow10(-default_safety_cap_db() / 20.0)
             } else {
                 0.0
             },
@@ -795,6 +790,7 @@ impl UpmixerPlugin {
 
             hr_direct_envelope: 1.0, // HR enabled by default
             hr_transient_env: 0.0,
+            height_transient_env_slow: 0.0,
             hr_energy_smooth: 0.0,
             prev_magnitude_spectrum: vec![0.0; spectrum_size],
             spectral_flux_smooth: 0.0,
@@ -815,9 +811,6 @@ impl UpmixerPlugin {
             decorrelation_crossfade_remaining: 0,
             prev_blended_filters_for_crossfade: Vec::new(),
 
-            limiter_envelope: 1.0,
-            limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
-            limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
             latency_filled: 0,
             cached_parameters: Vec::new(),
         };
@@ -2004,9 +1997,6 @@ impl Plugin for UpmixerPlugin {
             .set_time(time_ms, sample_rate);
         self.safety_cap_db_smoother.set_time(time_ms, sample_rate);
 
-        self.limiter_attack_coeff = (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp();
-        self.limiter_release_coeff = (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp();
-
         // Set FTZ/DAZ CPU flags once at initialization so the processing thread inherits
         // them for all subsequent process() calls. This avoids calling enable_ftz_daz()
         // on every block in the hot path.
@@ -2109,6 +2099,8 @@ impl Plugin for UpmixerPlugin {
         self.energy_correction_per_bin.fill(1.0);
         self.energy_correction_temp.fill(1.0);
         self.energy_correction_prev.fill(1.0);
+
+        self.prev_safety_scale = 1.0;
 
         // Reset MFCC extractor state
         if let Some(ref mut extractor) = self.mfcc_extractor {
@@ -2252,7 +2244,7 @@ impl Plugin for UpmixerPlugin {
             }
 
             // Step 2: Process FFT block if we have enough input
-            if self.input_buffer_fill >= self.fft_size * 2 {
+            while self.input_buffer_fill >= self.fft_size * 2 {
                 // Copy to temp buffer
                 self.temp_input_block[..self.fft_size * 2]
                     .copy_from_slice(&self.input_buffer[..self.fft_size * 2]);
@@ -2308,20 +2300,8 @@ impl Plugin for UpmixerPlugin {
                 self.output_accumulator_fill -= frames_to_drain;
                 output_pos += frames_to_drain;
             } else {
-                // If we can't process more input AND we have no more input to read (input_pos == num_frames),
-                // then we must pad with silence to satisfy the requested num_frames.
-                if input_pos >= context.num_frames {
-                    let remaining = context.num_frames - output_pos;
-                    for i in 0..remaining {
-                        let out_base = (output_pos + i) * nch;
-                        for ch in 0..nch {
-                            output[out_base + ch] = 0.0;
-                        }
-                    }
-                    output_pos = context.num_frames;
-                } else {
-                    break;
-                }
+                // Break if no progress is possible
+                break;
             }
         }
 

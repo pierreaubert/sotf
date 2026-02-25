@@ -17,7 +17,7 @@ fn benchmark_compressor(c: &mut Criterion) {
     );
     inner.initialize(sample_rate).unwrap();
     let plugin = InPlacePluginAdapter::new(inner);
-    benchmark_plugin_full(c, "Compressor_Linked", plugin, sample_rate as f64);
+    benchmark_plugin_full(c, "Compressor_Linked", Box::new(plugin), sample_rate as f64);
 
     // 2. Unlinked Compressor
     let params = CompressorPluginParams {
@@ -35,7 +35,7 @@ fn benchmark_compressor(c: &mut Criterion) {
     let mut inner_unlinked = CompressorPlugin::from_params(channels, params);
     inner_unlinked.initialize(sample_rate).unwrap();
     let plugin_unlinked = InPlacePluginAdapter::new(inner_unlinked);
-    benchmark_plugin_full(c, "Compressor_Unlinked", plugin_unlinked, sample_rate as f64);
+    benchmark_plugin_full(c, "Compressor_Unlinked", Box::new(plugin_unlinked), sample_rate as f64);
 }
 
 criterion_group!(benches, benchmark_compressor);

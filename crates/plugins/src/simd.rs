@@ -2239,9 +2239,10 @@ pub fn compute_covariance_simd(
             let yy_arr = std::mem::transmute::<_, [f32; 8]>(sum_yy);
             let xy_arr = std::mem::transmute::<_, [f32; 8]>(sum_xy_re);
 
-            // Sum hadd results (duplicated in pairs)
-            cov_xx = xx_arr[0] + xx_arr[2] + xx_arr[4] + xx_arr[6];
-            cov_yy = yy_arr[0] + yy_arr[2] + yy_arr[4] + yy_arr[6];
+            // Sum hadd results (each norm appears twice in each lane)
+            // Lane 0: [norm0, norm1, norm0, norm1], Lane 1: [norm2, norm3, norm2, norm3]
+            cov_xx = xx_arr[0] + xx_arr[1] + xx_arr[4] + xx_arr[5];
+            cov_yy = yy_arr[0] + yy_arr[1] + yy_arr[4] + yy_arr[5];
 
             // Sum re (even) and im (odd) separately
             cov_xy.re = xy_arr[0] + xy_arr[2] + xy_arr[4] + xy_arr[6];
@@ -2406,3 +2407,89 @@ pub fn fast_inv_sqrt(x: f32) -> f32 {
     let y = f32::from_bits(i);
     y * (1.5 - half * y * y) // One Newton-Raphson refinement
 }
+
+/// SIMD-optimized peak detection (maximum absolute value)
+#[inline]
+pub fn find_max_abs_simd(samples: &[f32]) -> f32 {
+    let len = samples.len();
+    if len == 0 {
+        return 0.0;
+    }
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+        let mut max_vec = unsafe { _mm256_setzero_ps() };
+        let abs_mask = unsafe { _mm256_set1_ps(-0.0) };
+        let simd_len = (len / 8) * 8;
+
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let ptr = samples.as_ptr().add(i);
+                let v = _mm256_loadu_ps(ptr);
+                let av = _mm256_andnot_ps(abs_mask, v);
+                max_vec = _mm256_max_ps(max_vec, av);
+            }
+        }
+
+        let mut max_val = 0.0_f32;
+        unsafe {
+            let arr = std::mem::transmute::<_, [f32; 8]>(max_vec);
+            for &v in &arr {
+                if v > max_val {
+                    max_val = v;
+                }
+            }
+        }
+
+        for i in simd_len..len {
+            let v = samples[i].abs();
+            if v > max_val {
+                max_val = v;
+            }
+        }
+        return max_val;
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+        let mut max_vec = unsafe { vdupq_n_f32(0.0) };
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let ptr = samples.as_ptr().add(i);
+                let v = vld1q_f32(ptr);
+                let av = vabsq_f32(v);
+                max_vec = vmaxq_f32(max_vec, av);
+            }
+        }
+
+        let mut max_val = unsafe { vmaxvq_f32(max_vec) };
+
+        for i in simd_len..len {
+            let v = samples[i].abs();
+            if v > max_val {
+                max_val = v;
+            }
+        }
+        return max_val;
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        let mut max_val = 0.0_f32;
+        for &s in samples {
+            let v = s.abs();
+            if v > max_val {
+                max_val = v;
+            }
+        }
+        max_val
+    }
+}
+

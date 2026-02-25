@@ -1005,8 +1005,10 @@ impl Plugin for XtcPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.limiter_attack_coeff = (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp();
-        self.limiter_release_coeff = (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp();
+        self.limiter_attack_coeff =
+            math_audio_dsp::fast_math::fast_exp(-1.0 / (0.2 * 0.001 * sample_rate as f32));
+        self.limiter_release_coeff =
+            math_audio_dsp::fast_math::fast_exp(-1.0 / (50.0 * 0.001 * sample_rate as f32));
         self.update_filters(true); // Synchronous for initialization
 
         // Pre-allocate temp buffers to max expected frame count.
@@ -1164,19 +1166,8 @@ impl Plugin for XtcPlugin {
                 self.output_accumulator_fill -= frames_to_drain;
                 output_pos += frames_to_drain;
             } else {
-                // If we reach here, we need more input to produce more output.
-                // If current input is exhausted, we must pad with silence.
-                if input_pos >= num_frames {
-                    let remaining = num_frames - output_pos;
-                    for i in 0..remaining {
-                        output[(output_pos + i) * 2] = 0.0;
-                        output[(output_pos + i) * 2 + 1] = 0.0;
-                    }
-                    output_pos = num_frames;
-                } else {
-                    // Break to avoid infinite loop if no progress is possible
-                    break;
-                }
+                // Break if no progress is possible
+                break;
             }
         }
 

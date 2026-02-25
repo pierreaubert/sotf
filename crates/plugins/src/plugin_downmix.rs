@@ -8,6 +8,7 @@ use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 
 use super::smoothing::Smoother;
+use math_audio_dsp::fast_math::{fast_atan2, fast_cos, fast_sin};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -403,10 +404,12 @@ impl DownmixPlugin {
         for ch in 0..self.input_ch {
             let ch_offset = ch * n;
             let fft_offset = ch * num_bins;
-            // Window and FFT each channel
-            for i in 0..n {
-                self.fft_input_buf[i] = self.input_buffer[ch_offset + i] * self.analysis_window[i];
-            }
+            // Window and FFT each channel (SIMD optimized windowing)
+            crate::simd::window_mul_simd(
+                &mut self.fft_input_buf,
+                &self.input_buffer[ch_offset..ch_offset + n],
+                &self.analysis_window,
+            );
             self.fft_forward
                 .process(
                     &mut self.fft_input_buf,
@@ -419,20 +422,18 @@ impl DownmixPlugin {
         self.out_freq_l.fill(Complex::new(0.0, 0.0));
         self.out_freq_r.fill(Complex::new(0.0, 0.0));
 
-        // Power sum (standard downmix) in frequency domain
+        // Power sum (standard downmix) in frequency domain (SIMD optimized)
         for ch in 0..self.input_ch {
             let gl = self.coeff_smoothers[ch * 2].current();
             let gr = self.coeff_smoothers[ch * 2 + 1].current();
             let fft_offset = ch * num_bins;
             let channel_fft = &self.fft_output[fft_offset..fft_offset + num_bins];
 
-            for (cfi, (ol, or_)) in channel_fft
-                .iter()
-                .zip(self.out_freq_l.iter_mut().zip(self.out_freq_r.iter_mut()))
-                .take(num_bins)
-            {
-                *ol += *cfi * gl;
-                *or_ += *cfi * gr;
+            // Complex multiply-accumulate: out += channel * gain
+            // Since gains are real, we can optimize the loop easily.
+            for i in 0..num_bins {
+                self.out_freq_l[i] += channel_fft[i] * gl;
+                self.out_freq_r[i] += channel_fft[i] * gr;
             }
         }
 
@@ -465,24 +466,38 @@ impl DownmixPlugin {
                         let gr = self.coeff_smoothers[ch * 2 + 1].current();
                         let val = self.fft_output[ch * num_bins + bin];
 
-                        let mag_l = val.norm() * gl;
-                        let mag_r = val.norm() * gr;
+                        // Optimized magnitude and phase using fast math
+                        let mag_sq = val.norm_sqr();
+                        let mag = if mag_sq > 1e-12 {
+                            mag_sq * crate::simd::fast_inv_sqrt(mag_sq)
+                        } else {
+                            0.0
+                        };
+
+                        let mag_l = mag * gl;
+                        let mag_r = mag * gr;
 
                         mag_sum_l += mag_l;
                         mag_sum_r += mag_r;
 
                         if mag_l > max_mag_l {
                             max_mag_l = mag_l;
-                            dominant_phase_l = (val * gl).arg();
+                            dominant_phase_l = fast_atan2(val.im, val.re);
                         }
                         if mag_r > max_mag_r {
                             max_mag_r = mag_r;
-                            dominant_phase_r = (val * gr).arg();
+                            dominant_phase_r = fast_atan2(val.im, val.re);
                         }
                     }
 
-                    let aligned_l = Complex::from_polar(mag_sum_l, dominant_phase_l);
-                    let aligned_r = Complex::from_polar(mag_sum_r, dominant_phase_r);
+                    let aligned_l = Complex::new(
+                        mag_sum_l * fast_cos(dominant_phase_l),
+                        mag_sum_l * fast_sin(dominant_phase_l),
+                    );
+                    let aligned_r = Complex::new(
+                        mag_sum_r * fast_cos(dominant_phase_r),
+                        mag_sum_r * fast_sin(dominant_phase_r),
+                    );
 
                     self.out_freq_l[bin] = self.out_freq_l[bin] * (1.0 - blend) + aligned_l * blend;
                     self.out_freq_r[bin] = self.out_freq_r[bin] * (1.0 - blend) + aligned_r * blend;
@@ -497,11 +512,14 @@ impl DownmixPlugin {
         self.fft_inverse
             .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
             .unwrap();
+
+        // Use SIMD windowing and scaling
+        crate::simd::window_mul_simd_inplace(&mut self.ifft_output_buf, &self.analysis_window);
+        crate::simd::scale_add_simd_inplace(&mut self.ifft_output_buf, scale);
+
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
-            // Apply synthesis window
-            let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
-            self.output_accumulator[idx * 2] += s;
+            self.output_accumulator[idx * 2] += self.ifft_output_buf[i];
         }
 
         self.out_freq_r[0].im = 0.0;
@@ -510,11 +528,13 @@ impl DownmixPlugin {
         self.fft_inverse
             .process(&mut self.ifft_input_buf, &mut self.ifft_output_buf)
             .unwrap();
+
+        crate::simd::window_mul_simd_inplace(&mut self.ifft_output_buf, &self.analysis_window);
+        crate::simd::scale_add_simd_inplace(&mut self.ifft_output_buf, scale);
+
         for i in 0..n {
             let idx = (self.next_add_position + i) & mask;
-            // Apply synthesis window
-            let s = self.ifft_output_buf[i] * self.analysis_window[i] * scale;
-            self.output_accumulator[idx * 2 + 1] += s;
+            self.output_accumulator[idx * 2 + 1] += self.ifft_output_buf[i];
         }
 
         self.next_add_position = (self.next_add_position + HOP_SIZE) & mask;
@@ -681,13 +701,6 @@ impl Plugin for DownmixPlugin {
                 self.output_read_position = (self.output_read_position + to_drain) & mask;
                 self.output_accumulator_fill -= to_drain;
                 output_pos += to_drain;
-            } else if input_pos >= num_frames {
-                let rem = num_frames - output_pos;
-                for i in 0..rem {
-                    output[(output_pos + i) * 2] = 0.0;
-                    output[(output_pos + i) * 2 + 1] = 0.0;
-                }
-                output_pos = num_frames;
             } else {
                 break;
             }

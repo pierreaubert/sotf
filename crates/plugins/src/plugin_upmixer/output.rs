@@ -40,11 +40,9 @@ impl UpmixerPlugin {
                 if self.cached_is_height[ch] {
                     continue;
                 }
-                for i in 0..self.fft_size {
-                    let v = self.time_out_channels[ch][i].abs();
-                    if v > max_abs {
-                        max_abs = v;
-                    }
+                let ch_max = crate::simd::find_max_abs_simd(&self.time_out_channels[ch]);
+                if ch_max > max_abs {
+                    max_abs = ch_max;
                 }
             }
 
@@ -76,44 +74,11 @@ impl UpmixerPlugin {
         let start_scale = self.prev_safety_scale;
         self.prev_safety_scale = end_scale;
 
-        let threshold = 0.95_f32;
-        let inv_fft_size = 1.0 / self.fft_size as f32;
-
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
-
-            // Step 1: Apply fixed STFT scale and block-level safety scale
-            let t = i as f32 * inv_fft_size;
+            let t = i as f32 / self.fft_size as f32;
             let block_safety_scale = start_scale + t * (end_scale - start_scale);
-            let base_scale = combined_scale * block_safety_scale;
-
-            // Step 2: Detect peak across channels for this sample
-            let mut peak = 0.0_f32;
-            for ch in 0..self.num_output_channels {
-                let v = (self.time_out_channels[ch][i] * base_scale).abs();
-                if v > peak {
-                    peak = v;
-                }
-            }
-
-            // Step 3: Update per-sample limiter envelope
-            let target_gr = if peak > threshold {
-                threshold / peak
-            } else {
-                1.0
-            };
-            if target_gr < self.limiter_envelope {
-                // Fast attack
-                self.limiter_envelope =
-                    target_gr + self.limiter_attack_coeff * (self.limiter_envelope - target_gr);
-            } else {
-                // Slow release
-                self.limiter_envelope =
-                    target_gr + self.limiter_release_coeff * (self.limiter_envelope - target_gr);
-            }
-
-            // Step 4: Apply final combined scale to all channels
-            let final_scale = base_scale * self.limiter_envelope;
+            let final_scale = combined_scale * block_safety_scale;
             for ch in 0..self.num_output_channels {
                 output[idx + ch] = self.time_out_channels[ch][i] * final_scale;
             }

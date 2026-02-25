@@ -4,6 +4,7 @@
 
 use super::UpmixerPlugin;
 use crate::simd::compute_covariance_simd;
+use math_audio_dsp::fast_math::{fast_atan2, fast_cos, fast_sin};
 
 use rustfft::num_complex::Complex;
 
@@ -303,7 +304,7 @@ impl UpmixerPlugin {
                     1.0
                 };
                 let tr_red = 1.0
-                    - (self.hr_transient_env * self.height_transient_reduction.current())
+                    - (self.height_transient_env_slow * self.height_transient_reduction.current())
                         .min(self.height_transient_reduction.current());
                 let corr_start = xfade_start.min(upmix_start);
                 for i in corr_start..end_bin {
@@ -317,9 +318,7 @@ impl UpmixerPlugin {
         }
 
         self.smooth_and_apply_energy_correction();
-        let strength = ((1.0 - self.hr_transient_env * 0.5).max(0.3)
-            * (1.0 - self.dialogue_probability * 0.7))
-            .max(0.05);
+        let strength = (1.0 - self.dialogue_probability * 0.7).clamp(0.05, 1.0);
         self.decorrelation_strength = strength;
 
         let spec_size = self.fft_size / 2 + 1;
@@ -328,7 +327,7 @@ impl UpmixerPlugin {
         // Only reblend when strength changed significantly, or in LFO mode
         // (LFO mode updates the underlying decorrelation filters every block)
         let needs_reblend = self.decorrelation_mode == 1
-            || (strength - self.prev_decorrelation_strength).abs() > 0.01;
+            || (strength - self.prev_decorrelation_strength).abs() > 0.02;
 
         if needs_reblend {
             self.prev_decorrelation_strength = strength;
@@ -375,7 +374,19 @@ impl UpmixerPlugin {
                     let prev = &self.prev_blended_filters_for_crossfade[ch];
                     let cur = &mut self.blended_decorrelation_filters[ch];
                     for i in 0..spec_size {
-                        cur[i] = prev[i] * (1.0 - t) + cur[i] * t;
+                        // Phase-angle interpolation preserves the all-pass property
+                        // during mode transitions (linear complex interp does not).
+                        // Use fast math approximations for real-time efficiency.
+                        let prev_phase = fast_atan2(prev[i].im, prev[i].re);
+                        let cur_phase = fast_atan2(cur[i].im, cur[i].re);
+                        let mut delta = cur_phase - prev_phase;
+                        if delta > std::f32::consts::PI {
+                            delta -= 2.0 * std::f32::consts::PI;
+                        } else if delta < -std::f32::consts::PI {
+                            delta += 2.0 * std::f32::consts::PI;
+                        }
+                        let blended_phase = prev_phase + t * delta;
+                        cur[i] = Complex::new(fast_cos(blended_phase), fast_sin(blended_phase));
                     }
                 }
             }

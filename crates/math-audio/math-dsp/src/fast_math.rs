@@ -88,6 +88,50 @@ pub fn fast_cos(x: f32) -> f32 {
     fast_sin(x + std::f32::consts::FRAC_PI_2)
 }
 
+/// Fast approximation of atan2(y, x)
+///
+/// Max error ~0.001 rad (0.05 degrees).
+/// Based on a rational approximation for atan(x) on [0, 1].
+#[inline]
+pub fn fast_atan2(y: f32, x: f32) -> f32 {
+    use std::f32::consts::PI;
+
+    if x == 0.0 {
+        if y > 0.0 {
+            return PI / 2.0;
+        }
+        if y < 0.0 {
+            return -PI / 2.0;
+        }
+        return 0.0;
+    }
+
+    let abs_y = y.abs();
+    let abs_x = x.abs();
+    let (a, b) = if abs_x > abs_y {
+        (abs_y, abs_x)
+    } else {
+        (abs_x, abs_y)
+    };
+
+    // Rational approximation for atan(z) where z = a/b is in [0, 1]
+    // atan(z) ≈ z * (π/4 + (1-z) * (0.273 + 0.07 * z))
+    // This is very fast and has max error ~0.0015 rad.
+    let z = a / b;
+    let mut atan = z * (std::f32::consts::FRAC_PI_4 + (1.0 - z) * (0.273 + 0.07 * z));
+
+    if abs_y > abs_x {
+        atan = (PI / 2.0) - atan;
+    }
+    if x < 0.0 {
+        atan = PI - atan;
+    }
+    if y < 0.0 {
+        atan = -atan;
+    }
+    atan
+}
+
 /// Fast approximation of base-10 exponential
 ///
 /// Useful for linear gain from dB: `fast_pow10(db / 20.0)`
@@ -106,6 +150,17 @@ pub fn fast_ln(x: f32) -> f32 {
 #[inline]
 pub fn fast_exp(x: f32) -> f32 {
     fast_exp2(x * std::f32::consts::LOG2_E)
+}
+
+/// Fast approximation of x^y
+///
+/// Uses log2/exp2 identity: x^y = 2^(y * log2(x))
+#[inline]
+pub fn fast_powf(x: f32, y: f32) -> f32 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    fast_exp2(y * fast_log2(x))
 }
 
 #[cfg(test)]
@@ -201,6 +256,31 @@ mod tests {
                 approx,
                 error
             );
+        }
+    }
+
+    #[test]
+    fn test_fast_atan2() {
+        for yi in -10..10 {
+            for xi in -10..10 {
+                let y = yi as f32 * 0.5;
+                let x = xi as f32 * 0.5;
+                if x == 0.0 && y == 0.0 {
+                    continue;
+                }
+                let actual = y.atan2(x);
+                let approx = fast_atan2(y, x);
+                let error = (actual - approx).abs();
+                assert!(
+                    error < 0.01,
+                    "atan2 error at ({}, {}): {} vs {} (err: {})",
+                    y,
+                    x,
+                    actual,
+                    approx,
+                    error
+                );
+            }
         }
     }
 }

@@ -106,12 +106,9 @@ impl UpmixerPlugin {
         let hr_input = &input[start..end];
         self.process_hr_fft(hr_input);
 
-        // Scale to match main path: (1/hr_fft_size) * 2.0 * (0.9/sqrt(2))
-        // This matches the main path's combined_scale from process.rs:70-71
-        // The result is then scaled by hr_mix to blend with the main path.
-        // Note: the main path's combined_scale is applied later in extract_output_and_scale,
-        // so we must apply the HR-equivalent scale here to get unity-matched levels.
-        let scale = (self.fft_size as f32 / self.hr_fft_size as f32) * hr_mix;
+        // Scale HR path relative to main: sqrt ratio avoids overpowering the
+        // main path while still providing transient detail enhancement.
+        let scale = (self.fft_size as f32 / self.hr_fft_size as f32).sqrt() * hr_mix;
 
         for &ch in &self.cached_hr_active_channels {
             for i in 0..self.hr_fft_size {

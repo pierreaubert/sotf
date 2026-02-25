@@ -5,6 +5,7 @@
 use super::analyzer::{RealTimeCache, SpectrumData};
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use math_audio_dsp::fast_math::fast_log10;
 
 use rtrb::{Consumer, RingBuffer};
 use rustfft::num_complex::Complex;
@@ -278,50 +279,66 @@ impl Plugin for SpectrumAnalyzerPlugin {
         context: &ProcessContext,
     ) -> Result<usize, String> {
         output.copy_from_slice(input);
-        for i in 0..context.num_frames {
-            let mut sum = 0.0f32;
-            for ch in 0..self.num_channels {
-                sum += input[i * self.num_channels + ch];
+
+        // Downmix to mono for analysis
+        if self.num_channels == 2 {
+            for i in 0..context.num_frames {
+                let s = (input[i * 2] + input[i * 2 + 1]) * 0.5;
+                let _ = self.producer.push(s);
             }
-            let _ = self.producer.push(sum / self.num_channels as f32);
+        } else {
+            let inv_ch = 1.0 / self.num_channels as f32;
+            for i in 0..context.num_frames {
+                let mut sum = 0.0f32;
+                for ch in 0..self.num_channels {
+                    sum += input[i * self.num_channels + ch];
+                }
+                let _ = self.producer.push(sum * inv_ch);
+            }
         }
+
         let slots = self.consumer.slots();
         if slots >= FFT_SIZE {
             if let Ok(chunk) = self.consumer.read_chunk(FFT_SIZE) {
                 let (s1, s2) = chunk.as_slices();
-                let mut idx = 0;
-                for &s in s1 {
-                    self.windowed[idx] = s * self.window[idx];
-                    idx += 1;
-                }
-                for &s in s2 {
-                    self.windowed[idx] = s * self.window[idx];
-                    idx += 1;
-                }
+                let s1_len = s1.len();
+
+                // Window each chunk using SIMD
+                crate::simd::window_mul_simd(&mut self.windowed[..s1_len], s1, &self.window[..s1_len]);
+                crate::simd::window_mul_simd(
+                    &mut self.windowed[s1_len..],
+                    s2,
+                    &self.window[s1_len..FFT_SIZE],
+                );
+
                 chunk.commit_all();
             }
             self.fft_r2c
                 .process(&mut self.windowed, &mut self.fft_output)
                 .unwrap();
             let scale = 2.0 / FFT_SIZE as f32;
+            let scale_sq = scale * scale;
             self.new_mags.fill(-100.0);
+
             for (i, bin) in self.fft_output.iter().enumerate().skip(1) {
-                if let Some(display_bin) = self.bin_to_display[i] {
+                if let Some(display_bin) = self.bin_to_display.get(i).copied().flatten() {
                     // Use norm_sqr to avoid sqrt; convert with 10*log10 instead of 20*log10
-                    let norm_sq = bin.norm_sqr() * scale * scale;
-                    let db = 10.0 * norm_sq.max(1e-10).log10();
+                    let norm_sq = bin.norm_sqr() * scale_sq;
+                    let db = 10.0 * fast_log10(norm_sq.max(1e-10));
                     self.new_mags[display_bin] = self.new_mags[display_bin].max(db);
                 }
             }
+
+            // Smooth magnitudes
+            let s = self.config.smoothing;
+            let inv_s = 1.0 - s;
             for i in 0..self.config.num_bins {
-                self.current_magnitudes[i] = self.config.smoothing * self.current_magnitudes[i]
-                    + (1.0 - self.config.smoothing) * self.new_mags[i];
+                self.current_magnitudes[i] =
+                    s * self.current_magnitudes[i] + inv_s * self.new_mags[i];
             }
-            let peak = self
-                .current_magnitudes
-                .iter()
-                .copied()
-                .fold(-100.0, f32::max);
+
+            // Find peak using SIMD-optimized function
+            let peak = crate::simd::find_max_abs_simd(&self.current_magnitudes);
 
             // Update cache in-place (real-time safe)
             self.cache.update(|data| {

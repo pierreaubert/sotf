@@ -5,6 +5,7 @@
 use super::analyzer::{LoudnessData, RealTimeCache};
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use math_audio_dsp::fast_math::fast_log10;
 use ebur128::{EbuR128, Mode};
 use rtrb::{Consumer, RingBuffer};
 use serde::{Deserialize, Serialize};
@@ -77,7 +78,8 @@ impl LoudnessMonitor {
             peaks[ch] = self.ebur128.prev_sample_peak(ch as u32).unwrap_or(0.0);
             let tp_linear = self.ebur128.prev_true_peak(ch as u32).unwrap_or(0.0);
             tps[ch] = if tp_linear > 0.0 {
-                20.0 * tp_linear.log10()
+                // Use fast math for true peak dB conversion
+                20.0 * fast_log10(tp_linear as f32) as f64
             } else {
                 f64::NEG_INFINITY
             };
@@ -118,12 +120,23 @@ fn compute_correlation_interleaved(samples: &[f32], channels: usize) -> Option<f
     let mut sum_l2: f64 = 0.0;
     let mut sum_r2: f64 = 0.0;
 
-    for i in 0..num_frames {
-        let l = samples[i * channels] as f64;
-        let r = samples[i * channels + 1] as f64;
-        sum_lr += l * r;
-        sum_l2 += l * l;
-        sum_r2 += r * r;
+    // Use chunks_exact(2) for common stereo case to help compiler auto-vectorize
+    if channels == 2 {
+        for chunk in samples.chunks_exact(2) {
+            let l = chunk[0] as f64;
+            let r = chunk[1] as f64;
+            sum_lr += l * r;
+            sum_l2 += l * l;
+            sum_r2 += r * r;
+        }
+    } else {
+        for i in 0..num_frames {
+            let l = samples[i * channels] as f64;
+            let r = samples[i * channels + 1] as f64;
+            sum_lr += l * r;
+            sum_l2 += l * l;
+            sum_r2 += r * r;
+        }
     }
 
     let denom = (sum_l2 * sum_r2).sqrt();
