@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex};
 // Import types from sibling modules
 use super::parameters::TuiEditablePlugin;
 use super::types::{
-    ArtistNode, ChannelFilter, ChannelGroup, ChannelInfo, FocusedPane, InputMode, LibrarySortOrder,
-    LibraryViewMode, MatrixEditMode, PendingParameterUpdate, QueueEntry, QueueItem, Screen,
-    TreeItem,
+    ArtistNode, ChannelFilter, ChannelGroup, ChannelInfo, FilePickerMode, FilePickerOrigin,
+    FocusedPane, InputMode, LibrarySortOrder, LibraryViewMode, MatrixEditMode,
+    PendingParameterUpdate, QueueEntry, QueueItem, Screen, TreeItem,
 };
 
 pub struct App {
@@ -153,11 +153,15 @@ pub struct App {
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
 
-    // File browser state
-    pub file_browser_items: Vec<PathBuf>,
-    pub selected_file_index: usize,
-    pub current_browser_dir: PathBuf,
-    pub file_browser_extension: Option<String>, // Filter by extension (.sofa, .wav)
+    // File explorer state
+    pub file_explorer_items: Vec<PathBuf>,
+    pub file_explorer_selected: usize,
+    pub file_explorer_dir: PathBuf,
+    pub file_explorer_filter: Option<String>,
+    pub file_explorer_show_hidden: bool,
+    pub file_picker_mode: FilePickerMode,
+    pub file_picker_origin: FilePickerOrigin,
+    pub file_picker_title: String,
 
     // Album cover image display
     pub album_images: Vec<PathBuf>, // List of image files in current album directory
@@ -285,10 +289,16 @@ impl App {
                 Arc::clone(&scanner_pause_flag),
             ),
             last_loaded_preset: None,
-            file_browser_items: Vec::new(),
-            selected_file_index: 0,
-            current_browser_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            file_browser_extension: None,
+            file_explorer_items: Vec::new(),
+            file_explorer_selected: 0,
+            file_explorer_dir: directories::UserDirs::new()
+                .map(|u| u.home_dir().to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("/")),
+            file_explorer_filter: None,
+            file_explorer_show_hidden: false,
+            file_picker_mode: FilePickerMode::File,
+            file_picker_origin: FilePickerOrigin::SofaFile,
+            file_picker_title: String::new(),
             album_images: Vec::new(),
             selected_image_index: 0,
             image_picker: None,
@@ -327,6 +337,29 @@ impl App {
             if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
                 self.selected_output_device_index = default_idx;
                 self.current_output_device_name = output_devices[default_idx].name.clone().into();
+            }
+        }
+    }
+
+    pub fn load_recording_devices(&mut self) {
+        if let Ok(devices_map) = sotf_audio::devices::get_audio_devices() {
+            if let Some(output_devices) = devices_map.get("output") {
+                self.recording.available_playback_devices = output_devices
+                    .iter()
+                    .map(|d| (d.device_id.clone().unwrap_or_default(), d.name.clone()))
+                    .collect();
+                if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
+                    self.recording.selected_playback_idx = default_idx;
+                }
+            }
+            if let Some(input_devices) = devices_map.get("input") {
+                self.recording.available_recording_devices = input_devices
+                    .iter()
+                    .map(|d| (d.device_id.clone().unwrap_or_default(), d.name.clone()))
+                    .collect();
+                if let Some(default_idx) = input_devices.iter().position(|d| d.is_default) {
+                    self.recording.selected_recording_idx = default_idx;
+                }
             }
         }
     }
@@ -2601,7 +2634,8 @@ impl App {
         } else {
             // No EQ plugin found — insert one at the user-plugin slot
             let insert_at = self.plugin_chain.user_plugin_insert_index();
-            self.plugin_chain.insert_plugin(insert_at, &PluginType::EQ)
+            self.plugin_chain.insert_plugin(insert_at, &PluginType::EQ);
+            insert_at
         };
 
         // Update the plugin settings
@@ -3135,28 +3169,80 @@ impl App {
     }
 
     // ========================================================================
-    // File Browser Methods
+    // File Explorer Methods
     // ========================================================================
 
-    pub fn refresh_file_browser(&mut self) {
-        self.file_browser_items.clear();
-        self.selected_file_index = 0;
+    /// Open the file explorer modal for the given origin context.
+    pub fn open_file_explorer(
+        &mut self,
+        origin: FilePickerOrigin,
+        mode: FilePickerMode,
+        title: &str,
+        start_dir: Option<&str>,
+        extension_filter: Option<&str>,
+    ) {
+        self.file_picker_origin = origin;
+        self.file_picker_mode = mode;
+        self.file_picker_title = title.to_string();
+        self.file_explorer_filter = extension_filter.map(|s| s.to_lowercase());
+        self.file_explorer_show_hidden = false;
 
-        // Add ".." entry to go up
-        if let Some(parent) = self.current_browser_dir.parent() {
-            self.file_browser_items.push(parent.to_path_buf());
-        }
+        // Smart start directory: use provided path's parent if it exists, else home
+        let dir = start_dir
+            .and_then(|s| {
+                let p = std::path::Path::new(s);
+                if p.is_dir() {
+                    Some(p.to_path_buf())
+                } else {
+                    p.parent().filter(|pp| pp.is_dir()).map(|pp| pp.to_path_buf())
+                }
+            })
+            .unwrap_or_else(|| {
+                directories::UserDirs::new()
+                    .map(|u| u.home_dir().to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("/"))
+            });
 
-        if let Ok(entries) = std::fs::read_dir(&self.current_browser_dir) {
+        self.file_explorer_dir = dir;
+        self.refresh_file_explorer();
+        self.input_mode = InputMode::FileExplorer;
+    }
+
+    /// Close the file explorer and restore the appropriate input mode.
+    pub fn close_file_explorer(&mut self) {
+        self.input_mode = match self.file_picker_origin {
+            FilePickerOrigin::SofaFile | FilePickerOrigin::IrFile | FilePickerOrigin::ApoFile => {
+                InputMode::EditPlugin
+            }
+            FilePickerOrigin::AddDirectory => InputMode::AddDirectory,
+            _ => InputMode::Normal,
+        };
+    }
+
+    pub fn refresh_file_explorer(&mut self) {
+        self.file_explorer_items.clear();
+        self.file_explorer_selected = 0;
+
+        if let Ok(entries) = std::fs::read_dir(&self.file_explorer_dir) {
             let mut dirs = Vec::new();
             let mut files = Vec::new();
 
             for entry in entries.flatten() {
                 let path = entry.path();
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                // Skip hidden files unless toggled on
+                if !self.file_explorer_show_hidden && name.starts_with('.') {
+                    continue;
+                }
+
                 if path.is_dir() {
                     dirs.push(path);
                 } else if path.is_file() {
-                    if let Some(ext) = &self.file_browser_extension {
+                    if let Some(ext) = &self.file_explorer_filter {
                         if path
                             .extension()
                             .is_some_and(|e| e.to_string_lossy().to_lowercase() == *ext)
@@ -3172,44 +3258,49 @@ impl App {
             dirs.sort();
             files.sort();
 
-            self.file_browser_items.extend(dirs);
-            self.file_browser_items.extend(files);
+            self.file_explorer_items.extend(dirs);
+            self.file_explorer_items.extend(files);
         }
     }
 
-    pub fn navigate_file_browser(&mut self) -> Option<PathBuf> {
-        if let Some(path) = self
-            .file_browser_items
-            .get(self.selected_file_index)
-            .cloned()
-        {
-            if path.is_dir() {
-                self.current_browser_dir = path;
-                self.refresh_file_browser();
-                None
+    pub fn file_explorer_enter_dir(&mut self, path: PathBuf) {
+        self.file_explorer_dir = path;
+        self.refresh_file_explorer();
+    }
+
+    pub fn file_explorer_go_parent(&mut self) {
+        if let Some(parent) = self.file_explorer_dir.parent() {
+            let parent = parent.to_path_buf();
+            self.file_explorer_dir = parent;
+            self.refresh_file_explorer();
+        }
+    }
+
+    pub fn file_explorer_select_next(&mut self) {
+        if !self.file_explorer_items.is_empty() {
+            self.file_explorer_selected =
+                (self.file_explorer_selected + 1) % self.file_explorer_items.len();
+        }
+    }
+
+    pub fn file_explorer_select_prev(&mut self) {
+        if !self.file_explorer_items.is_empty() {
+            if self.file_explorer_selected == 0 {
+                self.file_explorer_selected = self.file_explorer_items.len() - 1;
             } else {
-                Some(path)
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn select_next_file(&mut self) {
-        if !self.file_browser_items.is_empty() {
-            self.selected_file_index =
-                (self.selected_file_index + 1) % self.file_browser_items.len();
-        }
-    }
-
-    pub fn select_previous_file(&mut self) {
-        if !self.file_browser_items.is_empty() {
-            if self.selected_file_index == 0 {
-                self.selected_file_index = self.file_browser_items.len() - 1;
-            } else {
-                self.selected_file_index -= 1;
+                self.file_explorer_selected -= 1;
             }
         }
+    }
+
+    pub fn file_explorer_toggle_hidden(&mut self) {
+        self.file_explorer_show_hidden = !self.file_explorer_show_hidden;
+        self.refresh_file_explorer();
+    }
+
+    /// Returns the currently selected path, if any.
+    pub fn file_explorer_current(&self) -> Option<&PathBuf> {
+        self.file_explorer_items.get(self.file_explorer_selected)
     }
 }
 

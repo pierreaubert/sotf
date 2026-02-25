@@ -318,11 +318,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_load_apo_file_dialog(f, app);
     } else if app.input_mode == InputMode::LoadSofaFile {
         draw_load_sofa_file_dialog(f, app);
-    } else if matches!(
-        app.input_mode,
-        InputMode::BrowseSofaFile | InputMode::BrowseIrFile
-    ) {
-        draw_file_browser_modal(f, app);
+    } else if app.input_mode == InputMode::FileExplorer {
+        draw_file_explorer_modal(f, app);
     }
 
     // Scan progress popup
@@ -2845,7 +2842,8 @@ fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Loss chart or hint
             if s.loss_history.len() >= 2 {
-                draw_loss_chart(f, inner[2], app, &s.loss_history, s.opt_max_iter);
+                let history: Vec<_> = s.loss_history.iter().map(|(i, l)| (*i, *l, None)).collect();
+                draw_loss_chart(f, inner[2], app, &history);
             } else {
                 let hint = match &s.opt_status {
                     OptimizationStatus::Idle => " Enter=start  BackTab=back to configure",
@@ -3076,48 +3074,45 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             // Fields are numbered 0..24 for selected_field navigation
             let c = &s.config;
             let rows: Vec<(Option<usize>, &str, String)> = vec![
+                (None, "── Loss ──", String::new()),
+                (Some(0), "Loss Function", c.loss_function.clone()),
                 (None, "── Filters ──", String::new()),
-                (Some(0), "Filters (n)", format!("{}", c.num_filters)),
-                (Some(1), "Min Freq (Hz)", format!("{:.0}", c.min_freq)),
-                (Some(2), "Max Freq (Hz)", format!("{:.0}", c.max_freq)),
-                (Some(3), "Min dB", format!("{:.1}", c.min_db)),
-                (Some(4), "Max dB", format!("{:.1}", c.max_db)),
-                (Some(5), "Min Q", format!("{:.2}", c.min_q)),
-                (Some(6), "Max Q", format!("{:.2}", c.max_q)),
-                (Some(7), "PEQ Model", c.peq_model.clone()),
+                (Some(1), "Filters (n)", format!("{}", c.num_filters)),
+                (Some(2), "Min Freq (Hz)", format!("{:.0}", c.min_freq)),
+                (Some(3), "Max Freq (Hz)", format!("{:.0}", c.max_freq)),
+                (Some(4), "Min dB", format!("{:.1}", c.min_db)),
+                (Some(5), "Max dB", format!("{:.1}", c.max_db)),
+                (Some(6), "Min Q", format!("{:.2}", c.min_q)),
+                (Some(7), "Max Q", format!("{:.2}", c.max_q)),
+                (Some(8), "PEQ Model", c.peq_model.clone()),
                 (None, "── Optimization ──", String::new()),
-                (Some(8), "Algorithm", c.algorithm.as_str().to_string()),
-                (Some(9), "Max Iter", format!("{}", c.max_iter)),
-                (Some(10), "Population", format!("{}", c.population)),
-                (Some(11), "Strategy", c.strategy.clone()),
-                (Some(12), "DE F (mutation)", format!("{:.2}", c.de_f)),
-                (Some(13), "DE CR (crossover)", format!("{:.2}", c.de_cr)),
+                (Some(9), "Algorithm", c.algorithm.as_str().to_string()),
+                (Some(10), "Max Iter", format!("{}", c.max_iter)),
+                (Some(11), "Population", format!("{}", c.population)),
+                (Some(12), "Strategy", c.strategy.clone()),
+                (Some(13), "DE F (mutation)", format!("{:.2}", c.de_f)),
+                (Some(14), "DE CR (crossover)", format!("{:.2}", c.de_cr)),
                 (None, "── Refinement ──", String::new()),
-                (Some(14), "Refine", bool_str(c.refine).to_string()),
-                (Some(15), "Local Algo", c.local_algo.clone()),
+                (Some(15), "Refine", bool_str(c.refine).to_string()),
+                (Some(16), "Local Algo", c.local_algo.clone()),
                 (None, "── Smoothing ──", String::new()),
-                (Some(16), "Smooth", bool_str(c.smooth).to_string()),
-                (Some(17), "Smooth N", format!("{}", c.smooth_n)),
+                (Some(17), "Smooth", bool_str(c.smooth).to_string()),
+                (Some(18), "Smooth N", format!("{}", c.smooth_n)),
                 (
-                    Some(18),
+                    Some(19),
                     "Psychoacoustic",
                     bool_str(c.psychoacoustic).to_string(),
                 ),
                 (None, "── Constraints ──", String::new()),
                 (
-                    Some(19),
+                    Some(20),
                     "Spacing Weight",
                     format!("{:.1}", c.spacing_weight),
                 ),
                 (
-                    Some(20),
+                    Some(21),
                     "Min Spacing (oct)",
                     format!("{:.2}", c.min_spacing_oct),
-                ),
-                (
-                    Some(21),
-                    "Loss Function",
-                    c.loss_function.clone(),
                 ),
                 (None, "── Convergence ──", String::new()),
                 (Some(22), "Tolerance", format!("{:.0e}", c.tolerance)),
@@ -3261,7 +3256,7 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Loss history chart (if data available), else hint
             if s.loss_history.len() >= 2 {
-                draw_loss_chart(f, inner[2], app, &s.loss_history, s.opt_max_iter);
+                draw_loss_chart(f, inner[2], app, &s.loss_history);
             } else {
                 let hint = match &s.opt_status {
                     OptimizationStatus::Idle => " Enter=start  Tab=back to configure",
@@ -3298,15 +3293,22 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     ])
                     .split(chunks[1]);
 
+                let initial_score = s.loss_history.iter().find_map(|(_, _, score)| *score);
+                let final_score = s.loss_history.iter().rev().find_map(|(_, _, score)| *score);
+                let score_part = match (initial_score, final_score) {
+                    (Some(init), Some(fin)) => format!(
+                        "  |  Score: {:.2} → {:.2} (Δ {:+.2})",
+                        init, fin, fin - init,
+                    ),
+                    _ => String::new(),
+                };
                 let summary = format!(
-                    " {} filters  |  Loss: {:.4} → {:.4} (Δ {:.4})  |  Score: {:.2} → {:.2} (Δ {:+.2})",
+                    " {} filters  |  Loss: {:.4} → {:.4} (Δ {:.4}){}",
                     s.filters.len(),
                     s.pre_loss,
                     s.post_loss,
                     s.pre_loss - s.post_loss,
-                    -s.pre_loss,
-                    -s.post_loss,
-                    s.pre_loss - s.post_loss,
+                    score_part,
                 );
                 let summary_para = Paragraph::new(summary)
                     .style(Style::default().fg(app.theme.accent_success))
@@ -3401,7 +3403,7 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
                     lines.push(Line::from(""));
                     lines.push(Line::from(vec![Span::styled(
-                        " Enter=apply to rack  Tab=back to Select  BackTab=back to Results",
+                        " Enter=apply to rack  →=Select  ←/BackTab=Results",
                         Style::default().fg(app.theme.fg_secondary),
                     )]));
                 }
@@ -3443,16 +3445,13 @@ fn draw_loss_chart(
     f: &mut Frame,
     area: Rect,
     app: &App,
-    history: &[(usize, f64)],
-    max_iterations: usize,
+    history: &[(usize, f64, Option<f64>)],
 ) {
     if history.len() < 2 {
         return;
     }
 
-    let max_iter = history.last().map(|h| h.0).unwrap_or(1) as f64;
-    let x_bound = (max_iterations as f64).max(max_iter);
-    let min_loss = history.iter().map(|h| h.1).fold(f64::INFINITY, f64::min);
+    let x_bound = history.last().map(|h| h.0).unwrap_or(1) as f64;
     let max_loss = history
         .iter()
         .map(|h| h.1)
@@ -3465,34 +3464,15 @@ fn draw_loss_chart(
     let loss_data: Vec<(f64, f64)> = history
         .iter()
         .step_by(ds_step)
-        .map(|(iter, loss)| (*iter as f64, *loss))
+        .map(|(iter, loss, _)| (*iter as f64, *loss))
         .collect();
 
-    // Iteration progress line: maps iteration count → loss y-range
-    // Shows a diagonal from (0, y_hi) to (max_iterations, y_lo)
-    let iter_data: Vec<(f64, f64)> = history
-        .iter()
-        .step_by(ds_step)
-        .map(|(iter, _)| {
-            let frac = *iter as f64 / x_bound;
-            (*iter as f64, y_hi - frac * (y_hi - y_lo))
-        })
-        .collect();
-
-    let datasets = vec![
-        Dataset::default()
-            .name("Loss")
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().fg(app.theme.accent_primary))
-            .data(&loss_data),
-        Dataset::default()
-            .name("Iter%")
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().fg(app.theme.fg_secondary))
-            .data(&iter_data),
-    ];
+    let datasets = vec![Dataset::default()
+        .name("Loss")
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::default().fg(app.theme.accent_primary))
+        .data(&loss_data)];
 
     let x_labels = vec![
         Span::raw("0"),
@@ -3505,12 +3485,7 @@ fn draw_loss_chart(
         Span::raw(format!("{:.4}", max_loss)),
     ];
 
-    let pct = if max_iterations > 0 {
-        (max_iter / x_bound * 100.0) as u32
-    } else {
-        0
-    };
-    let title = format!("Loss History  ({}% of {} iter)", pct, max_iterations);
+    let title = format!("Loss History  ({} iterations)", x_bound as usize);
 
     let chart = Chart::new(datasets)
         .block(Block::default().borders(Borders::ALL).title(title))
@@ -3578,14 +3553,9 @@ fn draw_freq_response_chart(
         .map(|(f, v)| (*f, *v))
         .collect();
 
-    // Compute y bounds across all curves with tight padding for better zoom
-    let all_vals = s
-        .curve_input
-        .iter()
-        .chain(s.curve_corrected.iter())
-        .chain(s.curve_filter_response.iter());
-    let y_min = all_vals.clone().copied().fold(f64::INFINITY, f64::min);
-    let y_max = all_vals.copied().fold(f64::NEG_INFINITY, f64::max);
+    // Compute y bounds from filter response SPL for appropriate zoom
+    let y_min = s.curve_filter_response.iter().copied().fold(f64::INFINITY, f64::min);
+    let y_max = s.curve_filter_response.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let y_bound_lo = y_min.floor();
     let y_bound_hi = y_max.ceil();
 
@@ -6252,7 +6222,7 @@ fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     f.render_widget(paragraph, inner);
 }
 
-fn draw_file_browser_modal(f: &mut Frame, app: &App) {
+fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
     let area = f.area();
     let modal_width = (area.width as f32 * 0.8) as u16;
     let modal_height = (area.height as f32 * 0.8) as u16;
@@ -6266,12 +6236,7 @@ fn draw_file_browser_modal(f: &mut Frame, app: &App) {
         height: modal_height,
     };
 
-    let title = match app.input_mode {
-        InputMode::BrowseSofaFile => " Select SOFA File ",
-        InputMode::BrowseIrFile => " Select Impulse Response (WAV) ",
-        _ => " File Browser ",
-    };
-
+    let title = format!(" {} ", app.file_picker_title);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
@@ -6300,7 +6265,7 @@ fn draw_file_browser_modal(f: &mut Frame, app: &App) {
         .split(inner);
 
     // Current directory
-    let dir_text = format!("Dir: {}", app.current_browser_dir.display());
+    let dir_text = format!("Dir: {}", app.file_explorer_dir.display());
     f.render_widget(
         Paragraph::new(dir_text).style(Style::default().fg(app.theme.accent_primary)),
         chunks[0],
@@ -6308,23 +6273,26 @@ fn draw_file_browser_modal(f: &mut Frame, app: &App) {
 
     // File list
     let items: Vec<ListItem> = app
-        .file_browser_items
+        .file_explorer_items
         .iter()
         .enumerate()
         .map(|(i, path)| {
-            let is_selected = i == app.selected_file_index;
-            let icon = if path.is_dir() { "📁" } else { "📄" };
+            let is_selected = i == app.file_explorer_selected;
+            let is_dir = path.is_dir();
+            let icon = if is_dir { "/" } else { " " };
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.display().to_string());
 
-            let content = format!(" {} {}", icon, name);
+            let content = format!(" {}{}", icon, name);
             let style = if is_selected {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
+            } else if is_dir {
+                Style::default().fg(app.theme.accent_primary)
             } else {
                 Style::default().fg(app.theme.fg_primary)
             };
@@ -6335,13 +6303,14 @@ fn draw_file_browser_modal(f: &mut Frame, app: &App) {
 
     let list = List::new(items);
     let mut state = ListState::default();
-    state.select(Some(app.selected_file_index));
+    state.select(Some(app.file_explorer_selected));
 
     use ratatui::widgets::StatefulWidget;
     StatefulWidget::render(list, chunks[1], f.buffer_mut(), &mut state);
 
     // Help text
-    let help_text = "↑/↓: Navigate | Enter/→: Select/Open | ←/Back: Up | Esc: Cancel";
+    let help_text =
+        "Enter:Select | j/k:Navigate | l/Enter:Open dir | h:Parent | H:Hidden | Esc:Cancel";
     f.render_widget(
         Paragraph::new(help_text)
             .style(Style::default().fg(app.theme.fg_secondary))

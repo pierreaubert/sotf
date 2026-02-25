@@ -92,8 +92,8 @@ pub struct SpinoramaEqTuiState {
     pub curve_target: Vec<f64>,
     pub curve_corrected: Vec<f64>,
     pub curve_filter_response: Vec<f64>,
-    // Optimization loss history: (iteration, loss)
-    pub loss_history: Vec<(usize, f64)>,
+    // Optimization loss history: (iteration, loss, optional score)
+    pub loss_history: Vec<(usize, f64, Option<f64>)>,
     // Step 5: update plugin confirmation
     pub update_substep: SpinUpdateSubStep,
     /// (slot_index, filter_count) of existing EQ to overwrite
@@ -396,12 +396,33 @@ pub enum InputMode {
     LoadPlugins,
     LoadApoFile,
     LoadSofaFile,
-    BrowseSofaFile,
-    BrowseIrFile,
+    FileExplorer,
     ShowHelp,
     ShowError,
     /// Shown when a multichannel file conflicts with the upmixer plugin
     ChannelConflict,
+}
+
+/// Whether the file picker selects a file or a directory
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilePickerMode {
+    File,
+    Directory,
+}
+
+/// Tracks which feature opened the file explorer so we can apply the result
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilePickerOrigin {
+    SofaFile,
+    IrFile,
+    RecordingOutputDir,
+    RecordingMicCalibration,
+    RoomEqFilePath,
+    RoomEqExportPath,
+    HeadphoneMeasurement,
+    HeadphoneCustomTarget,
+    AddDirectory,
+    ApoFile,
 }
 
 /// Options presented in the channel conflict dialog

@@ -230,12 +230,12 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         }
                         None
                     }
-                    KeyCode::Tab => {
-                        app.spinorama_eq.step = SpinoramaStep::Select;
+                    KeyCode::BackTab | KeyCode::Left => {
+                        app.spinorama_eq.step = SpinoramaStep::Results;
                         None
                     }
-                    KeyCode::BackTab => {
-                        app.spinorama_eq.step = SpinoramaStep::Results;
+                    KeyCode::Right => {
+                        app.spinorama_eq.step = SpinoramaStep::Select;
                         None
                     }
                     _ => None,
@@ -305,23 +305,31 @@ fn cycle_string(current: &str, options: &[&str], delta: i32) -> String {
 fn adjust_spinorama_field(app: &mut App, delta: i32) {
     let c = &mut app.spinorama_eq.config;
     match app.spinorama_eq.selected_field {
-        // ── Filters ──
+        // ── Loss ──
         0 => {
+            c.loss_function = cycle_string(
+                &c.loss_function,
+                &["flat", "flat-asymmetric", "score"],
+                delta,
+            );
+        }
+        // ── Filters ──
+        1 => {
             let n = c.num_filters as i32 + delta;
             c.num_filters = n.clamp(1, 30) as usize;
         }
-        1 => c.min_freq = (c.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
-        2 => c.max_freq = (c.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
-        3 => c.min_db = (c.min_db + delta as f64).clamp(-24.0, 0.0),
-        4 => c.max_db = (c.max_db + delta as f64).clamp(0.0, 12.0),
-        5 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
-        6 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
-        7 => {
+        2 => c.min_freq = (c.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
+        3 => c.max_freq = (c.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
+        4 => c.min_db = (c.min_db + delta as f64).clamp(-24.0, 0.0),
+        5 => c.max_db = (c.max_db + delta as f64).clamp(0.0, 12.0),
+        6 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
+        7 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
+        8 => {
             c.peq_model =
                 cycle_string(&c.peq_model, &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"], delta);
         }
         // ── Optimization ──
-        8 => {
+        9 => {
             use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
             let algos = RoomEqAlgorithm::all();
             let idx = algos.iter().position(|a| *a == c.algorithm).unwrap_or(0);
@@ -332,45 +340,38 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
             };
             c.algorithm = algos[new_idx];
         }
-        9 => {
+        10 => {
             let n = c.max_iter as i32 + delta * 1000;
             c.max_iter = n.clamp(1000, 100000) as usize;
         }
-        10 => {
+        11 => {
             let n = c.population as i32 + delta * 10;
             c.population = n.clamp(10, 200) as usize;
         }
-        11 => {
+        12 => {
             c.strategy = cycle_string(
                 &c.strategy,
                 &["currenttobest1bin", "best1bin", "rand1bin", "best2bin"],
                 delta,
             );
         }
-        12 => c.de_f = (c.de_f + delta as f64 * 0.1).clamp(0.1, 2.0),
-        13 => c.de_cr = (c.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
+        13 => c.de_f = (c.de_f + delta as f64 * 0.1).clamp(0.1, 2.0),
+        14 => c.de_cr = (c.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
         // ── Refinement ──
-        14 => c.refine = !c.refine,
-        15 => {
+        15 => c.refine = !c.refine,
+        16 => {
             c.local_algo = cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
         }
         // ── Smoothing ──
-        16 => c.smooth = !c.smooth,
-        17 => {
+        17 => c.smooth = !c.smooth,
+        18 => {
             let n = c.smooth_n as i32 + delta;
             c.smooth_n = n.clamp(1, 24) as usize;
         }
-        18 => c.psychoacoustic = !c.psychoacoustic,
+        19 => c.psychoacoustic = !c.psychoacoustic,
         // ── Constraints ──
-        19 => c.spacing_weight = (c.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
-        20 => c.min_spacing_oct = (c.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
-        21 => {
-            c.loss_function = cycle_string(
-                &c.loss_function,
-                &["flat", "flat-asymmetric", "score"],
-                delta,
-            );
-        }
+        20 => c.spacing_weight = (c.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
+        21 => c.min_spacing_oct = (c.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
         // ── Convergence ──
         22 => {
             c.tolerance = if delta > 0 {
@@ -413,7 +414,7 @@ static OPT_RESULT: std::sync::OnceLock<
         >,
     >,
 > = std::sync::OnceLock::new();
-static OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f32)>>>> =
+static OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f32, Option<f64>)>>>> =
     std::sync::OnceLock::new();
 
 /// Poll speaker-load result on every tick. Returns true if the UI needs a redraw.
@@ -516,7 +517,15 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
                     app.spinorama_eq.curve_target = r.target_curve.clone();
                     app.spinorama_eq.curve_corrected = r.corrected_curve.clone();
                     app.spinorama_eq.curve_filter_response = r.filter_response.clone();
-                    app.spinorama_eq.loss_history = r.optimization_history.clone();
+                    // Keep the progress-based loss_history (which includes scores)
+                    // Only override if empty (e.g. if the callback wasn't called)
+                    if app.spinorama_eq.loss_history.is_empty() {
+                        app.spinorama_eq.loss_history = r
+                            .optimization_history
+                            .iter()
+                            .map(|(iter, loss)| (*iter, *loss, None))
+                            .collect();
+                    }
                     app.spinorama_eq.opt_status = OptimizationStatus::Completed;
                     app.spinorama_eq.opt_progress = 1.0;
                 }
@@ -530,11 +539,12 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
     }
 
     if let Ok(mut guard) = progress_slot.lock() {
-        if let Some((iter, max_iter, loss, pct)) = guard.take() {
+        if let Some((iter, max_iter, loss, pct, score)) = guard.take() {
             app.spinorama_eq.opt_iteration = iter;
             app.spinorama_eq.opt_max_iter = max_iter;
             app.spinorama_eq.opt_loss = loss;
             app.spinorama_eq.opt_progress = pct;
+            app.spinorama_eq.loss_history.push((iter, loss, score));
             return true;
         }
     }
@@ -674,7 +684,7 @@ fn spawn_spinorama_optimization(app: &mut App) {
                     0.0
                 };
                 if let Ok(mut guard) = progress_slot3.lock() {
-                    *guard = Some((p.iteration, p.max_iterations, p.loss, pct));
+                    *guard = Some((p.iteration, p.max_iterations, p.loss, pct, p.score));
                 }
                 CallbackAction::Continue
             });

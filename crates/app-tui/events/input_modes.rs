@@ -1,7 +1,7 @@
 //! Input mode handlers for text input dialogs and special modes
 
 use super::PlayerCommand;
-use crate::app::{App, InputMode, MatrixEditMode};
+use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode, MatrixEditMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sotf_audio_player::{PluginSettings, PluginType};
 
@@ -230,9 +230,13 @@ pub fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCom
             // Open SOFA file browser (for Binaural Decoder plugins)
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
-                    app.input_mode = InputMode::BrowseSofaFile;
-                    app.file_browser_extension = Some("sofa".to_string());
-                    app.refresh_file_browser();
+                    app.open_file_explorer(
+                        FilePickerOrigin::SofaFile,
+                        FilePickerMode::File,
+                        "Select SOFA File",
+                        Some(&app.sofa_file_input.clone()),
+                        Some("sofa"),
+                    );
                 } else {
                     app.status_message = Some(
                         "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
@@ -244,10 +248,15 @@ pub fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCom
         KeyCode::Char('f') => {
             // Open IR file browser (for Convolution plugins)
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
-                if matches!(plugin.settings, PluginSettings::Convolution { .. }) {
-                    app.input_mode = InputMode::BrowseIrFile;
-                    app.file_browser_extension = Some("wav".to_string()); // Common IR extension
-                    app.refresh_file_browser();
+                if let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings {
+                    let current_path = ir_file.clone();
+                    app.open_file_explorer(
+                        FilePickerOrigin::IrFile,
+                        FilePickerMode::File,
+                        "Select Impulse Response (WAV)",
+                        Some(&current_path),
+                        Some("wav"),
+                    );
                 } else {
                     app.status_message =
                         Some("IR files can only be loaded for Convolution plugins".to_string());
@@ -603,64 +612,7 @@ pub fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<Player
     }
 }
 
-/// Handle file browser mode input
-pub fn handle_file_browser_mode(
-    app: &mut App,
-    key: KeyEvent,
-    is_sofa: bool,
-) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::EditPlugin;
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_file();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_file();
-            None
-        }
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            if let Some(path) = app.navigate_file_browser() {
-                let path_str = path.to_string_lossy().to_string();
-                if is_sofa {
-                    app.sofa_file_input = path_str;
-                    if let Err(e) = app.load_sofa_file() {
-                        app.status_message = Some(format!("Error: {}", e));
-                    } else {
-                        app.status_message = Some("SOFA file loaded".to_string());
-                        app.request_plugin_update();
-                    }
-                } else {
-                    // Load IR for Convolution
-                    if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
-                    {
-                        if let PluginSettings::Convolution {
-                            ref mut ir_file, ..
-                        } = plugin.settings
-                        {
-                            *ir_file = path_str;
-                            app.status_message = Some("IR file set".to_string());
-                            app.request_plugin_update();
-                        }
-                    }
-                }
-                app.input_mode = InputMode::EditPlugin;
-            }
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') | KeyCode::Backspace => {
-            if let Some(parent) = app.current_browser_dir.parent() {
-                app.current_browser_dir = parent.to_path_buf();
-                app.refresh_file_browser();
-            }
-            None
-        }
-        _ => None,
-    }
-}
+// Old handle_file_browser_mode removed — replaced by handle_file_explorer_mode in mod.rs
 
 /// Handle help mode input
 pub fn handle_help_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {

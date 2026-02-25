@@ -106,7 +106,6 @@ math-solvers = { path = "crates/math-audio/math-solvers", version = "0.4", defau
 math-wave = { path = "crates/math-audio/math-wave", version = "0.4" }
 math-xem-common = { path = "crates/math-audio/math-xem-common", version = "0.4" }
 math-iir-fir = { path = "crates/math-audio/math-iir-fir", version = "0.4" }
-math-convex-hull = { path = "crates/math-audio/math-convex-hull", version = "0.4" }
 math-differential-evolution = { path = "crates/math-audio/math-differential-evolution", version = "0.4" }
 math-dsp = { path = "crates/math-audio/math-dsp", version = "0.4" }
 math-bem = { path = "crates/math-audio/math-bem", version = "0.4", default-features = false, features = ["native"] }
@@ -115,22 +114,18 @@ math-fem = { path = "crates/math-audio/math-fem", version = "0.4", default-featu
 autoeq-env = { version = "0.4", path = "crates/autoeq/autoeq-env" }
 autoeq-cea2034 = { version = "0.4", path = "crates/autoeq/autoeq-cea2034" }
 autoeq = { version = "0.4", path = "crates/autoeq/autoeq" }
-autoeq-roomsim = { version = "0.4", path = "crates/autoeq/autoeq-roomsim" }
 
 # using git version
 gpui-d3rs = { version = "0.6", path = "crates/gpui-toolkit/gpui-d3rs" }
 gpui-px = { version = "0.6", path = "crates/gpui-toolkit/gpui-px" }
-gpui-themes = { version = "0.6", path = "crates/gpui-toolkit/gpui-themes" }
 gpui-autoeq = { version = "0.6", path = "crates/gpui-toolkit/gpui-autoeq" }
 gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 
 engine = { path = "crates/engine", default-features = false }
-midi = { path = "crates/midi" }
 player = { path = "crates/player" }
 plugins = { path = "crates/plugins", default-features = false }
 driver-hal = { path = "crates/driver-hal" }  # macOS only
-sotf-head-tracker = { path = "crates/head-tracker" }
 
 # audio
 # bliss-audio for music similarity analysis
@@ -157,7 +152,6 @@ symphonia-format-riff = "0.5"
 symphonia-format-ogg = "0.5"
 symphonia-format-isomp4 = "0.5"
 rtrb = "0.3"
-rb = "0.4"
 midir = "0.10"
 
 # TUI framework
@@ -168,7 +162,6 @@ crossterm = "0.29"
 # GPUI framework, using HEAD (macros with _)
 gpui = { version="*", git = "https://github.com/zed-industries/zed.git" }
 gpui_macos = { version="*", git = "https://github.com/zed-industries/zed.git" }
-gpui_macros = { version="*", git = "https://github.com/zed-industries/zed.git" }
 
 # System and low-level
 objc = "0.2"
@@ -188,7 +181,6 @@ md-5 = "0.10"
 toml = "0.8"
 spec_math = "0.1"
 approx = "0.5"
-proptest = "1.9"
 unicode-normalization = "0.1"
 # toml = "0.8"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -216,7 +208,6 @@ metal = "0.33"
 core-graphics = "0.25"
 core-foundation = "0.10"
 core-foundation-sys = "0"
-coreaudio-sys = "0.2"
 
 # objc2 framework bindings (macOS)
 objc2 = "0.6"

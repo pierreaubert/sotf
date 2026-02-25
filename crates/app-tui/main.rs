@@ -136,8 +136,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Load available output devices
+    // Load available audio devices
     app.load_output_devices();
+    app.load_recording_devices();
 
     // Add initial directories (without triggering rescan)
     for dir in args.directories {

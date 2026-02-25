@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, MatrixEditMode, Screen};
+use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode, MatrixEditMode, Screen};
 use crate::media_controls::TuiMediaControls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use sotf_audio_player::{PluginSettings, PluginType};
@@ -144,8 +144,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         InputMode::LoadPlugins => handle_load_plugins_mode(app, key),
         InputMode::LoadApoFile => handle_load_apo_file_mode(app, key),
         InputMode::LoadSofaFile => handle_load_sofa_file_mode(app, key),
-        InputMode::BrowseSofaFile => handle_file_browser_mode(app, key, true),
-        InputMode::BrowseIrFile => handle_file_browser_mode(app, key, false),
+        InputMode::FileExplorer => handle_file_explorer_mode(app, key),
         InputMode::ShowHelp => handle_help_mode(app, key),
         InputMode::ShowError => handle_error_mode(app, key),
         InputMode::ChannelConflict => handle_channel_conflict_mode(app, key),
@@ -153,58 +152,125 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     }
 }
 
-fn handle_file_browser_mode(app: &mut App, key: KeyEvent, is_sofa: bool) -> Option<PlayerCommand> {
+fn handle_file_explorer_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
-            app.input_mode = InputMode::EditPlugin;
+            app.close_file_explorer();
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_file();
+            app.file_explorer_select_prev();
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_file();
+            app.file_explorer_select_next();
             None
         }
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            if let Some(path) = app.navigate_file_browser() {
-                let path_str = path.to_string_lossy().to_string();
-                if is_sofa {
-                    app.sofa_file_input = path_str;
-                    if let Err(e) = app.load_sofa_file() {
-                        app.status_message = Some(format!("Error: {}", e));
-                    } else {
-                        app.status_message = Some("SOFA file loaded".to_string());
-                        app.request_plugin_update();
-                    }
-                } else {
-                    // Load IR for Convolution
-                    if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
-                    {
-                        if let PluginSettings::Convolution {
-                            ref mut ir_file, ..
-                        } = plugin.settings
-                        {
-                            *ir_file = path_str;
-                            app.status_message = Some("IR file set".to_string());
-                            app.request_plugin_update();
+        KeyCode::Enter | KeyCode::Char('l') => {
+            if let Some(path) = app.file_explorer_current().cloned() {
+                if path.is_dir() {
+                    match app.file_picker_mode {
+                        FilePickerMode::Directory => {
+                            // Enter selects this directory
+                            apply_file_selection(app, path);
+                        }
+                        FilePickerMode::File => {
+                            // Enter navigates into directory
+                            app.file_explorer_enter_dir(path);
                         }
                     }
+                } else {
+                    // It's a file — select it
+                    apply_file_selection(app, path);
                 }
-                app.input_mode = InputMode::EditPlugin;
+            }
+            None
+        }
+        KeyCode::Right => {
+            // Right always navigates into directory (even in Directory mode)
+            if let Some(path) = app.file_explorer_current().cloned()
+                && path.is_dir()
+            {
+                app.file_explorer_enter_dir(path);
             }
             None
         }
         KeyCode::Left | KeyCode::Char('h') | KeyCode::Backspace => {
-            if let Some(parent) = app.current_browser_dir.parent() {
-                app.current_browser_dir = parent.to_path_buf();
-                app.refresh_file_browser();
-            }
+            app.file_explorer_go_parent();
+            None
+        }
+        KeyCode::Char('H') => {
+            // Toggle hidden files
+            app.file_explorer_toggle_hidden();
             None
         }
         _ => None,
     }
+}
+
+fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
+    let path_str = path.to_string_lossy().to_string();
+    match app.file_picker_origin {
+        FilePickerOrigin::SofaFile => {
+            app.sofa_file_input = path_str;
+            if let Err(e) = app.load_sofa_file() {
+                app.status_message = Some(format!("Error: {}", e));
+            } else {
+                app.status_message = Some("SOFA file loaded".to_string());
+                app.request_plugin_update();
+            }
+        }
+        FilePickerOrigin::IrFile => {
+            if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
+                && let PluginSettings::Convolution {
+                    ref mut ir_file, ..
+                } = plugin.settings
+            {
+                *ir_file = path_str;
+                app.status_message = Some("IR file set".to_string());
+                app.request_plugin_update();
+            }
+        }
+        FilePickerOrigin::RecordingOutputDir => {
+            app.recording.output_directory = path_str;
+            app.recording.editing_output_dir = false;
+        }
+        FilePickerOrigin::RecordingMicCalibration => {
+            app.recording.mic_calibration_path = path_str;
+            app.recording.editing_mic_cal = false;
+        }
+        FilePickerOrigin::RoomEqFilePath => {
+            app.room_eq.file_path = path_str;
+            app.room_eq.editing_file_path = false;
+            load_room_eq_measurements(app);
+        }
+        FilePickerOrigin::RoomEqExportPath => {
+            app.room_eq.export_path = path_str;
+            app.room_eq.editing_export_path = false;
+            export_room_eq_results(app);
+        }
+        FilePickerOrigin::HeadphoneMeasurement => {
+            app.headphone_eq.measurement_path = path_str;
+            app.headphone_eq.editing_measurement = false;
+        }
+        FilePickerOrigin::HeadphoneCustomTarget => {
+            app.headphone_eq.custom_target_path = path_str;
+            app.headphone_eq.editing_custom_target = false;
+        }
+        FilePickerOrigin::AddDirectory => {
+            app.add_directory(path);
+        }
+        FilePickerOrigin::ApoFile => {
+            app.apo_file_input = path_str;
+            if let Err(e) = app.load_apo_file() {
+                app.status_message = Some(format!("APO error: {}", e));
+            } else {
+                app.status_message = Some("APO file loaded".to_string());
+                app.request_plugin_update();
+            }
+        }
+    }
+    app.close_file_explorer();
 }
 
 fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
@@ -863,6 +929,17 @@ fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             }
             None
         }
+        KeyCode::F(2) => {
+            let start = app.directory_input.clone();
+            app.open_file_explorer(
+                FilePickerOrigin::AddDirectory,
+                FilePickerMode::Directory,
+                "Select Music Directory",
+                Some(&start),
+                None,
+            );
+            None
+        }
         KeyCode::Char(c) => {
             app.directory_input.push(c);
             app.clear_autocomplete();
@@ -1061,9 +1138,13 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             // Open SOFA file browser (for Binaural Decoder plugins)
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
-                    app.input_mode = InputMode::BrowseSofaFile;
-                    app.file_browser_extension = Some("sofa".to_string());
-                    app.refresh_file_browser();
+                    app.open_file_explorer(
+                        FilePickerOrigin::SofaFile,
+                        FilePickerMode::File,
+                        "Select SOFA File",
+                        Some(&app.sofa_file_input.clone()),
+                        Some("sofa"),
+                    );
                 } else {
                     app.status_message = Some(
                         "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
@@ -1075,10 +1156,15 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         KeyCode::Char('f') => {
             // Open IR file browser (for Convolution plugins)
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
-                if matches!(plugin.settings, PluginSettings::Convolution { .. }) {
-                    app.input_mode = InputMode::BrowseIrFile;
-                    app.file_browser_extension = Some("wav".to_string()); // Common IR extension
-                    app.refresh_file_browser();
+                if let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings {
+                    let current_path = ir_file.clone();
+                    app.open_file_explorer(
+                        FilePickerOrigin::IrFile,
+                        FilePickerMode::File,
+                        "Select Impulse Response (WAV)",
+                        Some(&current_path),
+                        Some("wav"),
+                    );
                 } else {
                     app.status_message =
                         Some("IR files can only be loaded for Convolution plugins".to_string());
@@ -1897,12 +1983,12 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 }
                 None
             }
-            KeyCode::Tab => {
-                app.spinorama_eq.step = SpinoramaStep::Select;
+            KeyCode::BackTab | KeyCode::Left => {
+                app.spinorama_eq.step = SpinoramaStep::Results;
                 None
             }
-            KeyCode::BackTab => {
-                app.spinorama_eq.step = SpinoramaStep::Results;
+            KeyCode::Right => {
+                app.spinorama_eq.step = SpinoramaStep::Select;
                 None
             }
             _ => None,
@@ -1922,19 +2008,28 @@ fn cycle_string(current: &str, options: &[&str], delta: i32) -> String {
 
 fn adjust_spinorama_field(app: &mut App, delta: i32) {
     let c = &mut app.spinorama_eq.config;
+    // Field indices must match the UI rows in ui/mod.rs draw_spinorama_configure
     match app.spinorama_eq.selected_field {
-        // ── Filters ──
+        // ── Loss ──
         0 => {
+            c.loss_function = cycle_string(
+                &c.loss_function,
+                &["flat", "flat-asymmetric", "score"],
+                delta,
+            );
+        }
+        // ── Filters ──
+        1 => {
             let n = c.num_filters as i32 + delta;
             c.num_filters = n.clamp(1, 30) as usize;
         }
-        1 => c.min_freq = (c.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
-        2 => c.max_freq = (c.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
-        3 => c.min_db = (c.min_db + delta as f64).clamp(-24.0, 0.0),
-        4 => c.max_db = (c.max_db + delta as f64).clamp(0.0, 12.0),
-        5 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
-        6 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
-        7 => {
+        2 => c.min_freq = (c.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
+        3 => c.max_freq = (c.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
+        4 => c.min_db = (c.min_db + delta as f64).clamp(-24.0, 0.0),
+        5 => c.max_db = (c.max_db + delta as f64).clamp(0.0, 12.0),
+        6 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
+        7 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
+        8 => {
             c.peq_model = cycle_string(
                 &c.peq_model,
                 &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"],
@@ -1942,7 +2037,7 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
             );
         }
         // ── Optimization ──
-        8 => {
+        9 => {
             use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
             let algos = RoomEqAlgorithm::all();
             let idx = algos.iter().position(|a| *a == c.algorithm).unwrap_or(0);
@@ -1953,45 +2048,38 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
             };
             c.algorithm = algos[new_idx];
         }
-        9 => {
+        10 => {
             let n = c.max_iter as i32 + delta * 1000;
             c.max_iter = n.clamp(1000, 100000) as usize;
         }
-        10 => {
+        11 => {
             let n = c.population as i32 + delta * 10;
             c.population = n.clamp(10, 200) as usize;
         }
-        11 => {
+        12 => {
             c.strategy = cycle_string(
                 &c.strategy,
                 &["currenttobest1bin", "best1bin", "rand1bin", "best2bin"],
                 delta,
             );
         }
-        12 => c.de_f = (c.de_f + delta as f64 * 0.1).clamp(0.1, 2.0),
-        13 => c.de_cr = (c.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
+        13 => c.de_f = (c.de_f + delta as f64 * 0.1).clamp(0.1, 2.0),
+        14 => c.de_cr = (c.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
         // ── Refinement ──
-        14 => c.refine = !c.refine,
-        15 => {
+        15 => c.refine = !c.refine,
+        16 => {
             c.local_algo = cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
         }
         // ── Smoothing ──
-        16 => c.smooth = !c.smooth,
-        17 => {
+        17 => c.smooth = !c.smooth,
+        18 => {
             let n = c.smooth_n as i32 + delta;
             c.smooth_n = n.clamp(1, 24) as usize;
         }
-        18 => c.psychoacoustic = !c.psychoacoustic,
+        19 => c.psychoacoustic = !c.psychoacoustic,
         // ── Constraints ──
-        19 => c.spacing_weight = (c.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
-        20 => c.min_spacing_oct = (c.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
-        21 => {
-            c.loss_function = cycle_string(
-                &c.loss_function,
-                &["flat", "flat-asymmetric", "score"],
-                delta,
-            );
-        }
+        20 => c.spacing_weight = (c.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
+        21 => c.min_spacing_oct = (c.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
         // ── Convergence ──
         22 => {
             c.tolerance = if delta > 0 {
@@ -2133,7 +2221,13 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
                     app.spinorama_eq.curve_target = r.target_curve.clone();
                     app.spinorama_eq.curve_corrected = r.corrected_curve.clone();
                     app.spinorama_eq.curve_filter_response = r.filter_response.clone();
-                    app.spinorama_eq.loss_history = r.optimization_history.clone();
+                    if app.spinorama_eq.loss_history.is_empty() {
+                        app.spinorama_eq.loss_history = r
+                            .optimization_history
+                            .iter()
+                            .map(|(iter, loss)| (*iter, *loss, None))
+                            .collect();
+                    }
                     app.spinorama_eq.opt_status = OptimizationStatus::Completed;
                     app.spinorama_eq.opt_progress = 1.0;
                 }
@@ -2376,6 +2470,16 @@ fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComman
                     KeyCode::Backspace => {
                         app.headphone_eq.measurement_path.pop();
                     }
+                    KeyCode::F(2) => {
+                        let start = app.headphone_eq.measurement_path.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::HeadphoneMeasurement,
+                            FilePickerMode::File,
+                            "Select Measurement CSV",
+                            Some(&start),
+                            Some("csv"),
+                        );
+                    }
                     KeyCode::Char(c) => {
                         app.headphone_eq.measurement_path.push(c);
                     }
@@ -2390,6 +2494,16 @@ fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComman
                     }
                     KeyCode::Backspace => {
                         app.headphone_eq.custom_target_path.pop();
+                    }
+                    KeyCode::F(2) => {
+                        let start = app.headphone_eq.custom_target_path.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::HeadphoneCustomTarget,
+                            FilePickerMode::File,
+                            "Select Custom Target CSV",
+                            Some(&start),
+                            Some("csv"),
+                        );
                     }
                     KeyCode::Char(c) => {
                         app.headphone_eq.custom_target_path.push(c);
@@ -2758,6 +2872,16 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                     KeyCode::Backspace => {
                         app.recording.output_directory.pop();
                     }
+                    KeyCode::F(2) => {
+                        let start = app.recording.output_directory.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::RecordingOutputDir,
+                            FilePickerMode::Directory,
+                            "Select Output Directory",
+                            Some(&start),
+                            None,
+                        );
+                    }
                     KeyCode::Char(c) => {
                         app.recording.output_directory.push(c);
                     }
@@ -2772,6 +2896,16 @@ fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                     }
                     KeyCode::Backspace => {
                         app.recording.mic_calibration_path.pop();
+                    }
+                    KeyCode::F(2) => {
+                        let start = app.recording.mic_calibration_path.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::RecordingMicCalibration,
+                            FilePickerMode::File,
+                            "Select Mic Calibration File",
+                            Some(&start),
+                            None,
+                        );
                     }
                     KeyCode::Char(c) => {
                         app.recording.mic_calibration_path.push(c);
@@ -3178,6 +3312,16 @@ fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                     KeyCode::Backspace => {
                         app.room_eq.file_path.pop();
                     }
+                    KeyCode::F(2) => {
+                        let start = app.room_eq.file_path.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::RoomEqFilePath,
+                            FilePickerMode::File,
+                            "Select Room EQ Measurements (JSON)",
+                            Some(&start),
+                            Some("json"),
+                        );
+                    }
                     KeyCode::Char(c) => {
                         app.room_eq.file_path.push(c);
                     }
@@ -3296,6 +3440,16 @@ fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                     }
                     KeyCode::Backspace => {
                         app.room_eq.export_path.pop();
+                    }
+                    KeyCode::F(2) => {
+                        let start = app.room_eq.export_path.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::RoomEqExportPath,
+                            FilePickerMode::File,
+                            "Select Export Path (JSON)",
+                            Some(&start),
+                            Some("json"),
+                        );
                     }
                     KeyCode::Char(c) => {
                         app.room_eq.export_path.push(c);
