@@ -39,7 +39,7 @@ pub struct IconButtonTheme {
     #[theme(default = 0xccccccff, from = text_secondary)]
     pub text: Rgba,
     /// Text color when selected or on accent background
-    #[theme(default = 0xffffffff, from = text_primary)]
+    #[theme(default = 0xffffffff, from = text_on_accent)]
     pub text_on_accent: Rgba,
     /// Border color for outline variant
     #[theme(default = 0x555555ff, from = border)]

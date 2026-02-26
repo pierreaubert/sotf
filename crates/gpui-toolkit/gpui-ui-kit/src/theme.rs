@@ -102,6 +102,10 @@ pub struct Theme {
     pub text_secondary: Rgba,
     /// Disabled text color
     pub text_muted: Rgba,
+    /// Text color for content on accent-colored backgrounds
+    pub text_on_accent: Rgba,
+    /// Icon color for content on accent-colored backgrounds
+    pub icon_on_accent: Rgba,
 
     // Accent colors
     /// Primary accent color
@@ -166,6 +170,8 @@ impl Theme {
             text_primary: rgb(0xffffff),
             text_secondary: rgb(0xcccccc),
             text_muted: rgb(0x888888),
+            text_on_accent: rgb(0xffffff),
+            icon_on_accent: rgb(0x1e1e1e),
             // Accent
             accent: rgb(0x007acc),
             accent_hover: rgb(0x0098ff),
@@ -207,6 +213,8 @@ impl Theme {
             text_primary: rgb(0x1a1a1a),
             text_secondary: rgb(0x4a4a4a),
             text_muted: rgb(0x888888),
+            text_on_accent: rgb(0xffffff),
+            icon_on_accent: rgb(0x1a1a1a),
             // Accent
             accent: rgb(0x0066cc),
             accent_hover: rgb(0x0055aa),
@@ -248,6 +256,8 @@ impl Theme {
             text_primary: rgb(0xc9d1d9),
             text_secondary: rgb(0x8b949e),
             text_muted: rgb(0x6e7681),
+            text_on_accent: rgb(0xffffff),
+            icon_on_accent: rgb(0x0d1117),
             // Accent
             accent: rgb(0x58a6ff),
             accent_hover: rgb(0x79b8ff),
@@ -289,6 +299,8 @@ impl Theme {
             text_primary: rgb(0xd4e4d1),
             text_secondary: rgb(0xa8c4a2),
             text_muted: rgb(0x7a9a73),
+            text_on_accent: rgb(0xffffff),
+            icon_on_accent: rgb(0x1a2418),
             // Accent
             accent: rgb(0x6abf69),
             accent_hover: rgb(0x7dd07c),
@@ -330,6 +342,8 @@ impl Theme {
             text_primary: rgb(0xffffff),
             text_secondary: rgb(0x888888),
             text_muted: rgb(0x555555),
+            text_on_accent: rgb(0x000000),
+            icon_on_accent: rgb(0x000000),
             // Accent (black background with white border for buttons)
             accent: rgb(0x000000),
             accent_hover: rgb(0x222222),

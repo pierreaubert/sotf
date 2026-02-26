@@ -64,7 +64,7 @@ pub struct ButtonTheme {
     #[theme(default = 0xcccccc, from = text_secondary)]
     pub text_secondary: Rgba,
     /// Text color for Primary variant buttons (on accent background)
-    #[theme(default = 0xffffff, from = text_primary)]
+    #[theme(default = 0xffffff, from = text_on_accent)]
     pub text_on_accent: Rgba,
     #[theme(default = 0xcc3333, from = error)]
     pub error: Rgba,

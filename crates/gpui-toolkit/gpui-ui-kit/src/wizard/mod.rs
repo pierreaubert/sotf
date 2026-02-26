@@ -46,8 +46,8 @@ pub struct WizardTheme {
     /// Background color for error step
     #[theme(default = 0xef4444ff, from = error)]
     pub step_error_bg: Rgba,
-    /// Text color for step numbers
-    #[theme(default = 0xffffffff, from = text_primary)]
+    /// Text color for step numbers (on accent/success/error backgrounds)
+    #[theme(default = 0xffffffff, from = text_on_accent)]
     pub step_text: Rgba,
     /// Text color for step labels
     #[theme(default = 0x888888ff, from = text_muted)]

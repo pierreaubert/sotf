@@ -67,8 +67,8 @@ pub struct SelectTheme {
     /// Option text color
     #[theme(default = 0xccccccff, from = text_secondary)]
     pub option_text_color: Rgba,
-    /// Selected option text color
-    #[theme(default = 0xffffffff, from = text_primary)]
+    /// Selected option text color (on accent background)
+    #[theme(default = 0xffffffff, from = text_on_accent)]
     pub selected_text_color: Rgba,
     /// Disabled text color
     #[theme(default = 0x666666ff, from = text_muted)]

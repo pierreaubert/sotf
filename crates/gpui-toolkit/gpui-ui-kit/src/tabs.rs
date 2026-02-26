@@ -28,8 +28,8 @@ pub struct TabsTheme {
     /// Accent color (underline, selected pill)
     #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
-    /// Text color for selected tab
-    #[theme(default = 0xffffffff, from = text_primary)]
+    /// Text color for selected tab (on accent background)
+    #[theme(default = 0xffffffff, from = text_on_accent)]
     pub text_selected: Rgba,
     /// Text color for unselected tab
     #[theme(default = 0x888888ff, from = text_muted)]

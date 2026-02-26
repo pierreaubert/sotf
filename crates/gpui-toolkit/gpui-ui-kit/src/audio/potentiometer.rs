@@ -57,7 +57,7 @@ pub struct PotentiometerTheme {
     #[theme(default = 0x888888ff, from = text_muted)]
     pub text_muted: Rgba,
     /// Text on accent background
-    #[theme(default = 0xffffffff, from = text_primary)]
+    #[theme(default = 0xffffffff, from = text_on_accent)]
     pub text_on_accent: Rgba,
     /// Background secondary (for value badge)
     #[theme(default = 0x2a2a2aff, from = surface)]
