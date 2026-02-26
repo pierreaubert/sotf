@@ -1,0 +1,15 @@
+[package]
+name = "sotf-plugin-resampler"
+description = "SOTF Resampler plugin - sample rate conversion"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_resampler"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+rubato = { workspace = true }
+audioadapter-buffers = { workspace = true }
+log = { workspace = true }

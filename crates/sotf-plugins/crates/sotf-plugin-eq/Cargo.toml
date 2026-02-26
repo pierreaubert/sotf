@@ -1,0 +1,22 @@
+[package]
+name = "sotf-plugin-eq"
+description = "SOTF EQ plugin - parametric equalizer with biquad filters"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_eq"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-eq"
+path = "bin/qa_eq.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }

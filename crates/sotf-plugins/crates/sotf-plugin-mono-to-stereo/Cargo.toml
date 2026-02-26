@@ -1,0 +1,24 @@
+[package]
+name = "sotf-plugin-mono-to-stereo"
+description = "SOTF Mono to Stereo plugin - mono to stereo widening"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_mono_to_stereo"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-mono-to-stereo"
+path = "bin/qa_mono_to_stereo.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+realfft = { workspace = true }
+rustfft = { workspace = true }
+serde = { workspace = true }
+rand = { workspace = true }

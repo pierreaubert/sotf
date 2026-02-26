@@ -1,0 +1,23 @@
+[package]
+name = "sotf-plugin-multiband-expander"
+description = "SOTF Multiband Expander plugin - multiband dynamic range expansion"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_multiband_expander"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-multiband-expander"
+path = "bin/qa_multiband_expander.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }

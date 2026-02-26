@@ -1,0 +1,14 @@
+[package]
+name = "sotf-plugin-channel-mute-solo"
+description = "SOTF Channel Mute/Solo plugin - per-channel mute/solo/dim"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_channel_mute_solo"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

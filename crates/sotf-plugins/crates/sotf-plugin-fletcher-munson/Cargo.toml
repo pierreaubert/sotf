@@ -1,0 +1,15 @@
+[package]
+name = "sotf-plugin-fletcher-munson"
+description = "SOTF Fletcher-Munson plugin - equal loudness contour correction"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_fletcher_munson"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }

@@ -1,0 +1,29 @@
+[package]
+name = "sotf-plugin-compressor"
+description = "SOTF Compressor plugin - dynamic range compression"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_compressor"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-compressor"
+path = "bin/qa_compressor.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "compressor-benchmark"
+harness = false

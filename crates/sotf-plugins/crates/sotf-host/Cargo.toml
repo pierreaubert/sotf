@@ -1,0 +1,38 @@
+[package]
+name = "sotf-host"
+description = "Core traits, host, and shared utilities for SOTF audio plugins"
+version = "0.5.84"
+edition.workspace = true
+
+[lib]
+name = "sotf_host"
+path = "src/lib.rs"
+
+[features]
+default = ["sofa_support"]
+sofa_support = ["dep:netcdf"]
+qa = ["dep:criterion"]
+
+[[bin]]
+name = "simd-fuzzer"
+path = "bin/simd_fuzzer.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+arc-swap = { workspace = true }
+clap = { workspace = true }
+rustfft = { workspace = true }
+realfft = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+ebur128 = { workspace = true }
+rand = { workspace = true }
+rtrb = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+bincode = { workspace = true }
+netcdf = { workspace = true, optional = true }
+criterion = { workspace = true, optional = true }

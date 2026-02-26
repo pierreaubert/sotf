@@ -1,0 +1,15 @@
+[package]
+name = "sotf-plugin-crossfeed"
+description = "SOTF Crossfeed plugin - stereo crossfeed for headphones"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_crossfeed"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }

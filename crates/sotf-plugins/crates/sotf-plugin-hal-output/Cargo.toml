@@ -1,0 +1,16 @@
+[package]
+name = "sotf-plugin-hal-output"
+description = "SOTF HAL Output plugin - macOS audio HAL output"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_hal_output"
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+driver-hal = { workspace = true }
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }

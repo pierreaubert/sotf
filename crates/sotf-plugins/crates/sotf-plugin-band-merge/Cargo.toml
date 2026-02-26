@@ -1,0 +1,13 @@
+[package]
+name = "sotf-plugin-band-merge"
+description = "SOTF Band Merge plugin - merge frequency bands"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_band_merge"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }

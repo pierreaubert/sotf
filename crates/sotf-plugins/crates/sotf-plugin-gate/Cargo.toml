@@ -1,0 +1,22 @@
+[package]
+name = "sotf-plugin-gate"
+description = "SOTF Gate plugin - noise gate"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_gate"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-gate"
+path = "bin/qa_gate.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+serde = { workspace = true }

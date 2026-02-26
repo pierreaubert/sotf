@@ -1,0 +1,37 @@
+[package]
+name = "sotf-plugin-xtc"
+description = "SOTF XTC plugin - crosstalk cancellation"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_xtc"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-xtc"
+path = "bin/qa_xtc.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+arc-swap = { workspace = true }
+math-dsp = { workspace = true }
+rayon = { workspace = true }
+realfft = { workspace = true }
+rustfft = { workspace = true }
+serde = { workspace = true }
+symphonia = { workspace = true }
+symphonia-core = { workspace = true }
+symphonia-format-riff = { workspace = true }
+symphonia-codec-pcm = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "xtc-validation-benchmark"
+harness = false

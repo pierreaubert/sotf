@@ -1,0 +1,25 @@
+[package]
+name = "sotf-plugin-downmix"
+description = "SOTF Downmix plugin - multichannel to stereo downmixing"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_downmix"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-downmix"
+path = "bin/qa_downmix.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+realfft = { workspace = true }
+rustfft = { workspace = true }
+serde = { workspace = true }

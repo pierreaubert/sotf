@@ -1,0 +1,14 @@
+[package]
+name = "sotf-plugin-band-split"
+description = "SOTF Band Split plugin - split signal into frequency bands"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_band_split"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }

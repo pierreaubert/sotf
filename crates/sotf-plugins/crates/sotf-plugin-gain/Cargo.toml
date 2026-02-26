@@ -1,0 +1,21 @@
+[package]
+name = "sotf-plugin-gain"
+description = "SOTF Gain plugin - simple volume control with per-channel support"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_gain"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-gain"
+path = "bin/qa_gain.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }

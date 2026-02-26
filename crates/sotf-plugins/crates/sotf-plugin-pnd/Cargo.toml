@@ -1,0 +1,23 @@
+[package]
+name = "sotf-plugin-pnd"
+description = "SOTF PND plugin - Perceptual Noise Diffusion"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_pnd"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-pnd"
+path = "bin/qa_pnd.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+rubato = { workspace = true }
+audioadapter-buffers = { workspace = true }
+serde = { workspace = true }

@@ -1,0 +1,23 @@
+[package]
+name = "sotf-plugin-multiband-compressor"
+description = "SOTF Multiband Compressor plugin - multiband dynamic range compression"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_multiband_compressor"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-multiband-compressor"
+path = "bin/qa_multiband_compressor.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }

@@ -1,0 +1,28 @@
+[package]
+name = "sotf-plugin-binaural"
+description = "SOTF Binaural Decoder plugin - HRTF-based binaural rendering"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_binaural"
+path = "src/lib.rs"
+
+[features]
+sofa_support = ["sotf-host/sofa_support", "dep:netcdf"]
+
+[dependencies]
+sotf-host = { workspace = true }
+arc-swap = { workspace = true }
+log = { workspace = true }
+netcdf = { workspace = true, optional = true }
+realfft = { workspace = true }
+rustfft = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "binaural-decoder-benchmark"
+harness = false

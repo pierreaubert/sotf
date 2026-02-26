@@ -1,0 +1,123 @@
+[package]
+name = "sotf-plugins"
+description = "an audio player and recorder that support audio plugins"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugins"
+path = "src/lib.rs"
+
+[features]
+default = ["sofa_support"]
+hal = ["sotf-plugin-hal-input", "sotf-plugin-hal-output", "driver-hal"]
+sofa_support = ["sotf-host/sofa_support", "dep:netcdf"]
+qa = ["sotf-host/qa", "dep:criterion"]
+
+[dependencies]
+sotf-host = { workspace = true }
+sotf-plugin-ab-compare = { workspace = true }
+sotf-plugin-band-merge = { workspace = true }
+sotf-plugin-band-split = { workspace = true }
+sotf-plugin-binaural = { workspace = true }
+sotf-plugin-channel-mute-solo = { workspace = true }
+sotf-plugin-compressor = { workspace = true }
+sotf-plugin-convolution = { workspace = true }
+sotf-plugin-crossfeed = { workspace = true }
+sotf-plugin-crossover = { workspace = true }
+sotf-plugin-delay = { workspace = true }
+sotf-plugin-denoiser = { workspace = true }
+sotf-plugin-downmix = { workspace = true }
+sotf-plugin-eq = { workspace = true }
+sotf-plugin-expander = { workspace = true }
+sotf-plugin-fletcher-munson = { workspace = true }
+sotf-plugin-gain = { workspace = true }
+sotf-plugin-gate = { workspace = true }
+sotf-plugin-hal-input = { workspace = true, optional = true }
+sotf-plugin-hal-output = { workspace = true, optional = true }
+sotf-plugin-limiter = { workspace = true }
+sotf-plugin-loudness-compensation = { workspace = true }
+sotf-plugin-matrix = { workspace = true }
+sotf-plugin-mono-to-stereo = { workspace = true }
+sotf-plugin-multiband-compressor = { workspace = true }
+sotf-plugin-multiband-expander = { workspace = true }
+sotf-plugin-pnd = { workspace = true }
+sotf-plugin-resampler = { workspace = true }
+sotf-plugin-upmixer = { workspace = true }
+sotf-plugin-xtc = { workspace = true }
+tokio = { workspace = true }
+ndarray = { workspace = true }
+notify = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+cpal = { workspace = true }
+tempfile = { workspace = true }
+serde_yaml = { workspace = true }
+which = { workspace = true }
+clap = { workspace = true }
+ctrlc = { workspace = true }
+chrono = { workspace = true }
+libc = { workspace = true }
+netcdf = { workspace = true, optional = true }
+arc-swap = { workspace = true }
+rustfft = { workspace = true }
+realfft = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+directories = { workspace = true }
+rusqlite = { workspace = true }
+walkdir = { workspace = true }
+autoeq-env = { workspace = true }
+math-dsp = { workspace = true }
+math-iir-fir = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+criterion = { workspace = true, optional = true }
+
+# Audio decoding/encoding
+symphonia = { workspace = true }
+symphonia-core = { workspace = true }
+symphonia-metadata = { workspace = true }
+symphonia-bundle-flac = { workspace = true }
+symphonia-bundle-mp3 = { workspace = true }
+symphonia-codec-aac = { workspace = true }
+symphonia-codec-alac = { workspace = true }
+symphonia-codec-pcm = { workspace = true }
+symphonia-codec-vorbis = { workspace = true }
+symphonia-format-riff = { workspace = true }
+symphonia-format-ogg = { workspace = true }
+symphonia-format-isomp4 = { workspace = true }
+ebur128 = { workspace = true }
+rtrb = { workspace = true }
+ort = { workspace = true }
+hound = { workspace = true }
+rubato = { workspace = true }
+audioadapter-buffers = { workspace = true }
+id3 = { workspace = true }
+metaflac = { workspace = true }
+bincode = { workspace = true }
+anyhow = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+driver-hal = { workspace = true, optional = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+criterion = { workspace = true }
+proptest = "1.5"
+
+[[bin]]
+name = "plugin-fuzzer"
+path = "bin/plugin_fuzzer.rs"
+
+[[bench]]
+name = "all-plugins-benchmark"
+harness = false
+
+[[bench]]
+name = "allocation-benchmark"
+harness = false

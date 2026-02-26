@@ -1,0 +1,14 @@
+[package]
+name = "sotf-plugin-crossover"
+description = "SOTF Crossover plugin - frequency band splitting"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_crossover"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }

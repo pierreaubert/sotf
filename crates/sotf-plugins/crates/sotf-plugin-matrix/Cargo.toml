@@ -1,0 +1,16 @@
+[package]
+name = "sotf-plugin-matrix"
+description = "SOTF Matrix plugin - channel matrix mixing"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_matrix"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+sotf-plugin-channel-mute-solo = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }

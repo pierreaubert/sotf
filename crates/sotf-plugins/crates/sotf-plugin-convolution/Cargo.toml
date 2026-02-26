@@ -1,0 +1,19 @@
+[package]
+name = "sotf-plugin-convolution"
+description = "SOTF Convolution plugin - FFT-based convolution for IR processing"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_convolution"
+path = "src/lib.rs"
+
+[dependencies]
+sotf-host = { workspace = true }
+arc-swap = { workspace = true }
+rustfft = { workspace = true }
+symphonia = { workspace = true }
+symphonia-core = { workspace = true }
+symphonia-format-riff = { workspace = true }
+symphonia-codec-pcm = { workspace = true }
+serde = { workspace = true }

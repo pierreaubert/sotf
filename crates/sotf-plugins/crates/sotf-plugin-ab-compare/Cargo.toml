@@ -1,0 +1,28 @@
+[package]
+name = "sotf-plugin-ab-compare"
+description = "SOTF AB Compare plugin - A/B comparison"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_ab_compare"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-ab-compare"
+path = "bin/qa_ab_compare.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+sotf-plugin-compressor = { workspace = true }
+sotf-plugin-delay = { workspace = true }
+sotf-plugin-eq = { workspace = true }
+sotf-plugin-gain = { workspace = true }
+sotf-plugin-gate = { workspace = true }
+sotf-plugin-limiter = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

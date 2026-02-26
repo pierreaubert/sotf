@@ -1,0 +1,13 @@
+pub mod delay {
+    pub const DELAY_MS_DEFAULT: f32 = 100.0;
+    pub const DELAY_MS_MIN: f32 = 0.1;
+    pub const DELAY_MS_MAX: f32 = 5000.0;
+
+    pub const FEEDBACK_DEFAULT: f32 = 0.3;
+    pub const FEEDBACK_MIN: f32 = 0.0;
+    pub const FEEDBACK_MAX: f32 = 0.95;
+
+    pub const MIX_DEFAULT: f32 = 0.5;
+    pub const MIX_MIN: f32 = 0.0;
+    pub const MIX_MAX: f32 = 1.0;
+}

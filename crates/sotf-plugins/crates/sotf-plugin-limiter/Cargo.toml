@@ -1,0 +1,22 @@
+[package]
+name = "sotf-plugin-limiter"
+description = "SOTF Limiter plugin - peak limiter"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_limiter"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-limiter"
+path = "bin/qa_limiter.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-dsp = { workspace = true }
+serde = { workspace = true }

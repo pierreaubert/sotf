@@ -1,0 +1,16 @@
+[package]
+name = "sotf-plugin-hal-input"
+description = "SOTF HAL Input plugin - macOS audio HAL input"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_hal_input"
+path = "src/lib.rs"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+driver-hal = { workspace = true }
+
+[dependencies]
+sotf-host = { workspace = true }
+serde = { workspace = true }

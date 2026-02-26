@@ -1,0 +1,29 @@
+[package]
+name = "sotf-plugin-loudness-compensation"
+description = "SOTF Loudness Compensation plugin - equal loudness contour compensation"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "sotf_plugin_loudness_compensation"
+path = "src/lib.rs"
+
+[features]
+qa = ["sotf-host/qa"]
+
+[[bin]]
+name = "qa-loudness-compensation"
+path = "bin/qa_loudness_compensation.rs"
+required-features = ["qa"]
+
+[dependencies]
+sotf-host = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "loudness-benchmark"
+harness = false
