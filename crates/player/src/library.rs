@@ -992,8 +992,25 @@ impl MusicLibrary {
 
             // Merge existing albums that weren't updated
             for existing_album in existing_albums {
-                // Use normalized key for matching (same as when scanning files)
-                let key = normalize_album_key(&existing_album.title);
+                // Single-track albums might be standalone (path-keyed in scan).
+                // If the path-based key already exists, this album was re-scanned → skip it.
+                if existing_album.tracks.len() == 1 {
+                    let path_key = format!(
+                        "__standalone__|{}",
+                        existing_album.tracks[0].path.to_string_lossy()
+                    );
+                    if album_map.contains_key(&path_key) {
+                        continue;
+                    }
+                }
+                // Use title|edition key (matches scan format for regular albums)
+                let normalized = normalize_album_key(&existing_album.title);
+                let edition = existing_album
+                    .edition
+                    .as_ref()
+                    .map(|e| normalize_album_key(e))
+                    .unwrap_or_default();
+                let key = format!("{}|{}", normalized, edition);
                 album_map.entry(key).or_insert(existing_album);
             }
         }

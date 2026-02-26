@@ -181,7 +181,7 @@ impl UpmixerPlugin {
 
     /// Update cached safety_cap linear values from safety_cap_db
     pub(super) fn update_safety_cap_cache(&mut self) {
-        if self.safety_cap_db > 0.0 {
+        if self.safety_cap_db >= 0.0 {
             self.safety_cap_linear = math_audio_dsp::fast_math::fast_pow10(self.safety_cap_db / 20.0);
             self.safety_cap_min_scale =
                 math_audio_dsp::fast_math::fast_pow10(-self.safety_cap_db / 20.0);

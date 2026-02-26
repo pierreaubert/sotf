@@ -432,6 +432,7 @@ impl DawHost {
         }
         let mut cf = nf;
         for stage in &self.stages {
+            let mut stage_cf: Option<usize> = None;
             for &nid in &stage.nodes {
                 let node = &self.nodes[&nid];
                 let in_len = if self.is_input_node[nid] {
@@ -468,7 +469,13 @@ impl DawHost {
                     .as_mut()
                     .unwrap()
                     .write(&bufs.scratch_output[..aof * node.output_channels()]);
-                cf = aof;
+                stage_cf = Some(match stage_cf {
+                    Some(prev) => prev.min(aof),
+                    None => aof,
+                });
+            }
+            if let Some(scf) = stage_cf {
+                cf = scf;
             }
         }
         Self::collect_output_from_buffers(&self.output_nodes, &bufs.node_buffers, output, cf)?;
@@ -1147,6 +1154,143 @@ mod tests {
             }
         }
         assert!(got);
+    }
+
+    /// Mock variable-frame plugin that returns a configurable output frame count.
+    struct VariableFramePlugin {
+        channels: usize,
+        output_frames: usize,
+    }
+    impl VariableFramePlugin {
+        fn new(channels: usize, output_frames: usize) -> Self {
+            Self { channels, output_frames }
+        }
+    }
+    impl Plugin for VariableFramePlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("VariableFrame", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize { self.channels }
+        fn output_channels(&self) -> usize { self.channels }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> { vec![] }
+        fn set_parameter(&mut self, _: crate::parameters::ParameterId, _: crate::parameters::ParameterValue) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(&self, _: &crate::parameters::ParameterId) -> Option<crate::parameters::ParameterValue> { None }
+        fn process(&mut self, input: &[f32], output: &mut [f32], _ctx: &crate::plugin::ProcessContext) -> Result<usize, String> {
+            let out_len = self.output_frames * self.channels;
+            for (o, &i) in output[..out_len].iter_mut().zip(input.iter().cycle()) {
+                *o = i;
+            }
+            Ok(self.output_frames)
+        }
+        fn output_frames_for_input(&self, _: usize) -> usize { self.output_frames }
+        fn latency_samples(&self) -> usize { 1 }
+    }
+
+    /// Mock plugin that records the ProcessContext.num_frames it receives.
+    struct FrameRecorderPlugin {
+        channels: usize,
+        last_num_frames: std::cell::Cell<usize>,
+    }
+    impl FrameRecorderPlugin {
+        fn new(channels: usize) -> Self {
+            Self { channels, last_num_frames: std::cell::Cell::new(0) }
+        }
+    }
+    impl Plugin for FrameRecorderPlugin {
+        fn info(&self) -> crate::plugin::PluginInfo {
+            crate::plugin::PluginInfo::new("FrameRecorder", "0.1", "test")
+        }
+        fn input_channels(&self) -> usize { self.channels }
+        fn output_channels(&self) -> usize { self.channels }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> { vec![] }
+        fn set_parameter(&mut self, _: crate::parameters::ParameterId, _: crate::parameters::ParameterValue) -> Result<(), String> {
+            Err("none".into())
+        }
+        fn get_parameter(&self, _: &crate::parameters::ParameterId) -> Option<crate::parameters::ParameterValue> { None }
+        fn process(&mut self, input: &[f32], output: &mut [f32], ctx: &crate::plugin::ProcessContext) -> Result<usize, String> {
+            self.last_num_frames.set(ctx.num_frames);
+            let len = input.len().min(output.len());
+            output[..len].copy_from_slice(&input[..len]);
+            Ok(ctx.num_frames)
+        }
+        fn get_data(&self) -> Option<Arc<dyn std::any::Any + Send + Sync>> {
+            // Return the recorded num_frames as Arc<usize>
+            Some(Arc::new(self.last_num_frames.get()))
+        }
+    }
+
+    /// Bug 2: In parallel stages, `cf` is overwritten per-node. If two parallel
+    /// variable-frame plugins return different frame counts, the downstream node
+    /// receives the last overwrite as `cf`, not a reconciled value. The downstream
+    /// context.num_frames should equal the minimum of the parallel outputs (the
+    /// actual amount of complete data available from all predecessors).
+    #[test]
+    fn test_parallel_variable_frame_consistent_cf() {
+        let mut g = DawHost::new(2, 48000);
+
+        // Input node: passthrough
+        let input_node = g
+            .add_node(
+                "input".into(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(2, 0.0, 0.0))),
+            )
+            .unwrap();
+
+        // Two parallel variable-frame plugins with DIFFERENT output frame counts
+        let vf_a = g
+            .add_node(
+                "vf_a".into(),
+                Box::new(VariableFramePlugin::new(2, 100)),
+            )
+            .unwrap();
+        let vf_b = g
+            .add_node(
+                "vf_b".into(),
+                Box::new(VariableFramePlugin::new(2, 200)),
+            )
+            .unwrap();
+
+        // Downstream: recorder that captures context.num_frames
+        let output_node = g
+            .add_node(
+                "recorder".into(),
+                Box::new(FrameRecorderPlugin::new(2)),
+            )
+            .unwrap();
+
+        g.add_edge(GraphEdge::new(input_node, vf_a)).unwrap();
+        g.add_edge(GraphEdge::new(input_node, vf_b)).unwrap();
+        g.add_edge(GraphEdge::new(vf_a, output_node)).unwrap();
+        g.add_edge(GraphEdge::new(vf_b, output_node)).unwrap();
+
+        g.build().unwrap();
+
+        let nf = 256;
+        let input = vec![0.5_f32; nf * 2];
+        let mut output = vec![0.0_f32; nf * 2];
+
+        g.process(&input, &mut output).unwrap();
+
+        // The downstream node should receive the minimum frame count (100),
+        // because that's the amount of complete data available from all
+        // predecessors. With the bug, it receives 100 or 200 depending on
+        // iteration order (whichever node runs last).
+        let recorded_cf = g.plugins[output_node]
+            .as_ref()
+            .unwrap()
+            .get_data()
+            .unwrap()
+            .downcast_ref::<usize>()
+            .copied()
+            .unwrap();
+
+        assert_eq!(
+            recorded_cf, 100,
+            "Downstream received cf={}, expected 100 (min of parallel outputs)",
+            recorded_cf,
+        );
     }
 
     #[test]

@@ -61,7 +61,7 @@ pub struct DownmixPluginParams {
 }
 
 #[derive(Clone, Copy)]
-struct DownmixCoeffs {
+pub(crate) struct DownmixCoeffs {
     left_gain: f32,
     right_gain: f32,
 }
@@ -74,7 +74,7 @@ pub struct DownmixPlugin {
     input_ch: usize,
     sample_rate: u32,
     speaker_config: Option<&'static SpeakerConfig>,
-    target_coeffs: Vec<DownmixCoeffs>,
+    pub(crate) target_coeffs: Vec<DownmixCoeffs>,
     coeff_smoothers: Vec<Smoother>,
     lfe_channels: Vec<usize>,
     lfe_lpf_idx: Vec<Option<usize>>,
@@ -256,11 +256,16 @@ impl DownmixPlugin {
                     let elevation = s.elevation.abs();
 
                     if elevation > 10.0 {
-                        // Height channels
-                        let ang = (s.azimuth.to_radians() + std::f32::consts::FRAC_PI_2) * 0.5;
+                        // Height channels: constant-power pan using sin(azimuth)
+                        // as leftness. This works over the full 360° circle:
+                        //   0° → center, ±90° → full L/R, ±180° → center again.
+                        // L² + R² = gain² always (no energy loss).
+                        let leftness = s.azimuth.to_radians().sin();
+                        let pan_angle =
+                            (1.0 - leftness) * std::f32::consts::FRAC_PI_4;
                         new_coeffs.push(DownmixCoeffs {
-                            left_gain: h_lin * ang.sin(),
-                            right_gain: h_lin * ang.cos(),
+                            left_gain: (h_lin * pan_angle.cos()).max(0.0),
+                            right_gain: (h_lin * pan_angle.sin()).max(0.0),
                         });
                     } else if azimuth < 1.0 {
                         // Center channel
@@ -285,21 +290,14 @@ impl DownmixPlugin {
                         }
                     } else {
                         // Surround channels (Side/Rear)
-                        // Map azimuth to stereo width: 45..180 -> Left, -180..-45 -> Right
-                        let (lg, rg) = if s.azimuth > 1.0 {
-                            // Left side
-                            let pan = ((s.azimuth.abs() - 10.0) / 80.0).clamp(0.0, 1.0);
-                            (s_lin * pan, s_lin * (1.0 - pan) * 0.5)
-                        } else if s.azimuth < -1.0 {
-                            // Right side
-                            let pan = ((s.azimuth.abs() - 10.0) / 80.0).clamp(0.0, 1.0);
-                            (s_lin * (1.0 - pan) * 0.5, s_lin * pan)
-                        } else {
-                            (s_lin * 0.707, s_lin * 0.707)
-                        };
+                        // Constant-power pan using sin(azimuth) as leftness.
+                        // L² + R² = s_lin² at every angle, no energy loss.
+                        let leftness = s.azimuth.to_radians().sin();
+                        let pan_angle =
+                            (1.0 - leftness) * std::f32::consts::FRAC_PI_4;
                         new_coeffs.push(DownmixCoeffs {
-                            left_gain: lg,
-                            right_gain: rg,
+                            left_gain: (s_lin * pan_angle.cos()).max(0.0),
+                            right_gain: (s_lin * pan_angle.sin()).max(0.0),
                         });
                     }
                 }
@@ -322,13 +320,13 @@ impl DownmixPlugin {
             }
         }
 
-        // Normalization: Only normalize if the sum of gains exceeds a safe threshold (e.g., 2.0)
-        // This prevents massive attenuation while still protecting against extreme clipping.
+        // Normalization: Only normalize if the sum of absolute gains exceeds a safe threshold.
+        // Using abs() ensures negative coefficients don't reduce the perceived sum.
         let max_sum = new_coeffs
             .iter()
-            .map(|c| c.left_gain)
+            .map(|c| c.left_gain.abs())
             .sum::<f32>()
-            .max(new_coeffs.iter().map(|c| c.right_gain).sum::<f32>());
+            .max(new_coeffs.iter().map(|c| c.right_gain.abs()).sum::<f32>());
 
         let norm_threshold = 2.0;
         if max_sum > norm_threshold {
@@ -796,5 +794,235 @@ mod tests {
         )
         .unwrap();
         assert!(o[0].abs() > 0.01);
+    }
+
+    /// Helper: create a 5.1.4 downmix plugin with all gains at 0dB, phase_coherence off,
+    /// feed DC=1.0 into a single channel, and return the (left, right) output after settling.
+    fn probe_514_channel(channel: usize) -> (f32, f32) {
+        let input_ch = 10;
+        let mut p = DownmixPlugin::from_params(DownmixPluginParams {
+            input_channels: input_ch,
+            center_gain_db: 0.0,
+            surround_gain_db: 0.0,
+            height_gain_db: 0.0,
+            lfe_gain_db: 0.0,
+            phase_coherence: false,
+            phase_blend_low_hz: 200.0,
+            phase_blend_high_hz: 5000.0,
+        });
+        p.initialize(48000).unwrap();
+
+        let num_frames = 2048;
+        let mut input = vec![0.0f32; num_frames * input_ch];
+        for k in 0..num_frames {
+            input[k * input_ch + channel] = 1.0;
+        }
+        let mut output = vec![0.0f32; num_frames * 2];
+        p.process(
+            &input,
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames,
+            },
+        )
+        .unwrap();
+
+        // Return the last frame (after smoother settles)
+        let l = output[(num_frames - 1) * 2];
+        let r = output[(num_frames - 1) * 2 + 1];
+        (l, r)
+    }
+
+    /// Bug 1: Rear height channels (TBL at +150°, TBR at -150°) must NOT produce
+    /// negative gains. Negative gains cause phase inversion and cancellation.
+    #[test]
+    fn test_514_rear_height_no_negative_gains() {
+        // 5.1.4 layout: ch8=TBL(+150°, 45°), ch9=TBR(-150°, 45°)
+        let (l_tbl, r_tbl) = probe_514_channel(8); // TBL
+        let (l_tbr, r_tbr) = probe_514_channel(9); // TBR
+
+        assert!(
+            r_tbl >= 0.0,
+            "TBL right gain must be non-negative, got {r_tbl}"
+        );
+        assert!(
+            l_tbr >= 0.0,
+            "TBR left gain must be non-negative, got {l_tbr}"
+        );
+        // TBL should go primarily to left
+        assert!(l_tbl > r_tbl, "TBL should map more to left than right");
+        // TBR should go primarily to right
+        assert!(r_tbr > l_tbr, "TBR should map more to right than left");
+    }
+
+    /// Bug 2: Normalization should use absolute values of gains so that negative
+    /// coefficients don't reduce the perceived sum and under-normalize.
+    #[test]
+    fn test_514_normalization_uses_abs() {
+        let input_ch = 10;
+        let p = DownmixPlugin::from_params(DownmixPluginParams {
+            input_channels: input_ch,
+            center_gain_db: 0.0,
+            surround_gain_db: 0.0,
+            height_gain_db: 0.0,
+            lfe_gain_db: 0.0,
+            phase_coherence: false,
+            phase_blend_low_hz: 200.0,
+            phase_blend_high_hz: 5000.0,
+        });
+
+        // Sum the absolute values of all left gains — should be <= 2.0 after normalization
+        let abs_sum_l: f32 = p.target_coeffs.iter().map(|c| c.left_gain.abs()).sum();
+        let abs_sum_r: f32 = p.target_coeffs.iter().map(|c| c.right_gain.abs()).sum();
+        let max_abs = abs_sum_l.max(abs_sum_r);
+
+        assert!(
+            max_abs <= 2.05, // small epsilon for float
+            "Absolute gain sum should be <= 2.0 after normalization, got L={abs_sum_l}, R={abs_sum_r}"
+        );
+    }
+
+    /// Bug 3: Surround panning should preserve constant-power relationships.
+    /// All surround speakers at the same gain should have equal L²+R² (before
+    /// normalization scales them uniformly). We verify this by checking that all
+    /// surround channels have the same power after normalization (within tolerance).
+    #[test]
+    fn test_surround_panning_energy_preservation() {
+        let input_ch = 8; // 7.1 layout
+        let p = DownmixPlugin::from_params(DownmixPluginParams {
+            input_channels: input_ch,
+            center_gain_db: -100.0,
+            surround_gain_db: 0.0, // s_lin = 1.0
+            height_gain_db: -100.0,
+            lfe_gain_db: -100.0,
+            phase_coherence: false,
+            phase_blend_low_hz: 200.0,
+            phase_blend_high_hz: 5000.0,
+        });
+
+        // In 7.1: ch4=SL(90°), ch5=SR(-90°), ch6=BL(150°), ch7=BR(-150°)
+        // All surround speakers should have equal power (constant-power panning).
+        let powers: Vec<f32> = [4, 5, 6, 7]
+            .iter()
+            .map(|&ch| {
+                let c = &p.target_coeffs[ch];
+                c.left_gain * c.left_gain + c.right_gain * c.right_gain
+            })
+            .collect();
+
+        let max_power = powers.iter().cloned().fold(0.0f32, f32::max);
+        let min_power = powers.iter().cloned().fold(f32::MAX, f32::min);
+        assert!(
+            (max_power - min_power) < 0.01,
+            "Surround speakers should have equal power: {:?}",
+            powers
+        );
+        // All should have positive power
+        assert!(min_power > 0.01, "Surround power should be non-trivial: {min_power}");
+    }
+
+    /// Verify all speaker configs produce valid coefficients:
+    /// - No negative gains
+    /// - All height speakers at the same gain have equal power (constant-power)
+    /// - All surround speakers at the same gain have equal power
+    /// - Left-side speakers go more to left, right-side more to right
+    #[test]
+    fn test_all_configs_valid_coefficients() {
+        use crate::speaker_config::get_speaker_config;
+
+        for config_id in &[
+            "2.0", "2.1", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4",
+            "9.1.6",
+        ] {
+            let config = get_speaker_config(config_id).unwrap();
+            let p = DownmixPlugin::from_params(DownmixPluginParams {
+                input_channels: config.total_channels,
+                center_gain_db: 0.0,
+                surround_gain_db: 0.0,
+                height_gain_db: 0.0,
+                lfe_gain_db: 0.0,
+                phase_coherence: false,
+                phase_blend_low_hz: 200.0,
+                phase_blend_high_hz: 5000.0,
+            });
+
+            assert_eq!(
+                p.target_coeffs.len(),
+                config.speakers.len(),
+                "{config_id}: coeff count mismatch"
+            );
+
+            let mut height_powers = Vec::new();
+            let mut surround_powers = Vec::new();
+
+            for (i, spk) in config.speakers.iter().enumerate() {
+                let c = &p.target_coeffs[i];
+
+                // No negative gains
+                assert!(
+                    c.left_gain >= 0.0,
+                    "{config_id} {}: left_gain={} is negative",
+                    spk.label,
+                    c.left_gain
+                );
+                assert!(
+                    c.right_gain >= 0.0,
+                    "{config_id} {}: right_gain={} is negative",
+                    spk.label,
+                    c.right_gain
+                );
+
+                // Left-side speakers (azimuth > 1°) should have left_gain >= right_gain
+                if !spk.is_lfe && spk.azimuth > 1.0 {
+                    assert!(
+                        c.left_gain >= c.right_gain,
+                        "{config_id} {}: left speaker should favor left (L={}, R={})",
+                        spk.label,
+                        c.left_gain,
+                        c.right_gain
+                    );
+                }
+                // Right-side speakers (azimuth < -1°) should have right_gain >= left_gain
+                if !spk.is_lfe && spk.azimuth < -1.0 {
+                    assert!(
+                        c.right_gain >= c.left_gain,
+                        "{config_id} {}: right speaker should favor right (L={}, R={})",
+                        spk.label,
+                        c.left_gain,
+                        c.right_gain
+                    );
+                }
+
+                let power = c.left_gain * c.left_gain + c.right_gain * c.right_gain;
+                if spk.elevation.abs() > 10.0 {
+                    height_powers.push(power);
+                } else if spk.azimuth.abs() >= 45.0 && !spk.is_lfe {
+                    surround_powers.push(power);
+                }
+            }
+
+            // All height speakers should have equal power (constant-power pan)
+            if height_powers.len() > 1 {
+                let max_h = height_powers.iter().cloned().fold(0.0f32, f32::max);
+                let min_h = height_powers.iter().cloned().fold(f32::MAX, f32::min);
+                assert!(
+                    (max_h - min_h) < 0.01,
+                    "{config_id}: height power variance too large: {:?}",
+                    height_powers
+                );
+            }
+
+            // All surround speakers should have equal power
+            if surround_powers.len() > 1 {
+                let max_s = surround_powers.iter().cloned().fold(0.0f32, f32::max);
+                let min_s = surround_powers.iter().cloned().fold(f32::MAX, f32::min);
+                assert!(
+                    (max_s - min_s) < 0.01,
+                    "{config_id}: surround power variance too large: {:?}",
+                    surround_powers
+                );
+            }
+        }
     }
 }

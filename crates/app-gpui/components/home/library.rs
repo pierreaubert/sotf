@@ -475,7 +475,7 @@ impl PlayerView {
                 self.render_tracks_tab_content(selected_track_range, track_range_counts, theme, cx)
                     .into_any_element()
             }
-            _ => {
+            LibrarySortOrder::Genre => {
                 // Genre tab: selection UI first, then albums with back button
                 self.render_selection_based_content(
                     sort_order,
@@ -485,6 +485,21 @@ impl PlayerView {
                     cx,
                 )
                 .into_any_element()
+            }
+            LibrarySortOrder::Popularity => {
+                // Popularity tab: album grid sorted by play count (sorting handled in sort_albums)
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_hidden()
+                            .child(self.render_library_grid(cx)),
+                    )
+                    .into_any_element()
             }
         }
     }

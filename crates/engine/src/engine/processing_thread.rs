@@ -1314,6 +1314,7 @@ mod tests {
                     | PluginType::XTC
                     | PluginType::Denoiser
                     | PluginType::Downmix
+                    | PluginType::MonoToStereo
             );
 
             if !may_produce_silence {

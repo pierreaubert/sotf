@@ -34,7 +34,7 @@ impl UpmixerPlugin {
         // erratic peaks that would modulate the safety cap and cause scratchiness in
         // the bed channels (L/R/C/surround).
         let mut target_safety_scale = 1.0_f32;
-        if self.safety_cap_db > 0.0 {
+        if self.safety_cap_db >= 0.0 {
             let mut max_abs = 0.0_f32;
             for ch in 0..self.num_output_channels {
                 if self.cached_is_height[ch] {

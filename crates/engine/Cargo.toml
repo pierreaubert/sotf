@@ -1,7 +1,7 @@
 [package]
 name = "engine"
 description = "an audio player and recorder that support audio plugins"
-version.workspace = true
+version = "1.0.11"
 edition.workspace = true
 
 [lib]

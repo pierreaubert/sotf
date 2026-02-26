@@ -297,6 +297,18 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                         if let Ok(configs_iter) = device.supported_output_configs() {
                             let configs: Vec<_> = configs_iter.collect();
 
+                            for (idx, cfg) in configs.iter().enumerate() {
+                                log::info!(
+                                    "[AUDIO] Output device '{}' config range [{}]: channels={}, sample_rate={}..{}, format={:?}",
+                                    name,
+                                    idx,
+                                    cfg.channels(),
+                                    cfg.min_sample_rate(),
+                                    cfg.max_sample_rate(),
+                                    cfg.sample_format(),
+                                );
+                            }
+
                             // Find config with most channels
                             let max_channel_config =
                                 configs.iter().max_by_key(|config| config.channels());

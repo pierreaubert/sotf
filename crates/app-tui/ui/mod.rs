@@ -992,92 +992,130 @@ fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
 
     let pause_tag = if paused { " [paused]" } else { "" };
 
-    let mut lines: Vec<Line> = Vec::new();
+    let label_style = Style::default().fg(app.theme.accent_primary);
+    let idle_style = Style::default().fg(app.theme.fg_secondary);
+    let progress_style = Style::default().fg(app.theme.accent_warning);
+    let ok_style = Style::default().fg(app.theme.accent_success);
+    let err_style = Style::default().fg(app.theme.accent_error);
+
+    // Header
+    //               "Scanner     Status              OK   Fail  Total"
+    let mut lines: Vec<Line> = vec![Line::from(vec![
+        Span::styled("Scanner     ", label_style),
+        Span::styled("Status              ", idle_style),
+        Span::styled("  OK", ok_style),
+        Span::styled("  Fail", err_style),
+        Span::styled("  Total", idle_style),
+    ])];
+
+    // Helper to format a scanner row with counts
+    let scanner_line = |name: &str,
+                        in_progress: bool,
+                        status_text: String,
+                        succeeded: usize,
+                        failed: usize,
+                        total: usize|
+     -> Line {
+        let status_span = if in_progress {
+            Span::styled(format!("{:<20}", status_text), progress_style)
+        } else {
+            Span::styled(format!("{:<20}", status_text), idle_style)
+        };
+        Line::from(vec![
+            Span::styled(format!("{:<12}", name), label_style),
+            status_span,
+            Span::styled(format!("{:>4}", succeeded), ok_style),
+            Span::styled(format!("{:>6}", failed), if failed > 0 { err_style } else { idle_style }),
+            Span::styled(format!("{:>7}", total), idle_style),
+        ])
+    };
 
     // ReplayGain
-    if app.replay_gain_manager.in_progress {
-        let rg_text = if app.replay_gain_manager.album_gain_phase
-            == sotf_audio_player::AlbumGainPhase::Scanning
-        {
-            format!(
-                "album {}/{}",
-                app.replay_gain_manager.album_gain_done,
-                app.replay_gain_manager.album_gain_total,
-            )
+    let rg = &app.replay_gain_manager;
+    let rg_status = if rg.in_progress {
+        if rg.album_gain_phase == sotf_audio_player::AlbumGainPhase::Scanning {
+            format!("album {}/{}{}", rg.album_gain_done, rg.album_gain_total, pause_tag)
         } else {
-            let pct = if app.replay_gain_manager.total > 0 {
-                app.replay_gain_manager.processed as f32 / app.replay_gain_manager.total as f32 * 100.0
-            } else { 0.0 };
-            format!(
-                "{}/{} ({:.0}%){}",
-                app.replay_gain_manager.processed,
-                app.replay_gain_manager.total,
-                pct,
-                pause_tag,
-            )
-        };
-        lines.push(Line::from(vec![
-            Span::styled("ReplayGain  ", Style::default().fg(app.theme.accent_primary)),
-            Span::styled(rg_text, Style::default().fg(app.theme.accent_warning)),
-        ]));
+            let pct = if rg.total > 0 {
+                rg.processed as f32 / rg.total as f32 * 100.0
+            } else {
+                0.0
+            };
+            format!("{}/{} ({:.0}%){}", rg.processed, rg.total, pct, pause_tag)
+        }
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("ReplayGain  ", Style::default().fg(app.theme.accent_primary)),
-            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
-        ]));
-    }
+        "idle".to_string()
+    };
+    lines.push(scanner_line(
+        "ReplayGain",
+        rg.in_progress,
+        rg_status,
+        rg.succeeded,
+        rg.failed,
+        rg.total,
+    ));
 
     // Waveform
-    if app.waveform_manager.in_progress {
-        let pct = if app.waveform_manager.total > 0 {
-            app.waveform_manager.processed as f32 / app.waveform_manager.total as f32 * 100.0
-        } else { 0.0 };
-        lines.push(Line::from(vec![
-            Span::styled("Waveform    ", Style::default().fg(app.theme.accent_primary)),
-            Span::styled(
-                format!("{}/{} ({:.0}%){}", app.waveform_manager.processed, app.waveform_manager.total, pct, pause_tag),
-                Style::default().fg(app.theme.accent_warning),
-            ),
-        ]));
+    let wf = &app.waveform_manager;
+    let wf_status = if wf.in_progress {
+        let pct = if wf.total > 0 {
+            wf.processed as f32 / wf.total as f32 * 100.0
+        } else {
+            0.0
+        };
+        format!("{}/{} ({:.0}%){}", wf.processed, wf.total, pct, pause_tag)
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("Waveform    ", Style::default().fg(app.theme.accent_primary)),
-            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
-        ]));
-    }
+        "idle".to_string()
+    };
+    lines.push(scanner_line(
+        "Waveform",
+        wf.in_progress,
+        wf_status,
+        wf.succeeded,
+        wf.failed,
+        wf.total,
+    ));
 
     // Bliss
-    if app.bliss_manager.in_progress {
-        let pct = if app.bliss_manager.total > 0 {
-            app.bliss_manager.processed as f32 / app.bliss_manager.total as f32 * 100.0
-        } else { 0.0 };
-        lines.push(Line::from(vec![
-            Span::styled("Bliss       ", Style::default().fg(app.theme.accent_primary)),
-            Span::styled(
-                format!("{}/{} ({:.0}%){}", app.bliss_manager.processed, app.bliss_manager.total, pct, pause_tag),
-                Style::default().fg(app.theme.accent_warning),
-            ),
-        ]));
+    let bl = &app.bliss_manager;
+    let bl_status = if bl.in_progress {
+        let pct = if bl.total > 0 {
+            bl.processed as f32 / bl.total as f32 * 100.0
+        } else {
+            0.0
+        };
+        format!("{}/{} ({:.0}%){}", bl.processed, bl.total, pct, pause_tag)
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("Bliss       ", Style::default().fg(app.theme.accent_primary)),
-            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
-        ]));
-    }
+        "idle".to_string()
+    };
+    lines.push(scanner_line(
+        "Bliss",
+        bl.in_progress,
+        bl_status,
+        bl.succeeded,
+        bl.failed,
+        bl.total,
+    ));
 
-    // Library scan
+    // Library scan (no success/failure breakdown)
     if app.scan_in_progress {
         lines.push(Line::from(vec![
-            Span::styled("Library     ", Style::default().fg(app.theme.accent_primary)),
+            Span::styled(format!("{:<12}", "Library"), label_style),
             Span::styled(
-                format!("{} tracks / {} albums{}", app.scan_progress_tracks, app.scan_progress_albums, pause_tag),
-                Style::default().fg(app.theme.accent_warning),
+                format!(
+                    "{:<20}",
+                    format!(
+                        "{} tracks / {} albums{}",
+                        app.scan_progress_tracks, app.scan_progress_albums, pause_tag
+                    )
+                ),
+                progress_style,
             ),
         ]));
     } else {
         lines.push(Line::from(vec![
-            Span::styled("Library     ", Style::default().fg(app.theme.accent_primary)),
-            Span::styled("idle", Style::default().fg(app.theme.fg_secondary)),
+            Span::styled(format!("{:<12}", "Library"), label_style),
+            Span::styled(format!("{:<20}", "idle"), idle_style),
         ]));
     }
 
@@ -5795,8 +5833,8 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
         Span::raw("  Cycle through screens and level meters pane"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  L/D/Q/P/O", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Jump to Library/Directories/Queue/Plugins/Devices"),
+        Span::styled("  L/Q/P/O/C", Style::default().fg(app.theme.accent_primary)),
+        Span::raw("  Jump to Library/Queue/Plugins/Devices/Configure"),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  Shift+M", Style::default().fg(app.theme.accent_primary)),

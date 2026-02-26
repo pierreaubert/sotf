@@ -334,11 +334,6 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.current_screen = Screen::Library;
             None
         }
-        KeyCode::Char('D') => {
-            app.current_screen = Screen::Configure;
-            app.configure_sub_screen = crate::app::ConfigureSubScreen::Directories;
-            None
-        }
         KeyCode::Char('N') => {
             app.current_screen = Screen::Configure;
             None
@@ -383,8 +378,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.toggle_level_meter_solo();
             None
         }
-        KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift-C to clear all mutes and solos (only when meters pane focused)
+        KeyCode::Char('C') => {
             if app.focused_pane == crate::app::FocusedPane::Meters {
                 app.clear_level_meter_mutes_and_solos();
             } else {

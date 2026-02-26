@@ -162,6 +162,7 @@ impl UpmixerPlugin {
                     let hp = self.mains_high_gains[bin];
                     self.direct_left[i] = left * hp;
                     self.direct_right[i] = right * hp;
+                    self.direct[i] = Complex::new(0.0, 0.0);
                     self.ambient_left[i] = Complex::new(0.0, 0.0);
                     self.ambient_right[i] = Complex::new(0.0, 0.0);
                 }
@@ -179,6 +180,7 @@ impl UpmixerPlugin {
                 for i in pass_start..pass_end {
                     self.direct_left[i] = self.freq_domain_left[i];
                     self.direct_right[i] = self.freq_domain_right[i];
+                    self.direct[i] = Complex::new(0.0, 0.0);
                     self.lfe[i] = Complex::new(0.0, 0.0);
                     self.ambient_left[i] = Complex::new(0.0, 0.0);
                     self.ambient_right[i] = Complex::new(0.0, 0.0);

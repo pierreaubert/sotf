@@ -1067,3 +1067,228 @@ fn test_asymmetric_spectral_norm_improves_ear_response() {
         "Spectral normalization should improve ear response. dev_off={dev_off:.6}, dev_on={dev_on:.6}"
     );
 }
+
+/// Bug 3: Spectral normalization can push per-bin gain past max_gain_linear.
+/// After `compute_2x2_inverse` soft-limits to max_gain_linear, spectral
+/// normalization multiplies by up to ~3.7x. Every bin must stay within budget.
+/// Use low beta to create ill-conditioned bins where the soft limiter saturates
+/// near max_gain_linear, then spectral normalization pushes past it.
+#[test]
+fn test_spectral_norm_does_not_exceed_gain_budget() {
+    let mut params = XtcPluginParams::default();
+    params.beta_base = 0.0003; // Low beta → more aggressive inverse → larger filter gains
+    assert!(params.spectral_normalization);
+    let fft_size = params.fft_size;
+    let num_bins = fft_size / 2 + 1;
+    let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
+
+    let filters = compute_xtc_filters_full(&params, 48000, num_bins);
+
+    for bin in 1..num_bins {
+        let mag_ll = filters.filter_ll[bin].norm();
+        assert!(
+            mag_ll <= max_gain_linear + 1e-3,
+            "filter_ll[{}] magnitude {} exceeds max_gain_linear {}",
+            bin, mag_ll, max_gain_linear,
+        );
+        let mag_lr = filters.filter_lr[bin].norm();
+        assert!(
+            mag_lr <= max_gain_linear + 1e-3,
+            "filter_lr[{}] magnitude {} exceeds max_gain_linear {}",
+            bin, mag_lr, max_gain_linear,
+        );
+    }
+}
+
+/// Bug 4: Neumann refinement can diverge at ill-conditioned bins, producing
+/// worse cancellation error than the first-order inverse. Per-bin, W2 should
+/// never have higher cancellation error than W1.
+/// Use low beta to create ill-conditioned bins where Neumann series diverges.
+#[test]
+fn test_neumann_refinement_never_increases_error() {
+    use filters::compute_2x2_inverse;
+    use std::f32::consts::PI;
+
+    let mut params = XtcPluginParams::default();
+    params.beta_base = 0.0003; // Low beta → ill-conditioned bins where Neumann diverges
+    let fft_size = params.fft_size;
+    let num_bins = fft_size / 2 + 1;
+    let max_gain_linear = 10.0_f32.powf(params.max_gain_db / 20.0);
+
+    let cache = compute_geometry_cache(&params, 48000, num_bins);
+    let sym = &cache.symmetric;
+
+    for bin in 1..num_bins {
+        let freq = bin as f32 * cache.freq_per_bin;
+
+        let h_ipsi = Complex::new(1.0, 0.0);
+        let delta_t = sym.delay_contra - sym.delay_ipsi;
+        let g = head_shadowing_woodworth(freq, sym.contra_angle, sym.a) * sym.amplitude_ratio;
+        let phase_contra = -2.0 * PI * freq * delta_t;
+        let h_contra = Complex::new(g * phase_contra.cos(), g * phase_contra.sin());
+
+        let beta = compute_beta_smooth(freq, &params);
+
+        // W1: first-order only (bypass Neumann)
+        let (w1_ipsi, w1_contra) =
+            compute_2x2_inverse(h_ipsi, h_contra, beta, max_gain_linear, true);
+        // W2: with Neumann refinement
+        let (w2_ipsi, w2_contra) =
+            compute_2x2_inverse(h_ipsi, h_contra, beta, max_gain_linear, false);
+
+        // Cancellation error: |C*W - I| for the left-ear row
+        // C = [[h_ipsi, h_contra], [h_contra, h_ipsi]]
+        // Left-ear row of C*W: [h_ipsi*w_ipsi + h_contra*w_contra, h_ipsi*w_contra + h_contra*w_ipsi]
+        // Ideal: [1, 0]
+        let err1_diag = h_ipsi * w1_ipsi + h_contra * w1_contra - Complex::new(1.0, 0.0);
+        let err1_off = h_ipsi * w1_contra + h_contra * w1_ipsi;
+        let err1_sq = err1_diag.norm_sqr() + err1_off.norm_sqr();
+
+        let err2_diag = h_ipsi * w2_ipsi + h_contra * w2_contra - Complex::new(1.0, 0.0);
+        let err2_off = h_ipsi * w2_contra + h_contra * w2_ipsi;
+        let err2_sq = err2_diag.norm_sqr() + err2_off.norm_sqr();
+
+        assert!(
+            err2_sq <= err1_sq + 1e-6,
+            "Neumann refinement increased error at bin {} (freq {:.0} Hz): \
+             err1_sq={:.6}, err2_sq={:.6}",
+            bin, freq, err1_sq, err2_sq,
+        );
+    }
+}
+
+/// Bug 5: Enabling pinna model causes saturation (gain > 1.0) because the
+/// pinna resonances (+10 dB ear canal, +5 dB concha) inflate the transfer
+/// function magnitudes. The inverse filter then attenuates at pinna frequencies,
+/// reducing broadband output level. Auto-gain over-compensates, pushing
+/// non-pinna frequencies past clipping.
+#[test]
+fn test_pinna_model_does_not_saturate() {
+    let mut params = XtcPluginParams::default();
+    params.pinna_model_enabled = true;
+    assert!(params.auto_gain_enabled);
+
+    let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    let block_size = 4096;
+    let num_blocks = 16; // Enough for auto-gain to converge
+
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames: block_size,
+    };
+
+    let mut peak_output = 0.0_f32;
+    for block in 0..num_blocks {
+        let mut input = vec![0.0_f32; block_size * 2];
+        for i in 0..block_size {
+            let sample_idx = block * block_size + i;
+            // Multi-tone broadband signal to exercise the full frequency range
+            let t = sample_idx as f32 / 48000.0;
+            let sig_l = (2.0 * std::f32::consts::PI * 200.0 * t).sin()
+                + (2.0 * std::f32::consts::PI * 1000.0 * t).sin()
+                + (2.0 * std::f32::consts::PI * 3000.0 * t).sin()
+                + (2.0 * std::f32::consts::PI * 6000.0 * t).sin();
+            let sig_r = (2.0 * std::f32::consts::PI * 300.0 * t).sin()
+                + (2.0 * std::f32::consts::PI * 1300.0 * t).sin()
+                + (2.0 * std::f32::consts::PI * 3500.0 * t).sin()
+                + (2.0 * std::f32::consts::PI * 7000.0 * t).sin();
+            // Normalize 4 tones to 0.9 peak (each tone has peak 1.0, worst-case sum = 4.0)
+            input[i * 2] = sig_l * 0.9 / 4.0;
+            input[i * 2 + 1] = sig_r * 0.9 / 4.0;
+        }
+        let mut output = vec![0.0_f32; block_size * 2];
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Track peak after auto-gain has had time to converge (skip first few blocks)
+        if block >= 4 {
+            for &s in &output {
+                peak_output = peak_output.max(s.abs());
+            }
+        }
+    }
+
+    assert!(
+        peak_output <= 1.0,
+        "Pinna model caused saturation: peak = {:.4}. \
+         Pinna resonances inflate transfer function, auto-gain over-compensates.",
+        peak_output
+    );
+}
+
+/// Bug 1: Asymmetric spectral normalization scales wrong columns (rows instead of columns).
+/// Left-ear normalization should scale column 0 (w_ll, w_rl) — the code scales row 0
+/// (w_ll, w_lr). This means w_ll and w_rl should receive the SAME scale factor.
+/// In the buggy code, w_ll and w_lr receive the same factor instead.
+///
+/// Test: verify that spectral normalization applies the same factor to both elements
+/// of each column (left column: w_ll, w_rl; right column: w_lr, w_rr).
+#[test]
+fn test_asymmetric_spectral_norm_scales_columns_not_rows() {
+    let num_bins = 513;
+
+    let mut params_off = XtcPluginParams::default();
+    params_off.head_yaw_deg = 45.0; // Large yaw for maximum asymmetry between ears
+    params_off.beta_base = 0.001;
+    params_off.spectral_normalization = false;
+    params_off.room_reflections_enabled = false;
+    let f_off = compute_xtc_filters_full(&params_off, 48000, num_bins);
+
+    let mut params_on = XtcPluginParams::default();
+    params_on.head_yaw_deg = 45.0;
+    params_on.beta_base = 0.001;
+    params_on.spectral_normalization = true;
+    params_on.bypass_spectral_normalization = false;
+    params_on.room_reflections_enabled = false;
+    let f_on = compute_xtc_filters_full(&params_on, 48000, num_bins);
+
+    assert!(!f_off.is_symmetric && !f_on.is_symmetric);
+    let rl_off = f_off.filter_rl.as_ref().unwrap();
+    let rr_off = f_off.filter_rr.as_ref().unwrap();
+    let rl_on = f_on.filter_rl.as_ref().unwrap();
+    let rr_on = f_on.filter_rr.as_ref().unwrap();
+
+    let cache = compute_geometry_cache(&params_on, 48000, num_bins);
+    let bin_lo = (800.0 / cache.freq_per_bin) as usize;
+    let bin_hi = (3000.0 / cache.freq_per_bin) as usize;
+
+    let mut col_err = 0.0_f64;
+    let mut row_err = 0.0_f64;
+    let mut count = 0;
+
+    for bin in bin_lo..=bin_hi {
+        // Skip bins where denominators are too small for stable ratio computation
+        if f_off.filter_ll[bin].norm() < 1e-6 || rl_off[bin].norm() < 1e-6
+            || f_off.filter_lr[bin].norm() < 1e-6 || rr_off[bin].norm() < 1e-6
+        {
+            continue;
+        }
+
+        // Ratio on/off for each element
+        let ratio_ll = (f_on.filter_ll[bin] / f_off.filter_ll[bin]).norm();
+        let ratio_lr = (f_on.filter_lr[bin] / f_off.filter_lr[bin]).norm();
+        let ratio_rl = (rl_on[bin] / rl_off[bin]).norm();
+        let ratio_rr = (rr_on[bin] / rr_off[bin]).norm();
+
+        // In correct code: left column has same ratio → |ratio_ll - ratio_rl| ≈ 0
+        //                   right column has same ratio → |ratio_lr - ratio_rr| ≈ 0
+        col_err += ((ratio_ll - ratio_rl) as f64).powi(2)
+            + ((ratio_lr - ratio_rr) as f64).powi(2);
+
+        // In buggy code (row scaling): |ratio_ll - ratio_lr| ≈ 0 and |ratio_rl - ratio_rr| ≈ 0
+        row_err += ((ratio_ll - ratio_lr) as f64).powi(2)
+            + ((ratio_rl - ratio_rr) as f64).powi(2);
+
+        count += 1;
+    }
+
+    assert!(count > 10, "Not enough valid bins: {}", count);
+
+    // Column error should be smaller than row error (correct = column scaling)
+    assert!(
+        col_err < row_err,
+        "Spectral normalization scales ROWS instead of COLUMNS! \
+         col_err={col_err:.10}, row_err={row_err:.10} (col_err should be smaller)"
+    );
+}

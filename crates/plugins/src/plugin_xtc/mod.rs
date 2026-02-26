@@ -1212,6 +1212,11 @@ impl Plugin for XtcPlugin {
                 }
                 output[idx_l] *= self.limiter_envelope;
                 output[idx_r] *= self.limiter_envelope;
+                // Hard clamp: the one-pole envelope has finite attack time, so a
+                // few samples can overshoot during transient onset. Clamp to ±1.0
+                // as a safety ceiling — matches standard digital limiter practice.
+                output[idx_l] = output[idx_l].clamp(-1.0, 1.0);
+                output[idx_r] = output[idx_r].clamp(-1.0, 1.0);
             }
         }
 

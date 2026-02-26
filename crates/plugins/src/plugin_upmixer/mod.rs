@@ -713,12 +713,12 @@ impl UpmixerPlugin {
 
             height_freq_weights: vec![0.0; spectrum_size],
 
-            safety_cap_linear: if default_safety_cap_db() > 0.0 {
+            safety_cap_linear: if default_safety_cap_db() >= 0.0 {
                 fast_pow10(default_safety_cap_db() / 20.0)
             } else {
                 1.0
             },
-            safety_cap_min_scale: if default_safety_cap_db() > 0.0 {
+            safety_cap_min_scale: if default_safety_cap_db() >= 0.0 {
                 fast_pow10(-default_safety_cap_db() / 20.0)
             } else {
                 0.0

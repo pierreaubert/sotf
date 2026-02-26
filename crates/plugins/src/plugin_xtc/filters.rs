@@ -388,23 +388,40 @@ fn compute_xtc_filters_asymmetric_with_cache(
             // Speakers emit: out_L = w_ll, out_R = w_rl
             // Left ear hears: h_ipsi * w_ll + h_contra * w_rl
             let ear_l = w_ll * h_ll_ipsi_final + w_rl * h_ll_contra_final;
-            let mag_l = ear_l.norm();
-            if mag_l > 0.01 {
-                let gain_l = 1.0 + 0.9 * ((1.0 / mag_l).clamp(0.5, 4.0) - 1.0);
-                w_ll *= gain_l;
-                w_lr *= gain_l;
-            }
 
             // Right Ear response for unit Right Input (L_in = 0, R_in = 1)
             // Speakers emit: out_L = w_lr, out_R = w_rr
             // Right ear hears: h_contra * w_lr + h_ipsi * w_rr
             let ear_r = w_lr * h_rr_contra_final + w_rr * h_rr_ipsi_final;
+
+            // Compute both gains before applying, to avoid contamination
+            let mag_l = ear_l.norm();
+            let gain_l = if mag_l > 0.01 {
+                1.0 + 0.9 * ((1.0 / mag_l).clamp(0.5, 4.0) - 1.0)
+            } else {
+                1.0
+            };
+
             let mag_r = ear_r.norm();
-            if mag_r > 0.01 {
-                let gain_r = 1.0 + 0.9 * ((1.0 / mag_r).clamp(0.5, 4.0) - 1.0);
-                w_rl *= gain_r;
-                w_rr *= gain_r;
-            }
+            let gain_r = if mag_r > 0.01 {
+                1.0 + 0.9 * ((1.0 / mag_r).clamp(0.5, 4.0) - 1.0)
+            } else {
+                1.0
+            };
+
+            // Scale COLUMNS, not rows:
+            // Left column (w_ll, w_rl) → left ear correction
+            // Right column (w_lr, w_rr) → right ear correction
+            w_ll *= gain_l;
+            w_rl *= gain_l;
+            w_lr *= gain_r;
+            w_rr *= gain_r;
+
+            // Re-apply soft limit: spectral normalization can push gains past budget
+            w_ll = soft_limit_complex_magnitude(w_ll, max_gain_linear);
+            w_lr = soft_limit_complex_magnitude(w_lr, max_gain_linear);
+            w_rl = soft_limit_complex_magnitude(w_rl, max_gain_linear);
+            w_rr = soft_limit_complex_magnitude(w_rr, max_gain_linear);
         }
 
         filter_ll[bin] = w_ll;
@@ -528,6 +545,9 @@ fn compute_xtc_filters_symmetric_with_cache(
                 w_ll *= gain;
                 w_lr *= gain;
             }
+            // Re-apply soft limit: spectral normalization can push gains past budget
+            w_ll = soft_limit_complex_magnitude(w_ll, max_gain_linear);
+            w_lr = soft_limit_complex_magnitude(w_lr, max_gain_linear);
         }
 
         filter_ll[bin] = w_ll;
@@ -551,7 +571,7 @@ fn compute_xtc_filters_symmetric_with_cache(
 /// Returns (w_ipsi, w_contra) filter coefficients.
 /// max_gain_linear limits the magnitude of each output coefficient.
 #[inline]
-fn compute_2x2_inverse(
+pub(crate) fn compute_2x2_inverse(
     h_ipsi: Complex<f32>,
     h_contra: Complex<f32>,
     beta: f32,
@@ -611,11 +631,27 @@ fn compute_2x2_inverse(
     let w2_ipsi = w1_ipsi + (w2_ipsi_full - w1_ipsi) * 0.7;
     let w2_contra = w1_contra + (w2_contra_full - w1_contra) * 0.7;
 
-    // Soft-limit magnitudes to prevent excessive boost
-    let w2_ipsi = soft_limit_complex_magnitude(w2_ipsi, max_gain_linear);
-    let w2_contra = soft_limit_complex_magnitude(w2_contra, max_gain_linear);
+    // Per-bin fallback: if refinement increased cancellation error, use first-order.
+    // At ill-conditioned bins (spectral radius > ~1.43), Neumann series diverges.
+    let w1_ipsi_limited = soft_limit_complex_magnitude(w1_ipsi, max_gain_linear);
+    let w1_contra_limited = soft_limit_complex_magnitude(w1_contra, max_gain_linear);
+    let w2_ipsi_limited = soft_limit_complex_magnitude(w2_ipsi, max_gain_linear);
+    let w2_contra_limited = soft_limit_complex_magnitude(w2_contra, max_gain_linear);
 
-    (w2_ipsi, w2_contra)
+    let identity = Complex::new(1.0, 0.0);
+    let err1_diag = h_ipsi * w1_ipsi_limited + h_contra * w1_contra_limited - identity;
+    let err1_off = h_ipsi * w1_contra_limited + h_contra * w1_ipsi_limited;
+    let err1_sq = err1_diag.norm_sqr() + err1_off.norm_sqr();
+
+    let err2_diag = h_ipsi * w2_ipsi_limited + h_contra * w2_contra_limited - identity;
+    let err2_off = h_ipsi * w2_contra_limited + h_contra * w2_ipsi_limited;
+    let err2_sq = err2_diag.norm_sqr() + err2_off.norm_sqr();
+
+    if err2_sq <= err1_sq {
+        (w2_ipsi_limited, w2_contra_limited)
+    } else {
+        (w1_ipsi_limited, w1_contra_limited)
+    }
 }
 
 /// Compute full 2x2 regularized inverse for asymmetric crosstalk cancellation.

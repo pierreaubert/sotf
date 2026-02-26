@@ -600,10 +600,17 @@ fn start_playback(
     let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
     let mut output_channels = app.plugin_chain.output_channels_for_input(track_channels);
 
+    let device_max = app.get_device_max_channels();
+    log::info!(
+        "[TUI] Plugin chain wants {} output channels, device max = {:?}",
+        output_channels,
+        device_max,
+    );
+
     // Clamp output channels to device max — the playback thread will
     // downmix automatically when the processing chain outputs more
     // channels than the hardware supports.
-    if let Some(max_channels) = app.get_device_max_channels() {
+    if let Some(max_channels) = device_max {
         if output_channels > max_channels {
             log::info!(
                 "[TUI] Clamping output from {} to {} channels (device limit)",

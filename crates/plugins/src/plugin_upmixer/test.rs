@@ -1796,4 +1796,121 @@ mod upmixer_tests {
             );
         }
     }
+
+    /// Bug 1 regression: `direct[i]` was never zeroed for bins in the LFE and
+    /// pass-through bands, so stale data from a previous FFT frame would bleed
+    /// into the center channel via `d_val * p_direct_c` in the panning stage.
+    ///
+    /// Reproduce: process a frame with strong correlated content (L=R sine wave),
+    /// then process a silence frame. After the silence frame, `direct[i]` for bins
+    /// below `bandpass_bin` must be zero.
+    #[test]
+    fn test_direct_buffer_zeroed_in_lfe_and_passthrough_bands() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let fft_size = plugin.fft_size;
+        let mut input = vec![0.0f32; fft_size * 2];
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+
+        // Frame 1: strong correlated sine (populates direct[i] in upmix band)
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.8;
+            input[i * 2] = s;
+            input[i * 2 + 1] = s;
+        }
+        plugin.process_fft_block(&input, &mut output);
+
+        // Frame 2: silence
+        input.fill(0.0);
+        plugin.process_fft_block(&input, &mut output);
+
+        // After processing silence, direct[i] must be zero for bins below bandpass_bin
+        // (LFE band + pass-through band). These bins are NOT in the upmix path
+        // and were never being cleared before the fix.
+        let bandpass_bin = plugin.cached_bandpass_bin;
+        let spectrum_size = fft_size / 2 + 1;
+        let check_end = bandpass_bin.min(spectrum_size);
+
+        for i in 0..check_end {
+            let norm = plugin.direct[i].norm();
+            assert!(
+                norm < 1e-10,
+                "direct[{}] should be zero after silence frame, got norm={}",
+                i,
+                norm,
+            );
+        }
+    }
+
+    /// Bug 2 regression: `safety_cap_db == 0.0` was treated as "disabled" because
+    /// the guard used strict `> 0.0`. With SAFETY_CAP_DB_MIN = 0.0, a setting of
+    /// 0.0 dB means "cap at unity" (tightest possible limiting). Verify that hot
+    /// signal is capped.
+    #[test]
+    fn test_safety_cap_zero_db_caps_output() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Set safety_cap_db to 0.0 (strictest cap: 0 dBFS = unity)
+        plugin.safety_cap_db = 0.0;
+        plugin.safety_cap_db_smoother.set_target(0.0);
+        plugin.safety_cap_db_smoother.next_n(4096);
+        plugin.update_safety_cap_cache();
+
+        // Verify the cache was computed correctly for 0 dB
+        assert!(
+            (plugin.safety_cap_linear - 1.0).abs() < 0.01,
+            "safety_cap_linear should be ~1.0 for 0 dB, got {}",
+            plugin.safety_cap_linear,
+        );
+
+        let num_ch = plugin.num_output_channels;
+        let block_size = 2048;
+
+        // Feed multiple blocks of hot signal so the safety cap's one-pole
+        // smoothing (attack_coeff=0.5) converges.  After ~6 blocks the limiter
+        // is within a few percent of steady-state.
+        let num_blocks = 8;
+        let num_frames = block_size * num_blocks;
+        let mut input = vec![0.0f32; num_frames * 2];
+        for i in 0..num_frames {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 3.0;
+            input[i * 2] = s;
+            input[i * 2 + 1] = s;
+        }
+        let mut output = vec![0.0f32; num_frames * num_ch];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Check peak in the last block only (limiter fully engaged)
+        let check_start = num_frames - block_size;
+        let mut peak = 0.0f32;
+        for i in check_start..num_frames {
+            for ch in 0..num_ch {
+                let sample = output[i * num_ch + ch].abs();
+                if sample > peak {
+                    peak = sample;
+                }
+            }
+        }
+
+        // With safety_cap_db=0.0, output should be limited near unity.
+        // Allow headroom for one-pole smoothing overshoot.
+        assert!(
+            peak < 1.5,
+            "Output peak should be capped near 1.0 with safety_cap_db=0.0, got {}",
+            peak,
+        );
+    }
 }
