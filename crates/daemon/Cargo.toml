@@ -6,7 +6,7 @@ edition.workspace = true
 
 [features]
 default = []
-hal = ["driver-hal", "plugins/hal", "engine/hal"]
+hal = ["driver-hal", "sotf-plugins/hal", "sotf-engine/hal"]
 
 [[bin]]
 name = "sotf-daemon"
@@ -15,8 +15,8 @@ required-features = ["hal"]
 
 [dependencies]
 parking_lot = { workspace = true }
-plugins = { workspace = true }
-engine = { workspace = true }
+sotf-plugins = { workspace = true }
+sotf-engine = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ctrlc = { workspace = true }

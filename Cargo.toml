@@ -1,17 +1,44 @@
 [workspace]
 members = [
-    "crates/engine",
-    "crates/player",
-    "crates/midi",
+    "crates/sotf-plugins/crates/sotf-host",
+    "crates/sotf-plugins/crates/sotf-plugin-ab-compare",
+    "crates/sotf-plugins/crates/sotf-plugin-band-merge",
+    "crates/sotf-plugins/crates/sotf-plugin-band-split",
+    "crates/sotf-plugins/crates/sotf-plugin-binaural",
+    "crates/sotf-plugins/crates/sotf-plugin-channel-mute-solo",
+    "crates/sotf-plugins/crates/sotf-plugin-compressor",
+    "crates/sotf-plugins/crates/sotf-plugin-convolution",
+    "crates/sotf-plugins/crates/sotf-plugin-crossfeed",
+    "crates/sotf-plugins/crates/sotf-plugin-crossover",
+    "crates/sotf-plugins/crates/sotf-plugin-delay",
+    "crates/sotf-plugins/crates/sotf-plugin-denoiser",
+    "crates/sotf-plugins/crates/sotf-plugin-downmix",
+    "crates/sotf-plugins/crates/sotf-plugin-eq",
+    "crates/sotf-plugins/crates/sotf-plugin-expander",
+    "crates/sotf-plugins/crates/sotf-plugin-fletcher-munson",
+    "crates/sotf-plugins/crates/sotf-plugin-gain",
+    "crates/sotf-plugins/crates/sotf-plugin-gate",
+    "crates/sotf-plugins/crates/sotf-plugin-hal-input",
+    "crates/sotf-plugins/crates/sotf-plugin-hal-output",
+    "crates/sotf-plugins/crates/sotf-plugin-limiter",
+    "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation",
+    "crates/sotf-plugins/crates/sotf-plugin-matrix",
+    "crates/sotf-plugins/crates/sotf-plugin-mono-to-stereo",
+    "crates/sotf-plugins/crates/sotf-plugin-multiband-compressor",
+    "crates/sotf-plugins/crates/sotf-plugin-multiband-expander",
+    "crates/sotf-plugins/crates/sotf-plugin-pnd",
+    "crates/sotf-plugins/crates/sotf-plugin-resampler",
+    "crates/sotf-plugins/crates/sotf-plugin-upmixer",
+    "crates/sotf-plugins/crates/sotf-plugin-xtc",
+    "crates/sotf-plugins",
+    "crates/sotf-engine",
+    "crates/sotf-player",
     "crates/tools",
     "crates/app-cli",
     "crates/app-gpui",
     "crates/app-tui",
-    "crates/plugins",
     "crates/plugins-ffi",
-    "crates/plugins-gpui",
     "crates/driver-hal",
-    "crates/head-tracker",
     "crates/daemon",
     "crates/math-audio/math-differential-evolution",
     "crates/math-audio/math-xem-common",
@@ -122,9 +149,40 @@ gpui-autoeq = { version = "0.6", path = "crates/gpui-toolkit/gpui-autoeq" }
 gpui-ui-kit = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit" }
 gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-toolkit/gpui-ui-kit-macros" }
 
-engine = { path = "crates/engine", default-features = false }
-player = { path = "crates/player" }
-plugins = { path = "crates/plugins", default-features = false }
+# SotF
+sotf-host = { path = "crates/sotf-plugins/crates/sotf-host", default-features = false }
+sotf-plugin-ab-compare = { path = "crates/sotf-plugins/crates/sotf-plugin-ab-compare" }
+sotf-plugin-band-merge = { path = "crates/sotf-plugins/crates/sotf-plugin-band-merge" }
+sotf-plugin-band-split = { path = "crates/sotf-plugins/crates/sotf-plugin-band-split" }
+sotf-plugin-binaural = { path = "crates/sotf-plugins/crates/sotf-plugin-binaural" }
+sotf-plugin-channel-mute-solo = { path = "crates/sotf-plugins/crates/sotf-plugin-channel-mute-solo" }
+sotf-plugin-compressor = { path = "crates/sotf-plugins/crates/sotf-plugin-compressor" }
+sotf-plugin-convolution = { path = "crates/sotf-plugins/crates/sotf-plugin-convolution" }
+sotf-plugin-crossfeed = { path = "crates/sotf-plugins/crates/sotf-plugin-crossfeed" }
+sotf-plugin-crossover = { path = "crates/sotf-plugins/crates/sotf-plugin-crossover" }
+sotf-plugin-delay = { path = "crates/sotf-plugins/crates/sotf-plugin-delay" }
+sotf-plugin-denoiser = { path = "crates/sotf-plugins/crates/sotf-plugin-denoiser" }
+sotf-plugin-downmix = { path = "crates/sotf-plugins/crates/sotf-plugin-downmix" }
+sotf-plugin-eq = { path = "crates/sotf-plugins/crates/sotf-plugin-eq" }
+sotf-plugin-expander = { path = "crates/sotf-plugins/crates/sotf-plugin-expander" }
+sotf-plugin-fletcher-munson = { path = "crates/sotf-plugins/crates/sotf-plugin-fletcher-munson" }
+sotf-plugin-gain = { path = "crates/sotf-plugins/crates/sotf-plugin-gain" }
+sotf-plugin-gate = { path = "crates/sotf-plugins/crates/sotf-plugin-gate" }
+sotf-plugin-hal-input = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-input" }
+sotf-plugin-hal-output = { path = "crates/sotf-plugins/crates/sotf-plugin-hal-output" }
+sotf-plugin-limiter = { path = "crates/sotf-plugins/crates/sotf-plugin-limiter" }
+sotf-plugin-loudness-compensation = { path = "crates/sotf-plugins/crates/sotf-plugin-loudness-compensation" }
+sotf-plugin-matrix = { path = "crates/sotf-plugins/crates/sotf-plugin-matrix" }
+sotf-plugin-mono-to-stereo = { path = "crates/sotf-plugins/crates/sotf-plugin-mono-to-stereo" }
+sotf-plugin-multiband-compressor = { path = "crates/sotf-plugins/crates/sotf-plugin-multiband-compressor" }
+sotf-plugin-multiband-expander = { path = "crates/sotf-plugins/crates/sotf-plugin-multiband-expander" }
+sotf-plugin-pnd = { path = "crates/sotf-plugins/crates/sotf-plugin-pnd" }
+sotf-plugin-resampler = { path = "crates/sotf-plugins/crates/sotf-plugin-resampler" }
+sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer" }
+sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
+sotf-engine = { path = "crates/sotf-engine", default-features = false }
+sotf-player = { path = "crates/sotf-player" }
+sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
 driver-hal = { path = "crates/driver-hal" }  # macOS only
 
 # audio

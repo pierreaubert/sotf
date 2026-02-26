@@ -9,11 +9,11 @@ repository.workspace = true
 
 [dependencies]
 # Shared audio player library (provides business logic, database, plugins, etc.)
-player = { workspace = true }
+sotf-player = { workspace = true }
 
 # Audio engine
-plugins = { workspace = true }
-engine = { workspace = true }
+sotf-plugins = { workspace = true }
+sotf-engine = { workspace = true }
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }
 

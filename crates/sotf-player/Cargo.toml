@@ -1,5 +1,5 @@
 [package]
-name = "player"
+name = "sotf-player"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -12,7 +12,7 @@ default = []
 # Enable this feature to bypass security validation in tests (for integration tests)
 testing = []
 # Enable HAL audio input support (macOS only)
-hal = ["engine/hal"]
+hal = ["sotf-engine/hal"]
 
 [lib]
 name = "sotf_audio_player"
@@ -28,8 +28,8 @@ math-differential-evolution = { workspace = true }
 autoeq-env = { workspace = true }
 autoeq-cea2034 = { workspace = true }
 autoeq = { workspace = true }
-plugins = { workspace = true }
-engine = { workspace = true }
+sotf-plugins = { workspace = true }
+sotf-engine = { workspace = true }
 
 # math
 ndarray = { workspace = true }
@@ -91,5 +91,5 @@ dependencies = ["nlopt", "hdf5", "netcdf-c", "openblas"]
 # x86_64-pc-windows-msvc = { triplet = "x64-windows-static", dependencies = ["sdl2", "zeromq"] }
 
 [dev-dependencies]
-player = { path = ".", features = ["testing"] }
+sotf-player = { path = ".", features = ["testing"] }
 tempfile = { workspace = true }

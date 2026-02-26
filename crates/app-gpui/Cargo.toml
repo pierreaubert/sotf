@@ -9,7 +9,7 @@ repository.workspace = true
 
 [features]
 default = []
-hal = ["engine/hal", "player/hal", "driver-hal"]
+hal = ["sotf-engine/hal", "sotf-player/hal", "driver-hal"]
 
 [dependencies]
 # GPUI framework
@@ -20,9 +20,9 @@ gpui-ui-kit = { workspace = true }
 gpui-px = { workspace = true }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
-player = { workspace = true }
-plugins = { workspace = true }
-engine = { workspace = true }
+sotf-player = { workspace = true }
+sotf-plugins = { workspace = true }
+sotf-engine = { workspace = true }
 
 # math libraries
 math-iir-fir = { workspace = true }
@@ -114,7 +114,7 @@ gpui-ui-kit = { workspace = true }
 math-iir-fir = { workspace = true }
 cpal = { workspace = true }
 hound = { workspace = true }
-engine = { workspace = true }
+sotf-engine = { workspace = true }
 proptest = "1.6"
 
 [[test]]

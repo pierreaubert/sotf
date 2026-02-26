@@ -36,8 +36,8 @@ rusqlite = { workspace = true }
 walkdir = { workspace = true }
 autoeq-env = { workspace = true }
 math-iir-fir = { workspace = true }
-plugins = { workspace = true }
-engine = { workspace = true }
+sotf-plugins = { workspace = true }
+sotf-engine = { workspace = true }
 num-complex = { workspace = true }
 
 # Audio decoding/encoding

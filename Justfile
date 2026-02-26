@@ -10,7 +10,7 @@ import? 'builds/linux.just'
 
 import? 'crates/math-audio/Justfile'
 import? 'crates/autoeq/Justfile'
-import? 'crates/plugins/Justfile'
+import? 'crates/sotf-plugins/Justfile'
 
 default:
 	just --list

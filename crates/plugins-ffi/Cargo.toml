@@ -10,8 +10,8 @@ license.workspace = true
 crate-type = ["staticlib", "cdylib"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
-plugins = { workspace = true }
-engine = { workspace = true }
+sotf-plugins = { workspace = true }
+sotf-engine = { workspace = true }
 math-iir-fir = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

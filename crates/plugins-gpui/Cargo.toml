@@ -24,7 +24,7 @@ gpui = { workspace = true }
 gpui_macos = { workspace = true }
 
 # Audio player types and UI
-player = { workspace = true }
+sotf-player = { workspace = true }
 math-iir-fir = { workspace = true }
 gpui-ui-kit = { workspace = true }
 

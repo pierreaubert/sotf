@@ -25,8 +25,8 @@ default = ["sofa_support"]
 sofa_support = ["dep:netcdf"]
 
 [dependencies]
-plugins = { workspace = true }
-engine = { workspace = true }
+sotf-plugins = { workspace = true }
+sotf-engine = { workspace = true }
 netcdf = { workspace = true, optional = true }
 
 # math
@@ -89,5 +89,5 @@ dependencies = ["nlopt", "hdf5", "netcdf-c", "openblas"]
 # x86_64-pc-windows-msvc = { triplet = "x64-windows-static", dependencies = ["sdl2", "zeromq"] }
 
 [dev-dependencies]
-player = { workspace = true, features = ["testing"] }
+sotf-player = { workspace = true, features = ["testing"] }
 tempfile = { workspace = true }
