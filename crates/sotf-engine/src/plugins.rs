@@ -354,33 +354,39 @@ impl EQFilter {
     }
 }
 
-// Import plugin defaults from plugins for consistent preset migration
-use sotf_plugins::{
-    binaural_default_enable_optimization, compressor_default_link_channels,
-    compressor_default_sidechain_hpf_hz, upmixer_default_hr_sharpen, upmixer_default_safety_cap_db,
-    upmixer_default_subharmonic_gain,
-};
 
-// Import param_specs for new upmixer defaults
+// Import param_specs for plugin defaults
+use sotf_plugins::param_specs::ab_compare as ab_compare_specs;
+use sotf_plugins::param_specs::binaural as binaural_specs;
+use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
+use sotf_plugins::param_specs::compressor as compressor_specs;
+use sotf_plugins::param_specs::convolution as convolution_specs;
+use sotf_plugins::param_specs::denoiser as denoiser_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
+use sotf_plugins::param_specs::fletcher_munson as fm_specs;
+use sotf_plugins::param_specs::gain as gain_specs;
 use sotf_plugins::param_specs::gate as gate_specs;
 use sotf_plugins::param_specs::limiter as limiter_specs;
+use sotf_plugins::param_specs::loudness_compensation as lc_specs;
+use sotf_plugins::param_specs::matrix as matrix_specs;
 use sotf_plugins::param_specs::multiband_compressor as mb_compressor_specs;
 use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
 use sotf_plugins::param_specs::pnd as pnd_specs;
+use sotf_plugins::param_specs::spectrum as spectrum_specs;
 use sotf_plugins::param_specs::upmixer as upmixer_specs;
+use sotf_plugins::param_specs::xtc as xtc_specs;
 
 // Wrapper functions to convert f32 -> f64 for PluginSettings (which uses f64)
 fn default_upmixer_subharmonic_gain() -> f64 {
-    upmixer_default_subharmonic_gain() as f64
+    upmixer_specs::SUBHARMONIC_GAIN_DEFAULT as f64
 }
 
 fn default_upmixer_hr_sharpen() -> f64 {
-    upmixer_default_hr_sharpen() as f64
+    upmixer_specs::HR_SHARPEN_DEFAULT as f64
 }
 
 fn default_upmixer_safety_cap_db() -> f64 {
-    upmixer_default_safety_cap_db() as f64
+    upmixer_specs::SAFETY_CAP_DB_DEFAULT as f64
 }
 
 // New upmixer parameter defaults
@@ -464,90 +470,94 @@ fn default_upmixer_voice_freq_max_hz() -> f64 {
     upmixer_specs::VOICE_FREQ_MAX_HZ_DEFAULT as f64
 }
 
+fn default_upmixer_enable_hr_direct() -> bool {
+    upmixer_specs::ENABLE_HR_DIRECT_DEFAULT
+}
+
 fn default_compressor_link_channels() -> bool {
-    compressor_default_link_channels()
+    compressor_specs::LINK_CHANNELS_DEFAULT
 }
 
 fn default_compressor_sidechain_hpf_hz() -> f64 {
-    compressor_default_sidechain_hpf_hz() as f64
+    compressor_specs::SIDECHAIN_HPF_HZ_DEFAULT as f64
 }
 
 fn default_binaural_enable_optimization() -> bool {
-    binaural_default_enable_optimization()
+    binaural_specs::ENABLE_OPTIMIZATION_DEFAULT
 }
 
 // Auto-gain defaults for loudness compensation
 fn default_auto_gain_max_db() -> f64 {
-    12.0
+    lc_specs::AUTO_GAIN_MAX_DB_DEFAULT as f64
 }
 
 fn default_auto_gain_smoothing_ms() -> f64 {
-    100.0
+    lc_specs::AUTO_GAIN_SMOOTHING_MS_DEFAULT as f64
 }
 
 // Fletcher-Munson defaults (using param_specs values)
 fn default_fm_reference_level_db() -> f64 {
-    -14.0 // ~80 dB SPL reference
+    fm_specs::REFERENCE_LEVEL_DB_DEFAULT as f64
 }
 fn default_fm_enabled() -> bool {
-    true
+    fm_specs::ENABLED_DEFAULT
 }
 fn default_fm_band1_freq() -> f64 {
-    60.0 // Sub-bass
+    fm_specs::BAND1_FREQ_DEFAULT
 }
 fn default_fm_band1_q() -> f64 {
-    0.5
+    fm_specs::BAND1_Q_DEFAULT
 }
 fn default_fm_band1_max_gain() -> f64 {
-    15.0
+    fm_specs::BAND1_MAX_GAIN_DEFAULT
 }
 fn default_fm_band1_slope() -> f64 {
-    0.6
+    fm_specs::BAND1_SLOPE_DEFAULT
 }
 fn default_fm_band2_freq() -> f64 {
-    250.0 // Mid-bass
+    fm_specs::BAND2_FREQ_DEFAULT
 }
 fn default_fm_band2_q() -> f64 {
-    0.707
+    fm_specs::BAND2_Q_DEFAULT
 }
 fn default_fm_band2_max_gain() -> f64 {
-    8.0
+    fm_specs::BAND2_MAX_GAIN_DEFAULT
 }
 fn default_fm_band2_slope() -> f64 {
-    0.4
+    fm_specs::BAND2_SLOPE_DEFAULT
 }
 fn default_fm_band3_freq() -> f64 {
-    3500.0 // Presence
+    fm_specs::BAND3_FREQ_DEFAULT
 }
 fn default_fm_band3_q() -> f64 {
-    1.0
+    fm_specs::BAND3_Q_DEFAULT
 }
 fn default_fm_band3_max_gain() -> f64 {
-    4.0
+    fm_specs::BAND3_MAX_GAIN_DEFAULT
 }
 fn default_fm_band3_slope() -> f64 {
-    0.2
+    fm_specs::BAND3_SLOPE_DEFAULT
 }
 fn default_fm_band4_freq() -> f64 {
-    12000.0 // Air/brilliance
+    fm_specs::BAND4_FREQ_DEFAULT
 }
 fn default_fm_band4_q() -> f64 {
-    0.707
+    fm_specs::BAND4_Q_DEFAULT
 }
 fn default_fm_band4_max_gain() -> f64 {
-    6.0
+    fm_specs::BAND4_MAX_GAIN_DEFAULT
 }
 fn default_fm_band4_slope() -> f64 {
-    0.3
+    fm_specs::BAND4_SLOPE_DEFAULT
 }
 fn default_fm_smoothing_ms() -> f64 {
-    30.0
+    fm_specs::SMOOTHING_MS_DEFAULT as f64
 }
 fn default_fm_auto_gain_max_db() -> f64 {
-    12.0
+    fm_specs::AUTO_GAIN_MAX_DB_DEFAULT as f64
 }
 fn default_fm_auto_gain_smoothing_ms() -> f64 {
-    100.0
+    fm_specs::AUTO_GAIN_SMOOTHING_MS_DEFAULT as f64
 }
 
 // Gate/Limiter defaults (defined locally as they use f64 and match engine defaults)
@@ -560,7 +570,7 @@ fn default_limiter_soft() -> bool {
 }
 
 fn default_limiter_mix() -> f64 {
-    1.0 // Match plugin_limiter default
+    limiter_specs::MIX_DEFAULT as f64
 }
 
 fn default_gate_hold_ms() -> f64 {
@@ -568,15 +578,11 @@ fn default_gate_hold_ms() -> f64 {
 }
 
 fn default_gate_mix() -> f64 {
-    1.0 // Match plugin_gate default
+    gate_specs::MIX_DEFAULT as f64
 }
 
 fn default_gate_link_channels() -> bool {
-    true
-}
-
-fn default_gate_sidechain_hpf_hz() -> f64 {
-    0.0
+    gate_specs::LINK_CHANNELS_DEFAULT
 }
 
 // Expander defaults
@@ -744,19 +750,19 @@ fn default_mb_expander_link_channels() -> bool {
 
 // SpectrumAnalyzer defaults
 fn default_spectrum_num_bins() -> usize {
-    512
+    spectrum_specs::NUM_BINS_DEFAULT
 }
 
 fn default_spectrum_min_freq() -> f32 {
-    20.0
+    spectrum_specs::MIN_FREQ_DEFAULT
 }
 
 fn default_spectrum_max_freq() -> f32 {
-    20000.0
+    spectrum_specs::MAX_FREQ_DEFAULT
 }
 
 fn default_spectrum_smoothing() -> f32 {
-    0.8
+    spectrum_specs::SMOOTHING_DEFAULT
 }
 
 fn default_spectrum_tilt_correction() -> SpectralTiltCorrection {
@@ -769,118 +775,130 @@ fn default_spectrum_tilt_reference() -> TiltReferenceFreq {
 
 // XTC defaults
 fn default_xtc_distance_m() -> f64 {
-    2.0
+    xtc_specs::DISTANCE_M_DEFAULT
 }
 fn default_xtc_speaker_angle_deg() -> f64 {
-    30.0
+    xtc_specs::SPEAKER_ANGLE_DEG_DEFAULT
 }
 fn default_xtc_head_radius_m() -> f64 {
-    0.0875
+    xtc_specs::HEAD_RADIUS_M_DEFAULT
 }
 fn default_xtc_beta_base() -> f64 {
-    0.001
+    xtc_specs::BETA_BASE_DEFAULT
 }
 fn default_xtc_beta_low_freq_boost() -> f64 {
-    10.0
+    xtc_specs::BETA_LOW_FREQ_BOOST_DEFAULT
 }
 fn default_xtc_beta_high_freq_boost() -> f64 {
-    10.0
+    xtc_specs::BETA_HIGH_FREQ_BOOST_DEFAULT
 }
 fn default_xtc_head_shadow_cutoff_hz() -> f64 {
-    4000.0
+    xtc_specs::HEAD_SHADOW_CUTOFF_HZ_DEFAULT
 }
 fn default_xtc_head_shadow_slope() -> f64 {
-    6.0
+    xtc_specs::HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_DEFAULT
 }
 
 fn default_xtc_max_gain_db() -> f64 {
-    12.0
+    xtc_specs::MAX_GAIN_DB_DEFAULT
 }
 
 fn default_xtc_auto_gain_enabled() -> bool {
-    true
+    xtc_specs::AUTO_GAIN_ENABLED_DEFAULT
 }
 
 fn default_xtc_auto_gain_max_db() -> f64 {
-    24.0
+    xtc_specs::AUTO_GAIN_MAX_DB_DEFAULT as f64
 }
 
 fn default_xtc_auto_gain_smoothing_ms() -> f64 {
-    100.0
+    xtc_specs::AUTO_GAIN_SMOOTHING_MS_DEFAULT as f64
 }
 
 fn default_xtc_room_width() -> f64 {
-    4.0
+    xtc_specs::ROOM_WIDTH_M_DEFAULT
 }
 
 fn default_xtc_room_depth() -> f64 {
-    5.0
+    xtc_specs::ROOM_DEPTH_M_DEFAULT
 }
 
 fn default_xtc_wall_absorption() -> f64 {
-    0.3
+    xtc_specs::WALL_ABSORPTION_DEFAULT
 }
 
 fn default_xtc_reflection_beta_boost() -> f64 {
-    3.0
+    xtc_specs::REFLECTION_BETA_BOOST_DEFAULT
 }
 
 fn default_xtc_head_tracking_smooth_s() -> f64 {
-    0.1
+    xtc_specs::HEAD_TRACKING_SMOOTH_S_DEFAULT
+}
+
+fn default_xtc_spectral_normalization() -> bool {
+    xtc_specs::SPECTRAL_NORMALIZATION_DEFAULT
+}
+
+fn default_xtc_room_reflections_enabled() -> bool {
+    xtc_specs::ROOM_REFLECTIONS_ENABLED_DEFAULT
+}
+
+fn default_xtc_pinna_model_enabled() -> bool {
+    xtc_specs::PINNA_MODEL_ENABLED_DEFAULT
 }
 
 // Denoiser defaults
 fn default_denoiser_reduction_db() -> f64 {
-    12.0
+    denoiser_specs::REDUCTION_DB_DEFAULT as f64
 }
 fn default_denoiser_floor_db() -> f64 {
-    -20.0
+    denoiser_specs::FLOOR_DB_DEFAULT as f64
 }
 fn default_denoiser_smoothing() -> f64 {
-    0.3
+    denoiser_specs::SMOOTHING_DEFAULT as f64
 }
 fn default_denoiser_attack_ms() -> f64 {
-    5.0
+    denoiser_specs::ATTACK_MS_DEFAULT as f64
 }
 fn default_denoiser_release_ms() -> f64 {
-    50.0
+    denoiser_specs::RELEASE_MS_DEFAULT as f64
 }
 fn default_denoiser_low_latency() -> bool {
-    false
+    denoiser_specs::LOW_LATENCY_DEFAULT
 }
 
 fn default_denoiser_polyphonic_detection() -> bool {
-    false
+    denoiser_specs::POLYPHONIC_DETECTION_DEFAULT
 }
 fn default_denoiser_psychoacoustic_masking() -> bool {
-    true
+    denoiser_specs::PSYCHOACOUSTIC_MASKING_DEFAULT
 }
 fn default_denoiser_use_captured_profile() -> bool {
-    false
+    denoiser_specs::USE_CAPTURED_PROFILE_DEFAULT
 }
 fn default_denoiser_transparency() -> f64 {
-    0.0
+    denoiser_specs::TRANSPARENCY_DEFAULT as f64
 }
 fn default_denoiser_dd_enabled() -> bool {
-    false
+    denoiser_specs::DD_ENABLED_DEFAULT
 }
 fn default_denoiser_dd_alpha() -> f64 {
-    0.98
+    denoiser_specs::DD_ALPHA_DEFAULT as f64
 }
 fn default_denoiser_mcra_alpha_s() -> f64 {
-    0.9
+    denoiser_specs::MCRA_ALPHA_S_DEFAULT as f64
 }
 fn default_denoiser_mcra_alpha_p() -> f64 {
-    0.7
+    denoiser_specs::MCRA_ALPHA_P_DEFAULT as f64
 }
 fn default_denoiser_mcra_l() -> usize {
-    50
+    denoiser_specs::MCRA_L_DEFAULT
 }
 fn default_denoiser_mcra_delta() -> f64 {
-    5.0
+    denoiser_specs::MCRA_DELTA_DEFAULT as f64
 }
 fn default_denoiser_crack_sensitivity() -> f64 {
-    10.0
+    denoiser_specs::CRACK_SENSITIVITY_DEFAULT as f64
 }
 
 // PND defaults
@@ -898,19 +916,19 @@ fn default_pnd_drift_smoothing() -> f64 {
 
 // ABCompare defaults
 fn default_ab_auto_gain_enabled() -> bool {
-    true
+    ab_compare_specs::AUTO_GAIN_ENABLED_DEFAULT
 }
 
 fn default_ab_max_auto_gain_db() -> f64 {
-    12.0
+    ab_compare_specs::MAX_AUTO_GAIN_DB_DEFAULT
 }
 
 fn default_ab_gain_smoothing_ms() -> f64 {
-    100.0
+    ab_compare_specs::GAIN_SMOOTHING_MS_DEFAULT
 }
 
 fn default_ab_mix_transition_ms() -> f64 {
-    50.0
+    ab_compare_specs::MIX_TRANSITION_MS_DEFAULT
 }
 
 fn default_ab_path_config() -> String {
@@ -985,6 +1003,14 @@ fn default_mono_to_stereo_decor_high_hz() -> f64 {
     mono_to_stereo_specs::DECOR_HIGH_HZ_DEFAULT as f64
 }
 
+fn default_mono_to_stereo_enable_comp_eq() -> bool {
+    mono_to_stereo_specs::ENABLE_COMP_EQ_DEFAULT
+}
+
+fn default_downmix_phase_coherence() -> bool {
+    downmix_specs::PHASE_COHERENCE_DEFAULT
+}
+
 fn default_channels() -> usize {
     2
 }
@@ -1038,6 +1064,10 @@ fn default_crossfeed_autogain_max_gain_db() -> f64 {
 
 fn default_crossfeed_autogain_smoothing_ms() -> f64 {
     crossfeed_specs::AUTOGAIN_SMOOTHING_DEFAULT as f64
+}
+
+fn default_crossfeed_mix() -> f64 {
+    crossfeed_specs::MIX_DEFAULT as f64
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1102,7 +1132,7 @@ pub enum PluginSettings {
         #[serde(default = "default_upmixer_velvet_noise_density")]
         velvet_noise_density: f64,
         // Height parameters
-        #[serde(default)] // false
+        #[serde(default = "default_upmixer_enable_hr_direct")]
         enable_hr_direct: bool,
         #[serde(default = "default_upmixer_hr_sharpen")]
         hr_sharpen: f64,
@@ -1414,9 +1444,9 @@ pub enum PluginSettings {
         head_yaw_deg: f64,
         #[serde(default = "default_xtc_head_tracking_smooth_s")]
         head_tracking_smooth_s: f64,
-        #[serde(default)]
+        #[serde(default = "default_xtc_spectral_normalization")]
         spectral_normalization: bool,
-        #[serde(default)]
+        #[serde(default = "default_xtc_room_reflections_enabled")]
         room_reflections_enabled: bool,
         #[serde(default)]
         room_ir_file: Option<String>,
@@ -1440,7 +1470,7 @@ pub enum PluginSettings {
         auto_gain_max_db: f64,
         #[serde(default = "default_xtc_auto_gain_smoothing_ms")]
         auto_gain_smoothing_ms: f64,
-        #[serde(default)]
+        #[serde(default = "default_xtc_pinna_model_enabled")]
         pinna_model_enabled: bool,
     },
     Denoiser {
@@ -1556,7 +1586,7 @@ pub enum PluginSettings {
         height_gain_db: f64,
         #[serde(default = "default_downmix_lfe_gain_db")]
         lfe_gain_db: f64,
-        #[serde(default)] // false
+        #[serde(default = "default_downmix_phase_coherence")]
         phase_coherence: bool,
         #[serde(default = "default_downmix_phase_blend_low_hz")]
         phase_blend_low_hz: f64,
@@ -1568,7 +1598,7 @@ pub enum PluginSettings {
         stereo_width: f64,
         #[serde(default = "default_mono_to_stereo_haas_delay_ms")]
         haas_delay_ms: f64,
-        #[serde(default)] // false
+        #[serde(default = "default_mono_to_stereo_enable_comp_eq")]
         enable_comp_eq: bool,
         #[serde(default = "default_mono_to_stereo_comp_eq_depth_db")]
         comp_eq_depth_db: f64,
@@ -1584,7 +1614,7 @@ pub enum PluginSettings {
         preset: CrossfeedPreset,
         #[serde(default)]
         enabled: bool,
-        #[serde(default)]
+        #[serde(default = "default_crossfeed_mix")]
         mix: f64,
         // Bauer
         #[serde(default = "default_crossfeed_bauer_fcut_hz")]
@@ -2439,7 +2469,7 @@ impl PluginSettings {
             },
             PluginType::Gain => Self::Gain {
                 channels: default_channels(),
-                gain_db: 0.0,
+                gain_db: gain_specs::GAIN_DB_DEFAULT as f64,
             },
             PluginType::Upmixer => Self::Upmixer {
                 speaker_config: "5.1".to_string(),
@@ -2493,33 +2523,33 @@ impl PluginSettings {
                 enable_ml_detection: upmixer_specs::ENABLE_ML_DETECTION_DEFAULT,
             },
             PluginType::Compressor => Self::Compressor {
-                threshold_db: -20.0,
-                ratio: 4.0,
-                attack_ms: 5.0,
-                release_ms: 100.0,
-                knee_db: 3.0,
-                makeup_gain_db: 0.0,
-                mix: 0.95,
-                auto_makeup: false,
-                link_channels: true,
-                sidechain_hpf_hz: 80.0,
+                threshold_db: compressor_specs::THRESHOLD_DEFAULT as f64,
+                ratio: compressor_specs::RATIO_DEFAULT as f64,
+                attack_ms: compressor_specs::ATTACK_DEFAULT as f64,
+                release_ms: compressor_specs::RELEASE_DEFAULT as f64,
+                knee_db: compressor_specs::KNEE_DEFAULT as f64,
+                makeup_gain_db: compressor_specs::MAKEUP_GAIN_DEFAULT as f64,
+                mix: compressor_specs::MIX_DEFAULT as f64,
+                auto_makeup: compressor_specs::AUTO_MAKEUP_DEFAULT,
+                link_channels: compressor_specs::LINK_CHANNELS_DEFAULT,
+                sidechain_hpf_hz: compressor_specs::SIDECHAIN_HPF_HZ_DEFAULT as f64,
             },
             PluginType::Limiter => Self::Limiter {
-                threshold_db: -1.0,
-                release_ms: 50.0,
-                lookahead_ms: default_limiter_lookahead_ms(),
-                soft: default_limiter_soft(),
-                mix: default_limiter_mix(),
+                threshold_db: limiter_specs::THRESHOLD_DEFAULT as f64,
+                release_ms: limiter_specs::RELEASE_DEFAULT as f64,
+                lookahead_ms: limiter_specs::LOOKAHEAD_DEFAULT as f64,
+                soft: limiter_specs::SOFT_DEFAULT,
+                mix: limiter_specs::MIX_DEFAULT as f64,
             },
             PluginType::Gate => Self::Gate {
-                threshold_db: -40.0,
-                ratio: 10.0,
-                attack_ms: 1.0,
-                hold_ms: default_gate_hold_ms(),
-                release_ms: 100.0,
-                mix: default_gate_mix(),
-                link_channels: default_gate_link_channels(),
-                sidechain_hpf_hz: default_gate_sidechain_hpf_hz(),
+                threshold_db: gate_specs::THRESHOLD_DEFAULT as f64,
+                ratio: gate_specs::RATIO_DEFAULT as f64,
+                attack_ms: gate_specs::ATTACK_DEFAULT as f64,
+                hold_ms: gate_specs::HOLD_DEFAULT as f64,
+                release_ms: gate_specs::RELEASE_DEFAULT as f64,
+                mix: gate_specs::MIX_DEFAULT as f64,
+                link_channels: gate_specs::LINK_CHANNELS_DEFAULT,
+                sidechain_hpf_hz: gate_specs::SIDECHAIN_HPF_HZ_DEFAULT as f64,
             },
             PluginType::Expander => Self::Expander {
                 threshold_db: default_expander_threshold_db(),
@@ -2570,99 +2600,102 @@ impl PluginSettings {
                 bands: Vec::new(),
             },
             PluginType::LoudnessCompensation => Self::LoudnessCompensation {
-                low_freq: 100.0,    // param_specs::loudness_compensation::LOW_FREQ_DEFAULT
-                low_gain: 6.0,      // param_specs::loudness_compensation::LOW_GAIN_DEFAULT
-                high_freq: 10000.0, // param_specs::loudness_compensation::HIGH_FREQ_DEFAULT
-                high_gain: 6.0,     // param_specs::loudness_compensation::HIGH_GAIN_DEFAULT
-                auto_gain_enabled: false,
-                auto_gain_max_db: default_auto_gain_max_db(),
-                auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
+                low_freq: lc_specs::LOW_FREQ_DEFAULT as f64,
+                low_gain: lc_specs::LOW_GAIN_DEFAULT as f64,
+                high_freq: lc_specs::HIGH_FREQ_DEFAULT as f64,
+                high_gain: lc_specs::HIGH_GAIN_DEFAULT as f64,
+                auto_gain_enabled: lc_specs::AUTO_GAIN_ENABLED_DEFAULT,
+                auto_gain_max_db: lc_specs::AUTO_GAIN_MAX_DB_DEFAULT as f64,
+                auto_gain_smoothing_ms: lc_specs::AUTO_GAIN_SMOOTHING_MS_DEFAULT as f64,
             },
             PluginType::FletcherMunson => Self::FletcherMunson {
-                playback_volume_db: 0.0,
-                reference_level_db: default_fm_reference_level_db(),
-                enabled: default_fm_enabled(),
-                band1_freq: default_fm_band1_freq(),
-                band1_q: default_fm_band1_q(),
-                band1_max_gain: default_fm_band1_max_gain(),
-                band1_slope: default_fm_band1_slope(),
-                band2_freq: default_fm_band2_freq(),
-                band2_q: default_fm_band2_q(),
-                band2_max_gain: default_fm_band2_max_gain(),
-                band2_slope: default_fm_band2_slope(),
-                band3_freq: default_fm_band3_freq(),
-                band3_q: default_fm_band3_q(),
-                band3_max_gain: default_fm_band3_max_gain(),
-                band3_slope: default_fm_band3_slope(),
-                band4_freq: default_fm_band4_freq(),
-                band4_q: default_fm_band4_q(),
-                band4_max_gain: default_fm_band4_max_gain(),
-                band4_slope: default_fm_band4_slope(),
-                smoothing_ms: default_fm_smoothing_ms(),
-                auto_gain_enabled: false,
-                auto_gain_max_db: default_fm_auto_gain_max_db(),
-                auto_gain_smoothing_ms: default_fm_auto_gain_smoothing_ms(),
-                auto_gain_loudness_type: 0,
+                playback_volume_db: fm_specs::PLAYBACK_VOLUME_DB_DEFAULT as f64,
+                reference_level_db: fm_specs::REFERENCE_LEVEL_DB_DEFAULT as f64,
+                enabled: fm_specs::ENABLED_DEFAULT,
+                band1_freq: fm_specs::BAND1_FREQ_DEFAULT,
+                band1_q: fm_specs::BAND1_Q_DEFAULT,
+                band1_max_gain: fm_specs::BAND1_MAX_GAIN_DEFAULT,
+                band1_slope: fm_specs::BAND1_SLOPE_DEFAULT,
+                band2_freq: fm_specs::BAND2_FREQ_DEFAULT,
+                band2_q: fm_specs::BAND2_Q_DEFAULT,
+                band2_max_gain: fm_specs::BAND2_MAX_GAIN_DEFAULT,
+                band2_slope: fm_specs::BAND2_SLOPE_DEFAULT,
+                band3_freq: fm_specs::BAND3_FREQ_DEFAULT,
+                band3_q: fm_specs::BAND3_Q_DEFAULT,
+                band3_max_gain: fm_specs::BAND3_MAX_GAIN_DEFAULT,
+                band3_slope: fm_specs::BAND3_SLOPE_DEFAULT,
+                band4_freq: fm_specs::BAND4_FREQ_DEFAULT,
+                band4_q: fm_specs::BAND4_Q_DEFAULT,
+                band4_max_gain: fm_specs::BAND4_MAX_GAIN_DEFAULT,
+                band4_slope: fm_specs::BAND4_SLOPE_DEFAULT,
+                smoothing_ms: fm_specs::SMOOTHING_MS_DEFAULT as f64,
+                auto_gain_enabled: fm_specs::AUTO_GAIN_ENABLED_DEFAULT,
+                auto_gain_max_db: fm_specs::AUTO_GAIN_MAX_DB_DEFAULT as f64,
+                auto_gain_smoothing_ms: fm_specs::AUTO_GAIN_SMOOTHING_MS_DEFAULT as f64,
+                auto_gain_loudness_type: fm_specs::AUTO_GAIN_LOUDNESS_TYPE_DEFAULT,
             },
             PluginType::BinauralDecoder => Self::BinauralDecoder {
                 sofa_file: String::new(),
                 input_channels: 6, // Default to 5.1
-                enable_optimization: true,
-                externalization: 0.0,
-                near_field_strength: 0.0,
+                enable_optimization: binaural_specs::ENABLE_OPTIMIZATION_DEFAULT,
+                externalization: binaural_specs::EXTERNALIZATION_DEFAULT as f64,
+                near_field_strength: binaural_specs::NEAR_FIELD_STRENGTH_DEFAULT as f64,
             },
             PluginType::Convolution => Self::Convolution {
                 ir_file: String::new(),
-                mix: 1.0,
-                gain_db: 0.0,
+                mix: convolution_specs::MIX_DEFAULT as f64,
+                gain_db: convolution_specs::GAIN_DB_DEFAULT as f64,
             },
             PluginType::LoudnessMonitor => Self::LoudnessMonitor,
             PluginType::SpectrumAnalyzer => Self::SpectrumAnalyzer {
-                num_bins: 30,
-                min_freq: 20.0,
-                max_freq: 20000.0,
-                smoothing: 0.7,
+                num_bins: spectrum_specs::NUM_BINS_DEFAULT,
+                min_freq: spectrum_specs::MIN_FREQ_DEFAULT,
+                max_freq: spectrum_specs::MAX_FREQ_DEFAULT,
+                smoothing: spectrum_specs::SMOOTHING_DEFAULT,
                 tilt_correction: SpectralTiltCorrection::None,
                 tilt_reference: TiltReferenceFreq::Standard,
             },
             PluginType::ChannelMuteSolo => Self::ChannelMuteSolo {
-                enabled: false,
+                enabled: cms_specs::ENABLED_DEFAULT,
                 channel_states: vec![],
             },
             PluginType::Matrix => Self::Matrix {
                 input_channels: 2,
                 output_channels: 2,
-                matrix: vec![1.0, 0.0, 0.0, 1.0], // Identity 2x2
+                matrix: vec![
+                    matrix_specs::GAIN_MAX, matrix_specs::GAIN_MIN,
+                    matrix_specs::GAIN_MIN, matrix_specs::GAIN_MAX,
+                ], // Identity 2x2
                 channel_states: vec![],
             },
             PluginType::XTC => Self::XTC {
-                distance_m: default_xtc_distance_m(),
-                speaker_angle_deg: default_xtc_speaker_angle_deg(),
-                head_radius_m: default_xtc_head_radius_m(),
-                beta_base: default_xtc_beta_base(),
-                beta_low_freq_boost: default_xtc_beta_low_freq_boost(),
-                beta_high_freq_boost: default_xtc_beta_high_freq_boost(),
-                head_shadow_cutoff_hz: default_xtc_head_shadow_cutoff_hz(),
-                head_shadow_slope_db_per_octave: default_xtc_head_shadow_slope(),
-                max_gain_db: default_xtc_max_gain_db(),
+                distance_m: xtc_specs::DISTANCE_M_DEFAULT,
+                speaker_angle_deg: xtc_specs::SPEAKER_ANGLE_DEG_DEFAULT,
+                head_radius_m: xtc_specs::HEAD_RADIUS_M_DEFAULT,
+                beta_base: xtc_specs::BETA_BASE_DEFAULT,
+                beta_low_freq_boost: xtc_specs::BETA_LOW_FREQ_BOOST_DEFAULT,
+                beta_high_freq_boost: xtc_specs::BETA_HIGH_FREQ_BOOST_DEFAULT,
+                head_shadow_cutoff_hz: xtc_specs::HEAD_SHADOW_CUTOFF_HZ_DEFAULT,
+                head_shadow_slope_db_per_octave: xtc_specs::HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_DEFAULT,
+                max_gain_db: xtc_specs::MAX_GAIN_DB_DEFAULT,
                 head_offset_x: 0.0,
                 head_offset_z: 0.0,
                 head_yaw_deg: 0.0,
-                head_tracking_smooth_s: default_xtc_head_tracking_smooth_s(),
-                spectral_normalization: true,
-                room_reflections_enabled: false,
+                head_tracking_smooth_s: xtc_specs::HEAD_TRACKING_SMOOTH_S_DEFAULT,
+                spectral_normalization: xtc_specs::SPECTRAL_NORMALIZATION_DEFAULT,
+                room_reflections_enabled: xtc_specs::ROOM_REFLECTIONS_ENABLED_DEFAULT,
                 room_ir_file: None,
-                room_width_m: default_xtc_room_width(),
-                room_depth_m: default_xtc_room_depth(),
-                wall_absorption: default_xtc_wall_absorption(),
-                reflection_beta_boost: default_xtc_reflection_beta_boost(),
+                room_width_m: xtc_specs::ROOM_WIDTH_M_DEFAULT,
+                room_depth_m: xtc_specs::ROOM_DEPTH_M_DEFAULT,
+                wall_absorption: xtc_specs::WALL_ABSORPTION_DEFAULT,
+                reflection_beta_boost: xtc_specs::REFLECTION_BETA_BOOST_DEFAULT,
                 bypass_xtc_filters: false,
                 bypass_spectral_normalization: false,
                 bypass_neumann_refinement: false,
-                auto_gain_enabled: default_xtc_auto_gain_enabled(),
-                auto_gain_max_db: default_xtc_auto_gain_max_db(),
-                auto_gain_smoothing_ms: default_xtc_auto_gain_smoothing_ms(),
-                pinna_model_enabled: false,
+                auto_gain_enabled: xtc_specs::AUTO_GAIN_ENABLED_DEFAULT,
+                auto_gain_max_db: xtc_specs::AUTO_GAIN_MAX_DB_DEFAULT as f64,
+                auto_gain_smoothing_ms: xtc_specs::AUTO_GAIN_SMOOTHING_MS_DEFAULT as f64,
+                pinna_model_enabled: xtc_specs::PINNA_MODEL_ENABLED_DEFAULT,
             },
             PluginType::Denoiser => Self::Denoiser {
                 reduction_db: default_denoiser_reduction_db(),
@@ -2691,15 +2724,15 @@ impl PluginSettings {
                 drift_smoothing: default_pnd_drift_smoothing(),
             },
             PluginType::ABCompare => Self::ABCompare {
-                mix: 0.0,
-                mix_mode: 0,
-                selected_path: 0,
-                bypass: false,
-                auto_gain_enabled: default_ab_auto_gain_enabled(),
-                loudness_type: 0,
-                max_auto_gain_db: default_ab_max_auto_gain_db(),
-                gain_smoothing_ms: default_ab_gain_smoothing_ms(),
-                mix_transition_ms: default_ab_mix_transition_ms(),
+                mix: ab_compare_specs::MIX_DEFAULT,
+                mix_mode: ab_compare_specs::MIX_MODE_DEFAULT,
+                selected_path: ab_compare_specs::SELECTED_PATH_DEFAULT,
+                bypass: ab_compare_specs::BYPASS_DEFAULT,
+                auto_gain_enabled: ab_compare_specs::AUTO_GAIN_ENABLED_DEFAULT,
+                loudness_type: ab_compare_specs::LOUDNESS_TYPE_DEFAULT,
+                max_auto_gain_db: ab_compare_specs::MAX_AUTO_GAIN_DB_DEFAULT,
+                gain_smoothing_ms: ab_compare_specs::GAIN_SMOOTHING_MS_DEFAULT,
+                mix_transition_ms: ab_compare_specs::MIX_TRANSITION_MS_DEFAULT,
                 path_a_config: default_ab_path_config(),
                 path_b_config: default_ab_path_config(),
             },
@@ -2714,21 +2747,21 @@ impl PluginSettings {
             },
             PluginType::Downmix => Self::Downmix {
                 input_channels: 6, // Default to 5.1
-                center_gain_db: default_downmix_center_gain_db(),
-                surround_gain_db: default_downmix_surround_gain_db(),
-                height_gain_db: default_downmix_height_gain_db(),
-                lfe_gain_db: default_downmix_lfe_gain_db(),
-                phase_coherence: true,
-                phase_blend_low_hz: default_downmix_phase_blend_low_hz(),
-                phase_blend_high_hz: default_downmix_phase_blend_high_hz(),
+                center_gain_db: downmix_specs::CENTER_GAIN_DB_DEFAULT as f64,
+                surround_gain_db: downmix_specs::SURROUND_GAIN_DB_DEFAULT as f64,
+                height_gain_db: downmix_specs::HEIGHT_GAIN_DB_DEFAULT as f64,
+                lfe_gain_db: downmix_specs::LFE_GAIN_DB_DEFAULT as f64,
+                phase_coherence: downmix_specs::PHASE_COHERENCE_DEFAULT,
+                phase_blend_low_hz: downmix_specs::PHASE_BLEND_LOW_HZ_DEFAULT as f64,
+                phase_blend_high_hz: downmix_specs::PHASE_BLEND_HIGH_HZ_DEFAULT as f64,
             },
             PluginType::MonoToStereo => Self::MonoToStereo {
-                stereo_width: default_mono_to_stereo_width(),
-                haas_delay_ms: default_mono_to_stereo_haas_delay_ms(),
-                enable_comp_eq: true,
-                comp_eq_depth_db: default_mono_to_stereo_comp_eq_depth_db(),
-                decor_low_hz: default_mono_to_stereo_decor_low_hz(),
-                decor_high_hz: default_mono_to_stereo_decor_high_hz(),
+                stereo_width: mono_to_stereo_specs::STEREO_WIDTH_DEFAULT as f64,
+                haas_delay_ms: mono_to_stereo_specs::HAAS_DELAY_MS_DEFAULT as f64,
+                enable_comp_eq: mono_to_stereo_specs::ENABLE_COMP_EQ_DEFAULT,
+                comp_eq_depth_db: mono_to_stereo_specs::COMP_EQ_DEPTH_DB_DEFAULT as f64,
+                decor_low_hz: mono_to_stereo_specs::DECOR_LOW_HZ_DEFAULT as f64,
+                decor_high_hz: mono_to_stereo_specs::DECOR_HIGH_HZ_DEFAULT as f64,
             },
             PluginType::Crossfeed => Self::Crossfeed {
                 mode: CrossfeedMode::Bauer,
@@ -2756,48 +2789,31 @@ impl PluginSettings {
 // Matrix Helper Functions
 // ============================================================================
 
-/// Get channel label for a given channel index and total channel count
-/// Returns standard speaker labels (L, R, C, LFE, etc.) when possible
+/// Get channel label for a given channel index and total channel count.
+/// Reads labels from `speaker_config.rs` (the single source of truth).
+/// Note: channel count alone is ambiguous for some layouts (e.g. 8ch = 7.1 or 5.1.2).
+/// Use `get_channel_label_from_config()` with a config ID when available.
 pub fn get_channel_label(index: usize, total: usize) -> String {
-    const MONO: &[&str] = &["M"];
-    const STEREO: &[&str] = &["L", "R"];
-    const SURROUND_3_0: &[&str] = &["L", "R", "C"];
-    const SURROUND_4_0: &[&str] = &["L", "R", "LS", "RS"];
-    const SURROUND_5_0: &[&str] = &["L", "R", "C", "LS", "RS"];
-    const SURROUND_5_1: &[&str] = &["L", "R", "C", "LFE", "LS", "RS"];
-    const SURROUND_7_1: &[&str] = &["L", "R", "C", "LFE", "LS", "RS", "LB", "RB"];
-
-    let labels: Option<&[&str]> = match total {
-        1 => Some(MONO),
-        2 => Some(STEREO),
-        3 => Some(SURROUND_3_0),
-        4 => Some(SURROUND_4_0),
-        5 => Some(SURROUND_5_0),
-        6 => Some(SURROUND_5_1),
-        8 => Some(SURROUND_7_1),
-        _ => None,
-    };
-
-    if let Some(labels) = labels {
-        if index < labels.len() {
-            return labels[index].to_string();
+    if let Some(groups) = sotf_plugins::get_meter_groups_by_channels(total) {
+        for group in groups {
+            for ch in group.channels {
+                if ch.index == index {
+                    return ch.label.to_string();
+                }
+            }
         }
     }
-
-    // Fallback: generic channel number
     format!("Ch{}", index)
 }
 
-/// Get channel label using MeterGroupSpec from speaker config, with fallback to channel-count lookup
+/// Get channel label using a speaker config ID for disambiguation.
+/// Falls back to channel-count lookup via `get_channel_label()`.
 pub fn get_channel_label_from_config(
     index: usize,
     total: usize,
     speaker_config: Option<&str>,
 ) -> String {
-    let groups = speaker_config
-        .and_then(sotf_plugins::get_meter_groups)
-        .or_else(|| sotf_plugins::get_meter_groups_by_channels(total));
-    if let Some(groups) = groups {
+    if let Some(groups) = speaker_config.and_then(sotf_plugins::get_meter_groups) {
         for group in groups {
             for ch in group.channels {
                 if ch.index == index {
@@ -3067,13 +3083,17 @@ pub fn resize_matrix(
 fn upmixer_output_channels(speaker_config: &str) -> usize {
     match speaker_config {
         "2.0" => 2,
+        "2.1" => 3,
+        "2.2" => 4,
         "5.0" => 5,
         "5.1" => 6,
         "7.1" => 8,
+        "9.1" => 8,
         "5.1.2" => 8,
         "5.1.4" => 10,
         "7.1.2" => 10,
         "7.1.4" => 12,
+        "9.1.2" => 12,
         "9.1.4" => 14,
         "9.1.6" => 16,
         _ => {

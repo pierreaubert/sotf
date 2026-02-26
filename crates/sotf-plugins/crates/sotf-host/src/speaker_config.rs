@@ -68,6 +68,15 @@ pub struct MeterGroupSpec {
 
 // Meter group definitions for each configuration
 
+const METER_GROUPS_1_0: &[MeterGroupSpec] = &[MeterGroupSpec {
+    name: "Mono",
+    channels: &[MeterChannelSpec {
+        index: 0,
+        label: "M",
+        display_chars: &["M"],
+    }],
+}];
+
 const METER_GROUPS_2_0: &[MeterGroupSpec] = &[MeterGroupSpec {
     name: "L/R",
     channels: &[
@@ -791,6 +800,23 @@ const METER_GROUPS_9_1_6: &[MeterGroupSpec] = &[
 // ============================================================================
 // Standard Speaker Configurations
 // ============================================================================
+
+/// 1.0 Mono
+pub const CONFIG_1_0: SpeakerConfig = SpeakerConfig {
+    id: "1.0",
+    name: "1.0 Mono",
+    description: "Single channel mono",
+    total_channels: 1,
+    speakers: &[SpeakerPosition {
+        label: "M",
+        name: "Mono",
+        azimuth: 0.0,
+        elevation: 0.0,
+        channel: 0,
+        is_lfe: false,
+    }],
+    meter_groups: METER_GROUPS_1_0,
+};
 
 /// 2.0 Stereo
 pub const CONFIG_2_0: SpeakerConfig = SpeakerConfig {
@@ -1672,6 +1698,7 @@ pub const CONFIG_9_1_6: SpeakerConfig = SpeakerConfig {
 /// Get speaker configuration by ID
 pub fn get_speaker_config(id: &str) -> Option<&'static SpeakerConfig> {
     match id {
+        "1.0" => Some(&CONFIG_1_0),
         "2.0" => Some(&CONFIG_2_0),
         "2.1" => Some(&CONFIG_2_1),
         "5.0" => Some(&CONFIG_5_0),
@@ -1690,7 +1717,8 @@ pub fn get_speaker_config(id: &str) -> Option<&'static SpeakerConfig> {
 /// Get all available configuration IDs
 pub fn get_available_configs() -> &'static [&'static str] {
     &[
-        "2.0", "2.1", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
+        "1.0", "2.0", "2.1", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4",
+        "9.1.6",
     ]
 }
 
@@ -1698,6 +1726,7 @@ pub fn get_available_configs() -> &'static [&'static str] {
 /// Returns the most common configuration for the given channel count
 pub fn get_speaker_config_by_channels(num_channels: usize) -> Option<&'static SpeakerConfig> {
     match num_channels {
+        1 => Some(&CONFIG_1_0),
         2 => Some(&CONFIG_2_0),
         3 => Some(&CONFIG_2_1),
         5 => Some(&CONFIG_5_0),

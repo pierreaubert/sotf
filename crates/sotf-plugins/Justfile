@@ -1,8 +1,8 @@
 [group('bench')]
 bench-plugins:
-	cargo bench -p plugins --bench binaural-decoder-benchmark
-	cargo bench -p plugins --bench upmixer-benchmark
-	cargo bench -p plugins --bench compressor-benchmark
+	cargo bench -p sotf-plugins --bench binaural-decoder-benchmark
+	cargo bench -p sotf-plugins --bench upmixer-benchmark
+	cargo bench -p sotf-plugins --bench compressor-benchmark
 
 # ----------------------------------------------------------------------
 # QA PLUGINS
@@ -52,20 +52,20 @@ qa-plugin-fuzzer-6ch:
 
 [group('qa-plugins')]
 qa-plugin-diagnostics:
-	cargo run --release --package plugins --bin qa-ab-compare --features qa
-	cargo run --release --package plugins --bin qa-compressor --features qa
-	cargo run --release --package plugins --bin qa-delay --features qa
-	cargo run --release --package plugins --bin qa-downmix --features qa
-	cargo run --release --package plugins --bin qa-eq --features qa
-	cargo run --release --package plugins --bin qa-expander --features qa
-	cargo run --release --package plugins --bin qa-gain --features qa
-	cargo run --release --package plugins --bin qa-gate --features qa
-	cargo run --release --package plugins --bin qa-limiter --features qa
-	cargo run --release --package plugins --bin qa-loudness-compensation --features qa
-	cargo run --release --package plugins --bin qa-mono-to-stereo --features qa
-	cargo run --release --package plugins --bin qa-multiband-compressor --features qa
-	cargo run --release --package plugins --bin qa-multiband-expander --features qa
-	cargo run --release --package plugins --bin qa-pnd --features qa
-	cargo run --release --package plugins --bin qa-upmixer --features qa
-	cargo run --release --package plugins --bin qa-xtc --features qa
+	cargo run --release --package sotf-plugin-ab-compare --bin qa-ab-compare --features qa
+	cargo run --release --package sotf-plugin-compressor --bin qa-compressor --features qa
+	cargo run --release --package sotf-plugin-delay --bin qa-delay --features qa
+	cargo run --release --package sotf-plugin-downmix --bin qa-downmix --features qa
+	cargo run --release --package sotf-plugin-eq --bin qa-eq --features qa
+	cargo run --release --package sotf-plugin-expander --bin qa-expander --features qa
+	cargo run --release --package sotf-plugin-gain --bin qa-gain --features qa
+	cargo run --release --package sotf-plugin-gate --bin qa-gate --features qa
+	cargo run --release --package sotf-plugin-limiter --bin qa-limiter --features qa
+	cargo run --release --package sotf-plugin-loudness-compensation --bin qa-loudness-compensation --features qa
+	cargo run --release --package sotf-plugin-mono-to-stereo --bin qa-mono-to-stereo --features qa
+	cargo run --release --package sotf-plugin-multiband-compressor --bin qa-multiband-compressor --features qa
+	cargo run --release --package sotf-plugin-multiband-expander --bin qa-multiband-expander --features qa
+	cargo run --release --package sotf-plugin-pnd --bin qa-pnd --features qa
+	cargo run --release --package sotf-plugin-upmixer --bin qa-upmixer --features qa
+	cargo run --release --package sotf-plugin-xtc --bin qa-xtc --features qa
 

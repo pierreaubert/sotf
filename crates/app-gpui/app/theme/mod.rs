@@ -236,6 +236,8 @@ impl Theme {
             text_primary: self.text_primary,
             text_secondary: self.text_secondary,
             text_muted: self.text_muted,
+            text_on_accent: self.text_on_accent,
+            icon_on_accent: self.icon_on_accent,
             accent: self.accent,
             accent_hover: self.accent_hover,
             accent_muted: self.accent_muted,
@@ -376,7 +378,7 @@ impl Theme {
             accent: self.accent,
             accent_hover: self.accent_hover,
             text: self.text_primary,
-            text_on_accent: self.text_primary,
+            text_on_accent: self.text_on_accent,
             border: self.border,
         }
     }

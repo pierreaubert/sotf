@@ -202,6 +202,10 @@ pub mod loudness_compensation {
     pub const HIGH_GAIN_DEFAULT: f32 = 6.0;
     pub const HIGH_GAIN_MIN: f32 = -20.0;
     pub const HIGH_GAIN_MAX: f32 = 20.0;
+
+    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = false;
+    pub const AUTO_GAIN_MAX_DB_DEFAULT: f32 = 12.0;
+    pub const AUTO_GAIN_SMOOTHING_MS_DEFAULT: f32 = 100.0;
 }
 
 // ============================================================================
@@ -582,6 +586,10 @@ pub mod denoiser {
     pub const USE_CAPTURED_PROFILE_DEFAULT: bool = false;
     pub const LEARN_FRAMES: usize = 50; // ~1s at typical hop rates
 
+    pub const CRACK_SENSITIVITY_DEFAULT: f32 = 10.0;
+    pub const CRACK_SENSITIVITY_MIN: f32 = 0.0;
+    pub const CRACK_SENSITIVITY_MAX: f32 = 50.0;
+
     // Transparency: blend computed gain toward 1.0 (0 = full denoising, 1 = pass-through)
     pub const TRANSPARENCY_DEFAULT: f32 = 0.0;
     pub const TRANSPARENCY_MIN: f32 = 0.0;
@@ -882,6 +890,20 @@ pub mod xtc {
     pub const AUTO_GAIN_SMOOTHING_MS_DEFAULT: f32 = 100.0;
     pub const AUTO_GAIN_SMOOTHING_MS_MIN: f32 = 10.0;
     pub const AUTO_GAIN_SMOOTHING_MS_MAX: f32 = 500.0;
+
+    pub const HEAD_TRACKING_SMOOTH_S_DEFAULT: f64 = 0.1;
+    pub const HEAD_TRACKING_SMOOTH_S_MIN: f64 = 0.01;
+    pub const HEAD_TRACKING_SMOOTH_S_MAX: f64 = 1.0;
+
+    pub const SPECTRAL_NORMALIZATION_DEFAULT: bool = true;
+
+    pub const ROOM_REFLECTIONS_ENABLED_DEFAULT: bool = false;
+    pub const ROOM_WIDTH_M_DEFAULT: f64 = 4.0;
+    pub const ROOM_DEPTH_M_DEFAULT: f64 = 5.0;
+    pub const WALL_ABSORPTION_DEFAULT: f64 = 0.3;
+    pub const REFLECTION_BETA_BOOST_DEFAULT: f64 = 3.0;
+
+    pub const PINNA_MODEL_ENABLED_DEFAULT: bool = false;
 }
 
 // ============================================================================
@@ -889,6 +911,9 @@ pub mod xtc {
 // ============================================================================
 
 pub mod ab_compare {
+    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = true;
+    pub const BYPASS_DEFAULT: bool = false;
+
     pub const MIX_DEFAULT: f64 = 0.0;
     pub const MIX_MIN: f64 = -1.0;
     pub const MIX_MAX: f64 = 1.0;

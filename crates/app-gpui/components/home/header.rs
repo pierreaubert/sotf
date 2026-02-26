@@ -316,7 +316,7 @@ impl PlayerView {
                     let is_selected = current_screen == screen_variant;
                     let entity_clone = state_entity.clone();
                     let accent = theme.accent;
-                    let text_primary = theme.text_primary;
+                    let text_on_accent = theme.text_on_accent;
                     let text_secondary = theme.text_secondary;
                     let bg_secondary = theme.background_secondary;
                     let surface_hover = theme.surface_hover;
@@ -330,7 +330,7 @@ impl PlayerView {
                         .cursor_pointer()
                         .when(is_selected, |d| {
                             d.bg(accent)
-                                .text_color(text_primary)
+                                .text_color(text_on_accent)
                                 .font_weight(FontWeight::SEMIBOLD)
                         })
                         .when(!is_selected, |d| {
