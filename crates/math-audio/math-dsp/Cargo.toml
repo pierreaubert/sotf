@@ -1,6 +1,6 @@
 [package]
 name = "math-dsp"
-version = "0.4.1"
+version = "0.4.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "DSP utilities: signal generation, FFT analysis, and audio analysis tools"
@@ -28,9 +28,14 @@ hound = { workspace = true }
 # Filters
 math-iir-fir = { workspace = true }
 
+# ReplayGain (EBU R128)
+ebur128 = { workspace = true }
+serde = { workspace = true }
+
 # Utilities
 log = { workspace = true }
 clap = { workspace = true }
 
 [dev-dependencies]
 approx = "0.5"
+serde_json = { workspace = true }

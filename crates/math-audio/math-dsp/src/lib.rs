@@ -20,7 +20,9 @@
 
 pub mod analysis;
 pub mod fast_math;
+pub mod replaygain;
 pub mod signals;
+pub mod waveform;
 
 // Re-export commonly used types
 pub use analysis::{
@@ -38,3 +40,6 @@ pub use signals::{
     mono_to_stereo, prepare_signal_for_playback, prepare_signal_for_playback_channels,
     replicate_mono,
 };
+
+pub use replaygain::{ReplayGainAnalyzer, ReplayGainInfo, ReplayGainTrackData, compute_album_gain};
+pub use waveform::{WAVEFORM_SAMPLES, compute_waveform};
