@@ -38,6 +38,9 @@ from pathlib import Path
 import numpy as np
 
 
+DATA_ROOT = "/Volumes/data/Shared/ML"
+
+
 def parse_annotations(annotations_path: str) -> dict[str, bool]:
     """
     Parse a MUSAN ANNOTATIONS file.
@@ -311,13 +314,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--musan-dir",
-        required=True,
+        default=os.path.join(DATA_ROOT, "musan"),
         help="Path to extracted MUSAN root directory (contains speech/, music/, noise/)",
     )
     parser.add_argument(
         "--output",
-        default="musan_manifest.tsv",
-        help="Output TSV manifest path (default: musan_manifest.tsv)",
+        default=os.path.join(DATA_ROOT, "musan_manifest.tsv"),
+        help="Output TSV manifest path",
     )
     parser.add_argument(
         "--segment",

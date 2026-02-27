@@ -37,6 +37,9 @@ import sys
 from collections import defaultdict
 
 
+DATA_ROOT = "/Volumes/data/Shared/ML"
+
+
 # AVA-Speech videos are labeled from 902s to 1798s (15-minute segment starting at 15:02)
 AVA_START_SEC = 902.0
 AVA_END_SEC = 1798.0
@@ -194,18 +197,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--csv",
-        required=True,
+        default=os.path.join(DATA_ROOT, "ava", "ava_speech_labels_v1.csv"),
         help="Path to ava_speech_labels_v1.csv",
     )
     parser.add_argument(
         "--output-dir",
-        required=True,
+        default=os.path.join(DATA_ROOT, "ava", "ava_wavs"),
         help="Directory to store downloaded/trimmed WAV files",
     )
     parser.add_argument(
         "--output",
-        default="ava_speech_manifest.tsv",
-        help="Output TSV manifest path (default: ava_speech_manifest.tsv)",
+        default=os.path.join(DATA_ROOT, "ava_speech_manifest.tsv"),
+        help="Output TSV manifest path",
     )
     parser.add_argument(
         "--max-videos",

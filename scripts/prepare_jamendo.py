@@ -42,6 +42,9 @@ import sys
 import zipfile
 
 
+DATA_ROOT = "/Volumes/data/Shared/ML"
+
+
 ZENODO_URL = "https://zenodo.org/api/records/2585988/files/jamando.zip/content"
 
 
@@ -245,13 +248,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--output-dir",
-        required=True,
+        default=os.path.join(DATA_ROOT, "jamendo"),
         help="Directory to download/extract Jamendo and store WAV files",
     )
     parser.add_argument(
         "--output",
-        default="jamendo_manifest.tsv",
-        help="Output TSV manifest path (default: jamendo_manifest.tsv)",
+        default=os.path.join(DATA_ROOT, "jamendo_manifest.tsv"),
+        help="Output TSV manifest path",
     )
     parser.add_argument(
         "--split",

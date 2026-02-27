@@ -43,6 +43,9 @@ import sys
 from concurrent.futures import ProcessPoolExecutor
 
 
+DATA_ROOT = "/Volumes/data/Shared/ML"
+
+
 def load_annotations(gz_path: str) -> list[tuple[float, float]]:
     """
     Load vocal note time ranges from a DALI annotation .gz file.
@@ -222,18 +225,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--annotations-dir",
-        required=True,
+        default=os.path.join(DATA_ROOT, "dali", "DALI_v1.0"),
         help="Path to extracted DALI annotation .gz files",
     )
     parser.add_argument(
         "--output-dir",
-        required=True,
+        default=os.path.join(DATA_ROOT, "dali", "wavs"),
         help="Directory to store downloaded WAV files",
     )
     parser.add_argument(
         "--output",
-        default="dali_manifest.tsv",
-        help="Output TSV manifest path (default: dali_manifest.tsv)",
+        default=os.path.join(DATA_ROOT, "dali_manifest.tsv"),
+        help="Output TSV manifest path",
     )
     parser.add_argument(
         "--max-songs",
