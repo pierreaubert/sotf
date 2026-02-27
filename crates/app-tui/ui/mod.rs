@@ -28,16 +28,30 @@ fn draw_help_box(f: &mut Frame, area: Rect, app: &App, screen: Screen) {
     draw_help_box_with_text(f, area, app, &help_text);
 }
 
-/// Draw a help box with custom text.
-fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text: &str) {
-    let help = Line::from(vec![
-        Span::styled("Help: ", Style::default().fg(app.theme.title_color)),
-        Span::styled(text, Style::default().fg(app.theme.title_color)),
-    ])
-    .alignment(Alignment::Center);
-    let help = Paragraph::new(help)
-        .block(Block::default().borders(Borders::ALL));
+/// Returns the screen area below the title bar (rows 3+), used for modals.
+fn below_title_bar(f: &Frame) -> Rect {
+    let area = f.area();
+    let title_height = 3u16;
+    Rect {
+        x: area.x,
+        y: area.y + title_height,
+        width: area.width,
+        height: area.height.saturating_sub(title_height),
+    }
+}
 
+/// Draw a help box with custom text, inside a bordered block.
+fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text: &str) {
+    let help = Paragraph::new(text.to_string())
+        .style(Style::default().fg(app.theme.title_color))
+        .alignment(Alignment::Left)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(app.theme.border_color))
+                .title(" Help "),
+        );
     f.render_widget(help, area);
 }
 
@@ -354,6 +368,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.input_mode == InputMode::ChannelConflict {
         draw_channel_conflict_modal(f, app);
     }
+
+    // Configure sub-screen modal
+    if app.input_mode == InputMode::ConfigureModal {
+        draw_configure_modal(f, app);
+    }
 }
 
 fn draw_loading_screen(f: &mut Frame, app: &App) {
@@ -528,7 +547,7 @@ fn draw_library_screen(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Help box
+            Constraint::Length(1), // Help box
             Constraint::Length(3), // Search box
             Constraint::Min(0),    // Album list
         ])
@@ -786,7 +805,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),                   // Help box
+            Constraint::Length(2),                   // Help box
             Constraint::Length(3),                   // Input box
             Constraint::Length(autocomplete_height), // Autocomplete suggestions
             Constraint::Min(0),                      // Directory list + status
@@ -795,10 +814,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 
     // Help box with scan keybindings
     let help_text = "a=Add dir | s/S=Scan | r/R=ReplayGain | b/B=Bliss | w/W=Waveform (uppercase=force)";
-    let help_box = Paragraph::new(help_text)
-        .style(Style::default().fg(app.theme.fg_secondary))
-        .block(Block::default().borders(Borders::ALL).title("Help"));
-    f.render_widget(help_box, chunks[0]);
+    draw_help_box_with_text(f, chunks[0], app, help_text);
 
     // Input box for adding directories
     let input_style = if app.input_mode == InputMode::AddDirectory {
@@ -1135,7 +1151,7 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Help box
+            Constraint::Length(1), // Help box
             Constraint::Min(0),    // Queue content
         ])
         .split(area);
@@ -1493,7 +1509,7 @@ fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
     let vchunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Help box
+            Constraint::Length(1), // Help box
             Constraint::Min(0),    // Plugin panels
         ])
         .split(area);
@@ -1695,51 +1711,123 @@ fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Help box
-            Constraint::Length(3), // Sub-navigation bar
-            Constraint::Min(0),    // Content area
+            Constraint::Length(3), // Help box (with border)
+            Constraint::Min(0),    // Select menu
         ])
         .split(area);
 
-    draw_help_box(f, chunks[0], app, Screen::Configure);
+    draw_help_box_with_text(
+        f,
+        chunks[0],
+        app,
+        "↑↓=Navigate  Enter=Open  Esc=Back",
+    );
 
-    // Sub-navigation tabs
-    let sub_screens = [
-        (ConfigureSubScreen::Directories, "1:Directories"),
-        (ConfigureSubScreen::Recording, "2:Recording"),
-        (ConfigureSubScreen::RoomEq, "3:RoomEQ"),
-        (ConfigureSubScreen::HeadphoneEq, "4:HeadphoneEQ"),
-        (ConfigureSubScreen::SpinoramaEq, "5:SpinoramaEQ"),
+    let options: &[(ConfigureSubScreen, &str, &str)] = &[
+        (ConfigureSubScreen::Directories,  "1", "Directories   – Music library folders"),
+        (ConfigureSubScreen::Recording,    "2", "Recording     – Measure impulse responses"),
+        (ConfigureSubScreen::RoomEq,       "3", "Room EQ       – Optimize room correction filters"),
+        (ConfigureSubScreen::HeadphoneEq,  "4", "Headphone EQ  – Target-curve EQ for headphones"),
+        (ConfigureSubScreen::SpinoramaEq,  "5", "Spinorama EQ  – Speaker EQ from spinorama data"),
     ];
 
-    let mut spans = vec![Span::raw(" ")];
-    for (sub, label) in &sub_screens {
-        let is_active = *sub == app.configure_sub_screen;
-        let style = if is_active {
+    let items: Vec<ListItem> = options
+        .iter()
+        .map(|(sub, key, label)| {
+            let is_selected = *sub == app.configure_sub_screen;
+            let style = if is_selected {
+                Style::default()
+                    .fg(app.theme.bg_primary)
+                    .bg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg_primary)
+            };
+            let line = Line::from(vec![
+                Span::styled(
+                    format!(" [{}] ", key),
+                    if is_selected {
+                        style.add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(app.theme.accent_primary)
+                    },
+                ),
+                Span::styled(label.to_string(), style),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    let selected_idx = options
+        .iter()
+        .position(|(sub, _, _)| *sub == app.configure_sub_screen)
+        .unwrap_or(0);
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected_idx));
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(app.theme.border_color))
+                .title(" Configure – select a workflow "),
+        )
+        .highlight_style(
             Style::default()
                 .fg(app.theme.bg_primary)
                 .bg(app.theme.accent_primary)
-                .add_modifier(Modifier::BOLD)
-        } else {
+                .add_modifier(Modifier::BOLD),
+        );
+
+    f.render_stateful_widget(list, chunks[1], &mut list_state);
+}
+
+/// Draw the full-screen configure modal (covers everything below the 3-row title bar).
+fn draw_configure_modal(f: &mut Frame, app: &App) {
+    use crate::app::ConfigureSubScreen;
+
+    let area = below_title_bar(f);
+
+    // Clear the area so the modal paints over everything underneath
+    f.render_widget(Clear, area);
+
+    let title = match app.configure_sub_screen {
+        ConfigureSubScreen::Directories => " Directories ",
+        ConfigureSubScreen::Recording   => " Recording ",
+        ConfigureSubScreen::RoomEq      => " Room EQ ",
+        ConfigureSubScreen::HeadphoneEq => " Headphone EQ ",
+        ConfigureSubScreen::SpinoramaEq => " Spinorama EQ ",
+    };
+
+    let outer = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(
             Style::default()
-                .fg(app.theme.fg_secondary)
-                .bg(app.theme.bg_secondary)
-        };
-        spans.push(Span::styled(format!(" {} ", label), style));
-        spans.push(Span::raw(" "));
-    }
+                .fg(app.theme.accent_primary)
+                .bg(app.theme.bg_primary),
+        )
+        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
+        .title(format!("{} (Esc to close)", title));
 
-    let sub_nav = Paragraph::new(Line::from(spans))
-        .block(Block::default().borders(Borders::ALL).title("Configure"));
-    f.render_widget(sub_nav, chunks[1]);
+    f.render_widget(outer, area);
 
-    // Content area
+    // Inner content area (inside border)
+    let inner = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+
     match app.configure_sub_screen {
-        ConfigureSubScreen::Directories => draw_directory_manager(f, chunks[2], app),
-        ConfigureSubScreen::Recording => draw_recording_screen(f, chunks[2], app),
-        ConfigureSubScreen::RoomEq => draw_room_eq_screen(f, chunks[2], app),
-        ConfigureSubScreen::HeadphoneEq => draw_headphone_eq_screen(f, chunks[2], app),
-        ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, chunks[2], app),
+        ConfigureSubScreen::Directories => draw_directory_manager(f, inner, app),
+        ConfigureSubScreen::Recording   => draw_recording_screen(f, inner, app),
+        ConfigureSubScreen::RoomEq      => draw_room_eq_screen(f, inner, app),
+        ConfigureSubScreen::HeadphoneEq => draw_headphone_eq_screen(f, inner, app),
+        ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, inner, app),
     }
 }
 
@@ -3047,13 +3135,13 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
     // Content per step
     match s.step {
         SpinoramaStep::Select => {
-            // Split: search box (3) + list (rest) + hint (1)
+            // Split: search box (3) + list (rest) + hint (3)
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3),
                     Constraint::Min(0),
-                    Constraint::Length(1),
+                    Constraint::Length(3),
                 ])
                 .split(chunks[1]);
 
@@ -3113,12 +3201,13 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Hint bar
             let hint = if let Some(ref sel) = s.selected_speaker {
-                format!(" Selected: {}  |  Enter=confirm  Tab=next step", sel)
+                format!(" Selected: {}  |  ←/→=step  Enter=confirm", sel)
             } else {
-                " ↑/↓=navigate  Enter=select  r=load speakers  Tab=next step".to_string()
+                " ←/→=step  ↑/↓=navigate  Enter=select  r=load speakers".to_string()
             };
-            let hint_widget =
-                Paragraph::new(hint).style(Style::default().fg(app.theme.fg_secondary));
+            let hint_widget = Paragraph::new(hint)
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .block(Block::default().borders(Borders::ALL));
             f.render_widget(hint_widget, inner[2]);
         }
 
@@ -3234,7 +3323,7 @@ fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             lines.push(Line::from(""));
             lines.push(Line::from(vec![Span::styled(
-                " ↑/↓=select field  ←/→ or -/+=adjust  Enter=start optimization  Tab=next step",
+                " ←/→=step  ↑/↓=select field  -/+=adjust  Enter=optimize",
                 Style::default().fg(app.theme.fg_secondary),
             )]));
 

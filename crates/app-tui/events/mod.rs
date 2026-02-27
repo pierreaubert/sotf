@@ -148,6 +148,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         InputMode::ShowHelp => handle_help_mode(app, key),
         InputMode::ShowError => handle_error_mode(app, key),
         InputMode::ChannelConflict => handle_channel_conflict_mode(app, key),
+        InputMode::ConfigureModal => handle_configure_modal_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
     }
 }
@@ -1550,6 +1551,16 @@ fn handle_error_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     }
 }
 
+fn handle_configure_modal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use crate::app::InputMode;
+    if key.code == KeyCode::Esc {
+        app.input_mode = InputMode::Normal;
+        app.configure_tab_focused = true;
+        return None;
+    }
+    handle_configure_modal_sub_keys(app, key)
+}
+
 fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     use crate::app::ChannelConflictChoice;
 
@@ -1634,145 +1645,75 @@ fn configure_sub_screen_next(s: crate::app::ConfigureSubScreen) -> crate::app::C
 }
 
 fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::ConfigureSubScreen;
+    use crate::app::{ConfigureSubScreen, InputMode};
 
-    // Esc always exits Configure → Library, and resets focus to tab bar.
+    // Esc exits Configure → Library.
     if key.code == KeyCode::Esc {
         app.configure_tab_focused = true;
         app.current_screen = Screen::Library;
         return None;
     }
 
-    // ── Tab-bar level (arrows cycle tabs, Down enters sub-screen) ──────────
-    if app.configure_tab_focused {
-        match key.code {
-            KeyCode::Left => {
-                app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
-                return None;
-            }
-            KeyCode::Right => {
-                app.configure_sub_screen = configure_sub_screen_next(app.configure_sub_screen);
-                return None;
-            }
-            KeyCode::Down | KeyCode::Enter => {
-                app.configure_tab_focused = false;
-                return None;
-            }
-            KeyCode::Up => {
-                app.current_screen = Screen::Library;
-                return None;
-            }
-            // Number keys still jump directly to a tab
-            KeyCode::Char('1') => {
-                app.configure_sub_screen = ConfigureSubScreen::Directories;
-                return None;
-            }
-            KeyCode::Char('2') => {
-                app.configure_sub_screen = ConfigureSubScreen::Recording;
-                return None;
-            }
-            KeyCode::Char('3') => {
-                app.configure_sub_screen = ConfigureSubScreen::RoomEq;
-                return None;
-            }
-            KeyCode::Char('4') => {
-                app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;
-                return None;
-            }
-            KeyCode::Char('5') => {
-                app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;
-                return None;
-            }
-            _ => return None,
+    // ── Select-menu level ────────────────────────────────────────────────────
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
+            return None;
         }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.configure_sub_screen = configure_sub_screen_next(app.configure_sub_screen);
+            return None;
+        }
+        KeyCode::Enter => {
+            app.input_mode = InputMode::ConfigureModal;
+            app.configure_tab_focused = false;
+            return None;
+        }
+        // Number keys jump directly to an item and open the modal
+        KeyCode::Char('1') => {
+            app.configure_sub_screen = ConfigureSubScreen::Directories;
+            app.input_mode = InputMode::ConfigureModal;
+            app.configure_tab_focused = false;
+            return None;
+        }
+        KeyCode::Char('2') => {
+            app.configure_sub_screen = ConfigureSubScreen::Recording;
+            app.input_mode = InputMode::ConfigureModal;
+            app.configure_tab_focused = false;
+            return None;
+        }
+        KeyCode::Char('3') => {
+            app.configure_sub_screen = ConfigureSubScreen::RoomEq;
+            app.input_mode = InputMode::ConfigureModal;
+            app.configure_tab_focused = false;
+            return None;
+        }
+        KeyCode::Char('4') => {
+            app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;
+            app.input_mode = InputMode::ConfigureModal;
+            app.configure_tab_focused = false;
+            return None;
+        }
+        KeyCode::Char('5') => {
+            app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;
+            app.input_mode = InputMode::ConfigureModal;
+            app.configure_tab_focused = false;
+            return None;
+        }
+        _ => {}
     }
+    None
+}
 
-    // ── Inside a sub-screen ─────────────────────────────────────────────────
-    // Up at the top of any sub-screen returns focus to the tab bar.
-    if key.code == KeyCode::Up
-        && app.configure_sub_screen != ConfigureSubScreen::SpinoramaEq
-        && app.configure_sub_screen != ConfigureSubScreen::HeadphoneEq
-        && app.configure_sub_screen != ConfigureSubScreen::RoomEq
-        && app.configure_sub_screen != ConfigureSubScreen::Recording
-    {
-        app.configure_tab_focused = true;
-        return None;
-    }
-
-    // Sub-screens get priority: delegate first, before number-key tab switching.
-    // This prevents e.g. '1' in the Spinorama Select step from switching to Directories.
+/// Dispatch keys inside an open configure modal to the active sub-screen handler.
+fn handle_configure_modal_sub_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use crate::app::ConfigureSubScreen;
     match app.configure_sub_screen {
-        ConfigureSubScreen::Directories => {
-            // Number keys 1-5 still switch sub-screens from Directories
-            match key.code {
-                KeyCode::Char('1') => {
-                    app.configure_sub_screen = ConfigureSubScreen::Directories;
-                    return None;
-                }
-                KeyCode::Char('2') => {
-                    app.configure_sub_screen = ConfigureSubScreen::Recording;
-                    return None;
-                }
-                KeyCode::Char('3') => {
-                    app.configure_sub_screen = ConfigureSubScreen::RoomEq;
-                    return None;
-                }
-                KeyCode::Char('4') => {
-                    app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;
-                    return None;
-                }
-                KeyCode::Char('5') => {
-                    app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;
-                    return None;
-                }
-                _ => {}
-            }
-            return handle_directory_keys(app, key);
-        }
-        ConfigureSubScreen::SpinoramaEq => {
-            // Inside Spinorama wizard, all keys go to the wizard handler.
-            // Number keys do NOT switch sub-screens while inside the wizard.
-            return handle_spinorama_keys(app, key);
-        }
-        ConfigureSubScreen::HeadphoneEq => {
-            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
-            match key.code {
-                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
-                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
-                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
-                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
-                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
-                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
-                _ => {}
-            }
-            return handle_headphone_eq_keys(app, key);
-        }
-        ConfigureSubScreen::RoomEq => {
-            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
-            match key.code {
-                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
-                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
-                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
-                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
-                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
-                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
-                _ => {}
-            }
-            return handle_room_eq_keys(app, key);
-        }
-        ConfigureSubScreen::Recording => {
-            // Number keys 1-5 switch sub-screens, BackTab returns to tab bar
-            match key.code {
-                KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; return None; }
-                KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; return None; }
-                KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; return None; }
-                KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; return None; }
-                KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; return None; }
-                KeyCode::BackTab => { app.configure_tab_focused = true; return None; }
-                _ => {}
-            }
-            return handle_recording_keys(app, key);
-        }
+        ConfigureSubScreen::Directories  => handle_directory_keys(app, key),
+        ConfigureSubScreen::SpinoramaEq  => handle_spinorama_keys(app, key),
+        ConfigureSubScreen::HeadphoneEq  => handle_headphone_eq_keys(app, key),
+        ConfigureSubScreen::RoomEq       => handle_room_eq_keys(app, key),
+        ConfigureSubScreen::Recording    => handle_recording_keys(app, key),
     }
 }
 
@@ -1825,19 +1766,12 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         return None;
     }
 
-    // Up always returns focus to the Configure tab bar
-    if key.code == KeyCode::Up && app.spinorama_eq.step == SpinoramaStep::Select {
-        app.configure_tab_focused = true;
-        return None;
-    }
-
-    // Left/Right navigate between wizard steps (step-bar level),
-    // but NOT in Configure step where Left/Right adjust field values.
-    if key.code == KeyCode::Left && app.spinorama_eq.step != SpinoramaStep::Configure {
+    // Left/Right navigate between wizard steps (step-bar level)
+    if key.code == KeyCode::Left {
         app.spinorama_eq.step = spinorama_step_prev(app.spinorama_eq.step);
         return None;
     }
-    if key.code == KeyCode::Right && app.spinorama_eq.step != SpinoramaStep::Configure {
+    if key.code == KeyCode::Right {
         app.spinorama_eq.step = spinorama_step_next(app.spinorama_eq.step);
         return None;
     }
@@ -1905,11 +1839,11 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 }
                 None
             }
-            KeyCode::Left | KeyCode::Char('-') => {
+            KeyCode::Char('-') => {
                 adjust_spinorama_field(app, -1);
                 None
             }
-            KeyCode::Right | KeyCode::Char('+') => {
+            KeyCode::Char('+') => {
                 adjust_spinorama_field(app, 1);
                 None
             }
@@ -1977,12 +1911,8 @@ fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 }
                 None
             }
-            KeyCode::BackTab | KeyCode::Left => {
+            KeyCode::BackTab => {
                 app.spinorama_eq.step = SpinoramaStep::Results;
-                None
-            }
-            KeyCode::Right => {
-                app.spinorama_eq.step = SpinoramaStep::Select;
                 None
             }
             _ => None,

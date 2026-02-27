@@ -60,19 +60,12 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         return None;
     }
 
-    // Up always returns focus to the Configure tab bar
-    if key.code == KeyCode::Up && app.spinorama_eq.step == SpinoramaStep::Select {
-        app.configure_tab_focused = true;
-        return None;
-    }
-
-    // Left/Right navigate between wizard steps (step-bar level),
-    // but NOT in Configure step where Left/Right adjust field values.
-    if key.code == KeyCode::Left && app.spinorama_eq.step != SpinoramaStep::Configure {
+    // Left/Right navigate between wizard steps (step-bar level)
+    if key.code == KeyCode::Left {
         app.spinorama_eq.step = spinorama_step_prev(app.spinorama_eq.step);
         return None;
     }
-    if key.code == KeyCode::Right && app.spinorama_eq.step != SpinoramaStep::Configure {
+    if key.code == KeyCode::Right {
         app.spinorama_eq.step = spinorama_step_next(app.spinorama_eq.step);
         return None;
     }
@@ -140,11 +133,11 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 }
                 None
             }
-            KeyCode::Left | KeyCode::Char('-') => {
+            KeyCode::Char('-') => {
                 adjust_spinorama_field(app, -1);
                 None
             }
-            KeyCode::Right | KeyCode::Char('+') => {
+            KeyCode::Char('+') => {
                 adjust_spinorama_field(app, 1);
                 None
             }
@@ -230,12 +223,8 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         }
                         None
                     }
-                    KeyCode::BackTab | KeyCode::Left => {
+                    KeyCode::BackTab => {
                         app.spinorama_eq.step = SpinoramaStep::Results;
-                        None
-                    }
-                    KeyCode::Right => {
-                        app.spinorama_eq.step = SpinoramaStep::Select;
                         None
                     }
                     _ => None,

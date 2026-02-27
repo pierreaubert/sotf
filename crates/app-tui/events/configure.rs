@@ -3,7 +3,7 @@
 //! Delegates to sub-screens (Spinorama, HeadphoneEQ, RoomEQ, Recording) and manages
 //! the tab-bar navigation for the Configure screen.
 
-use crate::app::{App, Screen};
+use crate::app::{App, InputMode, Screen};
 use crossterm::event::{KeyCode, KeyEvent};
 use super::PlayerCommand;
 use super::screens::handle_directory_keys;

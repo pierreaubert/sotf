@@ -401,6 +401,8 @@ pub enum InputMode {
     ShowError,
     /// Shown when a multichannel file conflicts with the upmixer plugin
     ChannelConflict,
+    /// Full-screen configure sub-screen modal (covers everything below title bar)
+    ConfigureModal,
 }
 
 /// Whether the file picker selects a file or a directory
