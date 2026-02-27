@@ -36,6 +36,7 @@ pub mod engine;
 pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 
 pub mod plugins;
+mod plugin_param_accessors;
 pub use plugins::{
     EQFilter, Plugin, PluginChain, PluginSettings, PluginType, apply_matrix_preset, db_to_linear,
     detect_matrix_preset, get_channel_label, get_channel_label_from_config, linear_to_db_string,

@@ -138,6 +138,12 @@ struct DecoderState {
     silent_source: bool, // For HAL input plugins (no file source)
     decode_buffer: Option<DecodedAudio>,
     resample_output_buffer: Vec<f32>,
+    /// Staging buffer: accumulates resampled output across decode chunks so that
+    /// only complete `frame_size`-frame blocks are forwarded to the processing thread.
+    /// Without this, a 48 kHz source resampled to 44.1 kHz produces ~940-frame blocks
+    /// which are smaller than the upmixer's hop size (1024), causing the upmixer to
+    /// never fire an FFT block and produce silence.
+    resample_staging: Vec<f32>,
     /// Pre-allocated buffer for chunk processing (avoids allocation in hot path)
     chunk_buffer: Vec<f32>,
     /// Pre-allocated buffer for frame sending (avoids allocation in hot path)
@@ -167,6 +173,7 @@ impl DecoderState {
             silent_source: false,
             decode_buffer: None,
             resample_output_buffer: Vec::new(),
+            resample_staging: Vec::new(),
             // Pre-allocate for typical frame size (1024 frames * 8 channels)
             chunk_buffer: Vec::with_capacity(1024 * 8),
             frame_send_buffer: Vec::with_capacity(1024 * 8),
@@ -223,6 +230,7 @@ impl DecoderState {
         self.decoder = Some(decoder);
         self.resampler = resampler;
         self.resampler_buffer.clear();
+        self.resample_staging.clear();
         self.paused = false;
         self.current_file = Some(path);
         self.spec = Some(spec);
@@ -274,7 +282,7 @@ impl DecoderState {
                     let s_start = Instant::now();
                     let chunk_len = frame_size * channels;
 
-                    let frame_to_send = if let Some(resampler) = &mut self.resampler {
+                    if let Some(resampler) = &mut self.resampler {
                         // Copy chunk to pre-allocated buffer (avoids drain().collect() allocation)
                         if self.chunk_buffer.len() < chunk_len {
                             self.chunk_buffer.resize(chunk_len, 0.0);
@@ -306,37 +314,54 @@ impl DecoderState {
                             .map_err(|e| format!("Resampling failed: {}", e))?;
                         total_resample_time += r_start.elapsed();
 
-                        // Use actual output frames returned by resampler.process()
+                        // Accumulate resampled output into staging buffer.
+                        // The resampler produces a variable number of output frames per
+                        // input chunk (e.g. ~940 frames for 48 kHz → 44.1 kHz with a
+                        // 1024-frame input). If we forwarded those ~940-frame blocks
+                        // directly, plugins with a hop size ≥ frame_size (like the
+                        // upmixer at hop=1024) would never accumulate enough input to
+                        // fire an FFT block and would produce silence. Staging here
+                        // ensures we always forward exactly `frame_size` frames.
                         let frame_len = actual_output_frames * channels;
+                        self.resample_staging
+                            .extend_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                        // Copy to frame_send_buffer and take ownership (avoids .to_vec() allocation)
-                        if self.frame_send_buffer.len() < frame_len {
-                            self.frame_send_buffer.resize(frame_len, 0.0);
+                        // Emit as many complete frame_size blocks as are available.
+                        let send_chunk_len = frame_size * channels;
+                        while self.resample_staging.len() >= send_chunk_len {
+                            if self.frame_send_buffer.len() < send_chunk_len {
+                                self.frame_send_buffer.resize(send_chunk_len, 0.0);
+                            }
+                            self.frame_send_buffer[..send_chunk_len]
+                                .copy_from_slice(&self.resample_staging[..send_chunk_len]);
+                            self.resample_staging.drain(..send_chunk_len);
+
+                            let frame_data = take_frame_buffer(
+                                &mut self.frame_send_buffer,
+                                &self.recycle_rx,
+                                send_chunk_len,
+                            );
+
+                            let frame = AudioFrame::new(
+                                frame_data,
+                                frame_size,
+                                channels,
+                                target_sample_rate,
+                            );
+
+                            let s_inner = Instant::now();
+                            if let Some(cmd) = send_or_interrupt(
+                                message_tx,
+                                command_rx,
+                                DecoderMessage::Frame(frame),
+                            )? {
+                                return Ok(DecoderLoopAction::Interrupted(cmd));
+                            }
+                            total_send_time += s_inner.elapsed();
                         }
-                        self.frame_send_buffer[..frame_len]
-                            .copy_from_slice(&self.resample_output_buffer[..frame_len]);
 
-                        let frame_data = take_frame_buffer(
-                            &mut self.frame_send_buffer,
-                            &self.recycle_rx,
-                            frame_len,
-                        );
-
-                        let frame = AudioFrame::new(
-                            frame_data,
-                            actual_output_frames,
-                            channels,
-                            target_sample_rate,
-                        );
-                        debug_assert_eq!(
-                            frame.data.len(),
-                            frame.num_frames * frame.num_channels,
-                            "Resampled frame data size mismatch: data.len()={}, num_frames={}, num_channels={}",
-                            frame.data.len(),
-                            frame.num_frames,
-                            frame.num_channels,
-                        );
-                        frame
+                        // All sending handled in the inner loop above; continue outer loop.
+                        continue;
                     } else {
                         // No resampling - copy chunk to frame_send_buffer and take ownership
                         if self.frame_send_buffer.len() < chunk_len {
@@ -362,18 +387,17 @@ impl DecoderState {
                             frame.num_frames,
                             frame.num_channels,
                         );
-                        frame
-                    };
 
-                    // Send with interruption support
-                    if let Some(cmd) = send_or_interrupt(
-                        message_tx,
-                        command_rx,
-                        DecoderMessage::Frame(frame_to_send),
-                    )? {
-                        return Ok(DecoderLoopAction::Interrupted(cmd));
+                        // Send with interruption support
+                        if let Some(cmd) = send_or_interrupt(
+                            message_tx,
+                            command_rx,
+                            DecoderMessage::Frame(frame),
+                        )? {
+                            return Ok(DecoderLoopAction::Interrupted(cmd));
+                        }
+                        total_send_time += s_start.elapsed();
                     }
-                    total_send_time += s_start.elapsed();
                 }
 
                 // Update position
@@ -903,4 +927,81 @@ fn run_decoder_thread(
 
     // log::debug!("[Decoder Thread] Stopped");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Regression test for the upmixer silence bug with cross-rate resampling.
+    ///
+    /// Root cause: the rubato resampler produces a variable number of output frames
+    /// per input chunk (e.g. ~940 frames for 48 kHz → 44.1 kHz with a 1024-frame
+    /// input block).  If those sub-`frame_size` blocks were forwarded directly to
+    /// the processing thread, plugins whose hop size equals `frame_size` (like the
+    /// upmixer at hop = 1024) would never accumulate enough input to fire an FFT
+    /// block, producing complete silence.
+    ///
+    /// The fix is a `resample_staging` buffer that accumulates resampled output and
+    /// only emits complete `frame_size`-frame blocks.  This test verifies the
+    /// staging logic in isolation: when fed chunks smaller than `frame_size` the
+    /// staging buffer must hold them, and when the accumulated total reaches
+    /// `frame_size` it must emit exactly one full block.
+    #[test]
+    fn test_resample_staging_emits_full_frame_size_blocks() {
+        let frame_size: usize = 1024;
+        let channels: usize = 2;
+        let send_chunk_len = frame_size * channels;
+
+        // Simulate the resampler producing ~940 frames per 1024-frame input
+        // (48 kHz → 44.1 kHz ratio ≈ 0.91875).
+        let resampled_chunk_frames: usize = 940;
+        let resampled_chunk_len = resampled_chunk_frames * channels;
+
+        let mut staging: Vec<f32> = Vec::new();
+        let mut emitted_blocks: usize = 0;
+
+        // Feed several resampled chunks and count how many full blocks are emitted.
+        // Two chunks of 940 = 1880 samples → one complete 1024-frame block with
+        // 856 frames left in staging.
+        for chunk_idx in 0..4 {
+            // Each sample is tagged with chunk index for easy debugging.
+            let chunk: Vec<f32> = (0..resampled_chunk_len)
+                .map(|i| (chunk_idx * 1000 + i) as f32)
+                .collect();
+            staging.extend_from_slice(&chunk);
+
+            while staging.len() >= send_chunk_len {
+                staging.drain(..send_chunk_len);
+                emitted_blocks += 1;
+            }
+        }
+
+        // 4 chunks × 1880 samples = 7520 samples.
+        // 7520 / 2048 = 3 full blocks (6144 samples), remainder 1376 samples = 688 frames.
+        assert_eq!(
+            emitted_blocks, 3,
+            "Expected 3 full blocks after 4 × 940-frame chunks"
+        );
+        let expected_remainder = (4 * resampled_chunk_len) - (3 * send_chunk_len);
+        assert_eq!(
+            staging.len(),
+            expected_remainder,
+            "Staging buffer should hold the partial remainder (688 frames)"
+        );
+        assert!(
+            staging.len() < send_chunk_len,
+            "Remainder must be less than one full block"
+        );
+
+        // Feed one more chunk: 1376 + 1880 = 3256 → 1 more full block.
+        let chunk: Vec<f32> = vec![0.0; resampled_chunk_len];
+        staging.extend_from_slice(&chunk);
+        while staging.len() >= send_chunk_len {
+            staging.drain(..send_chunk_len);
+            emitted_blocks += 1;
+        }
+        assert_eq!(
+            emitted_blocks, 4,
+            "Expected a fourth full block after the fifth chunk"
+        );
+    }
 }
