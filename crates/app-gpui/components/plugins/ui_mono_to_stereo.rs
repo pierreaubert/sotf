@@ -11,7 +11,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::mono_to_stereo::*;
+use sotf_plugins::param_specs::{find_by_key as pk, mono_to_stereo::PARAMS as MS};
 
 /// State for rendering the MonoToStereo plugin
 pub struct MonoToStereoRenderState {
@@ -52,8 +52,8 @@ pub fn render_mono_to_stereo_plugin(
                             plugin_idx,
                             "Width",
                             state.stereo_width,
-                            STEREO_WIDTH_MIN as f64,
-                            STEREO_WIDTH_MAX as f64,
+                            pk(MS, "stereo_width").min_f64(),
+                            pk(MS, "stereo_width").max_f64(),
                             "",
                             0,
                             state.selected_param,
@@ -66,8 +66,8 @@ pub fn render_mono_to_stereo_plugin(
                             plugin_idx,
                             "Haas Delay",
                             state.haas_delay_ms,
-                            HAAS_DELAY_MS_MIN as f64,
-                            HAAS_DELAY_MS_MAX as f64,
+                            pk(MS, "haas_delay_ms").min_f64(),
+                            pk(MS, "haas_delay_ms").max_f64(),
                             "ms",
                             1,
                             state.selected_param,
@@ -104,8 +104,8 @@ pub fn render_mono_to_stereo_plugin(
                                 plugin_idx,
                                 "EQ Depth",
                                 state.comp_eq_depth_db,
-                                COMP_EQ_DEPTH_DB_MIN as f64,
-                                COMP_EQ_DEPTH_DB_MAX as f64,
+                                pk(MS, "comp_eq_depth_db").min_f64(),
+                                pk(MS, "comp_eq_depth_db").max_f64(),
                                 "dB",
                                 3,
                                 state.selected_param,
@@ -132,8 +132,8 @@ pub fn render_mono_to_stereo_plugin(
                             plugin_idx,
                             "Decor Low",
                             state.decor_low_hz,
-                            DECOR_LOW_HZ_MIN as f64,
-                            DECOR_LOW_HZ_MAX as f64,
+                            pk(MS, "decor_low_hz").min_f64(),
+                            pk(MS, "decor_low_hz").max_f64(),
                             "Hz",
                             4,
                             state.selected_param,
@@ -146,8 +146,8 @@ pub fn render_mono_to_stereo_plugin(
                             plugin_idx,
                             "Decor High",
                             state.decor_high_hz,
-                            DECOR_HIGH_HZ_MIN as f64,
-                            DECOR_HIGH_HZ_MAX as f64,
+                            pk(MS, "decor_high_hz").min_f64(),
+                            pk(MS, "decor_high_hz").max_f64(),
                             "Hz",
                             5,
                             state.selected_param,

@@ -1,4 +1,4 @@
-use crate::app::types::{PluginUpdateType, ReplayGainMode};
+use crate::app::types::PluginUpdateType;
 use crate::app::{AppState, Screen};
 use crate::components::plugins::common::param_index_to_engine_param;
 
@@ -106,7 +106,7 @@ impl PlayerView {
 
                         // Read analyzer data from the shared cache (no audio pipeline blocking)
                         if playback_state.is_playing {
-                            let chain = &state.app.plugin_state.plugin_chain;
+                            let chain = &state.app.plugin_state.chain;
 
                             if let Some(idx) = chain.input_monitor_engine_index() {
                                 if let Some(data) = player.get_cached_plugin_data(idx) {
@@ -203,9 +203,7 @@ impl PlayerView {
                         state.app.check_library_on_startup();
 
                         // Managers update
-                        state.app.waveform_manager.update();
-                        state.app.replay_gain_manager.update();
-                        state.app.bliss_manager.update();
+                        state.app.scan_ctrl.update_all();
                         state.app.update_library_scan();
                         state.app.update_toast();
 
@@ -320,9 +318,7 @@ impl PlayerView {
             }
 
             // Stop background managers
-            state.app.waveform_manager.stop();
-            state.app.replay_gain_manager.stop();
-            state.app.bliss_manager.stop();
+            state.app.scan_ctrl.stop_all();
 
             // Stop audio playback - this stops the audio engine threads
             if let Err(e) = state.player.lock().stop() {
@@ -629,12 +625,12 @@ impl PlayerView {
         state
             .app
             .plugin_state
-            .plugin_chain
+            .chain
             .adapt_matrix_to_input(track_channels);
         let mut output_channels = state
             .app
             .plugin_state
-            .plugin_chain
+            .chain
             .output_channels_for_input(track_channels);
 
         // Clamp output channels to device max — the playback thread will
@@ -652,29 +648,19 @@ impl PlayerView {
         }
 
         // Apply ReplayGain correction to the permanent Gain plugin
-        let rg_gain = if state.app.replay_gain_enabled {
-            let track = state
-                .app
-                .playback
-                .current_queue_index
-                .and_then(|idx| state.app.queue.get(idx))
-                .and_then(|item| item.current_track());
-            let gain = match state.app.replay_gain_mode {
-                ReplayGainMode::Track => track.and_then(|t| t.replay_gain),
-                ReplayGainMode::Album => track
-                    .and_then(|t| t.album_gain)
-                    .or(track.and_then(|t| t.replay_gain)),
-            };
-            gain.map(|g| g + state.app.replay_gain_preamp as f64)
-        } else {
-            None
-        };
-        state.app.plugin_state.plugin_chain.set_replay_gain(rg_gain);
+        let rg_gain = state
+            .app
+            .playback
+            .current_queue_index
+            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|item| item.current_track())
+            .and_then(|track| state.app.playback.get_replay_gain_adjustment(track));
+        state.app.plugin_state.chain.set_replay_gain(rg_gain);
 
         let plugins = state
             .app
             .plugin_state
-            .plugin_chain
+            .chain
             .to_plugin_configs(sample_rate);
 
         if let Err(e) = state.player.lock().load_and_play_at(

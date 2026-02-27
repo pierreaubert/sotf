@@ -4,15 +4,486 @@
 //! Both plugin implementations and UI code should reference these constants
 //! to ensure consistency and single-source-of-truth for parameter ranges,
 //! defaults, and metadata.
+//!
+//! Each plugin module exports a `PARAMS` array of `ParamSpec` that serves as
+//! the single source of truth for parameter name, engine key, type, range,
+//! step size, unit, group, and update mode. All consumer code (TUI descriptors,
+//! GPUI editing, engine param mapping, serde defaults) derives from these specs.
+
+// ============================================================================
+// Rich Parameter Specification Types
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ParamType {
+    Float {
+        default: f64,
+        min: f64,
+        max: f64,
+        step: f64,
+    },
+    Int {
+        default: i64,
+        min: i64,
+        max: i64,
+        step: i64,
+    },
+    Bool {
+        default: bool,
+        true_label: &'static str,
+        false_label: &'static str,
+    },
+    Choice {
+        default_index: usize,
+        labels: &'static [&'static str],
+    },
+    FilePath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateMode {
+    /// Parameter can be updated without rebuilding the plugin (zero-dropout).
+    Realtime,
+    /// Parameter change requires rebuilding the plugin (e.g., channel count change).
+    Structural,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ParamSpec {
+    pub name: &'static str,
+    pub engine_key: &'static str,
+    pub param_type: ParamType,
+    pub unit: &'static str,
+    pub group: &'static str,
+    pub update_mode: UpdateMode,
+    /// Multiplier from internal value to display value.
+    /// E.g., 100.0 for a 0..1 value displayed as 0..100%.
+    /// `set_plugin_param()` divides incoming display values by this.
+    pub display_scale: f64,
+}
+
+#[allow(clippy::too_many_arguments)]
+impl ParamSpec {
+    pub const fn float(
+        name: &'static str,
+        engine_key: &'static str,
+        default: f64,
+        min: f64,
+        max: f64,
+        step: f64,
+        unit: &'static str,
+        group: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            engine_key,
+            param_type: ParamType::Float {
+                default,
+                min,
+                max,
+                step,
+            },
+            unit,
+            group,
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+        }
+    }
+
+    pub const fn int(
+        name: &'static str,
+        engine_key: &'static str,
+        default: i64,
+        min: i64,
+        max: i64,
+        step: i64,
+        unit: &'static str,
+        group: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            engine_key,
+            param_type: ParamType::Int {
+                default,
+                min,
+                max,
+                step,
+            },
+            unit,
+            group,
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+        }
+    }
+
+    pub const fn bool_param(
+        name: &'static str,
+        engine_key: &'static str,
+        default: bool,
+        group: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            engine_key,
+            param_type: ParamType::Bool {
+                default,
+                true_label: "On",
+                false_label: "Off",
+            },
+            unit: "",
+            group,
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+        }
+    }
+
+    pub const fn bool_labeled(
+        name: &'static str,
+        engine_key: &'static str,
+        default: bool,
+        true_label: &'static str,
+        false_label: &'static str,
+        group: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            engine_key,
+            param_type: ParamType::Bool {
+                default,
+                true_label,
+                false_label,
+            },
+            unit: "",
+            group,
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+        }
+    }
+
+    pub const fn choice(
+        name: &'static str,
+        engine_key: &'static str,
+        default_index: usize,
+        labels: &'static [&'static str],
+        group: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            engine_key,
+            param_type: ParamType::Choice {
+                default_index,
+                labels,
+            },
+            unit: "",
+            group,
+            update_mode: UpdateMode::Realtime,
+            display_scale: 1.0,
+        }
+    }
+
+    pub const fn file_path(
+        name: &'static str,
+        engine_key: &'static str,
+        group: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            engine_key,
+            param_type: ParamType::FilePath,
+            unit: "",
+            group,
+            update_mode: UpdateMode::Structural,
+            display_scale: 1.0,
+        }
+    }
+
+    /// Mark this parameter as requiring a structural rebuild.
+    pub const fn structural(self) -> Self {
+        Self {
+            update_mode: UpdateMode::Structural,
+            ..self
+        }
+    }
+
+    /// Set display_scale: multiplier from internal to display value.
+    pub const fn scaled(self, display_scale: f64) -> Self {
+        Self {
+            display_scale,
+            ..self
+        }
+    }
+
+    /// Clamp a raw internal value to this param's valid range.
+    pub fn clamp_f64(&self, value: f64) -> f64 {
+        match self.param_type {
+            ParamType::Float { min, max, .. } => value.clamp(min, max),
+            ParamType::Int { min, max, .. } => (value as i64).clamp(min, max) as f64,
+            ParamType::Bool { .. } => {
+                if value > 0.5 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            ParamType::Choice { labels, .. } => {
+                if labels.is_empty() {
+                    return value;
+                }
+                (value as usize).min(labels.len() - 1) as f64
+            }
+            ParamType::FilePath => value,
+        }
+    }
+
+    /// Adjust a value by delta steps, returns the clamped new value.
+    /// For Float/Int: applies delta * step and clamps.
+    /// For Bool: toggles (ignores delta direction).
+    /// For Choice: cycles forward/backward through labels.
+    pub fn adjust_f64(&self, current: f64, delta: f64) -> f64 {
+        match self.param_type {
+            ParamType::Float { min, max, step, .. } => (current + delta * step).clamp(min, max),
+            ParamType::Int { min, max, step, .. } => {
+                let new_val =
+                    (current as i64).saturating_add((delta as i64).saturating_mul(step));
+                new_val.clamp(min, max) as f64
+            }
+            ParamType::Bool { .. } => {
+                if current > 0.5 {
+                    0.0
+                } else {
+                    1.0
+                }
+            }
+            ParamType::Choice { labels, .. } => {
+                let count = labels.len();
+                if count == 0 {
+                    return current;
+                }
+                let idx = current as usize;
+                if delta > 0.0 {
+                    ((idx + 1) % count) as f64
+                } else {
+                    ((idx + count - 1) % count) as f64
+                }
+            }
+            ParamType::FilePath => current,
+        }
+    }
+
+    /// Get the default value as f64.
+    pub fn default_f64(&self) -> f64 {
+        match self.param_type {
+            ParamType::Float { default, .. } => default,
+            ParamType::Int { default, .. } => default as f64,
+            ParamType::Bool { default, .. } => {
+                if default {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            ParamType::Choice { default_index, .. } => default_index as f64,
+            ParamType::FilePath => 0.0,
+        }
+    }
+
+    /// Get the default value as bool (panics if not a Bool param).
+    pub fn default_bool(&self) -> bool {
+        match self.param_type {
+            ParamType::Bool { default, .. } => default,
+            _ => panic!("default_bool() called on non-Bool param '{}'", self.name),
+        }
+    }
+
+    /// Get the default value as usize.
+    pub fn default_usize(&self) -> usize {
+        self.default_f64() as usize
+    }
+
+    /// Get the default value as i32.
+    pub fn default_i32(&self) -> i32 {
+        self.default_f64() as i32
+    }
+
+    /// Get the default value as f32.
+    pub fn default_f32(&self) -> f32 {
+        self.default_f64() as f32
+    }
+
+    /// Get the minimum value as f64.
+    pub fn min_f64(&self) -> f64 {
+        match self.param_type {
+            ParamType::Float { min, .. } => min,
+            ParamType::Int { min, .. } => min as f64,
+            ParamType::Bool { .. } => 0.0,
+            ParamType::Choice { .. } => 0.0,
+            ParamType::FilePath => 0.0,
+        }
+    }
+
+    /// Get the maximum value as f64.
+    pub fn max_f64(&self) -> f64 {
+        match self.param_type {
+            ParamType::Float { max, .. } => max,
+            ParamType::Int { max, .. } => max as f64,
+            ParamType::Bool { .. } => 1.0,
+            ParamType::Choice { labels, .. } => {
+                if labels.is_empty() { 0.0 } else { (labels.len() - 1) as f64 }
+            }
+            ParamType::FilePath => 0.0,
+        }
+    }
+
+    /// Derive display precision from step size.
+    pub fn precision(&self) -> usize {
+        match self.param_type {
+            ParamType::Float { step, .. } => {
+                if step >= 1.0 {
+                    0
+                } else if step >= 0.1 {
+                    1
+                } else if step >= 0.01 {
+                    2
+                } else if step >= 0.001 {
+                    3
+                } else {
+                    4
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    /// Format a f64 value according to this param's type, precision, and labels.
+    pub fn format_value(&self, value: f64) -> String {
+        match self.param_type {
+            ParamType::Float { .. } => {
+                if self.unit == "%" {
+                    format!("{:.0}%", value * 100.0)
+                } else {
+                    match self.precision() {
+                        0 => format!("{:.0}", value),
+                        1 => format!("{:.1}", value),
+                        2 => format!("{:.2}", value),
+                        3 => format!("{:.3}", value),
+                        _ => format!("{:.4}", value),
+                    }
+                }
+            }
+            ParamType::Int { .. } => format!("{}", value as i64),
+            ParamType::Bool {
+                true_label,
+                false_label,
+                ..
+            } => {
+                if value > 0.5 {
+                    true_label.to_string()
+                } else {
+                    false_label.to_string()
+                }
+            }
+            ParamType::Choice { labels, .. } => {
+                let idx = value as usize;
+                if idx < labels.len() {
+                    labels[idx].to_string()
+                } else {
+                    format!("{}", idx)
+                }
+            }
+            ParamType::FilePath => String::new(),
+        }
+    }
+
+    /// Format a raw f64 value as the engine expects it.
+    /// Float: raw number, Int: integer, Bool: "true"/"false", Choice: index as integer.
+    pub fn engine_value_string(&self, value: f64) -> String {
+        match self.param_type {
+            ParamType::Float { .. } => format!("{}", value),
+            ParamType::Int { .. } => format!("{}", value as i64),
+            ParamType::Bool { .. } => {
+                if value > 0.5 {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }
+            ParamType::Choice { .. } => format!("{}", value as i64),
+            ParamType::FilePath => String::new(),
+        }
+    }
+
+    /// Get the labels for a Choice parameter (empty slice for other types).
+    pub fn choice_labels(&self) -> &'static [&'static str] {
+        match self.param_type {
+            ParamType::Choice { labels, .. } => labels,
+            _ => &[],
+        }
+    }
+}
+
+/// Look up a `ParamSpec` by its `engine_key` within a PARAMS slice.
+/// Panics if the key is not found (programmer error).
+pub fn find_by_key<'a>(params: &'a [ParamSpec], key: &str) -> &'a ParamSpec {
+    params
+        .iter()
+        .find(|s| s.engine_key == key)
+        .unwrap_or_else(|| panic!("no ParamSpec with engine_key '{}'", key))
+}
+
+/// Generate serde default wrapper functions from PARAMS arrays.
+///
+/// Usage:
+/// ```ignore
+/// sotf_plugins::serde_param_default! {
+///     module::PARAMS;
+///     fn default_foo() -> f64 = "engine_key";
+///     fn default_bar() -> bool = "engine_key";
+///     fn default_baz() -> usize = "engine_key";
+/// }
+/// ```
+#[macro_export]
+macro_rules! serde_param_default {
+    ($params:expr; $(fn $fn_name:ident() -> $ret:ident = $key:literal;)*) => {
+        $(
+            $crate::serde_param_default!(@one $params, $fn_name, $ret, $key);
+        )*
+    };
+    (@one $params:expr, $fn_name:ident, f64, $key:literal) => {
+        fn $fn_name() -> f64 {
+            $crate::param_specs::find_by_key($params, $key).default_f64()
+        }
+    };
+    (@one $params:expr, $fn_name:ident, bool, $key:literal) => {
+        fn $fn_name() -> bool {
+            $crate::param_specs::find_by_key($params, $key).default_bool()
+        }
+    };
+    (@one $params:expr, $fn_name:ident, usize, $key:literal) => {
+        fn $fn_name() -> usize {
+            $crate::param_specs::find_by_key($params, $key).default_usize()
+        }
+    };
+    (@one $params:expr, $fn_name:ident, i32, $key:literal) => {
+        fn $fn_name() -> i32 {
+            $crate::param_specs::find_by_key($params, $key).default_i32()
+        }
+    };
+    (@one $params:expr, $fn_name:ident, f32, $key:literal) => {
+        fn $fn_name() -> f32 {
+            $crate::param_specs::find_by_key($params, $key).default_f32()
+        }
+    };
+}
 
 // ============================================================================
 // Gain Plugin
 // ============================================================================
 
 pub mod gain {
-    pub const GAIN_DB_DEFAULT: f32 = 0.0;
-    pub const GAIN_DB_MIN: f32 = -60.0;
-    pub const GAIN_DB_MAX: f32 = 20.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Gain", "gain_db", 0.0, -60.0, 20.0, 0.5, "dB", "General"),
+    ];
 }
 
 // ============================================================================
@@ -20,40 +491,19 @@ pub mod gain {
 // ============================================================================
 
 pub mod compressor {
-    pub const THRESHOLD_DEFAULT: f32 = -20.0;
-    pub const THRESHOLD_MIN: f32 = -60.0;
-    pub const THRESHOLD_MAX: f32 = 0.0;
-
-    pub const RATIO_DEFAULT: f32 = 4.0;
-    pub const RATIO_MIN: f32 = 1.0;
-    pub const RATIO_MAX: f32 = 20.0;
-
-    pub const ATTACK_DEFAULT: f32 = 5.0;
-    pub const ATTACK_MIN: f32 = 0.1;
-    pub const ATTACK_MAX: f32 = 100.0;
-
-    pub const RELEASE_DEFAULT: f32 = 50.0;
-    pub const RELEASE_MIN: f32 = 10.0;
-    pub const RELEASE_MAX: f32 = 1000.0;
-
-    pub const KNEE_DEFAULT: f32 = 6.0;
-    pub const KNEE_MIN: f32 = 0.0;
-    pub const KNEE_MAX: f32 = 20.0;
-
-    pub const MAKEUP_GAIN_DEFAULT: f32 = 0.0;
-    pub const MAKEUP_GAIN_MIN: f32 = -24.0;
-    pub const MAKEUP_GAIN_MAX: f32 = 24.0;
-
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
-
-    pub const AUTO_MAKEUP_DEFAULT: bool = false;
-    pub const LINK_CHANNELS_DEFAULT: bool = true;
-
-    pub const SIDECHAIN_HPF_HZ_DEFAULT: f32 = 80.0;
-    pub const SIDECHAIN_HPF_HZ_MIN: f32 = 0.0;
-    pub const SIDECHAIN_HPF_HZ_MAX: f32 = 200.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Threshold", "threshold", -20.0, -60.0, 0.0, 1.0, "dB", "Dynamics"),
+        ParamSpec::float("Ratio", "ratio", 4.0, 1.0, 20.0, 0.1, ":1", "Dynamics"),
+        ParamSpec::float("Attack", "attack", 5.0, 0.1, 100.0, 0.5, "ms", "Timing"),
+        ParamSpec::float("Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Timing"),
+        ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Dynamics"),
+        ParamSpec::float("Makeup Gain", "makeup_gain", 0.0, -24.0, 24.0, 0.5, "dB", "Output"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0),
+        ParamSpec::bool_param("Auto Makeup", "auto_makeup", false, "Output"),
+        ParamSpec::bool_labeled("Link Channels", "link_channels", true, "Linked", "Unlinked", "Channels"),
+        ParamSpec::float("Sidechain HPF", "sidechain_hpf_hz", 80.0, 0.0, 200.0, 5.0, "Hz", "Sidechain"),
+    ];
 }
 
 // ============================================================================
@@ -61,35 +511,17 @@ pub mod compressor {
 // ============================================================================
 
 pub mod gate {
-    pub const THRESHOLD_DEFAULT: f32 = -40.0;
-    pub const THRESHOLD_MIN: f32 = -80.0;
-    pub const THRESHOLD_MAX: f32 = 0.0;
-
-    pub const RATIO_DEFAULT: f32 = 10.0;
-    pub const RATIO_MIN: f32 = 1.0;
-    pub const RATIO_MAX: f32 = 100.0;
-
-    pub const ATTACK_DEFAULT: f32 = 1.0;
-    pub const ATTACK_MIN: f32 = 0.1;
-    pub const ATTACK_MAX: f32 = 50.0;
-
-    pub const HOLD_DEFAULT: f32 = 10.0;
-    pub const HOLD_MIN: f32 = 0.0;
-    pub const HOLD_MAX: f32 = 1000.0;
-
-    pub const RELEASE_DEFAULT: f32 = 100.0;
-    pub const RELEASE_MIN: f32 = 10.0;
-    pub const RELEASE_MAX: f32 = 2000.0;
-
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
-
-    pub const LINK_CHANNELS_DEFAULT: bool = true;
-
-    pub const SIDECHAIN_HPF_HZ_DEFAULT: f32 = 0.0;
-    pub const SIDECHAIN_HPF_HZ_MIN: f32 = 0.0;
-    pub const SIDECHAIN_HPF_HZ_MAX: f32 = 200.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Threshold", "threshold", -40.0, -80.0, 0.0, 1.0, "dB", "Dynamics"),
+        ParamSpec::float("Ratio", "ratio", 10.0, 1.0, 100.0, 0.1, ":1", "Dynamics"),
+        ParamSpec::float("Attack", "attack", 1.0, 0.1, 50.0, 0.1, "ms", "Timing"),
+        ParamSpec::float("Hold", "hold", 10.0, 0.0, 1000.0, 1.0, "ms", "Timing"),
+        ParamSpec::float("Release", "release", 100.0, 10.0, 2000.0, 5.0, "ms", "Timing"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0),
+        ParamSpec::bool_labeled("Link Channels", "link_channels", true, "Linked", "Unlinked", "Channels"),
+        ParamSpec::float("Sidechain HPF", "sidechain_hpf_hz", 0.0, 0.0, 200.0, 5.0, "Hz", "Sidechain"),
+    ];
 }
 
 // ============================================================================
@@ -97,47 +529,20 @@ pub mod gate {
 // ============================================================================
 
 pub mod expander {
-    pub const THRESHOLD_DEFAULT: f32 = -40.0;
-    pub const THRESHOLD_MIN: f32 = -80.0;
-    pub const THRESHOLD_MAX: f32 = 0.0;
-
-    pub const RATIO_DEFAULT: f32 = 2.0;
-    pub const RATIO_MIN: f32 = 1.0;
-    pub const RATIO_MAX: f32 = 20.0;
-
-    pub const ATTACK_DEFAULT: f32 = 1.0;
-    pub const ATTACK_MIN: f32 = 0.1;
-    pub const ATTACK_MAX: f32 = 50.0;
-
-    pub const RELEASE_DEFAULT: f32 = 100.0;
-    pub const RELEASE_MIN: f32 = 10.0;
-    pub const RELEASE_MAX: f32 = 2000.0;
-
-    pub const RANGE_DEFAULT: f32 = 40.0;
-    pub const RANGE_MIN: f32 = 0.0;
-    pub const RANGE_MAX: f32 = 80.0;
-
-    pub const KNEE_DEFAULT: f32 = 6.0;
-    pub const KNEE_MIN: f32 = 0.0;
-    pub const KNEE_MAX: f32 = 20.0;
-
-    pub const HYSTERESIS_DEFAULT: f32 = 4.0;
-    pub const HYSTERESIS_MIN: f32 = 0.0;
-    pub const HYSTERESIS_MAX: f32 = 12.0;
-
-    pub const HOLD_DEFAULT: f32 = 10.0;
-    pub const HOLD_MIN: f32 = 0.0;
-    pub const HOLD_MAX: f32 = 500.0;
-
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
-
-    pub const LINK_CHANNELS_DEFAULT: bool = true;
-
-    pub const SIDECHAIN_HPF_HZ_DEFAULT: f32 = 80.0;
-    pub const SIDECHAIN_HPF_HZ_MIN: f32 = 0.0;
-    pub const SIDECHAIN_HPF_HZ_MAX: f32 = 500.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Threshold", "threshold", -40.0, -80.0, 0.0, 1.0, "dB", "Dynamics"),
+        ParamSpec::float("Ratio", "ratio", 2.0, 1.0, 20.0, 0.1, ":1", "Dynamics"),
+        ParamSpec::float("Attack", "attack", 1.0, 0.1, 50.0, 0.1, "ms", "Timing"),
+        ParamSpec::float("Release", "release", 100.0, 10.0, 2000.0, 5.0, "ms", "Timing"),
+        ParamSpec::float("Range", "range", 40.0, 0.0, 80.0, 1.0, "dB", "Dynamics"),
+        ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Dynamics"),
+        ParamSpec::float("Hysteresis", "hysteresis", 4.0, 0.0, 12.0, 0.1, "dB", "Dynamics"),
+        ParamSpec::float("Hold", "hold", 10.0, 0.0, 500.0, 1.0, "ms", "Timing"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0),
+        ParamSpec::bool_labeled("Link Channels", "link_channels", true, "Linked", "Unlinked", "Channels"),
+        ParamSpec::float("Sidechain HPF", "sidechain_hpf_hz", 80.0, 0.0, 500.0, 5.0, "Hz", "Sidechain"),
+    ];
 }
 
 // ============================================================================
@@ -145,23 +550,14 @@ pub mod expander {
 // ============================================================================
 
 pub mod limiter {
-    pub const THRESHOLD_DEFAULT: f32 = -0.1;
-    pub const THRESHOLD_MIN: f32 = -20.0;
-    pub const THRESHOLD_MAX: f32 = 0.0;
-
-    pub const RELEASE_DEFAULT: f32 = 50.0;
-    pub const RELEASE_MIN: f32 = 10.0;
-    pub const RELEASE_MAX: f32 = 1000.0;
-
-    pub const LOOKAHEAD_DEFAULT: f32 = 5.0;
-    pub const LOOKAHEAD_MIN: f32 = 0.0;
-    pub const LOOKAHEAD_MAX: f32 = 20.0;
-
-    pub const SOFT_DEFAULT: bool = false;
-
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Threshold", "threshold", -0.1, -20.0, 0.0, 0.1, "dB", "Dynamics"),
+        ParamSpec::float("Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Timing"),
+        ParamSpec::float("Lookahead", "lookahead", 5.0, 0.0, 20.0, 0.5, "ms", "Timing"),
+        ParamSpec::bool_labeled("Soft Knee", "soft", false, "Soft", "Hard", "Dynamics"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "Output").scaled(100.0),
+    ];
 }
 
 // ============================================================================
@@ -169,17 +565,6 @@ pub mod limiter {
 // ============================================================================
 
 pub mod delay {
-    pub const DELAY_MS_DEFAULT: f32 = 100.0;
-    pub const DELAY_MS_MIN: f32 = 0.1;
-    pub const DELAY_MS_MAX: f32 = 5000.0;
-
-    pub const FEEDBACK_DEFAULT: f32 = 0.3;
-    pub const FEEDBACK_MIN: f32 = 0.0;
-    pub const FEEDBACK_MAX: f32 = 0.95;
-
-    pub const MIX_DEFAULT: f32 = 0.5;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
 }
 
 // ============================================================================
@@ -187,25 +572,16 @@ pub mod delay {
 // ============================================================================
 
 pub mod loudness_compensation {
-    pub const LOW_FREQ_DEFAULT: f32 = 100.0;
-    pub const LOW_FREQ_MIN: f32 = 20.0;
-    pub const LOW_FREQ_MAX: f32 = 500.0;
-
-    pub const LOW_GAIN_DEFAULT: f32 = 6.0;
-    pub const LOW_GAIN_MIN: f32 = -20.0;
-    pub const LOW_GAIN_MAX: f32 = 20.0;
-
-    pub const HIGH_FREQ_DEFAULT: f32 = 10000.0;
-    pub const HIGH_FREQ_MIN: f32 = 2000.0;
-    pub const HIGH_FREQ_MAX: f32 = 20000.0;
-
-    pub const HIGH_GAIN_DEFAULT: f32 = 6.0;
-    pub const HIGH_GAIN_MIN: f32 = -20.0;
-    pub const HIGH_GAIN_MAX: f32 = 20.0;
-
-    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = false;
-    pub const AUTO_GAIN_MAX_DB_DEFAULT: f32 = 12.0;
-    pub const AUTO_GAIN_SMOOTHING_MS_DEFAULT: f32 = 100.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Low Freq", "low_freq", 100.0, 20.0, 500.0, 5.0, "Hz", "Low"),
+        ParamSpec::float("Low Gain", "low_gain", 6.0, -20.0, 20.0, 0.5, "dB", "Low"),
+        ParamSpec::float("High Freq", "high_freq", 10000.0, 2000.0, 20000.0, 100.0, "Hz", "High"),
+        ParamSpec::float("High Gain", "high_gain", 6.0, -20.0, 20.0, 0.5, "dB", "High"),
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain").structural(),
+        ParamSpec::float("Max Auto Gain", "auto_gain_max_db", 12.0, 0.0, 24.0, 1.0, "dB", "Auto Gain").structural(),
+        ParamSpec::float("Smoothing", "auto_gain_smoothing_ms", 100.0, 1.0, 1000.0, 5.0, "ms", "Auto Gain").structural(),
+    ];
 }
 
 // ============================================================================
@@ -213,9 +589,10 @@ pub mod loudness_compensation {
 // ============================================================================
 
 pub mod matrix {
-    pub const GAIN_DEFAULT: f32 = 0.0; // Identity matrix has 1.0 on diagonal
-    pub const GAIN_MIN: f32 = 0.0;
-    pub const GAIN_MAX: f32 = 1.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Gain", "gain", 0.0, 0.0, 1.0, 0.05, "", "Matrix"),
+    ];
 }
 
 // ============================================================================
@@ -223,151 +600,65 @@ pub mod matrix {
 // ============================================================================
 
 pub mod upmixer {
-    pub const SPEAKER_CONFIG_DEFAULT: i32 = 0;
-    pub const SPEAKER_CONFIG_MIN: i32 = 0;
-    pub const SPEAKER_CONFIG_MAX: i32 = 9;
-
-    pub const GAIN_FRONT_DIRECT_DEFAULT: f32 = 1.0;
-    pub const GAIN_FRONT_DIRECT_MIN: f32 = 0.0;
-    pub const GAIN_FRONT_DIRECT_MAX: f32 = 2.0;
-
-    pub const GAIN_FRONT_AMBIENT_DEFAULT: f32 = 0.5;
-    pub const GAIN_FRONT_AMBIENT_MIN: f32 = 0.0;
-    pub const GAIN_FRONT_AMBIENT_MAX: f32 = 2.0;
-
-    pub const GAIN_REAR_AMBIENT_DEFAULT: f32 = 1.0;
-    pub const GAIN_REAR_AMBIENT_MIN: f32 = 0.0;
-    pub const GAIN_REAR_AMBIENT_MAX: f32 = 2.0;
-
-    pub const GAIN_HEIGHT_DEFAULT: f32 = 1.0;
-    pub const GAIN_HEIGHT_MIN: f32 = 0.0;
-    pub const GAIN_HEIGHT_MAX: f32 = 2.0;
-
-    pub const LFE_GAIN_DEFAULT: f32 = 1.0;
-    pub const LFE_GAIN_MIN: f32 = 0.0;
-    pub const LFE_GAIN_MAX: f32 = 2.0;
-
-    pub const LFE_CUTOFF_HZ_DEFAULT: f32 = 120.0;
-    pub const LFE_CUTOFF_HZ_MIN: f32 = 20.0;
-    pub const LFE_CUTOFF_HZ_MAX: f32 = 180.0;
-
-    pub const STEREO_WIDTH_DEFAULT: f32 = 0.5;
-    pub const STEREO_WIDTH_MIN: f32 = 0.0;
-    pub const STEREO_WIDTH_MAX: f32 = 1.0;
-
-    pub const CENTER_SPREAD_DEFAULT: f32 = 0.0;
-    pub const CENTER_SPREAD_MIN: f32 = 0.0;
-    pub const CENTER_SPREAD_MAX: f32 = 1.0;
-
-    pub const BANDPASS_HZ_DEFAULT: f32 = 250.0;
-    pub const BANDPASS_HZ_MIN: f32 = 150.0;
-    pub const BANDPASS_HZ_MAX: f32 = 350.0;
-
     // Surround routing parameters
-    pub const SURROUND_DIRECT_BLEED_DEFAULT: f32 = 0.50;
-    pub const SURROUND_DIRECT_BLEED_MIN: f32 = 0.0;
-    pub const SURROUND_DIRECT_BLEED_MAX: f32 = 1.0;
-
-    pub const REAR_AMBIENT_BOOST_DEFAULT: f32 = 1.5;
-    pub const REAR_AMBIENT_BOOST_MIN: f32 = 1.0;
-    pub const REAR_AMBIENT_BOOST_MAX: f32 = 3.0;
-
-    pub const REAR_LATE_REFLECTION_DEFAULT: f32 = 0.10;
-    pub const REAR_LATE_REFLECTION_MIN: f32 = 0.0;
-    pub const REAR_LATE_REFLECTION_MAX: f32 = 0.5;
-
     // Sub-harmonic synthesis parameters
-    pub const ENABLE_SUBHARMONIC_SYNTH_DEFAULT: bool = false;
-
-    pub const SUBHARMONIC_GAIN_DEFAULT: f32 = 0.5;
-    pub const SUBHARMONIC_GAIN_MIN: f32 = 0.0;
-    pub const SUBHARMONIC_GAIN_MAX: f32 = 1.0;
-
-    pub const SUBHARMONIC_FREQ_HZ_DEFAULT: f32 = 40.0;
-    pub const SUBHARMONIC_FREQ_HZ_MIN: f32 = 20.0;
-    pub const SUBHARMONIC_FREQ_HZ_MAX: f32 = 80.0;
-
-    pub const SUBHARMONIC_ATTACK_MS_DEFAULT: f32 = 10.0;
-    pub const SUBHARMONIC_ATTACK_MS_MIN: f32 = 1.0;
-    pub const SUBHARMONIC_ATTACK_MS_MAX: f32 = 100.0;
-
-    pub const SUBHARMONIC_RELEASE_MS_DEFAULT: f32 = 50.0;
-    pub const SUBHARMONIC_RELEASE_MS_MIN: f32 = 10.0;
-    pub const SUBHARMONIC_RELEASE_MS_MAX: f32 = 500.0;
-
     // Decorrelation parameters
-    pub const DECORRELATION_MODE_DEFAULT: i32 = 0;
-    pub const DECORRELATION_MODE_MIN: i32 = 0;
-    pub const DECORRELATION_MODE_MAX: i32 = 1;
-
-    pub const DECORRELATION_LFO_RATE_HZ_DEFAULT: f32 = 0.15;
-    pub const DECORRELATION_LFO_RATE_HZ_MIN: f32 = 0.01;
-    pub const DECORRELATION_LFO_RATE_HZ_MAX: f32 = 1.0;
-
-    pub const VELVET_NOISE_DURATION_MS_DEFAULT: f32 = 30.0;
-    pub const VELVET_NOISE_DURATION_MS_MIN: f32 = 10.0;
-    pub const VELVET_NOISE_DURATION_MS_MAX: f32 = 100.0;
-
-    pub const VELVET_NOISE_DENSITY_DEFAULT: f32 = 2000.0;
-    pub const VELVET_NOISE_DENSITY_MIN: f32 = 500.0;
-    pub const VELVET_NOISE_DENSITY_MAX: f32 = 5000.0;
-
-    pub const SAFETY_CAP_DB_DEFAULT: f32 = 3.0;
-    pub const SAFETY_CAP_DB_MIN: f32 = 0.0;
-    pub const SAFETY_CAP_DB_MAX: f32 = 3.0;
-
     // Height channel parameters
-    pub const ENABLE_HR_DIRECT_DEFAULT: bool = true;
-
-    pub const HR_SHARPEN_DEFAULT: f32 = 1.0;
-    pub const HR_SHARPEN_MIN: f32 = 0.0;
-    pub const HR_SHARPEN_MAX: f32 = 1.0;
-
-    pub const HEIGHT_HF_CAP_HZ_DEFAULT: f32 = 16000.0;
-    pub const HEIGHT_HF_CAP_HZ_MIN: f32 = 8000.0;
-    pub const HEIGHT_HF_CAP_HZ_MAX: f32 = 20000.0;
-
-    pub const HEIGHT_TRANSIENT_REDUCTION_DEFAULT: f32 = 0.6;
-    pub const HEIGHT_TRANSIENT_REDUCTION_MIN: f32 = 0.0;
-    pub const HEIGHT_TRANSIENT_REDUCTION_MAX: f32 = 1.0;
-
-    pub const HEIGHT_DIRECT_LEAK_DEFAULT: f32 = 0.15;
-    pub const HEIGHT_DIRECT_LEAK_MIN: f32 = 0.0;
-    pub const HEIGHT_DIRECT_LEAK_MAX: f32 = 0.5;
-
     // Ambient gain boost (sqrt(1-coherence) multiplier)
-    pub const AMBIENT_BOOST_DEFAULT: f32 = 1.2;
-    pub const AMBIENT_BOOST_MIN: f32 = 0.5;
-    pub const AMBIENT_BOOST_MAX: f32 = 2.0;
-
     // Dialogue detection parameters
-    pub const DIALOGUE_WEIGHT_DEFAULT: f32 = 0.4;
-    pub const DIALOGUE_WEIGHT_MIN: f32 = 0.0;
-    pub const DIALOGUE_WEIGHT_MAX: f32 = 1.0;
-
-    pub const VOICE_FREQ_MIN_HZ_DEFAULT: f32 = 500.0;
-    pub const VOICE_FREQ_MIN_HZ_MIN: f32 = 200.0;
-    pub const VOICE_FREQ_MIN_HZ_MAX: f32 = 800.0;
-
-    pub const VOICE_FREQ_MAX_HZ_DEFAULT: f32 = 3000.0;
-    pub const VOICE_FREQ_MAX_HZ_MIN: f32 = 2000.0;
-    pub const VOICE_FREQ_MAX_HZ_MAX: f32 = 5000.0;
-
     // Dialogue detection sub-weights (centroid, variance, coherence)
-    pub const DIALOGUE_CENTROID_WEIGHT_DEFAULT: f32 = 0.3;
-    pub const DIALOGUE_CENTROID_WEIGHT_MIN: f32 = 0.0;
-    pub const DIALOGUE_CENTROID_WEIGHT_MAX: f32 = 1.0;
-
-    pub const DIALOGUE_VARIANCE_WEIGHT_DEFAULT: f32 = 0.2;
-    pub const DIALOGUE_VARIANCE_WEIGHT_MIN: f32 = 0.0;
-    pub const DIALOGUE_VARIANCE_WEIGHT_MAX: f32 = 1.0;
-
-    pub const DIALOGUE_COHERENCE_WEIGHT_DEFAULT: f32 = 0.5;
-    pub const DIALOGUE_COHERENCE_WEIGHT_MIN: f32 = 0.0;
-    pub const DIALOGUE_COHERENCE_WEIGHT_MAX: f32 = 1.0;
-
     // ML vocal detection
-    pub const ENABLE_ML_DETECTION_DEFAULT: bool = false;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::choice("Speaker Config", "speaker_config", 2, &["2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"], "Output").structural(),
+        // Gains
+        ParamSpec::float("Front Direct", "gain_front_direct", 1.0, 0.0, 2.0, 0.05, "x", "Gains"),
+        ParamSpec::float("Front Ambient", "gain_front_ambient", 0.5, 0.0, 2.0, 0.05, "x", "Gains"),
+        ParamSpec::float("Rear Ambient", "gain_rear_ambient", 1.0, 0.0, 2.0, 0.05, "x", "Gains"),
+        ParamSpec::float("Height Gain", "height_gain", 1.0, 0.0, 2.0, 0.05, "x", "Gains"),
+        // LFE
+        ParamSpec::float("LFE Gain", "lfe_gain", 1.0, 0.0, 2.0, 0.05, "x", "LFE"),
+        ParamSpec::float("LFE Cutoff", "lfe_cutoff_hz", 120.0, 20.0, 180.0, 5.0, "Hz", "LFE"),
+        ParamSpec::bool_param("Subharmonic Synth", "enable_subharmonic_synth", false, "LFE"),
+        ParamSpec::float("Sub Gain", "subharmonic_gain", 0.5, 0.0, 1.0, 0.05, "x", "LFE"),
+        ParamSpec::float("Sub Freq", "subharmonic_freq_hz", 40.0, 20.0, 80.0, 1.0, "Hz", "LFE"),
+        ParamSpec::float("Sub Attack", "subharmonic_attack_ms", 10.0, 1.0, 100.0, 1.0, "ms", "LFE"),
+        ParamSpec::float("Sub Release", "subharmonic_release_ms", 50.0, 10.0, 500.0, 5.0, "ms", "LFE"),
+        // Spatial
+        ParamSpec::float("Stereo Width", "stereo_width", 0.5, 0.0, 1.0, 0.05, "", "Spatial"),
+        ParamSpec::float("Center Spread", "center_spread", 0.0, 0.0, 1.0, 0.05, "", "Spatial"),
+        ParamSpec::float("Upmix Crossover", "bandpass_hz", 250.0, 150.0, 350.0, 5.0, "Hz", "Spatial"),
+        // Enhancement
+        ParamSpec::bool_param("HR Direct", "enable_hr_direct", true, "Enhancement"),
+        ParamSpec::float("HR Sharpen", "hr_sharpen", 1.0, 0.0, 1.0, 0.05, "", "Enhancement"),
+        ParamSpec::float("Ambient Boost", "ambient_boost", 1.2, 0.5, 2.0, 0.05, "x", "Enhancement"),
+        ParamSpec::choice("Decor Mode", "decorrelation_mode", 0, &["Velvet Noise", "LFO Phase"], "Enhancement"),
+        ParamSpec::float("Decor LFO Rate", "decorrelation_lfo_rate_hz", 0.15, 0.01, 1.0, 0.01, "Hz", "Enhancement"),
+        ParamSpec::float("Velvet Duration", "velvet_noise_duration_ms", 30.0, 10.0, 100.0, 1.0, "ms", "Enhancement"),
+        ParamSpec::float("Velvet Density", "velvet_noise_density", 2000.0, 500.0, 5000.0, 100.0, "", "Enhancement"),
+        // Height
+        ParamSpec::float("Height HF Cap", "height_hf_cap_hz", 16000.0, 8000.0, 20000.0, 100.0, "Hz", "Height"),
+        ParamSpec::float("Height Trans Red", "height_transient_reduction", 0.6, 0.0, 1.0, 0.05, "", "Height"),
+        ParamSpec::float("Height Direct Leak", "height_direct_leak", 0.15, 0.0, 0.5, 0.01, "", "Height"),
+        // Surround
+        ParamSpec::float("Surround Bleed", "surround_direct_bleed", 0.5, 0.0, 1.0, 0.05, "", "Surround"),
+        ParamSpec::float("Rear Amb Boost", "rear_ambient_boost", 1.5, 1.0, 3.0, 0.05, "x", "Surround"),
+        ParamSpec::float("Rear Late Refl", "rear_late_reflection", 0.1, 0.0, 0.5, 0.01, "", "Surround"),
+        // Dialogue
+        ParamSpec::float("Dialogue Weight", "dialogue_weight", 0.4, 0.0, 1.0, 0.05, "", "Dialogue"),
+        ParamSpec::float("Voice Freq Min", "voice_freq_min_hz", 500.0, 200.0, 800.0, 10.0, "Hz", "Dialogue"),
+        ParamSpec::float("Voice Freq Max", "voice_freq_max_hz", 3000.0, 2000.0, 5000.0, 50.0, "Hz", "Dialogue"),
+        ParamSpec::float("Diag Centroid W", "dialogue_centroid_weight", 0.3, 0.0, 1.0, 0.05, "", "Dialogue"),
+        ParamSpec::float("Diag Variance W", "dialogue_variance_weight", 0.2, 0.0, 1.0, 0.05, "", "Dialogue"),
+        ParamSpec::float("Diag Coherence W", "dialogue_coherence_weight", 0.5, 0.0, 1.0, 0.05, "", "Dialogue"),
+        // Output
+        ParamSpec::float("Safety Cap", "safety_cap_db", 3.0, 0.0, 3.0, 0.1, "dB", "Output"),
+        // Diagnostics
+        ParamSpec::bool_param("Bypass Decor", "bypass_decorrelation", false, "Diagnostics"),
+        ParamSpec::bool_param("Bypass Transients", "bypass_transient_detection", false, "Diagnostics"),
+        ParamSpec::bool_param("Bypass All", "bypass_all_processing", false, "Diagnostics"),
+        ParamSpec::bool_param("ML Detection", "enable_ml_detection", false, "Diagnostics"),
+    ];
 }
 
 // ============================================================================
@@ -375,13 +666,12 @@ pub mod upmixer {
 // ============================================================================
 
 pub mod convolution {
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
-
-    pub const GAIN_DB_DEFAULT: f32 = 0.0;
-    pub const GAIN_DB_MIN: f32 = -20.0;
-    pub const GAIN_DB_MAX: f32 = 20.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::file_path("IR File", "ir_file", "General"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General"),
+        ParamSpec::float("Gain", "gain_db", 0.0, -20.0, 20.0, 0.5, "dB", "General"),
+    ];
 }
 
 // ============================================================================
@@ -389,7 +679,10 @@ pub mod convolution {
 // ============================================================================
 
 pub mod channel_mute_solo {
-    pub const ENABLED_DEFAULT: bool = true;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::bool_param("Enabled", "enabled", true, "General"),
+    ];
 }
 
 // ============================================================================
@@ -397,9 +690,11 @@ pub mod channel_mute_solo {
 // ============================================================================
 
 pub mod hal {
-    pub const CHANNELS_DEFAULT: i32 = 2;
-    pub const CHANNELS_MIN: i32 = 1;
-    pub const CHANNELS_MAX: i32 = 16;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Input Channels", "input_channels", 2, 1, 16, 1, "ch", "General").structural(),
+        ParamSpec::int("Output Channels", "output_channels", 2, 1, 16, 1, "ch", "General").structural(),
+    ];
 }
 
 // ============================================================================
@@ -407,17 +702,14 @@ pub mod hal {
 // ============================================================================
 
 pub mod binaural {
-    pub const ENABLE_OPTIMIZATION_DEFAULT: bool = true;
-
-    pub const EXTERNALIZATION_DEFAULT: f32 = 0.0;
-    pub const EXTERNALIZATION_MIN: f32 = 0.0;
-    pub const EXTERNALIZATION_MAX: f32 = 1.0;
-
-    pub const NEAR_FIELD_STRENGTH_DEFAULT: f32 = 0.0;
-    pub const NEAR_FIELD_STRENGTH_MIN: f32 = 0.0;
-    pub const NEAR_FIELD_STRENGTH_MAX: f32 = 1.0;
-
-    pub const DIFFUSE_FIELD_EQ_DEFAULT: bool = true;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::file_path("SOFA File", "sofa_file", "General"),
+        ParamSpec::int("Input Channels", "input_channels", 2, 2, 16, 1, "ch", "General").structural(),
+        ParamSpec::bool_param("Optimization", "enable_optimization", true, "General").structural(),
+        ParamSpec::float("Externalization", "externalization", 0.0, 0.0, 1.0, 0.05, "", "General"),
+        ParamSpec::float("Near-field", "near_field_strength", 0.0, 0.0, 1.0, 0.05, "", "General").structural(),
+    ];
 }
 
 // ============================================================================
@@ -425,18 +717,15 @@ pub mod binaural {
 // ============================================================================
 
 pub mod spectrum {
-    pub const NUM_BINS_DEFAULT: usize = 30;
-    pub const NUM_BINS_MIN: usize = 8;
-    pub const NUM_BINS_MAX: usize = 120;
-    pub const MIN_FREQ_DEFAULT: f32 = 20.0;
-    pub const MIN_FREQ_MIN: f32 = 10.0;
-    pub const MIN_FREQ_MAX: f32 = 100.0;
-    pub const MAX_FREQ_DEFAULT: f32 = 20000.0;
-    pub const MAX_FREQ_MIN: f32 = 5000.0;
-    pub const MAX_FREQ_MAX: f32 = 22050.0;
-    pub const SMOOTHING_DEFAULT: f32 = 0.7;
-    pub const SMOOTHING_MIN: f32 = 0.0;
-    pub const SMOOTHING_MAX: f32 = 1.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Num Bins", "num_bins", 30, 8, 120, 1, "", "General").structural(),
+        ParamSpec::float("Min Freq", "min_freq", 20.0, 10.0, 100.0, 1.0, "Hz", "General"),
+        ParamSpec::float("Max Freq", "max_freq", 20000.0, 5000.0, 22050.0, 100.0, "Hz", "General"),
+        ParamSpec::float("Smoothing", "smoothing", 0.7, 0.0, 1.0, 0.01, "", "General"),
+        ParamSpec::choice("Tilt Correction", "tilt_correction", 0, &["None", "3dB/oct", "6dB/oct", "Pink"], "General"),
+        ParamSpec::choice("Tilt Reference", "tilt_reference", 0, &["Standard", "1kHz", "2kHz", "Min Freq"], "General"),
+    ];
 }
 
 // ============================================================================
@@ -445,17 +734,18 @@ pub mod spectrum {
 
 pub mod eq {
     // EQ filters are dynamic, but we can define common ranges for filter parameters
-    pub const FREQUENCY_MIN: f64 = 20.0;
-    pub const FREQUENCY_MAX: f64 = 20000.0;
-    pub const FREQUENCY_DEFAULT: f64 = 1000.0;
-
-    pub const Q_MIN: f64 = 0.1;
-    pub const Q_MAX: f64 = 10.0;
-    pub const Q_DEFAULT: f64 = 1.0;
-
-    pub const GAIN_DB_MIN: f64 = -24.0;
-    pub const GAIN_DB_MAX: f64 = 24.0;
-    pub const GAIN_DB_DEFAULT: f64 = 0.0;
+    use super::ParamSpec;
+    /// Global params before the per-filter params.
+    pub const GLOBAL_PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Max Filters", "max_filters", 20, 1, 20, 1, "", "Global").structural(),
+    ];
+    /// Template for each filter band (repeated per filter).
+    pub const BAND_TEMPLATE: &[ParamSpec] = &[
+        ParamSpec::float("Frequency", "frequency", 1000.0, 20.0, 20000.0, 10.0, "Hz", "Filter"),
+        ParamSpec::float("Q", "q", 1.0, 0.1, 10.0, 0.05, "", "Filter"),
+        ParamSpec::float("Gain", "gain_db", 0.0, -24.0, 24.0, 0.5, "dB", "Filter"),
+        ParamSpec::choice("Type", "filter_type", 0, &["Peak", "Lowshelf", "Highshelf", "Lowpass", "Highpass", "Bandpass", "Notch"], "Filter"),
+    ];
 }
 
 // ============================================================================
@@ -464,66 +754,38 @@ pub mod eq {
 
 pub mod multiband_compressor {
     // Number of bands
-    pub const NUM_BANDS_DEFAULT: usize = 3;
-    pub const NUM_BANDS_MIN: usize = 2;
-    pub const NUM_BANDS_MAX: usize = 5;
-
     // Crossover preset: 0=Custom, 1=200/2k, 2=100/3k, 3=250/4k
-    pub const CROSSOVER_PRESET_DEFAULT: i32 = 1;
-    pub const CROSSOVER_PRESET_MIN: i32 = 0;
-    pub const CROSSOVER_PRESET_MAX: i32 = 3;
-
     // Crossover frequencies (Hz)
-    pub const CROSSOVER_FREQ_1_DEFAULT: f32 = 200.0;
-    pub const CROSSOVER_FREQ_1_MIN: f32 = 20.0;
-    pub const CROSSOVER_FREQ_1_MAX: f32 = 500.0;
-
-    pub const CROSSOVER_FREQ_2_DEFAULT: f32 = 2000.0;
-    pub const CROSSOVER_FREQ_2_MIN: f32 = 500.0;
-    pub const CROSSOVER_FREQ_2_MAX: f32 = 5000.0;
-
-    pub const CROSSOVER_FREQ_3_DEFAULT: f32 = 8000.0;
-    pub const CROSSOVER_FREQ_3_MIN: f32 = 5000.0;
-    pub const CROSSOVER_FREQ_3_MAX: f32 = 15000.0;
-
-    pub const CROSSOVER_FREQ_4_DEFAULT: f32 = 12000.0;
-    pub const CROSSOVER_FREQ_4_MIN: f32 = 10000.0;
-    pub const CROSSOVER_FREQ_4_MAX: f32 = 18000.0;
-
     // Global compression parameters (same as compressor)
-    pub const THRESHOLD_DEFAULT: f32 = -20.0;
-    pub const THRESHOLD_MIN: f32 = -60.0;
-    pub const THRESHOLD_MAX: f32 = 0.0;
-
-    pub const RATIO_DEFAULT: f32 = 4.0;
-    pub const RATIO_MIN: f32 = 1.0;
-    pub const RATIO_MAX: f32 = 20.0;
-
-    pub const ATTACK_DEFAULT: f32 = 5.0;
-    pub const ATTACK_MIN: f32 = 0.1;
-    pub const ATTACK_MAX: f32 = 100.0;
-
-    pub const RELEASE_DEFAULT: f32 = 50.0;
-    pub const RELEASE_MIN: f32 = 10.0;
-    pub const RELEASE_MAX: f32 = 1000.0;
-
-    pub const KNEE_DEFAULT: f32 = 6.0;
-    pub const KNEE_MIN: f32 = 0.0;
-    pub const KNEE_MAX: f32 = 20.0;
-
-    pub const MAKEUP_GAIN_DEFAULT: f32 = 0.0;
-    pub const MAKEUP_GAIN_MIN: f32 = -24.0;
-    pub const MAKEUP_GAIN_MAX: f32 = 24.0;
-
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
-
-    pub const LINK_CHANNELS_DEFAULT: bool = true;
-
     // Per-band flags
-    pub const BAND_SOLO_DEFAULT: bool = false;
-    pub const BAND_BYPASS_DEFAULT: bool = false;
+    use super::ParamSpec;
+    /// Global params for multiband compressor.
+    pub const GLOBAL_PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global").structural(),
+        ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global").structural(),
+        ParamSpec::float("Crossover 1", "crossover_freq_1", 200.0, 20.0, 500.0, 10.0, "Hz", "Global").structural(),
+        ParamSpec::float("Crossover 2", "crossover_freq_2", 2000.0, 500.0, 5000.0, 50.0, "Hz", "Global").structural(),
+        ParamSpec::float("Crossover 3", "crossover_freq_3", 8000.0, 5000.0, 15000.0, 100.0, "Hz", "Global").structural(),
+        ParamSpec::float("Crossover 4", "crossover_freq_4", 12000.0, 10000.0, 18000.0, 100.0, "Hz", "Global").structural(),
+        ParamSpec::float("Threshold", "threshold", -20.0, -60.0, 0.0, 1.0, "dB", "Global"),
+        ParamSpec::float("Ratio", "ratio", 4.0, 1.0, 20.0, 0.1, ":1", "Global"),
+        ParamSpec::float("Attack", "attack", 5.0, 0.1, 100.0, 0.5, "ms", "Global"),
+        ParamSpec::float("Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Global"),
+        ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Global"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Global").scaled(100.0),
+        ParamSpec::bool_labeled("Link Channels", "link_channels", true, "Linked", "Unlinked", "Global"),
+    ];
+    /// Template for each compressor band (repeated per band).
+    pub const BAND_TEMPLATE: &[ParamSpec] = &[
+        ParamSpec::bool_param("Solo", "solo", false, "Band"),
+        ParamSpec::bool_param("Bypass", "bypass", false, "Band"),
+        ParamSpec::float("Threshold", "threshold", -20.0, -60.0, 0.0, 1.0, "dB", "Band"),
+        ParamSpec::float("Ratio", "ratio", 4.0, 1.0, 20.0, 0.1, ":1", "Band"),
+        ParamSpec::float("Attack", "attack", 5.0, 0.1, 100.0, 0.5, "ms", "Band"),
+        ParamSpec::float("Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Band"),
+        ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Band"),
+        ParamSpec::float("Makeup Gain", "makeup_gain", 0.0, -24.0, 24.0, 0.5, "dB", "Band"),
+    ];
 }
 
 // ============================================================================
@@ -531,17 +793,12 @@ pub mod multiband_compressor {
 // ============================================================================
 
 pub mod pnd {
-    pub const CORRECTION_STRENGTH_DEFAULT: f32 = 1.0;
-    pub const CORRECTION_STRENGTH_MIN: f32 = 0.0;
-    pub const CORRECTION_STRENGTH_MAX: f32 = 2.0; // Allow over-correction for effect
-
-    pub const ANALYSIS_WINDOW_MS_DEFAULT: f32 = 100.0;
-    pub const ANALYSIS_WINDOW_MS_MIN: f32 = 20.0;
-    pub const ANALYSIS_WINDOW_MS_MAX: f32 = 500.0;
-
-    pub const DRIFT_SMOOTHING_DEFAULT: f32 = 0.1; // Smoothing factor
-    pub const DRIFT_SMOOTHING_MIN: f32 = 0.001;
-    pub const DRIFT_SMOOTHING_MAX: f32 = 1.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Correction", "correction_strength", 1.0, 0.0, 2.0, 0.05, "", "General").scaled(100.0),
+        ParamSpec::float("Analysis Window", "analysis_window_ms", 100.0, 20.0, 500.0, 5.0, "ms", "General"),
+        ParamSpec::float("Drift Smoothing", "drift_smoothing", 0.1, 0.001, 1.0, 0.001, "", "General").scaled(1000.0),
+    ];
 }
 
 // ============================================================================
@@ -549,57 +806,35 @@ pub mod pnd {
 // ============================================================================
 
 pub mod denoiser {
-    pub const REDUCTION_DB_DEFAULT: f32 = 10.0;
-    pub const REDUCTION_DB_MIN: f32 = 0.0;
-    pub const REDUCTION_DB_MAX: f32 = 40.0;
-
-    pub const FLOOR_DB_DEFAULT: f32 = -20.0;
-    pub const FLOOR_DB_MIN: f32 = -60.0;
-    pub const FLOOR_DB_MAX: f32 = -10.0;
-
-    pub const SMOOTHING_DEFAULT: f32 = 0.3;
-    pub const SMOOTHING_MIN: f32 = 0.0;
-    pub const SMOOTHING_MAX: f32 = 0.99;
-
-    pub const ATTACK_MS_DEFAULT: f32 = 5.0;
-    pub const ATTACK_MS_MIN: f32 = 0.1;
-    pub const ATTACK_MS_MAX: f32 = 100.0;
-
-    pub const RELEASE_MS_DEFAULT: f32 = 50.0;
-    pub const RELEASE_MS_MIN: f32 = 10.0;
-    pub const RELEASE_MS_MAX: f32 = 500.0;
-
-    pub const LOW_LATENCY_DEFAULT: bool = false;
-
     // MCRA-specific parameters (advanced/expert use)
-    pub const MCRA_ALPHA_S_DEFAULT: f32 = 0.9; // Noise PSD smoothing
-    pub const MCRA_ALPHA_P_DEFAULT: f32 = 0.7; // Speech presence probability smoothing
-    pub const MCRA_L_DEFAULT: usize = 50; // Minimum tracking window (frames)
-    pub const MCRA_DELTA_DEFAULT: f32 = 5.0; // Speech presence threshold
-
-    pub const POLYPHONIC_DETECTION_DEFAULT: bool = false;
-
     // Psychoacoustic masking
-    pub const PSYCHOACOUSTIC_MASKING_DEFAULT: bool = true;
-
     // Noise profile capture
-    pub const USE_CAPTURED_PROFILE_DEFAULT: bool = false;
     pub const LEARN_FRAMES: usize = 50; // ~1s at typical hop rates
 
-    pub const CRACK_SENSITIVITY_DEFAULT: f32 = 10.0;
-    pub const CRACK_SENSITIVITY_MIN: f32 = 0.0;
-    pub const CRACK_SENSITIVITY_MAX: f32 = 50.0;
-
     // Transparency: blend computed gain toward 1.0 (0 = full denoising, 1 = pass-through)
-    pub const TRANSPARENCY_DEFAULT: f32 = 0.0;
-    pub const TRANSPARENCY_MIN: f32 = 0.0;
-    pub const TRANSPARENCY_MAX: f32 = 1.0;
-
     // Decision-Directed SNR estimation
-    pub const DD_ENABLED_DEFAULT: bool = true;
-    pub const DD_ALPHA_DEFAULT: f32 = 0.98;
-    pub const DD_ALPHA_MIN: f32 = 0.5;
-    pub const DD_ALPHA_MAX: f32 = 0.999;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Reduction", "reduction_db", 10.0, 0.0, 40.0, 0.5, "dB", "General"),
+        ParamSpec::float("Floor", "floor_db", -20.0, -60.0, -10.0, 0.5, "dB", "General"),
+        ParamSpec::float("Smoothing", "smoothing", 0.3, 0.0, 0.99, 0.01, "", "General").scaled(100.0),
+        ParamSpec::float("Attack", "attack_ms", 5.0, 0.1, 100.0, 0.5, "ms", "Timing"),
+        ParamSpec::float("Release", "release_ms", 50.0, 10.0, 500.0, 5.0, "ms", "Timing"),
+        ParamSpec::bool_param("Low Latency", "low_latency", false, "General").structural(),
+        ParamSpec::bool_param("Polyphonic", "polyphonic_detection", false, "Analysis"),
+        ParamSpec::float("Crack Sens.", "crack_sensitivity", 10.0, 1.0, 100.0, 1.0, "", "Analysis"),
+        ParamSpec::float("MCRA Alpha S", "mcra_alpha_s", 0.9, 0.5, 0.99, 0.01, "", "Advanced"),
+        ParamSpec::float("MCRA Alpha P", "mcra_alpha_p", 0.7, 0.1, 0.99, 0.01, "", "Advanced"),
+        ParamSpec::int("MCRA Window", "mcra_l", 50, 10, 200, 1, "fr", "Advanced"),
+        ParamSpec::float("MCRA Delta", "mcra_delta", 5.0, 1.0, 20.0, 0.5, "", "Advanced"),
+        ParamSpec::float("Transparency", "transparency", 0.0, 0.0, 1.0, 0.01, "", "Analysis").scaled(100.0),
+        ParamSpec::bool_param("DD SNR", "dd_enabled", true, "Analysis"),
+        ParamSpec::float("DD Alpha", "dd_alpha", 0.98, 0.5, 0.999, 0.001, "", "Analysis"),
+        ParamSpec::bool_param("Psychoacoustic", "psychoacoustic_masking", true, "Analysis"),
+        ParamSpec::bool_labeled("Learn Noise", "learn_noise", false, "Active", "Off", "Noise Profile").structural(),
+        ParamSpec::bool_param("Use Profile", "use_captured_profile", false, "Noise Profile"),
+        ParamSpec::bool_labeled("Clear Profile", "clear_profile", false, "Trigger", "Off", "Noise Profile").structural(),
+    ];
 }
 
 // ============================================================================
@@ -612,145 +847,91 @@ pub mod denoiser {
 
 pub mod fletcher_munson {
     // Playback volume (set by engine/UI when master volume changes)
-    pub const PLAYBACK_VOLUME_DB_DEFAULT: f32 = 0.0;
-    pub const PLAYBACK_VOLUME_DB_MIN: f32 = -80.0;
-    pub const PLAYBACK_VOLUME_DB_MAX: f32 = 0.0;
-
     // Reference level where response is flat (corresponds to ~80 dB SPL)
-    pub const REFERENCE_LEVEL_DB_DEFAULT: f32 = -14.0;
-    pub const REFERENCE_LEVEL_DB_MIN: f32 = -40.0;
-    pub const REFERENCE_LEVEL_DB_MAX: f32 = 0.0;
-
     // Smoothing time for gain transitions (ms)
-    pub const SMOOTHING_MS_DEFAULT: f32 = 30.0;
-    pub const SMOOTHING_MS_MIN: f32 = 1.0;
-    pub const SMOOTHING_MS_MAX: f32 = 200.0;
-
     // Band frequency ranges
-    pub const BAND_FREQ_MIN: f64 = 20.0;
-    pub const BAND_FREQ_MAX: f64 = 20000.0;
-
     // Band Q ranges
-    pub const BAND_Q_MIN: f64 = 0.1;
-    pub const BAND_Q_MAX: f64 = 10.0;
-
     // Band max gain ranges
-    pub const BAND_MAX_GAIN_MIN: f64 = 0.0;
-    pub const BAND_MAX_GAIN_MAX: f64 = 24.0;
-
     // Band slope ranges (dB gain per dB volume delta)
-    pub const BAND_SLOPE_MIN: f64 = 0.0;
-    pub const BAND_SLOPE_MAX: f64 = 1.0;
-
     // Band 1: Sub-bass (~60 Hz) - ISO 226 shows largest compensation needed here
-    pub const BAND1_FREQ_DEFAULT: f64 = 60.0;
-    pub const BAND1_Q_DEFAULT: f64 = 0.5;
-    pub const BAND1_MAX_GAIN_DEFAULT: f64 = 15.0;
-    pub const BAND1_SLOPE_DEFAULT: f64 = 0.6;
-
     // Band 2: Mid-bass (~250 Hz) - moderate compensation
-    pub const BAND2_FREQ_DEFAULT: f64 = 250.0;
-    pub const BAND2_Q_DEFAULT: f64 = 0.707;
-    pub const BAND2_MAX_GAIN_DEFAULT: f64 = 8.0;
-    pub const BAND2_SLOPE_DEFAULT: f64 = 0.4;
-
     // Band 3: Presence (~3.5 kHz) - small boost (ear most sensitive here)
-    pub const BAND3_FREQ_DEFAULT: f64 = 3500.0;
-    pub const BAND3_Q_DEFAULT: f64 = 1.0;
-    pub const BAND3_MAX_GAIN_DEFAULT: f64 = 4.0;
-    pub const BAND3_SLOPE_DEFAULT: f64 = 0.2;
-
     // Band 4: Air/brilliance (~12 kHz) - treble compensation
-    pub const BAND4_FREQ_DEFAULT: f64 = 12000.0;
-    pub const BAND4_Q_DEFAULT: f64 = 0.707;
-    pub const BAND4_MAX_GAIN_DEFAULT: f64 = 6.0;
-    pub const BAND4_SLOPE_DEFAULT: f64 = 0.3;
-
     // Enabled default
-    pub const ENABLED_DEFAULT: bool = true;
-
     // Auto-gain parameters
-    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = false;
-    pub const AUTO_GAIN_MAX_DB_DEFAULT: f32 = 12.0;
-    pub const AUTO_GAIN_MAX_DB_MIN: f32 = 0.0;
-    pub const AUTO_GAIN_MAX_DB_MAX: f32 = 24.0;
-    pub const AUTO_GAIN_SMOOTHING_MS_DEFAULT: f32 = 100.0;
-    pub const AUTO_GAIN_SMOOTHING_MS_MIN: f32 = 10.0;
-    pub const AUTO_GAIN_SMOOTHING_MS_MAX: f32 = 500.0;
     // 0 = Momentary (400ms), 1 = ShortTerm (3s)
-    pub const AUTO_GAIN_LOUDNESS_TYPE_DEFAULT: i32 = 0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Playback Volume", "playback_volume_db", 0.0, -80.0, 0.0, 0.5, "dB", "Global"),
+        ParamSpec::float("Reference", "reference_level_db", -14.0, -40.0, 0.0, 0.5, "dB", "Global"),
+        ParamSpec::bool_param("Enabled", "enabled", true, "Global"),
+        ParamSpec::float("Smoothing", "smoothing_ms", 30.0, 1.0, 200.0, 1.0, "ms", "Global"),
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain"),
+        ParamSpec::float("Max Correction", "auto_gain_max_db", 12.0, 0.0, 24.0, 1.0, "dB", "Auto Gain"),
+        ParamSpec::float("AG Smoothing", "auto_gain_smoothing_ms", 100.0, 10.0, 500.0, 5.0, "ms", "Auto Gain"),
+        ParamSpec::choice("AG Loudness Type", "auto_gain_loudness_type", 0, &["Momentary", "ShortTerm"], "Auto Gain"),
+        // Band 1
+        ParamSpec::float("Band 1 Freq", "band1_freq", 60.0, 20.0, 20000.0, 5.0, "Hz", "Band 1"),
+        ParamSpec::float("Band 1 Q", "band1_q", 0.5, 0.1, 10.0, 0.05, "", "Band 1"),
+        ParamSpec::float("Band 1 Max", "band1_max_gain", 15.0, 0.0, 24.0, 0.5, "dB", "Band 1"),
+        ParamSpec::float("Band 1 Slope", "band1_slope", 0.6, 0.0, 1.0, 0.01, "", "Band 1"),
+        // Band 2
+        ParamSpec::float("Band 2 Freq", "band2_freq", 250.0, 20.0, 20000.0, 10.0, "Hz", "Band 2"),
+        ParamSpec::float("Band 2 Q", "band2_q", 0.707, 0.1, 10.0, 0.05, "", "Band 2"),
+        ParamSpec::float("Band 2 Max", "band2_max_gain", 8.0, 0.0, 24.0, 0.5, "dB", "Band 2"),
+        ParamSpec::float("Band 2 Slope", "band2_slope", 0.4, 0.0, 1.0, 0.01, "", "Band 2"),
+        // Band 3
+        ParamSpec::float("Band 3 Freq", "band3_freq", 3500.0, 20.0, 20000.0, 50.0, "Hz", "Band 3"),
+        ParamSpec::float("Band 3 Q", "band3_q", 1.0, 0.1, 10.0, 0.05, "", "Band 3"),
+        ParamSpec::float("Band 3 Max", "band3_max_gain", 4.0, 0.0, 24.0, 0.5, "dB", "Band 3"),
+        ParamSpec::float("Band 3 Slope", "band3_slope", 0.2, 0.0, 1.0, 0.01, "", "Band 3"),
+        // Band 4
+        ParamSpec::float("Band 4 Freq", "band4_freq", 12000.0, 20.0, 20000.0, 100.0, "Hz", "Band 4"),
+        ParamSpec::float("Band 4 Q", "band4_q", 0.707, 0.1, 10.0, 0.05, "", "Band 4"),
+        ParamSpec::float("Band 4 Max", "band4_max_gain", 6.0, 0.0, 24.0, 0.5, "dB", "Band 4"),
+        ParamSpec::float("Band 4 Slope", "band4_slope", 0.3, 0.0, 1.0, 0.01, "", "Band 4"),
+    ];
 }
 
 pub mod multiband_expander {
     // Number of bands (same as multiband compressor)
-    pub const NUM_BANDS_DEFAULT: usize = 3;
-    pub const NUM_BANDS_MIN: usize = 2;
-    pub const NUM_BANDS_MAX: usize = 5;
-
     // Crossover preset: 0=Custom, 1=200/2k, 2=100/3k, 3=250/4k
-    pub const CROSSOVER_PRESET_DEFAULT: i32 = 1;
-    pub const CROSSOVER_PRESET_MIN: i32 = 0;
-    pub const CROSSOVER_PRESET_MAX: i32 = 3;
-
     // Crossover frequencies (Hz) - same as multiband compressor
-    pub const CROSSOVER_FREQ_1_DEFAULT: f32 = 200.0;
-    pub const CROSSOVER_FREQ_1_MIN: f32 = 20.0;
-    pub const CROSSOVER_FREQ_1_MAX: f32 = 500.0;
-
-    pub const CROSSOVER_FREQ_2_DEFAULT: f32 = 2000.0;
-    pub const CROSSOVER_FREQ_2_MIN: f32 = 500.0;
-    pub const CROSSOVER_FREQ_2_MAX: f32 = 5000.0;
-
-    pub const CROSSOVER_FREQ_3_DEFAULT: f32 = 8000.0;
-    pub const CROSSOVER_FREQ_3_MIN: f32 = 5000.0;
-    pub const CROSSOVER_FREQ_3_MAX: f32 = 15000.0;
-
-    pub const CROSSOVER_FREQ_4_DEFAULT: f32 = 12000.0;
-    pub const CROSSOVER_FREQ_4_MIN: f32 = 10000.0;
-    pub const CROSSOVER_FREQ_4_MAX: f32 = 18000.0;
-
     // Global expansion parameters (same as expander)
-    pub const THRESHOLD_DEFAULT: f32 = -40.0;
-    pub const THRESHOLD_MIN: f32 = -80.0;
-    pub const THRESHOLD_MAX: f32 = 0.0;
-
-    pub const RATIO_DEFAULT: f32 = 2.0;
-    pub const RATIO_MIN: f32 = 1.0;
-    pub const RATIO_MAX: f32 = 20.0;
-
-    pub const ATTACK_DEFAULT: f32 = 1.0;
-    pub const ATTACK_MIN: f32 = 0.1;
-    pub const ATTACK_MAX: f32 = 50.0;
-
-    pub const RELEASE_DEFAULT: f32 = 100.0;
-    pub const RELEASE_MIN: f32 = 10.0;
-    pub const RELEASE_MAX: f32 = 2000.0;
-
-    pub const RANGE_DEFAULT: f32 = 40.0;
-    pub const RANGE_MIN: f32 = 0.0;
-    pub const RANGE_MAX: f32 = 80.0;
-
-    pub const KNEE_DEFAULT: f32 = 6.0;
-    pub const KNEE_MIN: f32 = 0.0;
-    pub const KNEE_MAX: f32 = 20.0;
-
-    pub const HYSTERESIS_DEFAULT: f32 = 4.0;
-    pub const HYSTERESIS_MIN: f32 = 0.0;
-    pub const HYSTERESIS_MAX: f32 = 12.0;
-
-    pub const HOLD_DEFAULT: f32 = 10.0;
-    pub const HOLD_MIN: f32 = 0.0;
-    pub const HOLD_MAX: f32 = 500.0;
-
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
-
-    pub const LINK_CHANNELS_DEFAULT: bool = true;
-
     // Per-band flags
-    pub const BAND_SOLO_DEFAULT: bool = false;
-    pub const BAND_BYPASS_DEFAULT: bool = false;
+    use super::ParamSpec;
+    /// Global params for multiband expander.
+    pub const GLOBAL_PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global").structural(),
+        ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global").structural(),
+        ParamSpec::float("Crossover 1", "crossover_freq_1", 200.0, 20.0, 500.0, 10.0, "Hz", "Global").structural(),
+        ParamSpec::float("Crossover 2", "crossover_freq_2", 2000.0, 500.0, 5000.0, 50.0, "Hz", "Global").structural(),
+        ParamSpec::float("Crossover 3", "crossover_freq_3", 8000.0, 5000.0, 15000.0, 100.0, "Hz", "Global").structural(),
+        ParamSpec::float("Crossover 4", "crossover_freq_4", 12000.0, 10000.0, 18000.0, 100.0, "Hz", "Global").structural(),
+        ParamSpec::float("Threshold", "threshold", -40.0, -80.0, 0.0, 1.0, "dB", "Global"),
+        ParamSpec::float("Ratio", "ratio", 2.0, 1.0, 20.0, 0.1, ":1", "Global"),
+        ParamSpec::float("Attack", "attack", 1.0, 0.1, 50.0, 0.1, "ms", "Global"),
+        ParamSpec::float("Release", "release", 100.0, 10.0, 2000.0, 5.0, "ms", "Global"),
+        ParamSpec::float("Range", "range", 40.0, 0.0, 80.0, 1.0, "dB", "Global"),
+        ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Global"),
+        ParamSpec::float("Hysteresis", "hysteresis", 4.0, 0.0, 12.0, 0.1, "dB", "Global"),
+        ParamSpec::float("Hold", "hold", 10.0, 0.0, 500.0, 1.0, "ms", "Global"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Global").scaled(100.0),
+        ParamSpec::bool_labeled("Link Channels", "link_channels", true, "Linked", "Unlinked", "Global"),
+    ];
+    /// Template for each expander band (repeated per band).
+    pub const BAND_TEMPLATE: &[ParamSpec] = &[
+        ParamSpec::bool_param("Solo", "solo", false, "Band"),
+        ParamSpec::bool_param("Bypass", "bypass", false, "Band"),
+        ParamSpec::float("Threshold", "threshold", -40.0, -80.0, 0.0, 1.0, "dB", "Band"),
+        ParamSpec::float("Ratio", "ratio", 2.0, 1.0, 20.0, 0.1, ":1", "Band"),
+        ParamSpec::float("Attack", "attack", 1.0, 0.1, 50.0, 0.1, "ms", "Band"),
+        ParamSpec::float("Release", "release", 100.0, 10.0, 2000.0, 5.0, "ms", "Band"),
+        ParamSpec::float("Range", "range", 40.0, 0.0, 80.0, 1.0, "dB", "Band"),
+        ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Band"),
+        ParamSpec::float("Hysteresis", "hysteresis", 4.0, 0.0, 12.0, 0.1, "dB", "Band"),
+        ParamSpec::float("Hold", "hold", 10.0, 0.0, 500.0, 1.0, "ms", "Band"),
+    ];
 }
 
 // ============================================================================
@@ -762,27 +943,15 @@ pub mod multiband_expander {
 // ============================================================================
 
 pub mod mono_to_stereo {
-    pub const STEREO_WIDTH_DEFAULT: f32 = 0.5;
-    pub const STEREO_WIDTH_MIN: f32 = 0.0;
-    pub const STEREO_WIDTH_MAX: f32 = 1.0;
-
-    pub const HAAS_DELAY_MS_DEFAULT: f32 = 1.5;
-    pub const HAAS_DELAY_MS_MIN: f32 = 0.0;
-    pub const HAAS_DELAY_MS_MAX: f32 = 5.0;
-
-    pub const ENABLE_COMP_EQ_DEFAULT: bool = true;
-
-    pub const COMP_EQ_DEPTH_DB_DEFAULT: f32 = 1.0;
-    pub const COMP_EQ_DEPTH_DB_MIN: f32 = 0.0;
-    pub const COMP_EQ_DEPTH_DB_MAX: f32 = 3.0;
-
-    pub const DECOR_LOW_HZ_DEFAULT: f32 = 300.0;
-    pub const DECOR_LOW_HZ_MIN: f32 = 100.0;
-    pub const DECOR_LOW_HZ_MAX: f32 = 500.0;
-
-    pub const DECOR_HIGH_HZ_DEFAULT: f32 = 2000.0;
-    pub const DECOR_HIGH_HZ_MIN: f32 = 1000.0;
-    pub const DECOR_HIGH_HZ_MAX: f32 = 5000.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Width", "stereo_width", 0.5, 0.0, 1.0, 0.05, "", "General"),
+        ParamSpec::float("Haas Delay", "haas_delay_ms", 1.5, 0.0, 5.0, 0.1, "ms", "General"),
+        ParamSpec::bool_param("Comp EQ", "enable_comp_eq", true, "EQ"),
+        ParamSpec::float("Comp EQ Depth", "comp_eq_depth_db", 1.0, 0.0, 3.0, 0.1, "dB", "EQ"),
+        ParamSpec::float("Decor Low", "decor_low_hz", 300.0, 100.0, 500.0, 10.0, "Hz", "General"),
+        ParamSpec::float("Decor High", "decor_high_hz", 2000.0, 1000.0, 5000.0, 10.0, "Hz", "General"),
+    ];
 }
 
 // ============================================================================
@@ -790,31 +959,16 @@ pub mod mono_to_stereo {
 // ============================================================================
 
 pub mod downmix {
-    pub const CENTER_GAIN_DB_DEFAULT: f32 = -3.0;
-    pub const CENTER_GAIN_DB_MIN: f32 = -12.0;
-    pub const CENTER_GAIN_DB_MAX: f32 = 0.0;
-
-    pub const SURROUND_GAIN_DB_DEFAULT: f32 = -3.0;
-    pub const SURROUND_GAIN_DB_MIN: f32 = -12.0;
-    pub const SURROUND_GAIN_DB_MAX: f32 = 0.0;
-
-    pub const HEIGHT_GAIN_DB_DEFAULT: f32 = -6.0;
-    pub const HEIGHT_GAIN_DB_MIN: f32 = -60.0;
-    pub const HEIGHT_GAIN_DB_MAX: f32 = 0.0;
-
-    pub const LFE_GAIN_DB_DEFAULT: f32 = -10.0;
-    pub const LFE_GAIN_DB_MIN: f32 = -60.0;
-    pub const LFE_GAIN_DB_MAX: f32 = 0.0;
-
-    pub const PHASE_COHERENCE_DEFAULT: bool = true;
-
-    pub const PHASE_BLEND_LOW_HZ_DEFAULT: f32 = 500.0;
-    pub const PHASE_BLEND_LOW_HZ_MIN: f32 = 100.0;
-    pub const PHASE_BLEND_LOW_HZ_MAX: f32 = 1000.0;
-
-    pub const PHASE_BLEND_HIGH_HZ_DEFAULT: f32 = 2000.0;
-    pub const PHASE_BLEND_HIGH_HZ_MIN: f32 = 1000.0;
-    pub const PHASE_BLEND_HIGH_HZ_MAX: f32 = 5000.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Center Gain", "center_gain_db", -3.0, -12.0, 0.0, 0.5, "dB", "Gains"),
+        ParamSpec::float("Surround Gain", "surround_gain_db", -3.0, -12.0, 0.0, 0.5, "dB", "Gains"),
+        ParamSpec::float("Height Gain", "height_gain_db", -6.0, -60.0, 0.0, 0.5, "dB", "Gains"),
+        ParamSpec::float("LFE Gain", "lfe_gain_db", -10.0, -60.0, 0.0, 0.5, "dB", "Gains"),
+        ParamSpec::bool_param("Phase Coherence", "phase_coherence", true, "Phase"),
+        ParamSpec::float("Phase Blend Low", "phase_blend_low_hz", 500.0, 100.0, 1000.0, 10.0, "Hz", "Phase"),
+        ParamSpec::float("Phase Blend High", "phase_blend_high_hz", 2000.0, 1000.0, 5000.0, 10.0, "Hz", "Phase"),
+    ];
 }
 
 // ============================================================================
@@ -823,12 +977,12 @@ pub mod downmix {
 
 pub mod band_split {
     /// Crossover frequency in Hz
-    pub const FREQUENCY_DEFAULT: f64 = 300.0;
-    pub const FREQUENCY_MIN: f64 = 20.0;
-    pub const FREQUENCY_MAX: f64 = 20000.0;
-
     /// Crossover type: "LR24" (24 dB/oct) or "LR48" (48 dB/oct)
-    pub const CROSSOVER_TYPE_DEFAULT: &str = "LR24";
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Frequency", "frequency", 300.0, 20.0, 20000.0, 10.0, "Hz", "General").structural(),
+        ParamSpec::choice("Type", "type", 0, &["LR24", "LR48"], "General").structural(),
+    ];
 }
 
 // ============================================================================
@@ -837,9 +991,10 @@ pub mod band_split {
 
 pub mod band_merge {
     /// Number of bands to merge
-    pub const BANDS_DEFAULT: usize = 2;
-    pub const BANDS_MIN: usize = 2;
-    pub const BANDS_MAX: usize = 8;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::int("Bands", "bands", 2, 2, 8, 1, "", "General").structural(),
+    ];
 }
 
 // ============================================================================
@@ -847,63 +1002,44 @@ pub mod band_merge {
 // ============================================================================
 
 pub mod xtc {
-    pub const DISTANCE_M_DEFAULT: f64 = 2.0;
-    pub const DISTANCE_M_MIN: f64 = 0.5;
-    pub const DISTANCE_M_MAX: f64 = 10.0;
-
-    pub const SPEAKER_ANGLE_DEG_DEFAULT: f64 = 30.0;
-    pub const SPEAKER_ANGLE_DEG_MIN: f64 = 10.0;
-    pub const SPEAKER_ANGLE_DEG_MAX: f64 = 90.0;
-
-    pub const HEAD_RADIUS_M_DEFAULT: f64 = 0.0875;
-    pub const HEAD_RADIUS_M_MIN: f64 = 0.05;
-    pub const HEAD_RADIUS_M_MAX: f64 = 0.12;
-
-    pub const BETA_BASE_DEFAULT: f64 = 0.001;
-    pub const BETA_BASE_MIN: f64 = 0.0001;
-    pub const BETA_BASE_MAX: f64 = 0.1;
-
-    pub const BETA_LOW_FREQ_BOOST_DEFAULT: f64 = 10.0;
-    pub const BETA_LOW_FREQ_BOOST_MIN: f64 = 0.0;
-    pub const BETA_LOW_FREQ_BOOST_MAX: f64 = 30.0;
-
-    pub const BETA_HIGH_FREQ_BOOST_DEFAULT: f64 = 10.0;
-    pub const BETA_HIGH_FREQ_BOOST_MIN: f64 = 0.0;
-    pub const BETA_HIGH_FREQ_BOOST_MAX: f64 = 30.0;
-
-    pub const HEAD_SHADOW_CUTOFF_HZ_DEFAULT: f64 = 4000.0;
-    pub const HEAD_SHADOW_CUTOFF_HZ_MIN: f64 = 1000.0;
-    pub const HEAD_SHADOW_CUTOFF_HZ_MAX: f64 = 10000.0;
-
-    pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_DEFAULT: f64 = 6.0;
-    pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MIN: f64 = 0.0;
-    pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MAX: f64 = 12.0;
-
-    pub const MAX_GAIN_DB_DEFAULT: f64 = 12.0;
-    pub const MAX_GAIN_DB_MIN: f64 = 3.0;
-    pub const MAX_GAIN_DB_MAX: f64 = 30.0;
-
-    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = true;
-    pub const AUTO_GAIN_MAX_DB_DEFAULT: f32 = 12.0;
-    pub const AUTO_GAIN_MAX_DB_MIN: f32 = 0.0;
-    pub const AUTO_GAIN_MAX_DB_MAX: f32 = 24.0;
-    pub const AUTO_GAIN_SMOOTHING_MS_DEFAULT: f32 = 100.0;
-    pub const AUTO_GAIN_SMOOTHING_MS_MIN: f32 = 10.0;
-    pub const AUTO_GAIN_SMOOTHING_MS_MAX: f32 = 500.0;
-
-    pub const HEAD_TRACKING_SMOOTH_S_DEFAULT: f64 = 0.1;
-    pub const HEAD_TRACKING_SMOOTH_S_MIN: f64 = 0.01;
-    pub const HEAD_TRACKING_SMOOTH_S_MAX: f64 = 1.0;
-
-    pub const SPECTRAL_NORMALIZATION_DEFAULT: bool = true;
-
-    pub const ROOM_REFLECTIONS_ENABLED_DEFAULT: bool = false;
-    pub const ROOM_WIDTH_M_DEFAULT: f64 = 4.0;
-    pub const ROOM_DEPTH_M_DEFAULT: f64 = 5.0;
-    pub const WALL_ABSORPTION_DEFAULT: f64 = 0.3;
-    pub const REFLECTION_BETA_BOOST_DEFAULT: f64 = 3.0;
-
-    pub const PINNA_MODEL_ENABLED_DEFAULT: bool = false;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        // Geometry
+        ParamSpec::float("Distance", "distance_m", 2.0, 0.5, 10.0, 0.05, "m", "Geometry"),
+        ParamSpec::float("Speaker Angle", "speaker_angle_deg", 30.0, 10.0, 90.0, 0.5, "\u{00b0}", "Geometry"),
+        ParamSpec::float("Head Radius", "head_radius_m", 0.0875, 0.05, 0.12, 0.001, "m", "Geometry").scaled(100.0),
+        // Head Tracking
+        ParamSpec::float("Head Offset X", "head_offset_x", 0.0, -0.5, 0.5, 0.01, "m", "Head Tracking"),
+        ParamSpec::float("Head Offset Z", "head_offset_z", 0.0, -0.5, 0.5, 0.01, "m", "Head Tracking"),
+        ParamSpec::float("Head Yaw", "head_yaw_deg", 0.0, -90.0, 90.0, 1.0, "\u{00b0}", "Head Tracking"),
+        ParamSpec::float("Head Tracking Smooth", "head_tracking_smooth_s", 0.1, 0.0, 1.0, 0.01, "s", "Head Tracking"),
+        // Beta
+        ParamSpec::float("Beta Base", "beta_base", 0.001, 0.0001, 0.1, 0.001, "", "Beta").scaled(1000.0),
+        ParamSpec::float("Beta Low Boost", "beta_low_freq_boost", 10.0, 0.0, 30.0, 0.5, "", "Beta"),
+        ParamSpec::float("Beta High Boost", "beta_high_freq_boost", 10.0, 0.0, 30.0, 0.5, "", "Beta"),
+        // Shadow
+        ParamSpec::float("Shadow Cutoff", "head_shadow_cutoff_hz", 4000.0, 1000.0, 10000.0, 50.0, "Hz", "Shadow"),
+        ParamSpec::float("Shadow Slope", "head_shadow_slope_db_per_octave", 6.0, 0.0, 12.0, 0.5, "dB/oct", "Shadow"),
+        // Filter
+        ParamSpec::float("Max Gain", "max_gain_db", 12.0, 3.0, 30.0, 1.0, "dB", "Filter"),
+        // Advanced
+        ParamSpec::bool_param("Spectral Norm", "spectral_normalization", true, "Advanced"),
+        ParamSpec::bool_param("Pinna Model", "pinna_model_enabled", false, "Advanced"),
+        // Room
+        ParamSpec::bool_param("Room Reflections", "room_reflections_enabled", false, "Room"),
+        ParamSpec::float("Room Width", "room_width_m", 4.0, 2.0, 10.0, 0.1, "m", "Room"),
+        ParamSpec::float("Room Depth", "room_depth_m", 5.0, 2.0, 15.0, 0.1, "m", "Room"),
+        ParamSpec::float("Wall Absorption", "wall_absorption", 0.3, 0.0, 1.0, 0.05, "", "Room"),
+        ParamSpec::float("Reflection Beta", "reflection_beta_boost", 3.0, 1.0, 10.0, 0.1, "", "Room"),
+        // Diagnostic
+        ParamSpec::bool_param("Bypass XTC Filters", "bypass_xtc_filters", false, "Diagnostic"),
+        ParamSpec::bool_param("Bypass Spectral Norm", "bypass_spectral_normalization", false, "Diagnostic"),
+        ParamSpec::bool_param("Bypass Neumann", "bypass_neumann_refinement", false, "Diagnostic"),
+        // Auto Gain
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", true, "Auto Gain"),
+        ParamSpec::float("AG Max", "auto_gain_max_db", 12.0, 0.0, 24.0, 1.0, "dB", "Auto Gain"),
+        ParamSpec::float("AG Smoothing", "auto_gain_smoothing_ms", 100.0, 10.0, 500.0, 5.0, "ms", "Auto Gain"),
+    ];
 }
 
 // ============================================================================
@@ -911,36 +1047,18 @@ pub mod xtc {
 // ============================================================================
 
 pub mod ab_compare {
-    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = true;
-    pub const BYPASS_DEFAULT: bool = false;
-
-    pub const MIX_DEFAULT: f64 = 0.0;
-    pub const MIX_MIN: f64 = -1.0;
-    pub const MIX_MAX: f64 = 1.0;
-
-    pub const MIX_MODE_DEFAULT: i32 = 0;
-    pub const MIX_MODE_MIN: i32 = 0;
-    pub const MIX_MODE_MAX: i32 = 1;
-
-    pub const SELECTED_PATH_DEFAULT: i32 = 0;
-    pub const SELECTED_PATH_MIN: i32 = 0;
-    pub const SELECTED_PATH_MAX: i32 = 1;
-
-    pub const MAX_AUTO_GAIN_DB_DEFAULT: f64 = 12.0;
-    pub const MAX_AUTO_GAIN_DB_MIN: f64 = 0.0;
-    pub const MAX_AUTO_GAIN_DB_MAX: f64 = 24.0;
-
-    pub const GAIN_SMOOTHING_MS_DEFAULT: f64 = 100.0;
-    pub const GAIN_SMOOTHING_MS_MIN: f64 = 1.0;
-    pub const GAIN_SMOOTHING_MS_MAX: f64 = 500.0;
-
-    pub const MIX_TRANSITION_MS_DEFAULT: f64 = 50.0;
-    pub const MIX_TRANSITION_MS_MIN: f64 = 1.0;
-    pub const MIX_TRANSITION_MS_MAX: f64 = 500.0;
-
-    pub const LOUDNESS_TYPE_DEFAULT: i32 = 0;
-    pub const LOUDNESS_TYPE_MIN: i32 = 0;
-    pub const LOUDNESS_TYPE_MAX: i32 = 1;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float("Mix (A/B)", "mix", 0.0, -1.0, 1.0, 0.05, "", "Mix").scaled(100.0),
+        ParamSpec::choice("Mix Mode", "mix_mode", 0, &["Pot", "Binary"], "Mix"),
+        ParamSpec::choice("Selected Path", "selected_path", 0, &["A", "B"], "Mix"),
+        ParamSpec::bool_labeled("Bypass", "bypass", false, "Yes", "No", "Mix"),
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", true, "Auto Gain"),
+        ParamSpec::choice("Loudness Type", "loudness_type", 0, &["Momentary", "ShortTerm"], "Auto Gain"),
+        ParamSpec::float("Max Auto Gain", "max_auto_gain_db", 12.0, 0.0, 24.0, 1.0, "dB", "Auto Gain"),
+        ParamSpec::float("Gain Smoothing", "gain_smoothing_ms", 100.0, 1.0, 500.0, 5.0, "ms", "Auto Gain"),
+        ParamSpec::float("Mix Transition", "mix_transition_ms", 50.0, 1.0, 500.0, 5.0, "ms", "Mix"),
+    ];
 }
 
 // ============================================================================
@@ -948,60 +1066,32 @@ pub mod ab_compare {
 // ============================================================================
 
 pub mod crossfeed {
-    pub const CROSSFEED_MODE_DEFAULT: i32 = 0; // Bauer
-    pub const CROSSFEED_PRESET_DEFAULT: i32 = 0; // Default
-
     // Bauer mode
-    pub const BAUER_FCUT_DEFAULT: f32 = 700.0;
-    pub const BAUER_FCUT_MIN: f32 = 400.0;
-    pub const BAUER_FCUT_MAX: f32 = 1000.0;
-
-    pub const BAUER_FEED_DEFAULT: f32 = 4.5;
-    pub const BAUER_FEED_MIN: f32 = 0.0;
-    pub const BAUER_FEED_MAX: f32 = 15.0;
-
     // Meier mode
-    pub const MEIER_LEVEL_DEFAULT: f32 = 30.0;
-    pub const MEIER_LEVEL_MIN: f32 = 0.0;
-    pub const MEIER_LEVEL_MAX: f32 = 100.0;
-
     // Multiband mode
-    pub const MB_LOW_FREQ_DEFAULT: f32 = 150.0;
-    pub const MB_LOW_FREQ_MIN: f32 = 50.0;
-    pub const MB_LOW_FREQ_MAX: f32 = 500.0;
-
-    pub const MB_MID_HIGH_FREQ_DEFAULT: f32 = 5700.0;
-    pub const MB_MID_HIGH_FREQ_MIN: f32 = 2000.0;
-    pub const MB_MID_HIGH_FREQ_MAX: f32 = 15000.0;
-
-    pub const MB_LOW_FEED_DEFAULT: f32 = 0.0;
-    pub const MB_LOW_FEED_MIN: f32 = -20.0;
-    pub const MB_LOW_FEED_MAX: f32 = 0.0;
-
-    pub const MB_MID_FEED_DEFAULT: f32 = 6.0;
-    pub const MB_MID_FEED_MIN: f32 = 0.0;
-    pub const MB_MID_FEED_MAX: f32 = 15.0;
-
-    pub const MB_HIGH_FEED_DEFAULT: f32 = 3.0;
-    pub const MB_HIGH_FEED_MIN: f32 = 0.0;
-    pub const MB_HIGH_FEED_MAX: f32 = 15.0;
-
     // Auto gain
-    pub const AUTOGAIN_ENABLED_DEFAULT: bool = false;
-    pub const AUTOGAIN_TARGET_DEFAULT: f32 = -18.0;
-    pub const AUTOGAIN_TARGET_MIN: f32 = -40.0;
-    pub const AUTOGAIN_TARGET_MAX: f32 = -12.0;
-
-    pub const AUTOGAIN_MAX_GAIN_DEFAULT: f32 = 12.0;
-    pub const AUTOGAIN_MAX_GAIN_MIN: f32 = 0.0;
-    pub const AUTOGAIN_MAX_GAIN_MAX: f32 = 24.0;
-
-    pub const AUTOGAIN_SMOOTHING_DEFAULT: f32 = 100.0;
-    pub const AUTOGAIN_SMOOTHING_MIN: f32 = 10.0;
-    pub const AUTOGAIN_SMOOTHING_MAX: f32 = 5000.0;
-
     // Global
-    pub const MIX_DEFAULT: f32 = 1.0;
-    pub const MIX_MIN: f32 = 0.0;
-    pub const MIX_MAX: f32 = 1.0;
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::choice("Mode", "crossfeed_mode", 0, &["Off", "Bauer", "Meier", "Mb"], "General").structural(),
+        ParamSpec::choice("Preset", "crossfeed_preset", 0, &["Default", "Cmoy", "Meier", "Mb", "Off"], "General").structural(),
+        ParamSpec::bool_param("Enabled", "enabled", true, "General"),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General"),
+        // Bauer
+        ParamSpec::float("Bauer Cutoff", "bauer_fcut_hz", 700.0, 400.0, 1000.0, 10.0, "Hz", "Bauer"),
+        ParamSpec::float("Bauer Feed", "bauer_feed_db", 4.5, 0.0, 15.0, 0.5, "dB", "Bauer"),
+        // Meier
+        ParamSpec::float("Meier Level", "meier_level", 30.0, 0.0, 100.0, 1.0, "%", "Meier"),
+        // Multiband
+        ParamSpec::float("MB Low Freq", "mb_low_freq_hz", 150.0, 50.0, 500.0, 5.0, "Hz", "Multiband"),
+        ParamSpec::float("MB Mid/High Freq", "mb_mid_high_freq_hz", 5700.0, 2000.0, 15000.0, 50.0, "Hz", "Multiband"),
+        ParamSpec::float("MB Low Feed", "mb_low_feed_db", 0.0, -20.0, 0.0, 0.5, "dB", "Multiband"),
+        ParamSpec::float("MB Mid Feed", "mb_mid_feed_db", 6.0, 0.0, 15.0, 0.5, "dB", "Multiband"),
+        ParamSpec::float("MB High Feed", "mb_high_feed_db", 3.0, 0.0, 15.0, 0.5, "dB", "Multiband"),
+        // Auto Gain
+        ParamSpec::bool_param("Auto Gain", "autogain_enabled", false, "Auto Gain"),
+        ParamSpec::float("Target LUFS", "autogain_target_lufs", -18.0, -40.0, -12.0, 0.5, "LUFS", "Auto Gain"),
+        ParamSpec::float("Max Gain", "autogain_max_gain_db", 12.0, 0.0, 24.0, 1.0, "dB", "Auto Gain"),
+        ParamSpec::float("Smoothing", "autogain_smoothing_ms", 100.0, 10.0, 5000.0, 10.0, "ms", "Auto Gain"),
+    ];
 }

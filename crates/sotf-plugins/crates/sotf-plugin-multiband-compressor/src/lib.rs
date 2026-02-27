@@ -3,7 +3,7 @@
 // ============================================================================
 
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::multiband_compressor::*;
+use sotf_host::param_specs::{find_by_key as pk, multiband_compressor::{GLOBAL_PARAMS as MC, BAND_TEMPLATE as MCB}};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -198,7 +198,7 @@ impl MultibandCompressorPlugin {
         Self::with_params(channels, Default::default())
     }
     pub fn with_params(channels: usize, params: MultibandCompressorPluginParams) -> Self {
-        let nb = params.num_bands.clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+        let nb = params.num_bands.clamp(pk(MC, "num_bands").min_f64() as usize, pk(MC, "num_bands").max_f64() as usize);
         let sr = 44100;
         let mut xfs = params.crossover_frequencies.clone();
         while xfs.len() < 4 {
@@ -257,15 +257,15 @@ impl MultibandCompressorPlugin {
                 "num_bands",
                 "Bands",
                 self.num_bands as i32,
-                NUM_BANDS_MIN as i32,
-                NUM_BANDS_MAX as i32,
+                pk(MC, "num_bands").min_f64() as i32,
+                pk(MC, "num_bands").max_f64() as i32,
             )
             .with_group("General")
             .with_importance(ParameterImportance::Critical),
             Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
                 .with_group("General")
                 .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
+            Parameter::new_float("mix", "Mix", self.mix, pk(MC, "mix").min_f64() as f32, pk(MC, "mix").max_f64() as f32)
                 .with_group("General")
                 .with_importance(ParameterImportance::Useful),
         ];
@@ -286,20 +286,20 @@ impl MultibandCompressorPlugin {
                 "threshold",
                 "Threshold",
                 self.threshold_db,
-                THRESHOLD_MIN,
-                THRESHOLD_MAX,
+                pk(MC, "threshold").min_f64() as f32,
+                pk(MC, "threshold").max_f64() as f32,
             )
             .with_group("Global Dynamics"),
-            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
+            Parameter::new_float("ratio", "Ratio", self.ratio, pk(MC, "ratio").min_f64() as f32, pk(MC, "ratio").max_f64() as f32)
                 .with_group("Global Dynamics"),
-            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
+            Parameter::new_float("attack", "Attack", self.attack_ms, pk(MC, "attack").min_f64() as f32, pk(MC, "attack").max_f64() as f32)
                 .with_group("Global Dynamics"),
             Parameter::new_float(
                 "release",
                 "Release",
                 self.release_ms,
-                RELEASE_MIN,
-                RELEASE_MAX,
+                pk(MC, "release").min_f64() as f32,
+                pk(MC, "release").max_f64() as f32,
             )
             .with_group("Global Dynamics"),
         ]);
@@ -314,8 +314,8 @@ impl MultibandCompressorPlugin {
                     &format!("band_{}_threshold", i),
                     "Threshold",
                     bp.threshold_db.unwrap_or(self.threshold_db),
-                    THRESHOLD_MIN,
-                    THRESHOLD_MAX,
+                    pk(MCB, "threshold").min_f64() as f32,
+                    pk(MCB, "threshold").max_f64() as f32,
                 )
                 .with_group(&group),
             );
@@ -324,8 +324,8 @@ impl MultibandCompressorPlugin {
                     &format!("band_{}_ratio", i),
                     "Ratio",
                     bp.ratio.unwrap_or(self.ratio),
-                    RATIO_MIN,
-                    RATIO_MAX,
+                    pk(MCB, "ratio").min_f64() as f32,
+                    pk(MCB, "ratio").max_f64() as f32,
                 )
                 .with_group(&group),
             );
@@ -334,8 +334,8 @@ impl MultibandCompressorPlugin {
                     &format!("band_{}_attack", i),
                     "Attack",
                     bp.attack_ms.unwrap_or(self.attack_ms),
-                    ATTACK_MIN,
-                    ATTACK_MAX,
+                    pk(MCB, "attack").min_f64() as f32,
+                    pk(MCB, "attack").max_f64() as f32,
                 )
                 .with_group(&group),
             );
@@ -344,8 +344,8 @@ impl MultibandCompressorPlugin {
                     &format!("band_{}_release", i),
                     "Release",
                     bp.release_ms.unwrap_or(self.release_ms),
-                    RELEASE_MIN,
-                    RELEASE_MAX,
+                    pk(MCB, "release").min_f64() as f32,
+                    pk(MCB, "release").max_f64() as f32,
                 )
                 .with_group(&group),
             );
@@ -433,7 +433,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
     
             if name == "num_bands" {
                 let nb = value.as_int().ok_or_else(|| "Bands must be an integer".to_string())? as usize;
-                let nb = nb.clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                let nb = nb.clamp(pk(MC, "num_bands").min_f64() as usize, pk(MC, "num_bands").max_f64() as usize);
                 if nb != self.num_bands {
                     self.num_bands = nb;
                     self.build_crossovers();

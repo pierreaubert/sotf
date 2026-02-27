@@ -15,7 +15,7 @@
 //
 // Output channel mapping depends on selected configuration
 
-use sotf_host::param_specs::upmixer::*;
+use sotf_host::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -840,8 +840,8 @@ impl UpmixerPlugin {
                     "5.0" => 9,
                     _ => 0,
                 },
-                SPEAKER_CONFIG_MIN,
-                SPEAKER_CONFIG_MAX,
+                pk(UP, "speaker_config").min_f64() as i32,
+                pk(UP, "speaker_config").max_f64() as i32,
             )
             .with_description(
                 "Speaker configuration index.
@@ -856,8 +856,8 @@ Controls output layout and number of channels.",
                 "gain_front_direct",
                 "Front Direct Gain",
                 self.gain_front_direct.target(),
-                GAIN_FRONT_DIRECT_MIN,
-                GAIN_FRONT_DIRECT_MAX,
+                pk(UP, "gain_front_direct").min_f64() as f32,
+                pk(UP, "gain_front_direct").max_f64() as f32,
             )
             .with_description(
                 "Front direct gain for non-height front speakers.
@@ -871,8 +871,8 @@ lower values rely more on ambient and surround energy.",
                 "gain_front_ambient",
                 "Front Ambient Gain",
                 self.gain_front_ambient.target(),
-                GAIN_FRONT_AMBIENT_MIN,
-                GAIN_FRONT_AMBIENT_MAX,
+                pk(UP, "gain_front_ambient").min_f64() as f32,
+                pk(UP, "gain_front_ambient").max_f64() as f32,
             )
             .with_description(
                 "Decorrelated ambient gain routed to front speakers.
@@ -886,8 +886,8 @@ decrease for a more center-focused, direct front.",
                 "gain_rear_ambient",
                 "Rear Ambient Gain",
                 self.gain_rear_ambient.target(),
-                GAIN_REAR_AMBIENT_MIN,
-                GAIN_REAR_AMBIENT_MAX,
+                pk(UP, "gain_rear_ambient").min_f64() as f32,
+                pk(UP, "gain_rear_ambient").max_f64() as f32,
             )
             .with_description(
                 "Ambient gain for surround and rear channels.
@@ -900,8 +900,8 @@ Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
                 "height_gain",
                 "Height Gain",
                 self.height_gain.target(),
-                GAIN_HEIGHT_MIN,
-                GAIN_HEIGHT_MAX,
+                pk(UP, "height_gain").min_f64() as f32,
+                pk(UP, "height_gain").max_f64() as f32,
             )
             .with_description(
                 "Gain for height/overhead channels (elevation > 0).
@@ -915,8 +915,8 @@ of height speakers relative to the bed layer.",
                 "lfe_gain",
                 "LFE Gain",
                 self.lfe_gain.target(),
-                LFE_GAIN_MIN,
-                LFE_GAIN_MAX,
+                pk(UP, "lfe_gain").min_f64() as f32,
+                pk(UP, "lfe_gain").max_f64() as f32,
             )
             .with_description(
                 "Gain for LFE/subwoofer channel.
@@ -929,8 +929,8 @@ Controls overall subwoofer level after the mains/LFE crossover.",
                 "lfe_cutoff_hz",
                 "LFE Cutoff (Hz)",
                 self.lfe_cutoff_hz,
-                LFE_CUTOFF_HZ_MIN,
-                LFE_CUTOFF_HZ_MAX,
+                pk(UP, "lfe_cutoff_hz").min_f64() as f32,
+                pk(UP, "lfe_cutoff_hz").max_f64() as f32,
             )
             .with_description(
                 "Linkwitz-Riley crossover frequency between mains and LFE.
@@ -944,8 +944,8 @@ more low-frequency energy into the subwoofer.",
                 "stereo_width",
                 "Stereo Width",
                 self.stereo_width.target(),
-                STEREO_WIDTH_MIN,
-                STEREO_WIDTH_MAX,
+                pk(UP, "stereo_width").min_f64() as f32,
+                pk(UP, "stereo_width").max_f64() as f32,
             )
             .with_description(
                 "Controls front stereo width for the direct component.
@@ -959,8 +959,8 @@ intermediate values balance width and center focus.",
                 "center_spread",
                 "Center Spread",
                 self.center_spread.target(),
-                CENTER_SPREAD_MIN,
-                CENTER_SPREAD_MAX,
+                pk(UP, "center_spread").min_f64() as f32,
+                pk(UP, "center_spread").max_f64() as f32,
             )
             .with_description(
                 "Controls how much direct energy is focused in the physical center vs L/R.
@@ -974,8 +974,8 @@ Range: 0.0-1.0, default 0.0.
                 "bandpass_hz",
                 "Upmix Crossover (Hz)",
                 self.bandpass_hz,
-                BANDPASS_HZ_MIN,
-                BANDPASS_HZ_MAX,
+                pk(UP, "bandpass_hz").min_f64() as f32,
+                pk(UP, "bandpass_hz").max_f64() as f32,
             )
             .with_description(
                 "Frequency above which upmixing to surrounds/height is applied.
@@ -1001,8 +1001,8 @@ subwoofer, driven by the LFE envelope for extra rumble.",
                 "subharmonic_gain",
                 "Sub-Harmonic Gain",
                 self.subharmonic_gain.target(),
-                SUBHARMONIC_GAIN_MIN,
-                SUBHARMONIC_GAIN_MAX,
+                pk(UP, "subharmonic_gain").min_f64() as f32,
+                pk(UP, "subharmonic_gain").max_f64() as f32,
             )
             .with_description(
                 "Gain for synthesized sub-harmonics when enabled.
@@ -1028,8 +1028,8 @@ Adaptively blends based on transient detection for sharper attacks and smooth am
                 "hr_sharpen",
                 "HR Sharpen",
                 self.hr_sharpen.target(),
-                HR_SHARPEN_MIN,
-                HR_SHARPEN_MAX,
+                pk(UP, "hr_sharpen").min_f64() as f32,
+                pk(UP, "hr_sharpen").max_f64() as f32,
             )
             .with_description(
                 "Depth control for the high-resolution direct path.
@@ -1044,8 +1044,8 @@ of the main front field.",
                 "safety_cap_db",
                 "Safety Cap (dB)",
                 self.safety_cap_db,
-                SAFETY_CAP_DB_MIN,
-                SAFETY_CAP_DB_MAX,
+                pk(UP, "safety_cap_db").min_f64() as f32,
+                pk(UP, "safety_cap_db").max_f64() as f32,
             )
             .with_description(
                 "Peak safety cap for the upmixer output.
@@ -1059,8 +1059,8 @@ above unity, the block is scaled down to stay within the cap.",
                 "decorrelation_mode",
                 "Decorrelation Mode",
                 self.decorrelation_mode as i32,
-                DECORRELATION_MODE_MIN,
-                DECORRELATION_MODE_MAX,
+                pk(UP, "decorrelation_mode").min_f64() as i32,
+                pk(UP, "decorrelation_mode").max_f64() as i32,
             )
             .with_description(
                 "Mode for ambient decorrelation.
@@ -1074,8 +1074,8 @@ above unity, the block is scaled down to stay within the cap.",
                 "subharmonic_freq_hz",
                 "Sub-Harmonic Frequency",
                 self.subharmonic_freq_hz,
-                SUBHARMONIC_FREQ_HZ_MIN,
-                SUBHARMONIC_FREQ_HZ_MAX,
+                pk(UP, "subharmonic_freq_hz").min_f64() as f32,
+                pk(UP, "subharmonic_freq_hz").max_f64() as f32,
             )
             .with_description(
                 "Sub-harmonic synthesis frequency in Hz.
@@ -1088,8 +1088,8 @@ Lower values produce deeper rumble, higher values are more audible.",
                 "subharmonic_attack_ms",
                 "Sub-Harmonic Attack",
                 self.subharmonic_attack_ms,
-                SUBHARMONIC_ATTACK_MS_MIN,
-                SUBHARMONIC_ATTACK_MS_MAX,
+                pk(UP, "subharmonic_attack_ms").min_f64() as f32,
+                pk(UP, "subharmonic_attack_ms").max_f64() as f32,
             )
             .with_description(
                 "Sub-harmonic envelope attack time in milliseconds.
@@ -1102,8 +1102,8 @@ Faster attack follows LFE transients more closely.",
                 "subharmonic_release_ms",
                 "Sub-Harmonic Release",
                 self.subharmonic_release_ms,
-                SUBHARMONIC_RELEASE_MS_MIN,
-                SUBHARMONIC_RELEASE_MS_MAX,
+                pk(UP, "subharmonic_release_ms").min_f64() as f32,
+                pk(UP, "subharmonic_release_ms").max_f64() as f32,
             )
             .with_description(
                 "Sub-harmonic envelope release time in milliseconds.
@@ -1117,8 +1117,8 @@ Longer release creates smoother decay.",
                 "decorrelation_lfo_rate_hz",
                 "Decorrelation LFO Rate",
                 self.decorrelation_lfo_rate_hz,
-                DECORRELATION_LFO_RATE_HZ_MIN,
-                DECORRELATION_LFO_RATE_HZ_MAX,
+                pk(UP, "decorrelation_lfo_rate_hz").min_f64() as f32,
+                pk(UP, "decorrelation_lfo_rate_hz").max_f64() as f32,
             )
             .with_description(
                 "LFO rate for decorrelation phase modulation.
@@ -1131,8 +1131,8 @@ Higher values add more motion but may cause artifacts.",
                 "velvet_noise_duration_ms",
                 "Velvet Noise Duration",
                 self.velvet_noise_duration_ms,
-                VELVET_NOISE_DURATION_MS_MIN,
-                VELVET_NOISE_DURATION_MS_MAX,
+                pk(UP, "velvet_noise_duration_ms").min_f64() as f32,
+                pk(UP, "velvet_noise_duration_ms").max_f64() as f32,
             )
             .with_description(
                 "Velvet noise decorrelator duration in milliseconds.
@@ -1145,8 +1145,8 @@ Longer duration creates smoother diffusion.",
                 "velvet_noise_density",
                 "Velvet Noise Density",
                 self.velvet_noise_density,
-                VELVET_NOISE_DENSITY_MIN,
-                VELVET_NOISE_DENSITY_MAX,
+                pk(UP, "velvet_noise_density").min_f64() as f32,
+                pk(UP, "velvet_noise_density").max_f64() as f32,
             )
             .with_description(
                 "Velvet noise pulse density (pulses per second).
@@ -1160,8 +1160,8 @@ Higher density creates denser, smoother decorrelation.",
                 "height_hf_cap_hz",
                 "Height HF Cap",
                 self.height_hf_cap_hz,
-                HEIGHT_HF_CAP_HZ_MIN,
-                HEIGHT_HF_CAP_HZ_MAX,
+                pk(UP, "height_hf_cap_hz").min_f64() as f32,
+                pk(UP, "height_hf_cap_hz").max_f64() as f32,
             )
             .with_description(
                 "High-frequency cap for height channels in Hz.
@@ -1174,8 +1174,8 @@ Limits extreme highs in overhead speakers.",
                 "height_transient_reduction",
                 "Height Transient Reduction",
                 self.height_transient_reduction.target(),
-                HEIGHT_TRANSIENT_REDUCTION_MIN,
-                HEIGHT_TRANSIENT_REDUCTION_MAX,
+                pk(UP, "height_transient_reduction").min_f64() as f32,
+                pk(UP, "height_transient_reduction").max_f64() as f32,
             )
             .with_description(
                 "Transient reduction for height channels.
@@ -1188,8 +1188,8 @@ Reduces height channel level during transients for coherence.",
                 "height_direct_leak",
                 "Height Direct Leak",
                 self.height_direct_leak.target(),
-                HEIGHT_DIRECT_LEAK_MIN,
-                HEIGHT_DIRECT_LEAK_MAX,
+                pk(UP, "height_direct_leak").min_f64() as f32,
+                pk(UP, "height_direct_leak").max_f64() as f32,
             )
             .with_description(
                 "Direct signal leak into height channels.
@@ -1203,8 +1203,8 @@ Allows some direct sound into overheads for air and presence.",
                 "surround_direct_bleed",
                 "Surround Direct Bleed",
                 self.surround_direct_bleed.target(),
-                SURROUND_DIRECT_BLEED_MIN,
-                SURROUND_DIRECT_BLEED_MAX,
+                pk(UP, "surround_direct_bleed").min_f64() as f32,
+                pk(UP, "surround_direct_bleed").max_f64() as f32,
             )
             .with_description(
                 "Direct signal bleed into surround channels.
@@ -1217,8 +1217,8 @@ Higher values create more cohesive surround image.",
                 "rear_ambient_boost",
                 "Rear Ambient Boost",
                 self.rear_ambient_boost.target(),
-                REAR_AMBIENT_BOOST_MIN,
-                REAR_AMBIENT_BOOST_MAX,
+                pk(UP, "rear_ambient_boost").min_f64() as f32,
+                pk(UP, "rear_ambient_boost").max_f64() as f32,
             )
             .with_description(
                 "Ambient gain boost for rear channels.
@@ -1231,8 +1231,8 @@ Increases envelopment from rear speakers.",
                 "rear_late_reflection",
                 "Rear Late Reflection",
                 self.rear_late_reflection.target(),
-                REAR_LATE_REFLECTION_MIN,
-                REAR_LATE_REFLECTION_MAX,
+                pk(UP, "rear_late_reflection").min_f64() as f32,
+                pk(UP, "rear_late_reflection").max_f64() as f32,
             )
             .with_description(
                 "Late reflection level for rear height channels.
@@ -1246,8 +1246,8 @@ Adds late reflections to rear heights for depth.",
                 "ambient_boost",
                 "Ambient Boost",
                 self.ambient_boost.target(),
-                AMBIENT_BOOST_MIN,
-                AMBIENT_BOOST_MAX,
+                pk(UP, "ambient_boost").min_f64() as f32,
+                pk(UP, "ambient_boost").max_f64() as f32,
             )
             .with_description(
                 "Ambient gain boost factor.
@@ -1261,8 +1261,8 @@ Multiplier applied to coherence-derived ambient gain.",
                 "dialogue_weight",
                 "Dialogue Weight",
                 self.dialogue_weight.target(),
-                DIALOGUE_WEIGHT_MIN,
-                DIALOGUE_WEIGHT_MAX,
+                pk(UP, "dialogue_weight").min_f64() as f32,
+                pk(UP, "dialogue_weight").max_f64() as f32,
             )
             .with_description(
                 "Maximum dialogue routing weight.
@@ -1275,8 +1275,8 @@ Higher values route more detected dialogue to center.",
                 "voice_freq_min_hz",
                 "Voice Freq Min",
                 self.voice_freq_min_hz,
-                VOICE_FREQ_MIN_HZ_MIN,
-                VOICE_FREQ_MIN_HZ_MAX,
+                pk(UP, "voice_freq_min_hz").min_f64() as f32,
+                pk(UP, "voice_freq_min_hz").max_f64() as f32,
             )
             .with_description(
                 "Voice detection frequency range minimum.
@@ -1289,8 +1289,8 @@ Lower bound for dialogue detection analysis.",
                 "voice_freq_max_hz",
                 "Voice Freq Max",
                 self.voice_freq_max_hz,
-                VOICE_FREQ_MAX_HZ_MIN,
-                VOICE_FREQ_MAX_HZ_MAX,
+                pk(UP, "voice_freq_max_hz").min_f64() as f32,
+                pk(UP, "voice_freq_max_hz").max_f64() as f32,
             )
             .with_description(
                 "Voice detection frequency range maximum.
@@ -1303,8 +1303,8 @@ Upper bound for dialogue detection analysis.",
                 "dialogue_centroid_weight",
                 "Dialogue Centroid Weight",
                 self.dialogue_centroid_weight,
-                DIALOGUE_CENTROID_WEIGHT_MIN,
-                DIALOGUE_CENTROID_WEIGHT_MAX,
+                pk(UP, "dialogue_centroid_weight").min_f64() as f32,
+                pk(UP, "dialogue_centroid_weight").max_f64() as f32,
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::FineTuning),
@@ -1312,8 +1312,8 @@ Upper bound for dialogue detection analysis.",
                 "dialogue_variance_weight",
                 "Dialogue Variance Weight",
                 self.dialogue_variance_weight,
-                DIALOGUE_VARIANCE_WEIGHT_MIN,
-                DIALOGUE_VARIANCE_WEIGHT_MAX,
+                pk(UP, "dialogue_variance_weight").min_f64() as f32,
+                pk(UP, "dialogue_variance_weight").max_f64() as f32,
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::FineTuning),
@@ -1321,8 +1321,8 @@ Upper bound for dialogue detection analysis.",
                 "dialogue_coherence_weight",
                 "Dialogue Coherence Weight",
                 self.dialogue_coherence_weight,
-                DIALOGUE_COHERENCE_WEIGHT_MIN,
-                DIALOGUE_COHERENCE_WEIGHT_MAX,
+                pk(UP, "dialogue_coherence_weight").min_f64() as f32,
+                pk(UP, "dialogue_coherence_weight").max_f64() as f32,
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::FineTuning),

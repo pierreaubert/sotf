@@ -23,7 +23,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn add_plugin(&mut self, plugin_type: PluginType) -> usize {
         let max_id_opt = self.driver.read_app(|app| {
             app.plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .map(|p| p.id)
@@ -36,7 +36,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
 
         let new_id = self.driver.read_app(move |app| {
             app.plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .map(|p| p.id)
@@ -49,13 +49,13 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
 
     pub fn get_plugin_count(&mut self) -> usize {
         self.driver
-            .read_app(|app| app.plugin_state.plugin_chain.len())
+            .read_app(|app| app.plugin_state.chain.len())
     }
 
     pub fn get_plugin_type(&mut self, index: usize) -> Option<PluginType> {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .plugin_chain
+                .chain
                 .get_plugin(index)
                 .map(|p| p.plugin_type())
         })
@@ -64,7 +64,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn is_plugin_enabled(&mut self, index: usize) -> bool {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .plugin_chain
+                .chain
                 .get_plugin(index)
                 .map(|p| p.enabled)
                 .unwrap_or(false)
@@ -74,7 +74,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn is_plugin_permanent(&mut self, index: usize) -> bool {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .plugin_chain
+                .chain
                 .get_plugin(index)
                 .map(|p| p.permanent)
                 .unwrap_or(false)
@@ -95,13 +95,13 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
 
     pub fn get_output_channels(&mut self) -> usize {
         self.driver
-            .read_app(|app| app.plugin_state.plugin_chain.output_channels())
+            .read_app(|app| app.plugin_state.chain.output_channels())
     }
 
     pub fn find_plugin_index_by_id(&mut self, id: usize) -> Option<usize> {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .position(|p| p.id == id)
@@ -111,7 +111,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     pub fn plugin_exists(&mut self, id: usize) -> bool {
         self.driver.read_app(move |app| {
             app.plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .any(|p| p.id == id)
@@ -120,7 +120,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
 
     pub fn get_eq_channels(&mut self, index: usize) -> usize {
         self.driver.read_app(move |app| {
-            if let Some(plugin) = app.plugin_state.plugin_chain.get_plugin(index) {
+            if let Some(plugin) = app.plugin_state.chain.get_plugin(index) {
                 match &plugin.settings {
                     PluginSettings::EQ { channels, .. } => *channels,
                     _ => 0,
@@ -138,7 +138,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     }
     pub fn get_matrix_channels(&mut self, index: usize) -> (usize, usize) {
         self.driver.read_app(move |app| {
-            if let Some(plugin) = app.plugin_state.plugin_chain.get_plugin(index) {
+            if let Some(plugin) = app.plugin_state.chain.get_plugin(index) {
                 match &plugin.settings {
                     PluginSettings::Matrix {
                         input_channels,
@@ -248,9 +248,9 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                         let plugins = state
                             .app
                             .plugin_state
-                            .plugin_chain
+                            .chain
                             .to_plugin_configs(sample_rate);
-                        let output_channels = state.app.plugin_state.plugin_chain.output_channels();
+                        let output_channels = state.app.plugin_state.chain.output_channels();
 
                         if let Err(e) = state.player.lock().load_and_play(
                             path,

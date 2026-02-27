@@ -88,9 +88,9 @@ impl ConvolutionPlugin {
     }
 
     fn rebuild_cached_parameters(&mut self) {
-        use sotf_host::param_specs::convolution::*;
+        use sotf_host::param_specs::{find_by_key as pk, convolution::PARAMS as CV};
         self.cached_parameters = vec![
-            Parameter::new_float("mix", "Mix", self.mix_value, MIX_MIN, MIX_MAX)
+            Parameter::new_float("mix", "Mix", self.mix_value, pk(CV, "mix").min_f64() as f32, pk(CV, "mix").max_f64() as f32)
                 .with_description("Dry/wet mix (0 = dry, 1 = convolved)")
                 .with_group("Output")
                 .with_importance(ParameterImportance::Useful),
@@ -98,8 +98,8 @@ impl ConvolutionPlugin {
                 "gain_db",
                 "Gain",
                 self.gain_db_value,
-                GAIN_DB_MIN,
-                GAIN_DB_MAX,
+                pk(CV, "gain_db").min_f64() as f32,
+                pk(CV, "gain_db").max_f64() as f32,
             )
             .with_description("Output gain (dB)")
             .with_group("Output")

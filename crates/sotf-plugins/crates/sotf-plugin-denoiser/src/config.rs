@@ -2,77 +2,77 @@
 // Denoiser Plugin Configuration
 // ============================================================================
 
-use sotf_host::param_specs::denoiser::*;
+use sotf_host::param_specs::{find_by_key as pk, denoiser::PARAMS as DN};
 use serde::{Deserialize, Serialize};
 
 // Default functions for serde
 pub fn default_reduction_db() -> f32 {
-    REDUCTION_DB_DEFAULT
+    pk(DN, "reduction_db").default_f32()
 }
 
 pub fn default_floor_db() -> f32 {
-    FLOOR_DB_DEFAULT
+    pk(DN, "floor_db").default_f32()
 }
 
 pub fn default_smoothing() -> f32 {
-    SMOOTHING_DEFAULT
+    pk(DN, "smoothing").default_f32()
 }
 
 pub fn default_attack_ms() -> f32 {
-    ATTACK_MS_DEFAULT
+    pk(DN, "attack_ms").default_f32()
 }
 
 pub fn default_release_ms() -> f32 {
-    RELEASE_MS_DEFAULT
+    pk(DN, "release_ms").default_f32()
 }
 
 pub fn default_low_latency() -> bool {
-    LOW_LATENCY_DEFAULT
+    pk(DN, "low_latency").default_bool()
 }
 
 // MCRA-specific defaults
 pub fn default_mcra_alpha_s() -> f32 {
-    MCRA_ALPHA_S_DEFAULT
+    pk(DN, "mcra_alpha_s").default_f32()
 }
 
 pub fn default_mcra_alpha_p() -> f32 {
-    MCRA_ALPHA_P_DEFAULT
+    pk(DN, "mcra_alpha_p").default_f32()
 }
 
 pub fn default_mcra_l() -> usize {
-    MCRA_L_DEFAULT
+    pk(DN, "mcra_l").default_usize()
 }
 
 pub fn default_mcra_delta() -> f32 {
-    MCRA_DELTA_DEFAULT
+    pk(DN, "mcra_delta").default_f32()
 }
 
 pub fn default_polyphonic_detection() -> bool {
-    POLYPHONIC_DETECTION_DEFAULT
+    pk(DN, "polyphonic_detection").default_bool()
 }
 
 pub fn default_crack_sensitivity() -> f32 {
-    10.0
+    pk(DN, "crack_sensitivity").default_f32()
 }
 
 pub fn default_psychoacoustic_masking() -> bool {
-    PSYCHOACOUSTIC_MASKING_DEFAULT
+    pk(DN, "psychoacoustic_masking").default_bool()
 }
 
 pub fn default_use_captured_profile() -> bool {
-    USE_CAPTURED_PROFILE_DEFAULT
+    pk(DN, "use_captured_profile").default_bool()
 }
 
 pub fn default_transparency() -> f32 {
-    TRANSPARENCY_DEFAULT
+    pk(DN, "transparency").default_f32()
 }
 
 pub fn default_dd_enabled() -> bool {
-    DD_ENABLED_DEFAULT
+    pk(DN, "dd_enabled").default_bool()
 }
 
 pub fn default_dd_alpha() -> f32 {
-    DD_ALPHA_DEFAULT
+    pk(DN, "dd_alpha").default_f32()
 }
 
 /// Configuration parameters for DenoiserPlugin

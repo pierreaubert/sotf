@@ -193,7 +193,7 @@ fn render_preset_buttons(
                         if let Some(plugin) = state
                             .app
                             .plugin_state
-                            .plugin_chain
+                            .chain
                             .get_plugin_mut(plugin_idx)
                         {
                             if let sotf_audio_player::PluginSettings::Matrix {
@@ -485,7 +485,7 @@ fn render_msd_button(
                 if let Some(plugin) = state
                     .app
                     .plugin_state
-                    .plugin_chain
+                    .chain
                     .get_plugin_mut(plugin_idx)
                 {
                     if let sotf_audio_player::PluginSettings::Matrix {
@@ -653,7 +653,7 @@ fn render_matrix_cell(
                     if let Some(plugin) = state
                         .app
                         .plugin_state
-                        .plugin_chain
+                        .chain
                         .get_plugin_mut(plugin_idx)
                     {
                         if let sotf_audio_player::PluginSettings::Matrix {
@@ -684,7 +684,7 @@ fn render_matrix_cell(
                     if let Some(plugin) = state
                         .app
                         .plugin_state
-                        .plugin_chain
+                        .chain
                         .get_plugin_mut(plugin_idx)
                     {
                         if let sotf_audio_player::PluginSettings::Matrix {
@@ -711,7 +711,7 @@ fn render_matrix_cell(
                 if let Some(plugin) = state
                     .app
                     .plugin_state
-                    .plugin_chain
+                    .chain
                     .get_plugin_mut(plugin_idx)
                 {
                     if let sotf_audio_player::PluginSettings::Matrix {

@@ -97,7 +97,7 @@ impl Render for PlayerView {
             };
 
             // Debounce saving to avoid disk IO pressure during active resizing
-            self.geometry_save_task = Some(cx.spawn(async move |this, mut cx| {
+            self.geometry_save_task = Some(cx.spawn(async move |this, cx| {
                 // Wait for a period of stability (1 second) before saving
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 
@@ -144,7 +144,7 @@ impl Render for PlayerView {
                 state.app.ui_state.context_menu.is_some(),
                 state.app.ui_state.show_studio_menu,
                 state.app.ui_state.show_device_popup,
-                state.app.ui_state.translations.playback_output_devices.clone(),
+                state.app.ui_state.translations.playback_output_devices,
             )
         };
 
@@ -367,6 +367,7 @@ impl Render for PlayerView {
             .flex()
             .flex_col()
             .size_full()
+            .font_family(theme.font_family.clone())
             .bg(theme.background)
             .text_color(theme.text_primary)
             .when(!cfg!(target_os = "macos"), |div| {
@@ -430,7 +431,7 @@ impl Render for PlayerView {
             })
             // Device popup (rendered here to be above overlay)
             .when(show_device_popup, |div| {
-                div.child(self.render_device_popup(playback_output_devices.clone(), cx))
+                div.child(self.render_device_popup(playback_output_devices, cx))
             })
             // Menu dropdowns rendered last for z-ordering
             .when(active_menu != crate::app::ActiveMenu::None, |div| {

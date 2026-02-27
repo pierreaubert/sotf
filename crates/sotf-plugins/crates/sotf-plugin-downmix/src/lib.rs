@@ -2,7 +2,7 @@
 // Phase-Coherent Downmix Plugin
 // ============================================================================
 
-use sotf_host::param_specs::downmix::*;
+use sotf_host::param_specs::{find_by_key as pk, downmix::PARAMS as DM};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
@@ -20,25 +20,25 @@ use std::sync::Arc;
 // ============================================================================
 
 fn default_center_gain_db() -> f32 {
-    CENTER_GAIN_DB_DEFAULT
+    pk(DM, "center_gain_db").default_f64() as f32
 }
 fn default_surround_gain_db() -> f32 {
-    SURROUND_GAIN_DB_DEFAULT
+    pk(DM, "surround_gain_db").default_f64() as f32
 }
 fn default_height_gain_db() -> f32 {
-    HEIGHT_GAIN_DB_DEFAULT
+    pk(DM, "height_gain_db").default_f64() as f32
 }
 fn default_lfe_gain_db() -> f32 {
-    LFE_GAIN_DB_DEFAULT
+    pk(DM, "lfe_gain_db").default_f64() as f32
 }
 fn default_phase_coherence() -> bool {
-    PHASE_COHERENCE_DEFAULT
+    pk(DM, "phase_coherence").default_bool()
 }
 fn default_phase_blend_low_hz() -> f32 {
-    PHASE_BLEND_LOW_HZ_DEFAULT
+    pk(DM, "phase_blend_low_hz").default_f64() as f32
 }
 fn default_phase_blend_high_hz() -> f32 {
-    PHASE_BLEND_HIGH_HZ_DEFAULT
+    pk(DM, "phase_blend_high_hz").default_f64() as f32
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,13 +165,13 @@ impl DownmixPlugin {
             ifft_input_buf: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_output_buf: vec![0.0; FFT_SIZE],
             lfe_lpf: Vec::new(),
-            center_gain_db: CENTER_GAIN_DB_DEFAULT,
-            surround_gain_db: SURROUND_GAIN_DB_DEFAULT,
-            height_gain_db: HEIGHT_GAIN_DB_DEFAULT,
-            lfe_gain_db: LFE_GAIN_DB_DEFAULT,
-            phase_coherence: PHASE_COHERENCE_DEFAULT,
-            phase_blend_low_hz: PHASE_BLEND_LOW_HZ_DEFAULT,
-            phase_blend_high_hz: PHASE_BLEND_HIGH_HZ_DEFAULT,
+            center_gain_db: pk(DM, "center_gain_db").default_f64() as f32,
+            surround_gain_db: pk(DM, "surround_gain_db").default_f64() as f32,
+            height_gain_db: pk(DM, "height_gain_db").default_f64() as f32,
+            lfe_gain_db: pk(DM, "lfe_gain_db").default_f64() as f32,
+            phase_coherence: pk(DM, "phase_coherence").default_bool(),
+            phase_blend_low_hz: pk(DM, "phase_blend_low_hz").default_f64() as f32,
+            phase_blend_high_hz: pk(DM, "phase_blend_high_hz").default_f64() as f32,
             param_center_gain_db: ParameterId::from("center_gain_db"),
             param_surround_gain_db: ParameterId::from("surround_gain_db"),
             param_height_gain_db: ParameterId::from("height_gain_db"),
@@ -190,29 +190,29 @@ impl DownmixPlugin {
                 "center_gain_db",
                 "Center Gain",
                 self.center_gain_db,
-                CENTER_GAIN_DB_MIN,
-                CENTER_GAIN_DB_MAX,
+                pk(DM, "center_gain_db").min_f64() as f32,
+                pk(DM, "center_gain_db").max_f64() as f32,
             ),
             Parameter::new_float(
                 "surround_gain_db",
                 "Surround Gain",
                 self.surround_gain_db,
-                SURROUND_GAIN_DB_MIN,
-                SURROUND_GAIN_DB_MAX,
+                pk(DM, "surround_gain_db").min_f64() as f32,
+                pk(DM, "surround_gain_db").max_f64() as f32,
             ),
             Parameter::new_float(
                 "height_gain_db",
                 "Height Gain",
                 self.height_gain_db,
-                HEIGHT_GAIN_DB_MIN,
-                HEIGHT_GAIN_DB_MAX,
+                pk(DM, "height_gain_db").min_f64() as f32,
+                pk(DM, "height_gain_db").max_f64() as f32,
             ),
             Parameter::new_float(
                 "lfe_gain_db",
                 "LFE Gain",
                 self.lfe_gain_db,
-                LFE_GAIN_DB_MIN,
-                LFE_GAIN_DB_MAX,
+                pk(DM, "lfe_gain_db").min_f64() as f32,
+                pk(DM, "lfe_gain_db").max_f64() as f32,
             ),
             Parameter::new_bool("phase_coherence", "Phase Coherence", self.phase_coherence),
         ];
@@ -558,27 +558,27 @@ impl Plugin for DownmixPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_center_gain_db {
-            let v = value.as_float().unwrap_or(CENTER_GAIN_DB_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(DM, "center_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.center_gain_db = v;
             }
         } else if id == self.param_surround_gain_db {
-            let v = value.as_float().unwrap_or(SURROUND_GAIN_DB_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(DM, "surround_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.surround_gain_db = v;
             }
         } else if id == self.param_height_gain_db {
-            let v = value.as_float().unwrap_or(HEIGHT_GAIN_DB_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(DM, "height_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.height_gain_db = v;
             }
         } else if id == self.param_lfe_gain_db {
-            let v = value.as_float().unwrap_or(LFE_GAIN_DB_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(DM, "lfe_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.lfe_gain_db = v;
             }
         } else if id == self.param_phase_coherence {
-            self.phase_coherence = value.as_bool().unwrap_or(PHASE_COHERENCE_DEFAULT);
+            self.phase_coherence = value.as_bool().unwrap_or(pk(DM, "phase_coherence").default_bool());
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }

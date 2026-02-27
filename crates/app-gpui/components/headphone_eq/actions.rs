@@ -249,17 +249,17 @@ impl PlayerView {
                 let insert_idx = state
                     .app
                     .plugin_state
-                    .plugin_chain
+                    .chain
                     .user_plugin_insert_index();
                 state
                     .app
                     .plugin_state
-                    .plugin_chain
+                    .chain
                     .insert_plugin(insert_idx, &PluginType::EQ);
                 if let Some(plugin) = state
                     .app
                     .plugin_state
-                    .plugin_chain
+                    .chain
                     .get_plugin_mut(insert_idx)
                 {
                     plugin.settings = settings;

@@ -104,7 +104,7 @@ impl TestScenario for AllPluginsScenario {
         // If we have [InputMon(0), Upmixer(1), Matrix(2)...]
         // `insert_plugin` inserts at index.
         // Wait, `add_plugin` implementation:
-        // `let index = app.plugin_state.plugin_chain.find_processing_insert_index();`
+        // `let index = app.plugin_state.chain.find_processing_insert_index();`
         // `insert_plugin(index, ...)`
         // If Upmixer is at 1. Next insert index will be 2 (after Upmixer).
         // So EQ will be at 2.

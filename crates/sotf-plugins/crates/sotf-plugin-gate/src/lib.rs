@@ -3,7 +3,7 @@
 // ============================================================================
 
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::gate::*;
+use sotf_host::param_specs::{find_by_key as pk, gate::PARAMS as GT};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -35,28 +35,28 @@ pub struct GatePluginParams {
 }
 
 fn default_threshold_db() -> f32 {
-    THRESHOLD_DEFAULT
+    pk(GT, "threshold").default_f64() as f32
 }
 fn default_ratio() -> f32 {
-    RATIO_DEFAULT
+    pk(GT, "ratio").default_f64() as f32
 }
 fn default_attack_ms() -> f32 {
-    ATTACK_DEFAULT
+    pk(GT, "attack").default_f64() as f32
 }
 fn default_hold_ms() -> f32 {
-    HOLD_DEFAULT
+    pk(GT, "hold").default_f64() as f32
 }
 fn default_release_ms() -> f32 {
-    RELEASE_DEFAULT
+    pk(GT, "release").default_f64() as f32
 }
 fn default_mix() -> f32 {
-    MIX_DEFAULT
+    pk(GT, "mix").default_f64() as f32
 }
 fn default_link_channels() -> bool {
-    LINK_CHANNELS_DEFAULT
+    pk(GT, "link_channels").default_bool()
 }
 fn default_sidechain_hpf_hz() -> f32 {
-    SIDECHAIN_HPF_HZ_DEFAULT
+    pk(GT, "sidechain_hpf_hz").default_f64() as f32
 }
 
 #[derive(Debug, Clone)]
@@ -184,21 +184,21 @@ impl GatePlugin {
                 "threshold",
                 "Threshold",
                 self.threshold_db,
-                THRESHOLD_MIN,
-                THRESHOLD_MAX,
+                pk(GT, "threshold").min_f64() as f32,
+                pk(GT, "threshold").max_f64() as f32,
             )
             .with_description("Level below which gating starts (dB)")
             .with_group("Dynamics")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
+            Parameter::new_float("ratio", "Ratio", self.ratio, pk(GT, "ratio").min_f64() as f32, pk(GT, "ratio").max_f64() as f32)
                 .with_description("Gate ratio (1:1 to 100:1)")
                 .with_group("Dynamics")
                 .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
+            Parameter::new_float("attack", "Attack", self.attack_ms, pk(GT, "attack").min_f64() as f32, pk(GT, "attack").max_f64() as f32)
                 .with_description("Attack time (ms)")
                 .with_group("Timing")
                 .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("hold", "Hold", self.hold_ms, HOLD_MIN, HOLD_MAX)
+            Parameter::new_float("hold", "Hold", self.hold_ms, pk(GT, "hold").min_f64() as f32, pk(GT, "hold").max_f64() as f32)
                 .with_description("Hold time before closing (ms)")
                 .with_group("Timing")
                 .with_importance(ParameterImportance::Useful),
@@ -206,13 +206,13 @@ impl GatePlugin {
                 "release",
                 "Release",
                 self.release_ms,
-                RELEASE_MIN,
-                RELEASE_MAX,
+                pk(GT, "release").min_f64() as f32,
+                pk(GT, "release").max_f64() as f32,
             )
             .with_description("Release time (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
+            Parameter::new_float("mix", "Mix", self.mix, pk(GT, "mix").min_f64() as f32, pk(GT, "mix").max_f64() as f32)
                 .with_description("Dry/wet mix (0 = dry, 1 = gated)")
                 .with_group("Output")
                 .with_importance(ParameterImportance::Useful),
@@ -224,8 +224,8 @@ impl GatePlugin {
                 "sidechain_hpf_hz",
                 "Sidechain HPF",
                 self.sidechain_hpf_hz,
-                SIDECHAIN_HPF_HZ_MIN,
-                SIDECHAIN_HPF_HZ_MAX,
+                pk(GT, "sidechain_hpf_hz").min_f64() as f32,
+                pk(GT, "sidechain_hpf_hz").max_f64() as f32,
             )
             .with_description("High-pass filter frequency for sidechain (Hz)")
             .with_group("Sidechain")
@@ -296,43 +296,43 @@ impl InPlacePlugin for GatePlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_threshold {
-            let v = value.as_float().unwrap_or(THRESHOLD_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(GT, "threshold").default_f64() as f32);
             if v.is_finite() {
                 self.threshold_db = v;
                 self.threshold_smoother.set_target(self.threshold_db);
             }
         } else if id == self.param_ratio {
-            let v = value.as_float().unwrap_or(RATIO_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(GT, "ratio").default_f64() as f32);
             if v.is_finite() {
                 self.ratio = v.max(1.0);
             }
         } else if id == self.param_attack {
-            let v = value.as_float().unwrap_or(ATTACK_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(GT, "attack").default_f64() as f32);
             if v.is_finite() {
                 self.attack_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_hold {
-            let v = value.as_float().unwrap_or(HOLD_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(GT, "hold").default_f64() as f32);
             if v.is_finite() {
                 self.hold_ms = v;
             }
         } else if id == self.param_release {
-            let v = value.as_float().unwrap_or(RELEASE_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(GT, "release").default_f64() as f32);
             if v.is_finite() {
                 self.release_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_mix {
-            let v = value.as_float().unwrap_or(MIX_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(GT, "mix").default_f64() as f32);
             if v.is_finite() {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
             }
         } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().unwrap_or(LINK_CHANNELS_DEFAULT);
+            self.link_channels = value.as_bool().unwrap_or(pk(GT, "link_channels").default_bool());
         } else if id == self.param_sidechain_hpf_hz {
-            let v = value.as_float().unwrap_or(SIDECHAIN_HPF_HZ_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(GT, "sidechain_hpf_hz").default_f64() as f32);
             if v.is_finite() {
                 self.sidechain_hpf_hz = v.max(0.0);
                 self.update_coefficients();

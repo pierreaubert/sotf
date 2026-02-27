@@ -6,7 +6,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::param_specs::loudness_compensation::*;
+use sotf_plugins::param_specs::{find_by_key as pk, loudness_compensation::PARAMS as LC};
 
 /// State for rendering the Loudness Compensation plugin
 pub struct LoudnessCompensationRenderState {
@@ -62,8 +62,8 @@ pub fn render_loudness_compensation_plugin(
                                     plugin_idx,
                                     "Frequency",
                                     state.low_freq,
-                                    LOW_FREQ_MIN as f64,
-                                    LOW_FREQ_MAX as f64,
+                                    pk(LC, "low_freq").min_f64(),
+                                    pk(LC, "low_freq").max_f64(),
                                     "Hz",
                                     0,
                                     state.selected_param,
@@ -76,8 +76,8 @@ pub fn render_loudness_compensation_plugin(
                                     plugin_idx,
                                     "Gain",
                                     state.low_gain,
-                                    LOW_GAIN_MIN as f64,
-                                    LOW_GAIN_MAX as f64,
+                                    pk(LC, "low_gain").min_f64(),
+                                    pk(LC, "low_gain").max_f64(),
                                     "dB",
                                     1,
                                     state.selected_param,
@@ -103,8 +103,8 @@ pub fn render_loudness_compensation_plugin(
                                     plugin_idx,
                                     "Frequency",
                                     state.high_freq,
-                                    HIGH_FREQ_MIN as f64,
-                                    HIGH_FREQ_MAX as f64,
+                                    pk(LC, "high_freq").min_f64(),
+                                    pk(LC, "high_freq").max_f64(),
                                     "Hz",
                                     2,
                                     state.selected_param,
@@ -117,8 +117,8 @@ pub fn render_loudness_compensation_plugin(
                                     plugin_idx,
                                     "Gain",
                                     state.high_gain,
-                                    HIGH_GAIN_MIN as f64,
-                                    HIGH_GAIN_MAX as f64,
+                                    pk(LC, "high_gain").min_f64(),
+                                    pk(LC, "high_gain").max_f64(),
                                     "dB",
                                     3,
                                     state.selected_param,

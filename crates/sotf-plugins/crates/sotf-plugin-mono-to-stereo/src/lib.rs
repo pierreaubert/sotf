@@ -2,7 +2,7 @@
 // Mono-to-Stereo Plugin
 // ============================================================================
 
-use sotf_host::param_specs::mono_to_stereo::*;
+use sotf_host::param_specs::{find_by_key as pk, mono_to_stereo::PARAMS as MS};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;
@@ -24,10 +24,10 @@ pub struct MonoToStereoPluginParams {
 }
 
 fn default_stereo_width() -> f32 {
-    STEREO_WIDTH_DEFAULT
+    pk(MS, "stereo_width").default_f64() as f32
 }
 fn default_comp_eq_depth_db() -> f32 {
-    COMP_EQ_DEPTH_DB_DEFAULT
+    pk(MS, "comp_eq_depth_db").default_f64() as f32
 }
 
 pub struct MonoToStereoPlugin {
@@ -105,8 +105,8 @@ impl MonoToStereoPlugin {
             output_read_position: 0,
             analysis_window,
             output_scale,
-            stereo_width: Smoother::new(STEREO_WIDTH_DEFAULT, PARAM_SMOOTH_MS, 44100),
-            comp_eq_depth: Smoother::new(COMP_EQ_DEPTH_DB_DEFAULT, PARAM_SMOOTH_MS, 44100),
+            stereo_width: Smoother::new(pk(MS, "stereo_width").default_f64() as f32, PARAM_SMOOTH_MS, 44100),
+            comp_eq_depth: Smoother::new(pk(MS, "comp_eq_depth_db").default_f64() as f32, PARAM_SMOOTH_MS, 44100),
             fft_input_buf: vec![0.0; FFT_SIZE],
             fft_output_buf: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_input_buf: vec![Complex::new(0.0, 0.0); num_bins],
@@ -234,12 +234,12 @@ impl Plugin for MonoToStereoPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_stereo_width {
-            let v = value.as_float().unwrap_or(STEREO_WIDTH_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(MS, "stereo_width").default_f64() as f32);
             if v.is_finite() {
                 self.stereo_width.set_target(v);
             }
         } else if id == self.param_comp_eq_depth_db {
-            let v = value.as_float().unwrap_or(COMP_EQ_DEPTH_DB_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(MS, "comp_eq_depth_db").default_f64() as f32);
             if v.is_finite() {
                 self.comp_eq_depth.set_target(v);
             }

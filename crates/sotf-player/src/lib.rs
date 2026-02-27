@@ -11,6 +11,7 @@
 /// - Waveform scanning (`waveform_scanner`)
 /// - Bliss audio analysis (`bliss`)
 /// - Music recommendation engine (`recommendation`)
+pub mod controllers;
 pub mod audio_device;
 pub mod autoeq;
 pub mod bliss;
@@ -45,7 +46,7 @@ pub use database::MusicDatabase;
 pub use level_meter::{ChannelGroup, ChannelInfo, build_level_meter_groups};
 pub use library::{
     Album, AlbumChannelType, ChannelFilter, DirectoryInfo, LibrarySortOrder, MusicLibrary,
-    Playlist, PlaylistEntry, Track,
+    Playlist, PlaylistEntry, Track, group_and_merge_albums,
 };
 pub use library_scanner::{LibraryScanMessage, LibraryScanner};
 pub use library_stats::LibraryStats;
@@ -91,3 +92,10 @@ pub use sotf_plugins::{LoudnessData, LoudnessInfo, SpectrumData, SpectrumInfo};
 
 // Re-export parameter specifications for UI components
 pub use sotf_plugins::param_specs;
+
+// Re-export controllers
+pub use controllers::{
+    LibraryController, PlaybackController, PluginController, PluginUpdateEffect,
+    QueueController, QueuePlaybackEffect, ScanController, get_param_count,
+    param_index_to_engine_param,
+};

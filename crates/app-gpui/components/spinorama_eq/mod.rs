@@ -204,7 +204,7 @@ impl PlayerView {
     pub fn clear_spinorama_eq_from_playback(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Find and remove EQ plugins
-            let plugins = state.app.plugin_state.plugin_chain.plugins();
+            let plugins = state.app.plugin_state.chain.plugins();
             let eq_indices: Vec<_> = plugins
                 .iter()
                 .enumerate()
@@ -219,7 +219,7 @@ impl PlayerView {
 
             // Remove in reverse order to maintain correct indices
             for idx in eq_indices.into_iter().rev() {
-                state.app.plugin_state.plugin_chain.remove_plugin(idx);
+                state.app.plugin_state.chain.remove_plugin(idx);
             }
 
             state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
@@ -1510,7 +1510,7 @@ impl PlayerView {
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
-            let plugin_chain = &mut state.app.plugin_state.plugin_chain;
+            let plugin_chain = &mut state.app.plugin_state.chain;
 
             // Check if there's an existing EQ plugin
             if let Some(eq_idx) = plugin_chain.find_plugin_index(&sotf_audio_player::PluginType::EQ)

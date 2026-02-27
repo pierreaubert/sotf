@@ -10,7 +10,6 @@ use gpui::prelude::*;
 use gpui_ui_kit::workflow::NodeId;
 use sotf_audio_player::Player;
 
-use crate::app::types::ReplayGainMode;
 use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
@@ -18,7 +17,7 @@ use crate::theme::{Theme, ThemeId};
 use crate::app::debug::StateHistory;
 use crate::app::types::{
     ChannelGroup, InputMode, LayoutOrientation, LibraryStats, MeterDisplayMode,
-    OptimizationUiState, RackDisplayMode, ToastMessage,
+    OptimizationUiState, RackDisplayMode,
 };
 
 use super::ui::LayoutState;
@@ -69,7 +68,7 @@ pub struct App {
     pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
 
     // Queue state
-    pub queue: sotf_audio_player::Queue,
+    pub queue: sotf_audio_player::QueueController,
     pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
 
     // Speaker Optimization State
@@ -141,19 +140,8 @@ pub struct App {
     // Settings accordion expanded sections
     pub expanded_settings_sections: Vec<String>,
 
-    // Waveform scanner manager
-    pub waveform_manager: sotf_audio_player::WaveformScanManager,
-
-    // ReplayGain scanner manager
-    pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
-
-    // Bliss audio analysis scanner manager
-    pub bliss_manager: sotf_audio_player::BlissScanManager,
-
-    // ReplayGain settings
-    pub replay_gain_enabled: bool,
-    pub replay_gain_mode: ReplayGainMode,
-    pub replay_gain_preamp: f32,
+    // Scan managers (ReplayGain, Waveform, Bliss)
+    pub scan_ctrl: sotf_audio_player::ScanController,
 
     // Plugin UI states
     pub upmixer_config_open: bool,
@@ -216,7 +204,7 @@ impl App {
         let mut app = Self {
             library_stats: LibraryStats::default(),
             library_scanner: None,
-            queue: sotf_audio_player::Queue::new(),
+            queue: sotf_audio_player::QueueController::new(),
             expanded_queue_items: Vec::new(),
 
             // Speaker State Init
@@ -262,12 +250,7 @@ impl App {
             knob_drag_min: 0.0,
             knob_drag_max: 1.0,
             expanded_settings_sections: vec!["library".to_string()],
-            waveform_manager: sotf_audio_player::WaveformScanManager::new(),
-            replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
-            bliss_manager: sotf_audio_player::BlissScanManager::new(),
-            replay_gain_enabled: true,
-            replay_gain_mode: ReplayGainMode::Track,
-            replay_gain_preamp: 0.0,
+            scan_ctrl: sotf_audio_player::ScanController::new(),
             upmixer_config_open: false,
             spectrum_tilt_select_open: false,
             spectrum_reference_select_open: false,
@@ -876,7 +859,7 @@ impl App {
             };
             match self
                 .plugin_state
-                .plugin_chain
+                .chain
                 .load_from_file(&presets_dir, &preset_name)
             {
                 Ok(_) => {

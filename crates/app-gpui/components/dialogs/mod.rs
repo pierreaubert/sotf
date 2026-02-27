@@ -811,7 +811,7 @@ impl PlayerView {
     pub(crate) fn render_save_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let presets = state.app.plugin_state.available_plugin_presets.clone();
+        let presets = state.app.plugin_state.available_presets.clone();
         let selected_preset = state.app.plugin_state.selected_preset_index;
         let input = state.app.input_state.plugin_file_input.clone();
 
@@ -876,7 +876,7 @@ impl PlayerView {
     pub(crate) fn render_load_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let presets = state.app.plugin_state.available_plugin_presets.clone();
+        let presets = state.app.plugin_state.available_presets.clone();
         let selected_preset = state.app.plugin_state.selected_preset_index;
         let input = state.app.input_state.plugin_file_input.clone();
 
@@ -1156,7 +1156,7 @@ impl PlayerView {
                 (0.0, tracks, 0usize, albums, 0usize)
             }
             crate::app::types::ScanType::ReplayGain => {
-                let mgr = &state.app.replay_gain_manager;
+                let mgr = &state.app.scan_ctrl.replay_gain_manager;
                 (
                     mgr.progress(),
                     mgr.processed,
@@ -1166,7 +1166,7 @@ impl PlayerView {
                 )
             }
             crate::app::types::ScanType::Bliss => {
-                let mgr = &state.app.bliss_manager;
+                let mgr = &state.app.scan_ctrl.bliss_manager;
                 (
                     mgr.progress(),
                     mgr.processed,
@@ -1176,7 +1176,7 @@ impl PlayerView {
                 )
             }
             crate::app::types::ScanType::Waveform => {
-                let mgr = &state.app.waveform_manager;
+                let mgr = &state.app.scan_ctrl.waveform_manager;
                 (
                     mgr.progress(),
                     mgr.processed,
@@ -1193,9 +1193,9 @@ impl PlayerView {
         // Check if scan is complete
         let is_complete = match scan_type {
             crate::app::types::ScanType::Library => !state.app.library_state.scan_in_progress,
-            crate::app::types::ScanType::ReplayGain => !state.app.replay_gain_manager.in_progress,
-            crate::app::types::ScanType::Bliss => !state.app.bliss_manager.in_progress,
-            crate::app::types::ScanType::Waveform => !state.app.waveform_manager.in_progress,
+            crate::app::types::ScanType::ReplayGain => !state.app.scan_ctrl.replay_gain_manager.in_progress,
+            crate::app::types::ScanType::Bliss => !state.app.scan_ctrl.bliss_manager.in_progress,
+            crate::app::types::ScanType::Waveform => !state.app.scan_ctrl.waveform_manager.in_progress,
         };
 
         // Progress bar width (out of 100%)
@@ -1340,13 +1340,13 @@ impl PlayerView {
                     state.app.cancel_library_scan();
                 }
                 crate::app::types::ScanType::ReplayGain => {
-                    state.app.replay_gain_manager.stop();
+                    state.app.scan_ctrl.replay_gain_manager.stop();
                 }
                 crate::app::types::ScanType::Bliss => {
-                    state.app.bliss_manager.stop();
+                    state.app.scan_ctrl.bliss_manager.stop();
                 }
                 crate::app::types::ScanType::Waveform => {
-                    state.app.waveform_manager.stop();
+                    state.app.scan_ctrl.waveform_manager.stop();
                 }
             }
             state.app.scan_progress_modal = None;

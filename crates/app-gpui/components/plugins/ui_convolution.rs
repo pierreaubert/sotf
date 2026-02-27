@@ -5,7 +5,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::param_specs::convolution::*;
+use sotf_plugins::param_specs::{find_by_key as pk, convolution::PARAMS as CV};
 
 /// State for rendering the Convolution plugin
 pub struct ConvolutionRenderState<'a> {
@@ -179,8 +179,8 @@ pub fn render_convolution_plugin(
                             plugin_idx,
                             "Mix",
                             state.mix,
-                            MIX_MIN as f64,
-                            MIX_MAX as f64,
+                            pk(CV, "mix").min_f64(),
+                            pk(CV, "mix").max_f64(),
                             "%",
                             1,
                             state.selected_param,
@@ -193,8 +193,8 @@ pub fn render_convolution_plugin(
                             plugin_idx,
                             "Gain",
                             state.gain_db,
-                            GAIN_DB_MIN as f64,
-                            GAIN_DB_MAX as f64,
+                            pk(CV, "gain_db").min_f64(),
+                            pk(CV, "gain_db").max_f64(),
                             "dB",
                             2,
                             state.selected_param,

@@ -2,19 +2,19 @@
 // PND Plugin Configuration
 // ============================================================================
 
-use sotf_host::param_specs::pnd::*;
+use sotf_host::param_specs::{find_by_key as pk, pnd::PARAMS as PD};
 use serde::{Deserialize, Serialize};
 
 pub fn default_correction_strength() -> f32 {
-    CORRECTION_STRENGTH_DEFAULT
+    pk(PD, "correction_strength").default_f64() as f32
 }
 
 pub fn default_analysis_window_ms() -> f32 {
-    ANALYSIS_WINDOW_MS_DEFAULT
+    pk(PD, "analysis_window_ms").default_f64() as f32
 }
 
 pub fn default_drift_smoothing() -> f32 {
-    DRIFT_SMOOTHING_DEFAULT
+    pk(PD, "drift_smoothing").default_f64() as f32
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

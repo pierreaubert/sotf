@@ -15,7 +15,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::param_specs::limiter::*;
+use sotf_plugins::param_specs::{find_by_key as pk, limiter::PARAMS as LM};
 
 /// State for rendering the Limiter plugin
 pub struct LimiterRenderState {
@@ -79,8 +79,8 @@ pub fn render_limiter_plugin(
                                     plugin_idx,
                                     "Ceiling",
                                     state.threshold_db,
-                                    THRESHOLD_MIN as f64,
-                                    THRESHOLD_MAX as f64,
+                                    pk(LM, "threshold").min_f64(),
+                                    pk(LM, "threshold").max_f64(),
                                     "dB",
                                     0,
                                     state.selected_param,
@@ -94,8 +94,8 @@ pub fn render_limiter_plugin(
                                     plugin_idx,
                                     "Release",
                                     state.release_ms,
-                                    RELEASE_MIN as f64,
-                                    RELEASE_MAX as f64,
+                                    pk(LM, "release").min_f64(),
+                                    pk(LM, "release").max_f64(),
                                     "ms",
                                     1,
                                     state.selected_param,
@@ -109,8 +109,8 @@ pub fn render_limiter_plugin(
                                     plugin_idx,
                                     "Lookahead",
                                     state.lookahead_ms,
-                                    LOOKAHEAD_MIN as f64,
-                                    LOOKAHEAD_MAX as f64,
+                                    pk(LM, "lookahead").min_f64(),
+                                    pk(LM, "lookahead").max_f64(),
                                     "ms",
                                     2,
                                     state.selected_param,
@@ -161,8 +161,8 @@ pub fn render_limiter_plugin(
                                     plugin_idx,
                                     "Mix",
                                     state.mix * 100.0,
-                                    MIX_MIN as f64 * 100.0,
-                                    MIX_MAX as f64 * 100.0,
+                                    pk(LM, "mix").min_f64() * 100.0,
+                                    pk(LM, "mix").max_f64() * 100.0,
                                     "%",
                                     4,
                                     state.selected_param,

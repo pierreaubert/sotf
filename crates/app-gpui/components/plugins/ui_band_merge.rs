@@ -8,7 +8,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::band_merge::*;
+use sotf_plugins::param_specs::{find_by_key as pk, band_merge::PARAMS as BM};
 
 /// State for rendering the BandMerge plugin
 pub struct BandMergeRenderState {
@@ -44,8 +44,8 @@ pub fn render_band_merge_plugin(
                             plugin_idx,
                             "Number of Bands",
                             state.bands as f64,
-                            BANDS_MIN as f64,
-                            BANDS_MAX as f64,
+                            pk(BM, "bands").min_f64(),
+                            pk(BM, "bands").max_f64(),
                             "",
                             0,
                             state.selected_param,

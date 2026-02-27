@@ -2,7 +2,7 @@
 // Limiter Plugin
 // ============================================================================
 
-use sotf_host::param_specs::limiter::*;
+use sotf_host::param_specs::{find_by_key as pk, limiter::PARAMS as LM};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -25,19 +25,19 @@ pub struct LimiterPluginParams {
 }
 
 fn default_threshold_db() -> f32 {
-    THRESHOLD_DEFAULT
+    pk(LM, "threshold").default_f64() as f32
 }
 fn default_release_ms() -> f32 {
-    RELEASE_DEFAULT
+    pk(LM, "release").default_f64() as f32
 }
 fn default_lookahead_ms() -> f32 {
-    LOOKAHEAD_DEFAULT
+    pk(LM, "lookahead").default_f64() as f32
 }
 fn default_soft() -> bool {
-    SOFT_DEFAULT
+    pk(LM, "soft").default_bool()
 }
 fn default_mix() -> f32 {
-    MIX_DEFAULT
+    pk(LM, "mix").default_f64() as f32
 }
 
 pub struct LimiterPlugin {
@@ -105,8 +105,8 @@ impl LimiterPlugin {
                 "threshold",
                 "Threshold",
                 self.threshold_db,
-                THRESHOLD_MIN,
-                THRESHOLD_MAX,
+                pk(LM, "threshold").min_f64() as f32,
+                pk(LM, "threshold").max_f64() as f32,
             )
             .with_description("Ceiling level (dB)")
             .with_group("Dynamics")
@@ -115,8 +115,8 @@ impl LimiterPlugin {
                 "release",
                 "Release",
                 self.release_ms,
-                RELEASE_MIN,
-                RELEASE_MAX,
+                pk(LM, "release").min_f64() as f32,
+                pk(LM, "release").max_f64() as f32,
             )
             .with_description("Release time (ms)")
             .with_group("Timing")
@@ -129,13 +129,13 @@ impl LimiterPlugin {
                 "lookahead",
                 "Lookahead",
                 self.lookahead_ms,
-                LOOKAHEAD_DEFAULT,
-                LOOKAHEAD_MAX,
+                pk(LM, "lookahead").default_f64() as f32,
+                pk(LM, "lookahead").max_f64() as f32,
             )
             .with_description("Lookahead time for peak detection (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
+            Parameter::new_float("mix", "Mix", self.mix, pk(LM, "mix").min_f64() as f32, pk(LM, "mix").max_f64() as f32)
                 .with_description("Dry/wet mix (0 = dry, 1 = limited)")
                 .with_group("Output")
                 .with_importance(ParameterImportance::Useful),
@@ -186,28 +186,28 @@ impl InPlacePlugin for LimiterPlugin {
         }
 
         if id == self.param_threshold {
-            let val = value.as_float().unwrap_or(THRESHOLD_DEFAULT);
+            let val = value.as_float().unwrap_or(pk(LM, "threshold").default_f64() as f32);
             if val.is_finite() {
                 self.threshold_db = val;
                 self.threshold_smoother
                     .set_target(fast_pow10(self.threshold_db / 20.0));
             }
         } else if id == self.param_release {
-            let val = value.as_float().unwrap_or(RELEASE_DEFAULT);
+            let val = value.as_float().unwrap_or(pk(LM, "release").default_f64() as f32);
             if val.is_finite() {
                 self.release_ms = val.max(1.0);
                 self.update_coefficients();
             }
         } else if id == self.param_lookahead {
-            let val = value.as_float().unwrap_or(LOOKAHEAD_DEFAULT);
+            let val = value.as_float().unwrap_or(pk(LM, "lookahead").default_f64() as f32);
             if val.is_finite() {
                 self.lookahead_ms = val.max(0.0);
                 self.update_coefficients();
             }
         } else if id == self.param_soft {
-            self.soft = value.as_bool().unwrap_or(SOFT_DEFAULT);
+            self.soft = value.as_bool().unwrap_or(pk(LM, "soft").default_bool());
         } else if id == self.param_mix {
-            let val = value.as_float().unwrap_or(MIX_DEFAULT);
+            let val = value.as_float().unwrap_or(pk(LM, "mix").default_f64() as f32);
             if val.is_finite() {
                 self.mix = val.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);

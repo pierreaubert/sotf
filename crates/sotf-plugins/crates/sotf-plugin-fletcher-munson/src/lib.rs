@@ -3,7 +3,7 @@
 // ============================================================================
 
 use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
-use sotf_host::param_specs::fletcher_munson::*;
+use sotf_host::param_specs::{find_by_key as pk, fletcher_munson::PARAMS as FM};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -66,36 +66,36 @@ impl FletcherMunsonPlugin {
         let sr = 44100;
         let bands = [
             FletcherMunsonBand::new(
-                BAND1_FREQ_DEFAULT,
-                BAND1_Q_DEFAULT,
-                BAND1_MAX_GAIN_DEFAULT,
-                BAND1_SLOPE_DEFAULT,
+                pk(FM, "band1_freq").default_f64(),
+                pk(FM, "band1_q").default_f64(),
+                pk(FM, "band1_max_gain").default_f64(),
+                pk(FM, "band1_slope").default_f64(),
             ),
             FletcherMunsonBand::new(
-                BAND2_FREQ_DEFAULT,
-                BAND2_Q_DEFAULT,
-                BAND2_MAX_GAIN_DEFAULT,
-                BAND2_SLOPE_DEFAULT,
+                pk(FM, "band2_freq").default_f64(),
+                pk(FM, "band2_q").default_f64(),
+                pk(FM, "band2_max_gain").default_f64(),
+                pk(FM, "band2_slope").default_f64(),
             ),
             FletcherMunsonBand::new(
-                BAND3_FREQ_DEFAULT,
-                BAND3_Q_DEFAULT,
-                BAND3_MAX_GAIN_DEFAULT,
-                BAND3_SLOPE_DEFAULT,
+                pk(FM, "band3_freq").default_f64(),
+                pk(FM, "band3_q").default_f64(),
+                pk(FM, "band3_max_gain").default_f64(),
+                pk(FM, "band3_slope").default_f64(),
             ),
             FletcherMunsonBand::new(
-                BAND4_FREQ_DEFAULT,
-                BAND4_Q_DEFAULT,
-                BAND4_MAX_GAIN_DEFAULT,
-                BAND4_SLOPE_DEFAULT,
+                pk(FM, "band4_freq").default_f64(),
+                pk(FM, "band4_q").default_f64(),
+                pk(FM, "band4_max_gain").default_f64(),
+                pk(FM, "band4_slope").default_f64(),
             ),
         ];
 
         let mut p = Self {
             num_channels,
             sample_rate: sr,
-            playback_volume_db: PLAYBACK_VOLUME_DB_DEFAULT,
-            reference_level_db: REFERENCE_LEVEL_DB_DEFAULT,
+            playback_volume_db: pk(FM, "playback_volume_db").default_f64() as f32,
+            reference_level_db: pk(FM, "reference_level_db").default_f64() as f32,
             bands,
             enabled: true,
             filters: vec![Vec::with_capacity(NUM_BANDS); num_channels],
@@ -159,8 +159,8 @@ impl FletcherMunsonPlugin {
                 AutoGainParams {
                     enabled: true,
                     loudness_type: AutoGainLoudnessType::Momentary,
-                    max_gain_db: AUTO_GAIN_MAX_DB_DEFAULT,
-                    smoothing_ms: AUTO_GAIN_SMOOTHING_MS_DEFAULT,
+                    max_gain_db: pk(FM, "auto_gain_max_db").default_f64() as f32,
+                    smoothing_ms: pk(FM, "auto_gain_smoothing_ms").default_f64() as f32,
                 },
             )?);
         }
@@ -185,8 +185,8 @@ impl InPlacePlugin for FletcherMunsonPlugin {
                 "playback_volume_db",
                 "Playback Volume",
                 self.playback_volume_db,
-                PLAYBACK_VOLUME_DB_MIN,
-                PLAYBACK_VOLUME_DB_MAX,
+                pk(FM, "playback_volume_db").min_f64() as f32,
+                pk(FM, "playback_volume_db").max_f64() as f32,
             )
             .with_group("Levels")
             .with_importance(ParameterImportance::Critical),
@@ -194,8 +194,8 @@ impl InPlacePlugin for FletcherMunsonPlugin {
                 "reference_level_db",
                 "Reference Level",
                 self.reference_level_db,
-                REFERENCE_LEVEL_DB_MIN,
-                REFERENCE_LEVEL_DB_MAX,
+                pk(FM, "reference_level_db").min_f64() as f32,
+                pk(FM, "reference_level_db").max_f64() as f32,
             )
             .with_group("Levels"),
             Parameter::new_bool("enabled", "Enabled", self.enabled).with_group("Control"),

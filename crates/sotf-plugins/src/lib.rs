@@ -5,6 +5,9 @@
 //! This is the facade crate that re-exports shared infrastructure from `sotf-host`
 //! and all plugin implementations from their individual crates.
 
+// Re-export the serde_param_default macro from sotf-host
+pub use sotf_host::serde_param_default;
+
 // Re-export infrastructure modules from sotf-host
 pub use sotf_host::analyzer;
 pub use sotf_host::analyzer_loudness_monitor;

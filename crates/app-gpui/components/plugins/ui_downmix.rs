@@ -10,7 +10,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::downmix::*;
+use sotf_plugins::param_specs::{find_by_key as pk, downmix::PARAMS as DM};
 
 /// State for rendering the Downmix plugin
 pub struct DownmixRenderState {
@@ -52,8 +52,8 @@ pub fn render_downmix_plugin(
                             plugin_idx,
                             "Center",
                             state.center_gain_db,
-                            CENTER_GAIN_DB_MIN as f64,
-                            CENTER_GAIN_DB_MAX as f64,
+                            pk(DM, "center_gain_db").min_f64(),
+                            pk(DM, "center_gain_db").max_f64(),
                             "dB",
                             0,
                             state.selected_param,
@@ -66,8 +66,8 @@ pub fn render_downmix_plugin(
                             plugin_idx,
                             "Surround",
                             state.surround_gain_db,
-                            SURROUND_GAIN_DB_MIN as f64,
-                            SURROUND_GAIN_DB_MAX as f64,
+                            pk(DM, "surround_gain_db").min_f64(),
+                            pk(DM, "surround_gain_db").max_f64(),
                             "dB",
                             1,
                             state.selected_param,
@@ -80,8 +80,8 @@ pub fn render_downmix_plugin(
                             plugin_idx,
                             "Height",
                             state.height_gain_db,
-                            HEIGHT_GAIN_DB_MIN as f64,
-                            HEIGHT_GAIN_DB_MAX as f64,
+                            pk(DM, "height_gain_db").min_f64(),
+                            pk(DM, "height_gain_db").max_f64(),
                             "dB",
                             2,
                             state.selected_param,
@@ -94,8 +94,8 @@ pub fn render_downmix_plugin(
                             plugin_idx,
                             "LFE",
                             state.lfe_gain_db,
-                            LFE_GAIN_DB_MIN as f64,
-                            LFE_GAIN_DB_MAX as f64,
+                            pk(DM, "lfe_gain_db").min_f64(),
+                            pk(DM, "lfe_gain_db").max_f64(),
                             "dB",
                             3,
                             state.selected_param,
@@ -132,8 +132,8 @@ pub fn render_downmix_plugin(
                                 plugin_idx,
                                 "Blend Low",
                                 state.phase_blend_low_hz,
-                                PHASE_BLEND_LOW_HZ_MIN as f64,
-                                PHASE_BLEND_LOW_HZ_MAX as f64,
+                                pk(DM, "phase_blend_low_hz").min_f64(),
+                                pk(DM, "phase_blend_low_hz").max_f64(),
                                 "Hz",
                                 5,
                                 state.selected_param,
@@ -146,8 +146,8 @@ pub fn render_downmix_plugin(
                                 plugin_idx,
                                 "Blend High",
                                 state.phase_blend_high_hz,
-                                PHASE_BLEND_HIGH_HZ_MIN as f64,
-                                PHASE_BLEND_HIGH_HZ_MAX as f64,
+                                pk(DM, "phase_blend_high_hz").min_f64(),
+                                pk(DM, "phase_blend_high_hz").max_f64(),
                                 "Hz",
                                 6,
                                 state.selected_param,

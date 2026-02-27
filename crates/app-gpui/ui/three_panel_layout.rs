@@ -368,7 +368,7 @@ impl PlayerView {
     fn render_mini_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, output_channels) = {
             let state = self.state.read(cx);
-            let channels = state.app.plugin_state.plugin_chain.output_channels();
+            let channels = state.app.plugin_state.chain.output_channels();
             (state.app.ui_state.theme.clone(), channels)
         };
 

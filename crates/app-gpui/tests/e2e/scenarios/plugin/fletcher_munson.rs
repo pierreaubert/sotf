@@ -34,7 +34,7 @@ impl TestScenario for FletcherMunsonScenario {
             // Find Fletcher-Munson plugin index
             let plugin_idx = app
                 .plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
@@ -51,7 +51,7 @@ impl TestScenario for FletcherMunsonScenario {
             println!("Verifying Reference Level...");
             let plugin_idx = app
                 .plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
@@ -59,7 +59,7 @@ impl TestScenario for FletcherMunsonScenario {
 
             let plugin = app
                 .plugin_state
-                .plugin_chain
+                .chain
                 .get_plugin(plugin_idx)
                 .ok_or_else(|| "Plugin not found")?;
 
@@ -88,7 +88,7 @@ impl TestScenario for FletcherMunsonScenario {
             println!("Modifying Band 1 Frequency...");
             let plugin_idx = app
                 .plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
@@ -103,7 +103,7 @@ impl TestScenario for FletcherMunsonScenario {
             println!("Verifying Band 1 Frequency...");
             let plugin_idx = app
                 .plugin_state
-                .plugin_chain
+                .chain
                 .plugins()
                 .iter()
                 .position(|p| matches!(p.plugin_type(), PluginType::FletcherMunson))
@@ -111,7 +111,7 @@ impl TestScenario for FletcherMunsonScenario {
 
             let plugin = app
                 .plugin_state
-                .plugin_chain
+                .chain
                 .get_plugin(plugin_idx)
                 .expect("Plugin not found");
 

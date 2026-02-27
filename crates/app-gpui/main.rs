@@ -85,8 +85,10 @@ fn main() {
         .run(move |cx| {
             // Load custom fonts
             let fonts = vec![
-                "fonts/DMSerifDisplay-Regular.ttf",
-                "fonts/DMSerifDisplay-Italic.ttf",
+                "fonts/B612-Regular.ttf",
+                "fonts/B612-Italic.ttf",
+                "fonts/B612-Bold.ttf",
+                "fonts/B612-BoldItalic.ttf",
             ];
 
             let mut font_data = Vec::new();

@@ -83,7 +83,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn get_matrix_channel_mute_state(&mut self, channel_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            for plugin in app.plugin_state.plugin_chain.plugins() {
+            for plugin in app.plugin_state.chain.plugins() {
                 if let PluginSettings::Matrix { channel_states, .. } = &plugin.settings {
                     return channel_states
                         .get(channel_idx)
@@ -97,7 +97,7 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
 
     pub fn get_matrix_channel_solo_state(&mut self, channel_idx: usize) -> bool {
         self.driver.read_app(|app| {
-            for plugin in app.plugin_state.plugin_chain.plugins() {
+            for plugin in app.plugin_state.chain.plugins() {
                 if let PluginSettings::Matrix { channel_states, .. } = &plugin.settings {
                     return channel_states
                         .get(channel_idx)

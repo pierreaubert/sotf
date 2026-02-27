@@ -12,22 +12,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-
-// XTC parameter ranges (matching defaults in plugins.rs)
-const DISTANCE_MIN: f64 = 0.5;
-const DISTANCE_MAX: f64 = 5.0;
-const ANGLE_MIN: f64 = 10.0;
-const ANGLE_MAX: f64 = 60.0;
-const HEAD_RADIUS_MIN: f64 = 0.05;
-const HEAD_RADIUS_MAX: f64 = 0.15;
-const BETA_BASE_MIN: f64 = 0.0001;
-const BETA_BASE_MAX: f64 = 0.1;
-const BETA_BOOST_MIN: f64 = 1.0;
-const BETA_BOOST_MAX: f64 = 100.0;
-const HEAD_SHADOW_CUTOFF_MIN: f64 = 1000.0;
-const HEAD_SHADOW_CUTOFF_MAX: f64 = 10000.0;
-const HEAD_SHADOW_SLOPE_MIN: f64 = 0.0;
-const HEAD_SHADOW_SLOPE_MAX: f64 = 12.0;
+use sotf_plugins::param_specs::{find_by_key as pk, xtc::PARAMS as XT};
 
 /// State for rendering the XTC plugin
 pub struct XtcRenderState {
@@ -90,8 +75,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Distance",
                             state.distance_m,
-                            DISTANCE_MIN,
-                            DISTANCE_MAX,
+                            pk(XT, "distance_m").min_f64(),
+                            pk(XT, "distance_m").max_f64(),
                             "m",
                             0,
                             state.selected_param,
@@ -105,8 +90,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Angle",
                             state.speaker_angle_deg,
-                            ANGLE_MIN,
-                            ANGLE_MAX,
+                            pk(XT, "speaker_angle_deg").min_f64(),
+                            pk(XT, "speaker_angle_deg").max_f64(),
                             "°",
                             1,
                             state.selected_param,
@@ -120,8 +105,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Head Radius",
                             state.head_radius_m * 100.0,
-                            HEAD_RADIUS_MIN * 100.0,
-                            HEAD_RADIUS_MAX * 100.0,
+                            pk(XT, "head_radius_m").min_f64() * 100.0,
+                            pk(XT, "head_radius_m").max_f64() * 100.0,
                             "cm",
                             2,
                             state.selected_param,
@@ -193,8 +178,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Beta Base",
                             state.beta_base * 1000.0,
-                            BETA_BASE_MIN * 1000.0,
-                            BETA_BASE_MAX * 1000.0,
+                            pk(XT, "beta_base").min_f64() * 1000.0,
+                            pk(XT, "beta_base").max_f64() * 1000.0,
                             "×10⁻³",
                             6,
                             state.selected_param,
@@ -208,8 +193,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "LF Boost",
                             state.beta_low_freq_boost,
-                            BETA_BOOST_MIN,
-                            BETA_BOOST_MAX,
+                            pk(XT, "beta_low_freq_boost").min_f64(),
+                            pk(XT, "beta_low_freq_boost").max_f64(),
                             "×",
                             7,
                             state.selected_param,
@@ -223,8 +208,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "HF Boost",
                             state.beta_high_freq_boost,
-                            BETA_BOOST_MIN,
-                            BETA_BOOST_MAX,
+                            pk(XT, "beta_low_freq_boost").min_f64(),
+                            pk(XT, "beta_low_freq_boost").max_f64(),
                             "×",
                             8,
                             state.selected_param,
@@ -246,8 +231,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Cutoff",
                             state.head_shadow_cutoff_hz,
-                            HEAD_SHADOW_CUTOFF_MIN,
-                            HEAD_SHADOW_CUTOFF_MAX,
+                            pk(XT, "head_shadow_cutoff_hz").min_f64(),
+                            pk(XT, "head_shadow_cutoff_hz").max_f64(),
                             "Hz",
                             9,
                             state.selected_param,
@@ -261,8 +246,8 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Slope",
                             state.head_shadow_slope_db_per_octave,
-                            HEAD_SHADOW_SLOPE_MIN,
-                            HEAD_SHADOW_SLOPE_MAX,
+                            pk(XT, "head_shadow_slope_db_per_octave").min_f64(),
+                            pk(XT, "head_shadow_slope_db_per_octave").max_f64(),
                             "dB/oct",
                             10,
                             state.selected_param,

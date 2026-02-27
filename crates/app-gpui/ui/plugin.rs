@@ -34,11 +34,11 @@ impl PlayerView {
                 param_index,
             } => {
                 // Zero-dropout individual parameter update
-                if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin(plugin_index) {
+                if let Some(plugin) = state.app.plugin_state.chain.get_plugin(plugin_index) {
                     // We must map the UI index to the Engine index because the Engine reorders plugins
                     // (analyzers moved to the end) and filters out disabled ones.
                     if let Some(engine_index) =
-                        state.app.plugin_state.plugin_chain.get_engine_index(plugin_index)
+                        state.app.plugin_state.chain.get_engine_index(plugin_index)
                     {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&plugin.settings, param_index)
@@ -52,7 +52,7 @@ impl PlayerView {
                             let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
                             let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
                             let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
-                            let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
+                            let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
                             state.player.lock().update_plugins(plugins)
                         }
                     } else {
@@ -68,11 +68,11 @@ impl PlayerView {
                 let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
                 let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
                 let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
-                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
+                let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
                 log::warn!(
                     "[GPUI] Structural update: sending {} plugins to engine (expected output: {} channels) at {}Hz",
                     plugins.len(),
-                    state.app.plugin_state.plugin_chain.output_channels(),
+                    state.app.plugin_state.chain.output_channels(),
                     sample_rate
                 );
                 state.player.lock().update_plugins(plugins)

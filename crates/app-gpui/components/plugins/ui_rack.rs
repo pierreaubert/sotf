@@ -319,7 +319,7 @@ impl PlayerView {
     fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (plugins_data, selected_idx, theme) = {
             let state = self.state.read(cx);
-            let chain = &state.app.plugin_state.plugin_chain;
+            let chain = &state.app.plugin_state.chain;
             let plugins: Vec<_> = chain
                 .plugins()
                 .iter()
@@ -510,13 +510,13 @@ impl PlayerView {
                                                 if source != insert_pos {
                                                     view.state.update(cx, |state, _cx| {
                                                         let chain_len =
-                                                            state.app.plugin_state.plugin_chain.plugins().len();
+                                                            state.app.plugin_state.chain.plugins().len();
 
                                                         // Check if source plugin is a LoudnessMonitor
                                                         let source_is_monitor = state
                                                             .app
                                                             .plugin_state
-                                                            .plugin_chain
+                                                            .chain
                                                             .get_plugin(source)
                                                             .map(|p| {
                                                                 matches!(
@@ -541,14 +541,14 @@ impl PlayerView {
                                                         state
                                                             .app
                                                             .plugin_state
-                                                            .plugin_chain
+                                                            .chain
                                                             .move_plugin(source, insert_pos);
                                                         state.app.plugin_state.selected_plugin_index =
                                                             insert_pos;
                                                         state
                                                             .app
                                                             .plugin_state
-                                                            .plugin_chain
+                                                            .chain
                                                             .update_channel_dependent_plugins();
                                                         state.app.plugin_state.pending_plugin_update =
                                                             Some(PluginUpdateType::Structural);
@@ -610,12 +610,12 @@ impl PlayerView {
                                                 if source != target {
                                                     view.state.update(cx, |state, _cx| {
                                                         let chain_len =
-                                                            state.app.plugin_state.plugin_chain.plugins().len();
+                                                            state.app.plugin_state.chain.plugins().len();
 
                                                         // Check if source plugin is a LoudnessMonitor
                                                         let source_is_monitor = state
                                                             .app
-                                                            .plugin_state.plugin_chain
+                                                            .plugin_state.chain
                                                             .get_plugin(source)
                                                             .map(|p| {
                                                                 matches!(
@@ -645,14 +645,14 @@ impl PlayerView {
                                                         state
                                                             .app
                                                             .plugin_state
-                                                            .plugin_chain
+                                                            .chain
                                                             .move_plugin(source, target);
                                                         state.app.plugin_state.selected_plugin_index = target;
                                                         // Update channel-dependent plugins after move
                                                         state
                                                             .app
                                                             .plugin_state
-                                                            .plugin_chain
+                                                            .chain
                                                             .update_channel_dependent_plugins();
                                                         state.app.plugin_state.pending_plugin_update =
                                                             Some(PluginUpdateType::Structural);
@@ -840,12 +840,12 @@ impl PlayerView {
                                         if source != target {
                                             view.state.update(cx, |state, _cx| {
                                                 let chain_len =
-                                                    state.app.plugin_state.plugin_chain.plugins().len();
+                                                    state.app.plugin_state.chain.plugins().len();
 
                                                 let source_is_monitor = state
                                                     .app
                                                     .plugin_state
-                                                    .plugin_chain
+                                                    .chain
                                                     .get_plugin(source)
                                                     .map(|p| {
                                                         matches!(
@@ -867,13 +867,13 @@ impl PlayerView {
                                                 state
                                                     .app
                                                     .plugin_state
-                                                    .plugin_chain
+                                                    .chain
                                                     .move_plugin(source, target);
                                                 state.app.plugin_state.selected_plugin_index = target;
                                                 state
                                                     .app
                                                     .plugin_state
-                                                    .plugin_chain
+                                                    .chain
                                                     .update_channel_dependent_plugins();
                                                 state.app.plugin_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
@@ -1109,7 +1109,7 @@ impl PlayerView {
         let present_plugins: Vec<_> = state
             .app
             .plugin_state
-            .plugin_chain
+            .chain
             .plugins()
             .iter()
             .map(|p| p.plugin_type().clone())
@@ -1270,7 +1270,7 @@ impl PlayerView {
             let plugin = state
                 .app
                 .plugin_state
-                .plugin_chain
+                .chain
                 .get_plugin(state.app.plugin_state.selected_plugin_index)
                 .cloned();
             (
@@ -1403,7 +1403,7 @@ impl PlayerView {
                     // Calculate output channels based on plugin chain for conditional divider
                     let state = self.state.read(cx);
                     let mut output_channels = 2;
-                    for p in state.app.plugin_state.plugin_chain.plugins() {
+                    for p in state.app.plugin_state.chain.plugins() {
                         if p.enabled {
                             match p.plugin_type() {
                                 PluginType::Upmixer => {
@@ -1527,7 +1527,7 @@ impl PlayerView {
                                             // Find all LoudnessMonitor indices in the chain
                                             let monitor_indices: Vec<usize> = state
                                                 .app
-                                                .plugin_state.plugin_chain
+                                                .plugin_state.chain
                                                 .plugins()
                                                 .iter()
                                                 .enumerate()
@@ -1566,7 +1566,7 @@ impl PlayerView {
                                     let selected_eq_band = app_st.app.plugin_state.selected_eq_band;
                                     let spectrum_tilt_open = app_st.app.spectrum_tilt_select_open;
                                     let spectrum_ref_open = app_st.app.spectrum_reference_select_open;
-                                    let plugin_chain = app_st.app.plugin_state.plugin_chain.clone();
+                                    let plugin_chain = app_st.app.plugin_state.chain.clone();
 
                                     if simple_view {
                                         super::ui_simple::render_simple_plugin_view(

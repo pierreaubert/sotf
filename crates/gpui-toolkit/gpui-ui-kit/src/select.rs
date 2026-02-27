@@ -247,7 +247,7 @@ impl Select {
     }
 
     /// Build into element
-    fn build(self, theme: &SelectTheme, cx: &mut App) -> Div {
+    fn build(self, global_theme: &crate::theme::Theme, theme: &SelectTheme, cx: &mut App) -> Div {
         let (py, _text_size_class) = match self.size {
             SelectSize::Xs => (px(2.0), "xs"),
             SelectSize::Sm => (px(4.0), "sm"),
@@ -261,6 +261,7 @@ impl Select {
         if let Some(label) = self.label {
             container = container.child(
                 div()
+                    .font_family(global_theme.font_family.clone())
                     .text_sm()
                     .text_color(theme.label_color)
                     .font_weight(FontWeight::MEDIUM)
@@ -299,6 +300,7 @@ impl Select {
 
         let mut trigger = div()
             .id(self.id)
+            .font_family(global_theme.font_family.clone())
             .track_focus(&focus_handle)
             .flex()
             .items_center()
@@ -440,6 +442,7 @@ impl Select {
             let dropdown_id_for_options = dropdown_id.clone();
             let mut dropdown = div()
                 .id((dropdown_id, "dropdown"))
+                .font_family(global_theme.font_family.clone())
                 .absolute()
                 .top_full()
                 .left_0()
@@ -536,7 +539,7 @@ impl RenderOnce for Select {
             .clone()
             .unwrap_or_else(|| SelectTheme::from(&global_theme));
 
-        self.build(&theme, cx)
+        self.build(&global_theme, &theme, cx)
     }
 }
 

@@ -2,7 +2,7 @@
 // Crossfeed Plugin - Headphone crossfeed for speaker-like listening
 // ============================================================================
 
-use sotf_host::param_specs::crossfeed::*;
+use sotf_host::param_specs::{find_by_key as pk, crossfeed::PARAMS as CF};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, enable_ftz_daz, interleave_stereo};
@@ -82,51 +82,51 @@ fn default_enabled() -> bool {
 }
 
 fn default_mix() -> f32 {
-    MIX_DEFAULT
+    pk(CF, "mix").default_f64() as f32
 }
 
 fn default_bauer_fcut() -> f32 {
-    BAUER_FCUT_DEFAULT
+    pk(CF, "bauer_fcut_hz").default_f64() as f32
 }
 
 fn default_bauer_feed() -> f32 {
-    BAUER_FEED_DEFAULT
+    pk(CF, "bauer_feed_db").default_f64() as f32
 }
 
 fn default_meier_level() -> f32 {
-    MEIER_LEVEL_DEFAULT
+    pk(CF, "meier_level").default_f64() as f32
 }
 
 fn default_mb_low_freq() -> f32 {
-    MB_LOW_FREQ_DEFAULT
+    pk(CF, "mb_low_freq_hz").default_f64() as f32
 }
 
 fn default_mb_mid_high_freq() -> f32 {
-    MB_MID_HIGH_FREQ_DEFAULT
+    pk(CF, "mb_mid_high_freq_hz").default_f64() as f32
 }
 
 fn default_mb_low_feed() -> f32 {
-    MB_LOW_FEED_DEFAULT
+    pk(CF, "mb_low_feed_db").default_f64() as f32
 }
 
 fn default_mb_mid_feed() -> f32 {
-    MB_MID_FEED_DEFAULT
+    pk(CF, "mb_mid_feed_db").default_f64() as f32
 }
 
 fn default_mb_high_feed() -> f32 {
-    MB_HIGH_FEED_DEFAULT
+    pk(CF, "mb_high_feed_db").default_f64() as f32
 }
 
 fn default_autogain_target() -> f32 {
-    AUTOGAIN_TARGET_DEFAULT
+    pk(CF, "autogain_target_lufs").default_f64() as f32
 }
 
 fn default_autogain_max_gain() -> f32 {
-    AUTOGAIN_MAX_GAIN_DEFAULT
+    pk(CF, "autogain_max_gain_db").default_f64() as f32
 }
 
 fn default_autogain_smoothing() -> f32 {
-    AUTOGAIN_SMOOTHING_DEFAULT
+    pk(CF, "autogain_smoothing_ms").default_f64() as f32
 }
 
 impl Default for CrossfeedPluginParams {
@@ -136,18 +136,18 @@ impl Default for CrossfeedPluginParams {
             preset: CrossfeedPreset::Default,
             enabled: true,
             mix: 1.0,
-            bauer_fcut_hz: BAUER_FCUT_DEFAULT,
-            bauer_feed_db: BAUER_FEED_DEFAULT,
-            meier_level: MEIER_LEVEL_DEFAULT,
-            mb_low_freq_hz: MB_LOW_FREQ_DEFAULT,
-            mb_mid_high_freq_hz: MB_MID_HIGH_FREQ_DEFAULT,
-            mb_low_feed_db: MB_LOW_FEED_DEFAULT,
-            mb_mid_feed_db: MB_MID_FEED_DEFAULT,
-            mb_high_feed_db: MB_HIGH_FEED_DEFAULT,
-            autogain_enabled: false,
-            autogain_target_lufs: AUTOGAIN_TARGET_DEFAULT,
-            autogain_max_gain_db: AUTOGAIN_MAX_GAIN_DEFAULT,
-            autogain_smoothing_ms: AUTOGAIN_SMOOTHING_DEFAULT,
+            bauer_fcut_hz: pk(CF, "bauer_fcut_hz").default_f64() as f32,
+            bauer_feed_db: pk(CF, "bauer_feed_db").default_f64() as f32,
+            meier_level: pk(CF, "meier_level").default_f64() as f32,
+            mb_low_freq_hz: pk(CF, "mb_low_freq_hz").default_f64() as f32,
+            mb_mid_high_freq_hz: pk(CF, "mb_mid_high_freq_hz").default_f64() as f32,
+            mb_low_feed_db: pk(CF, "mb_low_feed_db").default_f64() as f32,
+            mb_mid_feed_db: pk(CF, "mb_mid_feed_db").default_f64() as f32,
+            mb_high_feed_db: pk(CF, "mb_high_feed_db").default_f64() as f32,
+            autogain_enabled: pk(CF, "autogain_enabled").default_bool(),
+            autogain_target_lufs: pk(CF, "autogain_target_lufs").default_f64() as f32,
+            autogain_max_gain_db: pk(CF, "autogain_max_gain_db").default_f64() as f32,
+            autogain_smoothing_ms: pk(CF, "autogain_smoothing_ms").default_f64() as f32,
         }
     }
 }
@@ -377,69 +377,69 @@ impl CrossfeedPlugin {
     fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
             Parameter::new_bool("enabled", "Enabled", self.params.enabled).with_group("General"),
-            Parameter::new_float("mix", "Mix", self.params.mix, 0.0, 1.0).with_group("General"),
+            Parameter::new_float("mix", "Mix", self.params.mix, pk(CF, "mix").min_f64() as f32, pk(CF, "mix").max_f64() as f32).with_group("General"),
             Parameter::new_float(
                 "bauer_fcut_hz",
                 "Bauer Cutoff",
                 self.params.bauer_fcut_hz,
-                BAUER_FCUT_MIN,
-                BAUER_FCUT_MAX,
+                pk(CF, "bauer_fcut_hz").min_f64() as f32,
+                pk(CF, "bauer_fcut_hz").max_f64() as f32,
             )
             .with_group("Bauer"),
             Parameter::new_float(
                 "bauer_feed_db",
                 "Bauer Feed",
                 self.params.bauer_feed_db,
-                BAUER_FEED_MIN,
-                BAUER_FEED_MAX,
+                pk(CF, "bauer_feed_db").min_f64() as f32,
+                pk(CF, "bauer_feed_db").max_f64() as f32,
             )
             .with_group("Bauer"),
             Parameter::new_float(
                 "meier_level",
                 "Meier Level",
                 self.params.meier_level,
-                MEIER_LEVEL_MIN,
-                MEIER_LEVEL_MAX,
+                pk(CF, "meier_level").min_f64() as f32,
+                pk(CF, "meier_level").max_f64() as f32,
             )
             .with_group("Meier"),
             Parameter::new_float(
                 "mb_low_freq_hz",
                 "MB Low Freq",
                 self.params.mb_low_freq_hz,
-                MB_LOW_FREQ_MIN,
-                MB_LOW_FREQ_MAX,
+                pk(CF, "mb_low_freq_hz").min_f64() as f32,
+                pk(CF, "mb_low_freq_hz").max_f64() as f32,
             )
             .with_group("Multiband"),
             Parameter::new_float(
                 "mb_mid_high_freq_hz",
                 "MB High Freq",
                 self.params.mb_mid_high_freq_hz,
-                MB_MID_HIGH_FREQ_MIN,
-                MB_MID_HIGH_FREQ_MAX,
+                pk(CF, "mb_mid_high_freq_hz").min_f64() as f32,
+                pk(CF, "mb_mid_high_freq_hz").max_f64() as f32,
             )
             .with_group("Multiband"),
             Parameter::new_float(
                 "mb_low_feed_db",
                 "MB Low Feed",
                 self.params.mb_low_feed_db,
-                MB_LOW_FEED_MIN,
-                MB_LOW_FEED_MAX,
+                pk(CF, "mb_low_feed_db").min_f64() as f32,
+                pk(CF, "mb_low_feed_db").max_f64() as f32,
             )
             .with_group("Multiband"),
             Parameter::new_float(
                 "mb_mid_feed_db",
                 "MB Mid Feed",
                 self.params.mb_mid_feed_db,
-                MB_MID_FEED_MIN,
-                MB_MID_FEED_MAX,
+                pk(CF, "mb_mid_feed_db").min_f64() as f32,
+                pk(CF, "mb_mid_feed_db").max_f64() as f32,
             )
             .with_group("Multiband"),
             Parameter::new_float(
                 "mb_high_feed_db",
                 "MB High Feed",
                 self.params.mb_high_feed_db,
-                MB_HIGH_FEED_MIN,
-                MB_HIGH_FEED_MAX,
+                pk(CF, "mb_high_feed_db").min_f64() as f32,
+                pk(CF, "mb_high_feed_db").max_f64() as f32,
             )
             .with_group("Multiband"),
             Parameter::new_bool(

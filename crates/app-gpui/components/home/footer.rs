@@ -306,7 +306,7 @@ impl PlayerView {
                 )
                 .child(div().text_xs().text_color(text_primary).child(format!(
                     "{} plugins active",
-                    state.app.plugin_state.plugin_chain.plugins().len()
+                    state.app.plugin_state.chain.plugins().len()
                 )))
                 .build()
                 .min_w(px(150.0))

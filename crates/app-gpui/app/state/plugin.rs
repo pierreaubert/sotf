@@ -1,25 +1,25 @@
 //! Plugin state management.
 //!
-//! Contains all state related to audio plugins including the plugin chain,
-//! graph view state, and editing state.
+//! Thin wrapper around `PluginController` from sotf-player, adding GPUI-specific
+//! state (graph view, workflow canvas, pending update tracking, etc.).
+
+use std::ops::{Deref, DerefMut};
 
 use crate::app::types::PluginUpdateType;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
-use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginChain, PluginGraph};
+use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginController, PluginGraph};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct PluginState {
-    pub plugin_chain: PluginChain,
+    ctrl: PluginController,
+
+    // GPUI-specific: tracks whether chain has been modified since last save
     pub plugin_chain_modified: bool,
     pub pending_plugin_update: Option<PluginUpdateType>,
-    pub editing_plugin_index: Option<usize>,
-    pub plugin_param_selection: usize,
-    pub selected_plugin_index: usize,
-    pub selected_eq_band: usize,
-    /// Selected channel for per-channel EQ mode (0 = first channel)
-    pub selected_eq_channel: usize,
+
+    // GPUI-specific: UI state
     pub matrix_selected_cell: Option<(usize, usize)>,
     pub plugin_view_mode: PluginViewMode,
     pub plugin_graph: Option<PluginGraph>,
@@ -29,13 +29,23 @@ pub struct PluginState {
     pub workflow_canvas: Option<Entity<WorkflowCanvas>>,
     pub workflow_node_mapping: Option<WorkflowNodeMapping>,
     pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
-    pub available_plugin_presets: Vec<String>,
-    pub selected_preset_index: usize,
-    pub last_loaded_preset: Option<String>,
     /// Dropdown states for AB Compare plugin
     pub ab_compare_dropdowns: ABCompareDropdowns,
     /// When true, show a simple text-based parameter list instead of the graphical plugin view
     pub simple_view: bool,
+}
+
+impl Deref for PluginState {
+    type Target = PluginController;
+    fn deref(&self) -> &Self::Target {
+        &self.ctrl
+    }
+}
+
+impl DerefMut for PluginState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ctrl
+    }
 }
 
 /// Dropdown open states for AB Compare plugin UI
@@ -62,18 +72,10 @@ pub struct WorkflowNodeMapping {
 
 impl Default for PluginState {
     fn default() -> Self {
-        // Create default rack with permanent plugins:
-        // Input Monitor -> [user plugins] -> Matrix -> Output Monitor
-        let chain = PluginChain::with_default_rack();
         Self {
-            plugin_chain: chain,
+            ctrl: PluginController::new(),
             plugin_chain_modified: false,
             pending_plugin_update: None,
-            editing_plugin_index: None,
-            plugin_param_selection: 0,
-            selected_plugin_index: 0,
-            selected_eq_band: 0,
-            selected_eq_channel: 0,
             matrix_selected_cell: None,
             plugin_view_mode: PluginViewMode::Rack,
             plugin_graph: None,
@@ -83,9 +85,6 @@ impl Default for PluginState {
             workflow_canvas: None,
             workflow_node_mapping: None,
             editing_plugin_node: None,
-            available_plugin_presets: Vec::new(),
-            selected_preset_index: 0,
-            last_loaded_preset: None,
             ab_compare_dropdowns: ABCompareDropdowns::default(),
             simple_view: false,
         }

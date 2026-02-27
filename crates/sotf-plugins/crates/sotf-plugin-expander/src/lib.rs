@@ -3,7 +3,7 @@
 // ============================================================================
 
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::expander::*;
+use sotf_host::param_specs::{find_by_key as pk, expander::PARAMS as EX};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -41,37 +41,37 @@ pub struct ExpanderPluginParams {
 }
 
 fn default_threshold_db() -> f32 {
-    THRESHOLD_DEFAULT
+    pk(EX, "threshold").default_f64() as f32
 }
 fn default_ratio() -> f32 {
-    RATIO_DEFAULT
+    pk(EX, "ratio").default_f64() as f32
 }
 fn default_attack_ms() -> f32 {
-    ATTACK_DEFAULT
+    pk(EX, "attack").default_f64() as f32
 }
 fn default_release_ms() -> f32 {
-    RELEASE_DEFAULT
+    pk(EX, "release").default_f64() as f32
 }
 fn default_range_db() -> f32 {
-    RANGE_DEFAULT
+    pk(EX, "range").default_f64() as f32
 }
 fn default_knee_db() -> f32 {
-    KNEE_DEFAULT
+    pk(EX, "knee").default_f64() as f32
 }
 fn default_hysteresis_db() -> f32 {
-    HYSTERESIS_DEFAULT
+    pk(EX, "hysteresis").default_f64() as f32
 }
 fn default_hold_ms() -> f32 {
-    HOLD_DEFAULT
+    pk(EX, "hold").default_f64() as f32
 }
 fn default_mix() -> f32 {
-    MIX_DEFAULT
+    pk(EX, "mix").default_f64() as f32
 }
 fn default_link_channels() -> bool {
-    LINK_CHANNELS_DEFAULT
+    pk(EX, "link_channels").default_bool()
 }
 fn default_sidechain_hpf_hz() -> f32 {
-    SIDECHAIN_HPF_HZ_DEFAULT
+    pk(EX, "sidechain_hpf_hz").default_f64() as f32
 }
 
 impl Default for ExpanderPluginParams {
@@ -233,56 +233,92 @@ impl ExpanderPlugin {
                 "threshold",
                 "Threshold",
                 self.threshold_db,
-                THRESHOLD_MIN,
-                THRESHOLD_MAX,
+                pk(EX, "threshold").min_f64() as f32,
+                pk(EX, "threshold").max_f64() as f32,
             )
             .with_description("Level below which expansion starts (dB)")
             .with_group("Dynamics")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("ratio", "Ratio", self.ratio, RATIO_MIN, RATIO_MAX)
-                .with_description("Expansion ratio (1:1 to 20:1)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("attack", "Attack", self.attack_ms, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Attack time (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "ratio",
+                "Ratio",
+                self.ratio,
+                pk(EX, "ratio").min_f64() as f32,
+                pk(EX, "ratio").max_f64() as f32,
+            )
+            .with_description("Expansion ratio (1:1 to 20:1)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "attack",
+                "Attack",
+                self.attack_ms,
+                pk(EX, "attack").min_f64() as f32,
+                pk(EX, "attack").max_f64() as f32,
+            )
+            .with_description("Attack time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
                 self.release_ms,
-                RELEASE_MIN,
-                RELEASE_MAX,
+                pk(EX, "release").min_f64() as f32,
+                pk(EX, "release").max_f64() as f32,
             )
             .with_description("Release time (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("range", "Range", self.range_db, RANGE_MIN, RANGE_MAX)
-                .with_description("Maximum attenuation depth (dB)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("knee", "Knee", self.knee_db, KNEE_MIN, KNEE_MAX)
-                .with_description("Soft knee width (dB)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "range",
+                "Range",
+                self.range_db,
+                pk(EX, "range").min_f64() as f32,
+                pk(EX, "range").max_f64() as f32,
+            )
+            .with_description("Maximum attenuation depth (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "knee",
+                "Knee",
+                self.knee_db,
+                pk(EX, "knee").min_f64() as f32,
+                pk(EX, "knee").max_f64() as f32,
+            )
+            .with_description("Soft knee width (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "hysteresis",
                 "Hysteresis",
                 self.hysteresis_db,
-                HYSTERESIS_MIN,
-                HYSTERESIS_MAX,
+                pk(EX, "hysteresis").min_f64() as f32,
+                pk(EX, "hysteresis").max_f64() as f32,
             )
             .with_description("Hysteresis between open and close thresholds (dB)")
             .with_group("Dynamics")
             .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float("hold", "Hold", self.hold_ms, HOLD_MIN, HOLD_MAX)
-                .with_description("Hold time before closing (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", self.mix, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = expanded)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "hold",
+                "Hold",
+                self.hold_ms,
+                pk(EX, "hold").min_f64() as f32,
+                pk(EX, "hold").max_f64() as f32,
+            )
+            .with_description("Hold time before closing (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "mix",
+                "Mix",
+                self.mix,
+                pk(EX, "mix").min_f64() as f32,
+                pk(EX, "mix").max_f64() as f32,
+            )
+            .with_description("Dry/wet mix (0 = dry, 1 = expanded)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
                 .with_description("Use linked sidechain for all channels")
                 .with_group("Channels")
@@ -291,8 +327,8 @@ impl ExpanderPlugin {
                 "sidechain_hpf_hz",
                 "Sidechain HPF",
                 self.sidechain_hpf_hz,
-                SIDECHAIN_HPF_HZ_MIN,
-                SIDECHAIN_HPF_HZ_MAX,
+                pk(EX, "sidechain_hpf_hz").min_f64() as f32,
+                pk(EX, "sidechain_hpf_hz").max_f64() as f32,
             )
             .with_description("High-pass filter frequency for sidechain (Hz)")
             .with_group("Sidechain")
@@ -416,58 +452,58 @@ impl InPlacePlugin for ExpanderPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_threshold {
-            let v = value.as_float().unwrap_or(THRESHOLD_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "threshold").default_f64() as f32);
             if v.is_finite() {
                 self.threshold_db = v;
                 self.threshold_smoother.set_target(self.threshold_db);
             }
         } else if id == self.param_ratio {
-            let v = value.as_float().unwrap_or(RATIO_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "ratio").default_f64() as f32);
             if v.is_finite() {
                 self.ratio = v.max(1.0);
             }
         } else if id == self.param_attack {
-            let v = value.as_float().unwrap_or(ATTACK_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "attack").default_f64() as f32);
             if v.is_finite() {
                 self.attack_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_release {
-            let v = value.as_float().unwrap_or(RELEASE_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "release").default_f64() as f32);
             if v.is_finite() {
                 self.release_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_range {
-            let v = value.as_float().unwrap_or(RANGE_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "range").default_f64() as f32);
             if v.is_finite() {
                 self.range_db = v.max(0.0);
             }
         } else if id == self.param_knee {
-            let v = value.as_float().unwrap_or(KNEE_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "knee").default_f64() as f32);
             if v.is_finite() {
                 self.knee_db = v.max(0.0);
             }
         } else if id == self.param_hysteresis {
-            let v = value.as_float().unwrap_or(HYSTERESIS_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "hysteresis").default_f64() as f32);
             if v.is_finite() {
                 self.hysteresis_db = v.max(0.0);
             }
         } else if id == self.param_hold {
-            let v = value.as_float().unwrap_or(HOLD_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "hold").default_f64() as f32);
             if v.is_finite() {
                 self.hold_ms = v.max(0.0);
             }
         } else if id == self.param_mix {
-            let v = value.as_float().unwrap_or(MIX_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "mix").default_f64() as f32);
             if v.is_finite() {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
             }
         } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().unwrap_or(LINK_CHANNELS_DEFAULT);
+            self.link_channels = value.as_bool().unwrap_or(pk(EX, "link_channels").default_bool());
         } else if id == self.param_sidechain_hpf_hz {
-            let v = value.as_float().unwrap_or(SIDECHAIN_HPF_HZ_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(EX, "sidechain_hpf_hz").default_f64() as f32);
             if v.is_finite() {
                 self.sidechain_hpf_hz = v.max(0.0);
                 self.update_coefficients();

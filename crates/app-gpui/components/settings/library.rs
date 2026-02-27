@@ -312,13 +312,13 @@ impl PlayerView {
                                         // Toggle switch (simulated with button for now or use Checkbox if available)
                                         Button::new(
                                             "replay-gain-toggle",
-                                            if state.app.replay_gain_enabled {
+                                            if state.app.playback.replay_gain_enabled {
                                                 translations.settings_on
                                             } else {
                                                 translations.settings_off
                                             },
                                         )
-                                        .variant(if state.app.replay_gain_enabled {
+                                        .variant(if state.app.playback.replay_gain_enabled {
                                             ButtonVariant::Primary
                                         } else {
                                             ButtonVariant::Secondary
@@ -329,8 +329,8 @@ impl PlayerView {
                                         .on_click(
                                             cx.listener(|view, _: &ClickEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
-                                                    state.app.replay_gain_enabled =
-                                                        !state.app.replay_gain_enabled;
+                                                    state.app.playback.replay_gain_enabled =
+                                                        !state.app.playback.replay_gain_enabled;
                                                 });
                                                 cx.notify();
                                             }),
@@ -368,7 +368,7 @@ impl PlayerView {
                                                     translations.settings_track,
                                                 )
                                                 .variant(
-                                                    if state.app.replay_gain_mode
+                                                    if state.app.playback.replay_gain_mode
                                                         == ReplayGainMode::Track
                                                     {
                                                         ButtonVariant::Primary
@@ -382,7 +382,7 @@ impl PlayerView {
                                                 .on_click(cx.listener(
                                                     |view, _: &ClickEvent, _window, cx| {
                                                         view.state.update(cx, |state, _cx| {
-                                                            state.app.replay_gain_mode =
+                                                            state.app.playback.replay_gain_mode =
                                                                 ReplayGainMode::Track;
                                                         });
                                                         cx.notify();
@@ -395,7 +395,7 @@ impl PlayerView {
                                                     translations.settings_album,
                                                 )
                                                 .variant(
-                                                    if state.app.replay_gain_mode
+                                                    if state.app.playback.replay_gain_mode
                                                         == ReplayGainMode::Album
                                                     {
                                                         ButtonVariant::Primary
@@ -409,7 +409,7 @@ impl PlayerView {
                                                 .on_click(cx.listener(
                                                     |view, _: &ClickEvent, _window, cx| {
                                                         view.state.update(cx, |state, _cx| {
-                                                            state.app.replay_gain_mode =
+                                                            state.app.playback.replay_gain_mode =
                                                                 ReplayGainMode::Album;
                                                         });
                                                         cx.notify();
@@ -460,7 +460,7 @@ impl PlayerView {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.scan_replay_gain();
                                                     // Show progress modal if scan started
-                                                    if state.app.replay_gain_manager.in_progress {
+                                                    if state.app.scan_ctrl.replay_gain_manager.in_progress {
                                                         state.app.scan_progress_modal = Some(
                                                         crate::app::types::ScanProgressModal::new(
                                                             crate::app::types::ScanType::ReplayGain,
@@ -536,7 +536,7 @@ impl PlayerView {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.scan_bliss();
                                                     // Show progress modal if scan started
-                                                    if state.app.bliss_manager.in_progress {
+                                                    if state.app.scan_ctrl.bliss_manager.in_progress {
                                                         state.app.scan_progress_modal = Some(
                                                         crate::app::types::ScanProgressModal::new(
                                                             crate::app::types::ScanType::Bliss,
@@ -588,7 +588,7 @@ impl PlayerView {
                                                 view.state.update(cx, |state, _cx| {
                                                     state.app.compute_waveform();
                                                     // Show progress modal if scan started
-                                                    if state.app.waveform_manager.in_progress {
+                                                    if state.app.scan_ctrl.waveform_manager.in_progress {
                                                         state.app.scan_progress_modal = Some(
                                                         crate::app::types::ScanProgressModal::new(
                                                             crate::app::types::ScanType::Waveform,

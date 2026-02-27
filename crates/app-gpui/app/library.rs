@@ -1,6 +1,6 @@
 //! Library management methods.
 //!
-//! Contains methods for library filtering, sorting, directories, and scanning.
+//! Thin UI layer that delegates to `LibraryController` via `self.library_state`.
 
 use std::path::PathBuf;
 
@@ -11,166 +11,26 @@ use super::state::library::{ChannelFilter, LibrarySortOrder};
 use super::types::ToastMessage;
 
 impl App {
+    /// Get filtered and sorted albums (with selection filters applied).
     pub fn filtered_albums(&self) -> Vec<&Album> {
-        let mut albums = self.library_state.filtered_albums();
-
-        // When there's an active search query, skip all selection filters.
-        // This ensures search results are not filtered by letter/genre/decade/etc
-        // that the user may have selected before entering search mode.
-        if !self.library_state.search_query.is_empty() {
-            return albums;
-        }
-
-        // Filter by selected genre if set
-        if let Some(ref genre) = self.library_state.selected_genre {
-            albums.retain(|album| {
-                album
-                    .tracks
-                    .first()
-                    .and_then(|t| t.genre.as_ref())
-                    .is_some_and(|g| g.eq_ignore_ascii_case(genre))
-            });
-        }
-
-        // Filter by selected decade if set (but no specific year)
-        if let Some((decade_start, decade_end)) = self.library_state.selected_decade {
-            if self.library_state.selected_year.is_none() {
-                albums.retain(|album| {
-                    album
-                        .year
-                        .map(|y| y as i32)
-                        .is_some_and(|y| y >= decade_start && y <= decade_end)
-                });
-            }
-        }
-
-        // Filter by selected year if set
-        if let Some(year) = self.library_state.selected_year {
-            albums.retain(|album| album.year.map(|y| y as i32) == Some(year));
-        }
-
-        // Filter by selected artist letter if set (but no specific artist)
-        if let Some(letter) = self.library_state.selected_artist_letter {
-            if self.library_state.selected_artist.is_none() {
-                albums.retain(|album| {
-                    album.artist().chars().next().map_or(false, |c| {
-                        let first = c.to_ascii_uppercase();
-                        if letter == '#' {
-                            !first.is_ascii_alphabetic()
-                        } else {
-                            first == letter
-                        }
-                    })
-                });
-            }
-        }
-
-        // Filter by selected artist if set
-        if let Some(ref artist) = self.library_state.selected_artist {
-            albums.retain(|album| album.artist().eq_ignore_ascii_case(artist));
-        }
-
-        // Filter by selected composer letter if set (but no specific composer)
-        if let Some(letter) = self.library_state.selected_composer_letter {
-            if self.library_state.selected_composer.is_none() {
-                albums.retain(|album| {
-                    album
-                        .tracks
-                        .first()
-                        .and_then(|t| t.composer.as_ref())
-                        .map_or(false, |c| {
-                            c.chars().next().map_or(false, |ch| {
-                                let first = ch.to_ascii_uppercase();
-                                if letter == '#' {
-                                    !first.is_ascii_alphabetic()
-                                } else {
-                                    first == letter
-                                }
-                            })
-                        })
-                });
-            }
-        }
-
-        // Filter by selected composer if set
-        if let Some(ref composer) = self.library_state.selected_composer {
-            albums.retain(|album| {
-                album
-                    .tracks
-                    .first()
-                    .and_then(|t| t.composer.as_ref())
-                    .is_some_and(|c| c.eq_ignore_ascii_case(composer))
-            });
-        }
-
-        // Filter by selected album letter if set
-        if let Some(letter) = self.library_state.selected_album_letter {
-            albums.retain(|album| {
-                album.title.chars().next().map_or(false, |c| {
-                    let first = c.to_ascii_uppercase();
-                    if letter == '#' {
-                        !first.is_ascii_alphabetic()
-                    } else {
-                        first == letter
-                    }
-                })
-            });
-        }
-
-        // Filter by selected track range if set
-        if let Some((min, max)) = self.library_state.selected_track_range {
-            albums.retain(|album| {
-                let count = album.tracks.len();
-                count >= min && count <= max
-            });
-        }
-
-        albums
+        self.library_state.selection_filtered_albums()
     }
 
-    /// Set library sort order
+    /// Set library sort order (delegates to controller, then resets page).
     pub fn set_library_sort_order(&mut self, order: LibrarySortOrder) {
-        self.library_state.sort_order = order;
-        // Reset selection and page to top when changing sort order
-        self.library_state.selected_index = 0;
-        // Clear all selection filters when changing sort order
-        self.library_state.selected_genre = None;
-        self.library_state.selected_decade = None;
-        self.library_state.selected_year = None;
-        self.library_state.selected_artist_letter = None;
-        self.library_state.selected_artist = None;
-        self.library_state.selected_composer_letter = None;
-        self.library_state.selected_composer = None;
-        self.library_state.selected_album_letter = None;
-        self.library_state.selected_track_range = None;
-        self.library_state.invalidate_cache();
+        self.library_state.set_sort_order(order);
         self.reset_page();
     }
 
-    /// Set channel filter
+    /// Set channel filter (delegates to controller, then resets page).
     pub fn set_channel_filter(&mut self, filter: ChannelFilter) {
-        self.library_state.filter = filter;
-        // Reset selection and page to top when changing filter
-        self.library_state.selected_index = 0;
-        self.library_state.invalidate_cache();
+        self.library_state.set_filter(filter);
         self.reset_page();
     }
 
-    /// Cycle to next channel filter
+    /// Cycle to next channel filter (delegates to controller, then resets page).
     pub fn cycle_channel_filter(&mut self) {
-        self.library_state.filter = match self.library_state.filter {
-            ChannelFilter::All => ChannelFilter::Mono,
-            ChannelFilter::Mono => ChannelFilter::Stereo,
-            ChannelFilter::Stereo => ChannelFilter::Surround,
-            ChannelFilter::Surround => ChannelFilter::Surround71,
-            ChannelFilter::Surround71 => ChannelFilter::SurroundPlus,
-            ChannelFilter::SurroundPlus => ChannelFilter::Mixed,
-            ChannelFilter::Mixed => ChannelFilter::All,
-            ChannelFilter::Specific(_) => ChannelFilter::All,
-        };
-        // Reset selection and page
-        self.library_state.selected_index = 0;
-        self.library_state.invalidate_cache();
+        self.library_state.cycle_filter();
         self.reset_page();
     }
 
@@ -193,7 +53,6 @@ impl App {
     pub fn load_more_albums(&mut self) {
         let total = self.filtered_albums().len();
         if self.library_state.items_per_page < total {
-            // Add 5 rows worth of items
             let more = self.library_state.library_columns * 5;
             self.library_state.items_per_page =
                 (self.library_state.items_per_page + more).min(total);
@@ -233,10 +92,7 @@ impl App {
         self.library_state.scan_in_progress = true;
         self.library_state.scan_progress_tracks = 0;
         self.library_state.scan_progress_albums = 0;
-        // Toast removed to avoid clutter
-        // self.ui_state.toast_message = Some(ToastMessage::info("Full library rescan..."));
 
-        // Start background scanner with force=true
         let directories: Vec<std::path::PathBuf> = self
             .library_state
             .library
@@ -251,7 +107,7 @@ impl App {
 
     /// Scan for ReplayGain
     pub fn scan_replay_gain(&mut self) {
-        if let Err(e) = self.replay_gain_manager.start_scan() {
+        if let Err(e) = self.scan_ctrl.replay_gain_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
                 "Failed to start ReplayGain scan: {}",
                 e
@@ -261,7 +117,7 @@ impl App {
 
     /// Scan for Bliss audio analysis (tempo, features for similarity)
     pub fn scan_bliss(&mut self) {
-        if let Err(e) = self.bliss_manager.start_scan() {
+        if let Err(e) = self.scan_ctrl.bliss_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
                 "Failed to start bliss analysis scan: {}",
                 e
@@ -271,7 +127,7 @@ impl App {
 
     /// Compute waveforms for tracks
     pub fn compute_waveform(&mut self) {
-        if let Err(e) = self.waveform_manager.start_scan() {
+        if let Err(e) = self.scan_ctrl.waveform_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
                 "Failed to start waveform analysis: {}",
                 e
@@ -303,14 +159,10 @@ impl App {
     }
 
     /// Remove the selected directory from the library
-    /// This also cleans up the database and removes albums/tracks from that directory
     pub fn remove_selected_directory(&mut self) {
-        // We need to map from tree index to actual directory index
         let tree_items = self.get_directory_tree_items();
         if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
-            // Only allow removing level 0 directories (main directories, not subdirectories)
             if *level == 0 {
-                // Find the actual index in the directories vector
                 if let Some(dir_index) = self
                     .library_state
                     .library
@@ -319,15 +171,12 @@ impl App {
                     .position(|d| d.path == *path)
                 {
                     if self.library_state.remove_directory(dir_index).is_some() {
-                        // Adjust selected_directory_index if needed
                         let tree_items = self.get_directory_tree_items();
                         if self.selected_directory_index >= tree_items.len()
                             && self.selected_directory_index > 0
                         {
                             self.selected_directory_index = tree_items.len() - 1;
                         }
-                        // Database cleanup is now done in library.remove_directory()
-                        // No rescan needed since data is already cleaned
                         self.ui_state.toast_message =
                             Some(ToastMessage::success("Directory removed and cleaned up."));
                     }
@@ -361,10 +210,7 @@ impl App {
         self.library_state.scan_in_progress = true;
         self.library_state.scan_progress_tracks = 0;
         self.library_state.scan_progress_albums = 0;
-        // Toast removed to avoid clutter, progress is shown in UI
-        // self.ui_state.toast_message = Some(ToastMessage::info("Scanning library..."));
 
-        // Start background scanner
         let directories: Vec<std::path::PathBuf> = self
             .library_state
             .library
@@ -381,10 +227,8 @@ impl App {
     pub fn update_library_scan(&mut self) {
         let mut reload_needed = false;
 
-        // Handle library scanner updates
         if let Some(scanner) = &self.library_scanner {
             let mut done = false;
-            // Drain all available messages
             while let Some(msg) = scanner.try_recv() {
                 match msg {
                     sotf_audio_player::LibraryScanMessage::Progress { tracks, albums } => {
@@ -418,7 +262,6 @@ impl App {
         }
 
         if reload_needed {
-            // Reload library to show new items
             if let Err(e) = self.load_library_from_database() {
                 log::error!("Failed to reload library after scan: {}", e);
                 self.ui_state.toast_message = Some(ToastMessage::error(
@@ -435,12 +278,9 @@ impl App {
 
     /// Toggle directory expansion
     pub fn toggle_directory_expansion(&mut self) {
-        // Find which directory in the tree we're selecting
         let tree_items = self.get_directory_tree_items();
         if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
-            // Only toggle if we're on a main directory (level 0)
             if *level == 0 {
-                // Find the directory in our list and toggle it
                 if let Some(dir_info) = self
                     .library_state
                     .library
@@ -451,8 +291,6 @@ impl App {
                     dir_info.expanded = !dir_info.expanded;
                 }
             }
-            // If we're on a subdirectory (level 1), do nothing - it's already part of the tree
-            // Don't add it as a new main directory or trigger a rescan
         }
     }
 }

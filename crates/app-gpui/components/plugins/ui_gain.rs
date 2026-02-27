@@ -10,7 +10,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::param_specs::gain::*;
+use sotf_plugins::param_specs::{find_by_key as pk, gain::PARAMS as GP};
 
 /// State for rendering the Gain plugin
 pub struct GainRenderState {
@@ -41,8 +41,8 @@ pub fn render_gain_plugin(
                     plugin_idx,
                     "Gain",
                     state.gain_db,
-                    GAIN_DB_MIN as f64,
-                    GAIN_DB_MAX as f64,
+                    pk(GP, "gain_db").min_f64(),
+                    pk(GP, "gain_db").max_f64(),
                     "dB",
                     0,
                     state.selected_param,

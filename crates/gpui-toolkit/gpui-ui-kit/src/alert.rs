@@ -117,6 +117,7 @@ impl Alert {
 
         let mut alert = div()
             .id(self.id)
+            .font_family(theme.font_family.clone())
             .flex()
             .items_start()
             .gap_3()
@@ -220,6 +221,7 @@ impl InlineAlert {
         let icon = self.variant.icon();
 
         div()
+            .font_family(theme.font_family.clone())
             .flex()
             .items_center()
             .gap_2()

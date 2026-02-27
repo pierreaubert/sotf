@@ -219,7 +219,10 @@ crossterm = "0.29"
 
 # GPUI framework, using HEAD (macros with _)
 gpui = { version="*", git = "https://github.com/zed-industries/zed.git" }
-gpui_macos = { version="*", git = "https://github.com/zed-industries/zed.git" }
+# gpui = { version = "0.2.2" }
+gpui-component = "0.5.0"
+# gpui_macos = { version = "*" }
+gpui_macos = { version="*", git = "https://github.com/zed-industries/zed.git", features = ["font-kit"] }
 
 # System and low-level
 objc = "0.2"
@@ -347,11 +350,12 @@ split-debuginfo= "packed"
 debug = 1
 codegen-units = 256
 
+# Fix: git font-kit rev has broken core-text imports; use crates.io version
+[patch."https://github.com/zed-industries/font-kit"]
+zed-font-kit = "0.14.1-zed"
+
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "unwind"  # Changed from "abort" to allow tests to run
 # debug = true # Keeps debug symbols for profiling
-
-[patch.'https://github.com/zed-industries/font-kit']
-zed-font-kit = { path = "crates/zed-font-kit" }

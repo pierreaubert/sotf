@@ -919,6 +919,7 @@ impl RenderOnce for Input {
         if let Some(label) = &self.label {
             container = container.child(
                 div()
+                    .font_family(global_theme.font_family.clone())
                     .text_sm()
                     .text_color(theme.label)
                     .font_weight(FontWeight::MEDIUM)
@@ -936,6 +937,7 @@ impl RenderOnce for Input {
         // Input wrapper
         let mut input_wrapper = div()
             .id(self.id.clone())
+            .font_family(global_theme.font_family.clone())
             .track_focus(&focus_handle)
             .flex()
             .items_center()

@@ -107,7 +107,7 @@ impl App {
 
         let prefix = self.input_state.plugin_file_input.to_lowercase();
 
-        for preset in &self.plugin_state.available_plugin_presets {
+        for preset in &self.plugin_state.available_presets {
             // Strip .json extension for suggestion
             let name = preset.strip_suffix(".json").unwrap_or(preset);
             if name.to_lowercase().starts_with(&prefix) {
@@ -157,7 +157,7 @@ impl App {
         } else {
             // Preset name autocomplete
             let prefix = input.to_lowercase();
-            for preset in &self.plugin_state.available_plugin_presets {
+            for preset in &self.plugin_state.available_presets {
                 let name = preset.strip_suffix(".json").unwrap_or(preset);
                 if name.to_lowercase().starts_with(&prefix) {
                     self.input_state

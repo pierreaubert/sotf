@@ -9,7 +9,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::band_split::*;
+use sotf_plugins::param_specs::{find_by_key as pk, band_split::PARAMS as BS};
 
 /// State for rendering the BandSplit plugin
 pub struct BandSplitRenderState {
@@ -47,8 +47,8 @@ pub fn render_band_split_plugin(
                             plugin_idx,
                             "Frequency",
                             state.frequency,
-                            FREQUENCY_MIN,
-                            FREQUENCY_MAX,
+                            pk(BS, "frequency").min_f64(),
+                            pk(BS, "frequency").max_f64(),
                             "Hz",
                             0,
                             state.selected_param,

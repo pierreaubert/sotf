@@ -3,7 +3,7 @@
 // ============================================================================
 
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::pnd::*;
+use sotf_host::param_specs::{find_by_key as pk, pnd::PARAMS as PD};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, interleave_stereo};
@@ -114,19 +114,19 @@ impl PndPlugin {
             interleaved_chunk_buffer: Vec::new(),
 
             param_correction_strength: ParameterId::from("correction_strength"),
-            correction_strength: CORRECTION_STRENGTH_DEFAULT,
+            correction_strength: pk(PD, "correction_strength").default_f64() as f32,
             // Rough default; re-initialized in initialize() with correct chunk rate
             correction_strength_smoother: Smoother::new(
-                CORRECTION_STRENGTH_DEFAULT,
+                pk(PD, "correction_strength").default_f64() as f32,
                 CORRECTION_STRENGTH_SMOOTH_MS,
                 43, // ~44100/1024
             ),
 
             param_analysis_window_ms: ParameterId::from("analysis_window_ms"),
-            analysis_window_ms: ANALYSIS_WINDOW_MS_DEFAULT,
+            analysis_window_ms: pk(PD, "analysis_window_ms").default_f64() as f32,
 
             param_drift_smoothing: ParameterId::from("drift_smoothing"),
-            drift_smoothing: DRIFT_SMOOTHING_DEFAULT,
+            drift_smoothing: pk(PD, "drift_smoothing").default_f64() as f32,
             cache: RealTimeCache::new(PndData::default()),
             cache_update_counter: 0,
             cached_parameters: Vec::new(),
@@ -141,8 +141,8 @@ impl PndPlugin {
                 "correction_strength",
                 "Correction Strength",
                 self.correction_strength,
-                CORRECTION_STRENGTH_MIN,
-                CORRECTION_STRENGTH_MAX,
+                pk(PD, "correction_strength").min_f64() as f32,
+                pk(PD, "correction_strength").max_f64() as f32,
             )
             .with_group("Correction")
             .with_importance(ParameterImportance::Critical),
@@ -150,8 +150,8 @@ impl PndPlugin {
                 "analysis_window_ms",
                 "Analysis Window (ms)",
                 self.analysis_window_ms,
-                ANALYSIS_WINDOW_MS_MIN,
-                ANALYSIS_WINDOW_MS_MAX,
+                pk(PD, "analysis_window_ms").min_f64() as f32,
+                pk(PD, "analysis_window_ms").max_f64() as f32,
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::FineTuning),
@@ -159,8 +159,8 @@ impl PndPlugin {
                 "drift_smoothing",
                 "Drift Smoothing",
                 self.drift_smoothing,
-                DRIFT_SMOOTHING_MIN,
-                DRIFT_SMOOTHING_MAX,
+                pk(PD, "drift_smoothing").min_f64() as f32,
+                pk(PD, "drift_smoothing").max_f64() as f32,
             )
             .with_group("Correction")
             .with_importance(ParameterImportance::Useful),
@@ -352,14 +352,14 @@ impl Plugin for PndPlugin {
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
         if id == self.param_correction_strength {
-            let v = value.as_float().unwrap_or(CORRECTION_STRENGTH_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(PD, "correction_strength").default_f64() as f32);
             if v.is_finite() {
                 self.correction_strength = v;
                 self.correction_strength_smoother
                     .set_target(self.correction_strength);
             }
         } else if id == self.param_analysis_window_ms {
-            let v = value.as_float().unwrap_or(ANALYSIS_WINDOW_MS_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(PD, "analysis_window_ms").default_f64() as f32);
             if v.is_finite() {
                 self.analysis_window_ms = v;
                 if let Some(analyzer) = &mut self.analyzer {
@@ -367,7 +367,7 @@ impl Plugin for PndPlugin {
                 }
             }
         } else if id == self.param_drift_smoothing {
-            let v = value.as_float().unwrap_or(DRIFT_SMOOTHING_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(PD, "drift_smoothing").default_f64() as f32);
             if v.is_finite() {
                 self.drift_smoothing = v;
             }

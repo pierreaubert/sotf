@@ -17,7 +17,7 @@ use gpui_ui_kit::PotentiometerSize;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 // Tabs are now custom-rendered to avoid context issues
 use sotf_audio_player::EQFilter;
-use sotf_audio_player::param_specs::eq::*;
+use sotf_plugins::param_specs::{find_by_key as pk, eq::BAND_TEMPLATE as EQ};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -103,8 +103,8 @@ const Q_BAR_HEIGHT: f32 = 3.0;
 
 /// Convert Q value to bar width (inverse: higher Q = narrower bar)
 fn q_to_bar_width(q: f64) -> f32 {
-    let t = ((q - Q_MIN) / (Q_MAX - Q_MIN)).clamp(0.0, 1.0) as f32;
-    // Inverse mapping: Q_MIN -> max width, Q_MAX -> min width
+    let t = ((q - pk(EQ, "q").min_f64()) / (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64())).clamp(0.0, 1.0) as f32;
+    // Inverse mapping: pk(EQ, "q").min_f64() -> max width, pk(EQ, "q").max_f64() -> min width
     Q_BAR_MAX_WIDTH - t * (Q_BAR_MAX_WIDTH - Q_BAR_MIN_WIDTH)
 }
 
@@ -113,7 +113,7 @@ fn q_to_bar_width(q: f64) -> f32 {
 /// Negative delta (dragging left handle left) = decrease Q
 fn drag_delta_to_q_change(delta_px: f32) -> f64 {
     // Scale factor: moving 30px should roughly change Q by the full range
-    let scale = (Q_MAX - Q_MIN) / 60.0;
+    let scale = (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()) / 60.0;
     delta_px as f64 * scale
 }
 
@@ -534,7 +534,7 @@ fn render_eq_visualization(
                     },
                 )
                 .on_drag_move::<EqQHandleDrag>({
-                    move |event, window, cx| {
+                    move |event, _window, cx| {
                         let bounds = if let Some(b) = *bounds_ref.borrow() {
                             b
                         } else {
@@ -549,7 +549,7 @@ fn render_eq_visualization(
                         // drag_data.start_x is in local coordinates
                         let delta = drag_data.start_x - x_px;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change).clamp(Q_MIN, Q_MAX);
+                        let new_q = (drag_data.start_q + q_change).clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -607,7 +607,7 @@ fn render_eq_visualization(
                     },
                 )
                 .on_drag_move::<EqQHandleDrag>({
-                    move |event, window, cx| {
+                    move |event, _window, cx| {
                         let bounds = if let Some(b) = *bounds_ref.borrow() {
                             b
                         } else {
@@ -621,7 +621,7 @@ fn render_eq_visualization(
                         // For right handle: moving right increases Q, moving left decreases Q
                         let delta = x_px - drag_data.start_x;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change).clamp(Q_MIN, Q_MAX);
+                        let new_q = (drag_data.start_q + q_change).clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -668,16 +668,16 @@ fn render_eq_visualization(
                             // Reset frequency to 1000 Hz
                             state
                                 .app
-                                .set_plugin_param(plugin_idx, band_idx * 4, FREQUENCY_DEFAULT);
+                                .set_plugin_param(plugin_idx, band_idx * 4, pk(EQ, "frequency").default_f64());
                             // Reset Q to 1.0
                             state
                                 .app
-                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, Q_DEFAULT);
+                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, pk(EQ, "q").default_f64());
                             // Reset gain to 0.0 dB
                             state.app.set_plugin_param(
                                 plugin_idx,
                                 band_idx * 4 + 2,
-                                GAIN_DB_DEFAULT,
+                                pk(EQ, "gain_db").default_f64(),
                             );
                             cx.notify();
                         });
@@ -722,7 +722,7 @@ fn render_eq_visualization(
         .on_drag_move::<EqControlPointDrag>({
             let entity = entity.clone();
             let bounds_ref = bounds_ref.clone();
-            move |event, window, cx| {
+            move |event, _window, cx| {
                 let bounds = if let Some(b) = *bounds_ref.borrow() {
                     b
                 } else {
@@ -1216,8 +1216,8 @@ pub fn render_eq_plugin(
                                 plugin_idx,
                                 "Freq",
                                 filter.frequency,
-                                FREQUENCY_MIN,
-                                FREQUENCY_MAX,
+                                pk(EQ, "frequency").min_f64(),
+                                pk(EQ, "frequency").max_f64(),
                                 "Hz",
                                 base_param_idx,
                                 state.selected_param,
@@ -1231,8 +1231,8 @@ pub fn render_eq_plugin(
                                 plugin_idx,
                                 "Q",
                                 filter.q,
-                                Q_MIN,
-                                Q_MAX,
+                                pk(EQ, "q").min_f64(),
+                                pk(EQ, "q").max_f64(),
                                 "",
                                 base_param_idx + 1,
                                 state.selected_param,
@@ -1246,8 +1246,8 @@ pub fn render_eq_plugin(
                                 plugin_idx,
                                 "Gain",
                                 filter.gain_db,
-                                GAIN_DB_MIN,
-                                GAIN_DB_MAX,
+                                pk(EQ, "gain_db").min_f64(),
+                                pk(EQ, "gain_db").max_f64(),
                                 "dB",
                                 base_param_idx + 2,
                                 state.selected_param,
@@ -1576,26 +1576,26 @@ mod tests {
     /// Test Q to bar width conversion
     #[test]
     fn test_q_to_bar_width() {
-        // Q_MIN should give maximum width
-        let width_at_min_q = q_to_bar_width(Q_MIN);
+        // pk(EQ, "q").min_f64() should give maximum width
+        let width_at_min_q = q_to_bar_width(pk(EQ, "q").min_f64());
         assert!(
             (width_at_min_q - Q_BAR_MAX_WIDTH).abs() < 0.01,
-            "Q_MIN should give max width: got {} expected {}",
+            "pk(EQ, "q").min_f64() should give max width: got {} expected {}",
             width_at_min_q,
             Q_BAR_MAX_WIDTH
         );
 
-        // Q_MAX should give minimum width
-        let width_at_max_q = q_to_bar_width(Q_MAX);
+        // pk(EQ, "q").max_f64() should give minimum width
+        let width_at_max_q = q_to_bar_width(pk(EQ, "q").max_f64());
         assert!(
             (width_at_max_q - Q_BAR_MIN_WIDTH).abs() < 0.01,
-            "Q_MAX should give min width: got {} expected {}",
+            "pk(EQ, "q").max_f64() should give min width: got {} expected {}",
             width_at_max_q,
             Q_BAR_MIN_WIDTH
         );
 
         // Mid-Q should give mid-width
-        let mid_q = (Q_MIN + Q_MAX) / 2.0;
+        let mid_q = (pk(EQ, "q").min_f64() + pk(EQ, "q").max_f64()) / 2.0;
         let mid_width = (Q_BAR_MIN_WIDTH + Q_BAR_MAX_WIDTH) / 2.0;
         let width_at_mid_q = q_to_bar_width(mid_q);
         assert!(
@@ -1714,7 +1714,7 @@ mod tests {
         // Dragging 60px should change Q by the full range
         let full_range_delta = 60.0;
         let q_change = drag_delta_to_q_change(full_range_delta);
-        let expected_change = Q_MAX - Q_MIN;
+        let expected_change = pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64();
 
         assert!(
             (q_change - expected_change).abs() < 0.01,

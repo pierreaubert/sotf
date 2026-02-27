@@ -30,10 +30,13 @@ fn draw_help_box(f: &mut Frame, area: Rect, app: &App, screen: Screen) {
 
 /// Draw a help box with custom text.
 fn draw_help_box_with_text(f: &mut Frame, area: Rect, app: &App, text: &str) {
-    let help = Paragraph::new(text)
-        .style(Style::default().fg(app.theme.title_color))
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Help"));
+    let help = Line::from(vec![
+        Span::styled("Help: ", Style::default().fg(app.theme.title_color)),
+        Span::styled(text, Style::default().fg(app.theme.title_color)),
+    ])
+    .alignment(Alignment::Center);
+    let help = Paragraph::new(help)
+        .block(Block::default().borders(Borders::ALL));
 
     f.render_widget(help, area);
 }
@@ -1407,13 +1410,32 @@ fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::from(status_spans));
 
     if let Some((track, _album)) = track_info {
-        // Track title
-        if let Some(title) = &track.title {
-            lines.push(Line::from(vec![
-                Span::styled("Track: ", Style::default().fg(app.theme.title_color)),
-                Span::raw(title),
-            ]));
-        }
+        // File format info: FLAC 24-bit/48kHz Stereo
+        let format_str = if let (Some(bit_depth), Some(sample_rate), Some(channels)) =
+            (track.bit_depth, track.sample_rate, track.channels)
+        {
+            let ext = track
+                .path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_uppercase())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let sr_khz = sample_rate as f64 / 1000.0;
+            let ch_str = match channels {
+                1 => "Mono",
+                2 => "Stereo",
+                6 => "5.1",
+                8 => "7.1",
+                _ => "Multi",
+            };
+            format!("{} {}-bit/{:.1}kHz {}", ext, bit_depth, sr_khz, ch_str)
+        } else {
+            "Unknown".to_string()
+        };
+        lines.push(Line::from(vec![
+            Span::styled("Format: ", Style::default().fg(app.theme.title_color)),
+            Span::raw(format_str),
+        ]));
 
         // Track ReplayGain
         if let Some(gain) = track.replay_gain {

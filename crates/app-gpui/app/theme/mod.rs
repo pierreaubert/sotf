@@ -247,6 +247,8 @@ impl Theme {
             info: self.info,
             border: self.border,
             border_hover: self.border_focused,
+            // Typography
+            font_family: self.font_family.clone(),
             // Badge colors - derive from semantic colors
             badge_primary_bg: Self::opacity_20pct(self.accent),
             badge_primary_text: self.accent,
@@ -273,13 +275,23 @@ impl Theme {
     }
 }
 
-/// Helper function to create Rgba from hex value
-fn rgba(hex: u32) -> Rgba {
+/// Helper function to create Rgba from 24-bit hex value (alpha = 1.0)
+pub(crate) fn rgb(hex: u32) -> Rgba {
     Rgba {
         r: ((hex >> 16) & 0xFF) as f32 / 255.0,
         g: ((hex >> 8) & 0xFF) as f32 / 255.0,
         b: (hex & 0xFF) as f32 / 255.0,
         a: 1.0,
+    }
+}
+
+/// Helper function to create Rgba from 32-bit hex value (RRGGBBAA)
+pub(crate) fn rgba(hex: u32) -> Rgba {
+    Rgba {
+        r: ((hex >> 24) & 0xFF) as f32 / 255.0,
+        g: ((hex >> 16) & 0xFF) as f32 / 255.0,
+        b: ((hex >> 8) & 0xFF) as f32 / 255.0,
+        a: (hex & 0xFF) as f32 / 255.0,
     }
 }
 

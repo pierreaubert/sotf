@@ -2,9 +2,7 @@
 // Gain Plugin - Simple gain control with per-channel support
 // ============================================================================
 
-pub mod param_specs;
-
-use crate::param_specs::gain::*;
+use sotf_host::param_specs::{find_by_key as pk, gain::PARAMS as GN};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{apply_gain_simd, apply_per_channel_gain_simd};
@@ -21,7 +19,7 @@ pub struct GainPluginParams {
 }
 
 fn default_gain_db() -> f32 {
-    GAIN_DB_DEFAULT
+    pk(GN, "gain_db").default_f64() as f32
 }
 
 pub struct GainPlugin {
@@ -92,8 +90,8 @@ impl GainPlugin {
             "gain_db",
             "Gain",
             self.global_gain_db,
-            GAIN_DB_MIN,
-            GAIN_DB_MAX,
+            pk(GN, "gain_db").min_f64() as f32,
+            pk(GN, "gain_db").max_f64() as f32,
         )];
 
         if self.is_per_channel() {
@@ -102,8 +100,8 @@ impl GainPlugin {
                     &format!("gain_db_{}", ch),
                     &format!("Gain Ch {}", ch + 1),
                     self.channel_gains_db[ch],
-                    GAIN_DB_MIN,
-                    GAIN_DB_MAX,
+                    pk(GN, "gain_db").min_f64() as f32,
+                    pk(GN, "gain_db").max_f64() as f32,
                 ));
             }
         }

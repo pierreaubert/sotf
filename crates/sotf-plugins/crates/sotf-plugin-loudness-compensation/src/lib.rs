@@ -4,7 +4,7 @@
 
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
-use sotf_host::param_specs::loudness_compensation::*;
+use sotf_host::param_specs::{find_by_key as pk, loudness_compensation::PARAMS as LC};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
@@ -48,16 +48,16 @@ pub struct ChannelLoudnessParams {
 }
 
 fn default_low_freq() -> f32 {
-    LOW_FREQ_DEFAULT
+    pk(LC, "low_freq").default_f32()
 }
 fn default_low_gain() -> f32 {
-    LOW_GAIN_DEFAULT
+    pk(LC, "low_gain").default_f32()
 }
 fn default_high_freq() -> f32 {
-    HIGH_FREQ_DEFAULT
+    pk(LC, "high_freq").default_f32()
 }
 fn default_high_gain() -> f32 {
-    HIGH_GAIN_DEFAULT
+    pk(LC, "high_gain").default_f32()
 }
 
 impl Default for ChannelLoudnessParams {
@@ -142,8 +142,8 @@ impl LoudnessCompensationPlugin {
                 "low_gain",
                 "Bass Boost",
                 self.low_gain,
-                LOW_GAIN_MIN,
-                LOW_GAIN_MAX,
+                pk(LC, "low_gain").min_f64() as f32,
+                pk(LC, "low_gain").max_f64() as f32,
             )
             .with_description("Low-frequency shelf gain (dB)")
             .with_group("Gain")
@@ -152,8 +152,8 @@ impl LoudnessCompensationPlugin {
                 "high_gain",
                 "Treble Boost",
                 self.high_gain,
-                HIGH_GAIN_MIN,
-                HIGH_GAIN_MAX,
+                pk(LC, "high_gain").min_f64() as f32,
+                pk(LC, "high_gain").max_f64() as f32,
             )
             .with_description("High-frequency shelf gain (dB)")
             .with_group("Gain")
@@ -162,8 +162,8 @@ impl LoudnessCompensationPlugin {
                 "low_freq",
                 "Low Frequency",
                 self.low_freq,
-                LOW_FREQ_MIN,
-                LOW_FREQ_MAX,
+                pk(LC, "low_freq").min_f64() as f32,
+                pk(LC, "low_freq").max_f64() as f32,
             )
             .with_description("Low shelf center frequency (Hz)")
             .with_group("Frequency")
@@ -172,8 +172,8 @@ impl LoudnessCompensationPlugin {
                 "high_freq",
                 "High Frequency",
                 self.high_freq,
-                HIGH_FREQ_MIN,
-                HIGH_FREQ_MAX,
+                pk(LC, "high_freq").min_f64() as f32,
+                pk(LC, "high_freq").max_f64() as f32,
             )
             .with_description("High shelf center frequency (Hz)")
             .with_group("Frequency")
@@ -264,25 +264,25 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id.0 == "low_gain" {
-            let v = value.as_float().unwrap_or(LOW_GAIN_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(LC, "low_gain").default_f32());
             if v.is_finite() {
                 self.low_gain = v;
                 self.rebuild_filters();
             }
         } else if id.0 == "high_gain" {
-            let v = value.as_float().unwrap_or(HIGH_GAIN_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(LC, "high_gain").default_f32());
             if v.is_finite() {
                 self.high_gain = v;
                 self.rebuild_filters();
             }
         } else if id.0 == "low_freq" {
-            let v = value.as_float().unwrap_or(LOW_FREQ_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(LC, "low_freq").default_f32());
             if v.is_finite() {
                 self.low_freq = v;
                 self.rebuild_filters();
             }
         } else if id.0 == "high_freq" {
-            let v = value.as_float().unwrap_or(HIGH_FREQ_DEFAULT);
+            let v = value.as_float().unwrap_or(pk(LC, "high_freq").default_f32());
             if v.is_finite() {
                 self.high_freq = v;
                 self.rebuild_filters();

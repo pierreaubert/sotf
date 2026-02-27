@@ -10,7 +10,7 @@ impl PlayerView {
         let has_eq_in_rack = state
             .app
             .plugin_state
-            .plugin_chain
+            .chain
             .find_plugin_index(&sotf_audio_player::PluginType::EQ)
             .is_some();
 
@@ -179,7 +179,7 @@ impl PlayerView {
         // Get the current plugin chain
         let plugin_chain = {
             let state = self.state.read(cx);
-            state.app.plugin_state.plugin_chain.clone()
+            state.app.plugin_state.chain.clone()
         };
 
         let state_entity = self.state.clone();
@@ -324,7 +324,7 @@ impl PlayerView {
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
-            let plugin_chain = &mut state.app.plugin_state.plugin_chain;
+            let plugin_chain = &mut state.app.plugin_state.chain;
 
             // Check if there's an existing EQ plugin
             if let Some(eq_idx) = plugin_chain.find_plugin_index(&PluginType::EQ) {

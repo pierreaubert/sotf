@@ -277,7 +277,7 @@ impl Element for SpectrumElement {
                     (height_ratio - yellow_threshold).min(red_threshold - yellow_threshold);
                 let yellow_top = yellow_threshold + yellow_height;
                 let yellow_y = bounds.origin.y + meter_height - (meter_height * yellow_top);
-                let yellow_bottom_y =
+                let _yellow_bottom_y =
                     bounds.origin.y + meter_height - (meter_height * yellow_threshold);
                 yellow_path.line_to(point(x, yellow_y));
                 yellow_path.line_to(point(x + step_width, yellow_y));

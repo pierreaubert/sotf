@@ -10,7 +10,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::param_specs::pnd::*;
+use sotf_plugins::param_specs::{find_by_key as pk, pnd::PARAMS as PN};
 
 /// State for rendering the PND plugin
 pub struct PndRenderState {
@@ -49,8 +49,8 @@ pub fn render_pnd_plugin(
                             plugin_idx,
                             "Strength",
                             state.correction_strength * 100.0,
-                            CORRECTION_STRENGTH_MIN as f64 * 100.0,
-                            CORRECTION_STRENGTH_MAX as f64 * 100.0,
+                            pk(PN, "correction_strength").min_f64() * 100.0,
+                            pk(PN, "correction_strength").max_f64() * 100.0,
                             "%",
                             0,
                             state.selected_param,
@@ -71,8 +71,8 @@ pub fn render_pnd_plugin(
                             plugin_idx,
                             "Window",
                             state.analysis_window_ms,
-                            ANALYSIS_WINDOW_MS_MIN as f64,
-                            ANALYSIS_WINDOW_MS_MAX as f64,
+                            pk(PN, "analysis_window_ms").min_f64(),
+                            pk(PN, "analysis_window_ms").max_f64(),
                             "ms",
                             1,
                             state.selected_param,
@@ -85,8 +85,8 @@ pub fn render_pnd_plugin(
                             plugin_idx,
                             "Smoothing",
                             state.drift_smoothing * 1000.0,
-                            DRIFT_SMOOTHING_MIN as f64 * 1000.0,
-                            DRIFT_SMOOTHING_MAX as f64 * 1000.0,
+                            pk(PN, "drift_smoothing").min_f64() * 1000.0,
+                            pk(PN, "drift_smoothing").max_f64() * 1000.0,
                             "",
                             2,
                             state.selected_param,

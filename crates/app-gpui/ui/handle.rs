@@ -215,7 +215,7 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     // If there are presets shown and input is empty, use selected preset (overwrite)
                     if state.app.input_state.plugin_file_input.is_empty()
-                        && !state.app.plugin_state.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_presets.is_empty()
                     {
                         state.app.save_selected_preset();
                     } else if !state.app.input_state.plugin_file_input.is_empty() {
@@ -236,7 +236,7 @@ impl PlayerView {
                 // Navigate preset list when input is empty
                 self.state.update(cx, |state, _cx| {
                     if state.app.input_state.plugin_file_input.is_empty()
-                        && !state.app.plugin_state.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_presets.is_empty()
                     {
                         state.app.select_previous_preset();
                     }
@@ -247,7 +247,7 @@ impl PlayerView {
                 // Navigate preset list when input is empty
                 self.state.update(cx, |state, _cx| {
                     if state.app.input_state.plugin_file_input.is_empty()
-                        && !state.app.plugin_state.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_presets.is_empty()
                     {
                         state.app.select_next_preset();
                     }
@@ -307,7 +307,7 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     // If there are presets shown and input is empty, load selected preset
                     if state.app.input_state.plugin_file_input.is_empty()
-                        && !state.app.plugin_state.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_presets.is_empty()
                     {
                         state.app.load_selected_preset();
                     } else if !state.app.input_state.plugin_file_input.is_empty() {

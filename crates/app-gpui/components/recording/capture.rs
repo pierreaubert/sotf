@@ -8,7 +8,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, NumberInputSize, Progress,
-    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify, StackSize,
+    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify,
     StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 

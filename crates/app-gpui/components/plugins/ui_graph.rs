@@ -163,7 +163,7 @@ impl PlayerView {
                     (stats.0, stats.1)
                 })
                 .unwrap_or((0, 0));
-            let pc = state.app.plugin_state.plugin_chain.len();
+            let pc = state.app.plugin_state.chain.len();
             (
                 state.app.ui_state.theme.clone(),
                 state.app.plugin_state.workflow_canvas.clone(),

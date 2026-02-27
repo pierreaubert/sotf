@@ -131,6 +131,10 @@ pub struct Theme {
     /// Border on hover/focus
     pub border_hover: Rgba,
 
+    // Typography
+    /// Default font family
+    pub font_family: SharedString,
+
     // Badge colors
     /// Badge primary background
     pub badge_primary_bg: Rgba,
@@ -184,6 +188,8 @@ impl Theme {
             // Border
             border: rgb(0x3a3a3a),
             border_hover: rgb(0x555555),
+            // Typography
+            font_family: ".SystemUI".into(),
             // Badge colors (dark theme)
             badge_primary_bg: rgb(0x1a4a7a),
             badge_primary_text: rgb(0x7cc4ff),
@@ -227,6 +233,8 @@ impl Theme {
             // Border
             border: rgb(0xd4d4d4),
             border_hover: rgb(0xaaaaaa),
+            // Typography
+            font_family: ".SystemUI".into(),
             // Badge colors (light theme)
             badge_primary_bg: rgb(0xdbeafe),
             badge_primary_text: rgb(0x1d4ed8),
@@ -270,6 +278,8 @@ impl Theme {
             // Border
             border: rgb(0x30363d),
             border_hover: rgb(0x484f58),
+            // Typography
+            font_family: ".SystemUI".into(),
             // Badge colors (dark variant)
             badge_primary_bg: rgb(0x1a4a7a),
             badge_primary_text: rgb(0x7cc4ff),
@@ -313,6 +323,8 @@ impl Theme {
             // Border
             border: rgb(0x3a4a35),
             border_hover: rgb(0x556b50),
+            // Typography
+            font_family: ".SystemUI".into(),
             // Badge colors (dark variant)
             badge_primary_bg: rgb(0x1a4a7a),
             badge_primary_text: rgb(0x7cc4ff),
@@ -356,6 +368,8 @@ impl Theme {
             // Border (white for high contrast)
             border: rgb(0xffffff),
             border_hover: rgb(0xcccccc),
+            // Typography
+            font_family: "B612".into(),
             // Badge colors (dark variant)
             badge_primary_bg: rgb(0x1a4a7a),
             badge_primary_text: rgb(0x7cc4ff),

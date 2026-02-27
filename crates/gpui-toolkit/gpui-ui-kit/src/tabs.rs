@@ -226,14 +226,16 @@ impl Tabs {
     /// - Left/Right arrows: Navigate between tabs
     /// - Home: Select first tab
     /// - End: Select last tab
-    pub fn build_with_theme(self, global_theme: &TabsTheme, cx: &mut App) -> Stateful<Div> {
-        let theme = self.theme.as_ref().unwrap_or(global_theme);
+    pub fn build_with_theme(self, global_theme: &crate::theme::Theme, cx: &mut App) -> Stateful<Div> {
+        let tabs_theme = TabsTheme::from(global_theme);
+        let theme = self.theme.as_ref().unwrap_or(&tabs_theme);
 
         // Get or create focus handle
         let focus_handle = self.focus_handle.unwrap_or_else(|| cx.focus_handle());
 
         let mut container = div()
             .id(self.id.clone())
+            .font_family(global_theme.font_family.clone())
             .track_focus(&focus_handle)
             .flex()
             .items_center()
@@ -658,8 +660,7 @@ impl Default for Tabs {
 impl RenderOnce for Tabs {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
-        let tabs_theme = TabsTheme::from(&global_theme);
-        self.build_with_theme(&tabs_theme, cx)
+        self.build_with_theme(&global_theme, cx)
     }
 }
 

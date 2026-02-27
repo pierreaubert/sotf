@@ -17,7 +17,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::param_specs::denoiser::*;
+use sotf_plugins::param_specs::{find_by_key as pk, denoiser::PARAMS as DN};
 
 /// State for rendering the Denoiser plugin
 pub struct DenoiserRenderState {
@@ -80,8 +80,8 @@ pub fn render_denoiser_plugin(
                                     plugin_idx,
                                     "Reduction",
                                     state.reduction_db,
-                                    REDUCTION_DB_MIN as f64,
-                                    REDUCTION_DB_MAX as f64,
+                                    pk(DN, "reduction_db").min_f64(),
+                                    pk(DN, "reduction_db").max_f64(),
                                     "dB",
                                     0,
                                     state.selected_param,
@@ -95,8 +95,8 @@ pub fn render_denoiser_plugin(
                                     plugin_idx,
                                     "Floor",
                                     state.floor_db,
-                                    FLOOR_DB_MIN as f64,
-                                    FLOOR_DB_MAX as f64,
+                                    pk(DN, "floor_db").min_f64(),
+                                    pk(DN, "floor_db").max_f64(),
                                     "dB",
                                     1,
                                     state.selected_param,
@@ -123,8 +123,8 @@ pub fn render_denoiser_plugin(
                                     plugin_idx,
                                     "Attack",
                                     state.attack_ms,
-                                    ATTACK_MS_MIN as f64,
-                                    ATTACK_MS_MAX as f64,
+                                    pk(DN, "attack_ms").min_f64(),
+                                    pk(DN, "attack_ms").max_f64(),
                                     "ms",
                                     3,
                                     state.selected_param,
@@ -138,8 +138,8 @@ pub fn render_denoiser_plugin(
                                     plugin_idx,
                                     "Release",
                                     state.release_ms,
-                                    RELEASE_MS_MIN as f64,
-                                    RELEASE_MS_MAX as f64,
+                                    pk(DN, "release_ms").min_f64(),
+                                    pk(DN, "release_ms").max_f64(),
                                     "ms",
                                     4,
                                     state.selected_param,
@@ -162,8 +162,8 @@ pub fn render_denoiser_plugin(
                             plugin_idx,
                             "Smoothing",
                             state.smoothing * 100.0,
-                            SMOOTHING_MIN as f64 * 100.0,
-                            SMOOTHING_MAX as f64 * 100.0,
+                            pk(DN, "smoothing").min_f64() * 100.0,
+                            pk(DN, "smoothing").max_f64() * 100.0,
                             "%",
                             2,
                             state.selected_param,
@@ -190,8 +190,8 @@ pub fn render_denoiser_plugin(
                             plugin_idx,
                             "Transparency",
                             state.transparency * 100.0,
-                            TRANSPARENCY_MIN as f64 * 100.0,
-                            TRANSPARENCY_MAX as f64 * 100.0,
+                            pk(DN, "transparency").min_f64() * 100.0,
+                            pk(DN, "transparency").max_f64() * 100.0,
                             "%",
                             12,
                             state.selected_param,

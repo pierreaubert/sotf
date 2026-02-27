@@ -131,6 +131,7 @@ impl Text {
         };
 
         let mut text = div()
+            .font_family(theme.font_family.clone())
             .text_color(text_color)
             .font_weight(self.weight.to_font_weight());
 
@@ -218,6 +219,7 @@ impl Heading {
     /// Build into element with explicit theme
     pub fn build_with_theme(self, theme: &Theme) -> Div {
         let mut heading = div()
+            .font_family(theme.font_family.clone())
             .font_weight(FontWeight::BOLD)
             .text_color(theme.text_primary);
 
@@ -294,6 +296,7 @@ impl Code {
 
         if self.inline {
             div()
+                .font_family(theme.font_family.clone())
                 .px_1()
                 .py(px(1.0))
                 .bg(theme.surface)
@@ -303,6 +306,7 @@ impl Code {
                 .child(self.content)
         } else {
             div()
+                .font_family(theme.font_family.clone())
                 .p_3()
                 .bg(theme.muted)
                 .rounded_md()
@@ -381,6 +385,7 @@ impl Link {
 
         let mut link = div()
             .id(self.id)
+            .font_family(theme.font_family.clone())
             .text_color(accent)
             .cursor_pointer()
             .hover(move |s| s.text_color(accent_hover));
