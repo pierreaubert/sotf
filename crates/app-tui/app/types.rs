@@ -266,6 +266,9 @@ impl Default for HeadphoneEqTuiState {
 #[derive(Debug, Clone)]
 pub struct RoomEqTuiState {
     pub step: RoomEqStep,
+    /// When true, focus is on the step tabs row; Left/Right/Tab cycle steps.
+    /// When false, focus is inside the current step's content.
+    pub step_tab_focused: bool,
     // Step 1: load measurement file (JSON)
     pub file_path: String,
     pub editing_file_path: bool,
@@ -297,6 +300,7 @@ impl Default for RoomEqTuiState {
     fn default() -> Self {
         Self {
             step: RoomEqStep::LoadData,
+            step_tab_focused: true,
             file_path: String::new(),
             editing_file_path: false,
             channel_measurements: Vec::new(),

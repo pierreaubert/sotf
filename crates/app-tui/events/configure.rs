@@ -47,32 +47,55 @@ pub fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
     // ── Tab-bar level ────────────────────────────────────────────────────────
     if app.configure_tab_focused {
         match key.code {
-            KeyCode::Left | KeyCode::BackTab => {
+            KeyCode::Left | KeyCode::Up => {
                 app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
+                return None;
             }
-            KeyCode::Right | KeyCode::Tab => {
+            KeyCode::Right | KeyCode::Down | KeyCode::Tab => {
                 app.configure_sub_screen = configure_sub_screen_next(app.configure_sub_screen);
+                return None;
             }
-            KeyCode::Down | KeyCode::Enter => {
+            KeyCode::BackTab => {
+                app.configure_sub_screen = configure_sub_screen_prev(app.configure_sub_screen);
+                return None;
+            }
+            KeyCode::Enter => {
                 app.configure_tab_focused = false;
+                return None;
             }
-            KeyCode::Up => {
-                app.current_screen = Screen::Library;
+            KeyCode::Char('1') => {
+                app.configure_sub_screen = ConfigureSubScreen::Directories;
+                app.configure_tab_focused = false;
+                return None;
             }
-            KeyCode::Char('1') => { app.configure_sub_screen = ConfigureSubScreen::Directories; }
-            KeyCode::Char('2') => { app.configure_sub_screen = ConfigureSubScreen::Recording; }
-            KeyCode::Char('3') => { app.configure_sub_screen = ConfigureSubScreen::RoomEq; }
-            KeyCode::Char('4') => { app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq; }
-            KeyCode::Char('5') => { app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq; }
-            _ => {}
+            KeyCode::Char('2') => {
+                app.configure_sub_screen = ConfigureSubScreen::Recording;
+                app.configure_tab_focused = false;
+                return None;
+            }
+            KeyCode::Char('3') => {
+                app.configure_sub_screen = ConfigureSubScreen::RoomEq;
+                app.configure_tab_focused = false;
+                return None;
+            }
+            KeyCode::Char('4') => {
+                app.configure_sub_screen = ConfigureSubScreen::HeadphoneEq;
+                app.configure_tab_focused = false;
+                return None;
+            }
+            KeyCode::Char('5') => {
+                app.configure_sub_screen = ConfigureSubScreen::SpinoramaEq;
+                app.configure_tab_focused = false;
+                return None;
+            }
+            _ => { return None; }
         }
-        return None;
     }
 
-    return delegate_to_sub_handler(app, key);
+    delegate_to_sub_handler(app, key)
 }
 
-fn delegate_to_sub_handler(app: &mut App, key: KeyEvent) {
+fn delegate_to_sub_handler(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match app.configure_sub_screen {
         ConfigureSubScreen::Directories => super::handle_directory_keys(app, key),
         ConfigureSubScreen::SpinoramaEq => super::spinorama::handle_spinorama_keys(app, key),

@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::app::*;
+    use crate::theme::Theme;
+    use sotf_audio::devices::AudioDevice;
     use sotf_audio_player::{Album, DirectoryInfo, Track};
     use sotf_audio_player::{PluginSettings, PluginType};
     use std::path::PathBuf;

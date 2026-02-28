@@ -3,228 +3,234 @@
 use super::PlayerCommand;
 use crate::app::{App, FilePickerMode, FilePickerOrigin};
 use crossterm::event::{KeyCode, KeyEvent};
+use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
 use std::sync::{Arc, Mutex};
 
+fn step_next_wrapping(s: RoomEqStep) -> RoomEqStep {
+    match s {
+        RoomEqStep::LoadData => RoomEqStep::Configure,
+        RoomEqStep::Configure => RoomEqStep::Optimize,
+        RoomEqStep::Optimize => RoomEqStep::Review,
+        RoomEqStep::Review => RoomEqStep::Export,
+        RoomEqStep::Export => RoomEqStep::LoadData,
+    }
+}
+
+fn step_prev_wrapping(s: RoomEqStep) -> RoomEqStep {
+    match s {
+        RoomEqStep::LoadData => RoomEqStep::Export,
+        RoomEqStep::Configure => RoomEqStep::LoadData,
+        RoomEqStep::Optimize => RoomEqStep::Configure,
+        RoomEqStep::Review => RoomEqStep::Optimize,
+        RoomEqStep::Export => RoomEqStep::Review,
+    }
+}
 
 pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
-
-    // Esc goes up one level
-    if key.code == KeyCode::Esc {
-        match app.room_eq.step {
-            RoomEqStep::LoadData => {
-                if app.room_eq.editing_file_path {
-                    app.room_eq.editing_file_path = false;
-                } else {
-                    app.configure_tab_focused = true;
-                }
+    // ── Step-tab level ─────────────────────────────────────────────────────
+    if app.room_eq.step_tab_focused {
+        match key.code {
+            KeyCode::Esc => {
+                app.configure_tab_focused = true;
             }
-            RoomEqStep::Configure => {
-                app.room_eq.step = RoomEqStep::LoadData;
+            KeyCode::Left => {
+                app.room_eq.step = step_prev_wrapping(app.room_eq.step);
             }
-            RoomEqStep::Optimize => {
-                app.room_eq.step = RoomEqStep::Configure;
+            KeyCode::Right => {
+                app.room_eq.step = step_next_wrapping(app.room_eq.step);
             }
-            RoomEqStep::Review => {
-                app.room_eq.step = RoomEqStep::Optimize;
+            KeyCode::Tab => {
+                app.room_eq.step = step_next_wrapping(app.room_eq.step);
             }
-            RoomEqStep::Export => {
-                if app.room_eq.editing_export_path {
-                    app.room_eq.editing_export_path = false;
-                } else {
-                    app.room_eq.step = RoomEqStep::Review;
-                }
+            KeyCode::BackTab => {
+                app.room_eq.step = step_prev_wrapping(app.room_eq.step);
             }
+            KeyCode::Enter | KeyCode::Down => {
+                app.room_eq.step_tab_focused = false;
+            }
+            KeyCode::Up => {
+                app.configure_tab_focused = true;
+            }
+            _ => {}
         }
         return None;
     }
 
-    match app.room_eq.step {
-        RoomEqStep::LoadData => {
-            if app.room_eq.editing_file_path {
-                match key.code {
-                    KeyCode::Enter => {
-                        app.room_eq.editing_file_path = false;
-                        load_room_eq_measurements(app);
-                    }
-                    KeyCode::Backspace => {
-                        app.room_eq.file_path.pop();
-                    }
-                    KeyCode::F(2) => {
-                        let start = app.room_eq.file_path.clone();
-                        app.open_file_explorer(
-                            FilePickerOrigin::RoomEqFilePath,
-                            FilePickerMode::File,
-                            "Select Room EQ Measurements (JSON)",
-                            Some(&start),
-                            Some("json"),
-                        );
-                    }
-                    KeyCode::Char(c) => {
-                        app.room_eq.file_path.push(c);
-                    }
-                    _ => {}
-                }
+    // ── Inside a step ──────────────────────────────────────────────────────
+
+    // Esc always goes back to step tabs
+    if key.code == KeyCode::Esc {
+        // If editing a text field, exit editing first
+        match app.room_eq.step {
+            RoomEqStep::LoadData if app.room_eq.editing_file_path => {
+                app.room_eq.editing_file_path = false;
                 return None;
             }
-            match key.code {
-                KeyCode::Up => {
-                    app.configure_tab_focused = true;
-                }
-                KeyCode::Enter => {
-                    app.room_eq.editing_file_path = true;
-                }
-                KeyCode::Tab => {
-                    if !app.room_eq.channel_measurements.is_empty() {
-                        app.room_eq.step = RoomEqStep::Configure;
-                    }
-                }
-                _ => {}
-            }
-            None
-        }
-
-        RoomEqStep::Configure => match key.code {
-            KeyCode::Up => {
-                if app.room_eq.selected_field > 0 {
-                    app.room_eq.selected_field -= 1;
-                } else {
-                    app.configure_tab_focused = true;
-                }
-                None
-            }
-            KeyCode::Down => {
-                if app.room_eq.selected_field < ROOM_EQ_FIELD_COUNT - 1 {
-                    app.room_eq.selected_field += 1;
-                }
-                None
-            }
-            KeyCode::Left | KeyCode::Char('-') => {
-                adjust_room_eq_field(app, -1);
-                None
-            }
-            KeyCode::Right | KeyCode::Char('+') => {
-                adjust_room_eq_field(app, 1);
-                None
-            }
-            KeyCode::Enter | KeyCode::Tab => {
-                app.room_eq.step = RoomEqStep::Optimize;
-                None
-            }
-            KeyCode::BackTab => {
-                app.room_eq.step = RoomEqStep::LoadData;
-                None
-            }
-            _ => None,
-        },
-
-        RoomEqStep::Optimize => match key.code {
-            KeyCode::Up => {
-                app.configure_tab_focused = true;
-                None
-            }
-            KeyCode::Enter => {
-                match &app.room_eq.opt_status {
-                    OptimizationStatus::Idle
-                    | OptimizationStatus::Failed
-                    | OptimizationStatus::Cancelled => {
-                        spawn_room_eq_optimization(app);
-                    }
-                    OptimizationStatus::Completed => {
-                        app.room_eq.step = RoomEqStep::Review;
-                    }
-                    OptimizationStatus::Running => {}
-                }
-                None
-            }
-            KeyCode::Tab => {
-                if app.room_eq.opt_status == OptimizationStatus::Completed {
-                    app.room_eq.step = RoomEqStep::Review;
-                } else {
-                    app.room_eq.step = RoomEqStep::Configure;
-                }
-                None
-            }
-            KeyCode::BackTab => {
-                app.room_eq.step = RoomEqStep::Configure;
-                None
-            }
-            _ => None,
-        },
-
-        RoomEqStep::Review => match key.code {
-            KeyCode::Up => {
-                if app.room_eq.selected_channel > 0 {
-                    app.room_eq.selected_channel -= 1;
-                } else {
-                    app.configure_tab_focused = true;
-                }
-                None
-            }
-            KeyCode::Down => {
-                if !app.room_eq.channel_results.is_empty()
-                    && app.room_eq.selected_channel < app.room_eq.channel_results.len() - 1
-                {
-                    app.room_eq.selected_channel += 1;
-                }
-                None
-            }
-            KeyCode::Tab => {
-                app.room_eq.step = RoomEqStep::Export;
-                None
-            }
-            KeyCode::BackTab => {
-                app.room_eq.step = RoomEqStep::Optimize;
-                None
-            }
-            _ => None,
-        },
-
-        RoomEqStep::Export => {
-            if app.room_eq.editing_export_path {
-                match key.code {
-                    KeyCode::Enter => {
-                        app.room_eq.editing_export_path = false;
-                        export_room_eq_results(app);
-                    }
-                    KeyCode::Backspace => {
-                        app.room_eq.export_path.pop();
-                    }
-                    KeyCode::F(2) => {
-                        let start = app.room_eq.export_path.clone();
-                        app.open_file_explorer(
-                            FilePickerOrigin::RoomEqExportPath,
-                            FilePickerMode::File,
-                            "Select Export Path (JSON)",
-                            Some(&start),
-                            Some("json"),
-                        );
-                    }
-                    KeyCode::Char(c) => {
-                        app.room_eq.export_path.push(c);
-                    }
-                    _ => {}
-                }
+            RoomEqStep::Export if app.room_eq.editing_export_path => {
+                app.room_eq.editing_export_path = false;
                 return None;
             }
-            match key.code {
-                KeyCode::Up => {
-                    app.configure_tab_focused = true;
-                }
-                KeyCode::Enter => {
-                    app.room_eq.editing_export_path = true;
-                }
-                KeyCode::Tab => {
-                    app.room_eq.step = RoomEqStep::LoadData;
-                }
-                KeyCode::BackTab => {
-                    app.room_eq.step = RoomEqStep::Review;
-                }
-                _ => {}
-            }
-            None
+            _ => {}
         }
+        app.room_eq.step_tab_focused = true;
+        return None;
     }
+
+    match app.room_eq.step {
+        RoomEqStep::LoadData => handle_load_data_keys(app, key),
+        RoomEqStep::Configure => handle_configure_keys(app, key),
+        RoomEqStep::Optimize => handle_optimize_keys(app, key),
+        RoomEqStep::Review => handle_review_keys(app, key),
+        RoomEqStep::Export => handle_export_keys(app, key),
+    }
+}
+
+fn handle_load_data_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    if app.room_eq.editing_file_path {
+        match key.code {
+            KeyCode::Enter => {
+                app.room_eq.editing_file_path = false;
+                load_room_eq_measurements(app);
+            }
+            KeyCode::Backspace => {
+                app.room_eq.file_path.pop();
+            }
+            KeyCode::F(2) => {
+                let start = app.room_eq.file_path.clone();
+                app.open_file_explorer(
+                    FilePickerOrigin::RoomEqFilePath,
+                    FilePickerMode::File,
+                    "Select Room EQ Measurements (JSON)",
+                    Some(&start),
+                    Some("json"),
+                );
+            }
+            KeyCode::Char(c) => {
+                app.room_eq.file_path.push(c);
+            }
+            _ => {}
+        }
+        return None;
+    }
+    match key.code {
+        KeyCode::Up => {
+            app.room_eq.step_tab_focused = true;
+        }
+        KeyCode::Enter => {
+            app.room_eq.editing_file_path = true;
+        }
+        _ => {}
+    }
+    None
+}
+
+fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up => {
+            if app.room_eq.selected_field > 0 {
+                app.room_eq.selected_field -= 1;
+            } else {
+                app.room_eq.step_tab_focused = true;
+            }
+        }
+        KeyCode::Down => {
+            if app.room_eq.selected_field < ROOM_EQ_FIELD_COUNT - 1 {
+                app.room_eq.selected_field += 1;
+            }
+        }
+        KeyCode::Left | KeyCode::Char('-') => {
+            adjust_room_eq_field(app, -1);
+        }
+        KeyCode::Right | KeyCode::Char('+') => {
+            adjust_room_eq_field(app, 1);
+        }
+        _ => {}
+    }
+    None
+}
+
+fn handle_optimize_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up => {
+            app.room_eq.step_tab_focused = true;
+        }
+        KeyCode::Enter => {
+            match &app.room_eq.opt_status {
+                OptimizationStatus::Idle
+                | OptimizationStatus::Failed
+                | OptimizationStatus::Cancelled => {
+                    spawn_room_eq_optimization(app);
+                }
+                OptimizationStatus::Completed => {
+                    app.room_eq.step = RoomEqStep::Review;
+                    app.room_eq.step_tab_focused = false;
+                }
+                OptimizationStatus::Running => {}
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+fn handle_review_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up => {
+            if app.room_eq.selected_channel > 0 {
+                app.room_eq.selected_channel -= 1;
+            } else {
+                app.room_eq.step_tab_focused = true;
+            }
+        }
+        KeyCode::Down => {
+            if !app.room_eq.channel_results.is_empty()
+                && app.room_eq.selected_channel < app.room_eq.channel_results.len() - 1
+            {
+                app.room_eq.selected_channel += 1;
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    if app.room_eq.editing_export_path {
+        match key.code {
+            KeyCode::Enter => {
+                app.room_eq.editing_export_path = false;
+                export_room_eq_results(app);
+            }
+            KeyCode::Backspace => {
+                app.room_eq.export_path.pop();
+            }
+            KeyCode::F(2) => {
+                let start = app.room_eq.export_path.clone();
+                app.open_file_explorer(
+                    FilePickerOrigin::RoomEqExportPath,
+                    FilePickerMode::File,
+                    "Select Export Path (JSON)",
+                    Some(&start),
+                    Some("json"),
+                );
+            }
+            KeyCode::Char(c) => {
+                app.room_eq.export_path.push(c);
+            }
+            _ => {}
+        }
+        return None;
+    }
+    match key.code {
+        KeyCode::Up => {
+            app.room_eq.step_tab_focused = true;
+        }
+        KeyCode::Enter => {
+            app.room_eq.editing_export_path = true;
+        }
+        _ => {}
+    }
+    None
 }
 
 /// Total number of adjustable fields in the Room EQ configure step
@@ -445,8 +451,6 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
 }
 
 fn spawn_room_eq_optimization(app: &mut App) {
-    use sotf_audio_player::room_eq_types::OptimizationStatus;
-
     if app.room_eq.channel_measurements.is_empty() {
         app.room_eq.opt_status = OptimizationStatus::Failed;
         app.room_eq.opt_error = Some("No measurements loaded".to_string());
@@ -712,7 +716,6 @@ mod tests {
     use super::*;
     use crate::events::tests::{key, make_app};
     use crate::app::Screen;
-    use sotf_audio_player::room_eq_types::RoomEqStep;
 
     #[test]
     fn room_eq_step_prev_does_not_wrap() {
@@ -726,9 +729,8 @@ mod tests {
 
     #[test]
     fn room_eq_progress_clamped_to_one() {
-        // Simulate progress calculation that could exceed 1.0
         let total_iters: usize = 100;
-        let done_iters: usize = 150; // Exceeds total (e.g. extra iterations)
+        let done_iters: usize = 150;
         let progress = if total_iters > 0 {
             (done_iters as f32 / total_iters as f32).min(1.0)
         } else {
@@ -739,22 +741,83 @@ mod tests {
     }
 
     #[test]
-    fn room_eq_esc_at_load_data_returns_to_tab_bar() {
+    fn room_eq_esc_at_step_tab_returns_to_configure_tabs() {
         let mut app = make_app();
         app.current_screen = Screen::Configure;
         app.configure_sub_screen = crate::app::ConfigureSubScreen::RoomEq;
         app.configure_tab_focused = false;
         app.room_eq.step = RoomEqStep::LoadData;
+        app.room_eq.step_tab_focused = true;
 
         handle_room_eq_keys(&mut app, key(KeyCode::Esc));
         assert!(app.configure_tab_focused);
     }
 
     #[test]
-    fn room_eq_esc_at_configure_goes_back() {
+    fn room_eq_esc_inside_step_returns_to_step_tabs() {
         let mut app = make_app();
         app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.step_tab_focused = false;
+
         handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(app.room_eq.step_tab_focused);
+        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+    }
+
+    #[test]
+    fn room_eq_tab_cycles_steps() {
+        let mut app = make_app();
+        app.room_eq.step = RoomEqStep::LoadData;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
+    }
+
+    #[test]
+    fn room_eq_tab_wraps_from_export_to_load() {
+        let mut app = make_app();
+        app.room_eq.step = RoomEqStep::Export;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
         assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
+    }
+
+    #[test]
+    fn room_eq_left_right_at_step_level() {
+        let mut app = make_app();
+        app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Right));
+        assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Left));
+        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+    }
+
+    #[test]
+    fn room_eq_enter_goes_into_step() {
+        let mut app = make_app();
+        app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(!app.room_eq.step_tab_focused);
+    }
+
+    #[test]
+    fn room_eq_up_on_first_field_goes_to_step_tabs() {
+        let mut app = make_app();
+        app.room_eq.step = RoomEqStep::Configure;
+        app.room_eq.step_tab_focused = false;
+        app.room_eq.selected_field = 0;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert!(app.room_eq.step_tab_focused);
     }
 }

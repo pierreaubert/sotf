@@ -27,8 +27,18 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             Line::from(Span::styled(st.label(), style))
         })
         .collect();
+    let tab_border_style = if s.step_tab_focused {
+        Style::default().fg(app.theme.accent_primary)
+    } else {
+        Style::default().fg(app.theme.border_color)
+    };
     let tabs = Tabs::new(tab_titles)
-        .block(Block::default().borders(Borders::ALL).title("Room EQ"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(tab_border_style)
+                .title("Room EQ"),
+        )
         .select(s.step.index())
         .highlight_style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(tabs, outer[0]);

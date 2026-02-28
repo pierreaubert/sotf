@@ -51,35 +51,6 @@ pub fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Get a human-readable name for a path config JSON (for A/B Compare plugin)
-pub fn path_config_to_display_name(config: &str) -> String {
-    if config.is_empty() || config == r#"{"type":"None"}"# {
-        "None (passthrough)".to_string()
-    } else if config.contains(r#""plugin_type":"EQ""#) {
-        "EQ".to_string()
-    } else if config.contains(r#""plugin_type":"gain""#) {
-        "Gain".to_string()
-    } else if config.contains(r#""plugin_type":"compressor""#) {
-        "Compressor".to_string()
-    } else if config.contains(r#""plugin_type":"limiter""#) {
-        "Limiter".to_string()
-    } else if config.contains(r#""plugin_type":"gate""#) {
-        "Gate".to_string()
-    } else if config.contains(r#""plugin_type":"expander""#) {
-        "Expander".to_string()
-    } else if config.contains(r#""plugin_type":"denoiser""#) {
-        "Denoiser".to_string()
-    } else if config.contains(r#""plugin_type":"loudness_compensation""#) {
-        "Loudness Comp".to_string()
-    } else if config.contains(r#""type":"Rack""#) {
-        "Rack (chain)".to_string()
-    } else if config.contains(r#""type":"Graph""#) {
-        "Graph".to_string()
-    } else {
-        "Custom".to_string()
-    }
-}
-
 /// Wrap text to a maximum width, returning lines
 pub fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {

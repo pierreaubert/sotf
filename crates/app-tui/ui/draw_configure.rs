@@ -271,8 +271,6 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 
     match s.step {
         RecordingStep::Config => {
-            let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
-
             let playback_name = if s.available_playback_devices.is_empty() {
                 "(no devices)".to_string()
             } else if let Some(d) = s.available_playback_devices.get(s.selected_playback_idx) {

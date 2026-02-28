@@ -35,30 +35,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
     // Esc goes up one level within the wizard
     if key.code == KeyCode::Esc {
-        match app.spinorama_eq.step {
-            SpinoramaStep::Select => {
-                // At top of wizard — go back to Configure tab bar
-                app.configure_tab_focused = true;
-            }
-            SpinoramaStep::Configure => {
-                app.spinorama_eq.step = SpinoramaStep::Select;
-            }
-            SpinoramaStep::Optimize => {
-                app.spinorama_eq.step = SpinoramaStep::Configure;
-            }
-            SpinoramaStep::Results => {
-                app.spinorama_eq.step = SpinoramaStep::Optimize;
-            }
-            SpinoramaStep::UpdatePlugin => {
-                use crate::app::SpinUpdateSubStep;
-                if app.spinorama_eq.update_substep == SpinUpdateSubStep::ConfirmOverwrite {
-                    app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
-                    app.spinorama_eq.update_existing_eq_info = None;
-                } else {
-                    app.spinorama_eq.step = SpinoramaStep::Results;
-                }
-            }
-        }
+        app.configure_tab_focused = true;
         return None;
     }
 
@@ -83,12 +60,6 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 let idx = app.spinorama_eq.selected_speaker_idx;
                 if let Some(name) = app.spinorama_eq.filtered_speakers.get(idx).cloned() {
                     app.spinorama_eq.selected_speaker = Some(name);
-                    app.spinorama_eq.step = SpinoramaStep::Configure;
-                }
-                None
-            }
-            KeyCode::Tab => {
-                if app.spinorama_eq.selected_speaker.is_some() {
                     app.spinorama_eq.step = SpinoramaStep::Configure;
                 }
                 None
@@ -146,10 +117,6 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 app.spinorama_eq.step = SpinoramaStep::Optimize;
                 None
             }
-            KeyCode::BackTab => {
-                app.spinorama_eq.step = SpinoramaStep::Select;
-                None
-            }
             _ => None,
         },
 
@@ -168,18 +135,6 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     }
                     OptimizationStatus::Running => {}
                 }
-                None
-            }
-            KeyCode::Tab => {
-                if app.spinorama_eq.opt_status == OptimizationStatus::Completed {
-                    app.spinorama_eq.step = SpinoramaStep::Results;
-                } else {
-                    app.spinorama_eq.step = SpinoramaStep::Configure;
-                }
-                None
-            }
-            KeyCode::BackTab => {
-                app.spinorama_eq.step = SpinoramaStep::Configure;
                 None
             }
             _ => None,

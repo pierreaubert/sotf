@@ -568,7 +568,7 @@ enum ParamDisplayEntry {
 /// Returns a mix of selectable parameters and non-selectable separators.
 /// Get the parameters for a plugin as display entries.
 /// Returns a mix of selectable parameters and non-selectable separators.
-pub(crate) fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<ParamDisplayEntry> {
+fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<ParamDisplayEntry> {
     use crate::app::TuiEditablePlugin;
     use ParamDisplayEntry::{Param, Separator};
 
