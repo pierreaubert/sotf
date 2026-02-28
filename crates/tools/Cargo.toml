@@ -8,6 +8,14 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
+name = "export-design-tokens"
+path = "bin/export-design-tokens.rs"
+
+[[bin]]
+name = "import-design-tokens"
+path = "bin/import-design-tokens.rs"
+
+[[bin]]
 name = "generate-audio-tests"
 path = "bin/generate_audio_tests.rs"
 
@@ -28,6 +36,8 @@ sofa_support = ["dep:netcdf"]
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
 netcdf = { workspace = true, optional = true }
+sotf-gpui = { path = "../app-gpui" }
+gpui = { workspace = true }
 
 # math
 ndarray = { workspace = true }
