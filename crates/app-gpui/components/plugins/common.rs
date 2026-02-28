@@ -59,7 +59,7 @@ pub fn render_param_row(
         // Value
         .child(
             div()
-                .min_w(px(80.0))
+                .min_w(rems(5.0))
                 .px_2()
                 .py_1()
                 .rounded_md()

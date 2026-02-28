@@ -120,7 +120,7 @@ pub enum IconSize {
 }
 
 impl IconSize {
-    /// Get the pixel size
+    /// Get the pixel size (for APIs that require Pixels)
     pub fn px(&self) -> Pixels {
         match self {
             IconSize::Xs => px(12.0),
@@ -129,6 +129,18 @@ impl IconSize {
             IconSize::Lg => px(24.0),
             IconSize::Xl => px(32.0),
             IconSize::Xxl => px(36.0),
+        }
+    }
+
+    /// Get the rem-based size (scales with window for responsive design)
+    pub fn to_rems(&self) -> Rems {
+        match self {
+            IconSize::Xs => rems(0.75),   // 12px at 16px rem
+            IconSize::Sm => rems(1.0),    // 16px at 16px rem
+            IconSize::Md => rems(1.25),   // 20px at 16px rem
+            IconSize::Lg => rems(1.5),    // 24px at 16px rem
+            IconSize::Xl => rems(2.0),    // 32px at 16px rem
+            IconSize::Xxl => rems(2.25),  // 36px at 16px rem
         }
     }
 }
@@ -202,7 +214,8 @@ impl Icon {
 
 impl RenderOnce for Icon {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let size = self.size.px();
+        // Use rem-based sizing so icons scale with the responsive rem size
+        let size = self.size.to_rems();
 
         let mut el = svg().path(self.name.path()).size(size);
 

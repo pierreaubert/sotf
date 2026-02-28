@@ -64,7 +64,7 @@ impl PlayerView {
                                     )))
                                     .flex()
                                     .flex_col()
-                                    .w(px(220.0))
+                                    .w(rems(13.75))
                                     .p_4()
                                     .rounded_md()
                                     .border_2()
@@ -191,8 +191,8 @@ impl PlayerView {
             })
             .collect();
 
-        let col_w = px(80.0);
-        let name_w = px(200.0);
+        let col_w = rems(5.0);
+        let name_w = rems(12.5);
         let text_primary = theme.text_primary;
         let text_secondary = theme.text_secondary;
         let border = theme.border;

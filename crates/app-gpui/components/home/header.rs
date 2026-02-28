@@ -176,8 +176,8 @@ impl PlayerView {
         })
         .build_with_theme(&theme.to_menu_theme())
         .absolute()
-        .top(px(28.0))
-        .left(px(16.0))
+        .top(rems(1.75))
+        .left(rems(1.0))
     }
 
     /// Render View menu dropdown
@@ -227,8 +227,8 @@ impl PlayerView {
         })
         .build_with_theme(&theme.to_menu_theme())
         .absolute()
-        .top(px(28.0))
-        .left(px(52.0))
+        .top(rems(1.75))
+        .left(rems(3.25))
     }
 
     /// Render Help menu dropdown
@@ -261,8 +261,8 @@ impl PlayerView {
         })
         .build_with_theme(&theme.to_menu_theme())
         .absolute()
-        .top(px(28.0))
-        .left(px(96.0))
+        .top(rems(1.75))
+        .left(rems(6.0))
     }
 
     /// Render the tab bar header (for compact mode)

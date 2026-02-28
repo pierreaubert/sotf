@@ -33,7 +33,7 @@ pub(crate) fn render_channel_config_row(
         .border_color(theme.border)
         // Channel name
         .child(
-            div().w(px(80.0)).child(
+            div().w(rems(5.0)).child(
                 Text::new(channel_name)
                     .weight(TextWeight::Bold)
                     .color(theme.text_primary),
@@ -729,7 +729,7 @@ fn render_filter_table(
                 .flex()
                 .flex_col()
                 .gap_1()
-                .min_w(px(80.0))
+                .min_w(rems(5.0))
                 // Filter number and type
                 .child(
                     div()

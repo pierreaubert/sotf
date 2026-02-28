@@ -62,8 +62,8 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .w(px(40.0))
-                            .h(px(32.0))
+                            .w(rems(2.5))
+                            .h(rems(2.0))
                             .cursor_pointer()
                             .rounded_md()
                             .hover(move |s| s.bg(surface_hover))
@@ -572,8 +572,8 @@ impl PlayerView {
                         // Album art (smaller, top-left)
                         .child({
                             let art_div = div()
-                                .w(px(120.0))
-                                .h(px(120.0))
+                                .w(rems(7.5))
+                                .h(rems(7.5))
                                 .bg(theme.surface)
                                 .rounded_lg()
                                 .overflow_hidden()
@@ -840,8 +840,8 @@ impl PlayerView {
                         .items_center()
                         .gap_2()
                         .px_2()
-                        .py(px(4.0))
-                        .rounded(px(4.0))
+                        .py_1()
+                        .rounded_md()
                         .cursor_pointer()
                         .when(is_current, |d| {
                             d.bg(theme_c.accent).text_color(theme_c.text_on_accent)
@@ -866,7 +866,7 @@ impl PlayerView {
                         )
                         .child(
                             div()
-                                .w(px(24.0))
+                                .w(rems(1.5))
                                 .text_xs()
                                 .text_color(if is_current {
                                     theme_c.text_on_accent
@@ -954,7 +954,7 @@ impl PlayerView {
                 .id("track-list")
                 .flex()
                 .flex_col()
-                .gap(px(2.0))
+                .gap_0p5()
                 .flex_1()
                 .overflow_y_scroll()
                 .children(all_elements),

@@ -745,26 +745,42 @@ impl PlayerView {
         cx.notify();
     }
 
-    /// Recalculate library pagination based on current layout
+    /// Recalculate library pagination based on current layout.
+    /// Uses the responsive scale to compute card sizes that match rem-based rendering.
     pub(crate) fn recalculate_pagination(&self, cx: &mut Context<Self>, force_reset: bool) {
-        let (window_width, window_height) = {
+        let (window_width, window_height, font_scale) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.window_width,
                 state.app.ui_state.window_height,
+                state.app.ui_state.font_scale,
             )
         };
 
         self.state.update(cx, |state, _cx| {
             let app = &mut state.app;
-            let available_width = window_width - 32.0; // Minus padding
-            let columns = (available_width / 176.0).floor().max(1.0) as usize;
+
+            // Compute the same responsive scale used for rem size in render()
+            let width_scale = window_width / 1200.0;
+            let height_scale = window_height / 800.0;
+            let responsive_scale = width_scale.min(height_scale).clamp(0.55, 2.5);
+            let effective_rem = 16.0 * font_scale * responsive_scale;
+
+            // Card width in pixels: 8.75 rem (matching album_card.rs)
+            // Plus gap_4 = 1rem gap
+            let card_px = 8.75 * effective_rem;
+            let gap_px = 1.0 * effective_rem;
+            let card_with_gap = card_px + gap_px;
+
+            let available_width = window_width - 2.0 * effective_rem; // p_2 padding
+            let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
             app.library_state.library_columns = columns;
 
-            // Estimate available height for grid
-            // Header (40) + Stats (100) + Filter (40) + Pagination (50) + Footer (60) = ~290px
-            let available_height = (window_height - 290.0).max(256.0);
-            let rows = (available_height / 256.0).floor().max(1.0) as usize;
+            // Estimate available height for grid (header/footer areas scale too)
+            let chrome_height = 18.0 * effective_rem; // ~290px at base scale
+            let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
+            let card_height = 11.25 * effective_rem; // ~180px at base (thumbnail + text)
+            let rows = (available_height / card_height).floor().max(1.0) as usize;
 
             // Initial load: 3 screens worth of items
             let new_items_per_page = columns * rows * 3;

@@ -854,7 +854,7 @@ pub fn render_eq_plugin(
         .flex_col()
         .items_center() // Center band selector and knob box
         .gap_4()
-        .when(use_horizontal_layout, |d| d.min_w(px(300.0)))
+        .when(use_horizontal_layout, |d| d.min_w(rems(18.75)))
         .when(!use_horizontal_layout, |d| d.w_full())
         // Channel Mode Toggle and Channel Selector
         .child({

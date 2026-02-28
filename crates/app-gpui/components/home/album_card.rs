@@ -230,8 +230,9 @@ impl AlbumCard {
     }
 
     fn render_grid(self) -> AnyElement {
-        let thumbnail_size = 140.0;
-        let card_width = 140.0;
+        // Use rem-based sizing so thumbnails/cards scale with the responsive rem size
+        let thumbnail_rems = 8.75; // ~140px at default 16px rem
+        let card_rems = 8.75;
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
@@ -245,7 +246,7 @@ impl AlbumCard {
 
         div()
             .id(("album-card", index))
-            .w(px(card_width))
+            .w(rems(card_rems))
             .rounded_lg()
             .cursor_pointer()
             .when(self.is_selected, |d| {
@@ -261,11 +262,11 @@ impl AlbumCard {
                     .flex()
                     .flex_col()
                     .items_center()
-                    // Album art thumbnail or placeholder (no border/margin)
+                    // Album art thumbnail or placeholder (scales with rem)
                     .child(
                         div()
-                            .w(px(thumbnail_size))
-                            .h(px(thumbnail_size))
+                            .w(rems(thumbnail_rems))
+                            .h(rems(thumbnail_rems))
                             .rounded_md()
                             .overflow_hidden()
                             .flex()
@@ -274,8 +275,8 @@ impl AlbumCard {
                             .child(
                                 if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
                                     img(image_from_jpeg_bytes(thumbnail_bytes))
-                                        .w(px(thumbnail_size))
-                                        .h(px(thumbnail_size))
+                                        .w(rems(thumbnail_rems))
+                                        .h(rems(thumbnail_rems))
                                         .object_fit(ObjectFit::Cover)
                                         .into_any_element()
                                 } else {

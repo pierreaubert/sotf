@@ -29,11 +29,14 @@ impl Render for PlayerView {
                         state.layout.update(cx, |layout, _cx| {
                             state.app.ui_state.window_height = window_height;
                             state.app.ui_state.window_width = window_width;
-                            state.app.ui_state.layout_mode = if window_height >= 800.0 {
-                                crate::app::LayoutMode::Expanded
-                            } else {
-                                crate::app::LayoutMode::Compact
-                            };
+                            // Use Expanded layout when both dimensions are large enough
+                            // for multi-panel view. Compact for small screens (phones/tablets).
+                            state.app.ui_state.layout_mode =
+                                if window_height >= 500.0 && window_width >= 600.0 {
+                                    crate::app::LayoutMode::Expanded
+                                } else {
+                                    crate::app::LayoutMode::Compact
+                                };
 
                             // Update 3-panel layout orientation based on aspect ratio
                             state.app.layout_orientation = if window_width > window_height {
@@ -148,9 +151,19 @@ impl Render for PlayerView {
             )
         };
 
-        // Apply font scale to the window's rem size
-        // Default rem size is 16px, scale it based on user preference
-        window.set_rem_size(px(16.0 * font_scale));
+        // Compute responsive scale based on window dimensions.
+        // Reference size: 1200x800 (default window). Scale adapts smoothly from
+        // phone-size windows (~400px) through 4K displays (~3840px logical).
+        let responsive_scale = {
+            let width_scale = window_width / 1200.0;
+            let height_scale = window_height / 800.0;
+            // Use the smaller axis to avoid overflow, clamp to usable range
+            width_scale.min(height_scale).clamp(0.55, 2.5)
+        };
+
+        // Apply combined font scale (user preference * responsive auto-scale) to rem size.
+        // All rem-based sizes (text, padding, gaps) scale automatically.
+        window.set_rem_size(px(16.0 * font_scale * responsive_scale));
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.

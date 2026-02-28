@@ -97,8 +97,8 @@ impl PlayerView {
                     .align(StackAlign::Center)
                     .child(
                         div()
-                            .w(px(128.0))
-                            .h(px(128.0))
+                            .w(rems(8.0))
+                            .h(rems(8.0))
                             .rounded_xl()
                             .overflow_hidden()
                             .child(
@@ -384,8 +384,8 @@ impl PlayerView {
                     .align(StackAlign::Center)
                     .child(
                         div()
-                            .w(px(80.0))
-                            .h(px(80.0))
+                            .w(rems(5.0))
+                            .h(rems(5.0))
                             .rounded_xl()
                             .overflow_hidden()
                             .child(
@@ -1133,7 +1133,7 @@ impl PlayerView {
                     .into_any_element()
             }))
             .build()
-            .min_w(px(260.0))
+            .min_w(rems(16.25))
     }
 
     /// Render the scan progress modal
@@ -1235,7 +1235,7 @@ impl PlayerView {
             .bg(theme.overlay_bg)
             .child(
                 div()
-                    .w(px(400.0))
+                    .w(rems(25.0))
                     .bg(theme.surface)
                     .border_1()
                     .border_color(theme.border)
