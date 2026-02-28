@@ -92,6 +92,17 @@ impl MusicDatabase {
         Self::open_internal(path.as_ref())
     }
 
+    /// Open an existing database for a secondary (read-only-intent) instance.
+    /// Uses normal open (not SQLITE_OPEN_READ_ONLY) because read-only connections
+    /// can't access uncommitted WAL data from the writer's shared memory map.
+    /// Skips WAL pragma (already set by the primary writer) and schema migration.
+    pub fn open_secondary<P: AsRef<Path>>(path: P) -> SqlResult<Self> {
+        let path = path.as_ref();
+        let conn = Connection::open(path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        Ok(Self { conn })
+    }
+
     /// Internal database open that skips security validation.
     fn open_internal(path: &Path) -> SqlResult<Self> {
         let conn = Connection::open(path)?;
@@ -2029,6 +2040,59 @@ impl MusicDatabase {
             ],
         )?;
         Ok(())
+    }
+
+    /// Get total track count in the database
+    pub fn get_track_count(&self) -> SqlResult<usize> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM tracks", [], |row| row.get(0))?;
+        Ok(count as usize)
+    }
+
+    /// Count tracks that have already been analyzed for bliss (succeeded, failed)
+    pub fn get_bliss_done_counts(&self) -> SqlResult<(usize, usize)> {
+        let succeeded: i64 = self.conn.query_row(
+            "SELECT count(*) FROM tracks WHERE bliss_analyzed_at IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        let failed: i64 = self.conn.query_row(
+            "SELECT count(*) FROM tracks WHERE bliss_error IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok((succeeded as usize, failed as usize))
+    }
+
+    /// Count tracks that have already been analyzed for waveform (succeeded, failed)
+    pub fn get_waveform_done_counts(&self) -> SqlResult<(usize, usize)> {
+        let succeeded: i64 = self.conn.query_row(
+            "SELECT count(*) FROM tracks WHERE waveform IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        let failed: i64 = self.conn.query_row(
+            "SELECT count(*) FROM tracks WHERE waveform_error IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok((succeeded as usize, failed as usize))
+    }
+
+    /// Count tracks that have already been analyzed for ReplayGain (succeeded, failed)
+    pub fn get_replay_gain_done_counts(&self) -> SqlResult<(usize, usize)> {
+        let succeeded: i64 = self.conn.query_row(
+            "SELECT count(*) FROM tracks WHERE replay_gain IS NOT NULL AND replay_peak IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        let failed: i64 = self.conn.query_row(
+            "SELECT count(*) FROM tracks WHERE replay_gain_error IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok((succeeded as usize, failed as usize))
     }
 
     /// Get tracks that don't have bliss analysis yet

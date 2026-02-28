@@ -311,9 +311,11 @@ impl ReplayGainScanManager {
         // Get database path
         let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
 
-        // Get tracks that need analysis
+        // Get tracks that need analysis and total counts
         let db = MusicDatabase::open(&db_path)?;
         let tracks = db.get_tracks_without_replay_gain()?;
+        let total_tracks = db.get_track_count()?;
+        let (already_succeeded, already_failed) = db.get_replay_gain_done_counts()?;
 
         if tracks.is_empty() {
             log::debug!("All tracks already have ReplayGain data");
@@ -325,8 +327,12 @@ impl ReplayGainScanManager {
             return Ok("All tracks already have ReplayGain data".to_string());
         }
 
-        let total = tracks.len();
-        log::info!("Starting ReplayGain scan for {} tracks", total);
+        let remaining = tracks.len();
+        log::info!(
+            "Starting ReplayGain scan for {} tracks ({} already done)",
+            remaining,
+            already_succeeded + already_failed
+        );
 
         // Determine number of threads (use CPU count or max 4)
         let num_threads = std::thread::available_parallelism()
@@ -343,16 +349,16 @@ impl ReplayGainScanManager {
         // Queue all tracks
         scanner.scan_tracks(tracks);
 
-        // Store scanner and initialize progress
+        // Store scanner and initialize progress — total reflects the whole library
         self.scanner = Some(scanner);
         self.in_progress = true;
-        self.total = total;
-        self.processed = 0;
-        self.succeeded = 0;
-        self.failed = 0;
+        self.total = total_tracks;
+        self.processed = already_succeeded + already_failed;
+        self.succeeded = already_succeeded;
+        self.failed = already_failed;
         self.album_gain_phase = AlbumGainPhase::Idle;
 
-        Ok(format!("Analyzing {} tracks for ReplayGain...", total))
+        Ok(format!("Analyzing {} tracks for ReplayGain...", remaining))
     }
 
     /// Start the album gain computation pass.

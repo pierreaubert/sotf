@@ -268,17 +268,23 @@ impl WaveformScanManager {
         // Get database path
         let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
 
-        // Get tracks that need waveform analysis
+        // Get tracks that need waveform analysis and total counts
         let db = MusicDatabase::open(&db_path)?;
         let tracks = db.get_tracks_without_waveform()?;
+        let total_tracks = db.get_track_count()?;
+        let (already_succeeded, already_failed) = db.get_waveform_done_counts()?;
 
         if tracks.is_empty() {
             log::debug!("All tracks already have waveform data");
             return Ok(());
         }
 
-        let total = tracks.len();
-        log::info!("Starting waveform scan for {} tracks", total);
+        let remaining = tracks.len();
+        log::info!(
+            "Starting waveform scan for {} tracks ({} already done)",
+            remaining,
+            already_succeeded + already_failed
+        );
 
         // Determine number of threads (use CPU count or max 4)
         let num_threads = std::thread::available_parallelism()
@@ -295,13 +301,13 @@ impl WaveformScanManager {
         // Queue all tracks
         scanner.scan_tracks(tracks);
 
-        // Store scanner and initialize progress
+        // Store scanner and initialize progress — total reflects the whole library
         self.scanner = Some(scanner);
         self.in_progress = true;
-        self.total = total;
-        self.processed = 0;
-        self.succeeded = 0;
-        self.failed = 0;
+        self.total = total_tracks;
+        self.processed = already_succeeded + already_failed;
+        self.succeeded = already_succeeded;
+        self.failed = already_failed;
 
         Ok(())
     }

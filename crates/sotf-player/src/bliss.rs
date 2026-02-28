@@ -531,24 +531,33 @@ impl BlissScanManager {
         // Get database path
         let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
 
-        // Get tracks that need analysis
+        // Get tracks that need analysis and total counts
         let db = MusicDatabase::open(&db_path)?;
         let tracks = db.get_tracks_without_bliss()?;
+        let total_tracks = db.get_track_count()?;
+        let (already_succeeded, already_failed) = db.get_bliss_done_counts()?;
 
         if tracks.is_empty() {
             log::debug!("All tracks already have bliss analysis data");
             return Ok("All tracks already have bliss analysis data".to_string());
         }
 
-        let total = tracks.len();
-        log::info!("Starting bliss analysis scan for {} tracks", total);
+        let remaining = tracks.len();
+        log::info!(
+            "Starting bliss analysis scan for {} tracks ({} already done)",
+            remaining,
+            already_succeeded + already_failed
+        );
 
-        // Start the scan
+        // Start the scan — total/succeeded/failed reflect the whole library
         self.start(db_path, tracks);
+        self.total = total_tracks;
+        self.succeeded = already_succeeded;
+        self.failed = already_failed;
 
         Ok(format!(
             "Analyzing {} tracks for bliss audio features...",
-            total
+            remaining
         ))
     }
 

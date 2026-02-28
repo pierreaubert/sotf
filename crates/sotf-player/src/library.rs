@@ -443,6 +443,21 @@ impl MusicLibrary {
         })
     }
 
+    /// Create a new library for a secondary (read-only-intent) instance.
+    /// Skips backup, WAL pragma, and schema migration.
+    pub fn with_database_secondary() -> Result<Self, Box<dyn std::error::Error>> {
+        let db_path =
+            MusicDatabase::default_path().ok_or("Could not determine config directory")?;
+
+        let db = MusicDatabase::open_secondary(&db_path)?;
+
+        Ok(Self {
+            directories: Vec::new(),
+            albums: Vec::new(),
+            db: Some(db),
+        })
+    }
+
     /// Create a new library with database persistence at a custom path (for testing)
     ///
     /// This method is primarily intended for testing but is available in all builds.
