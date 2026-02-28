@@ -41,7 +41,7 @@ pub fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             app.set_library_sort_order(next_order);
             None
         }
-        KeyCode::Char('c') => {
+        KeyCode::Char('f') => {
             // Cycle through channel filters
             app.cycle_channel_filter();
             None
@@ -119,14 +119,14 @@ pub fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             }
             None
         }
-        KeyCode::Right | KeyCode::Char('l') => {
+        KeyCode::Char('l') => {
             // Expand artist in tree view
             if app.library_view_mode == LibraryViewMode::TreeView {
                 app.toggle_artist_expansion();
             }
             None
         }
-        KeyCode::Left | KeyCode::Char('h') => {
+        KeyCode::Char('h') => {
             // Collapse artist in tree view
             if app.library_view_mode == LibraryViewMode::TreeView {
                 app.toggle_artist_expansion();
@@ -171,15 +171,7 @@ pub fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             app.select_next_directory();
             None
         }
-        KeyCode::PageUp => {
-            app.page_up_directories(PAGE_SIZE);
-            None
-        }
-        KeyCode::PageDown => {
-            app.page_down_directories(PAGE_SIZE);
-            None
-        }
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+        KeyCode::Char('l') => {
             // Toggle directory expansion to show/hide subdirectories
             app.toggle_directory_expansion();
             None
@@ -192,20 +184,36 @@ pub fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             app.start_library_scan();
             None
         }
+        KeyCode::Char('S') => {
+            app.start_force_library_scan();
+            None
+        }
         KeyCode::Char('m') => {
-            // Maintenance: clean up database
-            // The method handles all progress tracking and status messages
             let _ = app.clean_library_database();
             None
         }
-        KeyCode::Char('R') => {
-            // Start ReplayGain scan for all tracks
+        KeyCode::Char('r') => {
             let _ = app.start_replay_gain_scan();
             None
         }
-        KeyCode::Char('S') => {
-            // Force rescan all files (ignores modification time, preserves ReplayGain)
-            app.start_force_library_scan();
+        KeyCode::Char('R') => {
+            let _ = app.start_force_replay_gain_scan();
+            None
+        }
+        KeyCode::Char('b') => {
+            let _ = app.start_bliss_scan();
+            None
+        }
+        KeyCode::Char('B') => {
+            let _ = app.start_force_bliss_scan();
+            None
+        }
+        KeyCode::Char('w') => {
+            let _ = app.start_waveform_scan();
+            None
+        }
+        KeyCode::Char('W') => {
+            let _ = app.start_force_waveform_scan();
             None
         }
         _ => None,

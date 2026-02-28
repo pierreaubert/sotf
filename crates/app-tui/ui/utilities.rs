@@ -121,6 +121,8 @@ pub fn get_keybindings_for_screen(screen: crate::app::Screen) -> Vec<(&'static s
             ("a", "Add dir"),
             ("q", "Queue"),
             ("p", "Play"),
+            ("s", "Sort"),
+            ("c", "Filter"),
         ],
         Screen::Queue => vec![
             ("↑↓", "Browse"),
@@ -150,3 +152,68 @@ pub fn get_keybindings_for_screen(screen: crate::app::Screen) -> Vec<(&'static s
         _ => vec![],
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_text() {
+        // Test leading/trailing whitespace
+        assert_eq!(clean_text("  Text  "), "Text");
+
+        // Test multiple spaces
+        assert_eq!(clean_text("Text    Name"), "Text Name");
+
+        // Test tabs
+        assert_eq!(clean_text("Text\tName"), "Text Name");
+
+        // Test newlines
+        assert_eq!(clean_text("Text\nName"), "Text Name");
+
+        // Test combination
+        assert_eq!(clean_text("  \t Text   Name\n  "), "Text Name");
+
+        // Test normal string (no change needed)
+        assert_eq!(clean_text("Text Name"), "Text Name");
+
+        // Test empty string
+        assert_eq!(clean_text(""), "");
+
+        // Test only whitespace
+        assert_eq!(clean_text("   \t\n  "), "");
+    }
+
+    #[test]
+    fn test_clean_track_name() {
+        // Verify clean_track_name wraps clean_text correctly
+        assert_eq!(clean_track_name("  Track Name  "), "Track Name");
+        assert_eq!(clean_track_name("Track\tName"), "Track Name");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis() {
+        // Test no truncation needed
+        assert_eq!(truncate_with_ellipsis("Short", 10), "Short");
+
+        // Test exact length
+        assert_eq!(truncate_with_ellipsis("Exact", 5), "Exact");
+
+        // Test truncation
+        assert_eq!(
+            truncate_with_ellipsis("This is a very long track name", 15),
+            "This is a ve..."
+        );
+
+        // Test truncation at edge
+        assert_eq!(truncate_with_ellipsis("12345678", 5), "12...");
+
+        // Test very short max_len
+        assert_eq!(truncate_with_ellipsis("Test", 3), "...");
+
+        // Test empty string
+        assert_eq!(truncate_with_ellipsis("", 10), "");
+    }
+}
+

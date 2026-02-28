@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-crossfeed"
 description = "SOTF Crossfeed plugin - stereo crossfeed for headphones"
-version.workspace = true
+version = "0.5.2"
 edition.workspace = true
 
 [lib]

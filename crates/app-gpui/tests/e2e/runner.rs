@@ -88,6 +88,7 @@ pub trait TestScenario {
 
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::app::{App, AppState};
+use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::sync::Arc;
 
@@ -124,17 +125,19 @@ impl<S: TestScenario> E2ERunner<S> {
     async fn execute_scenario(&mut self, cx: &mut TestAppContext) -> Result<(), Box<dyn Error>> {
         // Create full App with PlayerView
         let window = cx.add_window(|_, cx| {
-            let app_state = cx.new(|_cx| {
-                let mut app = App::new();
+            let app_state = cx.new(|cx| {
+                let app = App::new();
 
                 // Ensure we don't try to load real audio devices in CI/Test env if possible,
                 // or assume they exist. For E2E we might want to mock them or Use BlackHole.
                 // For now, we follow main.rs logic but skipping config load to ensure deterministic state.
 
                 let player = Player::new();
+                let layout = cx.new(|_| LayoutState::default());
 
                 AppState {
                     app,
+                    layout,
                     player: Arc::new(parking_lot::Mutex::new(player)),
                 }
             });

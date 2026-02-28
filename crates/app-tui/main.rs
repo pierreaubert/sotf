@@ -1,88 +1,62 @@
-use clap::Parser;
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+use crossterm::execute;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::{Terminal, backend::CrosstermBackend};
-use sotf_audio::run_preflight_checks;
-use sotf_audio_player::{MusicLibrary, Player, PluginSettings, PluginType};
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
+use sotf_audio_player::{Player, PluginType};
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 use sotf_audio_player_tui::events::{
+    poll_headphone_eq_optimization, poll_recording, poll_room_eq_optimization,
+    poll_spinorama_optimization, poll_spinorama_speaker_load,
     AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
-    poll_headphone_eq_optimization, poll_room_eq_optimization, poll_spinorama_optimization,
-    poll_spinorama_speaker_load,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
-use sotf_audio_player_tui::theme;
 use sotf_audio_player_tui::ui;
 use souvlaki::{MediaPlayback, MediaPosition};
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-#[derive(Parser, Debug)]
-#[command(name = "player")]
-#[command(version, about = "SOTF TUI Music Player", long_about = None)]
+/// Try to acquire an exclusive advisory lock on `sotf.lock` in the config dir.
+/// Returns the open `File` (must be held for process lifetime) and whether the
+/// exclusive lock was obtained. If not, a second instance is already running.
+#[cfg(unix)]
+fn try_acquire_lock(config_dir: &Path) -> (File, bool) {
+    use std::os::unix::io::AsRawFd;
+
+    let lock_path = config_dir.join("sotf.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .expect("Failed to open lock file");
+
+    let exclusive = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 };
+    (file, exclusive)
+}
+
+#[cfg(not(unix))]
+fn try_acquire_lock(_config_dir: &Path) -> (File, bool) {
+    // On non-Unix platforms, always grant exclusive access (no lock contention check).
+    // A proper Windows implementation would use LockFile / LockFileEx.
+    let file = tempfile::tempfile().expect("Failed to create temp lock file");
+    (file, true)
+}
+
+#[derive(clap::Parser)]
 struct Args {
-    /// Initial directories to scan for music
-    #[arg(short, long)]
-    directories: Vec<PathBuf>,
-
-    /// Auto-scan on startup
-    #[arg(short, long)]
+    /// Force a full library rescan on startup
+    #[arg(long)]
     scan: bool,
-
-    /// Enable binaural decoder plugin
-    #[arg(long)]
-    binaural: bool,
-
-    /// Path to SOFA file for binaural decoder
-    #[arg(long)]
-    sofa_file: Option<PathBuf>,
-
-    /// Theme to use (dark or light)
-    #[arg(long, default_value = "dark")]
-    theme: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging to file to avoid corrupting the TUI
-    let log_path =
-        sotf_audio_player::config::get_tui_log_path().ok_or("Could not determine log file path")?;
-    let log_file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)?;
-
-    env_logger::Builder::from_default_env()
-        .target(env_logger::Target::Pipe(Box::new(log_file)))
-        .filter_level(log::LevelFilter::Debug)
-        // Log all modules including Symphonia at debug level
-        .filter_module("symphonia_core", log::LevelFilter::Debug)
-        .init();
-
-    log::info!("SOTF UI Player starting...");
-
-    // Run pre-flight checks before initializing the player
-    if let Err(e) = run_preflight_checks() {
-        eprintln!("\nPre-flight check failed:\n");
-        eprintln!("{}\n", e);
-        log::error!("Pre-flight check failed: {}", e);
-        std::process::exit(1);
-    }
-
-    let args = Args::parse();
-
-    // Parse theme
-    let theme_type = theme::ThemeType::from_str(&args.theme).ok_or_else(|| {
-        format!(
-            "Invalid theme '{}', valid options are: dark, light",
-            args.theme
-        )
-    })?;
-    let theme = theme::Theme::from_type(theme_type);
+    // Setup logging
+    env_logger::init();
 
     // Setup terminal
     enable_raw_mode()?;
@@ -91,62 +65,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app and player
-    let mut app = App::new(theme);
+    // Initialize app state
+    let args: Args = clap::Parser::parse();
+    let theme = sotf_audio_player_tui::theme::Theme::default();
+
+    // Try to acquire exclusive lock — second instance becomes read-only
+    let config_dir = sotf_audio_player::config::get_app_config_dir()
+        .expect("Could not determine config directory");
+    let (_lock_file, lock_acquired) = try_acquire_lock(&config_dir);
+    let read_only = !lock_acquired;
+    if read_only {
+        log::info!("Another instance is running — starting in read-only mode");
+    }
+
+    let mut app = App::new(theme, read_only);
+
+    // Initialize audio player
     let mut player = Player::new();
 
-    // Show loading screen immediately
-    app.current_screen = Screen::Loading;
-    terminal.draw(|f| ui::draw(f, &mut app))?;
-
-    // Set initial volume
-    player.set_volume(app.volume)?;
-
-    // Configure binaural decoder if requested
-    if args.binaural {
-        // Validate that SOFA file is provided
-        let sofa_file = args
-            .sofa_file
-            .clone()
-            .ok_or("Binaural decoder requires --sofa-file to be specified")?;
-
-        // Determine input channels from existing plugin chain
-        // This allows proper configuration when used after an upmixer
-        let input_channels = app.plugin_chain.output_channels();
-
-        // Add binaural decoder plugin to the chain (before permanent tail)
-        let insert_idx = app.plugin_chain.user_plugin_insert_index();
-        app.plugin_chain
-            .insert_plugin(insert_idx, &PluginType::BinauralDecoder);
-
-        // Configure the plugin with SOFA file path and detected input channels
-        if let Some(plugin) = app.plugin_chain.get_plugin_mut(insert_idx) {
-            plugin.settings = PluginSettings::BinauralDecoder {
-                sofa_file: sofa_file.to_string_lossy().to_string(),
-                input_channels,
-                enable_optimization: true,
-                externalization: 0.0,
-                near_field_strength: 0.0,
-            };
-            log::info!(
-                "Binaural decoder enabled with {} input channels, SOFA file: {:?}",
-                input_channels,
-                sofa_file
-            );
-        }
-    }
-
-    // Load available audio devices
-    app.load_output_devices();
-    app.load_recording_devices();
-
-    // Add initial directories (without triggering rescan)
-    for dir in args.directories {
-        app.add_directory_quiet(dir);
-    }
-
-    // Load library from database in a background thread so we can animate the
-    // loading screen. The library is moved to the thread and moved back when done.
+    // Load music library (asynchronously if requested)
+    use sotf_audio_player::MusicLibrary;
     let db_is_empty = if !args.scan {
         // Take the library (with its DB connection) for background loading
         let mut library = std::mem::replace(&mut app.library, MusicLibrary::new());
@@ -174,12 +112,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         log::info!("Loaded library from database: {} albums", album_count);
                         app.rebuild_artist_tree();
                         app.update_directory_scan_times();
+                        app.request_filter_update();
 
-                        if let Err(e) = app.start_waveform_scan() {
-                            log::warn!("Failed to start waveform scan: {}", e);
-                        }
-                        if let Err(e) = app.start_bliss_scan() {
-                            log::warn!("Failed to start bliss scan: {}", e);
+                        if !read_only {
+                            if let Err(e) = app.start_waveform_scan() {
+                                log::warn!("Failed to start waveform scan: {}", e);
+                            }
+                            if let Err(e) = app.start_bliss_scan() {
+                                log::warn!("Failed to start bliss scan: {}", e);
+                            }
                         }
                         db_empty = album_count == 0;
                     }
@@ -189,7 +130,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(mpsc::TryRecvError::Disconnected) => {
                     log::error!("Library loading thread panicked");
                     // Restore a fresh library with database
-                    app.library = MusicLibrary::with_database().unwrap_or_else(|_| MusicLibrary::new());
+                    let fallback = if read_only {
+                        MusicLibrary::with_database_secondary()
+                    } else {
+                        MusicLibrary::with_database()
+                    };
+                    app.library = fallback.unwrap_or_else(|_| MusicLibrary::new());
                     break;
                 }
             }
@@ -209,7 +155,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Auto-scan if:
     // 1. Explicit --scan flag provided, OR
     // 2. Database is empty and we have directories to scan
-    let will_scan = (args.scan || db_is_empty) && !app.library.directories.is_empty();
+    // Never scan in read-only mode
+    let will_scan =
+        !read_only && (args.scan || db_is_empty) && !app.library.directories.is_empty();
     if will_scan {
         log::info!(
             "Starting library scan (scan={}, db_empty={}, dirs={})",
@@ -253,9 +201,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Main loop
     let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls);
 
-    // Save configuration before exit
-    if let Err(e) = app.save_config() {
-        log::error!("Failed to save configuration: {}", e);
+    // Save configuration before exit (skip in read-only mode)
+    if !app.read_only {
+        if let Err(e) = app.save_config() {
+            log::error!("Failed to save configuration: {}", e);
+        }
     }
 
     // Restore terminal
@@ -277,7 +227,13 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     player: &mut Player,
     media_controls: &mut Option<TuiMediaControls>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Initial media control update (important for macOS to see the app as a media player)
+    update_media_controls(app, player, media_controls);
+
     loop {
+        // Pump macOS event loop so media key callbacks are delivered BEFORE we poll for events.
+        media_controls::pump_macos_event_loop();
+
         // Draw UI only if needed
         if app.needs_redraw {
             terminal.draw(|f| ui::draw(f, app))?;
@@ -319,6 +275,9 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.needs_redraw = true;
                     }
                     if poll_room_eq_optimization(app) {
+                        app.needs_redraw = true;
+                    }
+                    if poll_recording(app) {
                         app.needs_redraw = true;
                     }
                     // Poll speaker-load result (non-blocking, no-op when not loading)
@@ -553,15 +512,15 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                     // Check bliss scan progress
                     app.check_bliss_progress();
+
+                    // Regularly sync media controls (position, state)
+                    update_media_controls(app, player, media_controls);
                 }
                 AppEvent::Resize => {
                     // Terminal resized, will redraw on next iteration
                 }
             }
         }
-
-        // Pump macOS event loop so media key callbacks are delivered
-        media_controls::pump_macos_event_loop();
 
         if app.should_quit {
             break;

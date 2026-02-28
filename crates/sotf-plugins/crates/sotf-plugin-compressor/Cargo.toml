@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-compressor"
 description = "SOTF Compressor plugin - dynamic range compression"
-version.workspace = true
+version = "0.5.7"
 edition.workspace = true
 
 [lib]

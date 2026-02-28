@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-resampler"
 description = "SOTF Resampler plugin - sample rate conversion"
-version.workspace = true
+version = "0.5.20"
 edition.workspace = true
 
 [lib]

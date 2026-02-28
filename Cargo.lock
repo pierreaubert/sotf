@@ -8531,7 +8531,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-host"
-version = "0.5.84"
+version = "0.5.85"
 dependencies = [
  "arc-swap",
  "bincode",
@@ -8604,7 +8604,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ab-compare"
-version = "0.5.11"
+version = "0.5.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -8619,7 +8619,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-band-merge"
-version = "0.5.11"
+version = "0.5.1"
 dependencies = [
  "serde",
  "sotf-host",
@@ -8627,7 +8627,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-band-split"
-version = "0.5.11"
+version = "0.5.1"
 dependencies = [
  "math-iir-fir",
  "serde",
@@ -8636,7 +8636,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-binaural"
-version = "0.5.11"
+version = "0.5.17"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -8650,7 +8650,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-channel-mute-solo"
-version = "0.5.11"
+version = "0.5.60"
 dependencies = [
  "serde",
  "serde_json",
@@ -8659,7 +8659,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-compressor"
-version = "0.5.11"
+version = "0.5.7"
 dependencies = [
  "criterion",
  "math-dsp",
@@ -8669,7 +8669,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-convolution"
-version = "0.5.11"
+version = "0.5.6"
 dependencies = [
  "arc-swap",
  "rustfft",
@@ -8683,7 +8683,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-crossfeed"
-version = "0.5.11"
+version = "0.5.2"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -8693,7 +8693,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-crossover"
-version = "0.5.11"
+version = "0.5.23"
 dependencies = [
  "math-iir-fir",
  "serde",
@@ -8702,7 +8702,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-delay"
-version = "0.5.11"
+version = "0.5.3"
 dependencies = [
  "serde",
  "sotf-host",
@@ -8710,18 +8710,19 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-denoiser"
-version = "0.5.11"
+version = "0.5.3"
 dependencies = [
  "math-dsp",
  "realfft",
  "rustfft",
  "serde",
  "sotf-host",
+ "sotf-plugin-pnd",
 ]
 
 [[package]]
 name = "sotf-plugin-downmix"
-version = "0.5.11"
+version = "0.5.22"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -8733,7 +8734,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-eq"
-version = "0.5.11"
+version = "0.5.65"
 dependencies = [
  "math-iir-fir",
  "serde",
@@ -8742,7 +8743,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-expander"
-version = "0.5.11"
+version = "0.5.17"
 dependencies = [
  "math-dsp",
  "serde",
@@ -8751,7 +8752,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-fletcher-munson"
-version = "0.5.11"
+version = "0.5.2"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -8761,7 +8762,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-gain"
-version = "0.5.11"
+version = "0.5.3"
 dependencies = [
  "serde",
  "sotf-host",
@@ -8769,7 +8770,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-gate"
-version = "0.5.11"
+version = "0.5.4"
 dependencies = [
  "math-dsp",
  "serde",
@@ -8778,7 +8779,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hal-input"
-version = "0.5.11"
+version = "0.5.82"
 dependencies = [
  "driver-hal",
  "serde",
@@ -8787,7 +8788,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-hal-output"
-version = "0.5.11"
+version = "0.5.8"
 dependencies = [
  "driver-hal",
  "serde",
@@ -8796,7 +8797,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-limiter"
-version = "0.5.11"
+version = "0.5.8"
 dependencies = [
  "math-dsp",
  "serde",
@@ -8805,7 +8806,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-loudness-compensation"
-version = "0.5.11"
+version = "0.5.1"
 dependencies = [
  "criterion",
  "math-iir-fir",
@@ -8815,7 +8816,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-matrix"
-version = "0.5.11"
+version = "0.5.88"
 dependencies = [
  "log",
  "serde",
@@ -8826,7 +8827,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-mono-to-stereo"
-version = "0.5.11"
+version = "0.5.3"
 dependencies = [
  "rand 0.9.2",
  "realfft",
@@ -8837,7 +8838,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-multiband-compressor"
-version = "0.5.11"
+version = "0.5.9"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -8847,7 +8848,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-multiband-expander"
-version = "0.5.11"
+version = "0.5.19"
 dependencies = [
  "math-dsp",
  "math-iir-fir",
@@ -8857,7 +8858,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-pnd"
-version = "0.5.11"
+version = "0.5.1"
 dependencies = [
  "audioadapter-buffers",
  "rubato",
@@ -8867,7 +8868,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-resampler"
-version = "0.5.11"
+version = "0.5.20"
 dependencies = [
  "audioadapter-buffers",
  "log",
@@ -8896,7 +8897,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-xtc"
-version = "0.5.11"
+version = "0.5.34"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -9015,6 +9016,7 @@ dependencies = [
  "ebur128",
  "env_logger",
  "image",
+ "libc",
  "log",
  "math-iir-fir",
  "ndarray 0.17.2",
@@ -10063,6 +10065,7 @@ dependencies = [
  "directories",
  "ebur128",
  "env_logger",
+ "gpui",
  "hound",
  "image",
  "log",
@@ -10077,6 +10080,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-engine",
+ "sotf-gpui",
  "sotf-player",
  "sotf-plugins",
  "symphonia",

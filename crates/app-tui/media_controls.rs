@@ -29,13 +29,9 @@ impl TuiMediaControls {
         Ok(Self { controls, rx })
     }
 
-    /// Drain all pending media control events (non-blocking).
-    pub fn poll_events(&self) -> Vec<MediaControlEvent> {
-        let mut events = Vec::new();
-        while let Ok(event) = self.rx.try_recv() {
-            events.push(event);
-        }
-        events
+    /// Poll for a single pending media control event (non-blocking).
+    pub fn poll_event(&self) -> Option<MediaControlEvent> {
+        self.rx.try_recv().ok()
     }
 
     /// Update Now Playing metadata.

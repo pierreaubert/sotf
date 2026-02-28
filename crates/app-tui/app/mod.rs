@@ -1,7 +1,17 @@
 //! TUI application state management and related types
 
 mod app_impl;
+mod app_autocomplete;
+mod app_image;
+mod app_level_meter;
+mod app_library;
+mod app_plugins;
+mod app_scanner;
+mod app_tree;
+mod app_volume;
 mod parameters;
+#[cfg(test)]
+mod test;
 mod types;
 
 pub use app_impl::App;

@@ -5,7 +5,7 @@
 //! for passthrough (e.g., EQ with zero gain filters).
 
 use driver_hal::SharedAudioBuffer;
-use sotf_plugins::{BiquadFilterConfig, EqPlugin, EqPluginParams, Plugin, ProcessContext};
+use sotf_plugins::{BiquadFilterConfig, EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin, ProcessContext};
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use tempfile::NamedTempFile;
@@ -212,8 +212,10 @@ fn test_eq_zero_gain_filters_passthrough_near_exact() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
-        .expect("Failed to create EQ plugin");
+    let mut plugin = InPlacePluginAdapter::new(
+        EqPlugin::from_params(num_channels, sample_rate, params)
+            .expect("Failed to create EQ plugin"),
+    );
 
     plugin
         .initialize(sample_rate)
@@ -284,8 +286,10 @@ fn test_eq_empty_filters_passthrough_bit_exact() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
-        .expect("Failed to create EQ plugin");
+    let mut plugin = InPlacePluginAdapter::new(
+        EqPlugin::from_params(num_channels, sample_rate, params)
+            .expect("Failed to create EQ plugin"),
+    );
 
     plugin
         .initialize(sample_rate)
@@ -365,8 +369,10 @@ fn test_hal_with_eq_zero_gain_passthrough() {
         auto_gain: Default::default(),
     };
 
-    let mut plugin = EqPlugin::from_params(channel_count as usize, sample_rate, params)
-        .expect("Failed to create EQ plugin");
+    let mut plugin = InPlacePluginAdapter::new(
+        EqPlugin::from_params(channel_count as usize, sample_rate, params)
+            .expect("Failed to create EQ plugin"),
+    );
     plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");
@@ -460,8 +466,10 @@ fn test_eq_zero_gain_with_silence() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
-        .expect("Failed to create EQ plugin");
+    let mut plugin = InPlacePluginAdapter::new(
+        EqPlugin::from_params(num_channels, sample_rate, params)
+            .expect("Failed to create EQ plugin"),
+    );
     plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");
@@ -887,8 +895,10 @@ fn test_eq_zero_gain_preserves_full_scale() {
 
     let sample_rate = 48000;
     let num_channels = 2;
-    let mut plugin = EqPlugin::from_params(num_channels, sample_rate, params)
-        .expect("Failed to create EQ plugin");
+    let mut plugin = InPlacePluginAdapter::new(
+        EqPlugin::from_params(num_channels, sample_rate, params)
+            .expect("Failed to create EQ plugin"),
+    );
     plugin
         .initialize(sample_rate)
         .expect("Failed to initialize");

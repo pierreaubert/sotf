@@ -160,7 +160,7 @@ impl SpinoramaEqTuiState {
     }
 }
 
-/// Step in the Headphone EQ wizard (TUI-specific: 4 steps)
+/// Step in the Headphone EQ wizard (TUI-specific: 5 steps)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HeadphoneEqStep {
     #[default]
@@ -168,6 +168,7 @@ pub enum HeadphoneEqStep {
     Configure,
     Optimize,
     Results,
+    UpdatePlugin,
 }
 
 impl HeadphoneEqStep {
@@ -177,6 +178,7 @@ impl HeadphoneEqStep {
             HeadphoneEqStep::Configure => "Configure",
             HeadphoneEqStep::Optimize => "Optimize",
             HeadphoneEqStep::Results => "Results",
+            HeadphoneEqStep::UpdatePlugin => "Update Plugin",
         }
     }
 }
@@ -221,6 +223,10 @@ pub struct HeadphoneEqTuiState {
     pub curve_corrected: Vec<f64>,
     pub curve_filter_response: Vec<f64>,
     pub loss_history: Vec<(usize, f64)>,
+    // Step 5: update plugin confirmation
+    pub update_substep: SpinUpdateSubStep,
+    /// (slot_index, filter_count) of existing EQ to overwrite
+    pub update_existing_eq_info: Option<(usize, usize)>,
 }
 
 impl Default for HeadphoneEqTuiState {
@@ -250,6 +256,8 @@ impl Default for HeadphoneEqTuiState {
             curve_corrected: Vec::new(),
             curve_filter_response: Vec::new(),
             loss_history: Vec::new(),
+            update_substep: SpinUpdateSubStep::Ready,
+            update_existing_eq_info: None,
         }
     }
 }
@@ -363,7 +371,7 @@ impl Default for RecordingTuiState {
             mic_calibration_path: String::new(),
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
-            signal_level_db: -12.0,
+            signal_level_db: -20.0,
             sweep_start_freq: 20.0,
             sweep_end_freq: 20000.0,
             output_directory: String::new(),
@@ -401,8 +409,6 @@ pub enum InputMode {
     ShowError,
     /// Shown when a multichannel file conflicts with the upmixer plugin
     ChannelConflict,
-    /// Full-screen configure sub-screen modal (covers everything below title bar)
-    ConfigureModal,
 }
 
 /// Whether the file picker selects a file or a directory

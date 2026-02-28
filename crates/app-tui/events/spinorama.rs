@@ -5,6 +5,7 @@ use crate::app::App;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::sync::{Arc, Mutex};
 
+#[cfg(test)]
 pub(crate) fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
@@ -16,6 +17,7 @@ pub(crate) fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::S
     }
 }
 
+#[cfg(test)]
 pub(crate) fn spinorama_step_next(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
@@ -60,21 +62,13 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         return None;
     }
 
-    // Left/Right navigate between wizard steps (step-bar level)
-    if key.code == KeyCode::Left {
-        app.spinorama_eq.step = spinorama_step_prev(app.spinorama_eq.step);
-        return None;
-    }
-    if key.code == KeyCode::Right {
-        app.spinorama_eq.step = spinorama_step_next(app.spinorama_eq.step);
-        return None;
-    }
-
     match app.spinorama_eq.step {
         SpinoramaStep::Select => match key.code {
             KeyCode::Up => {
                 if app.spinorama_eq.selected_speaker_idx > 0 {
                     app.spinorama_eq.selected_speaker_idx -= 1;
+                } else {
+                    app.configure_tab_focused = true;
                 }
                 None
             }
@@ -124,6 +118,8 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             KeyCode::Up => {
                 if app.spinorama_eq.selected_field > 0 {
                     app.spinorama_eq.selected_field -= 1;
+                } else {
+                    app.configure_tab_focused = true;
                 }
                 None
             }
@@ -133,11 +129,11 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 }
                 None
             }
-            KeyCode::Char('-') => {
+            KeyCode::Left | KeyCode::Char('-') => {
                 adjust_spinorama_field(app, -1);
                 None
             }
-            KeyCode::Char('+') => {
+            KeyCode::Right | KeyCode::Char('+') => {
                 adjust_spinorama_field(app, 1);
                 None
             }
@@ -158,6 +154,10 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         },
 
         SpinoramaStep::Optimize => match key.code {
+            KeyCode::Up => {
+                app.configure_tab_focused = true;
+                None
+            }
             KeyCode::Enter => {
                 match &app.spinorama_eq.opt_status {
                     OptimizationStatus::Idle
@@ -186,6 +186,10 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         },
 
         SpinoramaStep::Results => match key.code {
+            KeyCode::Up => {
+                app.configure_tab_focused = true;
+                None
+            }
             KeyCode::Tab => {
                 app.spinorama_eq.step = SpinoramaStep::UpdatePlugin;
                 None
@@ -201,6 +205,10 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             use crate::app::SpinUpdateSubStep;
             match app.spinorama_eq.update_substep {
                 SpinUpdateSubStep::Ready => match key.code {
+                    KeyCode::Up => {
+                        app.configure_tab_focused = true;
+                        None
+                    }
                     KeyCode::Enter => {
                         // Check if an existing EQ has filters
                         if let Some((slot, count)) = app.find_last_eq_info() {
@@ -683,4 +691,41 @@ fn spawn_spinorama_optimization(app: &mut App) {
             *guard = Some(result);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::SpinoramaStep;
+
+    #[test]
+    fn spinorama_step_prev_does_not_wrap() {
+        assert_eq!(
+            spinorama_step_prev(SpinoramaStep::Select),
+            SpinoramaStep::Select,
+        );
+    }
+
+    #[test]
+    fn spinorama_step_next_does_not_wrap() {
+        assert_eq!(
+            spinorama_step_next(SpinoramaStep::UpdatePlugin),
+            SpinoramaStep::UpdatePlugin,
+        );
+    }
+
+    #[test]
+    fn spinorama_step_round_trip() {
+        let steps = [
+            SpinoramaStep::Select,
+            SpinoramaStep::Configure,
+            SpinoramaStep::Optimize,
+            SpinoramaStep::Results,
+            SpinoramaStep::UpdatePlugin,
+        ];
+        for i in 0..steps.len() - 1 {
+            assert_eq!(spinorama_step_next(steps[i]), steps[i + 1]);
+            assert_eq!(spinorama_step_prev(steps[i + 1]), steps[i]);
+        }
+    }
 }

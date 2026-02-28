@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-hal-input"
 description = "SOTF HAL Input plugin - macOS audio HAL input"
-version.workspace = true
+version = "0.5.82"
 edition.workspace = true
 
 [lib]

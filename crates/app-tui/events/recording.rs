@@ -1,11 +1,12 @@
 //! Recording wizard event handlers
 
 use super::PlayerCommand;
-use crate::app::App;
+use crate::app::{App, FilePickerMode, FilePickerOrigin};
 use crossterm::event::{KeyCode, KeyEvent};
+use std::sync::{Arc, Mutex};
 
 pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use sotf_audio_player::recording_types::RecordingStep;
+    use sotf_audio_player::recording_types::{ChannelRecordingState, RecordingStep};
 
     // Esc goes up one level
     if key.code == KeyCode::Esc {
@@ -40,18 +41,50 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         RecordingStep::Config => {
             if app.recording.editing_output_dir {
                 match key.code {
-                    KeyCode::Enter => { app.recording.editing_output_dir = false; }
-                    KeyCode::Backspace => { app.recording.output_directory.pop(); }
-                    KeyCode::Char(c) => { app.recording.output_directory.push(c); }
+                    KeyCode::Enter => {
+                        app.recording.editing_output_dir = false;
+                    }
+                    KeyCode::Backspace => {
+                        app.recording.output_directory.pop();
+                    }
+                    KeyCode::F(2) => {
+                        let start = app.recording.output_directory.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::RecordingOutputDir,
+                            FilePickerMode::Directory,
+                            "Select Output Directory",
+                            Some(&start),
+                            None,
+                        );
+                    }
+                    KeyCode::Char(c) => {
+                        app.recording.output_directory.push(c);
+                    }
                     _ => {}
                 }
                 return None;
             }
             if app.recording.editing_mic_cal {
                 match key.code {
-                    KeyCode::Enter => { app.recording.editing_mic_cal = false; }
-                    KeyCode::Backspace => { app.recording.mic_calibration_path.pop(); }
-                    KeyCode::Char(c) => { app.recording.mic_calibration_path.push(c); }
+                    KeyCode::Enter => {
+                        app.recording.editing_mic_cal = false;
+                    }
+                    KeyCode::Backspace => {
+                        app.recording.mic_calibration_path.pop();
+                    }
+                    KeyCode::F(2) => {
+                        let start = app.recording.mic_calibration_path.clone();
+                        app.open_file_explorer(
+                            FilePickerOrigin::RecordingMicCalibration,
+                            FilePickerMode::File,
+                            "Select Mic Calibration File",
+                            Some(&start),
+                            None,
+                        );
+                    }
+                    KeyCode::Char(c) => {
+                        app.recording.mic_calibration_path.push(c);
+                    }
                     _ => {}
                 }
                 return None;
@@ -70,20 +103,28 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         app.recording.selected_field += 1;
                     }
                 }
-                KeyCode::Enter => {
-                    match app.recording.selected_field {
-                        8 => { app.recording.editing_output_dir = true; }
-                        9 => { app.recording.editing_mic_cal = true; }
-                        _ => {}
+                KeyCode::Enter => match app.recording.selected_field {
+                    8 => {
+                        app.recording.editing_output_dir = true;
                     }
-                }
+                    9 => {
+                        app.recording.editing_mic_cal = true;
+                    }
+                    _ => {}
+                },
                 KeyCode::Left | KeyCode::Right => {
                     let delta = if key.code == KeyCode::Right { 1i32 } else { -1 };
                     adjust_recording_field(app, delta);
                 }
                 KeyCode::Tab => {
-                    init_recording_channels(app);
-                    app.recording.step = RecordingStep::Capture;
+                    // B3: Guard transition on output directory
+                    if app.recording.output_directory.is_empty() {
+                        app.recording.status_message =
+                            "Set an output directory first".to_string();
+                    } else {
+                        init_recording_channels(app);
+                        app.recording.step = RecordingStep::Capture;
+                    }
                 }
                 _ => {}
             }
@@ -92,9 +133,12 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
         RecordingStep::Capture => match key.code {
             KeyCode::Up => {
-                if let Some(ch) = app.recording.current_channel {
-                    if ch > 0 {
+                match app.recording.current_channel {
+                    Some(ch) if ch > 0 => {
                         app.recording.current_channel = Some(ch - 1);
+                    }
+                    _ => {
+                        app.configure_tab_focused = true;
                     }
                 }
                 None
@@ -104,211 +148,761 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     if ch + 1 < app.recording.channel_recordings.len() {
                         app.recording.current_channel = Some(ch + 1);
                     }
+                } else if !app.recording.channel_recordings.is_empty() {
+                    app.recording.current_channel = Some(0);
                 }
                 None
             }
             KeyCode::Enter => {
-                if let Some(idx) = app.recording.current_channel {
-                    if let Some(rec) = app.recording.channel_recordings.get_mut(idx) {
-                        use sotf_audio_player::recording_types::ChannelRecordingState;
-                        rec.state = match rec.state {
-                            ChannelRecordingState::Empty => ChannelRecordingState::Recording,
-                            ChannelRecordingState::Recording => ChannelRecordingState::Done,
-                            ChannelRecordingState::Done => ChannelRecordingState::Empty,
-                            ChannelRecordingState::Error => ChannelRecordingState::Empty,
-                        };
+                // B2: Record current channel via engine
+                if let Some(ch_idx) = app.recording.current_channel {
+                    let can_record = app
+                        .recording
+                        .channel_recordings
+                        .get(ch_idx)
+                        .map(|ch| {
+                            ch.state == ChannelRecordingState::Empty
+                                || ch.state == ChannelRecordingState::Error
+                        })
+                        .unwrap_or(false);
+                    if can_record {
+                        start_recording_channel(app, ch_idx);
                     }
                 }
                 None
             }
             KeyCode::Tab => {
-                app.recording.step = RecordingStep::Evaluating;
+                let has_done = app
+                    .recording
+                    .channel_recordings
+                    .iter()
+                    .any(|ch| ch.state == ChannelRecordingState::Done);
+                if has_done {
+                    app.recording.step = RecordingStep::Evaluating;
+                }
+                None
+            }
+            KeyCode::BackTab => {
+                app.recording.step = RecordingStep::Config;
                 None
             }
             _ => None,
         },
 
         RecordingStep::Evaluating => match key.code {
-            KeyCode::Tab => {
-                if can_save_recordings(app) {
-                    app.recording.editing_save_name = false;
-                    app.recording.step = RecordingStep::Saving;
+            KeyCode::Up => {
+                if app.recording.selected_channel_view > 0 {
+                    app.recording.selected_channel_view -= 1;
+                } else {
+                    app.configure_tab_focused = true;
                 }
+                None
+            }
+            KeyCode::Down => {
+                let completed = app
+                    .recording
+                    .channel_recordings
+                    .iter()
+                    .filter(|ch| ch.state == ChannelRecordingState::Done)
+                    .count();
+                if app.recording.selected_channel_view + 1 < completed {
+                    app.recording.selected_channel_view += 1;
+                }
+                None
+            }
+            KeyCode::Tab => {
+                app.recording.step = RecordingStep::Saving;
+                None
+            }
+            KeyCode::BackTab => {
+                app.recording.step = RecordingStep::Capture;
                 None
             }
             _ => None,
         },
 
-        RecordingStep::Saving => match key.code {
-            KeyCode::Up => {
-                if app.recording.selected_save_field > 0 {
-                    app.recording.selected_save_field -= 1;
-                }
-                None
-            }
-            KeyCode::Down => {
-                if app.recording.selected_save_field < 1 {
-                    app.recording.selected_save_field += 1;
-                }
-                None
-            }
-            KeyCode::Enter => {
-                match app.recording.selected_save_field {
-                    0 => { app.recording.editing_save_name = true; }
-                    1 => {
+        RecordingStep::Saving => {
+            if app.recording.editing_save_name {
+                match key.code {
+                    KeyCode::Enter => {
+                        app.recording.editing_save_name = false;
                         save_recordings(app);
+                    }
+                    KeyCode::Backspace => {
+                        app.recording.save_name.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.recording.save_name.push(c);
                     }
                     _ => {}
                 }
-                None
+                return None;
             }
-            KeyCode::Char(c) if app.recording.editing_save_name => {
-                app.recording.save_name.push(c);
-                None
+            match key.code {
+                KeyCode::Up => {
+                    app.configure_tab_focused = true;
+                }
+                KeyCode::Enter => {
+                    app.recording.editing_save_name = true;
+                }
+                KeyCode::Tab => {
+                    app.recording.step = RecordingStep::Config;
+                }
+                KeyCode::BackTab => {
+                    app.recording.step = RecordingStep::Evaluating;
+                }
+                _ => {}
             }
-            KeyCode::Backspace if app.recording.editing_save_name => {
-                app.recording.save_name.pop();
-                None
-            }
-            _ => None,
-        },
+            None
+        }
     }
 }
 
 fn adjust_recording_field(app: &mut App, delta: i32) {
     use sotf_audio_player::recording_types::{RecordingSignalType, SpeakerConfiguration};
+
     match app.recording.selected_field {
         0 => {
-            // Playback device
-            let count = app.recording.available_playback_devices.len();
-            if count > 0 {
-                let idx = app.recording.selected_playback_idx as i32 + delta;
-                app.recording.selected_playback_idx = idx.max(0).min((count - 1) as i32) as usize;
+            // B1: Cycle playback device and populate config
+            if !app.recording.available_playback_devices.is_empty() {
+                let len = app.recording.available_playback_devices.len();
+                app.recording.selected_playback_idx = if delta > 0 {
+                    (app.recording.selected_playback_idx + 1) % len
+                } else {
+                    (app.recording.selected_playback_idx + len - 1) % len
+                };
+                let (id, name) =
+                    app.recording.available_playback_devices[app.recording.selected_playback_idx]
+                        .clone();
+                app.recording.playback_config.device_name = name;
+                app.recording.playback_config.device_id = id;
             }
         }
         1 => {
-            // Recording device
-            let count = app.recording.available_recording_devices.len();
-            if count > 0 {
-                let idx = app.recording.selected_recording_idx as i32 + delta;
-                app.recording.selected_recording_idx = idx.max(0).min((count - 1) as i32) as usize;
+            // B1: Cycle recording device and populate config
+            if !app.recording.available_recording_devices.is_empty() {
+                let len = app.recording.available_recording_devices.len();
+                app.recording.selected_recording_idx = if delta > 0 {
+                    (app.recording.selected_recording_idx + 1) % len
+                } else {
+                    (app.recording.selected_recording_idx + len - 1) % len
+                };
+                let (id, name) =
+                    app.recording.available_recording_devices[app.recording.selected_recording_idx]
+                        .clone();
+                app.recording.recording_config.device_name = name;
+                app.recording.recording_config.device_id = id;
             }
         }
         2 => {
-            // Speaker configuration
+            // Cycle speaker config
             let configs = SpeakerConfiguration::all();
-            if let Some(idx) = configs
+            let idx = configs
                 .iter()
-                .position(|&c| c == app.recording.playback_config.speaker_configuration)
-            {
-                let new_idx = (idx as i32 + delta).max(0).min((configs.len() - 1) as i32) as usize;
-                app.recording.playback_config.speaker_configuration = configs[new_idx];
-                // Update channel mappings to match new config
-                let names = app
-                    .recording
-                    .playback_config
-                    .speaker_configuration
-                    .default_channel_names();
-                app.recording.playback_config.channel_mappings = names
-                    .iter()
-                    .enumerate()
-                    .map(|(i, name)| {
-                        sotf_audio_player::recording_types::ChannelMapping::single(i, *name)
-                    })
-                    .collect();
-                app.recording.playback_config.sync_channel_count();
-            }
+                .position(|c| *c == app.recording.playback_config.speaker_configuration)
+                .unwrap_or(0);
+            let new_idx = if delta > 0 {
+                (idx + 1) % configs.len()
+            } else {
+                (idx + configs.len() - 1) % configs.len()
+            };
+            let new_config = configs[new_idx];
+            app.recording.playback_config.speaker_configuration = new_config;
+            // Update channel mappings for new config
+            update_channel_mappings_for_config(app, new_config);
         }
         3 => {
-            // Signal type
+            // Cycle signal type
             let types = RecordingSignalType::all();
-            if let Some(idx) = types.iter().position(|&t| t == app.recording.signal_type) {
-                let new_idx = (idx as i32 + delta).max(0).min((types.len() - 1) as i32) as usize;
-                app.recording.signal_type = types[new_idx];
-            }
+            let idx = types
+                .iter()
+                .position(|t| *t == app.recording.signal_type)
+                .unwrap_or(0);
+            let new_idx = if delta > 0 {
+                (idx + 1) % types.len()
+            } else {
+                (idx + types.len() - 1) % types.len()
+            };
+            app.recording.signal_type = types[new_idx];
         }
         4 => {
-            // Duration
             app.recording.signal_duration_secs =
-                (app.recording.signal_duration_secs + delta as f32 * 0.5).max(0.5);
+                (app.recording.signal_duration_secs + delta as f32).clamp(1.0, 30.0);
         }
         5 => {
-            // Level dB
             app.recording.signal_level_db =
-                (app.recording.signal_level_db + delta as f32).clamp(-60.0, 0.0);
+                (app.recording.signal_level_db + delta as f32).clamp(-40.0, 0.0);
         }
         6 => {
-            // Sweep start freq
             app.recording.sweep_start_freq =
-                (app.recording.sweep_start_freq + delta as f32 * 5.0).max(5.0);
+                (app.recording.sweep_start_freq + delta as f32 * 10.0).clamp(10.0, 1000.0);
         }
         7 => {
-            // Sweep end freq
             app.recording.sweep_end_freq =
-                (app.recording.sweep_end_freq + delta as f32 * 500.0).max(100.0);
+                (app.recording.sweep_end_freq + delta as f32 * 1000.0).clamp(1000.0, 24000.0);
         }
         _ => {}
     }
 }
 
-pub fn init_recording_channels(app: &mut App) {
-    use sotf_audio_player::recording_types::{ChannelRecording, ChannelRecordingState};
+pub(crate) fn update_channel_mappings_for_config(
+    app: &mut App,
+    config: sotf_audio_player::recording_types::SpeakerConfiguration,
+) {
+    use sotf_audio_player::recording_types::ChannelMapping;
 
-    let names = app
-        .recording
-        .playback_config
-        .speaker_configuration
-        .default_channel_names();
-
-    app.recording.channel_recordings = names
+    let names = config.default_channel_names();
+    app.recording.playback_config.channel_mappings = names
         .iter()
         .enumerate()
-        .map(|(i, name)| ChannelRecording {
-            channel_index: i,
-            channel_name: name.to_string(),
-            state: ChannelRecordingState::Empty,
-            result: None,
+        .map(|(i, name)| ChannelMapping::single(i, *name))
+        .collect();
+    app.recording.playback_config.num_channels = names.len();
+}
+
+pub(crate) fn init_recording_channels(app: &mut App) {
+    use sotf_audio_player::recording_types::{ChannelRecording, ChannelRecordingState};
+
+    let expected_count = app.recording.playback_config.channel_mappings.len();
+    if app.recording.channel_recordings.len() != expected_count {
+        app.recording.channel_recordings = app
+            .recording
+            .playback_config
+            .channel_mappings
+            .iter()
+            .enumerate()
+            .map(|(i, mapping)| ChannelRecording {
+                channel_index: i,
+                channel_name: mapping.group_name.clone(),
+                state: ChannelRecordingState::Empty,
+                result: None,
+            })
+            .collect();
+        app.recording.current_channel = if expected_count > 0 { Some(0) } else { None };
+    }
+}
+
+// ---- B2: Actual recording implementation ----
+
+type RecordingResultSlot = Arc<Mutex<Option<Result<(usize, sotf_audio_player::recording_types::RecordingResult), String>>>>;
+
+static RECORDING_RESULT: std::sync::OnceLock<RecordingResultSlot> = std::sync::OnceLock::new();
+
+fn start_recording_channel(app: &mut App, channel_idx: usize) {
+    use sotf_audio_player::recording_types::ChannelRecordingState;
+    use sotf_audio_player::signal_recorder::{SignalParams, SignalType, generate_signal, write_temp_wav};
+
+    let ch = match app.recording.channel_recordings.get_mut(channel_idx) {
+        Some(ch) => ch,
+        None => return,
+    };
+    ch.state = ChannelRecordingState::Recording;
+    app.recording.status_message = format!("Recording channel {}...", ch.channel_name);
+
+    // Map signal type
+    let signal_type = match app.recording.signal_type {
+        sotf_audio_player::recording_types::RecordingSignalType::Sweep => SignalType::Sweep,
+        sotf_audio_player::recording_types::RecordingSignalType::WhiteNoise => SignalType::WhiteNoise,
+        sotf_audio_player::recording_types::RecordingSignalType::PinkNoise => SignalType::PinkNoise,
+    };
+
+    let duration_secs = app.recording.signal_duration_secs;
+    let level_db = app.recording.signal_level_db;
+    let sweep_start_freq = app.recording.sweep_start_freq;
+    let sweep_end_freq = app.recording.sweep_end_freq;
+    let sample_rate = app.recording.playback_config.sample_rate;
+
+    let output_device = app.recording.playback_config.device_name.clone();
+    let input_device = app.recording.recording_config.device_name.clone();
+
+    let output_channel = app
+        .recording
+        .playback_config
+        .channel_mappings
+        .get(channel_idx)
+        .map(|m| m.interface_channel())
+        .unwrap_or(0) as u16;
+    let input_channel = app
+        .recording
+        .recording_config
+        .channel_mappings
+        .first()
+        .copied()
+        .unwrap_or(0) as u16;
+
+    let mic_calibration = if app.recording.mic_calibration_path.is_empty() {
+        None
+    } else {
+        Some(app.recording.mic_calibration_path.clone())
+    };
+
+    let channel_name = app.recording.channel_recordings[channel_idx]
+        .channel_name
+        .clone();
+    let output_directory = app.recording.output_directory.clone();
+
+    // Convert dB level to linear amplitude
+    let amplitude = 10.0_f32.powf(level_db / 20.0);
+
+    // Generate signal parameters
+    let params = match signal_type {
+        SignalType::Sweep => SignalParams::Sweep {
+            start_freq: sweep_start_freq,
+            end_freq: sweep_end_freq,
+            amp: amplitude,
+        },
+        SignalType::WhiteNoise | SignalType::PinkNoise => SignalParams::Noise { amp: amplitude },
+        _ => SignalParams::Sweep {
+            start_freq: sweep_start_freq,
+            end_freq: sweep_end_freq,
+            amp: amplitude,
+        },
+    };
+
+    // Generate the test signal
+    let signal = match generate_signal(signal_type, &params, duration_secs, sample_rate) {
+        Ok(s) => s,
+        Err(e) => {
+            if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+                ch.state = ChannelRecordingState::Error;
+            }
+            app.recording.status_message = format!("Error generating signal: {}", e);
+            return;
+        }
+    };
+
+    // Write to temp file
+    let temp_wav = match write_temp_wav(&signal, sample_rate, 1) {
+        Ok(f) => f,
+        Err(e) => {
+            if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+                ch.state = ChannelRecordingState::Error;
+            }
+            app.recording.status_message = format!("Error writing temp WAV: {}", e);
+            return;
+        }
+    };
+
+    // Create output paths
+    let safe_channel_name: String = channel_name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
         })
         .collect();
+    let recording_dir = std::path::PathBuf::from(&output_directory);
+    let recorded_wav_path = recording_dir.join(format!("{}.wav", safe_channel_name));
+    let csv_path = recording_dir.join(format!("{}.csv", safe_channel_name));
 
-    app.recording.current_channel = if !names.is_empty() { Some(0) } else { None };
-}
-
-pub fn can_save_recordings(app: &App) -> bool {
-    use sotf_audio_player::recording_types::ChannelRecordingState;
-
-    if app.recording.channel_recordings.is_empty() {
-        return false;
-    }
-
-    if app.recording.save_name.contains('/') || app.recording.save_name.contains('\\') {
-        return false;
-    }
-
-    app.recording
-        .channel_recordings
-        .iter()
-        .all(|ch| ch.state == ChannelRecordingState::Done)
-}
-
-fn save_recordings(app: &mut App) {
-    use sotf_audio_player::recording_types::RecordingStep;
-
-    let output_dir = &app.recording.output_directory;
-    let save_name = &app.recording.save_name;
-
-    if output_dir.is_empty() || save_name.is_empty() {
-        app.recording.save_error = Some("Output dir and session name required".to_string());
+    // B4: Create output directory before recording
+    if let Err(e) = std::fs::create_dir_all(&recording_dir) {
+        if let Some(ch) = app.recording.channel_recordings.get_mut(channel_idx) {
+            ch.state = ChannelRecordingState::Error;
+        }
+        app.recording.status_message = format!("Cannot create directory: {}", e);
         return;
     }
 
-    match std::fs::create_dir_all(output_dir) {
-        Ok(_) => {
-            app.recording.step = RecordingStep::Config;
-            app.recording.save_error = None;
+    let result_slot = RECORDING_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    // Clear stale result
+    if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
+
+    let reference_signal = signal;
+    let temp_wav_path = temp_wav.path().to_path_buf();
+
+    std::thread::spawn(move || {
+        use sotf_audio_player::signal_recorder::record_and_analyze;
+        use sotf_audio_player::recording_types::RecordingResult;
+
+        let sweep_range = if signal_type == SignalType::Sweep {
+            Some((sweep_start_freq, sweep_end_freq))
+        } else {
+            None
+        };
+
+        let result = record_and_analyze(
+            &temp_wav_path,
+            &recorded_wav_path,
+            &reference_signal,
+            sample_rate,
+            &csv_path,
+            output_channel,
+            input_channel,
+            if output_device.is_empty() {
+                None
+            } else {
+                Some(output_device.as_str())
+            },
+            if input_device.is_empty() {
+                None
+            } else {
+                Some(input_device.as_str())
+            },
+            mic_calibration.as_deref(),
+            sweep_range,
+        );
+
+        let mapped = result.map(|analysis_result| {
+            let rec_result = RecordingResult {
+                channel: channel_idx,
+                wav_path: Some(recorded_wav_path.to_string_lossy().to_string()),
+                csv_path: Some(csv_path.to_string_lossy().to_string()),
+                frequencies: analysis_result.frequencies,
+                magnitude_db: analysis_result.spl_db,
+                phase_deg: analysis_result.phase_deg,
+                impulse_response: Some(analysis_result.impulse_response),
+                impulse_time_ms: Some(analysis_result.impulse_time_ms),
+                excess_group_delay_ms: Some(analysis_result.excess_group_delay_ms),
+                thd_percent: Some(analysis_result.thd_percent),
+                harmonic_distortion_db: Some(analysis_result.harmonic_distortion_db),
+                rt60_ms: Some(analysis_result.rt60_ms),
+                clarity_c50_db: Some(analysis_result.clarity_c50_db),
+                clarity_c80_db: Some(analysis_result.clarity_c80_db),
+                spectrogram_db: Some(analysis_result.spectrogram_db),
+            };
+            (channel_idx, rec_result)
+        })
+        .map_err(|e| e.to_string());
+
+        if let Ok(mut guard) = result_slot.lock() {
+            *guard = Some(mapped);
         }
+
+        // Keep temp file alive until recording is done
+        drop(temp_wav);
+    });
+}
+
+/// B7: Poll for recording completion — call from main tick loop
+pub fn poll_recording(app: &mut App) -> bool {
+    use sotf_audio_player::recording_types::ChannelRecordingState;
+
+    // Only poll when a recording is active
+    let has_active = app
+        .recording
+        .channel_recordings
+        .iter()
+        .any(|ch| ch.state == ChannelRecordingState::Recording);
+    if !has_active {
+        return false;
+    }
+
+    let result_slot = RECORDING_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+
+    if let Ok(mut guard) = result_slot.lock() {
+        if let Some(result) = guard.take() {
+            match result {
+                Ok((ch_idx, rec_result)) => {
+                    if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
+                        ch.state = ChannelRecordingState::Done;
+                        let channel_name = ch.channel_name.clone();
+                        ch.result = Some(rec_result);
+                        app.recording.status_message =
+                            format!("Channel {} recording complete", channel_name);
+                    }
+                }
+                Err(e) => {
+                    // Mark the recording channel as error
+                    for ch in &mut app.recording.channel_recordings {
+                        if ch.state == ChannelRecordingState::Recording {
+                            ch.state = ChannelRecordingState::Error;
+                            break;
+                        }
+                    }
+                    app.recording.status_message = format!("Recording failed: {}", e);
+                }
+            }
+            return true;
+        }
+    }
+
+    false
+}
+
+pub(crate) fn save_recordings(app: &mut App) {
+    use sotf_audio_player::recording_types::ChannelRecordingState;
+    use sotf_audio_player::room_eq_types::{
+        ChannelMeasurement, RecordingConfiguration, RoomEqMeasurementsFile,
+    };
+
+    // Validate save name early (before any I/O)
+    let name = if app.recording.save_name.is_empty() {
+        "recordings".to_string()
+    } else {
+        app.recording.save_name.clone()
+    };
+    if name.contains('/') || name.contains('\\') {
+        app.recording.save_error = Some("Save name must not contain path separators".to_string());
+        return;
+    }
+
+    let completed: Vec<_> = app
+        .recording
+        .channel_recordings
+        .iter()
+        .filter(|ch| ch.state == ChannelRecordingState::Done && ch.result.is_some())
+        .collect();
+
+    if completed.is_empty() {
+        app.recording.save_error = Some("No completed recordings to save".to_string());
+        return;
+    }
+
+    // Build measurements file
+    let channels: Vec<ChannelMeasurement> = completed
+        .iter()
+        .map(|ch| ChannelMeasurement {
+            channel_name: ch.channel_name.clone(),
+            measurement: ch.result.clone().unwrap(),
+            is_group: false,
+            group_drivers: Vec::new(),
+        })
+        .collect();
+
+    // B6: Build RecordingConfiguration from current state
+    let configuration = RecordingConfiguration {
+        playback_device_name: app.recording.playback_config.device_name.clone(),
+        playback_device_id: app.recording.playback_config.device_id.clone(),
+        playback_sample_rate: app.recording.playback_config.sample_rate,
+        playback_channels: app.recording.playback_config.num_channels,
+        speaker_configuration: app
+            .recording
+            .playback_config
+            .speaker_configuration
+            .as_str()
+            .to_string(),
+        channel_names: app
+            .recording
+            .playback_config
+            .channel_mappings
+            .iter()
+            .map(|m| m.group_name.clone())
+            .collect(),
+        recording_device_name: app.recording.recording_config.device_name.clone(),
+        recording_device_id: app.recording.recording_config.device_id.clone(),
+        recording_sample_rate: app.recording.recording_config.sample_rate,
+        recording_channels: app.recording.recording_config.num_channels,
+        mic_calibration_path: if app.recording.mic_calibration_path.is_empty() {
+            None
+        } else {
+            Some(app.recording.mic_calibration_path.clone())
+        },
+        recording_directory: if app.recording.output_directory.is_empty() {
+            None
+        } else {
+            Some(app.recording.output_directory.clone())
+        },
+        signal_type: app.recording.signal_type.as_str().to_string(),
+        signal_duration_secs: app.recording.signal_duration_secs,
+        signal_level_db: app.recording.signal_level_db,
+        sweep_start_freq: Some(app.recording.sweep_start_freq),
+        sweep_end_freq: Some(app.recording.sweep_end_freq),
+    };
+
+    let measurements_file =
+        RoomEqMeasurementsFile::with_configuration(channels, configuration);
+
+    // Determine output path
+    let dir = if app.recording.output_directory.is_empty() {
+        ".".to_string()
+    } else {
+        app.recording.output_directory.clone()
+    };
+
+    // B4: Create output directory before saving
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        app.recording.save_error = Some(format!("Cannot create directory: {}", e));
+        return;
+    }
+
+    let path = std::path::PathBuf::from(&dir).join(format!("{}.json", name));
+
+    match serde_json::to_string_pretty(&measurements_file) {
+        Ok(json) => match std::fs::write(&path, json) {
+            Ok(()) => {
+                app.recording.save_success = true;
+                app.recording.save_error = None;
+            }
+            Err(e) => {
+                app.recording.save_error = Some(format!("Write error: {}", e));
+            }
+        },
         Err(e) => {
-            app.recording.save_error = Some(e.to_string());
+            app.recording.save_error = Some(format!("Serialize error: {}", e));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::tests::make_app;
+    use sotf_audio_player::recording_types::{
+        ChannelMapping, RecordingStep, SpeakerConfiguration,
+    };
+
+    #[test]
+    fn init_recording_channels_creates_channels() {
+        let mut app = make_app();
+        app.recording.playback_config.channel_mappings = vec![
+            ChannelMapping::single(0, "FL"),
+            ChannelMapping::single(1, "FR"),
+        ];
+        app.recording.playback_config.num_channels = 2;
+
+        init_recording_channels(&mut app);
+        assert_eq!(app.recording.channel_recordings.len(), 2);
+        assert_eq!(app.recording.current_channel, Some(0));
+        assert_eq!(app.recording.channel_recordings[0].channel_name, "FL");
+        assert_eq!(app.recording.channel_recordings[1].channel_name, "FR");
+    }
+
+    #[test]
+    fn init_recording_channels_reinits_on_config_change() {
+        let mut app = make_app();
+        // Start with 2 channels
+        app.recording.playback_config.channel_mappings = vec![
+            ChannelMapping::single(0, "FL"),
+            ChannelMapping::single(1, "FR"),
+        ];
+        init_recording_channels(&mut app);
+        assert_eq!(app.recording.channel_recordings.len(), 2);
+
+        // Change to 3 channels
+        app.recording.playback_config.channel_mappings = vec![
+            ChannelMapping::single(0, "FL"),
+            ChannelMapping::single(1, "FR"),
+            ChannelMapping::single(2, "C"),
+        ];
+        init_recording_channels(&mut app);
+        assert_eq!(app.recording.channel_recordings.len(), 3);
+        assert_eq!(app.recording.channel_recordings[2].channel_name, "C");
+    }
+
+    #[test]
+    fn init_recording_channels_handles_empty_config() {
+        let mut app = make_app();
+        app.recording.playback_config.channel_mappings = vec![];
+        init_recording_channels(&mut app);
+        assert_eq!(app.recording.channel_recordings.len(), 0);
+        assert_eq!(app.recording.current_channel, None);
+    }
+
+    #[test]
+    fn save_recordings_rejects_path_separators_in_name() {
+        let mut app = make_app();
+        app.recording.save_name = "../../evil".to_string();
+        save_recordings(&mut app);
+        assert!(app.recording.save_error.is_some());
+        assert!(
+            app.recording
+                .save_error
+                .as_ref()
+                .unwrap()
+                .contains("path separators")
+        );
+    }
+
+    #[test]
+    fn save_recordings_rejects_backslash_in_name() {
+        let mut app = make_app();
+        app.recording.save_name = "foo\\bar".to_string();
+        save_recordings(&mut app);
+        assert!(app.recording.save_error.is_some());
+        assert!(
+            app.recording
+                .save_error
+                .as_ref()
+                .unwrap()
+                .contains("path separators")
+        );
+    }
+
+    #[test]
+    fn save_recordings_requires_completed_channels() {
+        let mut app = make_app();
+        app.recording.save_name = "test".to_string();
+        // No completed recordings
+        save_recordings(&mut app);
+        assert!(app.recording.save_error.is_some());
+        assert!(
+            app.recording
+                .save_error
+                .as_ref()
+                .unwrap()
+                .contains("No completed")
+        );
+    }
+
+    #[test]
+    fn recording_step_default_is_config() {
+        assert_eq!(RecordingStep::default(), RecordingStep::Config);
+    }
+
+    #[test]
+    fn update_channel_mappings_creates_correct_channels() {
+        let mut app = make_app();
+        update_channel_mappings_for_config(&mut app, SpeakerConfiguration::Stereo);
+        assert_eq!(app.recording.playback_config.num_channels, 2);
+        assert_eq!(app.recording.playback_config.channel_mappings.len(), 2);
+    }
+
+    #[test]
+    fn adjust_device_populates_config() {
+        let mut app = make_app();
+        app.recording.available_playback_devices = vec![
+            ("id0".to_string(), "Device 0".to_string()),
+            ("id1".to_string(), "Device 1".to_string()),
+        ];
+        app.recording.available_recording_devices = vec![
+            ("rid0".to_string(), "Mic 0".to_string()),
+            ("rid1".to_string(), "Mic 1".to_string()),
+        ];
+        app.recording.selected_field = 0;
+        adjust_recording_field(&mut app, 1);
+        assert_eq!(app.recording.playback_config.device_name, "Device 1");
+        assert_eq!(app.recording.playback_config.device_id, "id1");
+
+        app.recording.selected_field = 1;
+        adjust_recording_field(&mut app, 1);
+        assert_eq!(app.recording.recording_config.device_name, "Mic 1");
+        assert_eq!(app.recording.recording_config.device_id, "rid1");
+    }
+
+    #[test]
+    fn tab_from_config_requires_output_directory() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, KeyEventKind, KeyEventState};
+
+        let mut app = make_app();
+        app.recording.output_directory = String::new();
+        app.recording.playback_config.channel_mappings = vec![
+            ChannelMapping::single(0, "FL"),
+            ChannelMapping::single(1, "FR"),
+        ];
+
+        let tab_key = KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        };
+        handle_recording_keys(&mut app, tab_key);
+        // Should not have transitioned
+        assert_eq!(
+            app.recording.step,
+            sotf_audio_player::recording_types::RecordingStep::Config
+        );
+        assert!(app.recording.status_message.contains("output directory"));
     }
 }

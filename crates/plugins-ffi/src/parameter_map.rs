@@ -231,9 +231,9 @@ mod tests {
 
     #[test]
     fn test_parameter_map_creation() {
-        // Create a mock EQ plugin
-        use sotf_plugins::EqPlugin;
-        let plugin = EqPlugin::new(2, vec![]);
+        // Create a mock EQ plugin (EqPlugin implements InPlacePlugin, wrap in adapter for Plugin trait)
+        use sotf_plugins::{EqPlugin, InPlacePluginAdapter};
+        let plugin = InPlacePluginAdapter::new(EqPlugin::new(2, vec![]));
 
         let param_map = ParameterMap::from_eq_plugin(&plugin);
 

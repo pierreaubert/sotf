@@ -68,6 +68,9 @@ thiserror = { workspace = true }
 # Media controls (Now Playing / media keys)
 souvlaki = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { workspace = true }
 objc2-app-kit = { workspace = true, features = ["NSApplication", "NSRunningApplication", "NSEvent"] }

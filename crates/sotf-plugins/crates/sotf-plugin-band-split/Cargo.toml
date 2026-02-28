@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-band-split"
 description = "SOTF Band Split plugin - split signal into frequency bands"
-version.workspace = true
+version = "0.5.1"
 edition.workspace = true
 
 [lib]

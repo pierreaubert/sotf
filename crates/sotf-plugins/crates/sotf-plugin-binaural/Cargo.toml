@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-binaural"
 description = "SOTF Binaural Decoder plugin - HRTF-based binaural rendering"
-version.workspace = true
+version = "0.5.17"
 edition.workspace = true
 
 [lib]

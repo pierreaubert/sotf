@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-band-merge"
 description = "SOTF Band Merge plugin - merge frequency bands"
-version.workspace = true
+version = "0.5.1"
 edition.workspace = true
 
 [lib]
