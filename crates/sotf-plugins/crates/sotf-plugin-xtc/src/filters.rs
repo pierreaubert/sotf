@@ -380,6 +380,7 @@ fn compute_xtc_filters_asymmetric_with_cache(
             h_rr_ipsi_final,
             beta,
             max_gain_linear,
+            params.bypass_neumann_refinement,
         );
 
         // Per-bin spectral normalization: target unity gain for the estimated ear response.
@@ -424,10 +425,17 @@ fn compute_xtc_filters_asymmetric_with_cache(
             w_rr = soft_limit_complex_magnitude(w_rr, max_gain_linear);
         }
 
-        filter_ll[bin] = w_ll;
-        filter_lr[bin] = w_lr;
-        filter_rl[bin] = w_rl;
-        filter_rr[bin] = w_rr;
+        // Crossfade to identity (stereo passthrough) at very low and very high frequencies
+        // to prevent Tikhonov attenuation from muting the audio at band edges.
+        let low_fade = 1.0 - sigmoid_smooth(100.0 - freq, 30.0);
+        let high_fade = 1.0 - sigmoid_smooth(freq - 12000.0, 1500.0);
+        let alpha = low_fade * high_fade; // 1.0 in passband, 0.0 at extreme edges
+
+        let passthrough = Complex::new(1.0 - alpha, 0.0);
+        filter_ll[bin] = w_ll * alpha + passthrough;
+        filter_lr[bin] = w_lr * alpha;
+        filter_rl[bin] = w_rl * alpha;
+        filter_rr[bin] = w_rr * alpha + passthrough;
     }
 
     XtcFilters {
@@ -550,8 +558,15 @@ fn compute_xtc_filters_symmetric_with_cache(
             w_lr = soft_limit_complex_magnitude(w_lr, max_gain_linear);
         }
 
-        filter_ll[bin] = w_ll;
-        filter_lr[bin] = w_lr;
+        // Crossfade to identity (stereo passthrough) at very low and very high frequencies
+        // to prevent Tikhonov attenuation from muting the audio at band edges.
+        let low_fade = 1.0 - sigmoid_smooth(100.0 - freq, 30.0);
+        let high_fade = 1.0 - sigmoid_smooth(freq - 12000.0, 1500.0);
+        let alpha = low_fade * high_fade; // 1.0 in passband, 0.0 at extreme edges
+
+        let passthrough = Complex::new(1.0 - alpha, 0.0);
+        filter_ll[bin] = w_ll * alpha + passthrough;
+        filter_lr[bin] = w_lr * alpha;
     }
 
     (filter_ll, filter_lr)
@@ -668,6 +683,7 @@ fn compute_full_2x2_inverse(
     h_rr: Complex<f32>,
     beta: f32,
     max_gain_linear: f32,
+    bypass_neumann: bool,
 ) -> (Complex<f32>, Complex<f32>, Complex<f32>, Complex<f32>) {
     // 1. Compute A = C^H * C + beta * I
     // C^H = [[h_ll*, h_rl*],
@@ -708,18 +724,81 @@ fn compute_full_2x2_inverse(
     // W_rl = inv_a_10 * h_ll* + inv_a_11 * h_lr*
     // W_rr = inv_a_10 * h_rl* + inv_a_11 * h_rr*
 
-    let w_ll = inv_a_00 * h_ll.conj() + inv_a_01 * h_lr.conj();
-    let w_lr = inv_a_00 * h_rl.conj() + inv_a_01 * h_rr.conj();
-    let w_rl = inv_a_10 * h_ll.conj() + inv_a_11 * h_lr.conj();
-    let w_rr = inv_a_10 * h_rl.conj() + inv_a_11 * h_rr.conj();
+    let w1_ll = inv_a_00 * h_ll.conj() + inv_a_01 * h_lr.conj();
+    let w1_lr = inv_a_00 * h_rl.conj() + inv_a_01 * h_rr.conj();
+    let w1_rl = inv_a_10 * h_ll.conj() + inv_a_11 * h_lr.conj();
+    let w1_rr = inv_a_10 * h_rl.conj() + inv_a_11 * h_rr.conj();
 
-    // 4. Soft-limit magnitudes
-    let w_ll = soft_limit_complex_magnitude(w_ll, max_gain_linear);
-    let w_lr = soft_limit_complex_magnitude(w_lr, max_gain_linear);
-    let w_rl = soft_limit_complex_magnitude(w_rl, max_gain_linear);
-    let w_rr = soft_limit_complex_magnitude(w_rr, max_gain_linear);
+    if bypass_neumann {
+        let w1_ll_limit = soft_limit_complex_magnitude(w1_ll, max_gain_linear);
+        let w1_lr_limit = soft_limit_complex_magnitude(w1_lr, max_gain_linear);
+        let w1_rl_limit = soft_limit_complex_magnitude(w1_rl, max_gain_linear);
+        let w1_rr_limit = soft_limit_complex_magnitude(w1_rr, max_gain_linear);
+        return (w1_ll_limit, w1_lr_limit, w1_rl_limit, w1_rr_limit);
+    }
 
-    (w_ll, w_lr, w_rl, w_rr)
+    // Neumann series refinement: W₂ = W₁ * (2I - C*W₁)
+    // C = [[h_ll, h_lr], [h_rl, h_rr]]
+    // W1 = [[w1_ll, w1_lr], [w1_rl, w1_rr]]
+
+    // Compute C * W1
+    let cw_00 = h_ll * w1_ll + h_lr * w1_rl;
+    let cw_01 = h_ll * w1_lr + h_lr * w1_rr;
+    let cw_10 = h_rl * w1_ll + h_rr * w1_rl;
+    let cw_11 = h_rl * w1_lr + h_rr * w1_rr;
+
+    // R = 2I - C * W1
+    let r_00 = Complex::new(2.0, 0.0) - cw_00;
+    let r_01 = Complex::new(0.0, 0.0) - cw_01;
+    let r_10 = Complex::new(0.0, 0.0) - cw_10;
+    let r_11 = Complex::new(2.0, 0.0) - cw_11;
+
+    // W2 = W1 * R
+    // W2[0,0] = w1_ll * r_00 + w1_lr * r_10
+    // W2[0,1] = w1_ll * r_01 + w1_lr * r_11
+    // W2[1,0] = w1_rl * r_00 + w1_rr * r_10
+    // W2[1,1] = w1_rl * r_01 + w1_rr * r_11
+    let w2_ll_full = w1_ll * r_00 + w1_lr * r_10;
+    let w2_lr_full = w1_ll * r_01 + w1_lr * r_11;
+    let w2_rl_full = w1_rl * r_00 + w1_rr * r_10;
+    let w2_rr_full = w1_rl * r_01 + w1_rr * r_11;
+
+    // Dampen refinement: blend 70% between first-order (w1) and full refinement (w2).
+    let w2_ll = w1_ll + (w2_ll_full - w1_ll) * 0.7;
+    let w2_lr = w1_lr + (w2_lr_full - w1_lr) * 0.7;
+    let w2_rl = w1_rl + (w2_rl_full - w1_rl) * 0.7;
+    let w2_rr = w1_rr + (w2_rr_full - w1_rr) * 0.7;
+
+    let w1_ll_limit = soft_limit_complex_magnitude(w1_ll, max_gain_linear);
+    let w1_lr_limit = soft_limit_complex_magnitude(w1_lr, max_gain_linear);
+    let w1_rl_limit = soft_limit_complex_magnitude(w1_rl, max_gain_linear);
+    let w1_rr_limit = soft_limit_complex_magnitude(w1_rr, max_gain_linear);
+
+    let w2_ll_limit = soft_limit_complex_magnitude(w2_ll, max_gain_linear);
+    let w2_lr_limit = soft_limit_complex_magnitude(w2_lr, max_gain_linear);
+    let w2_rl_limit = soft_limit_complex_magnitude(w2_rl, max_gain_linear);
+    let w2_rr_limit = soft_limit_complex_magnitude(w2_rr, max_gain_linear);
+
+    let identity = Complex::new(1.0, 0.0);
+    // Error for W1 = C*W1 - I
+    let err1_00 = h_ll * w1_ll_limit + h_lr * w1_rl_limit - identity;
+    let err1_01 = h_ll * w1_lr_limit + h_lr * w1_rr_limit;
+    let err1_10 = h_rl * w1_ll_limit + h_rr * w1_rl_limit;
+    let err1_11 = h_rl * w1_lr_limit + h_rr * w1_rr_limit - identity;
+    let err1_sq = err1_00.norm_sqr() + err1_01.norm_sqr() + err1_10.norm_sqr() + err1_11.norm_sqr();
+
+    // Error for W2 = C*W2 - I
+    let err2_00 = h_ll * w2_ll_limit + h_lr * w2_rl_limit - identity;
+    let err2_01 = h_ll * w2_lr_limit + h_lr * w2_rr_limit;
+    let err2_10 = h_rl * w2_ll_limit + h_rr * w2_rl_limit;
+    let err2_11 = h_rl * w2_lr_limit + h_rr * w2_rr_limit - identity;
+    let err2_sq = err2_00.norm_sqr() + err2_01.norm_sqr() + err2_10.norm_sqr() + err2_11.norm_sqr();
+
+    if err2_sq <= err1_sq {
+        (w2_ll_limit, w2_lr_limit, w2_rl_limit, w2_rr_limit)
+    } else {
+        (w1_ll_limit, w1_lr_limit, w1_rl_limit, w1_rr_limit)
+    }
 }
 
 /// Soft-limit a complex number's magnitude using tanh saturation.
@@ -869,7 +948,7 @@ pub(crate) fn pinna_resonance_contra(freq: f32, speaker_angle_deg: f32) -> f32 {
     }
 
     // Angle factor: how much of the angle-dependent pinna effects remain.
-    // At 0° (median plane), factor=1.0 (full effect, same as ipsi).
+    // At 0° (median plane), factor=0.5 (partial effect — sound arrives from front, not ear side).
     // At 90° (directly to the side), factor→0 (minimal concha/pinna effect).
     // For typical 30° speakers: factor ≈ 0.33
     let angle_factor = 1.0 - ((90.0 + speaker_angle_deg) / 180.0).clamp(0.0, 1.0);

@@ -7,11 +7,11 @@
 // Run with:
 // cargo run --example xtc_demo --release
 
-use sotf_plugins::{Plugin, ProcessContext, XtcPlugin, XtcPluginParams};
+use sotf_host::plugin::{Plugin, ProcessContext};
+use sotf_host::{ParameterId, ParameterValue};
+use sotf_plugin_xtc::{XtcPlugin, XtcPluginParams};
 
 fn main() {
-    env_logger::init();
-
     println!("=== XTC Plugin Demo ===\n");
 
     // Create XTC plugin with default parameters
@@ -91,7 +91,6 @@ fn main() {
     println!("Testing parameter changes:");
 
     // Change speaker distance
-    use sotf_plugins::{ParameterId, ParameterValue};
     plugin
         .set_parameter(ParameterId::from("distance_m"), ParameterValue::Float(3.0))
         .expect("Failed to set distance");

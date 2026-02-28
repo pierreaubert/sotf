@@ -441,8 +441,12 @@ impl XtcPlugin {
             room_params_hash,
             auto_gain,
             limiter_envelope: 1.0,
-            limiter_attack_coeff: (-1.0 / (0.2 * 0.001 * sample_rate as f32)).exp(),
-            limiter_release_coeff: (-1.0 / (50.0 * 0.001 * sample_rate as f32)).exp(),
+            limiter_attack_coeff: math_audio_dsp::fast_math::fast_exp(
+                -1.0 / (0.2 * 0.001 * sample_rate as f32),
+            ),
+            limiter_release_coeff: math_audio_dsp::fast_math::fast_exp(
+                -1.0 / (50.0 * 0.001 * sample_rate as f32),
+            ),
             latency_filled: 0,
             cache: RealTimeCache::new(XtcData::default()),
             cache_update_counter: 0,
