@@ -576,27 +576,27 @@ struct MultibandCompressorArgs {
     mix: f32,
 
     /// Multiband compressor number of bands (2-5)
-    #[arg(long = "mb-compressor-num-bands", default_value = "3")]
+    #[arg(id = "mb_compressor_num_bands", long = "mb-compressor-num-bands", default_value = "3")]
     num_bands: usize,
 
     /// Multiband compressor crossover preset (0=custom, 1=default)
-    #[arg(long = "mb-compressor-crossover-preset", default_value = "1")]
+    #[arg(id = "mb_compressor_crossover_preset", long = "mb-compressor-crossover-preset", default_value = "1")]
     crossover_preset: i32,
 
     /// Multiband compressor crossover frequency 1 in Hz
-    #[arg(long = "mb-compressor-crossover-freq-1", default_value = "200.0")]
+    #[arg(id = "mb_compressor_crossover_freq_1", long = "mb-compressor-crossover-freq-1", default_value = "200.0")]
     crossover_freq_1: f32,
 
     /// Multiband compressor crossover frequency 2 in Hz
-    #[arg(long = "mb-compressor-crossover-freq-2", default_value = "2000.0")]
+    #[arg(id = "mb_compressor_crossover_freq_2", long = "mb-compressor-crossover-freq-2", default_value = "2000.0")]
     crossover_freq_2: f32,
 
     /// Multiband compressor crossover frequency 3 in Hz
-    #[arg(long = "mb-compressor-crossover-freq-3", default_value = "8000.0")]
+    #[arg(id = "mb_compressor_crossover_freq_3", long = "mb-compressor-crossover-freq-3", default_value = "8000.0")]
     crossover_freq_3: f32,
 
     /// Multiband compressor crossover frequency 4 in Hz
-    #[arg(long = "mb-compressor-crossover-freq-4", default_value = "12000.0")]
+    #[arg(id = "mb_compressor_crossover_freq_4", long = "mb-compressor-crossover-freq-4", default_value = "12000.0")]
     crossover_freq_4: f32,
 
     /// Disable multiband compressor channel linking
@@ -691,27 +691,27 @@ struct MultibandExpanderArgs {
     mix: f32,
 
     /// Multiband expander number of bands (2-5)
-    #[arg(long = "mb-expander-num-bands", default_value = "3")]
+    #[arg(id = "mb_expander_num_bands", long = "mb-expander-num-bands", default_value = "3")]
     num_bands: usize,
 
     /// Multiband expander crossover preset (0=custom, 1=default)
-    #[arg(long = "mb-expander-crossover-preset", default_value = "1")]
+    #[arg(id = "mb_expander_crossover_preset", long = "mb-expander-crossover-preset", default_value = "1")]
     crossover_preset: i32,
 
     /// Multiband expander crossover frequency 1 in Hz
-    #[arg(long = "mb-expander-crossover-freq-1", default_value = "200.0")]
+    #[arg(id = "mb_expander_crossover_freq_1", long = "mb-expander-crossover-freq-1", default_value = "200.0")]
     crossover_freq_1: f32,
 
     /// Multiband expander crossover frequency 2 in Hz
-    #[arg(long = "mb-expander-crossover-freq-2", default_value = "2000.0")]
+    #[arg(id = "mb_expander_crossover_freq_2", long = "mb-expander-crossover-freq-2", default_value = "2000.0")]
     crossover_freq_2: f32,
 
     /// Multiband expander crossover frequency 3 in Hz
-    #[arg(long = "mb-expander-crossover-freq-3", default_value = "8000.0")]
+    #[arg(id = "mb_expander_crossover_freq_3", long = "mb-expander-crossover-freq-3", default_value = "8000.0")]
     crossover_freq_3: f32,
 
     /// Multiband expander crossover frequency 4 in Hz
-    #[arg(long = "mb-expander-crossover-freq-4", default_value = "12000.0")]
+    #[arg(id = "mb_expander_crossover_freq_4", long = "mb-expander-crossover-freq-4", default_value = "12000.0")]
     crossover_freq_4: f32,
 
     /// Disable multiband expander channel linking
@@ -822,7 +822,7 @@ struct XtcArgs {
     bypass_neumann_refinement: bool,
 
     /// Enable XTC auto gain
-    #[arg(long = "xtc-auto-gain", default_value_t = true)]
+    #[arg(id = "xtc_auto_gain", long = "xtc-auto-gain", default_value_t = true)]
     auto_gain: bool,
 
     /// XTC auto gain maximum in dB
@@ -853,7 +853,7 @@ struct DenoiserArgs {
     floor_db: f32,
 
     /// Denoiser temporal smoothing (0.0-0.99)
-    #[arg(long = "denoiser-smoothing", default_value = "0.8")]
+    #[arg(id = "denoiser_smoothing", long = "denoiser-smoothing", default_value = "0.8")]
     smoothing: f32,
 
     /// Denoiser attack time (ms)
@@ -1081,7 +1081,7 @@ struct SpectrumAnalyzerArgs {
     max_freq: f32,
 
     /// Spectrum analyzer smoothing factor (0.0-1.0)
-    #[arg(long = "spectrum-smoothing", default_value = "0.7")]
+    #[arg(id = "spectrum_smoothing", long = "spectrum-smoothing", default_value = "0.7")]
     smoothing: f32,
 }
 
@@ -1107,7 +1107,7 @@ struct ABCompareArgs {
     enabled: bool,
 
     /// Enable A/B auto-gain loudness matching
-    #[arg(long = "ab-auto-gain", default_value_t = true)]
+    #[arg(id = "ab_auto_gain", long = "ab-auto-gain", default_value_t = true)]
     auto_gain: bool,
 
     /// A/B bypass (output original input)
