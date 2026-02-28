@@ -23,26 +23,29 @@ impl DenoiserPlugin {
     /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_polyphonic_gains(&mut self) {
         let floor_linear = self.floor_linear;
-
-        // 6 dB threshold ~ signal is 4x noise power
-        const SNR_THRESHOLD_LINEAR: f32 = 3.981_072; // 10^(6/10)
+        let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
 
         let mut total_reduction = 0.0_f32;
         let mut bin_count = 0;
 
         for ch in 0..self.channels {
-            // Pass 1: Compute instantaneous gate gain
+            // Pass 1: Compute instantaneous gate gain based on PND peaks
             for k in 0..self.spectrum_size {
-                let signal_power = self.get_power_at_bin(ch, k);
-                let noise_power = self.get_effective_noise_power(ch, k);
-                let snr = signal_power / noise_power.max(EPSILON);
+                self.gain[ch][k] = floor_linear;
+            }
 
-                let target_gain = if snr > SNR_THRESHOLD_LINEAR {
-                    1.0
-                } else {
-                    floor_linear
-                };
-                self.gain[ch][k] = target_gain;
+            // Apply unity gain around detected tonal peaks
+            let peaks = self.pnd_analyzers[ch].current_matched_peaks();
+            for &(freq_hz, _mag) in peaks {
+                let center_k = (freq_hz / bin_hz).round() as usize;
+
+                // Spread unity gain to adjacent bins to account for spectral leakage
+                let start_k = center_k.saturating_sub(1);
+                let end_k = (center_k + 1).min(self.spectrum_size - 1);
+
+                for k in start_k..=end_k {
+                    self.gain[ch][k] = 1.0;
+                }
             }
 
             // Pass 2: Smooth gains across frequency bins

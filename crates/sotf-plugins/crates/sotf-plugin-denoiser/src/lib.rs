@@ -23,6 +23,7 @@ use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, Paramet
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
+use sotf_plugin_pnd::analysis::PndAnalyzer;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -246,6 +247,9 @@ pub struct DenoiserPlugin {
     // Transient Suppressor
     transient_suppressor: transient::TransientSuppressor,
 
+    // PND Analyzers for polyphonic detection
+    pnd_analyzers: Vec<PndAnalyzer>,
+
     // Data exposure for UI — cached to avoid allocations in get_data()
     avg_reduction_db: f32,
     learning_active: bool,
@@ -298,6 +302,9 @@ impl DenoiserPlugin {
         let ring_capacity = (fft_size * 4).next_power_of_two();
         let output_accumulator = vec![vec![0.0_f32; ring_capacity]; channels];
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
+
+        // PND Analyzers for polyphonic detection
+        let pnd_analyzers = (0..channels).map(|_| PndAnalyzer::new(2048, 44100, 50.0)).collect();
 
         let mut p = Self {
             channels,
@@ -401,6 +408,7 @@ impl DenoiserPlugin {
             mcra_delta: pk(DN, "mcra_delta").default_f32(),
 
             transient_suppressor: transient::TransientSuppressor::new(channels),
+            pnd_analyzers,
 
             avg_reduction_db: 0.0,
             learning_active: true,
@@ -821,6 +829,12 @@ impl InPlacePlugin for DenoiserPlugin {
         self.sample_rate = sample_rate;
         self.update_envelope_coefficients();
         self.precompute_bark_mapping();
+
+        // Update PND analyzers with correct sample rate
+        for analyzer in &mut self.pnd_analyzers {
+            *analyzer = PndAnalyzer::new(2048, sample_rate, 50.0);
+        }
+
         Ok(())
     }
 
@@ -840,6 +854,11 @@ impl InPlacePlugin for DenoiserPlugin {
 
         // Reset transient suppressor
         self.transient_suppressor.reset();
+
+        // Reset PND analyzers
+        for analyzer in &mut self.pnd_analyzers {
+            analyzer.reset();
+        }
 
         // Reset buffers
         self.input_buffer.fill(0.0);
@@ -871,6 +890,15 @@ impl InPlacePlugin for DenoiserPlugin {
         let num_frames = context.num_frames;
         let total_samples = num_frames * self.channels;
         let block_samples = self.fft_size * self.channels;
+
+        // Phase 0: Feed samples to PND analyzers
+        if self.polyphonic_detection {
+            for i in 0..num_frames {
+                for ch in 0..self.channels {
+                    self.pnd_analyzers[ch].analyze(&[buffer[i * self.channels + ch]]);
+                }
+            }
+        }
 
         // Phase 1: Accumulate ALL input into input_buffer.
         // This is an in-place plugin (same buffer for input/output), so we must

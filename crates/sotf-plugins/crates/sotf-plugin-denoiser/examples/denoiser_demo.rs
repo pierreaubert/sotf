@@ -8,13 +8,12 @@
 // Run with:
 // cargo run --example denoiser_demo --release
 
-use sotf_plugins::{
-    DenoiserData, DenoiserPlugin, DenoiserPluginParams, InPlacePluginAdapter, ParameterId,
-    ParameterValue, Plugin, ProcessContext,
-};
+use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
+use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_host::parameters::{ParameterId, ParameterValue};
 
 fn main() {
-    env_logger::init();
+    // env_logger::init();
 
     println!("=== Denoiser Plugin Demo ===\n");
 
@@ -79,7 +78,7 @@ fn main() {
     }
 
     // Compute input energy
-    let input_energy: f32 = buffer.iter().map(|x| x.powi(2)).sum();
+    let input_energy: f32 = buffer.iter().map(|x: &f32| x.powi(2)).sum();
 
     let context = ProcessContext {
         sample_rate,
@@ -98,11 +97,11 @@ fn main() {
     let skip_frames = plugin.latency_samples();
     let output_energy: f32 = output[skip_frames * channels..]
         .iter()
-        .map(|x| x.powi(2))
+        .map(|x: &f32| x.powi(2))
         .sum();
     let input_after_latency: f32 = buffer[skip_frames * channels..]
         .iter()
-        .map(|x| x.powi(2))
+        .map(|x: &f32| x.powi(2))
         .sum();
 
     println!("Processing Results (signal + noise):");
@@ -188,7 +187,7 @@ fn main() {
 
     let output2_energy: f32 = output2[skip_frames * channels..]
         .iter()
-        .map(|x| x.powi(2))
+        .map(|x: &f32| x.powi(2))
         .sum();
     println!(
         "After parameter change - Output energy: {:.4}",

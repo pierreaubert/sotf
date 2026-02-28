@@ -13,7 +13,7 @@ use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use std::any::Any;
 use std::sync::Arc;
 
-mod analysis;
+pub mod analysis;
 mod config;
 
 use analysis::PndAnalyzer;

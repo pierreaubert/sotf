@@ -20,6 +20,7 @@ pub struct PndAnalyzer {
 
     // Partial tracking state
     prev_peaks: Vec<(f32, f32)>, // (frequency_hz, magnitude)
+    matched_peaks: Vec<(f32, f32)>, // (frequency_hz, magnitude)
 
     // Pre-allocated scratch buffers (reused via .clear())
     peak_scratch: Vec<(f32, f32)>,
@@ -61,6 +62,7 @@ impl PndAnalyzer {
             fft,
             ring,
             prev_peaks: Vec::new(),
+            matched_peaks: Vec::new(),
             peak_scratch: Vec::new(),
             ratio_scratch: Vec::new(),
 
@@ -132,6 +134,7 @@ impl PndAnalyzer {
         // Partial tracking: match current peaks against previous frame
         // using combined frequency + amplitude cost
         self.ratio_scratch.clear();
+        self.matched_peaks.clear();
         let mut matched_partials = 0;
 
         if !self.prev_peaks.is_empty() {
@@ -161,6 +164,7 @@ impl PndAnalyzer {
                 if best_prev_freq > 0.0 && min_cost < f32::MAX {
                     let ratio = freq / best_prev_freq;
                     self.ratio_scratch.push(ratio);
+                    self.matched_peaks.push((freq, mag));
                     matched_partials += 1;
                 }
             }
@@ -249,11 +253,17 @@ impl PndAnalyzer {
         self.last_total_peaks
     }
 
+    /// Get the matched peaks (frequency, magnitude) from the last frame.
+    pub fn current_matched_peaks(&self) -> &[(f32, f32)] {
+        &self.matched_peaks
+    }
+
     pub fn reset(&mut self) {
         self.ring.reset();
 
         // Clear peak tracking
         self.prev_peaks.clear();
+        self.matched_peaks.clear();
         self.peak_scratch.clear();
         self.ratio_scratch.clear();
 
