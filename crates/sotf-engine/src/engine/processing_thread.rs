@@ -20,8 +20,6 @@ use sotf_plugins::{
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::Duration;
 
-const SPIN_MS_SIGNAL: u64 = 1;
-
 /// Helper to send a message with backpressure handling and interruption support.
 /// When a command arrives during backpressure, the pending message is returned
 /// along with the command so the caller can handle both without data loss.
@@ -56,6 +54,7 @@ pub struct ProcessingThread {
 
 impl ProcessingThread {
     /// Create and start the processing thread
+    #[allow(clippy::too_many_arguments)] // thread constructor takes many channel endpoints
     pub fn new(
         decoder_rx: Receiver<DecoderMessage>,
         message_tx: SyncSender<ProcessingMessage>,
@@ -284,6 +283,7 @@ fn handle_processing_command(
 ) -> bool {
     match command {
         ProcessingCommand::UpdateHost(new_host) => {
+            let new_host = *new_host;
             let output_channels = new_host.output_channels();
             log::trace!(
                 "[Processing Thread] UpdateHost: Plugin host updated, output_channels={}",
@@ -385,6 +385,7 @@ fn handle_processing_command(
 }
 
 /// Main processing thread function
+#[allow(clippy::too_many_arguments)] // thread entrypoint receives all channel endpoints from constructor
 fn run_processing_thread(
     decoder_rx: Receiver<DecoderMessage>,
     message_tx: SyncSender<ProcessingMessage>,
@@ -412,10 +413,10 @@ fn run_processing_thread(
 
     loop {
         // Check for commands (non-blocking)
-        if let Ok(command) = command_rx.try_recv() {
-            if handle_processing_command(command, &mut state, &response_tx) {
-                break;
-            }
+        if let Ok(command) = command_rx.try_recv()
+            && handle_processing_command(command, &mut state, &response_tx)
+        {
+            break;
         }
 
         // Process audio from decoder

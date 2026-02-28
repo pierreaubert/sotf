@@ -487,10 +487,10 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
 /// Helper to match device by string identifier
 fn device_matches_str<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
     // First try to match by device ID (preferred for persistence)
-    if let Ok(id) = device.id() {
-        if id.to_string() == identifier {
-            return true;
-        }
+    if let Ok(id) = device.id()
+        && id.to_string() == identifier
+    {
+        return true;
     }
     // Try description name
     if let Ok(desc) = device.description() {
@@ -516,16 +516,16 @@ fn device_matches_str<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
 /// Check if a device matches the given identifier (ID preferred, name fallback)
 fn device_matches<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
     // First try to match by device ID (preferred for persistence)
-    if let Ok(id) = device.id() {
-        if id.to_string() == identifier {
-            return true;
-        }
+    if let Ok(id) = device.id()
+        && id.to_string() == identifier
+    {
+        return true;
     }
     // Fallback to name matching for legacy saved states
-    if let Ok(desc) = device.description() {
-        if desc.name() == identifier {
-            return true;
-        }
+    if let Ok(desc) = device.description()
+        && desc.name() == identifier
+    {
+        return true;
     }
     false
 }

@@ -710,7 +710,7 @@ impl DecoderState {
         }
 
         // Log that we don't have a HAL reader
-        if count % 100 == 0 {
+        if count.is_multiple_of(100) {
             log::warn!("[AUDIO FLOW] Decoder: No HAL reader available, sending silent frames");
         }
 

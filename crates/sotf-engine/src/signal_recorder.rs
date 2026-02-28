@@ -326,7 +326,7 @@ pub fn record_and_analyze(
     // We'll extract the specific channel we want in the callback
     let input_config = cpal::StreamConfig {
         channels: hardware_input_channels as u16,
-        sample_rate: sample_rate,
+        sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -726,6 +726,7 @@ impl RecordingSession {
     }
 
     /// Add a channel recording to the session
+    #[allow(clippy::too_many_arguments)] // recording metadata has many independent fields
     pub fn add_channel(
         &mut self,
         channel_index: usize,

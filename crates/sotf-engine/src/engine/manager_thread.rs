@@ -45,8 +45,6 @@ enum ConfigError {
     ProcessingError { reason: String },
     /// Unexpected response from processing thread
     UnexpectedResponse,
-    /// Failed to lock state mutex
-    StateLockError,
     /// Communication channel disconnected
     ChannelDisconnected,
 }
@@ -71,9 +69,6 @@ impl std::fmt::Display for ConfigError {
             }
             Self::UnexpectedResponse => {
                 write!(f, "Unexpected response from processing thread")
-            }
-            Self::StateLockError => {
-                write!(f, "Failed to acquire state lock")
             }
             Self::ChannelDisconnected => {
                 write!(f, "Communication channel disconnected")
@@ -462,7 +457,7 @@ fn run_manager_thread(
             Ok(host) => {
                 let _output_channels = host.output_channels();
                 // Send host to processing thread
-                if let Err(e) = processing_thread.send_command(ProcessingCommand::UpdateHost(host))
+                if let Err(e) = processing_thread.send_command(ProcessingCommand::UpdateHost(Box::new(host)))
                 {
                     return Err(format!("Failed to send initial plugin host: {}", e));
                 }
@@ -513,7 +508,7 @@ fn run_manager_thread(
                         ch
                     }
                     None => {
-                        return Err(format!("Plugin chain initialization timed out"));
+                        return Err("Plugin chain initialization timed out".to_string());
                     }
                 }
             }
@@ -837,10 +832,8 @@ fn estimate_update_timeout(plugins: &[super::PluginConfig]) -> std::time::Durati
     std::time::Duration::from_millis(timeout_ms.min(10000))
 }
 
-/// Apply a plugin update with proper synchronization and rollback on failure
-
-/// Waits for confirmation from processing thread and updates playback thread if needed
-
+/// Apply a plugin update with proper synchronization and rollback on failure.
+/// Waits for confirmation from processing thread and updates playback thread if needed.
 fn apply_plugin_update(
     processing: &mut ProcessingThread,
 
@@ -885,7 +878,7 @@ fn apply_plugin_update(
     // Send update command to processing thread
 
     processing
-        .send_command(ProcessingCommand::UpdateHost(host))
+        .send_command(ProcessingCommand::UpdateHost(Box::new(host)))
         .map_err(|_| {
             log::error!("[Manager Thread] Failed to send UpdateHost command: disconnected");
             ConfigError::ChannelDisconnected
@@ -1119,16 +1112,16 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             }
             "upmixer" => {
                 // Validate upmixer mode
-                if let Some(mode) = config.parameters.get("mode") {
-                    if !mode.is_string() {
-                        log::error!(
-                            "[Manager Thread] Upmixer validation failed: 'mode' must be a string"
-                        );
-                        return Err(ConfigError::ValidationError {
-                            plugin_index: i,
-                            reason: "Invalid 'mode' parameter (must be string)".to_string(),
-                        });
-                    }
+                if let Some(mode) = config.parameters.get("mode")
+                    && !mode.is_string()
+                {
+                    log::error!(
+                        "[Manager Thread] Upmixer validation failed: 'mode' must be a string"
+                    );
+                    return Err(ConfigError::ValidationError {
+                        plugin_index: i,
+                        reason: "Invalid 'mode' parameter (must be string)".to_string(),
+                    });
                 }
             }
             _ => {

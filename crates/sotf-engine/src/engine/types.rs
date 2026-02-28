@@ -126,7 +126,7 @@ pub enum DecoderCommand {
 pub enum ProcessingCommand {
     /// Update the plugin chain (hot reload)
     /// Receives a fully constructed PluginHost to avoid blocking audio thread
-    UpdateHost(PluginHost),
+    UpdateHost(Box<PluginHost>),
     /// Set a plugin parameter
     SetParameter {
         plugin_index: usize,

@@ -136,6 +136,7 @@ impl AudioEngineManager {
     /// When signal watching is enabled, the engine will handle Ctrl-C, SIGTERM, and SIGINT
     /// to cleanly shut down. This is useful for CLI applications but should be disabled
     /// for GUI/Tauri applications that manage their own lifecycle.
+    #[allow(clippy::arc_with_non_send_sync)] // ArcSwapOption requires Arc; single-thread access is enforced by cmd_mutex
     pub fn with_signal_watching(watch_signals: bool) -> Self {
         Self {
             engine: Arc::new(arc_swap::ArcSwapOption::new(None)),
@@ -276,6 +277,7 @@ impl AudioEngineManager {
         }
 
         // Store engine handle lock-free
+        #[allow(clippy::arc_with_non_send_sync)] // AudioEngine is !Sync but access is serialized by cmd_mutex
         self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 
@@ -341,6 +343,7 @@ impl AudioEngineManager {
         })?;
 
         // Store engine handle lock-free
+        #[allow(clippy::arc_with_non_send_sync)] // AudioEngine is !Sync but access is serialized by cmd_mutex
         self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 

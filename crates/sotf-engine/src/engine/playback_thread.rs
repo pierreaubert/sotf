@@ -17,7 +17,6 @@ use std::sync::mpsc::{Receiver, Sender, SyncSender};
 // No loopback to HAL needed
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
-const SPIN_MS_SIGNAL: u64 = 1;
 /// Max input channels for the stack-allocated downmix coefficient arrays.
 const MAX_DOWNMIX_CH: usize = 16;
 
@@ -232,7 +231,7 @@ fn run_playback_thread(
     // Create stream config
     let mut config = StreamConfig {
         channels: channels as u16,
-        sample_rate: sample_rate,
+        sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -348,7 +347,7 @@ fn run_playback_thread(
                         let new_config = StreamConfig {
                             channels: config.channels,
                             sample_rate: new_sample_rate,
-                            buffer_size: config.buffer_size.clone(),
+                            buffer_size: config.buffer_size,
                         };
 
                         // Create new ring buffer
@@ -734,9 +733,8 @@ fn run_playback_thread(
                         for i in 0..num_frames {
                             let src_base = i * frame.num_channels;
                             let dst_base = i * channels;
-                            for ch in 0..shared_channels {
-                                conversion_buffer[dst_base + ch] = frame.data[src_base + ch];
-                            }
+                                conversion_buffer[dst_base..dst_base + shared_channels]
+                                .copy_from_slice(&frame.data[src_base..src_base + shared_channels]);
                         }
                     }
 
@@ -799,16 +797,16 @@ fn run_playback_thread(
                     }
                     // Safety timeout: if drain takes too long (cpal callback stopped?),
                     // force completion to avoid hanging forever.
-                    if let Some(start) = drain_start {
-                        if start.elapsed() > drain_timeout {
-                            log::warn!(
-                                "[Playback Thread] Drain timeout, forcing PlaybackDrained (slots={}, capacity={})",
-                                producer.slots(),
-                                buffer_capacity
-                            );
-                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
-                            break;
-                        }
+                    if let Some(start) = drain_start
+                        && start.elapsed() > drain_timeout
+                    {
+                        log::warn!(
+                            "[Playback Thread] Drain timeout, forcing PlaybackDrained (slots={}, capacity={})",
+                            producer.slots(),
+                            buffer_capacity
+                        );
+                        event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                        break;
                     }
                     // Still draining, sleep briefly
                     std::thread::sleep(std::time::Duration::from_millis(5));
@@ -968,7 +966,7 @@ fn build_output_stream(
                     // Log underrun
                     let current_underruns =
                         state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
-                    if current_underruns % 100 == 0 {
+                    if current_underruns.is_multiple_of(100) {
                         event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
                     }
                 }
