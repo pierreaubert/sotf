@@ -384,6 +384,12 @@ pub struct UpmixerPlugin {
     hr_temp_input_block: Vec<f32>,
     /// Temporary HR frequency buffer for IFFT mixing
     hr_temp_freq_out: Vec<Complex<f32>>,
+    /// Pre-allocated temp buffer for delay-compensated HR input (avoids hot-path allocation)
+    hr_delay_temp: Vec<f32>,
+    /// Exact temporal delay buffer to phase-align the fast HR OLA path with the slow Main OLA path
+    hr_delay_buffer: Vec<f32>,
+    /// Ring buffer cursor for delay buffer
+    hr_delay_cursor: usize,
     /// Time-domain buffer for left channel (HR path)
     hr_time_domain_left: Vec<f32>,
     /// Time-domain buffer for right channel (HR path)
@@ -397,6 +403,12 @@ pub struct UpmixerPlugin {
     /// Next position to add a HR block in the shared accumulator (reserved)
     hr_next_add_position: usize,
 
+    // HR output accumulator
+    hr_output_accumulator: Vec<f32>,
+    hr_output_accumulator_mask: usize,
+    hr_output_accumulator_fill: usize,
+    hr_output_read_position: usize,
+
     /// Smooth envelope for enable_hr_direct toggle (0.0=off, 1.0=on)
     hr_direct_envelope: f32,
 
@@ -407,6 +419,9 @@ pub struct UpmixerPlugin {
     prev_magnitude_spectrum: Vec<f32>,
     /// Smoothed spectral flux for transient normalization
     spectral_flux_smooth: f32,
+
+    // Smoothing state
+    prev_hr_scale: f32,
 
     // Dialogue Detection State
     /// Smoothed spectral centroid (Hz) for dialogue detection
@@ -786,7 +801,21 @@ impl UpmixerPlugin {
             hr_freq_domain_left: vec![zero_complex; hr_spectrum_size],
             hr_freq_domain_right: vec![zero_complex; hr_spectrum_size],
             hr_time_out_channels: vec![vec![0.0; hr_fft_size]; num_output_channels],
+
+            // Pre-allocated temp buffer for delay-compensated HR input
+            hr_delay_temp: vec![0.0; fft_size * 2],
+            // Delay buffer to align physical OLA overlap latency:
+            // main_latency = fft_size - hop_size, hr_latency = hr_fft_size - hr_fft_size/2
+            // delay = (main_latency - hr_latency) * 2 (stereo interleaved)
+            hr_delay_buffer: vec![0.0; ((fft_size - hop_size) - (hr_fft_size - (hr_fft_size / 2))) * 2],
+            hr_delay_cursor: 0,
+
+            // Sized to match main ring buffer (fft_size * 4) since all input feeds HR before drain
+            hr_output_accumulator: vec![0.0; fft_size * 4 * num_output_channels],
+            hr_output_accumulator_mask: (fft_size * 4) - 1,
+            hr_output_accumulator_fill: 0,
             hr_next_add_position: 0,
+            hr_output_read_position: 0,
 
             hr_direct_envelope: 1.0, // HR enabled by default
             hr_transient_env: 0.0,
@@ -794,6 +823,8 @@ impl UpmixerPlugin {
             hr_energy_smooth: 0.0,
             prev_magnitude_spectrum: vec![0.0; spectrum_size],
             spectral_flux_smooth: 0.0,
+            
+            prev_hr_scale: 0.0,
 
             dialogue_spectral_centroid: 0.0,
             dialogue_envelope_variance: 0.0,
@@ -2067,7 +2098,13 @@ impl Plugin for UpmixerPlugin {
         // Clear HR input and temp blocks
         self.hr_input_buffer.fill(0.0);
         self.hr_temp_input_block.fill(0.0);
+        self.hr_delay_buffer.fill(0.0);
+        self.hr_delay_cursor = 0;
+
+        self.hr_output_accumulator.fill(0.0);
+        self.hr_output_accumulator_fill = 0;
         self.hr_next_add_position = 0;
+        self.hr_output_read_position = 0;
 
         // Reset state vectors
         self.steering_alphas.fill(0.15);
@@ -2080,6 +2117,7 @@ impl Plugin for UpmixerPlugin {
         self.hr_energy_smooth = 0.0;
         self.prev_magnitude_spectrum.fill(0.0);
         self.spectral_flux_smooth = 0.0;
+        self.prev_hr_scale = 0.0;
         self.coherence_history_idx = 0;
         for h in &mut self.coherence_history {
             *h = [0.0; 5];
@@ -2234,9 +2272,65 @@ impl Plugin for UpmixerPlugin {
                     (input_samples - input_pos * 2).min(self.fft_size * 2 - self.input_buffer_fill);
 
                 if samples_to_copy > 0 {
+                    let input_slice = &input[input_pos * 2..input_pos * 2 + samples_to_copy];
+                    
                     self.input_buffer
                         [self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
-                        .copy_from_slice(&input[input_pos * 2..input_pos * 2 + samples_to_copy]);
+                        .copy_from_slice(input_slice);
+
+                    // Also add to HR input buffer if HR is enabled.
+                    // First pass input through the delay buffer to temporally align
+                    // the HR path with the main path (compensates for the difference
+                    // in OLA latency: main_latency - hr_latency).
+                    if self.hr_direct_envelope > 0.0 {
+                        let delay_temp = &mut self.hr_delay_temp[..samples_to_copy];
+                        if self.hr_delay_buffer.is_empty() {
+                            delay_temp.copy_from_slice(input_slice);
+                        } else {
+                            for i in 0..samples_to_copy {
+                                delay_temp[i] = self.hr_delay_buffer[self.hr_delay_cursor];
+                                self.hr_delay_buffer[self.hr_delay_cursor] = input_slice[i];
+                                self.hr_delay_cursor += 1;
+                                if self.hr_delay_cursor >= self.hr_delay_buffer.len() {
+                                    self.hr_delay_cursor = 0;
+                                }
+                            }
+                        }
+
+                        let mut remaining_hr_samples = samples_to_copy;
+                        let mut hr_input_offset = 0;
+
+                        while remaining_hr_samples > 0 {
+                            let hr_capacity = self.hr_fft_size * 2 - self.hr_input_buffer_fill;
+                            let hr_chunk = remaining_hr_samples.min(hr_capacity);
+
+                            self.hr_input_buffer
+                                [self.hr_input_buffer_fill..self.hr_input_buffer_fill + hr_chunk]
+                                .copy_from_slice(&self.hr_delay_temp[hr_input_offset..hr_input_offset + hr_chunk]);
+
+                            self.hr_input_buffer_fill += hr_chunk;
+                            hr_input_offset += hr_chunk;
+                            remaining_hr_samples -= hr_chunk;
+
+                            // Process HR block if buffer is full
+                            if self.hr_input_buffer_fill >= self.hr_fft_size * 2 {
+                                // Copy to temp block
+                                self.hr_temp_input_block[..self.hr_fft_size * 2]
+                                    .copy_from_slice(&self.hr_input_buffer[..self.hr_fft_size * 2]);
+
+                                // Temporary take
+                                let temp_input = std::mem::take(&mut self.hr_temp_input_block);
+                                self.process_hr_block(&temp_input);
+                                self.hr_temp_input_block = temp_input;
+
+                                // 50% overlap hop: hr_fft_size interleaved samples = hr_fft_size/2 frames
+                                let hr_hop = self.hr_fft_size;
+                                let remaining = self.hr_input_buffer_fill - hr_hop;
+                                self.hr_input_buffer.copy_within(hr_hop..self.hr_input_buffer_fill, 0);
+                                self.hr_input_buffer_fill = remaining;
+                            }
+                        }
+                    }
 
                     self.input_buffer_fill += samples_to_copy;
                     input_pos += samples_to_copy / 2;
@@ -2298,6 +2392,17 @@ impl Plugin for UpmixerPlugin {
                 }
                 self.output_read_position = (self.output_read_position + frames_to_drain) & mask;
                 self.output_accumulator_fill -= frames_to_drain;
+
+                // Drain HR output and mix into the frames we just wrote
+                if self.hr_direct_envelope > 0.0 {
+                    self.mix_hr_output(&mut output[output_pos * nch..], frames_to_drain);
+                } else if self.hr_output_accumulator_fill > 0 {
+                    // HR disabled — reset ring buffer state so no stale data lingers
+                    self.hr_output_accumulator_fill = 0;
+                    self.hr_output_read_position = 0;
+                    self.hr_next_add_position = 0;
+                }
+
                 output_pos += frames_to_drain;
             } else {
                 // Break if no progress is possible

@@ -80,40 +80,85 @@ impl UpmixerPlugin {
                     &mut self.hr_time_out_channels[ch_idx],
                 )
                 .unwrap();
+
+            // No synthesis window needed: analysis-only Hann with 50% overlap sums
+            // to 1.0 (periodic Hann COLA). Matches the main path (fft.rs / panning.rs).
+            // The 1/N OLA normalization is applied in mix_hr_output via hr_ola_scale.
         }
     }
 
-    /// Mix HR results into the main time_out_channels before output scaling.
-    /// This ensures the safety cap in extract_output_and_scale() accounts for
-    /// the combined main+HR energy, preventing uncontrolled peaks.
-    ///
-    /// Must be called after apply_vbap_panning_and_inverse_fft() and before
-    /// extract_output_and_scale().
-    pub(super) fn apply_hr_enhancement(&mut self, input: &[f32]) {
+    /// Drain `num_frames` from the HR output ring buffer and mix into `output`.
+    /// Operates in synchronized lockstep with the main path via the delay buffer.
+    pub(super) fn mix_hr_output(&mut self, output: &mut [f32], num_frames: usize) {
+        let drain = num_frames.min(self.hr_output_accumulator_fill);
+
         let hr_mix = (self.hr_transient_env * self.hr_sharpen.current() * self.hr_direct_envelope)
             .clamp(0.0, 1.0);
-        if hr_mix < 0.01 || self.gain_front_direct.current() <= 0.0 {
-            return;
-        }
+        let nch = self.num_output_channels;
+        let mask = self.hr_output_accumulator_mask;
 
-        let center = (self.fft_size - self.hr_fft_size) / 2;
-        let start = center * 2;
-        let end = start + self.hr_fft_size * 2;
-        if end > input.len() {
-            return;
-        }
+        // Compute target scale (0 when muted)
+        let target_scale = if hr_mix < 0.01 || self.gain_front_direct.current() <= 0.0 {
+            0.0
+        } else {
+            // Scale HR path relative to main: sqrt ratio avoids overpowering the
+            // main path while still providing transient detail enhancement.
+            // Also apply the 1/N overlap-add scaling factor for the HR path itself.
+            // Multiply by sqrt(2) to compensate for the -3 dB headroom scale.
+            let hr_ola_scale = std::f32::consts::SQRT_2 / self.hr_fft_size as f32;
+            (self.fft_size as f32 / self.hr_fft_size as f32).sqrt() * hr_mix * hr_ola_scale
+        };
 
-        let hr_input = &input[start..end];
-        self.process_hr_fft(hr_input);
+        let mut scale = self.prev_hr_scale;
+        let scale_step = (target_scale - scale) / drain.max(1) as f32;
 
-        // Scale HR path relative to main: sqrt ratio avoids overpowering the
-        // main path while still providing transient detail enhancement.
-        let scale = (self.fft_size as f32 / self.hr_fft_size as f32).sqrt() * hr_mix;
+        // Drain HR output and mix directly into main output buffer
+        for i in 0..drain {
+            scale += scale_step;
+            let read_idx = (self.hr_output_read_position + i) & mask;
+            let acc_base = read_idx * nch;
+            let out_base = i * nch;
 
-        for &ch in &self.cached_hr_active_channels {
-            for i in 0..self.hr_fft_size {
-                self.time_out_channels[ch][center + i] += self.hr_time_out_channels[ch][i] * scale;
+            for &ch in &self.cached_hr_active_channels {
+                output[out_base + ch] += self.hr_output_accumulator[acc_base + ch] * scale;
+                self.hr_output_accumulator[acc_base + ch] = 0.0;
             }
         }
+
+        self.prev_hr_scale = target_scale;
+        self.hr_output_read_position = (self.hr_output_read_position + drain) & mask;
+        self.hr_output_accumulator_fill -= drain;
+    }
+    
+    /// Process one HR FFT block and accumulate into the HR output ring buffer.
+    pub(super) fn process_hr_block(&mut self, temp_input: &[f32]) {
+        self.process_hr_fft(temp_input);
+
+        let mask = self.hr_output_accumulator_mask;
+        let nch = self.num_output_channels;
+        let hr_hop = self.hr_fft_size / 2;
+        let hr_ring_capacity = mask + 1;
+
+        // Guard against ring buffer overflow
+        debug_assert!(
+            self.hr_output_accumulator_fill + hr_hop <= hr_ring_capacity,
+            "HR ring buffer overflow: fill {} + hop {} > capacity {}",
+            self.hr_output_accumulator_fill, hr_hop, hr_ring_capacity
+        );
+        if self.hr_output_accumulator_fill + hr_hop > hr_ring_capacity {
+            return;
+        }
+
+        for i in 0..self.hr_fft_size {
+            let write_idx = (self.hr_next_add_position + i) & mask;
+            let acc_base = write_idx * nch;
+
+            for &ch in &self.cached_hr_active_channels {
+                self.hr_output_accumulator[acc_base + ch] += self.hr_time_out_channels[ch][i];
+            }
+        }
+
+        self.hr_next_add_position = (self.hr_next_add_position + hr_hop) & mask;
+        self.hr_output_accumulator_fill += hr_hop;
     }
 }

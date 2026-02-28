@@ -95,12 +95,6 @@ impl UpmixerPlugin {
         self.apply_vbap_panning_and_inverse_fft();
         self.apply_subharmonic_synthesis();
 
-        // Apply HR enhancement before output scaling so the safety cap
-        // can account for the combined main+HR energy
-        if self.hr_direct_envelope > 0.0 {
-            self.apply_hr_enhancement(input);
-        }
-
         self.extract_output_and_scale(output, combined_scale);
     }
 }

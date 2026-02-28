@@ -413,14 +413,13 @@ use crate::UpmixerPlugin;
         }
 
         // Apply HR enhancement (adds to time_out_channels)
-        plugin.apply_hr_enhancement(&input);
+        plugin.process_hr_block(&input);
 
-        // Measure per-channel energy in the HR region (center 512 samples)
-        let center = (fft_size - plugin.hr_fft_size) / 2;
+        // Measure per-channel energy in the HR output block
         let mut energies = vec![0.0f32; plugin.num_output_channels];
         for ch in 0..plugin.num_output_channels {
-            for i in center..center + plugin.hr_fft_size {
-                energies[ch] += plugin.time_out_channels[ch][i].powi(2);
+            for i in 0..plugin.hr_fft_size {
+                energies[ch] += plugin.hr_time_out_channels[ch][i].powi(2);
             }
         }
 
@@ -441,6 +440,85 @@ use crate::UpmixerPlugin;
                 energies[ch]
             );
         }
+    }
+
+    #[test]
+    fn test_hr_path_continuous_output() {
+        // This test specifically isolates the HR enhancement path to check for
+        // the 50% duty cycle framing bug.
+        // If the HR path is only processed once per 1024 samples (main hop size)
+        // using a 512-sample HR window, the output will alternate between 512
+        // samples of sound and 512 samples of silence, creating severe modulation.
+
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.0, 0.0, 120.0, 0.5, 250.0, 0.0, 0.0, false, 0.0,
+        );
+        plugin.initialize(44100).unwrap();
+        
+        // Force the HR path to be fully active
+        plugin.enable_hr_direct = true;
+        plugin.hr_direct_envelope = 1.0;
+        plugin.hr_sharpen.set_target(1.0);
+        plugin.hr_transient_env = 1.0;
+        
+        // Make sure direct path doesn't mask the HR path by setting its smoothing
+        // to be very fast and target to 0 if possible, but the plugin initialization
+        // sets direct gain to 1.0 so we use parameter updates
+        plugin.set_parameter(ParameterId::from("gain_front_direct"), ParameterValue::Float(0.0001)).unwrap();
+        // For HR to work it needs a non-zero direct gain (checked in mix_hr_output),
+        // so we set it tiny, but let HR scale boost it.
+
+        let num_frames = 4096;
+        let mut input = vec![0.0f32; num_frames * 2];
+
+        // 4 kHz coherent sine (L=R), well within HR bandpass
+        for i in 0..num_frames {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 4000.0 * t).sin() * 0.5;
+            input[i * 2] = s;
+            input[i * 2 + 1] = s;
+        }
+
+        let mut output = vec![0.0f32; num_frames * plugin.num_output_channels];
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+
+        // Process a few blocks to get past latency
+        for _ in 0..5 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        // Now process one block to analyze
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Check for 50% duty cycle drops in the Front Left channel (0)
+        let mut zero_blocks = 0;
+        
+        let hr_hop = 256; // 512 / 2
+
+        for offset in (0..num_frames).step_by(hr_hop) {
+            let mut block_energy = 0.0f32;
+            for i in 0..hr_hop {
+                block_energy += output[(offset + i) * plugin.num_output_channels].powi(2);
+            }
+            
+
+            if block_energy < 1e-9 {
+                zero_blocks += 1;
+            } else {
+                
+            }
+        }
+
+        // If the bug exists, exactly half the blocks will be zero.
+        // A correct COLA implementation will have 0 zero blocks.
+        assert_eq!(
+            zero_blocks, 0,
+            "HR path output contains completely silent {} sample blocks. This indicates the 50% duty cycle framing bug.",
+            hr_hop
+        );
     }
 
     #[test]
@@ -557,7 +635,6 @@ use crate::UpmixerPlugin;
             }
         }
 
-        println!("Full 5ch test energies (settled): {:?}", channel_energies);
 
         // Front left and right should have signal
         assert!(channel_energies[0] > 0.01, "Front left should have signal");
@@ -849,20 +926,6 @@ use crate::UpmixerPlugin;
                 channel_energies[ch] += output[i * 10 + ch].powi(2);
             }
         }
-
-        /*
-        eprintln!("5.1.4 Channel energies:");
-        eprintln!("  [0] FL:  {:.6}", channel_energies[0]);
-        eprintln!("  [1] FR:  {:.6}", channel_energies[1]);
-        eprintln!("  [2] C:   {:.6}", channel_energies[2]);
-        eprintln!("  [3] LFE: {:.6}", channel_energies[3]);
-        eprintln!("  [4] SL:  {:.6}", channel_energies[4]);
-        eprintln!("  [5] SR:  {:.6}", channel_energies[5]);
-        eprintln!("  [6] TFL: {:.6}", channel_energies[6]);
-        eprintln!("  [7] TFR: {:.6}", channel_energies[7]);
-        eprintln!("  [8] TBL: {:.6}", channel_energies[8]);
-        eprintln!("  [9] TBR: {:.6}", channel_energies[9]);
-        */
 
         // Check that all non-LFE channels have some energy
         for (ch, &energy) in channel_energies.iter().enumerate() {
