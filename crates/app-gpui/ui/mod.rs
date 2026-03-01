@@ -35,6 +35,9 @@ pub(crate) fn compute_responsive_scale(window_width: f32, window_height: f32) ->
 /// and recalculate_pagination column estimation.
 pub(crate) const ALBUM_CARD_WIDTH_REMS: f32 = 8.75;
 
+/// Album card height in rems (~180px at 16px rem, thumbnail + text below).
+pub(crate) const ALBUM_CARD_HEIGHT_REMS: f32 = 11.25;
+
 /// Gap between album cards in rems (matches gap_4 = 1rem in library.rs grid).
 pub(crate) const ALBUM_CARD_GAP_REMS: f32 = 1.0;
 
@@ -46,6 +49,41 @@ pub(crate) const FOOTER_HEIGHT_REMS: f32 = 6.25;
 /// available grid area. Breakdown:
 ///   Header ~2.5rem + Stats ~6.25rem + Filter ~2.5rem + Pagination ~3.125rem + Footer ~3.625rem
 pub(crate) const CHROME_HEIGHT_REMS: f32 = 18.0;
+
+/// Estimate the number of album grid columns and rows that fit in the given window.
+///
+/// This is the pure computation behind `recalculate_pagination` — extracted so it can be
+/// unit-tested without constructing a full `PlayerView`.
+pub(crate) fn estimate_grid_dimensions(
+    window_width: f32,
+    window_height: f32,
+    font_scale: f32,
+) -> (usize, usize) {
+    let responsive_scale = compute_responsive_scale(window_width, window_height);
+    let combined_scale =
+        (font_scale * responsive_scale).clamp(COMBINED_SCALE_MIN, COMBINED_SCALE_MAX);
+    let effective_rem = 16.0 * combined_scale;
+
+    let card_with_gap = (ALBUM_CARD_WIDTH_REMS + ALBUM_CARD_GAP_REMS) * effective_rem;
+    // Approximate total horizontal chrome: grid p_2 (0.5rem × 2 sides) + parent padding
+    let available_width = window_width - 2.0 * effective_rem;
+    let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
+
+    let chrome_height = CHROME_HEIGHT_REMS * effective_rem;
+    let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
+    let card_height = ALBUM_CARD_HEIGHT_REMS * effective_rem;
+    let rows = (available_height / card_height).floor().max(1.0) as usize;
+
+    (columns, rows)
+}
+
+/// Minimum combined scale (font_scale × responsive_scale). Prevents the UI from becoming
+/// unusably small even with minimum font_scale on a tiny window.
+const COMBINED_SCALE_MIN: f32 = 0.25;
+
+/// Maximum combined scale (font_scale × responsive_scale). Caps the effective rem size so
+/// extreme combinations (e.g. font_scale=2.0 on a 4K display) don't blow out layout.
+const COMBINED_SCALE_MAX: f32 = 3.0;
 
 pub struct PlayerView {
     pub state: Entity<AppState>,
@@ -786,26 +824,11 @@ impl PlayerView {
             )
         };
 
+        let (columns, rows) = estimate_grid_dimensions(window_width, window_height, font_scale);
+
         self.state.update(cx, |state, _cx| {
             let app = &mut state.app;
-
-            let responsive_scale = compute_responsive_scale(window_width, window_height);
-            let combined_scale = (font_scale * responsive_scale).clamp(0.25, 3.0);
-            let effective_rem = 16.0 * combined_scale;
-
-            let card_px = ALBUM_CARD_WIDTH_REMS * effective_rem;
-            let gap_px = ALBUM_CARD_GAP_REMS * effective_rem;
-            let card_with_gap = card_px + gap_px;
-
-            // Approximate total horizontal chrome: grid p_2 (0.5rem × 2 sides) + parent padding
-            let available_width = window_width - 2.0 * effective_rem;
-            let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
             app.library_state.library_columns = columns;
-
-            let chrome_height = CHROME_HEIGHT_REMS * effective_rem;
-            let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
-            let card_height = 11.25 * effective_rem; // ~180px at base (thumbnail + text)
-            let rows = (available_height / card_height).floor().max(1.0) as usize;
 
             // Initial load: 3 screens worth of items
             let new_items_per_page = columns * rows * 3;
@@ -884,29 +907,13 @@ mod tests {
     }
 
     // --- pagination column/row estimates at common window sizes ---
-
-    /// Compute (columns, rows) the same way recalculate_pagination does.
-    fn estimate_grid(window_width: f32, window_height: f32, font_scale: f32) -> (usize, usize) {
-        let responsive_scale = compute_responsive_scale(window_width, window_height);
-        let combined_scale = (font_scale * responsive_scale).clamp(0.25, 3.0);
-        let effective_rem = 16.0 * combined_scale;
-
-        let card_with_gap = (ALBUM_CARD_WIDTH_REMS + ALBUM_CARD_GAP_REMS) * effective_rem;
-        let available_width = window_width - 2.0 * effective_rem;
-        let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
-
-        let chrome_height = CHROME_HEIGHT_REMS * effective_rem;
-        let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
-        let card_height = 11.25 * effective_rem;
-        let rows = (available_height / card_height).floor().max(1.0) as usize;
-
-        (columns, rows)
-    }
+    // These call the real estimate_grid_dimensions() used by recalculate_pagination,
+    // so any formula change is automatically tested.
 
     #[test]
     fn test_pagination_reference_window() {
         // 1200×800, font_scale 1.0 → reasonable desktop grid
-        let (cols, rows) = estimate_grid(1200.0, 800.0, 1.0);
+        let (cols, rows) = estimate_grid_dimensions(1200.0, 800.0, 1.0);
         assert!(cols >= 5 && cols <= 8, "expected 5–8 columns, got {cols}");
         assert!(rows >= 1 && rows <= 4, "expected 1–4 rows, got {rows}");
     }
@@ -914,7 +921,7 @@ mod tests {
     #[test]
     fn test_pagination_phone_window() {
         // 375×667 (iPhone SE-class) — should still get at least 1 column
-        let (cols, rows) = estimate_grid(375.0, 667.0, 1.0);
+        let (cols, rows) = estimate_grid_dimensions(375.0, 667.0, 1.0);
         assert!(cols >= 1 && cols <= 3, "expected 1–3 columns, got {cols}");
         assert!(rows >= 1, "expected at least 1 row, got {rows}");
     }
@@ -922,7 +929,7 @@ mod tests {
     #[test]
     fn test_pagination_4k_window() {
         // 3840×2160, font_scale 1.0 — many cards should fit
-        let (cols, rows) = estimate_grid(3840.0, 2160.0, 1.0);
+        let (cols, rows) = estimate_grid_dimensions(3840.0, 2160.0, 1.0);
         assert!(cols >= 8, "expected ≥8 columns on 4K, got {cols}");
         assert!(rows >= 2, "expected ≥2 rows on 4K, got {rows}");
     }

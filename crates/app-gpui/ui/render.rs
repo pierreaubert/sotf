@@ -154,9 +154,8 @@ impl Render for PlayerView {
         // Apply combined font scale (user preference × responsive auto-scale) to rem size.
         // All rem-based sizes (text, padding, gaps) scale automatically.
         let responsive_scale = compute_responsive_scale(window_width, window_height);
-        // Clamp the combined product so extreme font_scale + 4K window doesn't blow out layout.
-        // At max (font_scale=2.0, responsive=2.5) unclamped rem would be 80px; clamp to 3.0× keeps it usable.
-        let combined_scale = (font_scale * responsive_scale).clamp(0.25, 3.0);
+        let combined_scale =
+            (font_scale * responsive_scale).clamp(COMBINED_SCALE_MIN, COMBINED_SCALE_MAX);
         window.set_rem_size(px(16.0 * combined_scale));
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.

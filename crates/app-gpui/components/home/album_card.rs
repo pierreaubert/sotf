@@ -231,9 +231,8 @@ impl AlbumCard {
     }
 
     fn render_grid(self) -> AnyElement {
-        // Use rem-based sizing so thumbnails/cards scale with the responsive rem size
-        let thumbnail_rems = ALBUM_CARD_WIDTH_REMS;
-        let card_rems = ALBUM_CARD_WIDTH_REMS;
+        // Card and thumbnail share the same width (card is sized by its thumbnail)
+        let size_rems = ALBUM_CARD_WIDTH_REMS;
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
@@ -247,7 +246,7 @@ impl AlbumCard {
 
         div()
             .id(("album-card", index))
-            .w(rems(card_rems))
+            .w(rems(size_rems))
             .rounded_lg()
             .cursor_pointer()
             .when(self.is_selected, |d| {
@@ -266,8 +265,8 @@ impl AlbumCard {
                     // Album art thumbnail or placeholder (scales with rem)
                     .child(
                         div()
-                            .w(rems(thumbnail_rems))
-                            .h(rems(thumbnail_rems))
+                            .w(rems(size_rems))
+                            .h(rems(size_rems))
                             .rounded_md()
                             .overflow_hidden()
                             .flex()
@@ -276,8 +275,8 @@ impl AlbumCard {
                             .child(
                                 if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
                                     img(image_from_jpeg_bytes(thumbnail_bytes))
-                                        .w(rems(thumbnail_rems))
-                                        .h(rems(thumbnail_rems))
+                                        .w(rems(size_rems))
+                                        .h(rems(size_rems))
                                         .object_fit(ObjectFit::Cover)
                                         .into_any_element()
                                 } else {
