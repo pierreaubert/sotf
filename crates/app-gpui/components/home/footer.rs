@@ -937,7 +937,7 @@ impl PlayerView {
                     .px_3()
                     .py_1()
                     .mx_1()
-                    .my(px(1.0))
+                    .my(rems(0.0625))
                     .rounded_sm()
                     .cursor_pointer()
                     .text_sm()
@@ -1157,7 +1157,7 @@ impl PlayerView {
                 VolumeKnob::new()
                     .value(volume)
                     .label(format!("{}", volume_percent))
-                    .size(px(72.0)) // Size is managed by container scaling
+                    .size(px(72.0)) // Fixed pixel size: VolumeKnob paints via canvas paths, not rem-based layout
                     .muted(muted)
                     .accent_color(accent_color)
                     .muted_color(muted_color)

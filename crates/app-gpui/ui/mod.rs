@@ -18,6 +18,15 @@ use crate::components::plugins::actions::{
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
 
+/// Compute the responsive scale factor for a given window size.
+/// Reference size: 1200×800 (default window). Uses the smaller axis ratio
+/// so the UI never overflows, clamped to 0.55–2.5× for usability.
+pub fn compute_responsive_scale(window_width: f32, window_height: f32) -> f32 {
+    let width_scale = window_width / 1200.0;
+    let height_scale = window_height / 800.0;
+    width_scale.min(height_scale).clamp(0.55, 2.5)
+}
+
 pub struct PlayerView {
     pub state: Entity<AppState>,
     pub focus_handle: FocusHandle,
@@ -760,10 +769,7 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             let app = &mut state.app;
 
-            // Compute the same responsive scale used for rem size in render()
-            let width_scale = window_width / 1200.0;
-            let height_scale = window_height / 800.0;
-            let responsive_scale = width_scale.min(height_scale).clamp(0.55, 2.5);
+            let responsive_scale = compute_responsive_scale(window_width, window_height);
             let effective_rem = 16.0 * font_scale * responsive_scale;
 
             // Card width in pixels: 8.75 rem (matching album_card.rs)
@@ -772,7 +778,8 @@ impl PlayerView {
             let gap_px = 1.0 * effective_rem;
             let card_with_gap = card_px + gap_px;
 
-            let available_width = window_width - 2.0 * effective_rem; // p_2 padding
+            // Approximate total horizontal chrome: grid p_2 (0.5rem × 2 sides) + parent padding
+            let available_width = window_width - 2.0 * effective_rem;
             let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
             app.library_state.library_columns = columns;
 

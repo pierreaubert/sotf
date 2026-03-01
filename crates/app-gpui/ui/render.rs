@@ -151,18 +151,9 @@ impl Render for PlayerView {
             )
         };
 
-        // Compute responsive scale based on window dimensions.
-        // Reference size: 1200x800 (default window). Scale adapts smoothly from
-        // phone-size windows (~400px) through 4K displays (~3840px logical).
-        let responsive_scale = {
-            let width_scale = window_width / 1200.0;
-            let height_scale = window_height / 800.0;
-            // Use the smaller axis to avoid overflow, clamp to usable range
-            width_scale.min(height_scale).clamp(0.55, 2.5)
-        };
-
-        // Apply combined font scale (user preference * responsive auto-scale) to rem size.
+        // Apply combined font scale (user preference × responsive auto-scale) to rem size.
         // All rem-based sizes (text, padding, gaps) scale automatically.
+        let responsive_scale = compute_responsive_scale(window_width, window_height);
         window.set_rem_size(px(16.0 * font_scale * responsive_scale));
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
