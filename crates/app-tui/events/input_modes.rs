@@ -658,28 +658,32 @@ pub fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<Play
         }
         KeyCode::Enter => {
             let choice = match app.channel_conflict_selection {
-                0 => ChannelConflictChoice::DisableUpmixer,
-                1 => ChannelConflictChoice::RemoveUpmixer,
+                0 => ChannelConflictChoice::SuspendIncompatible,
+                1 => ChannelConflictChoice::RemoveIncompatible,
                 2 => ChannelConflictChoice::Cancel,
                 _ => ChannelConflictChoice::Cancel,
             };
 
             let path = app.channel_conflict_path.take();
+            let conflicts = std::mem::take(&mut app.channel_conflicts);
             app.input_mode = InputMode::Normal;
 
             match choice {
-                ChannelConflictChoice::DisableUpmixer => {
-                    if let Some(idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
-                        app.plugin_chain.toggle_plugin(idx);
-                        log::info!("[TUI] Upmixer disabled by user (channel conflict)");
-                    }
+                ChannelConflictChoice::SuspendIncompatible => {
+                    let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
+                    app.plugin_chain.suspend_plugins(&indices);
+                    app.plugin_chain.update_channel_dependent_plugins();
+                    log::info!("[TUI] Suspended {} incompatible plugin(s) (channel conflict)", indices.len());
                     path.map(PlayerCommand::Play)
                 }
-                ChannelConflictChoice::RemoveUpmixer => {
-                    if let Some(idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer) {
-                        app.plugin_chain.remove_plugin(idx);
-                        log::info!("[TUI] Upmixer removed by user (channel conflict)");
+                ChannelConflictChoice::RemoveIncompatible => {
+                    // Remove in reverse order to keep indices valid
+                    let mut indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
+                    indices.sort_unstable_by(|a, b| b.cmp(a));
+                    for idx in &indices {
+                        app.plugin_chain.remove_plugin(*idx);
                     }
+                    log::info!("[TUI] Removed {} incompatible plugin(s) (channel conflict)", indices.len());
                     path.map(PlayerCommand::Play)
                 }
                 ChannelConflictChoice::Cancel => {
@@ -691,6 +695,7 @@ pub fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<Play
         }
         KeyCode::Esc | KeyCode::Char('q') => {
             app.channel_conflict_path = None;
+            app.channel_conflicts.clear();
             app.input_mode = InputMode::Normal;
             app.is_playing = false;
             None

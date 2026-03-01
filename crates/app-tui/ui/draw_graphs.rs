@@ -11,12 +11,17 @@ pub(crate) fn draw_loss_chart(
     }
 
     let x_bound = history.last().map(|h| h.0).unwrap_or(1) as f64;
+    let min_loss = history
+        .iter()
+        .map(|h| h.1)
+        .fold(f64::INFINITY, f64::min);
     let max_loss = history
         .iter()
         .map(|h| h.1)
         .fold(f64::NEG_INFINITY, f64::max);
-    let y_lo = 0.0;
-    let y_hi = max_loss * 1.05;
+    let margin = (max_loss - min_loss).abs() * 0.05;
+    let y_lo = min_loss - margin;
+    let y_hi = max_loss + margin;
 
     // Downsample to at most 200 points for chart performance
     let ds_step = (history.len() / 200).max(1);
@@ -39,14 +44,15 @@ pub(crate) fn draw_loss_chart(
         Span::raw(format!("{:.0}", x_bound)),
     ];
     let y_labels = vec![
-        Span::raw("0"),
-        Span::raw(format!("{:.4}", y_hi / 2.0)),
-        Span::raw(format!("{:.4}", max_loss)),
+        Span::raw(format!("{:.4}", y_lo)),
+        Span::raw(format!("{:.4}", (y_lo + y_hi) / 2.0)),
+        Span::raw(format!("{:.4}", y_hi)),
     ];
 
     let title = format!("Loss History  ({} iterations)", x_bound as usize);
 
     let chart = Chart::new(datasets)
+        .style(Style::default().fg(app.theme.fg_primary).bg(app.theme.bg_secondary))
         .block(Block::default().borders(Borders::ALL).title(title))
         .x_axis(
             Axis::default()
@@ -155,6 +161,7 @@ pub(crate) fn draw_freq_response_chart(
     ];
 
     let chart = Chart::new(datasets)
+        .style(Style::default().fg(app.theme.fg_primary).bg(app.theme.bg_secondary))
         .block(
             Block::default()
                 .borders(Borders::ALL)

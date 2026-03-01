@@ -27,11 +27,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             Line::from(Span::styled(st.label(), style))
         })
         .collect();
-    let tab_border_style = if s.step_tab_focused {
-        Style::default().fg(app.theme.accent_primary)
-    } else {
-        Style::default().fg(app.theme.border_color)
-    };
+    let tab_border_style = Style::default().fg(app.theme.border_color);
     let tabs = Tabs::new(tab_titles)
         .block(
             Block::default()
@@ -129,7 +125,12 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 f.render_widget(table, inner[2]);
             }
 
-            let help = Paragraph::new(" Enter=edit path  Tab=next step (after loading)")
+            let help_text = if s.editing_file_path {
+                " Enter=confirm  F2=browse  Esc=cancel"
+            } else {
+                " Enter=browse for JSON  Tab=next step"
+            };
+            let help = Paragraph::new(help_text)
                 .style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[3]);
         }
@@ -314,19 +315,26 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .percent(pct.min(100));
             f.render_widget(gauge, inner[1]);
 
-            // Hint
-            let hint = match &s.opt_status {
-                OptimizationStatus::Idle => " Enter=start  BackTab=back to configure",
-                OptimizationStatus::Running => " Optimization running...",
-                OptimizationStatus::Completed => " Enter or Tab=view results",
-                OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
-                    " Enter=retry  BackTab=back to configure"
-                }
-            };
-            let hint_para = Paragraph::new(hint)
-                .style(Style::default().fg(app.theme.fg_secondary))
-                .block(Block::default().borders(Borders::ALL).title("Info"));
-            f.render_widget(hint_para, inner[2]);
+            // Loss chart or hint
+            if s.loss_history.len() >= 2 {
+                let history: Vec<_> = s.loss_history.iter().map(|(i, l)| (*i, *l, None)).collect();
+                draw_loss_chart(f, inner[2], app, &history);
+            } else {
+                let hint = match &s.opt_status {
+                    OptimizationStatus::Idle => " Enter=start  BackTab=configure",
+                    OptimizationStatus::Running => " Optimization running...",
+                    OptimizationStatus::Completed => {
+                        " Enter=re-run  Tab=view results  BackTab=configure"
+                    }
+                    OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
+                        " Enter=retry  BackTab=configure"
+                    }
+                };
+                let hint_para = Paragraph::new(hint)
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL).title("Loss History"));
+                f.render_widget(hint_para, inner[2]);
+            }
         }
 
         RoomEqStep::Review => {

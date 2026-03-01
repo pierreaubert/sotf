@@ -334,6 +334,50 @@ impl Render for PlayerView {
                         cx.stop_propagation();
                         view.handle_spinorama_speaker_search_input(event, cx);
                     }
+                    crate::app::InputMode::ChannelConflict => {
+                        cx.stop_propagation();
+                        match event.keystroke.key.as_str() {
+                            "enter" => {
+                                // Default action: suspend incompatible plugins and play
+                                view.state.update(cx, |state, _| {
+                                    let conflicts =
+                                        std::mem::take(&mut state.app.channel_conflicts);
+                                    let indices: Vec<usize> =
+                                        conflicts.iter().map(|c| c.index).collect();
+                                    state.app.plugin_state.chain.suspend_plugins(&indices);
+                                    state
+                                        .app
+                                        .plugin_state
+                                        .chain
+                                        .update_channel_dependent_plugins();
+                                    state.app.ui_state.input_mode =
+                                        crate::app::InputMode::Normal;
+                                });
+                                let path = view
+                                    .state
+                                    .update(cx, |state, _| {
+                                        state.app.channel_conflict_path.take()
+                                    });
+                                if let Some(path) = path {
+                                    view.state.update(cx, |state, _| {
+                                        PlayerView::play_track(state, path);
+                                    });
+                                }
+                                cx.notify();
+                            }
+                            "escape" => {
+                                view.state.update(cx, |state, _| {
+                                    state.app.channel_conflict_path = None;
+                                    state.app.channel_conflicts.clear();
+                                    state.app.ui_state.input_mode =
+                                        crate::app::InputMode::Normal;
+                                    state.app.playback.is_playing = false;
+                                });
+                                cx.notify();
+                            }
+                            _ => {}
+                        }
+                    }
                     crate::app::InputMode::Normal => {
                         // Handle screen-specific shortcuts in Normal mode
                         if current_screen == crate::app::Screen::Settings

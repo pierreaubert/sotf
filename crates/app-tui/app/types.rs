@@ -64,6 +64,8 @@ pub enum SpinUpdateSubStep {
 #[derive(Debug, Clone)]
 pub struct SpinoramaEqTuiState {
     pub step: SpinoramaStep,
+    /// When true, the wizard step tab bar has focus (Left/Right change step).
+    pub step_tab_focused: bool,
     // Step 1: speaker selection
     pub search_query: String,
     pub available_speakers: Vec<String>,
@@ -113,6 +115,7 @@ impl Default for SpinoramaEqTuiState {
         config.atolerance = 1e-4;
         Self {
             step: SpinoramaStep::Select,
+            step_tab_focused: false,
             search_query: String::new(),
             available_speakers: Vec::new(),
             filtered_speakers: Vec::new(),
@@ -300,7 +303,7 @@ impl Default for RoomEqTuiState {
     fn default() -> Self {
         Self {
             step: RoomEqStep::LoadData,
-            step_tab_focused: true,
+            step_tab_focused: false,
             file_path: String::new(),
             editing_file_path: false,
             channel_measurements: Vec::new(),
@@ -440,10 +443,10 @@ pub enum FilePickerOrigin {
 /// Options presented in the channel conflict dialog
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelConflictChoice {
-    /// Disable the upmixer and play with native channels
-    DisableUpmixer,
-    /// Remove the upmixer from the chain entirely
-    RemoveUpmixer,
+    /// Suspend incompatible plugins and play (auto-restores on next compatible track)
+    SuspendIncompatible,
+    /// Remove incompatible plugins from the chain permanently
+    RemoveIncompatible,
     /// Cancel playback
     Cancel,
 }

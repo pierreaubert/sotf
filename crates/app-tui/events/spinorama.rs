@@ -29,14 +29,66 @@ pub(crate) fn spinorama_step_next(s: crate::app::SpinoramaStep) -> crate::app::S
     }
 }
 
+fn spinorama_step_prev_wrap(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
+    use crate::app::SpinoramaStep;
+    match s {
+        SpinoramaStep::Select       => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::Configure    => SpinoramaStep::Select,
+        SpinoramaStep::Optimize     => SpinoramaStep::Configure,
+        SpinoramaStep::Results      => SpinoramaStep::Optimize,
+        SpinoramaStep::UpdatePlugin => SpinoramaStep::Results,
+    }
+}
+
+fn spinorama_step_next_wrap(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
+    use crate::app::SpinoramaStep;
+    match s {
+        SpinoramaStep::Select       => SpinoramaStep::Configure,
+        SpinoramaStep::Configure    => SpinoramaStep::Optimize,
+        SpinoramaStep::Optimize     => SpinoramaStep::Results,
+        SpinoramaStep::Results      => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::UpdatePlugin => SpinoramaStep::Select,
+    }
+}
+
 pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     use crate::app::SpinoramaStep;
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 
     // Esc goes up one level within the wizard
     if key.code == KeyCode::Esc {
-        app.configure_tab_focused = true;
+        if app.spinorama_eq.step_tab_focused {
+            app.spinorama_eq.step_tab_focused = false;
+            app.configure_tab_focused = true;
+        } else {
+            app.spinorama_eq.step_tab_focused = true;
+        }
         return None;
+    }
+
+    // When the step tab bar has focus, Left/Right change step, Up goes to
+    // the top-level configure tab bar, Down/Enter returns to step content.
+    if app.spinorama_eq.step_tab_focused {
+        match key.code {
+            KeyCode::Left | KeyCode::BackTab => {
+                app.spinorama_eq.step = spinorama_step_prev_wrap(app.spinorama_eq.step);
+                return None;
+            }
+            KeyCode::Right | KeyCode::Tab => {
+                app.spinorama_eq.step = spinorama_step_next_wrap(app.spinorama_eq.step);
+                return None;
+            }
+            KeyCode::Up => {
+                app.spinorama_eq.step_tab_focused = false;
+                app.configure_tab_focused = true;
+                return None;
+            }
+            KeyCode::Down | KeyCode::Enter => {
+                app.spinorama_eq.step_tab_focused = false;
+                return None;
+            }
+            _ => return None,
+        }
     }
 
     match app.spinorama_eq.step {
@@ -45,7 +97,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 if app.spinorama_eq.selected_speaker_idx > 0 {
                     app.spinorama_eq.selected_speaker_idx -= 1;
                 } else {
-                    app.configure_tab_focused = true;
+                    app.spinorama_eq.step_tab_focused = true;
                 }
                 None
             }
@@ -90,7 +142,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 if app.spinorama_eq.selected_field > 0 {
                     app.spinorama_eq.selected_field -= 1;
                 } else {
-                    app.configure_tab_focused = true;
+                    app.spinorama_eq.step_tab_focused = true;
                 }
                 None
             }
@@ -117,12 +169,16 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 app.spinorama_eq.step = SpinoramaStep::Optimize;
                 None
             }
+            KeyCode::BackTab => {
+                app.spinorama_eq.step = SpinoramaStep::Select;
+                None
+            }
             _ => None,
         },
 
         SpinoramaStep::Optimize => match key.code {
             KeyCode::Up => {
-                app.configure_tab_focused = true;
+                app.spinorama_eq.step_tab_focused = true;
                 None
             }
             KeyCode::Enter => {
@@ -137,19 +193,27 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 }
                 None
             }
+            KeyCode::Tab => {
+                app.spinorama_eq.step = SpinoramaStep::Results;
+                None
+            }
+            KeyCode::BackTab | KeyCode::Left => {
+                app.spinorama_eq.step = SpinoramaStep::Configure;
+                None
+            }
             _ => None,
         },
 
         SpinoramaStep::Results => match key.code {
             KeyCode::Up => {
-                app.configure_tab_focused = true;
+                app.spinorama_eq.step_tab_focused = true;
                 None
             }
             KeyCode::Tab => {
                 app.spinorama_eq.step = SpinoramaStep::UpdatePlugin;
                 None
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab | KeyCode::Left => {
                 app.spinorama_eq.step = SpinoramaStep::Optimize;
                 None
             }
@@ -161,7 +225,11 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             match app.spinorama_eq.update_substep {
                 SpinUpdateSubStep::Ready => match key.code {
                     KeyCode::Up => {
-                        app.configure_tab_focused = true;
+                        app.spinorama_eq.step_tab_focused = true;
+                        None
+                    }
+                    KeyCode::BackTab | KeyCode::Left => {
+                        app.spinorama_eq.step = SpinoramaStep::Results;
                         None
                     }
                     KeyCode::Enter => {
@@ -184,10 +252,6 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                                 Err(e) => app.status_message = Some(format!("Error: {}", e)),
                             }
                         }
-                        None
-                    }
-                    KeyCode::BackTab => {
-                        app.spinorama_eq.step = SpinoramaStep::Results;
                         None
                     }
                     _ => None,

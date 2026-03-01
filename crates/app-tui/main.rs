@@ -4,7 +4,7 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
-use sotf_audio_player::{Player, PluginType};
+use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 use sotf_audio_player_tui::events::{
     poll_headphone_eq_optimization, poll_recording, poll_room_eq_optimization,
@@ -152,6 +152,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         log::warn!("Could not load saved configuration: {}", e);
     }
 
+    // Load available audio devices
+    app.load_output_devices();
+    app.load_recording_devices();
+
     // Auto-scan if:
     // 1. Explicit --scan flag provided, OR
     // 2. Database is empty and we have directories to scan
@@ -169,18 +173,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.start_library_scan();
     }
 
-    // Set initial screen based on queue state (if not scanning)
-    if !will_scan {
-        if !app.queue.is_empty() {
-            app.current_screen = Screen::Queue;
-            log::info!(
-                "Starting with Queue view (queue has {} items)",
-                app.queue.len()
-            );
-        } else {
-            app.current_screen = Screen::Library;
-            log::info!("Starting with Library view (queue is empty)");
-        }
+    // Transition from loading screen to the appropriate initial screen
+    if !app.queue.is_empty() {
+        app.current_screen = Screen::Queue;
+        log::info!(
+            "Starting with Queue view (queue has {} items)",
+            app.queue.len()
+        );
+    } else {
+        app.current_screen = Screen::Library;
+        log::info!("Starting with Library view (queue is empty)");
     }
 
     // Initialize media controls (best-effort: works without them on headless servers)
@@ -350,26 +352,21 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             let track_channels =
                                 app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
-                            // Check for upmixer + non-stereo conflict
-                            if track_channels != 2
-                                && let Some(upmixer_idx) =
-                                    app.plugin_chain.find_plugin_index(&PluginType::Upmixer)
-                                && app
-                                    .plugin_chain
-                                    .plugins()
-                                    .get(upmixer_idx)
-                                    .is_some_and(|p| p.enabled)
-                            {
+                            // Clear suspensions from previous track and check for conflicts
+                            app.plugin_chain.clear_suspensions();
+                            app.plugin_chain.update_channel_dependent_plugins();
+
+                            let conflicts = app.plugin_chain.find_channel_conflicts(track_channels);
+                            if !conflicts.is_empty() {
                                 log::info!(
-                                    "[TUI] Auto-advance channel conflict: {}ch file with upmixer enabled",
-                                    track_channels
+                                    "[TUI] Auto-advance channel conflict: {}ch file with {} incompatible plugin(s)",
+                                    track_channels,
+                                    conflicts.len()
                                 );
-                                app.channel_conflict_path = Some(path);
-                                app.channel_conflict_selection = 0;
-                                app.channel_conflict_track_channels = track_channels;
-                                app.input_mode = InputMode::ChannelConflict;
-                                update_media_controls(app, player, media_controls);
-                                continue;
+                                // Auto-suspend without modal (user already consented by continuing playback)
+                                let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
+                                app.plugin_chain.suspend_plugins(&indices);
+                                app.plugin_chain.update_channel_dependent_plugins();
                             }
 
                             if let Err(e) = start_playback(player, app, path, track_channels) {
@@ -607,20 +604,19 @@ fn handle_player_command(
 
             let track_channels = app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
 
-            // Check for upmixer + non-stereo conflict before attempting playback.
-            // The upmixer only accepts stereo (2ch) input.
-            if track_channels != 2
-                && let Some(upmixer_idx) = app.plugin_chain.find_plugin_index(&PluginType::Upmixer)
-                && app
-                    .plugin_chain
-                    .plugins()
-                    .get(upmixer_idx)
-                    .is_some_and(|p| p.enabled)
-            {
+            // Clear suspensions from previous track
+            app.plugin_chain.clear_suspensions();
+            app.plugin_chain.update_channel_dependent_plugins();
+
+            // Check for channel conflicts with all fixed-channel plugins
+            let conflicts = app.plugin_chain.find_channel_conflicts(track_channels);
+            if !conflicts.is_empty() {
                 log::info!(
-                    "[TUI] Channel conflict: {}ch file with upmixer enabled",
-                    track_channels
+                    "[TUI] Channel conflict: {}ch file with {} incompatible plugin(s)",
+                    track_channels,
+                    conflicts.len()
                 );
+                app.channel_conflicts = conflicts;
                 app.channel_conflict_path = Some(path);
                 app.channel_conflict_selection = 0;
                 app.channel_conflict_track_channels = track_channels;

@@ -167,8 +167,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_channel_conflict_modal(f, app);
     }
 
-    // Configure sub-screen modal (drawn when inside a sub-screen, not on the tab bar)
-    if app.current_screen == Screen::Configure && !app.configure_tab_focused {
+    // Configure sub-screen modal (drawn when inside a sub-screen, not on the tab bar).
+    // Skip when an overlay modal (file explorer, help, error, etc.) is active so the
+    // configure wizard content doesn't paint over it.
+    if app.current_screen == Screen::Configure
+        && !app.configure_tab_focused
+        && app.input_mode == InputMode::Normal
+    {
         draw_configure_modal(f, app);
     }
 }

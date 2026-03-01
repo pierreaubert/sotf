@@ -1,6 +1,6 @@
 [package]
 name = "sotf-tui"
-version.workspace = true
+version = "0.5.201"
 authors.workspace = true
 edition.workspace = true
 description = "TUI music player frontend for SOTF"

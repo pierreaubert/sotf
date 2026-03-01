@@ -6,61 +6,42 @@ use crossterm::event::{KeyCode, KeyEvent};
 use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
 use std::sync::{Arc, Mutex};
 
-fn step_next_wrapping(s: RoomEqStep) -> RoomEqStep {
+fn room_eq_step_prev_wrap(s: RoomEqStep) -> RoomEqStep {
     match s {
-        RoomEqStep::LoadData => RoomEqStep::Configure,
-        RoomEqStep::Configure => RoomEqStep::Optimize,
-        RoomEqStep::Optimize => RoomEqStep::Review,
-        RoomEqStep::Review => RoomEqStep::Export,
-        RoomEqStep::Export => RoomEqStep::LoadData,
+        RoomEqStep::LoadData  => RoomEqStep::Export,
+        RoomEqStep::Configure => RoomEqStep::LoadData,
+        RoomEqStep::Optimize  => RoomEqStep::Configure,
+        RoomEqStep::Review    => RoomEqStep::Optimize,
+        RoomEqStep::Export    => RoomEqStep::Review,
     }
 }
 
-fn step_prev_wrapping(s: RoomEqStep) -> RoomEqStep {
+fn room_eq_step_next_wrap(s: RoomEqStep) -> RoomEqStep {
     match s {
-        RoomEqStep::LoadData => RoomEqStep::Export,
-        RoomEqStep::Configure => RoomEqStep::LoadData,
-        RoomEqStep::Optimize => RoomEqStep::Configure,
-        RoomEqStep::Review => RoomEqStep::Optimize,
-        RoomEqStep::Export => RoomEqStep::Review,
+        RoomEqStep::LoadData  => RoomEqStep::Configure,
+        RoomEqStep::Configure => RoomEqStep::Optimize,
+        RoomEqStep::Optimize  => RoomEqStep::Review,
+        RoomEqStep::Review    => RoomEqStep::Export,
+        RoomEqStep::Export    => RoomEqStep::LoadData,
+    }
+}
+
+/// Open the file explorer for Room EQ measurement selection if no data is loaded.
+pub fn auto_open_load_data(app: &mut App) {
+    if app.room_eq.file_path.is_empty() && app.room_eq.channel_measurements.is_empty() {
+        app.open_file_explorer(
+            FilePickerOrigin::RoomEqFilePath,
+            FilePickerMode::File,
+            "Select Room EQ Measurements (JSON)",
+            Some(&app.room_eq.file_path.clone()),
+            Some("json"),
+        );
     }
 }
 
 pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    // ── Step-tab level ─────────────────────────────────────────────────────
-    if app.room_eq.step_tab_focused {
-        match key.code {
-            KeyCode::Esc => {
-                app.configure_tab_focused = true;
-            }
-            KeyCode::Left => {
-                app.room_eq.step = step_prev_wrapping(app.room_eq.step);
-            }
-            KeyCode::Right => {
-                app.room_eq.step = step_next_wrapping(app.room_eq.step);
-            }
-            KeyCode::Tab => {
-                app.room_eq.step = step_next_wrapping(app.room_eq.step);
-            }
-            KeyCode::BackTab => {
-                app.room_eq.step = step_prev_wrapping(app.room_eq.step);
-            }
-            KeyCode::Enter | KeyCode::Down => {
-                app.room_eq.step_tab_focused = false;
-            }
-            KeyCode::Up => {
-                app.configure_tab_focused = true;
-            }
-            _ => {}
-        }
-        return None;
-    }
-
-    // ── Inside a step ──────────────────────────────────────────────────────
-
-    // Esc always goes back to step tabs
+    // Esc: exit editing if active, then two-level focus (content → step tab → configure tab)
     if key.code == KeyCode::Esc {
-        // If editing a text field, exit editing first
         match app.room_eq.step {
             RoomEqStep::LoadData if app.room_eq.editing_file_path => {
                 app.room_eq.editing_file_path = false;
@@ -72,7 +53,34 @@ pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             }
             _ => {}
         }
-        app.room_eq.step_tab_focused = true;
+        if app.room_eq.step_tab_focused {
+            app.room_eq.step_tab_focused = false;
+            app.configure_tab_focused = true;
+        } else {
+            app.room_eq.step_tab_focused = true;
+        }
+        return None;
+    }
+
+    // When the step tab bar has focus, Left/Right change step, Up goes to
+    // the top-level configure tab bar, Down/Enter returns to step content.
+    if app.room_eq.step_tab_focused {
+        match key.code {
+            KeyCode::Left | KeyCode::BackTab => {
+                app.room_eq.step = room_eq_step_prev_wrap(app.room_eq.step);
+            }
+            KeyCode::Right | KeyCode::Tab => {
+                app.room_eq.step = room_eq_step_next_wrap(app.room_eq.step);
+            }
+            KeyCode::Up => {
+                app.room_eq.step_tab_focused = false;
+                app.configure_tab_focused = true;
+            }
+            KeyCode::Down | KeyCode::Enter => {
+                app.room_eq.step_tab_focused = false;
+            }
+            _ => {}
+        }
         return None;
     }
 
@@ -117,7 +125,17 @@ fn handle_load_data_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
             app.room_eq.step_tab_focused = true;
         }
         KeyCode::Enter => {
-            app.room_eq.editing_file_path = true;
+            let start = app.room_eq.file_path.clone();
+            app.open_file_explorer(
+                FilePickerOrigin::RoomEqFilePath,
+                FilePickerMode::File,
+                "Select Room EQ Measurements (JSON)",
+                Some(&start),
+                Some("json"),
+            );
+        }
+        KeyCode::Tab => {
+            app.room_eq.step = RoomEqStep::Configure;
         }
         _ => {}
     }
@@ -144,6 +162,12 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         KeyCode::Right | KeyCode::Char('+') => {
             adjust_room_eq_field(app, 1);
         }
+        KeyCode::Enter | KeyCode::Tab => {
+            app.room_eq.step = RoomEqStep::Optimize;
+        }
+        KeyCode::BackTab => {
+            app.room_eq.step = RoomEqStep::LoadData;
+        }
         _ => {}
     }
     None
@@ -162,11 +186,16 @@ fn handle_optimize_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                     spawn_room_eq_optimization(app);
                 }
                 OptimizationStatus::Completed => {
-                    app.room_eq.step = RoomEqStep::Review;
-                    app.room_eq.step_tab_focused = false;
+                    spawn_room_eq_optimization(app);
                 }
                 OptimizationStatus::Running => {}
             }
+        }
+        KeyCode::Tab => {
+            app.room_eq.step = RoomEqStep::Review;
+        }
+        KeyCode::BackTab | KeyCode::Left => {
+            app.room_eq.step = RoomEqStep::Configure;
         }
         _ => {}
     }
@@ -188,6 +217,12 @@ fn handle_review_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             {
                 app.room_eq.selected_channel += 1;
             }
+        }
+        KeyCode::Tab => {
+            app.room_eq.step = RoomEqStep::Export;
+        }
+        KeyCode::BackTab | KeyCode::Left => {
+            app.room_eq.step = RoomEqStep::Optimize;
         }
         _ => {}
     }
@@ -227,6 +262,12 @@ fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Enter => {
             app.room_eq.editing_export_path = true;
+        }
+        KeyCode::Tab => {
+            app.room_eq.step = RoomEqStep::LoadData;
+        }
+        KeyCode::BackTab | KeyCode::Left => {
+            app.room_eq.step = RoomEqStep::Review;
         }
         _ => {}
     }
@@ -717,6 +758,15 @@ mod tests {
     use crate::events::tests::{key, make_app};
     use crate::app::Screen;
 
+    fn app_on_room_eq_content() -> App {
+        let mut app = make_app();
+        app.current_screen = Screen::Configure;
+        app.configure_sub_screen = crate::app::ConfigureSubScreen::RoomEq;
+        app.configure_tab_focused = false;
+        app.room_eq.step_tab_focused = false;
+        app
+    }
+
     #[test]
     fn room_eq_step_prev_does_not_wrap() {
         assert_eq!(RoomEqStep::LoadData.previous(), None);
@@ -740,84 +790,202 @@ mod tests {
         assert!(progress <= 1.0);
     }
 
+    // ── Esc: two-level focus (content → step tab → configure tab) ────────
+
     #[test]
-    fn room_eq_esc_at_step_tab_returns_to_configure_tabs() {
-        let mut app = make_app();
-        app.current_screen = Screen::Configure;
-        app.configure_sub_screen = crate::app::ConfigureSubScreen::RoomEq;
-        app.configure_tab_focused = false;
+    fn room_eq_esc_from_content_goes_to_step_tab() {
+        let mut app = app_on_room_eq_content();
         app.room_eq.step = RoomEqStep::LoadData;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(app.room_eq.step_tab_focused, "Esc from content should focus step tab bar");
+        assert!(!app.configure_tab_focused, "should NOT jump to configure tab bar");
+    }
+
+    #[test]
+    fn room_eq_esc_from_step_tab_goes_to_configure_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Configure;
         app.room_eq.step_tab_focused = true;
 
         handle_room_eq_keys(&mut app, key(KeyCode::Esc));
         assert!(app.configure_tab_focused);
-    }
-
-    #[test]
-    fn room_eq_esc_inside_step_returns_to_step_tabs() {
-        let mut app = make_app();
-        app.room_eq.step = RoomEqStep::Configure;
-        app.room_eq.step_tab_focused = false;
-
-        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
-        assert!(app.room_eq.step_tab_focused);
-        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
-    }
-
-    #[test]
-    fn room_eq_tab_cycles_steps() {
-        let mut app = make_app();
-        app.room_eq.step = RoomEqStep::LoadData;
-        app.room_eq.step_tab_focused = true;
-
-        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
-        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
-
-        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
-        assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
-    }
-
-    #[test]
-    fn room_eq_tab_wraps_from_export_to_load() {
-        let mut app = make_app();
-        app.room_eq.step = RoomEqStep::Export;
-        app.room_eq.step_tab_focused = true;
-
-        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
-        assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
-    }
-
-    #[test]
-    fn room_eq_left_right_at_step_level() {
-        let mut app = make_app();
-        app.room_eq.step = RoomEqStep::Configure;
-        app.room_eq.step_tab_focused = true;
-
-        handle_room_eq_keys(&mut app, key(KeyCode::Right));
-        assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
-
-        handle_room_eq_keys(&mut app, key(KeyCode::Left));
-        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
-    }
-
-    #[test]
-    fn room_eq_enter_goes_into_step() {
-        let mut app = make_app();
-        app.room_eq.step = RoomEqStep::Configure;
-        app.room_eq.step_tab_focused = true;
-
-        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
         assert!(!app.room_eq.step_tab_focused);
     }
 
     #[test]
-    fn room_eq_up_on_first_field_goes_to_step_tabs() {
-        let mut app = make_app();
+    fn room_eq_esc_chain_content_to_step_to_configure() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+
+        // First Esc → step tab bar
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(app.room_eq.step_tab_focused);
+        assert!(!app.configure_tab_focused);
+
+        // Second Esc → configure tab bar
+        handle_room_eq_keys(&mut app, key(KeyCode::Esc));
+        assert!(app.configure_tab_focused);
+        assert!(!app.room_eq.step_tab_focused);
+    }
+
+    // ── Step tab bar navigation ──────────────────────────────────────────
+
+    #[test]
+    fn room_eq_step_tab_right_changes_step() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::LoadData;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Right));
+        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+        assert!(app.room_eq.step_tab_focused, "should stay on step tab bar");
+    }
+
+    #[test]
+    fn room_eq_step_tab_left_changes_step() {
+        let mut app = app_on_room_eq_content();
         app.room_eq.step = RoomEqStep::Configure;
-        app.room_eq.step_tab_focused = false;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Left));
+        assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
+        assert!(app.room_eq.step_tab_focused);
+    }
+
+    #[test]
+    fn room_eq_step_tab_wraps_forward() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Export;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Right));
+        assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
+    }
+
+    #[test]
+    fn room_eq_step_tab_wraps_backward() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::LoadData;
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Left));
+        assert_eq!(app.room_eq.step, RoomEqStep::Export);
+    }
+
+    #[test]
+    fn room_eq_step_tab_up_goes_to_configure_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert!(app.configure_tab_focused);
+        assert!(!app.room_eq.step_tab_focused);
+    }
+
+    #[test]
+    fn room_eq_step_tab_down_enters_content() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Down));
+        assert!(!app.room_eq.step_tab_focused);
+        assert!(!app.configure_tab_focused);
+    }
+
+    #[test]
+    fn room_eq_step_tab_enter_enters_content() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step_tab_focused = true;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Enter));
+        assert!(!app.room_eq.step_tab_focused);
+        assert!(!app.configure_tab_focused);
+    }
+
+    // ── Content-level: Up at top goes to step tab bar ────────────────────
+
+    #[test]
+    fn room_eq_up_on_load_data_goes_to_step_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::LoadData;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert!(app.room_eq.step_tab_focused, "Up from LoadData should go to step tab");
+        assert!(!app.configure_tab_focused, "should NOT jump to configure tab");
+    }
+
+    #[test]
+    fn room_eq_up_on_configure_first_field_goes_to_step_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Configure;
         app.room_eq.selected_field = 0;
 
         handle_room_eq_keys(&mut app, key(KeyCode::Up));
         assert!(app.room_eq.step_tab_focused);
+        assert!(!app.configure_tab_focused);
+    }
+
+    #[test]
+    fn room_eq_up_on_optimize_goes_to_step_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert!(app.room_eq.step_tab_focused);
+        assert!(!app.configure_tab_focused);
+    }
+
+    #[test]
+    fn room_eq_up_on_review_first_channel_goes_to_step_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Review;
+        app.room_eq.selected_channel = 0;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert!(app.room_eq.step_tab_focused);
+        assert!(!app.configure_tab_focused);
+    }
+
+    #[test]
+    fn room_eq_up_on_export_goes_to_step_tab() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Export;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Up));
+        assert!(app.room_eq.step_tab_focused);
+        assert!(!app.configure_tab_focused);
+    }
+
+    // ── Content-level: Tab/BackTab still advance steps ───────────────────
+
+    #[test]
+    fn room_eq_content_tab_advances_steps() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::LoadData;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Optimize);
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Review);
+
+        handle_room_eq_keys(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Export);
+    }
+
+    #[test]
+    fn room_eq_content_backtab_goes_back() {
+        let mut app = app_on_room_eq_content();
+        app.room_eq.step = RoomEqStep::Optimize;
+
+        handle_room_eq_keys(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.room_eq.step, RoomEqStep::Configure);
+
+        handle_room_eq_keys(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.room_eq.step, RoomEqStep::LoadData);
     }
 }

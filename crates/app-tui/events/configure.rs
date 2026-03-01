@@ -61,6 +61,11 @@ pub fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             }
             KeyCode::Enter => {
                 app.configure_tab_focused = false;
+                if app.configure_sub_screen == ConfigureSubScreen::RoomEq
+                    && app.room_eq.step == sotf_audio_player::room_eq_types::RoomEqStep::LoadData
+                {
+                    super::room_eq::auto_open_load_data(app);
+                }
                 return None;
             }
             KeyCode::Char('1') => {
@@ -76,6 +81,9 @@ pub fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             KeyCode::Char('3') => {
                 app.configure_sub_screen = ConfigureSubScreen::RoomEq;
                 app.configure_tab_focused = false;
+                if app.room_eq.step == sotf_audio_player::room_eq_types::RoomEqStep::LoadData {
+                    super::room_eq::auto_open_load_data(app);
+                }
                 return None;
             }
             KeyCode::Char('4') => {

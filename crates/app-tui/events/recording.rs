@@ -182,7 +182,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 }
                 None
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab | KeyCode::Left => {
                 app.recording.step = RecordingStep::Config;
                 None
             }
@@ -214,7 +214,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 app.recording.step = RecordingStep::Saving;
                 None
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab | KeyCode::Left => {
                 app.recording.step = RecordingStep::Capture;
                 None
             }
@@ -248,7 +248,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 KeyCode::Tab => {
                     app.recording.step = RecordingStep::Config;
                 }
-                KeyCode::BackTab => {
+                KeyCode::BackTab | KeyCode::Left => {
                     app.recording.step = RecordingStep::Evaluating;
                 }
                 _ => {}

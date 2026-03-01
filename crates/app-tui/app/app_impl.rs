@@ -1,7 +1,7 @@
 use crate::theme::Theme;
 use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
-use sotf_audio_player::{Album, MusicLibrary, PluginChain, Track};
+use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, PluginChain, Track};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -41,9 +41,10 @@ pub struct App {
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
 
     // Channel conflict dialog state
-    pub channel_conflict_path: Option<PathBuf>, // File pending playback
-    pub channel_conflict_selection: usize,      // Currently highlighted option (0-2)
-    pub channel_conflict_track_channels: usize, // File's channel count
+    pub channel_conflict_path: Option<PathBuf>,      // File pending playback
+    pub channel_conflict_selection: usize,            // Currently highlighted option (0-2)
+    pub channel_conflict_track_channels: usize,       // File's channel count
+    pub channel_conflicts: Vec<ChannelConflict>,      // All incompatible plugins
 
     // Cached filtered results
     pub cached_filtered_albums: Vec<Album>,
@@ -205,7 +206,7 @@ impl App {
         Self {
             library,
             queue: Vec::new(),
-            current_screen: Screen::Library,
+            current_screen: Screen::Loading,
             input_mode: InputMode::Normal,
             focused_pane: FocusedPane::Main,
             theme,
@@ -226,6 +227,7 @@ impl App {
             channel_conflict_path: None,
             channel_conflict_selection: 0,
             channel_conflict_track_channels: 2,
+            channel_conflicts: Vec::new(),
             cached_filtered_albums: Vec::new(),
             needs_filter_update: true,
             autocomplete_suggestions: Vec::new(),

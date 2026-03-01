@@ -181,7 +181,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app-cli"
-version = "0.5.11"
+version = "0.5.21"
 dependencies = [
  "autoeq-env",
  "chrono",
@@ -8555,7 +8555,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.11"
+version = "0.5.111"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -9005,7 +9005,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.11"
+version = "0.5.201"
 dependencies = [
  "autoeq",
  "chrono",
@@ -10055,7 +10055,7 @@ checksum = "ab16f14aed21ee8bfd8ec22513f7287cd4a91aa92e44edfe2c17ddd004e92607"
 
 [[package]]
 name = "tools"
-version = "0.5.11"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "bincode",

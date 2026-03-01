@@ -1,6 +1,6 @@
 [package]
 name = "tools"
-version.workspace = true
+version = "0.5.4"
 authors.workspace = true
 edition.workspace = true
 description = "Tools for generating test signal or converting formats"

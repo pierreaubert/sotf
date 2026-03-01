@@ -486,8 +486,11 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
 
 pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     let area = f.area();
+    // Dynamic height: 2 (header) + 1 (blank) + conflicts + 1 (blank) + 3 (options) + 1 (blank) + 1 (help) + 3 (border)
+    let conflict_lines = app.channel_conflicts.len().max(1);
+    let content_height = 2 + 1 + conflict_lines + 1 + 3 + 1 + 1;
     let modal_width = 56u16.min(area.width.saturating_sub(4));
-    let modal_height = 14u16.min(area.height.saturating_sub(4));
+    let modal_height = (content_height as u16 + 3).min(area.height.saturating_sub(4));
     let modal_x = (area.width - modal_width) / 2;
     let modal_y = (area.height - modal_height) / 2;
 
@@ -523,25 +526,40 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     let highlight_style = Style::default()
         .fg(app.theme.accent_primary)
         .add_modifier(Modifier::BOLD);
+    let warn_style = Style::default().fg(Color::Yellow);
 
     let mut lines = vec![];
 
     lines.push(Line::from(Span::styled(
         format!(
-            "This track has {} channels but the upmixer",
+            "This track has {} channels but these plugins",
             app.channel_conflict_track_channels
         ),
         text_style,
     )));
     lines.push(Line::from(Span::styled(
-        "only supports stereo (2ch) input.",
+        "are incompatible:",
         text_style,
     )));
     lines.push(Line::from(""));
 
+    for conflict in &app.channel_conflicts {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {} (requires {}ch, got {}ch)",
+                conflict.plugin_type.name(),
+                conflict.required_channels,
+                conflict.actual_channels
+            ),
+            warn_style,
+        )));
+    }
+
+    lines.push(Line::from(""));
+
     let options = [
-        "Disable upmixer and play",
-        "Remove upmixer and play",
+        "Suspend incompatible and play",
+        "Remove incompatible and play",
         "Cancel playback",
     ];
 

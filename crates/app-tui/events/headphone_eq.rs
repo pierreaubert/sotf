@@ -232,7 +232,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 }
                 None
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab | KeyCode::Left => {
                 app.headphone_eq.step = HeadphoneEqStep::Configure;
                 None
             }
@@ -248,7 +248,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 app.headphone_eq.step = HeadphoneEqStep::UpdatePlugin;
                 None
             }
-            KeyCode::BackTab => {
+            KeyCode::BackTab | KeyCode::Left => {
                 app.headphone_eq.step = HeadphoneEqStep::Optimize;
                 None
             }
@@ -281,7 +281,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         }
                         None
                     }
-                    KeyCode::BackTab => {
+                    KeyCode::BackTab | KeyCode::Left => {
                         app.headphone_eq.step = HeadphoneEqStep::Results;
                         None
                     }
