@@ -239,8 +239,8 @@ impl PlayerView {
         let art_div = div()
             .w(rems(footer_height_rems))
             .h(rems(footer_height_rems))
-            // Only round bottom-left corner to match window
-            .rounded_bl(px(10.0))
+            // Only round bottom-left corner to match window (0.625rem ≈ 10px at base)
+            .rounded_bl(rems(0.625))
             .bg(surface_hover)
             .overflow_hidden()
             .flex_shrink_0();
@@ -937,7 +937,7 @@ impl PlayerView {
                     .px_3()
                     .py_1()
                     .mx_1()
-                    .my(rems(0.0625))
+                    .my(px(1.0))
                     .rounded_sm()
                     .cursor_pointer()
                     .text_sm()

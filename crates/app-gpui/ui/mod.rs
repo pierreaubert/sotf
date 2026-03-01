@@ -770,7 +770,8 @@ impl PlayerView {
             let app = &mut state.app;
 
             let responsive_scale = compute_responsive_scale(window_width, window_height);
-            let effective_rem = 16.0 * font_scale * responsive_scale;
+            let combined_scale = (font_scale * responsive_scale).clamp(0.25, 3.0);
+            let effective_rem = 16.0 * combined_scale;
 
             // Card width in pixels: 8.75 rem (matching album_card.rs)
             // Plus gap_4 = 1rem gap
@@ -783,8 +784,10 @@ impl PlayerView {
             let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
             app.library_state.library_columns = columns;
 
-            // Estimate available height for grid (header/footer areas scale too)
-            let chrome_height = 18.0 * effective_rem; // ~290px at base scale
+            // Estimate available height for grid chrome (all heights scale with rem):
+            //   Header ~2.5rem (40px) + Stats ~6.25rem (100px) + Filter ~2.5rem (40px)
+            //   + Pagination ~3.125rem (50px) + Footer ~3.625rem (58px) ≈ 18rem
+            let chrome_height = 18.0 * effective_rem;
             let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
             let card_height = 11.25 * effective_rem; // ~180px at base (thumbnail + text)
             let rows = (available_height / card_height).floor().max(1.0) as usize;
@@ -825,3 +828,35 @@ include!("split_view.rs");
 include!("switch.rs");
 include!("three_panel_layout.rs");
 include!("volume.rs");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_responsive_scale_reference_size() {
+        let scale = compute_responsive_scale(1200.0, 800.0);
+        assert_eq!(scale, 1.0);
+    }
+
+    #[test]
+    fn test_compute_responsive_scale_min_clamp() {
+        // Very small window — clamped to 0.55
+        let scale = compute_responsive_scale(100.0, 100.0);
+        assert_eq!(scale, 0.55);
+    }
+
+    #[test]
+    fn test_compute_responsive_scale_max_clamp() {
+        // 4K window — clamped to 2.5
+        let scale = compute_responsive_scale(3840.0, 2160.0);
+        assert_eq!(scale, 2.5);
+    }
+
+    #[test]
+    fn test_compute_responsive_scale_uses_constraining_axis() {
+        // Wide but short — height is the bottleneck
+        let scale = compute_responsive_scale(2400.0, 400.0);
+        assert!((scale - 0.55).abs() < 0.01); // 400/800 = 0.5 → clamped to 0.55
+    }
+}
