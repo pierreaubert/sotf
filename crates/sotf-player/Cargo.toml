@@ -1,6 +1,6 @@
 [package]
 name = "sotf-player"
-version.workspace = true
+version = "0.5.111"
 authors.workspace = true
 edition.workspace = true
 description = "Shared business logic for SOTF audio players"

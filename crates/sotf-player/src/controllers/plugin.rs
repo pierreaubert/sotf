@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use crate::{
-    BiquadFilterType, EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
+    BiquadFilterType, ChannelConflict, EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
 };
 
 // Re-export param_index_to_engine_param as a free function (used by GPUI apply_plugin_update)
@@ -830,6 +830,30 @@ impl PluginController {
         }
 
         PluginUpdateEffect::Structural
+    }
+
+    // -- Channel conflict detection & suspension --
+
+    pub fn find_channel_conflicts(&self, input_channels: usize) -> Vec<ChannelConflict> {
+        self.chain.find_channel_conflicts(input_channels)
+    }
+
+    /// Find and suspend all incompatible plugins, then update channel-dependent plugins.
+    pub fn suspend_incompatible(&mut self, input_channels: usize) {
+        let conflicts = self.chain.find_channel_conflicts(input_channels);
+        let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
+        self.chain.suspend_plugins(&indices);
+        self.chain.update_channel_dependent_plugins();
+    }
+
+    /// Clear all suspensions and update channel-dependent plugins.
+    pub fn clear_suspensions(&mut self) {
+        self.chain.clear_suspensions();
+        self.chain.update_channel_dependent_plugins();
+    }
+
+    pub fn has_suspensions(&self) -> bool {
+        self.chain.has_suspensions()
     }
 }
 

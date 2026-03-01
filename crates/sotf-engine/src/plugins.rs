@@ -1273,6 +1273,17 @@ impl PluginSettings {
         }
     }
 
+    /// Returns the fixed input channel count this plugin requires, or None if it adapts to any.
+    pub fn required_input_channels(&self) -> Option<usize> {
+        match self {
+            Self::Upmixer { .. } => Some(2),
+            Self::XTC { .. } => Some(2),
+            Self::Crossfeed { .. } => Some(2),
+            Self::MonoToStereo { .. } => Some(1),
+            _ => None,
+        }
+    }
+
     pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
         match self {
             Self::Crossfeed {
@@ -2760,6 +2771,15 @@ fn default_plugin_preset_version() -> u32 {
     1
 }
 
+/// A plugin that is incompatible with the current channel count.
+#[derive(Debug, Clone)]
+pub struct ChannelConflict {
+    pub index: usize,
+    pub plugin_type: PluginType,
+    pub required_channels: usize,
+    pub actual_channels: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plugin {
     pub id: usize,
@@ -2768,6 +2788,9 @@ pub struct Plugin {
     /// If true, this plugin cannot be removed from the chain (part of default rack)
     #[serde(default)]
     pub permanent: bool,
+    /// Temporarily disabled due to channel incompatibility; auto-restores on compatible tracks
+    #[serde(skip)]
+    pub suspended: bool,
 }
 
 impl Plugin {
@@ -2777,6 +2800,7 @@ impl Plugin {
             enabled: true,
             settings: PluginSettings::default_for(plugin_type),
             permanent: false,
+            suspended: false,
         }
     }
 
@@ -2787,6 +2811,7 @@ impl Plugin {
             enabled: true,
             settings: PluginSettings::default_for(plugin_type),
             permanent: true,
+            suspended: false,
         }
     }
 
@@ -2800,7 +2825,7 @@ impl Plugin {
     }
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> Option<PluginConfig> {
-        if self.enabled {
+        if self.enabled && !self.suspended {
             Some(self.settings.to_plugin_config(sample_rate))
         } else {
             None
@@ -3127,7 +3152,7 @@ impl PluginChain {
     /// 3. Other monitoring plugins (subsequent LoudnessMonitors, Spectrum, etc.) - at the end
     pub fn get_engine_index(&self, ui_index: usize) -> Option<usize> {
         let target_plugin = self.plugins.get(ui_index)?;
-        if !target_plugin.enabled {
+        if !target_plugin.enabled || target_plugin.suspended {
             return None;
         }
 
@@ -3150,7 +3175,7 @@ impl PluginChain {
         // An input monitor exists in the engine if the first permanent one is enabled.
         let has_input_monitor = first_permanent_loudness_idx
             .and_then(|idx| self.plugins.get(idx))
-            .map(|p| p.enabled)
+            .map(|p| p.enabled && !p.suspended)
             .unwrap_or(false);
         let input_monitor_offset = if has_input_monitor { 1 } else { 0 };
 
@@ -3162,7 +3187,7 @@ impl PluginChain {
                 if i == ui_index {
                     return Some(engine_idx);
                 }
-                if p.enabled && !p.plugin_type().is_monitoring() {
+                if p.enabled && !p.suspended && !p.plugin_type().is_monitoring() {
                     engine_idx += 1;
                 }
             }
@@ -3173,7 +3198,7 @@ impl PluginChain {
             // 1. Count all enabled processing plugins
             let mut engine_idx = input_monitor_offset;
             for p in &self.plugins {
-                if p.enabled && !p.plugin_type().is_monitoring() {
+                if p.enabled && !p.suspended && !p.plugin_type().is_monitoring() {
                     engine_idx += 1;
                 }
             }
@@ -3186,7 +3211,7 @@ impl PluginChain {
                 if i == ui_index {
                     return Some(engine_idx);
                 }
-                if p.enabled && p.plugin_type().is_monitoring() {
+                if p.enabled && !p.suspended && p.plugin_type().is_monitoring() {
                     engine_idx += 1;
                 }
             }
@@ -3356,7 +3381,7 @@ impl PluginChain {
     pub fn output_channels_for_input(&self, input_channels: usize) -> usize {
         // Walk backwards through the chain to find the last channel-count-changing plugin
         for plugin in self.plugins.iter().rev() {
-            if !plugin.enabled {
+            if !plugin.enabled || plugin.suspended {
                 continue;
             }
 
@@ -3393,7 +3418,7 @@ impl PluginChain {
     pub fn adapt_matrix_to_input(&mut self, file_channels: usize) {
         let mut running_channels = file_channels;
         for plugin in &mut self.plugins {
-            if !plugin.enabled {
+            if !plugin.enabled || plugin.suspended {
                 continue;
             }
             // Track channel changes from plugins before the matrix
@@ -3447,6 +3472,82 @@ impl PluginChain {
                 break; // Only adapt the first enabled matrix
             }
         }
+    }
+
+    /// Find all enabled (non-suspended) plugins incompatible with the given input channel count.
+    /// Walks the chain tracking running channel count through channel-changing plugins.
+    pub fn find_channel_conflicts(&self, input_channels: usize) -> Vec<ChannelConflict> {
+        let mut conflicts = Vec::new();
+        let mut running_channels = input_channels;
+
+        for (index, plugin) in self.plugins.iter().enumerate() {
+            if !plugin.enabled || plugin.suspended {
+                continue;
+            }
+
+            if let Some(required) = plugin.settings.required_input_channels() {
+                if required != running_channels {
+                    conflicts.push(ChannelConflict {
+                        index,
+                        plugin_type: plugin.plugin_type(),
+                        required_channels: required,
+                        actual_channels: running_channels,
+                    });
+                    continue;
+                }
+            }
+
+            // Track channel changes through the chain
+            match &plugin.settings {
+                PluginSettings::Upmixer { speaker_config, .. } => {
+                    running_channels = upmixer_output_channels(speaker_config);
+                }
+                PluginSettings::BinauralDecoder { .. } => {
+                    running_channels = 2;
+                }
+                PluginSettings::Downmix { .. } => {
+                    running_channels = 2;
+                }
+                PluginSettings::MonoToStereo { .. } => {
+                    running_channels = 2;
+                }
+                PluginSettings::Matrix {
+                    output_channels, ..
+                } => {
+                    running_channels = *output_channels;
+                }
+                PluginSettings::BandSplit { .. } => {
+                    running_channels *= 2;
+                }
+                PluginSettings::BandMerge { bands, .. } => {
+                    running_channels /= if *bands > 0 { *bands } else { 2 };
+                }
+                _ => {}
+            }
+        }
+
+        conflicts
+    }
+
+    /// Suspend the plugins at the given indices (set suspended = true).
+    pub fn suspend_plugins(&mut self, indices: &[usize]) {
+        for &idx in indices {
+            if let Some(plugin) = self.plugins.get_mut(idx) {
+                plugin.suspended = true;
+            }
+        }
+    }
+
+    /// Clear all suspensions (set suspended = false on all plugins).
+    pub fn clear_suspensions(&mut self) {
+        for plugin in &mut self.plugins {
+            plugin.suspended = false;
+        }
+    }
+
+    /// Returns true if any plugin is currently suspended.
+    pub fn has_suspensions(&self) -> bool {
+        self.plugins.iter().any(|p| p.suspended)
     }
 
     /// Save the plugin chain to a JSON file
@@ -3763,7 +3864,7 @@ impl PluginChain {
             }
 
             // Update output channels for next plugin
-            if self.plugins[i].enabled {
+            if self.plugins[i].enabled && !self.plugins[i].suspended {
                 match &self.plugins[i].settings {
                     PluginSettings::Upmixer { speaker_config, .. } => {
                         current_channels = upmixer_output_channels(speaker_config);

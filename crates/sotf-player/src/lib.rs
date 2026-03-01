@@ -62,6 +62,7 @@ pub use replay_gain_scanner::{
     AlbumGainPhase, ReplayGainMode, ReplayGainScanManager, ReplayGainScanner, ScanMessage,
 };
 pub use sotf_audio::plugins::{
+    ChannelConflict,
     EQFilter,
     Plugin,
     PluginChain,
