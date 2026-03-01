@@ -61,6 +61,8 @@ pub enum InputMode {
     EmptyLibraryPrompt,
     /// Modal for editing a plugin node in the graph view
     EditingPluginNode,
+    /// Modal shown when track channels conflict with plugins in the chain
+    ChannelConflict,
 }
 
 impl InputMode {

@@ -53,8 +53,9 @@ mod tests {
             InputMode::About,
             InputMode::EditingParam,
             InputMode::SpinoramaSpeakerSearch,
+            InputMode::ChannelConflict,
         ];
-        assert_eq!(modes.len(), 12);
+        assert_eq!(modes.len(), 13);
     }
 
     // ============================================================================

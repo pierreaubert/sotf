@@ -260,7 +260,7 @@ impl PlayerView {
                             // Check if playback ended and auto-advance
                             state.app.stop_track_tracking();
                             if let Some(path) = state.app.next_track() {
-                                Self::play_track(state, path);
+                                Self::play_track_auto_advance(state, path);
                             } else {
                                 state.app.playback.is_playing = false;
                             }
@@ -650,10 +650,79 @@ impl PlayerView {
         Self::play_track_at(state, path, None);
     }
 
+    /// Auto-advance variant: auto-suspends incompatible plugins without showing a dialog.
+    pub(crate) fn play_track_auto_advance(state: &mut AppState, path: std::path::PathBuf) {
+        let track_channels = state
+            .app
+            .playback
+            .current_queue_index
+            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|item| item.current_track())
+            .and_then(|track| track.channels)
+            .unwrap_or(2) as usize;
+
+        // Clear suspensions from previous track
+        state.app.plugin_state.chain.clear_suspensions();
+        state.app.plugin_state.chain.update_channel_dependent_plugins();
+
+        let conflicts = state.app.plugin_state.chain.find_channel_conflicts(track_channels);
+        if !conflicts.is_empty() {
+            log::info!(
+                "[GPUI] Auto-advance: suspending {} incompatible plugin(s) for {}ch track",
+                conflicts.len(),
+                track_channels
+            );
+            let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
+            state.app.plugin_state.chain.suspend_plugins(&indices);
+            state.app.plugin_state.chain.update_channel_dependent_plugins();
+        }
+
+        Self::play_track_at_inner(state, path, None, track_channels);
+    }
+
     pub(crate) fn play_track_at(
         state: &mut AppState,
         path: std::path::PathBuf,
         position: Option<f64>,
+    ) {
+        let track_channels = state
+            .app
+            .playback
+            .current_queue_index
+            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|item| item.current_track())
+            .and_then(|track| track.channels)
+            .unwrap_or(2) as usize;
+
+        // Clear suspensions from previous track
+        state.app.plugin_state.chain.clear_suspensions();
+        state.app.plugin_state.chain.update_channel_dependent_plugins();
+
+        // Check for channel conflicts with all fixed-channel plugins
+        let conflicts = state.app.plugin_state.chain.find_channel_conflicts(track_channels);
+        if !conflicts.is_empty() {
+            log::info!(
+                "[GPUI] Channel conflict: {}ch file with {} incompatible plugin(s)",
+                track_channels,
+                conflicts.len()
+            );
+            state.app.channel_conflicts = conflicts;
+            state.app.channel_conflict_path = Some(path);
+            state.app.channel_conflict_track_channels = track_channels;
+            state.app.ui_state.input_mode = crate::app::InputMode::ChannelConflict;
+            return;
+        }
+
+        Self::play_track_at_inner(state, path, position, track_channels);
+    }
+
+    /// Inner play logic after conflict resolution. Called by both play_track_at and
+    /// play_track_auto_advance after suspensions are handled.
+    fn play_track_at_inner(
+        state: &mut AppState,
+        path: std::path::PathBuf,
+        position: Option<f64>,
+        track_channels: usize,
     ) {
         let track_sample_rate = state
             .app
@@ -681,14 +750,6 @@ impl PlayerView {
         let sample_rate =
             sotf_audio::select_output_sample_rate(track_sample_rate, device_name.as_deref()) as f64;
 
-        let track_channels = state
-            .app
-            .playback
-            .current_queue_index
-            .and_then(|idx| state.app.queue.get(idx))
-            .and_then(|item| item.current_track())
-            .and_then(|track| track.channels)
-            .unwrap_or(2) as usize;
         state
             .app
             .plugin_state

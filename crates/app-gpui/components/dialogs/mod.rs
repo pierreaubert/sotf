@@ -1371,4 +1371,176 @@ impl PlayerView {
         });
         cx.notify();
     }
+
+    pub(crate) fn render_channel_conflict_dialog(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let track_channels = state.app.channel_conflict_track_channels;
+        let conflict_names: Vec<String> = state
+            .app
+            .channel_conflicts
+            .iter()
+            .map(|c| {
+                format!(
+                    "{} (requires {}ch, got {}ch)",
+                    c.plugin_type.name(),
+                    c.required_channels,
+                    c.actual_channels
+                )
+            })
+            .collect();
+
+        Dialog::new("channel-conflict-dialog")
+            .title("Channel Conflict")
+            .size(DialogSize::Sm)
+            .on_close({
+                let state_entity = self.state.clone();
+                move |_window, cx| {
+                    let state_entity = state_entity.clone();
+                    cx.defer(move |cx| {
+                        state_entity.update(cx, |state, _| {
+                            state.app.channel_conflict_path = None;
+                            state.app.channel_conflicts.clear();
+                            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                            state.app.playback.is_playing = false;
+                        });
+                    });
+                }
+            })
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(
+                        Text::new(format!(
+                            "This track has {} channels but the following plugins are incompatible:",
+                            track_channels
+                        ))
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                    )
+                    .children(conflict_names.iter().map(|name| {
+                        Text::new(format!("  {}", name))
+                            .size(TextSize::Sm)
+                            .color(theme.warning)
+                            .into_any_element()
+                    }))
+                    .child(div().h_2())
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .width(StackSize::Full)
+                            .child(
+                                gpui_ui_kit::Button::new(
+                                    "conflict-suspend",
+                                    "Suspend incompatible and play",
+                                )
+                                .variant(gpui_ui_kit::ButtonVariant::Primary)
+                                .size(gpui_ui_kit::ButtonSize::Sm)
+                                .full_width(true)
+                                .on_click({
+                                    let state_entity = self.state.clone();
+                                    move |_event, cx| {
+                                        let state_entity = state_entity.clone();
+                                        cx.defer(move |cx| {
+                                            state_entity.update(cx, |state, _| {
+                                                let conflicts =
+                                                    std::mem::take(&mut state.app.channel_conflicts);
+                                                let indices: Vec<usize> =
+                                                    conflicts.iter().map(|c| c.index).collect();
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .chain
+                                                    .suspend_plugins(&indices);
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .chain
+                                                    .update_channel_dependent_plugins();
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                            });
+                                            // Play the pending track
+                                            let path = state_entity
+                                                .update(cx, |state, _| {
+                                                    state.app.channel_conflict_path.take()
+                                                });
+                                            if let Some(path) = path {
+                                                state_entity.update(cx, |state, _| {
+                                                    PlayerView::play_track(state, path);
+                                                });
+                                            }
+                                        });
+                                    }
+                                }),
+                            )
+                            .child(
+                                gpui_ui_kit::Button::new(
+                                    "conflict-remove",
+                                    "Remove incompatible and play",
+                                )
+                                .variant(gpui_ui_kit::ButtonVariant::Destructive)
+                                .size(gpui_ui_kit::ButtonSize::Sm)
+                                .full_width(true)
+                                .on_click({
+                                    let state_entity = self.state.clone();
+                                    move |_event, cx| {
+                                        let state_entity = state_entity.clone();
+                                        cx.defer(move |cx| {
+                                            state_entity.update(cx, |state, _| {
+                                                let conflicts =
+                                                    std::mem::take(&mut state.app.channel_conflicts);
+                                                let mut indices: Vec<usize> =
+                                                    conflicts.iter().map(|c| c.index).collect();
+                                                indices.sort_unstable_by(|a, b| b.cmp(a));
+                                                for idx in &indices {
+                                                    state
+                                                        .app
+                                                        .plugin_state
+                                                        .chain
+                                                        .remove_plugin(*idx);
+                                                }
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                            });
+                                            let path = state_entity
+                                                .update(cx, |state, _| {
+                                                    state.app.channel_conflict_path.take()
+                                                });
+                                            if let Some(path) = path {
+                                                state_entity.update(cx, |state, _| {
+                                                    PlayerView::play_track(state, path);
+                                                });
+                                            }
+                                        });
+                                    }
+                                }),
+                            )
+                            .child(
+                                gpui_ui_kit::Button::new("conflict-cancel", "Cancel playback")
+                                    .variant(gpui_ui_kit::ButtonVariant::Ghost)
+                                    .size(gpui_ui_kit::ButtonSize::Sm)
+                                    .full_width(true)
+                                    .on_click({
+                                        let state_entity = self.state.clone();
+                                        move |_event, cx| {
+                                            let state_entity = state_entity.clone();
+                                            cx.defer(move |cx| {
+                                                state_entity.update(cx, |state, _| {
+                                                    state.app.channel_conflict_path = None;
+                                                    state.app.channel_conflicts.clear();
+                                                    state.app.ui_state.input_mode =
+                                                        crate::app::InputMode::Normal;
+                                                    state.app.playback.is_playing = false;
+                                                });
+                                            });
+                                        }
+                                    }),
+                            ),
+                    ),
+            )
+    }
 }

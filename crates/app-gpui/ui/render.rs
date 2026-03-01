@@ -421,6 +421,10 @@ impl Render for PlayerView {
                 input_mode == crate::app::InputMode::EditingPluginNode,
                 |div| div.child(self.render_plugin_node_modal(cx)),
             )
+            .when(
+                input_mode == crate::app::InputMode::ChannelConflict,
+                |div| div.child(self.render_channel_conflict_dialog(cx)),
+            )
             // Scan progress modal
             .child(self.render_scan_progress_modal(cx))
             // Migration modal for recording format conversion

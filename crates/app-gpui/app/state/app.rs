@@ -190,6 +190,11 @@ pub struct App {
     pub current_track_path: Option<std::path::PathBuf>,
     pub current_track_start_time: Option<std::time::Instant>,
     pub current_track_already_recorded: bool,
+
+    // Channel conflict dialog state
+    pub channel_conflict_path: Option<std::path::PathBuf>,
+    pub channel_conflicts: Vec<sotf_audio_player::ChannelConflict>,
+    pub channel_conflict_track_channels: usize,
 }
 
 /// GPUI-compatible state wrapper
@@ -275,6 +280,9 @@ impl App {
             current_track_path: None,
             current_track_start_time: None,
             current_track_already_recorded: false,
+            channel_conflict_path: None,
+            channel_conflicts: Vec::new(),
+            channel_conflict_track_channels: 2,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
