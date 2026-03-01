@@ -3,7 +3,7 @@
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 use crate::components::icons::{Icon, IconName, IconSize};
-use crate::ui::PlayerView;
+use crate::ui::{PlayerView, FOOTER_HEIGHT_REMS};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -173,8 +173,7 @@ impl PlayerView {
         let show_track_info = window_width >= BREAKPOINT_HIDE_TRACK_INFO;
         let show_studio_device = window_width >= BREAKPOINT_HIDE_STUDIO_DEVICE;
 
-        // Footer height in rems (~100px at 16px rem, scales with window)
-        let footer_height_rems = 6.25;
+        let footer_height_rems = FOOTER_HEIGHT_REMS;
 
         div()
             .flex()
@@ -212,7 +211,10 @@ impl PlayerView {
             )
     }
 
-    /// Album artwork aligned to left corner with window-matching rounded corners
+    /// Album artwork aligned to left corner with window-matching rounded corners.
+    ///
+    /// `footer_height_rems`: footer height in rem units (e.g. 6.25 ≈ 100px at 16px rem).
+    /// The art is rendered as a square of this size.
     fn render_footer_album_art(
         &self,
         footer_height_rems: f32,
@@ -865,7 +867,7 @@ impl PlayerView {
         div()
             .id("device-popup")
             .absolute()
-            .bottom(rems(6.25)) // Positioned above the footer
+            .bottom(rems(FOOTER_HEIGHT_REMS)) // Positioned above the footer
             .right(rems(0.625))
             .w(rems(15.625))
             .max_h(rems(18.75))
@@ -1080,7 +1082,7 @@ impl PlayerView {
         })
         .build_with_theme(&theme.to_menu_theme())
         .absolute()
-        .bottom(rems(6.25))
+        .bottom(rems(FOOTER_HEIGHT_REMS))
         .right(rems(11.25))
     }
 

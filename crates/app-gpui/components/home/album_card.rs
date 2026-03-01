@@ -6,6 +6,7 @@
 use crate::app::AppState;
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
+use crate::ui::ALBUM_CARD_WIDTH_REMS;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -231,8 +232,8 @@ impl AlbumCard {
 
     fn render_grid(self) -> AnyElement {
         // Use rem-based sizing so thumbnails/cards scale with the responsive rem size
-        let thumbnail_rems = 8.75; // ~140px at default 16px rem
-        let card_rems = 8.75;
+        let thumbnail_rems = ALBUM_CARD_WIDTH_REMS;
+        let card_rems = ALBUM_CARD_WIDTH_REMS;
         let theme = self.theme;
         let album = self.album;
         let index = self.index;

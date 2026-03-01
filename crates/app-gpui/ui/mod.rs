@@ -21,11 +21,31 @@ use crate::components::plugins::level_meters::LevelMeterManager;
 /// Compute the responsive scale factor for a given window size.
 /// Reference size: 1200×800 (default window). Uses the smaller axis ratio
 /// so the UI never overflows, clamped to 0.55–2.5× for usability.
-pub fn compute_responsive_scale(window_width: f32, window_height: f32) -> f32 {
+pub(crate) fn compute_responsive_scale(window_width: f32, window_height: f32) -> f32 {
     let width_scale = window_width / 1200.0;
     let height_scale = window_height / 800.0;
     width_scale.min(height_scale).clamp(0.55, 2.5)
 }
+
+// Layout constants shared between rendering and pagination calculation.
+// Keeping these in one place avoids silent drift between the grid layout
+// (album_card.rs, library.rs) and the column/row estimator (recalculate_pagination).
+
+/// Album card width in rems (~140px at default 16px rem). Used in album_card.rs grid rendering
+/// and recalculate_pagination column estimation.
+pub(crate) const ALBUM_CARD_WIDTH_REMS: f32 = 8.75;
+
+/// Gap between album cards in rems (matches gap_4 = 1rem in library.rs grid).
+pub(crate) const ALBUM_CARD_GAP_REMS: f32 = 1.0;
+
+/// Footer height in rems (~100px at 16px rem). Used for footer sizing and positioning
+/// popups (device popup, studio menu) above the footer.
+pub(crate) const FOOTER_HEIGHT_REMS: f32 = 6.25;
+
+/// Total vertical chrome height in rems, used by recalculate_pagination to estimate the
+/// available grid area. Breakdown:
+///   Header ~2.5rem + Stats ~6.25rem + Filter ~2.5rem + Pagination ~3.125rem + Footer ~3.625rem
+pub(crate) const CHROME_HEIGHT_REMS: f32 = 18.0;
 
 pub struct PlayerView {
     pub state: Entity<AppState>,
@@ -773,10 +793,8 @@ impl PlayerView {
             let combined_scale = (font_scale * responsive_scale).clamp(0.25, 3.0);
             let effective_rem = 16.0 * combined_scale;
 
-            // Card width in pixels: 8.75 rem (matching album_card.rs)
-            // Plus gap_4 = 1rem gap
-            let card_px = 8.75 * effective_rem;
-            let gap_px = 1.0 * effective_rem;
+            let card_px = ALBUM_CARD_WIDTH_REMS * effective_rem;
+            let gap_px = ALBUM_CARD_GAP_REMS * effective_rem;
             let card_with_gap = card_px + gap_px;
 
             // Approximate total horizontal chrome: grid p_2 (0.5rem × 2 sides) + parent padding
@@ -784,10 +802,7 @@ impl PlayerView {
             let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
             app.library_state.library_columns = columns;
 
-            // Estimate available height for grid chrome (all heights scale with rem):
-            //   Header ~2.5rem (40px) + Stats ~6.25rem (100px) + Filter ~2.5rem (40px)
-            //   + Pagination ~3.125rem (50px) + Footer ~3.625rem (58px) ≈ 18rem
-            let chrome_height = 18.0 * effective_rem;
+            let chrome_height = CHROME_HEIGHT_REMS * effective_rem;
             let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
             let card_height = 11.25 * effective_rem; // ~180px at base (thumbnail + text)
             let rows = (available_height / card_height).floor().max(1.0) as usize;
@@ -832,31 +847,107 @@ include!("volume.rs");
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::components::icons::IconSize;
+
+    /// Helper: assert two f32 values are equal within f32::EPSILON.
+    fn assert_f32_eq(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < f32::EPSILON,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    // --- compute_responsive_scale ---
 
     #[test]
     fn test_compute_responsive_scale_reference_size() {
-        let scale = compute_responsive_scale(1200.0, 800.0);
-        assert_eq!(scale, 1.0);
+        // 1200/1200 = 1.0, 800/800 = 1.0 — both exactly representable in f32
+        assert_f32_eq(compute_responsive_scale(1200.0, 800.0), 1.0);
     }
 
     #[test]
     fn test_compute_responsive_scale_min_clamp() {
         // Very small window — clamped to 0.55
-        let scale = compute_responsive_scale(100.0, 100.0);
-        assert_eq!(scale, 0.55);
+        assert_f32_eq(compute_responsive_scale(100.0, 100.0), 0.55);
     }
 
     #[test]
     fn test_compute_responsive_scale_max_clamp() {
         // 4K window — clamped to 2.5
-        let scale = compute_responsive_scale(3840.0, 2160.0);
-        assert_eq!(scale, 2.5);
+        assert_f32_eq(compute_responsive_scale(3840.0, 2160.0), 2.5);
     }
 
     #[test]
     fn test_compute_responsive_scale_uses_constraining_axis() {
-        // Wide but short — height is the bottleneck
-        let scale = compute_responsive_scale(2400.0, 400.0);
-        assert!((scale - 0.55).abs() < 0.01); // 400/800 = 0.5 → clamped to 0.55
+        // Wide but short — height is the bottleneck: 400/800 = 0.5 → clamped to 0.55
+        assert_f32_eq(compute_responsive_scale(2400.0, 400.0), 0.55);
+    }
+
+    // --- pagination column/row estimates at common window sizes ---
+
+    /// Compute (columns, rows) the same way recalculate_pagination does.
+    fn estimate_grid(window_width: f32, window_height: f32, font_scale: f32) -> (usize, usize) {
+        let responsive_scale = compute_responsive_scale(window_width, window_height);
+        let combined_scale = (font_scale * responsive_scale).clamp(0.25, 3.0);
+        let effective_rem = 16.0 * combined_scale;
+
+        let card_with_gap = (ALBUM_CARD_WIDTH_REMS + ALBUM_CARD_GAP_REMS) * effective_rem;
+        let available_width = window_width - 2.0 * effective_rem;
+        let columns = (available_width / card_with_gap).floor().max(1.0) as usize;
+
+        let chrome_height = CHROME_HEIGHT_REMS * effective_rem;
+        let available_height = (window_height - chrome_height).max(16.0 * effective_rem);
+        let card_height = 11.25 * effective_rem;
+        let rows = (available_height / card_height).floor().max(1.0) as usize;
+
+        (columns, rows)
+    }
+
+    #[test]
+    fn test_pagination_reference_window() {
+        // 1200×800, font_scale 1.0 → reasonable desktop grid
+        let (cols, rows) = estimate_grid(1200.0, 800.0, 1.0);
+        assert!(cols >= 5 && cols <= 8, "expected 5–8 columns, got {cols}");
+        assert!(rows >= 1 && rows <= 4, "expected 1–4 rows, got {rows}");
+    }
+
+    #[test]
+    fn test_pagination_phone_window() {
+        // 375×667 (iPhone SE-class) — should still get at least 1 column
+        let (cols, rows) = estimate_grid(375.0, 667.0, 1.0);
+        assert!(cols >= 1 && cols <= 3, "expected 1–3 columns, got {cols}");
+        assert!(rows >= 1, "expected at least 1 row, got {rows}");
+    }
+
+    #[test]
+    fn test_pagination_4k_window() {
+        // 3840×2160, font_scale 1.0 — many cards should fit
+        let (cols, rows) = estimate_grid(3840.0, 2160.0, 1.0);
+        assert!(cols >= 8, "expected ≥8 columns on 4K, got {cols}");
+        assert!(rows >= 2, "expected ≥2 rows on 4K, got {rows}");
+    }
+
+    // --- IconSize: to_rems() ↔ px() consistency ---
+
+    #[test]
+    fn test_icon_size_to_rems_matches_px_at_base_rem() {
+        // At 16px rem, to_rems().0 * 16.0 should equal px().0 for every variant
+        let base_rem = 16.0_f32;
+        let variants = [
+            IconSize::Xs,
+            IconSize::Sm,
+            IconSize::Md,
+            IconSize::Lg,
+            IconSize::Xl,
+            IconSize::Xxl,
+        ];
+        for size in variants {
+            let from_rems = size.to_rems().0 * base_rem;
+            let from_px = size.px().0;
+            assert!(
+                (from_rems - from_px).abs() < 0.01,
+                "{size:?}: to_rems gives {from_rems}px but px() gives {from_px}px"
+            );
+        }
     }
 }
