@@ -32,8 +32,8 @@ impl Render for PluginDragInfo {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         // Drag preview - a smaller version of the plugin module
         div()
-            .w(px(70.0))
-            .h(px(60.0))
+            .w(rems(4.375))
+            .h(rems(3.75))
             .flex()
             .flex_col()
             .rounded_lg()
@@ -42,7 +42,7 @@ impl Render for PluginDragInfo {
             .shadow_lg()
             .opacity(0.9)
             // Top bar with color
-            .child(div().h(px(3.0)).w_full().bg(self.color).rounded_t_md())
+            .child(div().h(rems(0.1875)).w_full().bg(self.color).rounded_t_md())
             // Icon
             .child(
                 div()
@@ -391,8 +391,8 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .w(px(40.0))
-                            .h(px(32.0))
+                            .w(rems(2.5))
+                            .h(rems(2.0))
                             .cursor_pointer()
                             .rounded_md()
                             .hover(move |s| s.bg(surface_hover))
@@ -436,7 +436,7 @@ impl PlayerView {
                     .px_4()
                     .py_3()
                     .overflow_x_scroll()
-                    .min_h(px(140.0))
+                    .min_h(rems(8.75))
                     // Input Meter removed from rack strip (moved to detail panel)
                     // Plugin modules - inline creation with drag-and-drop
                     .children(modules_info.into_iter().map(
@@ -467,8 +467,8 @@ impl PlayerView {
                                 .child(
                                     div()
                                         .id(("plugin-gap", idx))
-                                        .w(px(20.0))
-                                        .h(px(90.0)) // Full height for easier targeting
+                                        .w(rems(1.25))
+                                        .h(rems(5.625)) // Full height for easier targeting
                                         .flex()
                                         .items_center()
                                         .justify_center()
@@ -564,8 +564,8 @@ impl PlayerView {
                                     div()
                                         .id(("plugin-module", idx))
                                         .group("plugin-module")
-                                        .w(px(80.0))
-                                        .h(px(90.0))
+                                        .w(rems(5.0))
+                                        .h(rems(5.625))
                                         .flex()
                                         .flex_col()
                                         .rounded_lg()
@@ -693,10 +693,10 @@ impl PlayerView {
                                             d.child(
                                                 div()
                                                     .absolute()
-                                                    .top(px(8.0))
-                                                    .right(px(4.0))
-                                                    .w(px(12.0))
-                                                    .h(px(12.0))
+                                                    .top(rems(0.5))
+                                                    .right(rems(0.25))
+                                                    .w(rems(0.75))
+                                                    .h(rems(0.75))
                                                     .rounded_full()
                                                     .bg(theme_c.error)
                                                     .flex()
@@ -731,8 +731,8 @@ impl PlayerView {
                                             d.child(
                                                 div()
                                                     .absolute()
-                                                    .top(px(8.0))
-                                                    .right(px(4.0))
+                                                    .top(rems(0.5))
+                                                    .right(rems(0.25))
                                                     .text_xs()
                                                     .text_color(theme_c.text_muted)
                                                     .child("🔒"),
@@ -742,10 +742,10 @@ impl PlayerView {
                                         .child(
                                             div()
                                                 .absolute()
-                                                .top(px(8.0))
-                                                .left(px(4.0))
-                                                .w(px(12.0))
-                                                .h(px(12.0))
+                                                .top(rems(0.5))
+                                                .left(rems(0.25))
+                                                .w(rems(0.75))
+                                                .h(rems(0.75))
                                                 .rounded_full()
                                                 .flex()
                                                 .items_center()
@@ -812,8 +812,8 @@ impl PlayerView {
                         d.child(
                             div()
                                 .id("plugin-gap-end")
-                                .w(px(20.0))
-                                .h(px(90.0))
+                                .w(rems(1.25))
+                                .h(rems(5.625))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -1288,7 +1288,7 @@ impl PlayerView {
             .flex_1()
             .flex()
             .flex_col()
-            .min_h(px(350.0))
+            .min_h(rems(21.875))
             .when(has_plugin, |d| {
                 let plugin = plugin_data.clone().unwrap();
                 let plugin_type = plugin.plugin_type().clone();
@@ -1448,7 +1448,7 @@ impl PlayerView {
                     div()
                         .flex_1()
                         .flex()
-                        .min_h(px(300.0)) // Minimum height for meters and content
+                        .min_h(rems(18.75)) // Minimum height for meters and content
                         // Left: Input Meter (legend on right side, facing center)
                         .when(!input_collapsed, |d| {
                             d.child(

@@ -106,7 +106,7 @@ impl PlayerView {
                             .flex()
                             .flex_col()
                             .overflow_y_scroll()
-                            .max_h(px(500.0))
+                            .max_h(rems(31.25))
                             .border_1()
                             .border_color(theme.border)
                             .rounded_md()
@@ -143,7 +143,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         )
         .child(
             div()
-                .w(px(100.0))
+                .w(rems(6.25))
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
@@ -152,7 +152,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         )
         .child(
             div()
-                .w(px(100.0))
+                .w(rems(6.25))
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
@@ -161,7 +161,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         )
         .child(
             div()
-                .w(px(100.0))
+                .w(rems(6.25))
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
@@ -170,7 +170,7 @@ fn render_table_header(theme: &crate::app::Theme) -> impl IntoElement {
         )
         .child(
             div()
-                .w(px(100.0))
+                .w(rems(6.25))
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_muted)
@@ -255,7 +255,7 @@ fn render_comparison_row(
             let key = keys.get(preset).map(|s| s.as_str()).unwrap_or("-");
             let is_current = *preset == current_preset;
             div()
-                .w(px(100.0))
+                .w(rems(6.25))
                 .text_xs()
                 .text_align(gpui::TextAlign::Center)
                 .text_color(if is_current { accent } else { text_muted })

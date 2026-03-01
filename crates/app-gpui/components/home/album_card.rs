@@ -6,6 +6,7 @@
 use crate::app::AppState;
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
+use crate::ui::ALBUM_CARD_WIDTH_REMS;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -230,8 +231,8 @@ impl AlbumCard {
     }
 
     fn render_grid(self) -> AnyElement {
-        let thumbnail_size = 140.0;
-        let card_width = 140.0;
+        // Card and thumbnail share the same width (card is sized by its thumbnail)
+        let size_rems = ALBUM_CARD_WIDTH_REMS;
         let theme = self.theme;
         let album = self.album;
         let index = self.index;
@@ -245,7 +246,7 @@ impl AlbumCard {
 
         div()
             .id(("album-card", index))
-            .w(px(card_width))
+            .w(rems(size_rems))
             .rounded_lg()
             .cursor_pointer()
             .when(self.is_selected, |d| {
@@ -261,11 +262,11 @@ impl AlbumCard {
                     .flex()
                     .flex_col()
                     .items_center()
-                    // Album art thumbnail or placeholder (no border/margin)
+                    // Album art thumbnail or placeholder (scales with rem)
                     .child(
                         div()
-                            .w(px(thumbnail_size))
-                            .h(px(thumbnail_size))
+                            .w(rems(size_rems))
+                            .h(rems(size_rems))
                             .rounded_md()
                             .overflow_hidden()
                             .flex()
@@ -274,8 +275,8 @@ impl AlbumCard {
                             .child(
                                 if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
                                     img(image_from_jpeg_bytes(thumbnail_bytes))
-                                        .w(px(thumbnail_size))
-                                        .h(px(thumbnail_size))
+                                        .w(rems(size_rems))
+                                        .h(rems(size_rems))
                                         .object_fit(ObjectFit::Cover)
                                         .into_any_element()
                                 } else {

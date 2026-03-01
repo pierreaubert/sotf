@@ -84,8 +84,8 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .w(px(40.0))
-                            .h(px(32.0))
+                            .w(rems(2.5))
+                            .h(rems(2.0))
                             .cursor_pointer()
                             .rounded_md()
                             .hover(move |s| s.bg(theme.surface_hover))
@@ -187,7 +187,7 @@ impl PlayerView {
                         tabs_container
                     }))
                     // Spacer on the right to balance the home button
-                    .child(div().w(px(40.0))),
+                    .child(div().w(rems(2.5))),
             )
             // Content with vertical scroll
             .child(

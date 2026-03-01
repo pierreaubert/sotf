@@ -29,11 +29,14 @@ impl Render for PlayerView {
                         state.layout.update(cx, |layout, _cx| {
                             state.app.ui_state.window_height = window_height;
                             state.app.ui_state.window_width = window_width;
-                            state.app.ui_state.layout_mode = if window_height >= 800.0 {
-                                crate::app::LayoutMode::Expanded
-                            } else {
-                                crate::app::LayoutMode::Compact
-                            };
+                            // Use Expanded layout when both dimensions are large enough
+                            // for multi-panel view. Compact for small screens (phones/tablets).
+                            state.app.ui_state.layout_mode =
+                                if window_height >= 500.0 && window_width >= 600.0 {
+                                    crate::app::LayoutMode::Expanded
+                                } else {
+                                    crate::app::LayoutMode::Compact
+                                };
 
                             // Update 3-panel layout orientation based on aspect ratio
                             state.app.layout_orientation = if window_width > window_height {
@@ -148,9 +151,12 @@ impl Render for PlayerView {
             )
         };
 
-        // Apply font scale to the window's rem size
-        // Default rem size is 16px, scale it based on user preference
-        window.set_rem_size(px(16.0 * font_scale));
+        // Apply combined font scale (user preference × responsive auto-scale) to rem size.
+        // All rem-based sizes (text, padding, gaps) scale automatically.
+        let responsive_scale = compute_responsive_scale(window_width, window_height);
+        let combined_scale =
+            (font_scale * responsive_scale).clamp(COMBINED_SCALE_MIN, COMBINED_SCALE_MAX);
+        window.set_rem_size(px(16.0 * combined_scale));
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.

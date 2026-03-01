@@ -3,7 +3,7 @@
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 use crate::components::icons::{Icon, IconName, IconSize};
-use crate::ui::PlayerView;
+use crate::ui::{PlayerView, FOOTER_HEIGHT_REMS};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -173,19 +173,18 @@ impl PlayerView {
         let show_track_info = window_width >= BREAKPOINT_HIDE_TRACK_INFO;
         let show_studio_device = window_width >= BREAKPOINT_HIDE_STUDIO_DEVICE;
 
-        // Footer height
-        let footer_height = 100.0;
+        let footer_height_rems = FOOTER_HEIGHT_REMS;
 
         div()
             .flex()
             .flex_row()
-            .h(px(footer_height))
+            .h(rems(footer_height_rems))
             .bg(bg_surface)
             .border_t_1()
             .border_color(border_color)
             // Album art aligned to left corner with window-matching rounded corners
             .when(show_track_info, |el| {
-                el.child(self.render_footer_album_art(footer_height, cx))
+                el.child(self.render_footer_album_art(footer_height_rems, cx))
             })
             // Main content area with padding
             .child(
@@ -212,10 +211,13 @@ impl PlayerView {
             )
     }
 
-    /// Album artwork aligned to left corner with window-matching rounded corners
+    /// Album artwork aligned to left corner with window-matching rounded corners.
+    ///
+    /// `footer_height_rems`: footer height in rem units (e.g. 6.25 ≈ 100px at 16px rem).
+    /// The art is rendered as a square of this size.
     fn render_footer_album_art(
         &self,
-        footer_height: f32,
+        footer_height_rems: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -235,17 +237,12 @@ impl PlayerView {
         let surface_hover = theme.surface_hover;
         let text_muted = theme.text_muted;
 
-        // Window corner radius (macOS default is ~10px)
-        let window_radius = 10.0;
-
-        // Album art is square, matching footer height
-        let art_size = footer_height;
-
+        // Album art is square, matching footer height (rem-based)
         let art_div = div()
-            .w(px(art_size))
-            .h(px(art_size))
-            // Only round bottom-left corner to match window
-            .rounded_bl(px(window_radius))
+            .w(rems(footer_height_rems))
+            .h(rems(footer_height_rems))
+            // Only round bottom-left corner to match window (0.625rem ≈ 10px at base)
+            .rounded_bl(rems(0.625))
             .bg(surface_hover)
             .overflow_hidden()
             .flex_shrink_0();
@@ -309,8 +306,8 @@ impl PlayerView {
                     state.app.plugin_state.chain.plugins().len()
                 )))
                 .build()
-                .min_w(px(150.0))
-                .max_w(px(250.0));
+                .min_w(rems(9.375))
+                .max_w(rems(15.625));
         }
 
         // Get current track info from queue
@@ -396,8 +393,8 @@ impl PlayerView {
                     .child(artist_text),
             )
             .build()
-            .min_w(px(150.0))
-            .max_w(px(250.0))
+            .min_w(rems(9.375))
+            .max_w(rems(15.625))
     }
 
     /// Center section: Transport controls + waveform + time
@@ -467,9 +464,9 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .gap_0() // No gap - we use explicit margins
-            .pt(px(8.0)) // Top padding to push transport down from border
+            .pt_2() // Top padding to push transport down from border
             .flex_1()
-            .max_w(px(600.0))
+            .max_w(rems(37.5))
             // Transport controls row
             .child(
                 div()
@@ -608,14 +605,14 @@ impl PlayerView {
                         .items_center()
                         .gap_2()
                         .w_full()
-                        .mt(px(12.0)) // Space between transport and waveform row
+                        .mt_3() // Space between transport and waveform row
                         // Current position - vertically centered with waveform
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(text_muted)
-                                .min_w(px(40.0))
-                                .mb(px(24.0))
+                                .min_w(rems(2.5))
+                                .mb_6()
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -627,7 +624,7 @@ impl PlayerView {
                                 .id("waveform-bar")
                                 .flex_1()
                                 .gap_0()
-                                .h(px(24.0)) // Waveform height
+                                .h(rems(1.5)) // Waveform height
                                 .cursor_pointer()
                                 .on_mouse_down(
                                     MouseButton::Left,
@@ -670,8 +667,8 @@ impl PlayerView {
                             div()
                                 .text_xs()
                                 .text_color(text_muted)
-                                .min_w(px(40.0))
-                                .mb(px(24.0))
+                                .min_w(rems(2.5))
+                                .mb_6()
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -687,7 +684,7 @@ impl PlayerView {
                         .items_center()
                         .justify_center()
                         .gap_1()
-                        .mt(px(8.0))
+                        .mt_2()
                         .text_xs()
                         .text_color(text_muted)
                         .child(position_str)
@@ -756,7 +753,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .gap_3()
-            .when(show_studio_device, |el| el.min_w(px(180.0)))
+            .when(show_studio_device, |el| el.min_w(rems(11.25)))
             .justify_end()
             .relative()
             // Studio button (Plugin Rack) - hidden on narrow screens
@@ -870,14 +867,14 @@ impl PlayerView {
         div()
             .id("device-popup")
             .absolute()
-            .bottom(px(100.0)) // Positioned above the footer
-            .right(px(10.0))
-            .w(px(250.0))
-            .max_h(px(300.0))
+            .bottom(rems(FOOTER_HEIGHT_REMS)) // Positioned above the footer
+            .right(rems(0.625))
+            .w(rems(15.625))
+            .max_h(rems(18.75))
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)
-            .rounded(px(4.0))
+            .rounded_md()
             .shadow_lg()
             .py_1()
             .overflow_y_scroll()
@@ -907,7 +904,7 @@ impl PlayerView {
                             .id("refresh-devices")
                             .cursor_pointer()
                             .p_1()
-                            .rounded(px(3.0))
+                            .rounded_sm()
                             .hover(|s| s.bg(theme_header.surface_hover))
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -940,10 +937,10 @@ impl PlayerView {
                 div()
                     .id(SharedString::from(format!("device-{}", idx)))
                     .px_3()
-                    .py(px(6.0))
+                    .py_1()
                     .mx_1()
                     .my(px(1.0))
-                    .rounded(px(3.0))
+                    .rounded_sm()
                     .cursor_pointer()
                     .text_sm()
                     .when(is_selected, |d| {
@@ -1085,8 +1082,8 @@ impl PlayerView {
         })
         .build_with_theme(&theme.to_menu_theme())
         .absolute()
-        .bottom(px(100.0))
-        .right(px(180.0))
+        .bottom(rems(FOOTER_HEIGHT_REMS))
+        .right(rems(11.25))
     }
 
     /// Render a round volume button with circular progress indicator
@@ -1162,7 +1159,7 @@ impl PlayerView {
                 VolumeKnob::new()
                     .value(volume)
                     .label(format!("{}", volume_percent))
-                    .size(px(72.0)) // 50% bigger (48 * 1.5 = 72)
+                    .size(px(72.0)) // Fixed pixel size: VolumeKnob paints via canvas paths, not rem-based layout
                     .muted(muted)
                     .accent_color(accent_color)
                     .muted_color(muted_color)

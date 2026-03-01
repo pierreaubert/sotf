@@ -1336,7 +1336,7 @@ impl PlayerView {
                     .flex()
                     .flex_wrap()
                     .gap_3()
-                    .max_w(px(1000.0))
+                    .max_w(rems(62.5))
                     .justify_center()
                     .children(items.into_iter().map(|(id, label, size, action)| {
                         Button::new(SharedString::from(id), SharedString::from(label))
