@@ -54,8 +54,7 @@ impl UpmixerPlugin {
             } else {
                 SPECTRAL_FLUX_RELEASE_ALPHA
             };
-            self.spectral_flux_smooth +=
-                flux_alpha * (flux - self.spectral_flux_smooth);
+            self.spectral_flux_smooth += flux_alpha * (flux - self.spectral_flux_smooth);
 
             let transient_target = if self.spectral_flux_smooth > 1e-9 {
                 ((flux / self.spectral_flux_smooth - 1.0) / TRANSIENT_RATIO_DIVISOR).clamp(0.0, 1.0)

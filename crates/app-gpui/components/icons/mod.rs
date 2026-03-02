@@ -135,12 +135,12 @@ impl IconSize {
     /// Get the rem-based size (scales with window for responsive design)
     pub fn to_rems(&self) -> Rems {
         match self {
-            IconSize::Xs => rems(0.75),   // 12px at 16px rem
-            IconSize::Sm => rems(1.0),    // 16px at 16px rem
-            IconSize::Md => rems(1.25),   // 20px at 16px rem
-            IconSize::Lg => rems(1.5),    // 24px at 16px rem
-            IconSize::Xl => rems(2.0),    // 32px at 16px rem
-            IconSize::Xxl => rems(2.25),  // 36px at 16px rem
+            IconSize::Xs => rems(0.75),  // 12px at 16px rem
+            IconSize::Sm => rems(1.0),   // 16px at 16px rem
+            IconSize::Md => rems(1.25),  // 20px at 16px rem
+            IconSize::Lg => rems(1.5),   // 24px at 16px rem
+            IconSize::Xl => rems(2.0),   // 32px at 16px rem
+            IconSize::Xxl => rems(2.25), // 36px at 16px rem
         }
     }
 }

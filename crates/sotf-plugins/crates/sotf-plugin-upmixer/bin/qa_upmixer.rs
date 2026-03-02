@@ -1,6 +1,6 @@
-use sotf_plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
-use sotf_host::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
+use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
 use sotf_host::{Plugin, ProcessContext};
+use sotf_plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
 use std::f32::consts::PI;
 
 #[global_allocator]

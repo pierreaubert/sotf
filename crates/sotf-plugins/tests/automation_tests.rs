@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use sotf_plugins::{GainPlugin, CompressorPlugin, InPlacePluginAdapter, ParameterId, test_parameter_ramp, InPlacePlugin, Plugin};
+    use sotf_plugins::{
+        CompressorPlugin, GainPlugin, InPlacePlugin, InPlacePluginAdapter, ParameterId, Plugin,
+        test_parameter_ramp,
+    };
 
     #[test]
     fn test_gain_automation_ramp() {
@@ -8,7 +11,7 @@ mod tests {
         let mut inner = GainPlugin::new(2, 0.0);
         inner.initialize(sample_rate as u32).unwrap();
         let mut plugin = InPlacePluginAdapter::new(inner);
-        
+
         // Ramp gain from 0dB to -24dB over 0.5 seconds
         test_parameter_ramp(
             &mut plugin,
@@ -26,7 +29,7 @@ mod tests {
         let mut inner = CompressorPlugin::new(2, 0.0, 4.0, 5.0, 50.0, 0.0, 0.0);
         inner.initialize(sample_rate as u32).unwrap();
         let mut plugin = InPlacePluginAdapter::new(inner);
-        
+
         // Ramp threshold from 0dB down to -40dB
         test_parameter_ramp(
             &mut plugin,
@@ -52,7 +55,7 @@ mod tests {
         let mut inner = sotf_plugins::EqPlugin::new(2, f);
         inner.initialize(sample_rate as u32).unwrap();
         let mut plugin = InPlacePluginAdapter::new(inner);
-        
+
         // Ramp band 0 gain from 0dB to 12dB
         test_parameter_ramp(
             &mut plugin,

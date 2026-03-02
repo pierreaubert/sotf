@@ -61,10 +61,7 @@ impl LibraryScanner {
     }
 
     /// Start a force scan with a pause flag
-    pub fn start_force_with_pause(
-        directories: Vec<PathBuf>,
-        pause_flag: Arc<AtomicBool>,
-    ) -> Self {
+    pub fn start_force_with_pause(directories: Vec<PathBuf>, pause_flag: Arc<AtomicBool>) -> Self {
         Self::start_with_options(directories, true, Some(pause_flag))
     }
 

@@ -389,11 +389,9 @@ impl DecoderState {
                         );
 
                         // Send with interruption support
-                        if let Some(cmd) = send_or_interrupt(
-                            message_tx,
-                            command_rx,
-                            DecoderMessage::Frame(frame),
-                        )? {
+                        if let Some(cmd) =
+                            send_or_interrupt(message_tx, command_rx, DecoderMessage::Frame(frame))?
+                        {
                             return Ok(DecoderLoopAction::Interrupted(cmd));
                         }
                         total_send_time += s_start.elapsed();

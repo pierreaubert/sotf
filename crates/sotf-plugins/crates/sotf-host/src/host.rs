@@ -741,29 +741,56 @@ mod tests {
     }
     impl VariableFramePlugin {
         fn new(channels: usize, output_frames: usize) -> Self {
-            Self { channels, output_frames }
+            Self {
+                channels,
+                output_frames,
+            }
         }
     }
     impl Plugin for VariableFramePlugin {
         fn info(&self) -> crate::plugin::PluginInfo {
             crate::plugin::PluginInfo::new("VariableFrame", "0.1", "test")
         }
-        fn input_channels(&self) -> usize { self.channels }
-        fn output_channels(&self) -> usize { self.channels }
-        fn parameters(&self) -> Vec<crate::parameters::Parameter> { vec![] }
-        fn set_parameter(&mut self, _: crate::parameters::ParameterId, _: crate::parameters::ParameterValue) -> Result<(), String> {
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
             Err("none".into())
         }
-        fn get_parameter(&self, _: &crate::parameters::ParameterId) -> Option<crate::parameters::ParameterValue> { None }
-        fn process(&mut self, input: &[f32], output: &mut [f32], _ctx: &crate::plugin::ProcessContext) -> Result<usize, String> {
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            _ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
             let out_len = self.output_frames * self.channels;
             for (o, &i) in output[..out_len].iter_mut().zip(input.iter().cycle()) {
                 *o = i;
             }
             Ok(self.output_frames)
         }
-        fn output_frames_for_input(&self, _: usize) -> usize { self.output_frames }
-        fn latency_samples(&self) -> usize { 1 }
+        fn output_frames_for_input(&self, _: usize) -> usize {
+            self.output_frames
+        }
+        fn latency_samples(&self) -> usize {
+            1
+        }
     }
 
     /// Mock plugin that records the ProcessContext.num_frames it receives.
@@ -773,21 +800,44 @@ mod tests {
     }
     impl FrameRecorderPlugin {
         fn new(channels: usize) -> Self {
-            Self { channels, last_num_frames: std::cell::Cell::new(0) }
+            Self {
+                channels,
+                last_num_frames: std::cell::Cell::new(0),
+            }
         }
     }
     impl Plugin for FrameRecorderPlugin {
         fn info(&self) -> crate::plugin::PluginInfo {
             crate::plugin::PluginInfo::new("FrameRecorder", "0.1", "test")
         }
-        fn input_channels(&self) -> usize { self.channels }
-        fn output_channels(&self) -> usize { self.channels }
-        fn parameters(&self) -> Vec<crate::parameters::Parameter> { vec![] }
-        fn set_parameter(&mut self, _: crate::parameters::ParameterId, _: crate::parameters::ParameterValue) -> Result<(), String> {
+        fn input_channels(&self) -> usize {
+            self.channels
+        }
+        fn output_channels(&self) -> usize {
+            self.channels
+        }
+        fn parameters(&self) -> Vec<crate::parameters::Parameter> {
+            vec![]
+        }
+        fn set_parameter(
+            &mut self,
+            _: crate::parameters::ParameterId,
+            _: crate::parameters::ParameterValue,
+        ) -> Result<(), String> {
             Err("none".into())
         }
-        fn get_parameter(&self, _: &crate::parameters::ParameterId) -> Option<crate::parameters::ParameterValue> { None }
-        fn process(&mut self, input: &[f32], output: &mut [f32], ctx: &crate::plugin::ProcessContext) -> Result<usize, String> {
+        fn get_parameter(
+            &self,
+            _: &crate::parameters::ParameterId,
+        ) -> Option<crate::parameters::ParameterValue> {
+            None
+        }
+        fn process(
+            &mut self,
+            input: &[f32],
+            output: &mut [f32],
+            ctx: &crate::plugin::ProcessContext,
+        ) -> Result<usize, String> {
             self.last_num_frames.set(ctx.num_frames);
             let len = input.len().min(output.len());
             output[..len].copy_from_slice(&input[..len]);

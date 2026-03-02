@@ -1,8 +1,6 @@
 // Multi-plugin dynamics chain test (uses Gate + Compressor + Limiter)
 
-use sotf_plugins::{
-    CompressorPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin, PluginHost,
-};
+use sotf_plugins::{CompressorPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin, PluginHost};
 
 #[test]
 fn test_dynamics_chain() {

@@ -87,8 +87,8 @@ pub trait TestScenario {
 }
 
 use sotf_audio_player::Player;
-use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
+use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::sync::Arc;
 

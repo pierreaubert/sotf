@@ -507,6 +507,27 @@ impl BlissScanManager {
         }
     }
 
+    /// Populate succeeded/failed/total from the database without starting a scan.
+    /// Call after library load so the status display shows meaningful counts.
+    pub fn refresh_counts(&mut self) {
+        if self.in_progress {
+            return;
+        }
+        let db_path = match MusicDatabase::default_path() {
+            Some(p) => p,
+            None => return,
+        };
+        let db = match MusicDatabase::open(&db_path) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let total = db.get_track_count().unwrap_or(0);
+        let (succeeded, failed) = db.get_bliss_done_counts().unwrap_or((0, 0));
+        self.total = total;
+        self.succeeded = succeeded;
+        self.failed = failed;
+    }
+
     /// Clear all bliss data and rescan every track.
     pub fn start_force_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         if self.in_progress {
@@ -539,6 +560,9 @@ impl BlissScanManager {
 
         if tracks.is_empty() {
             log::debug!("All tracks already have bliss analysis data");
+            self.total = total_tracks;
+            self.succeeded = already_succeeded;
+            self.failed = already_failed;
             return Ok("All tracks already have bliss analysis data".to_string());
         }
 

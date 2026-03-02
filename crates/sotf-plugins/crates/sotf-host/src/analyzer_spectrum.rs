@@ -167,7 +167,13 @@ impl SpectrumAnalyzerPlugin {
             Parameter::new_float("smoothing", "Smoothing", self.config.smoothing, 0.0, 0.999),
             Parameter::new_int("num_bins", "Bins", self.config.num_bins as i32, 10, 100),
             Parameter::new_float("min_freq", "Min Freq", self.config.min_freq, 10.0, 500.0),
-            Parameter::new_float("max_freq", "Max Freq", self.config.max_freq, 1000.0, 22050.0),
+            Parameter::new_float(
+                "max_freq",
+                "Max Freq",
+                self.config.max_freq,
+                1000.0,
+                22050.0,
+            ),
         ];
     }
 
@@ -304,7 +310,11 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 let s1_len = s1.len();
 
                 // Window each chunk using SIMD
-                crate::simd::window_mul_simd(&mut self.windowed[..s1_len], s1, &self.window[..s1_len]);
+                crate::simd::window_mul_simd(
+                    &mut self.windowed[..s1_len],
+                    s1,
+                    &self.window[..s1_len],
+                );
                 crate::simd::window_mul_simd(
                     &mut self.windowed[s1_len..],
                     s2,

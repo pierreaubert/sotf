@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use sotf_host::sofa::SourcePosition;
 use sotf_host::speaker_config::{SpeakerConfig, SpeakerPosition};
-use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Room Model Configuration

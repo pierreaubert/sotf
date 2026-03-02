@@ -354,9 +354,7 @@ impl EQFilter {
     }
 }
 
-
 // Import param_specs for plugin defaults and serde_param_default! macro
-use sotf_plugins::param_specs::find_by_key as pk;
 use sotf_plugins::param_specs::ab_compare as ab_compare_specs;
 use sotf_plugins::param_specs::band_merge as band_merge_specs;
 use sotf_plugins::param_specs::band_split as band_split_specs;
@@ -368,6 +366,7 @@ use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
+use sotf_plugins::param_specs::find_by_key as pk;
 use sotf_plugins::param_specs::fletcher_munson as fm_specs;
 use sotf_plugins::param_specs::gain as gain_specs;
 use sotf_plugins::param_specs::gate as gate_specs;
@@ -2255,7 +2254,8 @@ impl PluginSettings {
                     auto_gain_enabled: p(fm, "auto_gain_enabled").default_bool(),
                     auto_gain_max_db: p(fm, "auto_gain_max_db").default_f64(),
                     auto_gain_smoothing_ms: p(fm, "auto_gain_smoothing_ms").default_f64(),
-                    auto_gain_loudness_type: pk(fm_specs::PARAMS, "auto_gain_loudness_type").default_f64() as i32,
+                    auto_gain_loudness_type: pk(fm_specs::PARAMS, "auto_gain_loudness_type")
+                        .default_f64() as i32,
                 }
             }
             PluginType::BinauralDecoder => {
@@ -2293,8 +2293,10 @@ impl PluginSettings {
                 input_channels: 2,
                 output_channels: 2,
                 matrix: vec![
-                    pk(matrix_specs::PARAMS, "gain").max_f64() as f32, pk(matrix_specs::PARAMS, "gain").min_f64() as f32,
-                    pk(matrix_specs::PARAMS, "gain").min_f64() as f32, pk(matrix_specs::PARAMS, "gain").max_f64() as f32,
+                    pk(matrix_specs::PARAMS, "gain").max_f64() as f32,
+                    pk(matrix_specs::PARAMS, "gain").min_f64() as f32,
+                    pk(matrix_specs::PARAMS, "gain").min_f64() as f32,
+                    pk(matrix_specs::PARAMS, "gain").max_f64() as f32,
                 ], // Identity 2x2
                 channel_states: vec![],
             },
@@ -2308,12 +2310,14 @@ impl PluginSettings {
                     beta_low_freq_boost: p(x, "beta_low_freq_boost").default_f64(),
                     beta_high_freq_boost: p(x, "beta_high_freq_boost").default_f64(),
                     head_shadow_cutoff_hz: p(x, "head_shadow_cutoff_hz").default_f64(),
-                    head_shadow_slope_db_per_octave: p(x, "head_shadow_slope_db_per_octave").default_f64(),
+                    head_shadow_slope_db_per_octave: p(x, "head_shadow_slope_db_per_octave")
+                        .default_f64(),
                     max_gain_db: p(x, "max_gain_db").default_f64(),
                     head_offset_x: p(x, "head_offset_x").default_f64(),
                     head_offset_z: p(x, "head_offset_z").default_f64(),
                     head_yaw_deg: p(x, "head_yaw_deg").default_f64(),
-                    head_tracking_smooth_s: pk(xtc_specs::PARAMS, "head_tracking_smooth_s").default_f64(),
+                    head_tracking_smooth_s: pk(xtc_specs::PARAMS, "head_tracking_smooth_s")
+                        .default_f64(),
                     spectral_normalization: p(x, "spectral_normalization").default_bool(),
                     room_reflections_enabled: p(x, "room_reflections_enabled").default_bool(),
                     room_ir_file: None,
@@ -2322,7 +2326,8 @@ impl PluginSettings {
                     wall_absorption: p(x, "wall_absorption").default_f64(),
                     reflection_beta_boost: p(x, "reflection_beta_boost").default_f64(),
                     bypass_xtc_filters: p(x, "bypass_xtc_filters").default_bool(),
-                    bypass_spectral_normalization: p(x, "bypass_spectral_normalization").default_bool(),
+                    bypass_spectral_normalization: p(x, "bypass_spectral_normalization")
+                        .default_bool(),
                     bypass_neumann_refinement: p(x, "bypass_neumann_refinement").default_bool(),
                     auto_gain_enabled: p(x, "auto_gain_enabled").default_bool(),
                     auto_gain_max_db: p(x, "auto_gain_max_db").default_f64(),
@@ -3466,8 +3471,7 @@ impl PluginChain {
                     );
                     *input_channels = running_channels;
                     *output_channels = running_channels;
-                    channel_states
-                        .resize(running_channels, sotf_plugins::ChannelState::default());
+                    channel_states.resize(running_channels, sotf_plugins::ChannelState::default());
                 }
                 break; // Only adapt the first enabled matrix
             }
@@ -4553,10 +4557,7 @@ mod tests {
 
         // Change upmixer to 7.1.4
         if let Some(p) = chain.get_plugin_mut(0) {
-            if let PluginSettings::Upmixer {
-                speaker_config, ..
-            } = &mut p.settings
-            {
+            if let PluginSettings::Upmixer { speaker_config, .. } = &mut p.settings {
                 *speaker_config = "7.1.4".to_string();
             }
         }
@@ -4574,7 +4575,10 @@ mod tests {
 
         if let Some(p) = chain.get_plugin(1) {
             if let PluginSettings::EQ { channels, .. } = &p.settings {
-                assert_eq!(*channels, 10, "EQ after 5.1.4 upmixer should have 10 channels");
+                assert_eq!(
+                    *channels, 10,
+                    "EQ after 5.1.4 upmixer should have 10 channels"
+                );
             } else {
                 panic!("expected EQ");
             }
@@ -4589,7 +4593,10 @@ mod tests {
 
         if let Some(p) = chain.get_plugin(1) {
             if let PluginSettings::Gain { channels, .. } = &p.settings {
-                assert_eq!(*channels, 8, "Gain after 7.1 upmixer should have 8 channels");
+                assert_eq!(
+                    *channels, 8,
+                    "Gain after 7.1 upmixer should have 8 channels"
+                );
             } else {
                 panic!("expected Gain");
             }
@@ -4611,7 +4618,10 @@ mod tests {
         chain.update_channel_dependent_plugins();
         if let Some(p) = chain.get_plugin(1) {
             if let PluginSettings::Gain { channels, .. } = &p.settings {
-                assert_eq!(*channels, 4, "Gain after BandSplit(2ch) should have 4 channels");
+                assert_eq!(
+                    *channels, 4,
+                    "Gain after BandSplit(2ch) should have 4 channels"
+                );
             } else {
                 panic!("expected Gain");
             }

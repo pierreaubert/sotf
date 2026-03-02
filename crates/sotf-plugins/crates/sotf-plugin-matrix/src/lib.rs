@@ -2,11 +2,11 @@
 // Matrix Plugin - Channel mixer with configurable gain matrix
 // ============================================================================
 
-use sotf_plugin_channel_mute_solo::ChannelState;
+use serde_json;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;
-use serde_json;
+use sotf_plugin_channel_mute_solo::ChannelState;
 
 /// Smoothing time in ms for gain coefficient transitions (~5ms to avoid clicks)
 const GAIN_SMOOTH_MS: f32 = 5.0;
@@ -325,9 +325,15 @@ impl Plugin for MatrixPlugin {
         let id_str = id.0.as_str();
         if id_str.starts_with("gain_") {
             let parts: Vec<&str> = id_str.split('_').collect();
-            let in_ch = parts[1].parse::<usize>().map_err(|_| "Invalid input channel".to_string())?;
-            let out_ch = parts[2].parse::<usize>().map_err(|_| "Invalid output channel".to_string())?;
-            let v = value.as_float().ok_or_else(|| format!("{} must be a float", id_str))?;
+            let in_ch = parts[1]
+                .parse::<usize>()
+                .map_err(|_| "Invalid input channel".to_string())?;
+            let out_ch = parts[2]
+                .parse::<usize>()
+                .map_err(|_| "Invalid output channel".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| format!("{} must be a float", id_str))?;
             if v.is_finite() {
                 self.set_gain(in_ch, out_ch, v)?;
                 self.rebuild_cached_parameters();
@@ -336,26 +342,34 @@ impl Plugin for MatrixPlugin {
             return Ok(());
         }
         if let Some(rest) = id_str.strip_prefix("mute_") {
-            let ch = rest.parse::<usize>().map_err(|_| "Invalid channel index".to_string())?;
+            let ch = rest
+                .parse::<usize>()
+                .map_err(|_| "Invalid channel index".to_string())?;
             if ch < self.num_outputs() {
                 if self.channel_states.len() <= ch {
                     self.channel_states
                         .resize(self.num_outputs(), ChannelState::default());
                 }
-                self.channel_states[ch].muted = value.as_bool().ok_or_else(|| format!("{} must be a boolean", id_str))?;
+                self.channel_states[ch].muted = value
+                    .as_bool()
+                    .ok_or_else(|| format!("{} must be a boolean", id_str))?;
                 self.ensure_channel_state_smoothers();
                 self.rebuild_cached_parameters();
                 return Ok(());
             }
         }
         if let Some(rest) = id_str.strip_prefix("dim_") {
-            let ch = rest.parse::<usize>().map_err(|_| "Invalid channel index".to_string())?;
+            let ch = rest
+                .parse::<usize>()
+                .map_err(|_| "Invalid channel index".to_string())?;
             if ch < self.num_outputs() {
                 if self.channel_states.len() <= ch {
                     self.channel_states
                         .resize(self.num_outputs(), ChannelState::default());
                 }
-                self.channel_states[ch].dimmed = value.as_bool().ok_or_else(|| format!("{} must be a boolean", id_str))?;
+                self.channel_states[ch].dimmed = value
+                    .as_bool()
+                    .ok_or_else(|| format!("{} must be a boolean", id_str))?;
                 self.ensure_channel_state_smoothers();
                 self.rebuild_cached_parameters();
                 return Ok(());
@@ -473,8 +487,8 @@ impl Plugin for MatrixPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
 
     #[test]
     fn test_identity_matrix_2x2() {

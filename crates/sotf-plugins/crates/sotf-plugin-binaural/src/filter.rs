@@ -1,6 +1,6 @@
-use sotf_host::sofa::SofaFile;
 use realfft::RealToComplex;
 use rustfft::num_complex::Complex;
+use sotf_host::sofa::SofaFile;
 use std::sync::Arc;
 
 /// Convert impulse response to frequency domain using real FFT

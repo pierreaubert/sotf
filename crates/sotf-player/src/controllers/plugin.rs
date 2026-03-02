@@ -198,7 +198,12 @@ impl PluginController {
         let mut channel_count_changed = false;
 
         let result = if let Some(plugin) = self.get_editing_plugin_mut() {
-            adjust_plugin_param(&mut plugin.settings, param_idx, delta, &mut channel_count_changed)
+            adjust_plugin_param(
+                &mut plugin.settings,
+                param_idx,
+                delta,
+                &mut channel_count_changed,
+            )
         } else {
             false
         };
@@ -331,12 +336,11 @@ impl PluginController {
         plugin_idx: usize,
         param_idx: usize,
     ) -> PluginUpdateEffect {
-        let plugin_type =
-            if let Some(plugin) = self.chain.get_plugin(plugin_idx) {
-                plugin.plugin_type()
-            } else {
-                return PluginUpdateEffect::None;
-            };
+        let plugin_type = if let Some(plugin) = self.chain.get_plugin(plugin_idx) {
+            plugin.plugin_type()
+        } else {
+            return PluginUpdateEffect::None;
+        };
 
         let default_settings = PluginSettings::default_for(&plugin_type);
         let default_value = match default_settings.param_value(param_idx) {
@@ -353,15 +357,15 @@ impl PluginController {
                 PluginSettings::Upmixer { .. } if param_idx == 0 => {
                     channel_count_changed = true;
                 }
-                PluginSettings::MultibandCompressor { num_bands, bands, .. }
-                    if param_idx == 0 =>
-                {
+                PluginSettings::MultibandCompressor {
+                    num_bands, bands, ..
+                } if param_idx == 0 => {
                     bands.resize_with(*num_bands, Default::default);
                     channel_count_changed = true;
                 }
-                PluginSettings::MultibandExpander { num_bands, bands, .. }
-                    if param_idx == 0 =>
-                {
+                PluginSettings::MultibandExpander {
+                    num_bands, bands, ..
+                } if param_idx == 0 => {
                     bands.resize_with(*num_bands, Default::default);
                     channel_count_changed = true;
                 }
@@ -534,10 +538,7 @@ impl PluginController {
     }
 
     /// Toggle mute state for an EQ band.
-    pub fn toggle_eq_band_mute(
-        &mut self,
-        band_idx: usize,
-    ) -> Result<PluginUpdateEffect, String> {
+    pub fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
                 return Err("Selected plugin is not an EQ".to_string());
@@ -583,10 +584,7 @@ impl PluginController {
     }
 
     /// Toggle solo state for an EQ band.
-    pub fn toggle_eq_band_solo(
-        &mut self,
-        band_idx: usize,
-    ) -> Result<PluginUpdateEffect, String> {
+    pub fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
                 return Err("Selected plugin is not an EQ".to_string());
@@ -692,11 +690,7 @@ impl PluginController {
     }
 
     /// Save the plugin chain to a file. Returns the filename used.
-    pub fn save_to_file(
-        &mut self,
-        presets_dir: &Path,
-        filename: &str,
-    ) -> Result<String, String> {
+    pub fn save_to_file(&mut self, presets_dir: &Path, filename: &str) -> Result<String, String> {
         let filename_with_ext = if filename.ends_with(".json") {
             filename.to_string()
         } else {
@@ -735,10 +729,7 @@ impl PluginController {
     }
 
     /// Save the plugin chain to the selected preset file. Returns the filename used.
-    pub fn save_selected_preset(
-        &mut self,
-        presets_dir: &Path,
-    ) -> Result<String, String> {
+    pub fn save_selected_preset(&mut self, presets_dir: &Path) -> Result<String, String> {
         if self.available_presets.is_empty() {
             return Err("No presets available".to_string());
         }
@@ -781,7 +772,11 @@ impl PluginController {
         self.last_loaded_preset = Some(preset_filename.clone());
         let plugin_count = self.chain.len();
 
-        Ok((PluginUpdateEffect::Structural, preset_filename, plugin_count))
+        Ok((
+            PluginUpdateEffect::Structural,
+            preset_filename,
+            plugin_count,
+        ))
     }
 
     /// Select the next preset in the list.
@@ -959,9 +954,15 @@ fn adjust_plugin_param(
                 7 => adj!(stereo_width, "stereo_width"),
                 8 => adj!(center_spread, "center_spread"),
                 9 => adj!(bandpass_hz, "bandpass_hz"),
-                10 => { *enable_subharmonic_synth = !*enable_subharmonic_synth; true }
+                10 => {
+                    *enable_subharmonic_synth = !*enable_subharmonic_synth;
+                    true
+                }
                 11 => adj!(subharmonic_gain, "subharmonic_gain"),
-                12 => { *enable_hr_direct = !*enable_hr_direct; true }
+                12 => {
+                    *enable_hr_direct = !*enable_hr_direct;
+                    true
+                }
                 13 => adj!(hr_sharpen, "hr_sharpen"),
                 14 => adj!(safety_cap_db, "safety_cap_db"),
                 15 => {
@@ -989,10 +990,22 @@ fn adjust_plugin_param(
                 32 => adj!(dialogue_centroid_weight, "dialogue_centroid_weight"),
                 33 => adj!(dialogue_variance_weight, "dialogue_variance_weight"),
                 34 => adj!(dialogue_coherence_weight, "dialogue_coherence_weight"),
-                35 => { *bypass_decorrelation = !*bypass_decorrelation; true }
-                36 => { *bypass_transient_detection = !*bypass_transient_detection; true }
-                37 => { *bypass_all_processing = !*bypass_all_processing; true }
-                38 => { *enable_ml_detection = !*enable_ml_detection; true }
+                35 => {
+                    *bypass_decorrelation = !*bypass_decorrelation;
+                    true
+                }
+                36 => {
+                    *bypass_transient_detection = !*bypass_transient_detection;
+                    true
+                }
+                37 => {
+                    *bypass_all_processing = !*bypass_all_processing;
+                    true
+                }
+                38 => {
+                    *enable_ml_detection = !*enable_ml_detection;
+                    true
+                }
                 _ => false,
             }
         }
@@ -1021,8 +1034,7 @@ fn adjust_plugin_param(
                         true
                     }
                     2 => {
-                        filter.gain_db =
-                            (filter.gain_db + delta * 0.5).max(-24.0).min(24.0);
+                        filter.gain_db = (filter.gain_db + delta * 0.5).max(-24.0).min(24.0);
                         true
                     }
                     3 => {
@@ -1092,7 +1104,9 @@ fn adjust_plugin_param(
             bands,
             ..
         } if param_idx >= 100 => {
-            use sotf_plugins::param_specs::{find_by_key as p, multiband_compressor::BAND_TEMPLATE as BT};
+            use sotf_plugins::param_specs::{
+                find_by_key as p, multiband_compressor::BAND_TEMPLATE as BT,
+            };
             macro_rules! band_adj {
                 ($field:expr, $global:expr, $key:literal, $step:expr) => {{
                     let spec = p(BT, $key);
@@ -1125,8 +1139,14 @@ fn adjust_plugin_param(
                             .clamp(s.min_f64() as f32, s.max_f64() as f32);
                         true
                     }
-                    14 => { band.bypass = !band.bypass; true }
-                    15 => { band.solo = !band.solo; true }
+                    14 => {
+                        band.bypass = !band.bypass;
+                        true
+                    }
+                    15 => {
+                        band.solo = !band.solo;
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -1145,7 +1165,9 @@ fn adjust_plugin_param(
             bands,
             ..
         } if param_idx >= 100 => {
-            use sotf_plugins::param_specs::{find_by_key as p, multiband_expander::BAND_TEMPLATE as BT};
+            use sotf_plugins::param_specs::{
+                find_by_key as p, multiband_expander::BAND_TEMPLATE as BT,
+            };
             macro_rules! band_adj {
                 ($field:expr, $global:expr, $key:literal, $step:expr) => {{
                     let spec = p(BT, $key);
@@ -1173,10 +1195,21 @@ fn adjust_plugin_param(
                     9 => band_adj!(band.release_ms, release_ms, "release", delta as f32 * 10.0),
                     10 => band_adj!(band.range_db, range_db, "range", delta as f32),
                     11 => band_adj!(band.knee_db, knee_db, "knee", delta as f32 * 0.1),
-                    12 => band_adj!(band.hysteresis_db, hysteresis_db, "hysteresis", delta as f32 * 0.1),
+                    12 => band_adj!(
+                        band.hysteresis_db,
+                        hysteresis_db,
+                        "hysteresis",
+                        delta as f32 * 0.1
+                    ),
                     13 => band_adj!(band.hold_ms, hold_ms, "hold", delta as f32 * 5.0),
-                    14 => { band.bypass = !band.bypass; true }
-                    15 => { band.solo = !band.solo; true }
+                    14 => {
+                        band.bypass = !band.bypass;
+                        true
+                    }
+                    15 => {
+                        band.solo = !band.solo;
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -1216,32 +1249,85 @@ fn adjust_plugin_param(
                 *smoothing_ms = (*smoothing_ms + delta * 5.0).clamp(1.0, 200.0);
                 true
             }
-            2 => { *band1_freq = (*band1_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0); true }
-            3 => { *band1_q = (*band1_q + delta * 0.1).clamp(0.1, 10.0); true }
-            4 => { *band1_max_gain = (*band1_max_gain + delta).clamp(0.0, 24.0); true }
-            5 => { *band1_slope = (*band1_slope + delta * 0.05).clamp(0.0, 1.0); true }
-            6 => { *band2_freq = (*band2_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0); true }
-            7 => { *band2_q = (*band2_q + delta * 0.1).clamp(0.1, 10.0); true }
-            8 => { *band2_max_gain = (*band2_max_gain + delta).clamp(0.0, 24.0); true }
-            9 => { *band2_slope = (*band2_slope + delta * 0.05).clamp(0.0, 1.0); true }
-            10 => { *band3_freq = (*band3_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0); true }
-            11 => { *band3_q = (*band3_q + delta * 0.1).clamp(0.1, 10.0); true }
-            12 => { *band3_max_gain = (*band3_max_gain + delta).clamp(0.0, 24.0); true }
-            13 => { *band3_slope = (*band3_slope + delta * 0.05).clamp(0.0, 1.0); true }
-            14 => { *band4_freq = (*band4_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0); true }
-            15 => { *band4_q = (*band4_q + delta * 0.1).clamp(0.1, 10.0); true }
-            16 => { *band4_max_gain = (*band4_max_gain + delta).clamp(0.0, 24.0); true }
-            17 => { *band4_slope = (*band4_slope + delta * 0.05).clamp(0.0, 1.0); true }
-            18 => { *auto_gain_enabled = !*auto_gain_enabled; true }
-            19 => { *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0); true }
+            2 => {
+                *band1_freq = (*band1_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                true
+            }
+            3 => {
+                *band1_q = (*band1_q + delta * 0.1).clamp(0.1, 10.0);
+                true
+            }
+            4 => {
+                *band1_max_gain = (*band1_max_gain + delta).clamp(0.0, 24.0);
+                true
+            }
+            5 => {
+                *band1_slope = (*band1_slope + delta * 0.05).clamp(0.0, 1.0);
+                true
+            }
+            6 => {
+                *band2_freq = (*band2_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                true
+            }
+            7 => {
+                *band2_q = (*band2_q + delta * 0.1).clamp(0.1, 10.0);
+                true
+            }
+            8 => {
+                *band2_max_gain = (*band2_max_gain + delta).clamp(0.0, 24.0);
+                true
+            }
+            9 => {
+                *band2_slope = (*band2_slope + delta * 0.05).clamp(0.0, 1.0);
+                true
+            }
+            10 => {
+                *band3_freq = (*band3_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                true
+            }
+            11 => {
+                *band3_q = (*band3_q + delta * 0.1).clamp(0.1, 10.0);
+                true
+            }
+            12 => {
+                *band3_max_gain = (*band3_max_gain + delta).clamp(0.0, 24.0);
+                true
+            }
+            13 => {
+                *band3_slope = (*band3_slope + delta * 0.05).clamp(0.0, 1.0);
+                true
+            }
+            14 => {
+                *band4_freq = (*band4_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                true
+            }
+            15 => {
+                *band4_q = (*band4_q + delta * 0.1).clamp(0.1, 10.0);
+                true
+            }
+            16 => {
+                *band4_max_gain = (*band4_max_gain + delta).clamp(0.0, 24.0);
+                true
+            }
+            17 => {
+                *band4_slope = (*band4_slope + delta * 0.05).clamp(0.0, 1.0);
+                true
+            }
+            18 => {
+                *auto_gain_enabled = !*auto_gain_enabled;
+                true
+            }
+            19 => {
+                *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0);
+                true
+            }
             20 => {
                 *auto_gain_smoothing_ms =
                     (*auto_gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0);
                 true
             }
             21 => {
-                *auto_gain_loudness_type =
-                    if *auto_gain_loudness_type == 0 { 1 } else { 0 };
+                *auto_gain_loudness_type = if *auto_gain_loudness_type == 0 { 1 } else { 0 };
                 true
             }
             _ => false,
@@ -1283,7 +1369,7 @@ fn adjust_plugin_param(
             autogain_max_gain_db,
             autogain_smoothing_ms,
         } => {
-            use sotf_plugins::param_specs::{find_by_key as p, crossfeed::PARAMS as CF};
+            use sotf_plugins::param_specs::{crossfeed::PARAMS as CF, find_by_key as p};
             use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
             macro_rules! adj {
                 ($field:expr, $key:literal) => {{
@@ -1335,7 +1421,10 @@ fn adjust_plugin_param(
                     *mb_high_feed_db = pp.mb_high_feed_db as f64;
                     true
                 }
-                2 => { *enabled = !*enabled; true }
+                2 => {
+                    *enabled = !*enabled;
+                    true
+                }
                 3 => adj!(mix, "mix"),
                 4 => adj!(bauer_fcut_hz, "bauer_fcut_hz"),
                 5 => adj!(bauer_feed_db, "bauer_feed_db"),
@@ -1345,7 +1434,10 @@ fn adjust_plugin_param(
                 9 => adj!(mb_low_feed_db, "mb_low_feed_db"),
                 10 => adj!(mb_mid_feed_db, "mb_mid_feed_db"),
                 11 => adj!(mb_high_feed_db, "mb_high_feed_db"),
-                12 => { *autogain_enabled = !*autogain_enabled; true }
+                12 => {
+                    *autogain_enabled = !*autogain_enabled;
+                    true
+                }
                 13 => adj!(autogain_target_lufs, "autogain_target_lufs"),
                 14 => adj!(autogain_max_gain_db, "autogain_max_gain_db"),
                 15 => adj!(autogain_smoothing_ms, "autogain_smoothing_ms"),
@@ -1463,12 +1555,21 @@ fn set_plugin_param_value(
                 7 => set!(stereo_width, "stereo_width"),
                 8 => set!(center_spread, "center_spread"),
                 9 => set!(bandpass_hz, "bandpass_hz"),
-                10 => { *enable_subharmonic_synth = value > 0.5; true }
+                10 => {
+                    *enable_subharmonic_synth = value > 0.5;
+                    true
+                }
                 11 => set!(subharmonic_gain, "subharmonic_gain"),
-                12 => { *enable_hr_direct = value > 0.5; true }
+                12 => {
+                    *enable_hr_direct = value > 0.5;
+                    true
+                }
                 13 => set!(hr_sharpen, "hr_sharpen"),
                 14 => set!(safety_cap_db, "safety_cap_db"),
-                15 => { *decorrelation_mode = if value > 0.5 { 1 } else { 0 }; true }
+                15 => {
+                    *decorrelation_mode = if value > 0.5 { 1 } else { 0 };
+                    true
+                }
                 16 => set!(subharmonic_freq_hz, "subharmonic_freq_hz"),
                 17 => set!(subharmonic_attack_ms, "subharmonic_attack_ms"),
                 18 => set!(subharmonic_release_ms, "subharmonic_release_ms"),
@@ -1488,10 +1589,22 @@ fn set_plugin_param_value(
                 32 => set!(dialogue_centroid_weight, "dialogue_centroid_weight"),
                 33 => set!(dialogue_variance_weight, "dialogue_variance_weight"),
                 34 => set!(dialogue_coherence_weight, "dialogue_coherence_weight"),
-                35 => { *bypass_decorrelation = value > 0.5; true }
-                36 => { *bypass_transient_detection = value > 0.5; true }
-                37 => { *bypass_all_processing = value > 0.5; true }
-                38 => { *enable_ml_detection = value > 0.5; true }
+                35 => {
+                    *bypass_decorrelation = value > 0.5;
+                    true
+                }
+                36 => {
+                    *bypass_transient_detection = value > 0.5;
+                    true
+                }
+                37 => {
+                    *bypass_all_processing = value > 0.5;
+                    true
+                }
+                38 => {
+                    *enable_ml_detection = value > 0.5;
+                    true
+                }
                 _ => false,
             };
             if param_idx == 0 {
@@ -1505,9 +1618,18 @@ fn set_plugin_param_value(
 
             if let Some(filter) = filters.get_mut(filter_idx) {
                 match field_idx {
-                    0 => { filter.frequency = value.clamp(20.0, 20_000.0); true }
-                    1 => { filter.q = value.clamp(0.1, 10.0); true }
-                    2 => { filter.gain_db = value.clamp(-24.0, 24.0); true }
+                    0 => {
+                        filter.frequency = value.clamp(20.0, 20_000.0);
+                        true
+                    }
+                    1 => {
+                        filter.q = value.clamp(0.1, 10.0);
+                        true
+                    }
+                    2 => {
+                        filter.gain_db = value.clamp(-24.0, 24.0);
+                        true
+                    }
                     3 => {
                         use crate::BiquadFilterType;
                         let types = [
@@ -1530,10 +1652,16 @@ fn set_plugin_param_value(
             }
         }
         PluginSettings::Convolution { mix, gain_db, .. } => {
-            use sotf_plugins::param_specs::{find_by_key as pk, convolution::PARAMS as CV};
+            use sotf_plugins::param_specs::{convolution::PARAMS as CV, find_by_key as pk};
             match param_idx {
-                0 => { *mix = pk(CV, "mix").clamp_f64(value); true }
-                1 => { *gain_db = pk(CV, "gain_db").clamp_f64(value); true }
+                0 => {
+                    *mix = pk(CV, "mix").clamp_f64(value);
+                    true
+                }
+                1 => {
+                    *gain_db = pk(CV, "gain_db").clamp_f64(value);
+                    true
+                }
                 _ => false,
             }
         }
@@ -1544,10 +1672,22 @@ fn set_plugin_param_value(
             smoothing,
             ..
         } => match param_idx {
-            0 => { *num_bins = (value as usize).clamp(10, 256); true }
-            1 => { *min_freq = (value as f32).clamp(20.0, 20000.0); true }
-            2 => { *max_freq = (value as f32).clamp(20.0, 20000.0); true }
-            3 => { *smoothing = (value as f32).clamp(0.0, 1.0); true }
+            0 => {
+                *num_bins = (value as usize).clamp(10, 256);
+                true
+            }
+            1 => {
+                *min_freq = (value as f32).clamp(20.0, 20000.0);
+                true
+            }
+            2 => {
+                *max_freq = (value as f32).clamp(20.0, 20000.0);
+                true
+            }
+            3 => {
+                *smoothing = (value as f32).clamp(0.0, 1.0);
+                true
+            }
             _ => false,
         },
         PluginSettings::MultibandCompressor { bands, .. } if param_idx >= 100 => {
@@ -1555,14 +1695,38 @@ fn set_plugin_param_value(
             let local_idx = param_idx % 100;
             if let Some(band) = bands.get_mut(band_idx) {
                 match local_idx {
-                    6 => { band.threshold_db = Some(value as f32); true }
-                    7 => { band.ratio = Some(value as f32); true }
-                    8 => { band.attack_ms = Some(value as f32); true }
-                    9 => { band.release_ms = Some(value as f32); true }
-                    10 => { band.knee_db = Some(value as f32); true }
-                    13 => { band.makeup_gain_db = value as f32; true }
-                    14 => { band.bypass = value > 0.5; true }
-                    15 => { band.solo = value > 0.5; true }
+                    6 => {
+                        band.threshold_db = Some(value as f32);
+                        true
+                    }
+                    7 => {
+                        band.ratio = Some(value as f32);
+                        true
+                    }
+                    8 => {
+                        band.attack_ms = Some(value as f32);
+                        true
+                    }
+                    9 => {
+                        band.release_ms = Some(value as f32);
+                        true
+                    }
+                    10 => {
+                        band.knee_db = Some(value as f32);
+                        true
+                    }
+                    13 => {
+                        band.makeup_gain_db = value as f32;
+                        true
+                    }
+                    14 => {
+                        band.bypass = value > 0.5;
+                        true
+                    }
+                    15 => {
+                        band.solo = value > 0.5;
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -1574,16 +1738,46 @@ fn set_plugin_param_value(
             let local_idx = param_idx % 100;
             if let Some(band) = bands.get_mut(band_idx) {
                 match local_idx {
-                    6 => { band.threshold_db = Some(value as f32); true }
-                    7 => { band.ratio = Some(value as f32); true }
-                    8 => { band.attack_ms = Some(value as f32); true }
-                    9 => { band.release_ms = Some(value as f32); true }
-                    10 => { band.range_db = Some(value as f32); true }
-                    11 => { band.knee_db = Some(value as f32); true }
-                    12 => { band.hysteresis_db = Some(value as f32); true }
-                    13 => { band.hold_ms = Some(value as f32); true }
-                    14 => { band.bypass = value > 0.5; true }
-                    15 => { band.solo = value > 0.5; true }
+                    6 => {
+                        band.threshold_db = Some(value as f32);
+                        true
+                    }
+                    7 => {
+                        band.ratio = Some(value as f32);
+                        true
+                    }
+                    8 => {
+                        band.attack_ms = Some(value as f32);
+                        true
+                    }
+                    9 => {
+                        band.release_ms = Some(value as f32);
+                        true
+                    }
+                    10 => {
+                        band.range_db = Some(value as f32);
+                        true
+                    }
+                    11 => {
+                        band.knee_db = Some(value as f32);
+                        true
+                    }
+                    12 => {
+                        band.hysteresis_db = Some(value as f32);
+                        true
+                    }
+                    13 => {
+                        band.hold_ms = Some(value as f32);
+                        true
+                    }
+                    14 => {
+                        band.bypass = value > 0.5;
+                        true
+                    }
+                    15 => {
+                        band.solo = value > 0.5;
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -1618,14 +1812,38 @@ fn set_plugin_param_value(
         } => {
             use sotf_plugins::param_specs::{find_by_key as pk, fletcher_munson::PARAMS as FM};
             match param_idx {
-                0 => { *playback_volume_db = value.clamp(-80.0, 0.0); true }
-                1 => { *reference_level_db = pk(FM, "reference_level_db").clamp_f64(value); true }
-                2 => { *enabled = value > 0.5; true }
-                3 => { *smoothing_ms = pk(FM, "smoothing_ms").clamp_f64(value); true }
-                4 => { *auto_gain_enabled = value > 0.5; true }
-                5 => { *auto_gain_max_db = pk(FM, "auto_gain_max_db").clamp_f64(value); true }
-                6 => { *auto_gain_smoothing_ms = pk(FM, "auto_gain_smoothing_ms").clamp_f64(value); true }
-                7 => { *auto_gain_loudness_type = (value as i32).clamp(0, 1); true }
+                0 => {
+                    *playback_volume_db = value.clamp(-80.0, 0.0);
+                    true
+                }
+                1 => {
+                    *reference_level_db = pk(FM, "reference_level_db").clamp_f64(value);
+                    true
+                }
+                2 => {
+                    *enabled = value > 0.5;
+                    true
+                }
+                3 => {
+                    *smoothing_ms = pk(FM, "smoothing_ms").clamp_f64(value);
+                    true
+                }
+                4 => {
+                    *auto_gain_enabled = value > 0.5;
+                    true
+                }
+                5 => {
+                    *auto_gain_max_db = pk(FM, "auto_gain_max_db").clamp_f64(value);
+                    true
+                }
+                6 => {
+                    *auto_gain_smoothing_ms = pk(FM, "auto_gain_smoothing_ms").clamp_f64(value);
+                    true
+                }
+                7 => {
+                    *auto_gain_loudness_type = (value as i32).clamp(0, 1);
+                    true
+                }
                 _ => {
                     if param_idx >= 8 && param_idx < 24 {
                         let rel_idx = param_idx - 8;
@@ -1652,10 +1870,22 @@ fn set_plugin_param_value(
                             format!("{}_slope", band_prefix),
                         ];
                         match field_idx {
-                            0 => { *freq = pk(FM, &keys[0]).clamp_f64(value); true }
-                            1 => { *q = pk(FM, &keys[1]).clamp_f64(value); true }
-                            2 => { *max_gain = pk(FM, &keys[2]).clamp_f64(value); true }
-                            3 => { *slope = pk(FM, &keys[3]).clamp_f64(value); true }
+                            0 => {
+                                *freq = pk(FM, &keys[0]).clamp_f64(value);
+                                true
+                            }
+                            1 => {
+                                *q = pk(FM, &keys[1]).clamp_f64(value);
+                                true
+                            }
+                            2 => {
+                                *max_gain = pk(FM, &keys[2]).clamp_f64(value);
+                                true
+                            }
+                            3 => {
+                                *slope = pk(FM, &keys[3]).clamp_f64(value);
+                                true
+                            }
                             _ => false,
                         }
                     } else {
@@ -1687,8 +1917,7 @@ fn set_plugin_param_value(
             ];
             let idx = (value as usize).min(presets.len() - 1);
             *preset = presets[idx];
-            let p_params =
-                sotf_plugins::CrossfeedPluginParams::from_preset(*preset);
+            let p_params = sotf_plugins::CrossfeedPluginParams::from_preset(*preset);
             *mode = p_params.mode;
             *bauer_fcut_hz = p_params.bauer_fcut_hz as f64;
             *bauer_feed_db = p_params.bauer_feed_db as f64;
@@ -1707,15 +1936,15 @@ fn set_plugin_param_value(
                 let raw = value / spec.display_scale;
                 other.set_param_value(param_idx, spec.clamp_f64(raw));
                 match other {
-                    PluginSettings::MultibandCompressor { num_bands, bands, .. }
-                        if param_idx == 0 =>
-                    {
+                    PluginSettings::MultibandCompressor {
+                        num_bands, bands, ..
+                    } if param_idx == 0 => {
                         bands.resize_with(*num_bands, Default::default);
                         *channel_count_changed = true;
                     }
-                    PluginSettings::MultibandExpander { num_bands, bands, .. }
-                        if param_idx == 0 =>
-                    {
+                    PluginSettings::MultibandExpander {
+                        num_bands, bands, ..
+                    } if param_idx == 0 => {
                         bands.resize_with(*num_bands, Default::default);
                         *channel_count_changed = true;
                     }

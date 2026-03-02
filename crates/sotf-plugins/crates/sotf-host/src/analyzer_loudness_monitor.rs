@@ -5,8 +5,8 @@
 use crate::analyzer::{LoudnessData, RealTimeCache};
 use crate::parameters::{Parameter, ParameterId, ParameterValue};
 use crate::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use math_audio_dsp::fast_math::fast_log10;
 use ebur128::{EbuR128, Mode};
+use math_audio_dsp::fast_math::fast_log10;
 use rtrb::{Consumer, RingBuffer};
 use serde::{Deserialize, Serialize};
 use std::any::Any;

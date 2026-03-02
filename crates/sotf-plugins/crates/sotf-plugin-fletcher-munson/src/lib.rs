@@ -206,19 +206,25 @@ impl InPlacePlugin for FletcherMunsonPlugin {
         self.validate_parameter(&id, &value)?;
         let name = id.0.as_str();
         if name == "playback_volume_db" {
-            let v = value.as_float().ok_or_else(|| "playback_volume_db must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "playback_volume_db must be a float".to_string())?;
             if v.is_finite() {
                 self.playback_volume_db = v;
                 self.update_band_targets();
             }
         } else if name == "reference_level_db" {
-            let v = value.as_float().ok_or_else(|| "reference_level_db must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "reference_level_db must be a float".to_string())?;
             if v.is_finite() {
                 self.reference_level_db = v;
                 self.update_band_targets();
             }
         } else if name == "enabled" {
-            self.enabled = value.as_bool().ok_or_else(|| "enabled must be a boolean".to_string())?;
+            self.enabled = value
+                .as_bool()
+                .ok_or_else(|| "enabled must be a boolean".to_string())?;
         } else {
             return Err(format!("Unknown: {}", id));
         }

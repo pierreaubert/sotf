@@ -1,5 +1,5 @@
 use super::{
-    EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme, rgb
+    EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme, rgb,
 };
 use gpui::Rgba;
 
@@ -22,7 +22,7 @@ impl Theme {
             text_disabled: rgb(0x333333),
 
             // Border colors (white for high contrast)
-            border: rgb(0xdddddd), // Slightly softer but still visible
+            border: rgb(0xdddddd),         // Slightly softer but still visible
             border_focused: rgb(0xffffff), // Pure white for hover states
 
             // Accent colors (white accent for high contrast)

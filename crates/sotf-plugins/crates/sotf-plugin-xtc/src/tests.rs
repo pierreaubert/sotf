@@ -1,8 +1,8 @@
 use super::*;
 use filters::{
     compute_beta, compute_beta_smooth, compute_geometry_cache, compute_xtc_filters_full,
-    head_shadowing_filter, head_shadowing_woodworth, sanitize_filter,
-    soft_limit_complex_magnitude, woodworth_diffraction_path,
+    head_shadowing_filter, head_shadowing_woodworth, sanitize_filter, soft_limit_complex_magnitude,
+    woodworth_diffraction_path,
 };
 use reflections::{air_absorption, compute_image_sources, compute_reflection_beta_boost};
 
@@ -1089,13 +1089,17 @@ fn test_spectral_norm_does_not_exceed_gain_budget() {
         assert!(
             mag_ll <= max_gain_linear + 1e-3,
             "filter_ll[{}] magnitude {} exceeds max_gain_linear {}",
-            bin, mag_ll, max_gain_linear,
+            bin,
+            mag_ll,
+            max_gain_linear,
         );
         let mag_lr = filters.filter_lr[bin].norm();
         assert!(
             mag_lr <= max_gain_linear + 1e-3,
             "filter_lr[{}] magnitude {} exceeds max_gain_linear {}",
-            bin, mag_lr, max_gain_linear,
+            bin,
+            mag_lr,
+            max_gain_linear,
         );
     }
 }
@@ -1152,7 +1156,10 @@ fn test_neumann_refinement_never_increases_error() {
             err2_sq <= err1_sq + 1e-6,
             "Neumann refinement increased error at bin {} (freq {:.0} Hz): \
              err1_sq={:.6}, err2_sq={:.6}",
-            bin, freq, err1_sq, err2_sq,
+            bin,
+            freq,
+            err1_sq,
+            err2_sq,
         );
     }
 }
@@ -1259,8 +1266,10 @@ fn test_asymmetric_spectral_norm_scales_columns_not_rows() {
 
     for bin in bin_lo..=bin_hi {
         // Skip bins where denominators are too small for stable ratio computation
-        if f_off.filter_ll[bin].norm() < 1e-6 || rl_off[bin].norm() < 1e-6
-            || f_off.filter_lr[bin].norm() < 1e-6 || rr_off[bin].norm() < 1e-6
+        if f_off.filter_ll[bin].norm() < 1e-6
+            || rl_off[bin].norm() < 1e-6
+            || f_off.filter_lr[bin].norm() < 1e-6
+            || rr_off[bin].norm() < 1e-6
         {
             continue;
         }
@@ -1273,12 +1282,10 @@ fn test_asymmetric_spectral_norm_scales_columns_not_rows() {
 
         // In correct code: left column has same ratio → |ratio_ll - ratio_rl| ≈ 0
         //                   right column has same ratio → |ratio_lr - ratio_rr| ≈ 0
-        col_err += ((ratio_ll - ratio_rl) as f64).powi(2)
-            + ((ratio_lr - ratio_rr) as f64).powi(2);
+        col_err += ((ratio_ll - ratio_rl) as f64).powi(2) + ((ratio_lr - ratio_rr) as f64).powi(2);
 
         // In buggy code (row scaling): |ratio_ll - ratio_lr| ≈ 0 and |ratio_rl - ratio_rr| ≈ 0
-        row_err += ((ratio_ll - ratio_lr) as f64).powi(2)
-            + ((ratio_rl - ratio_rr) as f64).powi(2);
+        row_err += ((ratio_ll - ratio_lr) as f64).powi(2) + ((ratio_rl - ratio_rr) as f64).powi(2);
 
         count += 1;
     }

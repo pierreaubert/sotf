@@ -1,6 +1,6 @@
-use sotf_plugin_gate::{GatePlugin, GatePluginParams};
-use sotf_host::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
+use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
 use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_plugin_gate::{GatePlugin, GatePluginParams};
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;
@@ -67,5 +67,3 @@ fn main() {
 
     println!("\n[ALL PASS] Gate QA Complete.");
 }
-
-

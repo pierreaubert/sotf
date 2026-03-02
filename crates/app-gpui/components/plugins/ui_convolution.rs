@@ -5,7 +5,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, convolution::PARAMS as CV};
+use sotf_plugins::param_specs::{convolution::PARAMS as CV, find_by_key as pk};
 
 /// State for rendering the Convolution plugin
 pub struct ConvolutionRenderState<'a> {

@@ -2,17 +2,17 @@
 // Phase-Coherent Downmix Plugin
 // ============================================================================
 
-use sotf_host::param_specs::{find_by_key as pk, downmix::PARAMS as DM};
+use sotf_host::param_specs::{downmix::PARAMS as DM, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 
-use sotf_host::smoothing::Smoother;
 use math_audio_dsp::fast_math::{fast_atan2, fast_cos, fast_sin};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
+use sotf_host::smoothing::Smoother;
 use std::sync::Arc;
 
 // ============================================================================
@@ -261,8 +261,7 @@ impl DownmixPlugin {
                         //   0° → center, ±90° → full L/R, ±180° → center again.
                         // L² + R² = gain² always (no energy loss).
                         let leftness = s.azimuth.to_radians().sin();
-                        let pan_angle =
-                            (1.0 - leftness) * std::f32::consts::FRAC_PI_4;
+                        let pan_angle = (1.0 - leftness) * std::f32::consts::FRAC_PI_4;
                         new_coeffs.push(DownmixCoeffs {
                             left_gain: (h_lin * pan_angle.cos()).max(0.0),
                             right_gain: (h_lin * pan_angle.sin()).max(0.0),
@@ -293,8 +292,7 @@ impl DownmixPlugin {
                         // Constant-power pan using sin(azimuth) as leftness.
                         // L² + R² = s_lin² at every angle, no energy loss.
                         let leftness = s.azimuth.to_radians().sin();
-                        let pan_angle =
-                            (1.0 - leftness) * std::f32::consts::FRAC_PI_4;
+                        let pan_angle = (1.0 - leftness) * std::f32::consts::FRAC_PI_4;
                         new_coeffs.push(DownmixCoeffs {
                             left_gain: (s_lin * pan_angle.cos()).max(0.0),
                             right_gain: (s_lin * pan_angle.sin()).max(0.0),
@@ -558,27 +556,37 @@ impl Plugin for DownmixPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_center_gain_db {
-            let v = value.as_float().unwrap_or(pk(DM, "center_gain_db").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(DM, "center_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.center_gain_db = v;
             }
         } else if id == self.param_surround_gain_db {
-            let v = value.as_float().unwrap_or(pk(DM, "surround_gain_db").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(DM, "surround_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.surround_gain_db = v;
             }
         } else if id == self.param_height_gain_db {
-            let v = value.as_float().unwrap_or(pk(DM, "height_gain_db").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(DM, "height_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.height_gain_db = v;
             }
         } else if id == self.param_lfe_gain_db {
-            let v = value.as_float().unwrap_or(pk(DM, "lfe_gain_db").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(DM, "lfe_gain_db").default_f64() as f32);
             if v.is_finite() {
                 self.lfe_gain_db = v;
             }
         } else if id == self.param_phase_coherence {
-            self.phase_coherence = value.as_bool().unwrap_or(pk(DM, "phase_coherence").default_bool());
+            self.phase_coherence = value
+                .as_bool()
+                .unwrap_or(pk(DM, "phase_coherence").default_bool());
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -751,8 +759,8 @@ impl Plugin for DownmixPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_downmix_basic() {
         let mut p = DownmixPlugin::new(2);
@@ -920,7 +928,10 @@ mod tests {
             powers
         );
         // All should have positive power
-        assert!(min_power > 0.01, "Surround power should be non-trivial: {min_power}");
+        assert!(
+            min_power > 0.01,
+            "Surround power should be non-trivial: {min_power}"
+        );
     }
 
     /// Verify all speaker configs produce valid coefficients:
@@ -933,8 +944,7 @@ mod tests {
         use sotf_host::speaker_config::get_speaker_config;
 
         for config_id in &[
-            "2.0", "2.1", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4",
-            "9.1.6",
+            "2.0", "2.1", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
         ] {
             let config = get_speaker_config(config_id).unwrap();
             let p = DownmixPlugin::from_params(DownmixPluginParams {

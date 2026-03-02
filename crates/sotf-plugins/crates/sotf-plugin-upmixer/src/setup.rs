@@ -3,8 +3,8 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use sotf_host::plugin::{Plugin, PluginResult};
 use rustfft::num_complex::Complex;
+use sotf_host::plugin::{Plugin, PluginResult};
 use sotf_host::speaker_config::{
     calculate_panning_gain, calculate_panning_gain_with_wraparound, get_speaker_config,
 };
@@ -182,7 +182,8 @@ impl UpmixerPlugin {
     /// Update cached safety_cap linear values from safety_cap_db
     pub(super) fn update_safety_cap_cache(&mut self) {
         if self.safety_cap_db >= 0.0 {
-            self.safety_cap_linear = math_audio_dsp::fast_math::fast_pow10(self.safety_cap_db / 20.0);
+            self.safety_cap_linear =
+                math_audio_dsp::fast_math::fast_pow10(self.safety_cap_db / 20.0);
             self.safety_cap_min_scale =
                 math_audio_dsp::fast_math::fast_pow10(-self.safety_cap_db / 20.0);
         } else {

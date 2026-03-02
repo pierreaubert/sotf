@@ -2,15 +2,18 @@
 // Multiband Expander Plugin
 // ============================================================================
 
+use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::{find_by_key as pk, multiband_expander::{GLOBAL_PARAMS as ME, BAND_TEMPLATE as MEB}};
+use sotf_host::param_specs::{
+    find_by_key as pk,
+    multiband_expander::{BAND_TEMPLATE as MEB, GLOBAL_PARAMS as ME},
+};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::{LogSmoother, Smoother};
-use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -209,7 +212,10 @@ impl MultibandExpanderPlugin {
         Self::with_params(channels, Default::default())
     }
     pub fn with_params(channels: usize, params: MultibandExpanderPluginParams) -> Self {
-        let nb = params.num_bands.clamp(pk(ME, "num_bands").min_f64() as usize, pk(ME, "num_bands").max_f64() as usize);
+        let nb = params.num_bands.clamp(
+            pk(ME, "num_bands").min_f64() as usize,
+            pk(ME, "num_bands").max_f64() as usize,
+        );
         let sr = 44100;
         let mut xfs = params.crossover_frequencies.clone();
         while xfs.len() < 4 {
@@ -282,9 +288,15 @@ impl MultibandExpanderPlugin {
             Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
                 .with_group("General")
                 .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", self.mix, pk(ME, "mix").min_f64() as f32, pk(ME, "mix").max_f64() as f32)
-                .with_group("General")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "mix",
+                "Mix",
+                self.mix,
+                pk(ME, "mix").min_f64() as f32,
+                pk(ME, "mix").max_f64() as f32,
+            )
+            .with_group("General")
+            .with_importance(ParameterImportance::Useful),
         ];
 
         // Crossover frequencies
@@ -307,10 +319,22 @@ impl MultibandExpanderPlugin {
                 pk(ME, "threshold").max_f64() as f32,
             )
             .with_group("Global Dynamics"),
-            Parameter::new_float("ratio", "Ratio", self.ratio, pk(ME, "ratio").min_f64() as f32, pk(ME, "ratio").max_f64() as f32)
-                .with_group("Global Dynamics"),
-            Parameter::new_float("attack", "Attack", self.attack_ms, pk(ME, "attack").min_f64() as f32, pk(ME, "attack").max_f64() as f32)
-                .with_group("Global Dynamics"),
+            Parameter::new_float(
+                "ratio",
+                "Ratio",
+                self.ratio,
+                pk(ME, "ratio").min_f64() as f32,
+                pk(ME, "ratio").max_f64() as f32,
+            )
+            .with_group("Global Dynamics"),
+            Parameter::new_float(
+                "attack",
+                "Attack",
+                self.attack_ms,
+                pk(ME, "attack").min_f64() as f32,
+                pk(ME, "attack").max_f64() as f32,
+            )
+            .with_group("Global Dynamics"),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -445,8 +469,14 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         let name = &id.0;
 
         if name == "num_bands" {
-            let nb = value.as_int().ok_or_else(|| "Bands must be an integer".to_string())? as usize;
-            let nb = nb.clamp(pk(ME, "num_bands").min_f64() as usize, pk(ME, "num_bands").max_f64() as usize);
+            let nb = value
+                .as_int()
+                .ok_or_else(|| "Bands must be an integer".to_string())?
+                as usize;
+            let nb = nb.clamp(
+                pk(ME, "num_bands").min_f64() as usize,
+                pk(ME, "num_bands").max_f64() as usize,
+            );
             if nb != self.num_bands {
                 self.num_bands = nb;
                 self.build_crossovers();
@@ -475,9 +505,13 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         self.validate_parameter(&id, &value)?;
 
         if name == "link_channels" {
-            self.link_channels = value.as_bool().ok_or_else(|| "link_channels must be a boolean".to_string())?;
+            self.link_channels = value
+                .as_bool()
+                .ok_or_else(|| "link_channels must be a boolean".to_string())?;
         } else if name == "mix" {
-            let v = value.as_float().ok_or_else(|| "mix must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "mix must be a float".to_string())?;
             if v.is_finite() {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
@@ -491,7 +525,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 .ok_or_else(|| "Crossover index must be at least 1".to_string())?;
 
             if idx < self.xover_smoothers.len() {
-                let f = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                let f = value
+                    .as_float()
+                    .ok_or_else(|| format!("{} must be a float", name))?;
                 if f.is_finite() {
                     self.crossover_frequencies[idx] = f;
                     self.xover_smoothers[idx].set_target(f);
@@ -500,24 +536,32 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 return Err(format!("Crossover index {} out of range", idx + 1));
             }
         } else if name == "threshold" {
-            let v = value.as_float().ok_or_else(|| "threshold must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "threshold must be a float".to_string())?;
             if v.is_finite() {
                 self.threshold_db = v;
                 self.threshold_smoother.set_target(self.threshold_db);
             }
         } else if name == "ratio" {
-            let v = value.as_float().ok_or_else(|| "ratio must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "ratio must be a float".to_string())?;
             if v.is_finite() {
                 self.ratio = v.max(1.0);
             }
         } else if name == "attack" {
-            let v = value.as_float().ok_or_else(|| "attack must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "attack must be a float".to_string())?;
             if v.is_finite() {
                 self.attack_ms = v;
                 self.update_coefficients();
             }
         } else if name == "release" {
-            let v = value.as_float().ok_or_else(|| "release must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "release must be a float".to_string())?;
             if v.is_finite() {
                 self.release_ms = v;
                 self.update_coefficients();
@@ -525,39 +569,57 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         } else if name.starts_with("band_") {
             let parts: Vec<&str> = name.split('_').collect();
             if parts.len() >= 3 {
-                let b_idx = parts[1].parse::<usize>().map_err(|e| format!("Invalid band index: {}", e))?;
+                let b_idx = parts[1]
+                    .parse::<usize>()
+                    .map_err(|e| format!("Invalid band index: {}", e))?;
                 if b_idx < self.num_bands {
                     let field = parts[2];
                     let bp = &mut self.band_params[b_idx];
                     match field {
                         "threshold" => {
-                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.threshold_db = Some(v);
                             }
                         }
                         "ratio" => {
-                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.ratio = Some(v);
                             }
                         }
                         "attack" => {
-                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.attack_ms = Some(v);
                                 self.update_coefficients();
                             }
                         }
                         "release" => {
-                            let v = value.as_float().ok_or_else(|| format!("{} must be a float", name))?;
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
                             if v.is_finite() {
                                 bp.release_ms = Some(v);
                                 self.update_coefficients();
                             }
                         }
-                        "solo" => bp.solo = value.as_bool().ok_or_else(|| format!("{} must be a boolean", name))?,
-                        "bypass" => bp.bypass = value.as_bool().ok_or_else(|| format!("{} must be a boolean", name))?,
+                        "solo" => {
+                            bp.solo = value
+                                .as_bool()
+                                .ok_or_else(|| format!("{} must be a boolean", name))?
+                        }
+                        "bypass" => {
+                            bp.bypass = value
+                                .as_bool()
+                                .ok_or_else(|| format!("{} must be a boolean", name))?
+                        }
                         _ => return Err(format!("Unknown band field: {}", field)),
                     }
                 } else {
@@ -568,25 +630,33 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             // Support legacy names or other fields
             match name.as_str() {
                 "knee" => {
-                    let v = value.as_float().ok_or_else(|| "knee must be a float".to_string())?;
+                    let v = value
+                        .as_float()
+                        .ok_or_else(|| "knee must be a float".to_string())?;
                     if v.is_finite() {
                         self.knee_db = v;
                     }
                 }
                 "range" => {
-                    let v = value.as_float().ok_or_else(|| "range must be a float".to_string())?;
+                    let v = value
+                        .as_float()
+                        .ok_or_else(|| "range must be a float".to_string())?;
                     if v.is_finite() {
                         self.range_db = v;
                     }
                 }
                 "hysteresis" => {
-                    let v = value.as_float().ok_or_else(|| "hysteresis must be a float".to_string())?;
+                    let v = value
+                        .as_float()
+                        .ok_or_else(|| "hysteresis must be a float".to_string())?;
                     if v.is_finite() {
                         self.hysteresis_db = v;
                     }
                 }
                 "hold" => {
-                    let v = value.as_float().ok_or_else(|| "hold must be a float".to_string())?;
+                    let v = value
+                        .as_float()
+                        .ok_or_else(|| "hold must be a float".to_string())?;
                     if v.is_finite() {
                         self.hold_ms = v;
                     }
@@ -904,8 +974,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_mb_exp_basic() {
         let mut p = MultibandExpanderPlugin::new(1);

@@ -2,13 +2,13 @@
 // Parametric EQ Plugin
 // ============================================================================
 
+use math_audio_iir_fir::Biquad;
+use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
-use math_audio_iir_fir::Biquad;
-use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -244,15 +244,11 @@ impl InPlacePlugin for EqPlugin {
 
                 // Validate using a temporary parameter template
                 match field {
-                    "freq" => {
-                        Parameter::new_float("freq", "Freq", 1000.0, FREQ_MIN, FREQ_MAX)
-                            .validate(&value)?
-                    }
+                    "freq" => Parameter::new_float("freq", "Freq", 1000.0, FREQ_MIN, FREQ_MAX)
+                        .validate(&value)?,
                     "q" => Parameter::new_float("q", "Q", 1.0, Q_MIN, Q_MAX).validate(&value)?,
-                    "gain" => {
-                        Parameter::new_float("gain", "Gain", 0.0, GAIN_MIN, GAIN_MAX)
-                            .validate(&value)?
-                    }
+                    "gain" => Parameter::new_float("gain", "Gain", 0.0, GAIN_MIN, GAIN_MAX)
+                        .validate(&value)?,
                     _ => return Err(format!("Unknown field: {}", field)),
                 }
 
@@ -376,9 +372,9 @@ impl InPlacePlugin for EqPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
     use math_audio_iir_fir::{Biquad, BiquadFilterType};
+    use sotf_host::*;
 
     #[test]
     fn test_eq_passthrough() {

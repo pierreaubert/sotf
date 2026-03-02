@@ -270,7 +270,9 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 self.rebuild_filters();
             }
         } else if id.0 == "high_gain" {
-            let v = value.as_float().unwrap_or(pk(LC, "high_gain").default_f32());
+            let v = value
+                .as_float()
+                .unwrap_or(pk(LC, "high_gain").default_f32());
             if v.is_finite() {
                 self.high_gain = v;
                 self.rebuild_filters();
@@ -282,7 +284,9 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 self.rebuild_filters();
             }
         } else if id.0 == "high_freq" {
-            let v = value.as_float().unwrap_or(pk(LC, "high_freq").default_f32());
+            let v = value
+                .as_float()
+                .unwrap_or(pk(LC, "high_freq").default_f32());
             if v.is_finite() {
                 self.high_freq = v;
                 self.rebuild_filters();
@@ -377,8 +381,8 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_loudness_basic() {
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);

@@ -16,13 +16,13 @@ mod tests;
 pub use config::*;
 use factory::build_path_from_config;
 
+use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use sotf_host::host::DawHost;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;
-use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -168,10 +168,14 @@ impl ABComparePlugin {
                 .with_description("Bypass A/B processing, output original input")
                 .with_group("Mix Control")
                 .with_importance(ParameterImportance::Critical),
-            Parameter::new_bool("auto_gain_enabled", "Auto Gain", self.auto_gain.is_enabled())
-                .with_description("Automatically match loudness between A and B")
-                .with_group("Loudness Matching")
-                .with_importance(ParameterImportance::Critical),
+            Parameter::new_bool(
+                "auto_gain_enabled",
+                "Auto Gain",
+                self.auto_gain.is_enabled(),
+            )
+            .with_description("Automatically match loudness between A and B")
+            .with_group("Loudness Matching")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_int(
                 "loudness_type",
                 "Loudness Type",
@@ -185,22 +189,41 @@ impl ABComparePlugin {
             .with_description("0 = Momentary (400ms), 1 = Short-term (3s)")
             .with_group("Loudness Matching")
             .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("max_auto_gain_db", "Max Auto Gain", self.auto_gain.max_gain_db(), 0.0, 24.0)
-                .with_description("Maximum loudness correction in dB")
-                .with_group("Loudness Matching")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float("gain_smoothing_ms", "Gain Smoothing", self.auto_gain.smoothing_ms(), 10.0, 500.0)
-                .with_description("Auto-gain smoothing time in milliseconds")
-                .with_group("Loudness Matching")
-                .with_importance(ParameterImportance::FineTuning),
-            Parameter::new_float("mix_transition_ms", "Mix Transition", self.mix_transition_ms, 5.0, 500.0)
-                .with_description("A/B transition smoothing time in milliseconds")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "max_auto_gain_db",
+                "Max Auto Gain",
+                self.auto_gain.max_gain_db(),
+                0.0,
+                24.0,
+            )
+            .with_description("Maximum loudness correction in dB")
+            .with_group("Loudness Matching")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "gain_smoothing_ms",
+                "Gain Smoothing",
+                self.auto_gain.smoothing_ms(),
+                10.0,
+                500.0,
+            )
+            .with_description("Auto-gain smoothing time in milliseconds")
+            .with_group("Loudness Matching")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "mix_transition_ms",
+                "Mix Transition",
+                self.mix_transition_ms,
+                5.0,
+                500.0,
+            )
+            .with_description("A/B transition smoothing time in milliseconds")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_string(
                 "path_a_config",
                 "Path A Config",
-                serde_json::to_string(&self.path_a_config).unwrap_or_else(|_| r#"{"type":"None"}"#.to_string()),
+                serde_json::to_string(&self.path_a_config)
+                    .unwrap_or_else(|_| r#"{"type":"None"}"#.to_string()),
             )
             .with_description("JSON configuration for path A")
             .with_group("Configuration")
@@ -208,7 +231,8 @@ impl ABComparePlugin {
             Parameter::new_string(
                 "path_b_config",
                 "Path B Config",
-                serde_json::to_string(&self.path_b_config).unwrap_or_else(|_| r#"{"type":"None"}"#.to_string()),
+                serde_json::to_string(&self.path_b_config)
+                    .unwrap_or_else(|_| r#"{"type":"None"}"#.to_string()),
             )
             .with_description("JSON configuration for path B")
             .with_group("Configuration")
@@ -257,14 +281,18 @@ impl Plugin for ABComparePlugin {
         self.validate_parameter(&id, &value)?;
         match id.0.as_str() {
             "mix" => {
-                let v = value.as_float().ok_or_else(|| "mix must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mix must be a float".to_string())?;
                 if v.is_finite() {
                     self.mix = v.clamp(-1.0, 1.0);
                     self.mix_smoother.set_target(self.mix);
                 }
             }
             "mix_mode" => {
-                let v = value.as_int().ok_or_else(|| "mix_mode must be an integer".to_string())?;
+                let v = value
+                    .as_int()
+                    .ok_or_else(|| "mix_mode must be an integer".to_string())?;
                 self.mix_mode = if v == 0 {
                     MixMode::Potentiometer
                 } else {
@@ -272,7 +300,9 @@ impl Plugin for ABComparePlugin {
                 };
             }
             "selected_path" => {
-                let v = value.as_int().ok_or_else(|| "selected_path must be an integer".to_string())?;
+                let v = value
+                    .as_int()
+                    .ok_or_else(|| "selected_path must be an integer".to_string())?;
                 self.selected_path = v.clamp(0, 1);
                 // Update mix target for binary mode
                 if self.mix_mode == MixMode::Binary {
@@ -281,13 +311,21 @@ impl Plugin for ABComparePlugin {
                 }
             }
             "bypass" => {
-                self.bypass = value.as_bool().ok_or_else(|| "bypass must be a boolean".to_string())?;
+                self.bypass = value
+                    .as_bool()
+                    .ok_or_else(|| "bypass must be a boolean".to_string())?;
             }
             "auto_gain_enabled" => {
-                self.auto_gain.set_enabled(value.as_bool().ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?);
+                self.auto_gain.set_enabled(
+                    value
+                        .as_bool()
+                        .ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?,
+                );
             }
             "loudness_type" => {
-                let v = value.as_int().ok_or_else(|| "loudness_type must be an integer".to_string())?;
+                let v = value
+                    .as_int()
+                    .ok_or_else(|| "loudness_type must be an integer".to_string())?;
                 let loudness_type = if v == 0 {
                     AutoGainLoudnessType::Momentary
                 } else {
@@ -296,19 +334,25 @@ impl Plugin for ABComparePlugin {
                 self.auto_gain.set_loudness_type(loudness_type);
             }
             "max_auto_gain_db" => {
-                let v = value.as_float().ok_or_else(|| "max_auto_gain_db must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "max_auto_gain_db must be a float".to_string())?;
                 if v.is_finite() {
                     self.auto_gain.set_max_gain_db(v.clamp(0.0, 24.0));
                 }
             }
             "gain_smoothing_ms" => {
-                let v = value.as_float().ok_or_else(|| "gain_smoothing_ms must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "gain_smoothing_ms must be a float".to_string())?;
                 if v.is_finite() {
                     self.auto_gain.set_smoothing_ms(v.clamp(10.0, 500.0));
                 }
             }
             "mix_transition_ms" => {
-                let v = value.as_float().ok_or_else(|| "mix_transition_ms must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mix_transition_ms must be a float".to_string())?;
                 if v.is_finite() {
                     self.mix_transition_ms = v.clamp(5.0, 500.0);
                     self.mix_smoother

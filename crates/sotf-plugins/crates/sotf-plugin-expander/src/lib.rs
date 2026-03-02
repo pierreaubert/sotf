@@ -2,14 +2,14 @@
 // Expander Plugin
 // ============================================================================
 
+use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::{find_by_key as pk, expander::PARAMS as EX};
+use sotf_host::param_specs::{expander::PARAMS as EX, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
-use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -452,58 +452,80 @@ impl InPlacePlugin for ExpanderPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_threshold {
-            let v = value.as_float().unwrap_or(pk(EX, "threshold").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "threshold").default_f64() as f32);
             if v.is_finite() {
                 self.threshold_db = v;
                 self.threshold_smoother.set_target(self.threshold_db);
             }
         } else if id == self.param_ratio {
-            let v = value.as_float().unwrap_or(pk(EX, "ratio").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "ratio").default_f64() as f32);
             if v.is_finite() {
                 self.ratio = v.max(1.0);
             }
         } else if id == self.param_attack {
-            let v = value.as_float().unwrap_or(pk(EX, "attack").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "attack").default_f64() as f32);
             if v.is_finite() {
                 self.attack_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_release {
-            let v = value.as_float().unwrap_or(pk(EX, "release").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "release").default_f64() as f32);
             if v.is_finite() {
                 self.release_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_range {
-            let v = value.as_float().unwrap_or(pk(EX, "range").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "range").default_f64() as f32);
             if v.is_finite() {
                 self.range_db = v.max(0.0);
             }
         } else if id == self.param_knee {
-            let v = value.as_float().unwrap_or(pk(EX, "knee").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "knee").default_f64() as f32);
             if v.is_finite() {
                 self.knee_db = v.max(0.0);
             }
         } else if id == self.param_hysteresis {
-            let v = value.as_float().unwrap_or(pk(EX, "hysteresis").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "hysteresis").default_f64() as f32);
             if v.is_finite() {
                 self.hysteresis_db = v.max(0.0);
             }
         } else if id == self.param_hold {
-            let v = value.as_float().unwrap_or(pk(EX, "hold").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "hold").default_f64() as f32);
             if v.is_finite() {
                 self.hold_ms = v.max(0.0);
             }
         } else if id == self.param_mix {
-            let v = value.as_float().unwrap_or(pk(EX, "mix").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "mix").default_f64() as f32);
             if v.is_finite() {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
             }
         } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().unwrap_or(pk(EX, "link_channels").default_bool());
+            self.link_channels = value
+                .as_bool()
+                .unwrap_or(pk(EX, "link_channels").default_bool());
         } else if id == self.param_sidechain_hpf_hz {
-            let v = value.as_float().unwrap_or(pk(EX, "sidechain_hpf_hz").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(EX, "sidechain_hpf_hz").default_f64() as f32);
             if v.is_finite() {
                 self.sidechain_hpf_hz = v.max(0.0);
                 self.update_coefficients();
@@ -630,8 +652,8 @@ impl InPlacePlugin for ExpanderPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_expander_basic() {
         let mut p = ExpanderPlugin::new(1);

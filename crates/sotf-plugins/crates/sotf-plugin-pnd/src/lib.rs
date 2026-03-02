@@ -2,14 +2,14 @@
 // PND (Polyphonic Note Detection & Varispeed) Plugin
 // ============================================================================
 
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::{find_by_key as pk, pnd::PARAMS as PD};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, interleave_stereo};
 use sotf_host::smoothing::Smoother;
-use audioadapter_buffers::direct::SequentialSliceOfVecs;
-use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -352,14 +352,18 @@ impl Plugin for PndPlugin {
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
         if id == self.param_correction_strength {
-            let v = value.as_float().unwrap_or(pk(PD, "correction_strength").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(PD, "correction_strength").default_f64() as f32);
             if v.is_finite() {
                 self.correction_strength = v;
                 self.correction_strength_smoother
                     .set_target(self.correction_strength);
             }
         } else if id == self.param_analysis_window_ms {
-            let v = value.as_float().unwrap_or(pk(PD, "analysis_window_ms").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(PD, "analysis_window_ms").default_f64() as f32);
             if v.is_finite() {
                 self.analysis_window_ms = v;
                 if let Some(analyzer) = &mut self.analyzer {
@@ -367,7 +371,9 @@ impl Plugin for PndPlugin {
                 }
             }
         } else if id == self.param_drift_smoothing {
-            let v = value.as_float().unwrap_or(pk(PD, "drift_smoothing").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(PD, "drift_smoothing").default_f64() as f32);
             if v.is_finite() {
                 self.drift_smoothing = v;
             }

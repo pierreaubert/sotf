@@ -226,7 +226,11 @@ impl Tabs {
     /// - Left/Right arrows: Navigate between tabs
     /// - Home: Select first tab
     /// - End: Select last tab
-    pub fn build_with_theme(self, global_theme: &crate::theme::Theme, cx: &mut App) -> Stateful<Div> {
+    pub fn build_with_theme(
+        self,
+        global_theme: &crate::theme::Theme,
+        cx: &mut App,
+    ) -> Stateful<Div> {
         let tabs_theme = TabsTheme::from(global_theme);
         let theme = self.theme.as_ref().unwrap_or(&tabs_theme);
 

@@ -1,6 +1,6 @@
-use sotf_plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
-use sotf_host::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
+use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
 use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
+use sotf_plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 use std::f32::consts::PI;
 
 #[global_allocator]
@@ -41,10 +41,7 @@ fn main() {
     // Test 2: Cut at peak frequency
     println!("\n[Test 2] Peak Cut (-6dB at 1kHz)");
     inner
-        .set_parameter(
-            "band_0_gain".into(),
-            sotf_host::ParameterValue::Float(-6.0),
-        )
+        .set_parameter("band_0_gain".into(), sotf_host::ParameterValue::Float(-6.0))
         .unwrap();
     let mut buffer = generate_sine(sample_rate, 1000.0, -10.0, num_frames);
     inner.process_in_place(&mut buffer, &ctx).unwrap();
@@ -65,4 +62,3 @@ fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {
         .map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin() * amp)
         .collect()
 }
-

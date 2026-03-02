@@ -26,10 +26,7 @@ fn speaker_config_to_index(config: &str) -> f64 {
 
 fn index_to_speaker_config(index: f64) -> String {
     let idx = index as usize;
-    SPEAKER_CONFIGS
-        .get(idx)
-        .unwrap_or(&"5.1")
-        .to_string()
+    SPEAKER_CONFIGS.get(idx).unwrap_or(&"5.1").to_string()
 }
 
 fn crossfeed_mode_to_index(mode: &CrossfeedMode) -> f64 {
@@ -75,18 +72,12 @@ fn index_to_crossfeed_preset(index: f64) -> CrossfeedPreset {
 const CROSSOVER_TYPES: &[&str] = &["LR24", "LR48"];
 
 fn crossover_type_to_index(ct: &str) -> f64 {
-    CROSSOVER_TYPES
-        .iter()
-        .position(|&c| c == ct)
-        .unwrap_or(0) as f64
+    CROSSOVER_TYPES.iter().position(|&c| c == ct).unwrap_or(0) as f64
 }
 
 fn index_to_crossover_type(index: f64) -> String {
     let idx = index as usize;
-    CROSSOVER_TYPES
-        .get(idx)
-        .unwrap_or(&"LR24")
-        .to_string()
+    CROSSOVER_TYPES.get(idx).unwrap_or(&"LR24").to_string()
 }
 
 // ============================================================================
@@ -164,10 +155,7 @@ impl PluginSettings {
             return None;
         }
         let value = self.param_value(idx)?;
-        Some((
-            spec.engine_key.to_string(),
-            spec.engine_value_string(value),
-        ))
+        Some((spec.engine_key.to_string(), spec.engine_value_string(value)))
     }
 
     /// Read the current value of parameter at `index` as f64.
@@ -179,7 +167,11 @@ impl PluginSettings {
         match self {
             // ----------------------------------------------------------------
             Self::Gain { gain_db, .. } => {
-                if index == 0 { Some(*gain_db) } else { None }
+                if index == 0 {
+                    Some(*gain_db)
+                } else {
+                    None
+                }
             }
             // ----------------------------------------------------------------
             Self::Compressor {
@@ -595,7 +587,11 @@ impl PluginSettings {
             },
             // ----------------------------------------------------------------
             Self::BandMerge { bands, .. } => {
-                if index == 0 { Some(*bands as f64) } else { None }
+                if index == 0 {
+                    Some(*bands as f64)
+                } else {
+                    None
+                }
             }
             // ----------------------------------------------------------------
             Self::Downmix {
@@ -674,7 +670,11 @@ impl PluginSettings {
             // ----------------------------------------------------------------
             // Dynamic-param plugins: global params only
             Self::EQ { max_filters, .. } => {
-                if index == 0 { Some(*max_filters as f64) } else { None }
+                if index == 0 {
+                    Some(*max_filters as f64)
+                } else {
+                    None
+                }
             }
             Self::MultibandCompressor {
                 num_bands,
@@ -762,7 +762,9 @@ impl PluginSettings {
         match self {
             // ----------------------------------------------------------------
             Self::Gain { gain_db, .. } => {
-                if index == 0 { *gain_db = value; }
+                if index == 0 {
+                    *gain_db = value;
+                }
             }
             // ----------------------------------------------------------------
             Self::Compressor {
@@ -1178,7 +1180,9 @@ impl PluginSettings {
             },
             // ----------------------------------------------------------------
             Self::BandMerge { bands, .. } => {
-                if index == 0 { *bands = value as usize; }
+                if index == 0 {
+                    *bands = value as usize;
+                }
             }
             // ----------------------------------------------------------------
             Self::Downmix {
@@ -1257,7 +1261,9 @@ impl PluginSettings {
             // ----------------------------------------------------------------
             // Dynamic-param plugins: global params only
             Self::EQ { max_filters, .. } => {
-                if index == 0 { *max_filters = value as usize; }
+                if index == 0 {
+                    *max_filters = value as usize;
+                }
             }
             Self::MultibandCompressor {
                 num_bands,
@@ -1349,9 +1355,7 @@ impl PluginSettings {
             param_specs::ParamType::FilePath => {
                 // Return the file path string directly
                 match self {
-                    Self::Convolution { ir_file, .. } if index == 0 => {
-                        Some(ir_file.clone())
-                    }
+                    Self::Convolution { ir_file, .. } if index == 0 => Some(ir_file.clone()),
                     Self::BinauralDecoder { sofa_file, .. } if index == 0 => {
                         Some(sofa_file.clone())
                     }
@@ -1370,12 +1374,14 @@ impl PluginSettings {
                     Self::BandSplit { crossover_type, .. } if index == 1 => {
                         Some(crossover_type.clone())
                     }
-                    Self::Crossfeed { mode, .. } if index == 0 => {
-                        Some(format!("{}", serde_json::to_value(mode).unwrap_or_default()))
-                    }
-                    Self::Crossfeed { preset, .. } if index == 1 => {
-                        Some(format!("{}", serde_json::to_value(preset).unwrap_or_default()))
-                    }
+                    Self::Crossfeed { mode, .. } if index == 0 => Some(format!(
+                        "{}",
+                        serde_json::to_value(mode).unwrap_or_default()
+                    )),
+                    Self::Crossfeed { preset, .. } if index == 1 => Some(format!(
+                        "{}",
+                        serde_json::to_value(preset).unwrap_or_default()
+                    )),
                     _ => {
                         // Numeric choice: format as integer
                         self.param_value(index).map(|v| format!("{}", v as i64))

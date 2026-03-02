@@ -2,7 +2,7 @@
 // Crossfeed Plugin - Headphone crossfeed for speaker-like listening
 // ============================================================================
 
-use sotf_host::param_specs::{find_by_key as pk, crossfeed::PARAMS as CF};
+use sotf_host::param_specs::{crossfeed::PARAMS as CF, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{deinterleave_stereo, enable_ftz_daz, interleave_stereo};
@@ -377,7 +377,14 @@ impl CrossfeedPlugin {
     fn rebuild_cached_parameters(&mut self) {
         self.cached_parameters = vec![
             Parameter::new_bool("enabled", "Enabled", self.params.enabled).with_group("General"),
-            Parameter::new_float("mix", "Mix", self.params.mix, pk(CF, "mix").min_f64() as f32, pk(CF, "mix").max_f64() as f32).with_group("General"),
+            Parameter::new_float(
+                "mix",
+                "Mix",
+                self.params.mix,
+                pk(CF, "mix").min_f64() as f32,
+                pk(CF, "mix").max_f64() as f32,
+            )
+            .with_group("General"),
             Parameter::new_float(
                 "bauer_fcut_hz",
                 "Bauer Cutoff",
@@ -601,68 +608,92 @@ impl InPlacePlugin for CrossfeedPlugin {
         self.validate_parameter(&id, &value)?;
         let name = id.0.as_str();
         match name {
-            "enabled" => self.params.enabled = value.as_bool().ok_or_else(|| "enabled must be a boolean".to_string())?,
+            "enabled" => {
+                self.params.enabled = value
+                    .as_bool()
+                    .ok_or_else(|| "enabled must be a boolean".to_string())?
+            }
             "mix" => {
-                let v = value.as_float().ok_or_else(|| "mix must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mix must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.mix = v;
                     self.mix_smoother.set_target(v);
                 }
             }
             "bauer_fcut_hz" => {
-                let v = value.as_float().ok_or_else(|| "bauer_fcut_hz must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "bauer_fcut_hz must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.bauer_fcut_hz = v;
                     self.update_filters();
                 }
             }
             "bauer_feed_db" => {
-                let v = value.as_float().ok_or_else(|| "bauer_feed_db must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "bauer_feed_db must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.bauer_feed_db = v;
                     self.update_filters();
                 }
             }
             "meier_level" => {
-                let v = value.as_float().ok_or_else(|| "meier_level must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "meier_level must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.meier_level = v;
                 }
             }
             "mb_low_freq_hz" => {
-                let v = value.as_float().ok_or_else(|| "mb_low_freq_hz must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mb_low_freq_hz must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.mb_low_freq_hz = v;
                     self.update_filters();
                 }
             }
             "mb_mid_high_freq_hz" => {
-                let v = value.as_float().ok_or_else(|| "mb_mid_high_freq_hz must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mb_mid_high_freq_hz must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.mb_mid_high_freq_hz = v;
                     self.update_filters();
                 }
             }
             "mb_low_feed_db" => {
-                let v = value.as_float().ok_or_else(|| "mb_low_feed_db must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mb_low_feed_db must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.mb_low_feed_db = v;
                 }
             }
             "mb_mid_feed_db" => {
-                let v = value.as_float().ok_or_else(|| "mb_mid_feed_db must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mb_mid_feed_db must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.mb_mid_feed_db = v;
                 }
             }
             "mb_high_feed_db" => {
-                let v = value.as_float().ok_or_else(|| "mb_high_feed_db must be a float".to_string())?;
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "mb_high_feed_db must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.mb_high_feed_db = v;
                 }
             }
             "autogain_enabled" => {
-                let v = value.as_bool().ok_or_else(|| "autogain_enabled must be a boolean".to_string())?;
+                let v = value
+                    .as_bool()
+                    .ok_or_else(|| "autogain_enabled must be a boolean".to_string())?;
                 self.params.autogain_enabled = v;
                 if v && self.auto_gain.is_none() {
                     self.auto_gain = Some(sotf_host::auto_gain::AutoGain::new(
@@ -777,9 +808,9 @@ impl InPlacePlugin for CrossfeedPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
     use sotf_host::plugin::ProcessContext;
+    use sotf_host::*;
 
     #[test]
     fn test_crossfeed_basic() {

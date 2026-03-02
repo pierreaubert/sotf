@@ -293,67 +293,68 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
 
                     // Get configuration with most channels (instead of default)
                     // Use current/default sample rate, not max
-                    let (default_config, available_sample_rates) =
-                        if let Ok(configs_iter) = device.supported_output_configs() {
-                            let configs: Vec<_> = configs_iter.collect();
+                    let (default_config, available_sample_rates) = if let Ok(configs_iter) =
+                        device.supported_output_configs()
+                    {
+                        let configs: Vec<_> = configs_iter.collect();
 
-                            for (idx, cfg) in configs.iter().enumerate() {
-                                log::info!(
-                                    "[AUDIO] Output device '{}' config range [{}]: channels={}, sample_rate={}..{}, format={:?}",
-                                    name,
-                                    idx,
-                                    cfg.channels(),
-                                    cfg.min_sample_rate(),
-                                    cfg.max_sample_rate(),
-                                    cfg.sample_format(),
-                                );
+                        for (idx, cfg) in configs.iter().enumerate() {
+                            log::info!(
+                                "[AUDIO] Output device '{}' config range [{}]: channels={}, sample_rate={}..{}, format={:?}",
+                                name,
+                                idx,
+                                cfg.channels(),
+                                cfg.min_sample_rate(),
+                                cfg.max_sample_rate(),
+                                cfg.sample_format(),
+                            );
+                        }
+
+                        // Find config with most channels
+                        let max_channel_config =
+                            configs.iter().max_by_key(|config| config.channels());
+
+                        // Get current sample rate from device default
+                        let current_sample_rate = device
+                            .default_output_config()
+                            .map(|cfg| cfg.sample_rate())
+                            .unwrap_or(48000); // Fallback to 48kHz
+
+                        let default_cfg = max_channel_config.map(|config| {
+                            // Use current sample rate, clamped to supported range
+                            let sample_rate = current_sample_rate
+                                .max(config.min_sample_rate())
+                                .min(config.max_sample_rate());
+
+                            AudioConfig {
+                                sample_rate,
+                                channels: config.channels(),
+                                buffer_size: None,
+                                sample_format: format_to_string(config.sample_format()),
                             }
+                        });
 
-                            // Find config with most channels
-                            let max_channel_config =
-                                configs.iter().max_by_key(|config| config.channels());
-
-                            // Get current sample rate from device default
-                            let current_sample_rate = device
-                                .default_output_config()
-                                .map(|cfg| cfg.sample_rate())
-                                .unwrap_or(48000); // Fallback to 48kHz
-
-                            let default_cfg = max_channel_config.map(|config| {
-                                // Use current sample rate, clamped to supported range
-                                let sample_rate = current_sample_rate
-                                    .max(config.min_sample_rate())
-                                    .min(config.max_sample_rate());
-
-                                AudioConfig {
-                                    sample_rate,
-                                    channels: config.channels(),
-                                    buffer_size: None,
-                                    sample_format: format_to_string(config.sample_format()),
-                                }
-                            });
-
-                            // Collect all available sample rates across all configs
-                            let mut sample_rates = std::collections::HashSet::new();
-                            for config in &configs {
-                                sample_rates.insert(config.min_sample_rate());
-                                sample_rates.insert(config.max_sample_rate());
-                                // Add common rates if in range
-                                for &rate in &[44100, 48000, 88200, 96000, 176400, 192000] {
-                                    if rate >= config.min_sample_rate()
-                                        && rate <= config.max_sample_rate()
-                                    {
-                                        sample_rates.insert(rate);
-                                    }
+                        // Collect all available sample rates across all configs
+                        let mut sample_rates = std::collections::HashSet::new();
+                        for config in &configs {
+                            sample_rates.insert(config.min_sample_rate());
+                            sample_rates.insert(config.max_sample_rate());
+                            // Add common rates if in range
+                            for &rate in &[44100, 48000, 88200, 96000, 176400, 192000] {
+                                if rate >= config.min_sample_rate()
+                                    && rate <= config.max_sample_rate()
+                                {
+                                    sample_rates.insert(rate);
                                 }
                             }
-                            let mut rates: Vec<u32> = sample_rates.into_iter().collect();
-                            rates.sort_unstable();
+                        }
+                        let mut rates: Vec<u32> = sample_rates.into_iter().collect();
+                        rates.sort_unstable();
 
-                            (default_cfg, rates)
-                        } else {
-                            (None, Vec::new())
-                        };
+                        (default_cfg, rates)
+                    } else {
+                        (None, Vec::new())
+                    };
 
                     // Report what we detected - don't make assumptions
                     if let Some(ref cfg) = default_config {

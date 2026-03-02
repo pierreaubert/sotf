@@ -733,7 +733,7 @@ fn run_playback_thread(
                         for i in 0..num_frames {
                             let src_base = i * frame.num_channels;
                             let dst_base = i * channels;
-                                conversion_buffer[dst_base..dst_base + shared_channels]
+                            conversion_buffer[dst_base..dst_base + shared_channels]
                                 .copy_from_slice(&frame.data[src_base..src_base + shared_channels]);
                         }
                     }

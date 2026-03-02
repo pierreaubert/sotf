@@ -579,10 +579,10 @@ impl PlayerView {
                             .spinorama_eq_state
                             .optimizer_config
                             .loss_function = if value {
-                                "flat-asymmetric".to_string()
-                            } else {
-                                "flat".to_string()
-                            };
+                            "flat-asymmetric".to_string()
+                        } else {
+                            "flat".to_string()
+                        };
                     });
                 }
             });

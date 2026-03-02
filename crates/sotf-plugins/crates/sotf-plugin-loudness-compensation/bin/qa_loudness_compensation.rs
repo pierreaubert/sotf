@@ -1,8 +1,8 @@
+use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
+use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 use sotf_plugin_loudness_compensation::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };
-use sotf_host::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 use std::f32::consts::PI;
 
 #[global_allocator]
@@ -65,4 +65,3 @@ fn generate_sine(sr: u32, freq: f32, db: f32, frames: usize) -> Vec<f32> {
         .map(|i| (2.0 * PI * freq * i as f32 / sr as f32).sin() * amp)
         .collect()
 }
-

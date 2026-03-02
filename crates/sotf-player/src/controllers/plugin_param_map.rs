@@ -208,64 +208,62 @@ pub fn param_index_to_engine_param(
             band4_q,
             band4_max_gain,
             band4_slope,
-        } => {
-            match param_idx {
-                0 => Some((
-                    "playback_volume_db".to_string(),
-                    format!("{}", playback_volume_db),
-                )),
-                1 => Some((
-                    "reference_level_db".to_string(),
-                    format!("{}", reference_level_db),
-                )),
-                2 => Some(("enabled".to_string(), enabled.to_string())),
-                3 => Some(("smoothing_ms".to_string(), format!("{}", smoothing_ms))),
-                4 => Some((
-                    "auto_gain_enabled".to_string(),
-                    auto_gain_enabled.to_string(),
-                )),
-                5 => Some((
-                    "auto_gain_max_db".to_string(),
-                    format!("{}", auto_gain_max_db),
-                )),
-                6 => Some((
-                    "auto_gain_smoothing_ms".to_string(),
-                    format!("{}", auto_gain_smoothing_ms),
-                )),
-                7 => Some((
-                    "auto_gain_loudness_type".to_string(),
-                    format!("{}", auto_gain_loudness_type),
-                )),
-                _ => {
-                    if (8..24).contains(&param_idx) {
-                        let rel_idx = param_idx - 8;
-                        let band_idx = (rel_idx / 4) + 1;
-                        let field_idx = rel_idx % 4;
+        } => match param_idx {
+            0 => Some((
+                "playback_volume_db".to_string(),
+                format!("{}", playback_volume_db),
+            )),
+            1 => Some((
+                "reference_level_db".to_string(),
+                format!("{}", reference_level_db),
+            )),
+            2 => Some(("enabled".to_string(), enabled.to_string())),
+            3 => Some(("smoothing_ms".to_string(), format!("{}", smoothing_ms))),
+            4 => Some((
+                "auto_gain_enabled".to_string(),
+                auto_gain_enabled.to_string(),
+            )),
+            5 => Some((
+                "auto_gain_max_db".to_string(),
+                format!("{}", auto_gain_max_db),
+            )),
+            6 => Some((
+                "auto_gain_smoothing_ms".to_string(),
+                format!("{}", auto_gain_smoothing_ms),
+            )),
+            7 => Some((
+                "auto_gain_loudness_type".to_string(),
+                format!("{}", auto_gain_loudness_type),
+            )),
+            _ => {
+                if (8..24).contains(&param_idx) {
+                    let rel_idx = param_idx - 8;
+                    let band_idx = (rel_idx / 4) + 1;
+                    let field_idx = rel_idx % 4;
 
-                        let (freq, q, max_gain, slope) = match band_idx {
-                            1 => (band1_freq, band1_q, band1_max_gain, band1_slope),
-                            2 => (band2_freq, band2_q, band2_max_gain, band2_slope),
-                            3 => (band3_freq, band3_q, band3_max_gain, band3_slope),
-                            4 => (band4_freq, band4_q, band4_max_gain, band4_slope),
-                            _ => return None,
-                        };
+                    let (freq, q, max_gain, slope) = match band_idx {
+                        1 => (band1_freq, band1_q, band1_max_gain, band1_slope),
+                        2 => (band2_freq, band2_q, band2_max_gain, band2_slope),
+                        3 => (band3_freq, band3_q, band3_max_gain, band3_slope),
+                        4 => (band4_freq, band4_q, band4_max_gain, band4_slope),
+                        _ => return None,
+                    };
 
-                        match field_idx {
-                            0 => Some((format!("band{}_freq", band_idx), format!("{}", freq))),
-                            1 => Some((format!("band{}_q", band_idx), format!("{}", q))),
-                            2 => Some((
-                                format!("band{}_max_gain", band_idx),
-                                format!("{}", max_gain),
-                            )),
-                            3 => Some((format!("band{}_slope", band_idx), format!("{}", slope))),
-                            _ => None,
-                        }
-                    } else {
-                        None
+                    match field_idx {
+                        0 => Some((format!("band{}_freq", band_idx), format!("{}", freq))),
+                        1 => Some((format!("band{}_q", band_idx), format!("{}", q))),
+                        2 => Some((
+                            format!("band{}_max_gain", band_idx),
+                            format!("{}", max_gain),
+                        )),
+                        3 => Some((format!("band{}_slope", band_idx), format!("{}", slope))),
+                        _ => None,
                     }
+                } else {
+                    None
                 }
             }
-        }
+        },
         // MultibandCompressor: band-level params (idx >= 100) need manual handling
         PluginSettings::MultibandCompressor {
             threshold_db,

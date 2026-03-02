@@ -35,8 +35,8 @@ pub use math_audio_dsp::{AnalysisResult, read_analysis_csv, write_analysis_csv};
 pub mod engine;
 pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 
-pub mod plugins;
 mod plugin_param_accessors;
+pub mod plugins;
 pub use plugins::{
     ChannelConflict, EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
     apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label,

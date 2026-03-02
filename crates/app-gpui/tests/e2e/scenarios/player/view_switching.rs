@@ -23,8 +23,7 @@ impl TestScenario for ViewSwitchingStabilityScenario {
 
         // Direct audio to a virtual device to avoid sending sound to speakers.
         driver.update_app(|app, _| {
-            app.audio_device_state.current_output_device_name =
-                Some("BlackHole 2ch".to_string());
+            app.audio_device_state.current_output_device_name = Some("BlackHole 2ch".to_string());
         });
 
         // 1. Initialize and start playback using a virtual device
@@ -41,7 +40,10 @@ impl TestScenario for ViewSwitchingStabilityScenario {
         // to trigger the 100ms polling timer that syncs position_secs.
         let wait_and_sync = |driver: &mut AppDriver, ms: u64| {
             std::thread::sleep(Duration::from_millis(ms));
-            driver.cx.executor().advance_clock(Duration::from_millis(200));
+            driver
+                .cx
+                .executor()
+                .advance_clock(Duration::from_millis(200));
             driver.run_until_parked();
         };
 

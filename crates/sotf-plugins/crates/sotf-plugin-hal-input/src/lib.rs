@@ -2,9 +2,9 @@
 // HAL Input Plugin - Reads audio from macOS HAL driver
 // ============================================================================
 
+use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use serde::{Deserialize, Serialize};
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalInputReader;

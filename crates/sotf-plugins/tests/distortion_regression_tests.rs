@@ -26,14 +26,14 @@ fn test_xtc_bypass_fidelity() {
     let num_frames = 16384;
     let mut signal_gen = SignalGen::new_sine(sample_rate as f64, 1000.0, 0.5);
     let mono_input = signal_gen.generate(num_frames);
-    
+
     // Stereo input
     let mut input = vec![0.0; num_frames * 2];
     for (i, &s) in mono_input.iter().enumerate() {
         input[i * 2] = s;
         input[i * 2 + 1] = s;
     }
-    
+
     let mut output = vec![0.0; num_frames * 2];
     let context = ProcessContext {
         sample_rate,
@@ -46,21 +46,25 @@ fn test_xtc_bypass_fidelity() {
     let latency = plugin.latency_samples();
     let start = latency;
     let end = num_frames - latency;
-    
+
     let signal_segment = &input[start * 2..end * 2];
     let output_segment = &output[start * 2..end * 2];
-    
+
     let mut error = vec![0.0; signal_segment.len()];
     for i in 0..signal_segment.len() {
         error[i] = output_segment[i] - signal_segment[i];
     }
-    
+
     let ser = calculate_ser(signal_segment, &error);
     println!("XTC Bypass SER: {:.2} dB", ser);
-    
+
     // For f32, bit-perfect-ish OLA should be > 80 dB.
     // Double-windowing error dropped this to ~30-40 dB.
-    assert!(ser > 70.0, "XTC Bypass fidelity too low: {:.2} dB. Possible double-windowing or OLA error.", ser);
+    assert!(
+        ser > 70.0,
+        "XTC Bypass fidelity too low: {:.2} dB. Possible double-windowing or OLA error.",
+        ser
+    );
 }
 
 /// Test that the upmixer STFT path preserves energy.
@@ -96,7 +100,10 @@ fn test_upmixer_bypass_fidelity() {
 
     let out_ch = plugin.output_channels();
     let mut output = vec![0.0; num_frames * out_ch];
-    let context = ProcessContext { sample_rate, num_frames };
+    let context = ProcessContext {
+        sample_rate,
+        num_frames,
+    };
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Skip latency + warm-up
@@ -155,13 +162,13 @@ fn test_xtc_limiter_reactivity() {
     let num_frames = 4096;
     let mut signal_gen = SignalGen::new_sine(sample_rate as f64, 1000.0, 10.0); // 20dB above unit
     let mono_input = signal_gen.generate(num_frames);
-    
+
     let mut input = vec![0.0; num_frames * 2];
     for (i, &s) in mono_input.iter().enumerate() {
         input[i * 2] = s;
         input[i * 2 + 1] = s;
     }
-    
+
     let mut output = vec![0.0; num_frames * 2];
     let context = ProcessContext {
         sample_rate,
@@ -174,13 +181,17 @@ fn test_xtc_limiter_reactivity() {
     for &s in &output {
         max_peak = max_peak.max(s.abs());
     }
-    
+
     println!("XTC Limiter Max Peak: {:.4}", max_peak);
-    
+
     // A slow limiter (per-block) will let the first block or parts of it through
     // at a very high level before the gain is reduced.
     // A fast limiter (per-sample) should clamp it much more effectively.
-    assert!(max_peak < 1.5, "XTC Limiter too slow: peak leaked to {:.4}. Must be < 1.5", max_peak);
+    assert!(
+        max_peak < 1.5,
+        "XTC Limiter too slow: peak leaked to {:.4}. Must be < 1.5",
+        max_peak
+    );
 }
 
 #[test]
@@ -190,23 +201,43 @@ fn test_downmix_bypass_fidelity() {
     // and phase coherence is disabled.
     let mut plugin = sotf_plugins::DownmixPlugin::new(2);
     plugin.initialize(sample_rate).unwrap();
-    
+
     // Set all gains to unity (0 dB) and disable phase coherence for "bypass" test
-    plugin.set_parameter("center_gain_db".into(), sotf_plugins::ParameterValue::Float(0.0)).unwrap();
-    plugin.set_parameter("surround_gain_db".into(), sotf_plugins::ParameterValue::Float(0.0)).unwrap();
-    plugin.set_parameter("lfe_gain_db".into(), sotf_plugins::ParameterValue::Float(0.0)).unwrap();
-    plugin.set_parameter("phase_coherence".into(), sotf_plugins::ParameterValue::Bool(false)).unwrap();
+    plugin
+        .set_parameter(
+            "center_gain_db".into(),
+            sotf_plugins::ParameterValue::Float(0.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            "surround_gain_db".into(),
+            sotf_plugins::ParameterValue::Float(0.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            "lfe_gain_db".into(),
+            sotf_plugins::ParameterValue::Float(0.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            "phase_coherence".into(),
+            sotf_plugins::ParameterValue::Bool(false),
+        )
+        .unwrap();
 
     let num_frames = 16384;
     let mut signal_gen = SignalGen::new_sine(sample_rate as f64, 1000.0, 0.5);
     let mono_input = signal_gen.generate(num_frames);
-    
+
     let mut input = vec![0.0; num_frames * 2];
     for (i, &s) in mono_input.iter().enumerate() {
         input[i * 2] = s; // L
         input[i * 2 + 1] = 0.0; // R (test L separately to avoid summing logic interference)
     }
-    
+
     let mut output = vec![0.0; num_frames * 2];
     let context = ProcessContext {
         sample_rate,
@@ -218,15 +249,15 @@ fn test_downmix_bypass_fidelity() {
     // With phase_coherence = false, Downmix uses a simple per-sample path (zero latency)
     let latency = plugin.latency_samples();
     assert_eq!(latency, 0);
-    
+
     let mut error = vec![0.0; input.len()];
     for i in 0..input.len() {
         error[i] = output[i] - input[i];
     }
-    
+
     let ser = calculate_ser(&input, &error);
     println!("Downmix Bypass SER: {:.2} dB", ser);
-    
+
     assert!(ser > 70.0, "Downmix Bypass fidelity too low: {:.2} dB", ser);
 }
 
@@ -236,7 +267,7 @@ fn test_xtc_envelope_stability() {
     let fft_size = 1024;
     let mut params = XtcPluginParams::default();
     params.fft_size = fft_size;
-    params.bypass_xtc_filters = true; 
+    params.bypass_xtc_filters = true;
 
     let mut plugin = XtcPlugin::new(params, sample_rate).unwrap();
     plugin.initialize(sample_rate).unwrap();
@@ -245,13 +276,13 @@ fn test_xtc_envelope_stability() {
     // Use DC signal (Step) to test OLA flatness perfectly
     let mut signal_gen = SignalGen::new_step();
     let mono_input = signal_gen.generate(num_frames);
-    
+
     let mut input = vec![0.0; num_frames * 2];
     for (i, &s) in mono_input.iter().enumerate() {
         input[i * 2] = s;
         input[i * 2 + 1] = s;
     }
-    
+
     let mut output = vec![0.0; num_frames * 2];
     let context = ProcessContext {
         sample_rate,
@@ -263,23 +294,30 @@ fn test_xtc_envelope_stability() {
     let latency = plugin.latency_samples();
     let start = latency + fft_size; // Extra warm-up
     let end = num_frames - fft_size;
-    
+
     // Measure envelope of output (just the values since it's DC)
     let mut envelope = Vec::new();
     for i in start..end {
         envelope.push(output[i * 2]);
     }
-    
+
     let avg = envelope.iter().sum::<f32>() / envelope.len() as f32;
     let mut max_dev = 0.0_f32;
     for &s in &envelope {
         max_dev = max_dev.max((s - avg).abs());
     }
-    
+
     let rel_dev = max_dev / avg.abs().max(1e-6);
-    println!("XTC Envelope Relative Deviation (DC): {:.6}%", rel_dev * 100.0);
-    
-    assert!(rel_dev < 0.001, "XTC Amplitude modulation detected on DC: {:.4}%. Windowing error?", rel_dev * 100.0);
+    println!(
+        "XTC Envelope Relative Deviation (DC): {:.6}%",
+        rel_dev * 100.0
+    );
+
+    assert!(
+        rel_dev < 0.001,
+        "XTC Amplitude modulation detected on DC: {:.4}%. Windowing error?",
+        rel_dev * 100.0
+    );
 }
 
 /// Test STFT energy conservation with LFO decorrelation mode.
@@ -315,7 +353,10 @@ fn test_upmixer_envelope_stability() {
 
     let out_ch = plugin.output_channels();
     let mut output = vec![0.0; num_frames * out_ch];
-    let context = ProcessContext { sample_rate, num_frames };
+    let context = ProcessContext {
+        sample_rate,
+        num_frames,
+    };
     plugin.process(&input, &mut output, &context).unwrap();
 
     let latency = plugin.latency_samples();
@@ -360,23 +401,43 @@ fn test_downmix_phase_coherence_stability() {
     let sample_rate = 48000;
     let mut plugin = sotf_plugins::DownmixPlugin::new(2);
     plugin.initialize(sample_rate).unwrap();
-    
+
     // Enable phase coherence and set unity gains
-    plugin.set_parameter("center_gain_db".into(), sotf_plugins::ParameterValue::Float(0.0)).unwrap();
-    plugin.set_parameter("surround_gain_db".into(), sotf_plugins::ParameterValue::Float(0.0)).unwrap();
-    plugin.set_parameter("lfe_gain_db".into(), sotf_plugins::ParameterValue::Float(0.0)).unwrap();
-    plugin.set_parameter("phase_coherence".into(), sotf_plugins::ParameterValue::Bool(true)).unwrap();
+    plugin
+        .set_parameter(
+            "center_gain_db".into(),
+            sotf_plugins::ParameterValue::Float(0.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            "surround_gain_db".into(),
+            sotf_plugins::ParameterValue::Float(0.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            "lfe_gain_db".into(),
+            sotf_plugins::ParameterValue::Float(0.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            "phase_coherence".into(),
+            sotf_plugins::ParameterValue::Bool(true),
+        )
+        .unwrap();
 
     let num_frames = 16384;
     let mut signal_gen = SignalGen::new_step();
     let mono_input = signal_gen.generate(num_frames);
-    
+
     let mut input = vec![0.0; num_frames * 2];
     for (i, &s) in mono_input.iter().enumerate() {
         input[i * 2] = s;
         input[i * 2 + 1] = 0.0;
     }
-    
+
     let mut output = vec![0.0; num_frames * 2];
     let context = ProcessContext {
         sample_rate,
@@ -388,24 +449,31 @@ fn test_downmix_phase_coherence_stability() {
     let latency = plugin.latency_samples();
     let start = latency + 2048; // Warm-up for STFT
     let end = num_frames - 2048;
-    
+
     let mut envelope = Vec::new();
     for i in start..end {
         envelope.push(output[i * 2]);
     }
-    
+
     let avg = envelope.iter().sum::<f32>() / envelope.len() as f32;
     let mut max_dev = 0.0_f32;
     for &s in &envelope {
         max_dev = max_dev.max((s - avg).abs());
     }
-    
+
     let rel_dev = max_dev / avg.abs().max(1e-6);
-    println!("Downmix (PC) Envelope Relative Deviation (DC): {:.6}%", rel_dev * 100.0);
-    
+    println!(
+        "Downmix (PC) Envelope Relative Deviation (DC): {:.6}%",
+        rel_dev * 100.0
+    );
+
     // Phase coherence path uses dual windowing (Hann*Hann) with 75% overlap.
     // COLA should still be perfect (deviation < 0.001%).
-    assert!(rel_dev < 0.001, "Downmix Phase Coherence Amplitude modulation detected: {:.4}%. Windowing error?", rel_dev * 100.0);
+    assert!(
+        rel_dev < 0.001,
+        "Downmix Phase Coherence Amplitude modulation detected: {:.4}%. Windowing error?",
+        rel_dev * 100.0
+    );
 }
 
 /// Test energy conservation with prime-sized blocks to stress OLA alignment.
@@ -444,14 +512,23 @@ fn test_upmixer_prime_block_size_fidelity() {
     let mut frames_processed = 0;
     while frames_processed < total_frames {
         let nf = prime_block.min(total_frames - frames_processed);
-        let ctx = ProcessContext { sample_rate, num_frames: nf };
+        let ctx = ProcessContext {
+            sample_rate,
+            num_frames: nf,
+        };
 
         let start_in = frames_processed * 2;
         let end_in = start_in + nf * 2;
         let start_out = frames_processed * out_ch;
         let end_out = start_out + nf * out_ch;
 
-        plugin.process(&input[start_in..end_in], &mut output[start_out..end_out], &ctx).unwrap();
+        plugin
+            .process(
+                &input[start_in..end_in],
+                &mut output[start_out..end_out],
+                &ctx,
+            )
+            .unwrap();
         frames_processed += nf;
     }
 
@@ -489,9 +566,3 @@ fn test_upmixer_prime_block_size_fidelity() {
         energy_ratio_db
     );
 }
-
-
-
-
-
-

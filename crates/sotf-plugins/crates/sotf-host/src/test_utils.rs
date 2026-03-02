@@ -200,8 +200,8 @@ pub fn test_varied_buffer_sizes<P: Plugin>(
                 num_frames,
             };
 
-            let in_slice = &input
-                [frames_processed * num_channels_in..(frames_processed + num_frames) * num_channels_in];
+            let in_slice = &input[frames_processed * num_channels_in
+                ..(frames_processed + num_frames) * num_channels_in];
             let out_slice = &mut output[frames_processed * num_channels_out
                 ..(frames_processed + num_frames) * num_channels_out];
 
@@ -294,17 +294,13 @@ pub fn run_standard_tests(plugin: &mut dyn Plugin, label: &str) {
     let sample_rate = 48000;
 
     // Test 2: Latency Reporting
-    println!(
-        "\n[Test 2] Latency Reporting"
-    );
+    println!("\n[Test 2] Latency Reporting");
     let reported = plugin.latency_samples();
     println!("  Reported Latency: {} samples", reported);
     println!("  Latency: PASS");
 
     // Test 3: Real-time Safety (Zero Allocations)
-    println!(
-        "\n[Test 3] Real-time Safety (Zero Allocations)"
-    );
+    println!("\n[Test 3] Real-time Safety (Zero Allocations)");
     let rt_block_size = 512;
     let rt_input = vec![0.0_f32; rt_block_size * plugin.input_channels()];
     let mut rt_output = vec![0.0_f32; rt_block_size * plugin.output_channels()];
@@ -325,9 +321,7 @@ pub fn run_standard_tests(plugin: &mut dyn Plugin, label: &str) {
     println!("  Zero Allocations: PASS");
 
     // Test 4: Performance Benchmark
-    println!(
-        "\n[Test 4] Performance Benchmark"
-    );
+    println!("\n[Test 4] Performance Benchmark");
     let bench_frames = 48000 * 5; // 5 seconds of audio
     let bench_input = vec![0.1_f32; bench_frames * plugin.input_channels()];
     let mut bench_output = vec![0.0_f32; bench_frames * plugin.output_channels()];
@@ -448,8 +442,8 @@ impl PerformanceProfiler {
                 num_frames,
             };
 
-            let in_slice =
-                &input[frames_processed * self.channels..(frames_processed + num_frames) * self.channels];
+            let in_slice = &input
+                [frames_processed * self.channels..(frames_processed + num_frames) * self.channels];
             let out_slice = &mut output[frames_processed * plugin.output_channels()
                 ..(frames_processed + num_frames) * plugin.output_channels()];
 
@@ -517,35 +511,44 @@ pub fn test_parameter_ramp(
     let channels = plugin.input_channels();
     let input = vec![0.5; duration_frames * channels];
     let mut output = vec![0.0; duration_frames * plugin.output_channels()];
-    
+
     // We'll process in small blocks to allow parameter updates at block boundaries
     let block_size = 64;
     let mut frames_processed = 0;
-    
+
     while frames_processed < duration_frames {
         let num_frames = (block_size).min(duration_frames - frames_processed);
-        
+
         // Calculate current ramp value
         let progress = frames_processed as f32 / duration_frames as f32;
         let val = start_val + (end_val - start_val) * progress;
-        
-        plugin.set_parameter(param_id.clone(), ParameterValue::Float(val)).unwrap();
-        
+
+        plugin
+            .set_parameter(param_id.clone(), ParameterValue::Float(val))
+            .unwrap();
+
         let ctx = ProcessContext {
             sample_rate: sample_rate as u32,
             num_frames,
         };
-        
-        let in_slice = &input[frames_processed * channels..(frames_processed + num_frames) * channels];
-        let out_slice = &mut output[frames_processed * plugin.output_channels()..(frames_processed + num_frames) * plugin.output_channels()];
-        
+
+        let in_slice =
+            &input[frames_processed * channels..(frames_processed + num_frames) * channels];
+        let out_slice = &mut output[frames_processed * plugin.output_channels()
+            ..(frames_processed + num_frames) * plugin.output_channels()];
+
         plugin.process(in_slice, out_slice, &ctx).unwrap();
         frames_processed += num_frames;
     }
-    
+
     // Check for artifacts (sudden jumps in output)
     for i in 1..output.len() {
-        let diff = (output[i] - output[i-1]).abs();
-        assert!(diff < 0.1, "Artifact detected at sample {}: jump of {}", i, diff);
+        let diff = (output[i] - output[i - 1]).abs();
+        assert!(
+            diff < 0.1,
+            "Artifact detected at sample {}: jump of {}",
+            i,
+            diff
+        );
     }
 }

@@ -10,7 +10,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, downmix::PARAMS as DM};
+use sotf_plugins::param_specs::{downmix::PARAMS as DM, find_by_key as pk};
 
 /// State for rendering the Downmix plugin
 pub struct DownmixRenderState {

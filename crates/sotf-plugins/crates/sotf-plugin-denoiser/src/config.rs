@@ -2,8 +2,8 @@
 // Denoiser Plugin Configuration
 // ============================================================================
 
-use sotf_host::param_specs::{find_by_key as pk, denoiser::PARAMS as DN};
 use serde::{Deserialize, Serialize};
+use sotf_host::param_specs::{denoiser::PARAMS as DN, find_by_key as pk};
 
 // Default functions for serde
 pub fn default_reduction_db() -> f32 {

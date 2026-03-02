@@ -9,7 +9,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, band_split::PARAMS as BS};
+use sotf_plugins::param_specs::{band_split::PARAMS as BS, find_by_key as pk};
 
 /// State for rendering the BandSplit plugin
 pub struct BandSplitRenderState {

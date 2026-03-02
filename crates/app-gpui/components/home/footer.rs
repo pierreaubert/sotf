@@ -3,7 +3,7 @@
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 use crate::components::icons::{Icon, IconName, IconSize};
-use crate::ui::{PlayerView, FOOTER_HEIGHT_REMS};
+use crate::ui::{FOOTER_HEIGHT_REMS, PlayerView};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{

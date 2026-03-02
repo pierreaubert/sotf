@@ -101,7 +101,9 @@ fn spec_to_descriptor(spec: &sotf_plugins::param_specs::ParamSpec) -> TuiParamDe
                 step: step as i32,
             },
             ParamType::Bool { .. } => TuiParamType::Bool,
-            ParamType::Choice { labels, .. } => TuiParamType::Choice { count: labels.len() },
+            ParamType::Choice { labels, .. } => TuiParamType::Choice {
+                count: labels.len(),
+            },
             ParamType::FilePath => TuiParamType::Choice { count: 0 },
         },
         unit: spec.unit.to_string(),
@@ -118,10 +120,7 @@ impl TuiEditablePlugin for PluginSettings {
         use sotf_plugins::param_specs;
         match self {
             // Dynamic-param plugins: global + per-band from BAND_TEMPLATE
-            PluginSettings::EQ {
-                max_filters,
-                ..
-            } => {
+            PluginSettings::EQ { max_filters, .. } => {
                 let mut descs = specs_to_descriptors(param_specs::eq::GLOBAL_PARAMS);
                 for i in 0..*max_filters {
                     let g = format!("Filter {}", i + 1);
@@ -134,7 +133,8 @@ impl TuiEditablePlugin for PluginSettings {
                 descs
             }
             PluginSettings::MultibandCompressor { num_bands, .. } => {
-                let mut descs = specs_to_descriptors(param_specs::multiband_compressor::GLOBAL_PARAMS);
+                let mut descs =
+                    specs_to_descriptors(param_specs::multiband_compressor::GLOBAL_PARAMS);
                 for i in 0..*num_bands {
                     let g = format!("Band {}", i + 1);
                     for spec in param_specs::multiband_compressor::BAND_TEMPLATE {
@@ -146,7 +146,8 @@ impl TuiEditablePlugin for PluginSettings {
                 descs
             }
             PluginSettings::MultibandExpander { num_bands, .. } => {
-                let mut descs = specs_to_descriptors(param_specs::multiband_expander::GLOBAL_PARAMS);
+                let mut descs =
+                    specs_to_descriptors(param_specs::multiband_expander::GLOBAL_PARAMS);
                 for i in 0..*num_bands {
                     let g = format!("Band {}", i + 1);
                     for spec in param_specs::multiband_expander::BAND_TEMPLATE {
@@ -161,7 +162,6 @@ impl TuiEditablePlugin for PluginSettings {
             _ => specs_to_descriptors(self.param_specs()),
         }
     }
-
 
     fn get_params(&self) -> Vec<TuiParamSpec> {
         let descriptors = self.get_descriptors();
@@ -237,7 +237,13 @@ impl TuiEditablePlugin for PluginSettings {
                         9 => *release_ms,
                         10 => *knee_db,
                         11 => *mix,
-                        12 => return global_specs[12].format_value(if *link_channels { 1.0 } else { 0.0 }),
+                        12 => {
+                            return global_specs[12].format_value(if *link_channels {
+                                1.0
+                            } else {
+                                0.0
+                            });
+                        }
                         _ => return String::new(),
                     };
                     global_specs[index].format_value(val)
@@ -249,11 +255,26 @@ impl TuiEditablePlugin for PluginSettings {
                         match param_in_band {
                             0 => band_template[0].format_value(if band.solo { 1.0 } else { 0.0 }),
                             1 => band_template[1].format_value(if band.bypass { 1.0 } else { 0.0 }),
-                            2 => band.threshold_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            3 => band.ratio.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            4 => band.attack_ms.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            5 => band.release_ms.map(|v| format!("{:.0}", v)).unwrap_or("Global".into()),
-                            6 => band.knee_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
+                            2 => band
+                                .threshold_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            3 => band
+                                .ratio
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            4 => band
+                                .attack_ms
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            5 => band
+                                .release_ms
+                                .map(|v| format!("{:.0}", v))
+                                .unwrap_or("Global".into()),
+                            6 => band
+                                .knee_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
                             7 => format!("{:.1}", band.makeup_gain_db),
                             _ => String::new(),
                         }
@@ -303,7 +324,13 @@ impl TuiEditablePlugin for PluginSettings {
                         12 => *hysteresis_db,
                         13 => *hold_ms,
                         14 => *mix,
-                        15 => return global_specs[15].format_value(if *link_channels { 1.0 } else { 0.0 }),
+                        15 => {
+                            return global_specs[15].format_value(if *link_channels {
+                                1.0
+                            } else {
+                                0.0
+                            });
+                        }
                         _ => return String::new(),
                     };
                     global_specs[index].format_value(val)
@@ -315,14 +342,38 @@ impl TuiEditablePlugin for PluginSettings {
                         match param_in_band {
                             0 => band_template[0].format_value(if band.solo { 1.0 } else { 0.0 }),
                             1 => band_template[1].format_value(if band.bypass { 1.0 } else { 0.0 }),
-                            2 => band.threshold_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            3 => band.ratio.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            4 => band.attack_ms.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            5 => band.release_ms.map(|v| format!("{:.0}", v)).unwrap_or("Global".into()),
-                            6 => band.range_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            7 => band.knee_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            8 => band.hysteresis_db.map(|v| format!("{:.1}", v)).unwrap_or("Global".into()),
-                            9 => band.hold_ms.map(|v| format!("{:.0}", v)).unwrap_or("Global".into()),
+                            2 => band
+                                .threshold_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            3 => band
+                                .ratio
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            4 => band
+                                .attack_ms
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            5 => band
+                                .release_ms
+                                .map(|v| format!("{:.0}", v))
+                                .unwrap_or("Global".into()),
+                            6 => band
+                                .range_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            7 => band
+                                .knee_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            8 => band
+                                .hysteresis_db
+                                .map(|v| format!("{:.1}", v))
+                                .unwrap_or("Global".into()),
+                            9 => band
+                                .hold_ms
+                                .map(|v| format!("{:.0}", v))
+                                .unwrap_or("Global".into()),
                             _ => String::new(),
                         }
                     } else {
@@ -335,18 +386,14 @@ impl TuiEditablePlugin for PluginSettings {
                 let specs = self.param_specs();
                 if let Some(spec) = specs.get(index) {
                     match spec.param_type {
-                        ParamType::FilePath => {
-                            match self.param_value_string(index) {
-                                Some(path) if !path.is_empty() => {
-                                    PathBuf::from(&path)
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .to_string()
-                                }
-                                _ => "None".to_string(),
-                            }
-                        }
+                        ParamType::FilePath => match self.param_value_string(index) {
+                            Some(path) if !path.is_empty() => PathBuf::from(&path)
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string(),
+                            _ => "None".to_string(),
+                        },
                         _ => {
                             if let Some(value) = self.param_value(index) {
                                 spec.format_value(value)
@@ -361,7 +408,6 @@ impl TuiEditablePlugin for PluginSettings {
             }
         }
     }
-
 
     fn adjust_param(&mut self, index: usize, delta: f64) -> bool {
         use sotf_plugins::param_specs::ParamType;
@@ -436,14 +482,18 @@ impl TuiEditablePlugin for PluginSettings {
                 bands,
                 ..
             } => {
-                use sotf_plugins::param_specs::{find_by_key as pk, multiband_compressor::{GLOBAL_PARAMS, BAND_TEMPLATE}};
+                use sotf_plugins::param_specs::{
+                    find_by_key as pk,
+                    multiband_compressor::{BAND_TEMPLATE, GLOBAL_PARAMS},
+                };
                 let global_count = GLOBAL_PARAMS.len();
                 let band_params = BAND_TEMPLATE.len();
                 match index {
                     0 => {
-                        let new_bands = ((*num_bands as i64) + delta as i64)
-                            .clamp(pk(GLOBAL_PARAMS, "num_bands").min_f64() as i64, pk(GLOBAL_PARAMS, "num_bands").max_f64() as i64)
-                            as usize;
+                        let new_bands = ((*num_bands as i64) + delta as i64).clamp(
+                            pk(GLOBAL_PARAMS, "num_bands").min_f64() as i64,
+                            pk(GLOBAL_PARAMS, "num_bands").max_f64() as i64,
+                        ) as usize;
                         *num_bands = new_bands;
                         bands.resize_with(new_bands, Default::default);
                     }
@@ -465,52 +515,87 @@ impl TuiEditablePlugin for PluginSettings {
                             0 => band.solo = !band.solo,
                             1 => band.bypass = !band.bypass,
                             2 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "threshold").min_f64() as f32, pk(BAND_TEMPLATE, "threshold").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "threshold").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "threshold").max_f64() as f32,
+                                );
                                 band.threshold_db = match band.threshold_db {
                                     None => Some(*threshold_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             3 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "ratio").min_f64() as f32, pk(BAND_TEMPLATE, "ratio").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "ratio").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "ratio").max_f64() as f32,
+                                );
                                 band.ratio = match band.ratio {
                                     None => Some(*ratio as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             4 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "attack").min_f64() as f32, pk(BAND_TEMPLATE, "attack").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "attack").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "attack").max_f64() as f32,
+                                );
                                 band.attack_ms = match band.attack_ms {
                                     None => Some(*attack_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             5 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "release").min_f64() as f32, pk(BAND_TEMPLATE, "release").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "release").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "release").max_f64() as f32,
+                                );
                                 band.release_ms = match band.release_ms {
                                     None => Some(*release_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             6 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "knee").min_f64() as f32, pk(BAND_TEMPLATE, "knee").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "knee").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "knee").max_f64() as f32,
+                                );
                                 band.knee_db = match band.knee_db {
                                     None => Some(*knee_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
@@ -537,14 +622,18 @@ impl TuiEditablePlugin for PluginSettings {
                 bands,
                 ..
             } => {
-                use sotf_plugins::param_specs::{find_by_key as pk, multiband_expander::{GLOBAL_PARAMS, BAND_TEMPLATE}};
+                use sotf_plugins::param_specs::{
+                    find_by_key as pk,
+                    multiband_expander::{BAND_TEMPLATE, GLOBAL_PARAMS},
+                };
                 let global_count = GLOBAL_PARAMS.len();
                 let band_params = BAND_TEMPLATE.len();
                 match index {
                     0 => {
-                        let new_bands = ((*num_bands as i64) + delta as i64)
-                            .clamp(pk(GLOBAL_PARAMS, "num_bands").min_f64() as i64, pk(GLOBAL_PARAMS, "num_bands").max_f64() as i64)
-                            as usize;
+                        let new_bands = ((*num_bands as i64) + delta as i64).clamp(
+                            pk(GLOBAL_PARAMS, "num_bands").min_f64() as i64,
+                            pk(GLOBAL_PARAMS, "num_bands").max_f64() as i64,
+                        ) as usize;
                         *num_bands = new_bands;
                         bands.resize_with(new_bands, Default::default);
                     }
@@ -566,82 +655,138 @@ impl TuiEditablePlugin for PluginSettings {
                             0 => band.solo = !band.solo,
                             1 => band.bypass = !band.bypass,
                             2 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "threshold").min_f64() as f32, pk(BAND_TEMPLATE, "threshold").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "threshold").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "threshold").max_f64() as f32,
+                                );
                                 band.threshold_db = match band.threshold_db {
                                     None => Some(*threshold_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             3 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "ratio").min_f64() as f32, pk(BAND_TEMPLATE, "ratio").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "ratio").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "ratio").max_f64() as f32,
+                                );
                                 band.ratio = match band.ratio {
                                     None => Some(*ratio as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             4 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "attack").min_f64() as f32, pk(BAND_TEMPLATE, "attack").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "attack").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "attack").max_f64() as f32,
+                                );
                                 band.attack_ms = match band.attack_ms {
                                     None => Some(*attack_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             5 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "release").min_f64() as f32, pk(BAND_TEMPLATE, "release").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "release").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "release").max_f64() as f32,
+                                );
                                 band.release_ms = match band.release_ms {
                                     None => Some(*release_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             6 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "range").min_f64() as f32, pk(BAND_TEMPLATE, "range").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "range").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "range").max_f64() as f32,
+                                );
                                 band.range_db = match band.range_db {
                                     None => Some(*range_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             7 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "knee").min_f64() as f32, pk(BAND_TEMPLATE, "knee").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "knee").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "knee").max_f64() as f32,
+                                );
                                 band.knee_db = match band.knee_db {
                                     None => Some(*knee_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             8 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "hysteresis").min_f64() as f32, pk(BAND_TEMPLATE, "hysteresis").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "hysteresis").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "hysteresis").max_f64() as f32,
+                                );
                                 band.hysteresis_db = match band.hysteresis_db {
                                     None => Some(*hysteresis_db as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32 * 0.1;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
                             9 => {
-                                let (lo, hi) = (pk(BAND_TEMPLATE, "hold").min_f64() as f32, pk(BAND_TEMPLATE, "hold").max_f64() as f32);
+                                let (lo, hi) = (
+                                    pk(BAND_TEMPLATE, "hold").min_f64() as f32,
+                                    pk(BAND_TEMPLATE, "hold").max_f64() as f32,
+                                );
                                 band.hold_ms = match band.hold_ms {
                                     None => Some(*hold_ms as f32),
                                     Some(v) => {
                                         let new_v = v + delta as f32;
-                                        if new_v < lo { None } else { Some(new_v.clamp(lo, hi)) }
+                                        if new_v < lo {
+                                            None
+                                        } else {
+                                            Some(new_v.clamp(lo, hi))
+                                        }
                                     }
                                 };
                             }
@@ -663,18 +808,28 @@ impl TuiEditablePlugin for PluginSettings {
                 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
                 match index {
                     0 => {
-                        *num_bins = ((*num_bins as i64) + delta as i64)
-                            .clamp(pk(SP, "num_bins").min_f64() as i64, pk(SP, "num_bins").max_f64() as i64)
-                            as usize
+                        *num_bins = ((*num_bins as i64) + delta as i64).clamp(
+                            pk(SP, "num_bins").min_f64() as i64,
+                            pk(SP, "num_bins").max_f64() as i64,
+                        ) as usize
                     }
-                    1 => *min_freq = (*min_freq + delta as f32).clamp(pk(SP, "min_freq").min_f64() as f32, pk(SP, "min_freq").max_f64() as f32),
+                    1 => {
+                        *min_freq = (*min_freq + delta as f32).clamp(
+                            pk(SP, "min_freq").min_f64() as f32,
+                            pk(SP, "min_freq").max_f64() as f32,
+                        )
+                    }
                     2 => {
-                        *max_freq =
-                            (*max_freq + delta as f32 * 100.0).clamp(pk(SP, "max_freq").min_f64() as f32, pk(SP, "max_freq").max_f64() as f32)
+                        *max_freq = (*max_freq + delta as f32 * 100.0).clamp(
+                            pk(SP, "max_freq").min_f64() as f32,
+                            pk(SP, "max_freq").max_f64() as f32,
+                        )
                     }
                     3 => {
-                        *smoothing =
-                            (*smoothing + delta as f32 * 0.01).clamp(pk(SP, "smoothing").min_f64() as f32, pk(SP, "smoothing").max_f64() as f32)
+                        *smoothing = (*smoothing + delta as f32 * 0.01).clamp(
+                            pk(SP, "smoothing").min_f64() as f32,
+                            pk(SP, "smoothing").max_f64() as f32,
+                        )
                     }
                     4 => {
                         let modes = [
@@ -725,14 +880,16 @@ impl TuiEditablePlugin for PluginSettings {
                 use sotf_plugins::param_specs::{find_by_key as pk, hal::PARAMS as HL};
                 match index {
                     0 => {
-                        *input_channels = ((*input_channels as i64) + delta as i64)
-                            .clamp(pk(HL, "input_channels").min_f64() as i64, pk(HL, "input_channels").max_f64() as i64)
-                            as usize
+                        *input_channels = ((*input_channels as i64) + delta as i64).clamp(
+                            pk(HL, "input_channels").min_f64() as i64,
+                            pk(HL, "input_channels").max_f64() as i64,
+                        ) as usize
                     }
                     1 => {
-                        *output_channels = ((*output_channels as i64) + delta as i64)
-                            .clamp(pk(HL, "output_channels").min_f64() as i64, pk(HL, "output_channels").max_f64() as i64)
-                            as usize
+                        *output_channels = ((*output_channels as i64) + delta as i64).clamp(
+                            pk(HL, "output_channels").min_f64() as i64,
+                            pk(HL, "output_channels").max_f64() as i64,
+                        ) as usize
                     }
                     _ => return false,
                 }

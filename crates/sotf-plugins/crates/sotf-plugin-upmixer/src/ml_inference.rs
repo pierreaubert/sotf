@@ -9,10 +9,10 @@
 // and V_prob is read via a relaxed atomic load.
 
 use super::ml_features::FEATURE_SIZE;
-use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use ort::session::builder::GraphOptimizationLevel;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread::{self, JoinHandle};
 
 /// Ring buffer capacity in frames (inference ~1-5ms, blocks arrive every ~42ms at 2048/44100)
@@ -244,8 +244,7 @@ mod tests {
             return;
         }
 
-        let mut handle = MlInferenceHandle::new(model_path)
-            .expect("Should load dummy model");
+        let mut handle = MlInferenceHandle::new(model_path).expect("Should load dummy model");
 
         // Send a feature frame
         let features = [0.0_f32; FEATURE_SIZE];

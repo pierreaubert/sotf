@@ -457,7 +457,8 @@ fn run_manager_thread(
             Ok(host) => {
                 let _output_channels = host.output_channels();
                 // Send host to processing thread
-                if let Err(e) = processing_thread.send_command(ProcessingCommand::UpdateHost(Box::new(host)))
+                if let Err(e) =
+                    processing_thread.send_command(ProcessingCommand::UpdateHost(Box::new(host)))
                 {
                     return Err(format!("Failed to send initial plugin host: {}", e));
                 }

@@ -8,7 +8,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, band_merge::PARAMS as BM};
+use sotf_plugins::param_specs::{band_merge::PARAMS as BM, find_by_key as pk};
 
 /// State for rendering the BandMerge plugin
 pub struct BandMergeRenderState {

@@ -15,7 +15,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, expander::PARAMS as EX};
+use sotf_plugins::param_specs::{expander::PARAMS as EX, find_by_key as pk};
 
 /// State for rendering the Expander plugin
 pub struct ExpanderRenderState {

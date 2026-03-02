@@ -1011,25 +1011,20 @@ impl PlayerView {
             // Removed rounded_md and selection background logic
             .bg(theme_c.background_secondary)
             // Channel meters
-            .child(
-                div()
-                    .flex()
-                    .gap_px()
-                    .flex_1()
-                    .min_h(rems(12.5))
-                    .children(channel_data.into_iter().map(
-                        |(fill_ratio, yellow_threshold, red_threshold, peak_hold_ratio, name)| {
-                            render_gradient_meter(
-                                fill_ratio,
-                                yellow_threshold,
-                                red_threshold,
-                                peak_hold_ratio,
-                                name,
-                                theme,
-                            )
-                        },
-                    )),
-            )
+            .child(div().flex().gap_px().flex_1().min_h(rems(12.5)).children(
+                channel_data.into_iter().map(
+                    |(fill_ratio, yellow_threshold, red_threshold, peak_hold_ratio, name)| {
+                        render_gradient_meter(
+                            fill_ratio,
+                            yellow_threshold,
+                            red_threshold,
+                            peak_hold_ratio,
+                            name,
+                            theme,
+                        )
+                    },
+                ),
+            ))
             // M/S/D buttons vertical column below meters, centered
             .child(
                 div()

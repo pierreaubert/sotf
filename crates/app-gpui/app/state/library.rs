@@ -133,9 +133,7 @@ impl Manager for LibraryState {
     fn query(&self, query: Self::Query) -> Self::Response {
         match query {
             LibraryQuery::ItemCount => LibraryResponse::Count(self.item_count()),
-            LibraryQuery::SelectedAlbum => {
-                LibraryResponse::Album(self.selected_album().cloned())
-            }
+            LibraryQuery::SelectedAlbum => LibraryResponse::Album(self.selected_album().cloned()),
             LibraryQuery::FilteredAlbums => LibraryResponse::None,
         }
     }

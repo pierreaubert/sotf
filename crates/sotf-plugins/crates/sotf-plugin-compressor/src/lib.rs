@@ -16,14 +16,14 @@
 // - link_channels: Use a shared detector across channels to avoid image shifts
 // - sidechain_hpf_hz: High-pass filter cutoff for the detector sidechain (Hz)
 
+use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
-use sotf_host::param_specs::{find_by_key as pk, compressor::PARAMS as CP};
+use sotf_host::param_specs::{compressor::PARAMS as CP, find_by_key as pk};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
-use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
 use std::any::Any;
@@ -262,7 +262,11 @@ impl CompressorPlugin {
             sidechain_hpf_alpha: 0.0,
 
             threshold_smoother: Smoother::new(threshold_db, DEFAULT_SMOOTHING_TIME_MS, sample_rate),
-            makeup_gain_smoother: Smoother::new(makeup_gain_db, DEFAULT_SMOOTHING_TIME_MS, sample_rate),
+            makeup_gain_smoother: Smoother::new(
+                makeup_gain_db,
+                DEFAULT_SMOOTHING_TIME_MS,
+                sample_rate,
+            ),
             cache: RealTimeCache::new(CompressorData::new(channels)),
             cache_update_counter: 0,
         };
@@ -274,7 +278,8 @@ impl CompressorPlugin {
     pub fn with_smoothing_time(mut self, time_ms: f32) -> Self {
         self.smoothing_time_ms = time_ms;
         self.threshold_smoother.set_time(time_ms, self.sample_rate);
-        self.makeup_gain_smoother.set_time(time_ms, self.sample_rate);
+        self.makeup_gain_smoother
+            .set_time(time_ms, self.sample_rate);
         self
     }
 
@@ -290,14 +295,26 @@ impl CompressorPlugin {
             .with_description("Level above which compression starts (dB)")
             .with_group("Dynamics")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("ratio", "Ratio", self.ratio, pk(CP, "ratio").min_f64() as f32, pk(CP, "ratio").max_f64() as f32)
-                .with_description("Compression ratio (1:1 to 20:1)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("attack", "Attack", self.attack_ms, pk(CP, "attack").min_f64() as f32, pk(CP, "attack").max_f64() as f32)
-                .with_description("Attack time (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "ratio",
+                "Ratio",
+                self.ratio,
+                pk(CP, "ratio").min_f64() as f32,
+                pk(CP, "ratio").max_f64() as f32,
+            )
+            .with_description("Compression ratio (1:1 to 20:1)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "attack",
+                "Attack",
+                self.attack_ms,
+                pk(CP, "attack").min_f64() as f32,
+                pk(CP, "attack").max_f64() as f32,
+            )
+            .with_description("Attack time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -308,10 +325,16 @@ impl CompressorPlugin {
             .with_description("Release time (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("knee", "Knee", self.knee_db, pk(CP, "knee").min_f64() as f32, pk(CP, "knee").max_f64() as f32)
-                .with_description("Soft knee width (dB)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "knee",
+                "Knee",
+                self.knee_db,
+                pk(CP, "knee").min_f64() as f32,
+                pk(CP, "knee").max_f64() as f32,
+            )
+            .with_description("Soft knee width (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "makeup_gain",
                 "Makeup Gain",
@@ -322,10 +345,16 @@ impl CompressorPlugin {
             .with_description("Output gain compensation (dB)")
             .with_group("Output")
             .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("mix", "Mix", self.mix, pk(CP, "mix").min_f64() as f32, pk(CP, "mix").max_f64() as f32)
-                .with_description("Dry/wet mix (0 = dry, 1 = compressed)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "mix",
+                "Mix",
+                self.mix,
+                pk(CP, "mix").min_f64() as f32,
+                pk(CP, "mix").max_f64() as f32,
+            )
+            .with_description("Dry/wet mix (0 = dry, 1 = compressed)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("auto_makeup", "Auto Makeup", self.auto_makeup)
                 .with_description("Automatically compensate for gain reduction")
                 .with_group("Output")
@@ -479,50 +508,70 @@ impl InPlacePlugin for CompressorPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_threshold {
-            let val = value.as_float().unwrap_or(pk(CP, "threshold").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "threshold").default_f64() as f32);
             if val.is_finite() {
                 self.threshold_db = val;
                 self.threshold_smoother.set_target(val);
             }
         } else if id == self.param_ratio {
-            let val = value.as_float().unwrap_or(pk(CP, "ratio").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "ratio").default_f64() as f32);
             if val.is_finite() {
                 self.ratio = val.max(1.0);
             }
         } else if id == self.param_attack {
-            let val = value.as_float().unwrap_or(pk(CP, "attack").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "attack").default_f64() as f32);
             if val.is_finite() {
                 self.attack_ms = val;
                 self.update_coefficients();
             }
         } else if id == self.param_release {
-            let val = value.as_float().unwrap_or(pk(CP, "release").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "release").default_f64() as f32);
             if val.is_finite() {
                 self.release_ms = val;
                 self.update_coefficients();
             }
         } else if id == self.param_knee {
-            let val = value.as_float().unwrap_or(pk(CP, "knee").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "knee").default_f64() as f32);
             if val.is_finite() {
                 self.knee_db = val.max(0.0);
             }
         } else if id == self.param_makeup_gain {
-            let val = value.as_float().unwrap_or(pk(CP, "makeup_gain").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "makeup_gain").default_f64() as f32);
             if val.is_finite() {
                 self.makeup_gain_db = val;
                 self.makeup_gain_smoother.set_target(val);
             }
         } else if id == self.param_mix {
-            let val = value.as_float().unwrap_or(pk(CP, "mix").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "mix").default_f64() as f32);
             if val.is_finite() {
                 self.mix = val.clamp(0.0, 1.0);
             }
         } else if id == self.param_auto_makeup {
-            self.auto_makeup = value.as_bool().unwrap_or(pk(CP, "auto_makeup").default_bool());
+            self.auto_makeup = value
+                .as_bool()
+                .unwrap_or(pk(CP, "auto_makeup").default_bool());
         } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().unwrap_or(pk(CP, "link_channels").default_bool());
+            self.link_channels = value
+                .as_bool()
+                .unwrap_or(pk(CP, "link_channels").default_bool());
         } else if id == self.param_sidechain_hpf_hz {
-            let val = value.as_float().unwrap_or(pk(CP, "sidechain_hpf_hz").default_f64() as f32);
+            let val = value
+                .as_float()
+                .unwrap_or(pk(CP, "sidechain_hpf_hz").default_f64() as f32);
             if val.is_finite() {
                 self.sidechain_hpf_hz = val.max(0.0);
                 self.update_coefficients();
@@ -630,8 +679,7 @@ impl InPlacePlugin for CompressorPlugin {
                     let sample_idx = frame * self.channels + ch;
                     let input_sample = buffer[sample_idx];
                     let filtered = self.apply_sidechain_filter(ch, input_sample);
-                    let input_db =
-                        DB_CONVERSION_FACTOR * fast_log10(filtered.abs().max(EPSILON));
+                    let input_db = DB_CONVERSION_FACTOR * fast_log10(filtered.abs().max(EPSILON));
                     let target_gr = self.calculate_gain_reduction(input_db, thresh);
 
                     buffer[sample_idx] = self.apply_gain_for_channel(
@@ -677,8 +725,8 @@ impl InPlacePlugin for CompressorPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
 
     #[test]
     fn test_compressor_creation() {
@@ -751,7 +799,7 @@ mod tests {
         // Generate a 1 second sine wave at -10dB (above threshold)
         let mut signal_gen = SignalGen::new_sine(sample_rate, 1000.0, 0.316); // -10dB approx
         let input = signal_gen.generate(4800 * channels); // 100ms is enough for CI
-        
+
         // Generate reference output with standard block size
         let mut expected_output = vec![0.0; input.len()];
         let ctx = ProcessContext {
@@ -759,7 +807,7 @@ mod tests {
             num_frames: 4800,
         };
         plugin.process(&input, &mut expected_output, &ctx).unwrap();
-        
+
         // Reset and test varied buffer sizes
         plugin.reset();
         test_varied_buffer_sizes(&mut plugin, sample_rate, &input, &expected_output);

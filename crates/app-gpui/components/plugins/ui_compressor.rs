@@ -15,8 +15,8 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, compressor::PARAMS as CP};
 use sotf_plugins::CompressorData;
+use sotf_plugins::param_specs::{compressor::PARAMS as CP, find_by_key as pk};
 
 /// State for rendering the Compressor plugin
 pub struct CompressorRenderState<'a> {

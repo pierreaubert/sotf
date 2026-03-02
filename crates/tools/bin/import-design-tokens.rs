@@ -74,9 +74,7 @@ fn get_color(theme_obj: &Value, path: &str) -> String {
             a = a
         )
     } else {
-        format!(
-            "Rgba {{ r: {r:.3}, g: {g:.3}, b: {b:.3}, a: {a:.3} }}"
-        )
+        format!("Rgba {{ r: {r:.3}, g: {g:.3}, b: {b:.3}, a: {a:.3} }}")
     }
 }
 
@@ -110,35 +108,30 @@ fn theme_configs() -> Vec<ThemeConfig> {
             fn_name: "dark",
             file_name: "black.rs",
             doc_comment: "Dark theme (default)",
-
         },
         ThemeConfig {
             set_name: "theme/light",
             fn_name: "light",
             file_name: "light.rs",
             doc_comment: "Light theme",
-
         },
         ThemeConfig {
             set_name: "theme/midnight",
             fn_name: "midnight",
             file_name: "midnight.rs",
             doc_comment: "Midnight theme (deep blue)",
-
         },
         ThemeConfig {
             set_name: "theme/forest",
             fn_name: "forest",
             file_name: "forest.rs",
             doc_comment: "Forest theme (green tones)",
-
         },
         ThemeConfig {
             set_name: "theme/black-and-white",
             fn_name: "black_and_white",
             file_name: "black_and_white.rs",
             doc_comment: "Black & White theme (monochrome high contrast)",
-
         },
     ]
 }
@@ -149,11 +142,7 @@ fn generate_theme_file(tokens: &Value, config: &ThemeConfig) -> String {
     // Check if any color value uses Rgba struct (has alpha != 1.0)
     let has_rgba = needs_rgba_import(t);
 
-    let rgba_use = if has_rgba {
-        "\nuse gpui::Rgba;\n"
-    } else {
-        ""
-    };
+    let rgba_use = if has_rgba { "\nuse gpui::Rgba;\n" } else { "" };
 
     let rgba_import = if has_rgba { ", rgba" } else { "" };
 

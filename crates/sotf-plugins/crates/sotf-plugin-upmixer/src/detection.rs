@@ -18,8 +18,7 @@ impl UpmixerPlugin {
         let ml_v_prob = if self.enable_ml_detection && self.ml_inference_handle.is_some() {
             // Compute MFCC features from existing FFT data
             if let Some(ref mut extractor) = self.mfcc_extractor {
-                let features =
-                    *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
+                let features = *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
                 if let Some(ref mut handle) = self.ml_inference_handle {
                     handle.send_features(&features);
                     handle.read_v_prob()
@@ -41,8 +40,7 @@ impl UpmixerPlugin {
                 } else {
                     0.05
                 };
-                self.dialogue_probability +=
-                    p_alpha * (v_prob - self.dialogue_probability);
+                self.dialogue_probability += p_alpha * (v_prob - self.dialogue_probability);
                 self.dialogue_probability
             }
             None => {

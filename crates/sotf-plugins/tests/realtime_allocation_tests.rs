@@ -6,8 +6,8 @@
 // on the hot path. They use a custom GlobalAlloc wrapper to count allocations.
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 // Tests must run sequentially because COUNTING_ENABLED is process-global:
 // a parallel test's warm-up allocations would be counted by another test's

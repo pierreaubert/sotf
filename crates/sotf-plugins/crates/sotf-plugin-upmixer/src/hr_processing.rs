@@ -129,7 +129,7 @@ impl UpmixerPlugin {
         self.hr_output_read_position = (self.hr_output_read_position + drain) & mask;
         self.hr_output_accumulator_fill -= drain;
     }
-    
+
     /// Process one HR FFT block and accumulate into the HR output ring buffer.
     pub(super) fn process_hr_block(&mut self, temp_input: &[f32]) {
         self.process_hr_fft(temp_input);
@@ -143,7 +143,9 @@ impl UpmixerPlugin {
         debug_assert!(
             self.hr_output_accumulator_fill + hr_hop <= hr_ring_capacity,
             "HR ring buffer overflow: fill {} + hop {} > capacity {}",
-            self.hr_output_accumulator_fill, hr_hop, hr_ring_capacity
+            self.hr_output_accumulator_fill,
+            hr_hop,
+            hr_ring_capacity
         );
         if self.hr_output_accumulator_fill + hr_hop > hr_ring_capacity {
             return;

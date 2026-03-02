@@ -283,7 +283,9 @@ impl Button {
 impl RenderOnce for Button {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
-        let theme = self.theme.unwrap_or_else(|| ButtonTheme::from(&global_theme));
+        let theme = self
+            .theme
+            .unwrap_or_else(|| ButtonTheme::from(&global_theme));
         let (bg, bg_hover, text_color, border_color) =
             Self::compute_colors(self.variant, self.selected, &theme);
 

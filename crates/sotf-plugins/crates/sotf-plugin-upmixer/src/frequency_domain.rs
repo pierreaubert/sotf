@@ -3,8 +3,8 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use sotf_host::simd::compute_covariance_simd;
 use math_audio_dsp::fast_math::{fast_atan2, fast_cos, fast_sin};
+use sotf_host::simd::compute_covariance_simd;
 
 use rustfft::num_complex::Complex;
 

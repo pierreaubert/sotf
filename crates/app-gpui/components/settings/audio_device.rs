@@ -8,8 +8,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {

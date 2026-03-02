@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
+use crate::Track;
 use crate::database::MusicDatabase;
 use crate::play_tracker::PlayTracker;
 use crate::replay_gain_scanner::ReplayGainMode;
-use crate::Track;
 
 /// Default startup volume (0.0 to 1.0).
 const DEFAULT_STARTUP_VOLUME: f32 = 0.8;
@@ -91,9 +91,7 @@ impl PlaybackController {
 
         let gain = match self.replay_gain_mode {
             ReplayGainMode::Track => track.replay_gain?,
-            ReplayGainMode::Album => {
-                track.album_gain.unwrap_or(track.replay_gain?)
-            }
+            ReplayGainMode::Album => track.album_gain.unwrap_or(track.replay_gain?),
         };
 
         Some(gain + self.replay_gain_preamp as f64)

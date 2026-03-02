@@ -21,14 +21,9 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     /// For now, we will use direct state manipulation to add plugins as it's cleaner for E2E logic
     /// unless we explicitly want to test the *menu*.
     pub fn add_plugin(&mut self, plugin_type: PluginType) -> usize {
-        let max_id_opt = self.driver.read_app(|app| {
-            app.plugin_state
-                .chain
-                .plugins()
-                .iter()
-                .map(|p| p.id)
-                .max()
-        });
+        let max_id_opt = self
+            .driver
+            .read_app(|app| app.plugin_state.chain.plugins().iter().map(|p| p.id).max());
 
         self.driver.update_app(move |app, _cx| {
             app.add_plugin(&plugin_type);
@@ -48,8 +43,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     }
 
     pub fn get_plugin_count(&mut self) -> usize {
-        self.driver
-            .read_app(|app| app.plugin_state.chain.len())
+        self.driver.read_app(|app| app.plugin_state.chain.len())
     }
 
     pub fn get_plugin_type(&mut self, index: usize) -> Option<PluginType> {
@@ -109,13 +103,8 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     }
 
     pub fn plugin_exists(&mut self, id: usize) -> bool {
-        self.driver.read_app(move |app| {
-            app.plugin_state
-                .chain
-                .plugins()
-                .iter()
-                .any(|p| p.id == id)
-        })
+        self.driver
+            .read_app(move |app| app.plugin_state.chain.plugins().iter().any(|p| p.id == id))
     }
 
     pub fn get_eq_channels(&mut self, index: usize) -> usize {
@@ -245,11 +234,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                     // Get the path of the track to play
                     if let Some(path) = state.app.play_selected_queue_item() {
                         let sample_rate = 48000.0;
-                        let plugins = state
-                            .app
-                            .plugin_state
-                            .chain
-                            .to_plugin_configs(sample_rate);
+                        let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
                         let output_channels = state.app.plugin_state.chain.output_channels();
 
                         if let Err(e) = state.player.lock().load_and_play(

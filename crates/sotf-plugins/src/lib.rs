@@ -63,18 +63,6 @@ pub use sotf_plugin_hal_input as plugin_hal_input;
 pub use sotf_plugin_hal_output as plugin_hal_output;
 
 // Re-export all public types for backward compatibility
-pub use sotf_host::analyzer::{AnalyzerData, LoudnessData, SpectrumData};
-pub use sotf_host::analyzer_loudness_monitor::{LoudnessInfo, LoudnessMonitor, LoudnessMonitorPlugin};
-pub use sotf_host::analyzer_spectrum::{
-    SpectralTiltCorrection, SpectrumAnalyzer, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,
-    TiltReferenceFreq,
-};
-pub use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
-pub use sotf_host::host::{DawHost, GraphEdge, Host};
-pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-pub use sotf_host::plugin::{
-    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
-};
 pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
 pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
 pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
@@ -120,15 +108,29 @@ pub use plugin_upmixer::{
     default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
 pub use plugin_xtc::{XtcPlugin, XtcPluginParams, validation};
-
-#[cfg(any(feature = "qa", test, debug_assertions))]
-pub use sotf_host::test_utils::{
-    assert_no_allocs, detect_latency, generate_dc, measure_peak_db, measure_rms_db,
-    run_standard_tests, test_parameter_ramp, test_varied_buffer_sizes, BufferComparison,
-    CountingAlloc, PerformanceProfiler, SignalGen,
+pub use sotf_host::analyzer::{AnalyzerData, LoudnessData, SpectrumData};
+pub use sotf_host::analyzer_loudness_monitor::{
+    LoudnessInfo, LoudnessMonitor, LoudnessMonitorPlugin,
 };
+pub use sotf_host::analyzer_spectrum::{
+    SpectralTiltCorrection, SpectrumAnalyzer, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,
+    TiltReferenceFreq,
+};
+pub use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+pub use sotf_host::host::{DawHost, GraphEdge, Host};
+pub use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+pub use sotf_host::plugin::{
+    InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, PluginResult, ProcessContext,
+};
+
 #[cfg(feature = "qa")]
 pub use sotf_host::test_utils::benchmark_plugin_full;
+#[cfg(any(feature = "qa", test, debug_assertions))]
+pub use sotf_host::test_utils::{
+    BufferComparison, CountingAlloc, PerformanceProfiler, SignalGen, assert_no_allocs,
+    detect_latency, generate_dc, measure_peak_db, measure_rms_db, run_standard_tests,
+    test_parameter_ramp, test_varied_buffer_sizes,
+};
 
 pub use sotf_host::simd::enable_ftz_daz;
 pub use sotf_host::sofa::{HrtfData, SofaFile, SourcePosition};

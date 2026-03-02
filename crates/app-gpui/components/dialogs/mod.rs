@@ -1193,9 +1193,13 @@ impl PlayerView {
         // Check if scan is complete
         let is_complete = match scan_type {
             crate::app::types::ScanType::Library => !state.app.library_state.scan_in_progress,
-            crate::app::types::ScanType::ReplayGain => !state.app.scan_ctrl.replay_gain_manager.in_progress,
+            crate::app::types::ScanType::ReplayGain => {
+                !state.app.scan_ctrl.replay_gain_manager.in_progress
+            }
             crate::app::types::ScanType::Bliss => !state.app.scan_ctrl.bliss_manager.in_progress,
-            crate::app::types::ScanType::Waveform => !state.app.scan_ctrl.waveform_manager.in_progress,
+            crate::app::types::ScanType::Waveform => {
+                !state.app.scan_ctrl.waveform_manager.in_progress
+            }
         };
 
         // Progress bar width (out of 100%)

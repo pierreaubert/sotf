@@ -6,7 +6,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, binaural::PARAMS as BN};
+use sotf_plugins::param_specs::{binaural::PARAMS as BN, find_by_key as pk};
 
 /// State for rendering the Binaural Decoder plugin
 pub struct BinauralRenderState<'a> {

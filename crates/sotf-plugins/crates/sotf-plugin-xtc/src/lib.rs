@@ -37,6 +37,10 @@ use reflections::{
     RoomReflectionData, build_reflection_data_image_source, build_reflection_data_ir,
 };
 
+use arc_swap::ArcSwap;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use rustfft::num_complex::Complex;
+use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::auto_gain::{AutoGain, AutoGainData, AutoGainParams};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
@@ -45,10 +49,6 @@ use sotf_host::simd::{
     complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, flush_denormals_inplace,
     window_mul_simd,
 };
-use arc_swap::ArcSwap;
-use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
-use rustfft::num_complex::Complex;
-use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::f32::consts::PI;
 use std::hash::{Hash, Hasher};
@@ -871,57 +871,83 @@ impl Plugin for XtcPlugin {
         let mut needs_filter_update = false;
 
         if id == self.param_enabled {
-            self.params.enabled = value.as_bool().ok_or_else(|| "enabled must be a boolean".to_string())?;
+            self.params.enabled = value
+                .as_bool()
+                .ok_or_else(|| "enabled must be a boolean".to_string())?;
         } else if id == self.param_distance {
-            let v = value.as_float().ok_or_else(|| "distance_m must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "distance_m must be a float".to_string())?;
             if v.is_finite() {
                 self.params.distance_m = v.clamp(0.5, 5.0);
                 needs_filter_update = true;
             }
         } else if id == self.param_speaker_angle {
-            let v = value.as_float().ok_or_else(|| "speaker_angle_deg must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "speaker_angle_deg must be a float".to_string())?;
             if v.is_finite() {
                 self.params.speaker_angle_deg = v.clamp(15.0, 60.0);
                 needs_filter_update = true;
             }
         } else if id == self.param_head_offset_x {
-            let v = value.as_float().ok_or_else(|| "head_offset_x must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "head_offset_x must be a float".to_string())?;
             if v.is_finite() {
                 self.params.head_offset_x = v.clamp(-0.5, 0.5);
                 needs_filter_update = true;
             }
         } else if id == self.param_head_offset_z {
-            let v = value.as_float().ok_or_else(|| "head_offset_z must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "head_offset_z must be a float".to_string())?;
             if v.is_finite() {
                 self.params.head_offset_z = v.clamp(-0.5, 0.5);
                 needs_filter_update = true;
             }
         } else if id == self.param_head_yaw {
-            let v = value.as_float().ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "head_yaw_deg must be a float".to_string())?;
             if v.is_finite() {
                 self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
                 needs_filter_update = true;
             }
         } else if id == self.param_pinna_model_enabled {
-            self.params.pinna_model_enabled = value.as_bool().ok_or_else(|| "pinna_model_enabled must be a boolean".to_string())?;
+            self.params.pinna_model_enabled = value
+                .as_bool()
+                .ok_or_else(|| "pinna_model_enabled must be a boolean".to_string())?;
             needs_filter_update = true;
         } else if id == self.param_spectral_normalization {
-            self.params.spectral_normalization = value.as_bool().ok_or_else(|| "spectral_normalization must be a boolean".to_string())?;
+            self.params.spectral_normalization = value
+                .as_bool()
+                .ok_or_else(|| "spectral_normalization must be a boolean".to_string())?;
             needs_filter_update = true;
         } else if id == self.param_room_reflections {
-            self.params.room_reflections_enabled = value.as_bool().ok_or_else(|| "room_reflections_enabled must be a boolean".to_string())?;
+            self.params.room_reflections_enabled = value
+                .as_bool()
+                .ok_or_else(|| "room_reflections_enabled must be a boolean".to_string())?;
             needs_filter_update = true;
         } else if id == self.param_bypass_xtc_filters {
-            self.params.bypass_xtc_filters = value.as_bool().ok_or_else(|| "bypass_xtc_filters must be a boolean".to_string())?;
+            self.params.bypass_xtc_filters = value
+                .as_bool()
+                .ok_or_else(|| "bypass_xtc_filters must be a boolean".to_string())?;
             self.limiter_envelope = 1.0;
         } else if id == self.param_bypass_spectral_normalization {
-            self.params.bypass_spectral_normalization = value.as_bool().ok_or_else(|| "bypass_spectral_normalization must be a boolean".to_string())?;
+            self.params.bypass_spectral_normalization = value
+                .as_bool()
+                .ok_or_else(|| "bypass_spectral_normalization must be a boolean".to_string())?;
             needs_filter_update = true;
         } else if id == self.param_bypass_neumann_refinement {
-            self.params.bypass_neumann_refinement = value.as_bool().ok_or_else(|| "bypass_neumann_refinement must be a boolean".to_string())?;
+            self.params.bypass_neumann_refinement = value
+                .as_bool()
+                .ok_or_else(|| "bypass_neumann_refinement must be a boolean".to_string())?;
             needs_filter_update = true;
         } else if id == self.param_auto_gain_enabled {
-            let v = value.as_bool().ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?;
+            let v = value
+                .as_bool()
+                .ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?;
             self.params.auto_gain_enabled = v;
             if v && self.auto_gain.is_none() {
                 self.auto_gain = Some(AutoGain::new(
@@ -938,7 +964,9 @@ impl Plugin for XtcPlugin {
                 self.auto_gain = None;
             }
         } else if id == self.param_auto_gain_max_db {
-            let v = value.as_float().ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
             if v.is_finite() {
                 self.params.auto_gain_max_db = v.clamp(0.0, 24.0);
                 if let Some(ag) = &mut self.auto_gain {
@@ -946,7 +974,9 @@ impl Plugin for XtcPlugin {
                 }
             }
         } else if id == self.param_auto_gain_smoothing_ms {
-            let v = value.as_float().ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
             if v.is_finite() {
                 self.params.auto_gain_smoothing_ms = v.clamp(10.0, 500.0);
                 if let Some(ag) = &mut self.auto_gain {

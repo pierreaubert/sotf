@@ -18,11 +18,11 @@
 // 5. Apply gains to frequency domain
 // 6. Inverse FFT and overlap-add to output
 
-use sotf_host::param_specs::{find_by_key as pk, denoiser::PARAMS as DN};
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
+use sotf_host::param_specs::{denoiser::PARAMS as DN, find_by_key as pk};
+use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_plugin_pnd::analysis::PndAnalyzer;
 use std::any::Any;
 use std::sync::Arc;
@@ -304,7 +304,9 @@ impl DenoiserPlugin {
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
 
         // PND Analyzers for polyphonic detection
-        let pnd_analyzers = (0..channels).map(|_| PndAnalyzer::new(2048, 44100, 50.0)).collect();
+        let pnd_analyzers = (0..channels)
+            .map(|_| PndAnalyzer::new(2048, 44100, 50.0))
+            .collect();
 
         let mut p = Self {
             channels,
@@ -511,9 +513,15 @@ impl DenoiserPlugin {
             Parameter::new_bool("dd_enabled", "Dialogue Detection", self.dd_enabled)
                 .with_group("Analysis")
                 .with_importance(ParameterImportance::Useful),
-            Parameter::new_float("dd_alpha", "DD Sensitivity", self.dd_alpha, pk(DN, "dd_alpha").min_f64() as f32, pk(DN, "dd_alpha").max_f64() as f32)
-                .with_group("Analysis")
-                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "dd_alpha",
+                "DD Sensitivity",
+                self.dd_alpha,
+                pk(DN, "dd_alpha").min_f64() as f32,
+                pk(DN, "dd_alpha").max_f64() as f32,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool("learn_noise", "Learn Noise", false).with_group("Profile"),
             Parameter::new_bool(
                 "use_captured_profile",
@@ -529,15 +537,30 @@ impl DenoiserPlugin {
     pub fn from_params(channels: usize, params: DenoiserPluginParams) -> Self {
         let mut plugin = Self::new(channels, params.low_latency);
 
-        plugin.reduction_db = params
-            .reduction_db
-            .clamp(pk(DN, "reduction_db").min_f64() as f32, pk(DN, "reduction_db").max_f64() as f32);
-        plugin.floor_db = params.floor_db.clamp(pk(DN, "floor_db").min_f64() as f32, pk(DN, "floor_db").max_f64() as f32);
-        plugin.smoothing = params.smoothing.clamp(pk(DN, "smoothing").min_f64() as f32, pk(DN, "smoothing").max_f64() as f32);
-        plugin.attack_ms = params.attack_ms.clamp(pk(DN, "attack_ms").min_f64() as f32, pk(DN, "attack_ms").max_f64() as f32);
-        plugin.release_ms = params.release_ms.clamp(pk(DN, "release_ms").min_f64() as f32, pk(DN, "release_ms").max_f64() as f32);
+        plugin.reduction_db = params.reduction_db.clamp(
+            pk(DN, "reduction_db").min_f64() as f32,
+            pk(DN, "reduction_db").max_f64() as f32,
+        );
+        plugin.floor_db = params.floor_db.clamp(
+            pk(DN, "floor_db").min_f64() as f32,
+            pk(DN, "floor_db").max_f64() as f32,
+        );
+        plugin.smoothing = params.smoothing.clamp(
+            pk(DN, "smoothing").min_f64() as f32,
+            pk(DN, "smoothing").max_f64() as f32,
+        );
+        plugin.attack_ms = params.attack_ms.clamp(
+            pk(DN, "attack_ms").min_f64() as f32,
+            pk(DN, "attack_ms").max_f64() as f32,
+        );
+        plugin.release_ms = params.release_ms.clamp(
+            pk(DN, "release_ms").min_f64() as f32,
+            pk(DN, "release_ms").max_f64() as f32,
+        );
         plugin.polyphonic_detection = params.polyphonic_detection;
-        plugin.crack_sensitivity = params.crack_sensitivity.max(pk(DN, "crack_sensitivity").min_f64() as f32);
+        plugin.crack_sensitivity = params
+            .crack_sensitivity
+            .max(pk(DN, "crack_sensitivity").min_f64() as f32);
         plugin
             .transient_suppressor
             .set_sensitivity(plugin.crack_sensitivity);
@@ -547,11 +570,15 @@ impl DenoiserPlugin {
         plugin.mcra_l = params.mcra_l.max(1);
         plugin.mcra_delta = params.mcra_delta;
 
-        plugin.transparency = params
-            .transparency
-            .clamp(pk(DN, "transparency").min_f64() as f32, pk(DN, "transparency").max_f64() as f32);
+        plugin.transparency = params.transparency.clamp(
+            pk(DN, "transparency").min_f64() as f32,
+            pk(DN, "transparency").max_f64() as f32,
+        );
         plugin.dd_enabled = params.dd_enabled;
-        plugin.dd_alpha = params.dd_alpha.clamp(pk(DN, "dd_alpha").min_f64() as f32, pk(DN, "dd_alpha").max_f64() as f32);
+        plugin.dd_alpha = params.dd_alpha.clamp(
+            pk(DN, "dd_alpha").min_f64() as f32,
+            pk(DN, "dd_alpha").max_f64() as f32,
+        );
         plugin.psychoacoustic_masking = params.psychoacoustic_masking;
         plugin.use_captured_profile = params.use_captured_profile;
 
@@ -716,59 +743,100 @@ impl InPlacePlugin for DenoiserPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_reduction_db {
-            let val = value.as_float().unwrap_or(pk(DN, "reduction_db").default_f32());
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "reduction_db").default_f32());
             if val.is_finite() {
-                self.reduction_db = val.clamp(pk(DN, "reduction_db").min_f64() as f32, pk(DN, "reduction_db").max_f64() as f32);
+                self.reduction_db = val.clamp(
+                    pk(DN, "reduction_db").min_f64() as f32,
+                    pk(DN, "reduction_db").max_f64() as f32,
+                );
                 self.reduction_linear = 10.0_f32.powf(self.reduction_db / 10.0);
             }
         } else if id == self.param_floor_db {
             let val = value.as_float().unwrap_or(pk(DN, "floor_db").default_f32());
             if val.is_finite() {
-                self.floor_db = val.clamp(pk(DN, "floor_db").min_f64() as f32, pk(DN, "floor_db").max_f64() as f32);
+                self.floor_db = val.clamp(
+                    pk(DN, "floor_db").min_f64() as f32,
+                    pk(DN, "floor_db").max_f64() as f32,
+                );
                 self.floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
             }
         } else if id == self.param_smoothing {
-            let val = value.as_float().unwrap_or(pk(DN, "smoothing").default_f32());
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "smoothing").default_f32());
             if val.is_finite() {
-                self.smoothing = val.clamp(pk(DN, "smoothing").min_f64() as f32, pk(DN, "smoothing").max_f64() as f32);
+                self.smoothing = val.clamp(
+                    pk(DN, "smoothing").min_f64() as f32,
+                    pk(DN, "smoothing").max_f64() as f32,
+                );
                 self.freq_smooth_kernel = Self::compute_smoothing_kernel(self.smoothing);
             }
         } else if id == self.param_attack_ms {
-            let val = value.as_float().unwrap_or(pk(DN, "attack_ms").default_f32());
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "attack_ms").default_f32());
             if val.is_finite() {
-                self.attack_ms = val.clamp(pk(DN, "attack_ms").min_f64() as f32, pk(DN, "attack_ms").max_f64() as f32);
+                self.attack_ms = val.clamp(
+                    pk(DN, "attack_ms").min_f64() as f32,
+                    pk(DN, "attack_ms").max_f64() as f32,
+                );
                 self.update_envelope_coefficients();
             }
         } else if id == self.param_release_ms {
-            let val = value.as_float().unwrap_or(pk(DN, "release_ms").default_f32());
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "release_ms").default_f32());
             if val.is_finite() {
-                self.release_ms = val.clamp(pk(DN, "release_ms").min_f64() as f32, pk(DN, "release_ms").max_f64() as f32);
+                self.release_ms = val.clamp(
+                    pk(DN, "release_ms").min_f64() as f32,
+                    pk(DN, "release_ms").max_f64() as f32,
+                );
                 self.update_envelope_coefficients();
             }
         } else if id == self.param_low_latency {
-            self.low_latency = value.as_bool().unwrap_or(pk(DN, "low_latency").default_bool());
+            self.low_latency = value
+                .as_bool()
+                .unwrap_or(pk(DN, "low_latency").default_bool());
         } else if id == self.param_polyphonic_detection {
-            self.polyphonic_detection = value.as_bool().unwrap_or(pk(DN, "polyphonic_detection").default_bool());
+            self.polyphonic_detection = value
+                .as_bool()
+                .unwrap_or(pk(DN, "polyphonic_detection").default_bool());
         } else if id == self.param_crack_sensitivity {
-            let val = value.as_float().unwrap_or(pk(DN, "crack_sensitivity").default_f32());
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "crack_sensitivity").default_f32());
             if val.is_finite() {
                 self.crack_sensitivity = val.max(pk(DN, "crack_sensitivity").min_f64() as f32);
                 self.transient_suppressor
                     .set_sensitivity(self.crack_sensitivity);
             }
         } else if id == self.param_transparency {
-            let val = value.as_float().unwrap_or(pk(DN, "transparency").default_f32());
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "transparency").default_f32());
             if val.is_finite() {
-                self.transparency = val.clamp(pk(DN, "transparency").min_f64() as f32, pk(DN, "transparency").max_f64() as f32);
+                self.transparency = val.clamp(
+                    pk(DN, "transparency").min_f64() as f32,
+                    pk(DN, "transparency").max_f64() as f32,
+                );
             }
         } else if id == self.param_psychoacoustic_masking {
-            self.psychoacoustic_masking = value.as_bool().unwrap_or(pk(DN, "psychoacoustic_masking").default_bool());
+            self.psychoacoustic_masking = value
+                .as_bool()
+                .unwrap_or(pk(DN, "psychoacoustic_masking").default_bool());
         } else if id == self.param_dd_enabled {
-            self.dd_enabled = value.as_bool().unwrap_or(pk(DN, "dd_enabled").default_bool());
+            self.dd_enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "dd_enabled").default_bool());
         } else if id == self.param_dd_alpha {
             let val = value.as_float().unwrap_or(pk(DN, "dd_alpha").default_f32());
             if val.is_finite() {
-                self.dd_alpha = val.clamp(pk(DN, "dd_alpha").min_f64() as f32, pk(DN, "dd_alpha").max_f64() as f32);
+                self.dd_alpha = val.clamp(
+                    pk(DN, "dd_alpha").min_f64() as f32,
+                    pk(DN, "dd_alpha").max_f64() as f32,
+                );
             }
         } else if id == self.param_learn_noise {
             let trigger = value.as_bool().unwrap_or(false);
@@ -776,7 +844,9 @@ impl InPlacePlugin for DenoiserPlugin {
                 self.start_learning();
             }
         } else if id == self.param_use_captured_profile {
-            self.use_captured_profile = value.as_bool().unwrap_or(pk(DN, "use_captured_profile").default_bool());
+            self.use_captured_profile = value
+                .as_bool()
+                .unwrap_or(pk(DN, "use_captured_profile").default_bool());
         } else if id == self.param_clear_profile {
             let trigger = value.as_bool().unwrap_or(false);
             if trigger {

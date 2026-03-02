@@ -1,7 +1,7 @@
 //! Configuration types and parameters for the A/B Compare plugin.
 
-use sotf_host::auto_gain::AutoGainLoudnessType;
 use serde::{Deserialize, Serialize};
+use sotf_host::auto_gain::AutoGainLoudnessType;
 
 // ============================================================================
 // Configuration Types

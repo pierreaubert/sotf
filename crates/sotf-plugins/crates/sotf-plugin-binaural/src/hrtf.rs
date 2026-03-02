@@ -1,7 +1,7 @@
 use super::filter::ir_to_freq;
-use sotf_host::sofa::{SofaFile, SourcePosition};
 use realfft::RealToComplex;
 use rustfft::num_complex::Complex;
+use sotf_host::sofa::{SofaFile, SourcePosition};
 use std::sync::Arc;
 
 /// Calculate VBAP gains using barycentric interpolation

@@ -8,9 +8,9 @@
 // Run with:
 // cargo run --example denoiser_demo --release
 
-use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, ProcessContext};
 use sotf_host::parameters::{ParameterId, ParameterValue};
+use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 
 fn main() {
     // env_logger::init();

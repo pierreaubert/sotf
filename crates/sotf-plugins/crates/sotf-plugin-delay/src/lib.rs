@@ -4,11 +4,11 @@
 
 pub mod param_specs;
 
+use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use serde::{Deserialize, Serialize};
 
 const MAX_DELAY_MS: f32 = 5000.0;
 
@@ -103,20 +103,26 @@ impl InPlacePlugin for DelayPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_delay_ms {
-            let v = value.as_float().ok_or_else(|| "delay_ms must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "delay_ms must be a float".to_string())?;
             if v.is_finite() {
                 self.delay_ms = v;
                 self.delay_smoother
                     .set_target(self.delay_ms * self.sample_rate as f32 / 1000.0);
             }
         } else if id == self.param_feedback {
-            let v = value.as_float().ok_or_else(|| "feedback must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "feedback must be a float".to_string())?;
             if v.is_finite() {
                 self.feedback = v;
                 self.feedback_smoother.set_target(self.feedback);
             }
         } else if id == self.param_mix {
-            let v = value.as_float().ok_or_else(|| "mix must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "mix must be a float".to_string())?;
             if v.is_finite() {
                 self.mix = v;
                 self.mix_smoother.set_target(self.mix);
@@ -198,8 +204,8 @@ impl InPlacePlugin for DelayPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_delay_basic() {
         let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);

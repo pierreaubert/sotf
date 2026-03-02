@@ -5,13 +5,13 @@
 // High-quality audio resampling using the rubato library.
 // Supports arbitrary sample rate conversion with minimal artifacts.
 
-use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
-use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
     Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
     WindowFunction,
 };
+use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
+use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 
 /// Resampler plugin using rubato
 ///
@@ -321,8 +321,8 @@ impl Plugin for ResamplerPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
 
     #[test]
     fn test_resampler_creation() {

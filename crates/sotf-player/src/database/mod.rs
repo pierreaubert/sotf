@@ -1260,18 +1260,12 @@ impl MusicDatabase {
             Migration {
                 description: "Add error columns for replay_gain, waveform, and bliss scanners",
                 apply: |db| {
-                    db.conn.execute(
-                        "ALTER TABLE tracks ADD COLUMN replay_gain_error TEXT",
-                        [],
-                    )?;
-                    db.conn.execute(
-                        "ALTER TABLE tracks ADD COLUMN waveform_error TEXT",
-                        [],
-                    )?;
-                    db.conn.execute(
-                        "ALTER TABLE tracks ADD COLUMN bliss_error TEXT",
-                        [],
-                    )?;
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN replay_gain_error TEXT", [])?;
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN waveform_error TEXT", [])?;
+                    db.conn
+                        .execute("ALTER TABLE tracks ADD COLUMN bliss_error TEXT", [])?;
                     log::info!("Added scanner error columns to tracks table");
                     Ok(())
                 },
@@ -1744,7 +1738,9 @@ impl MusicDatabase {
 
     /// Get aggregate scanner statistics across all tracks.
     /// Returns (total, rg_done, rg_errors, wf_done, wf_errors, bliss_done, bliss_errors).
-    pub fn get_scanner_stats(&self) -> SqlResult<(usize, usize, usize, usize, usize, usize, usize)> {
+    pub fn get_scanner_stats(
+        &self,
+    ) -> SqlResult<(usize, usize, usize, usize, usize, usize, usize)> {
         self.conn.query_row(
             "SELECT COUNT(*) as total,
                     COUNT(replay_gain) as rg_done,
@@ -2097,9 +2093,9 @@ impl MusicDatabase {
 
     /// Get tracks that don't have bliss analysis yet
     pub fn get_tracks_without_bliss(&self) -> SqlResult<Vec<PathBuf>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT path FROM tracks WHERE bliss_analyzed_at IS NULL AND bliss_error IS NULL")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT path FROM tracks WHERE bliss_analyzed_at IS NULL AND bliss_error IS NULL",
+        )?;
 
         let paths = stmt
             .query_map([], |row| {

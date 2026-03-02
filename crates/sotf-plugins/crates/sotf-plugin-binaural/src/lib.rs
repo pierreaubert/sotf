@@ -2,15 +2,15 @@
 // Binaural Decoder Plugin
 // ============================================================================
 
+use arc_swap::ArcSwap;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use rustfft::num_complex::Complex;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{complex_mul_add_simd, enable_ftz_daz, window_mul_simd};
 use sotf_host::smoothing::Smoother;
-use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use sotf_host::sofa::SofaFile;
-use arc_swap::ArcSwap;
-use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
-use rustfft::num_complex::Complex;
+use sotf_host::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -426,9 +426,11 @@ impl Plugin for BinauralDecoderPlugin {
         self.cached_parameters.clone()
     }
     fn set_parameter(&mut self, id: ParameterId, val: ParameterValue) -> PluginResult<()> {
-            self.validate_parameter(&id, &val)?;
+        self.validate_parameter(&id, &val)?;
         if id.0 == "externalization" {
-            let v = val.as_float().ok_or_else(|| "externalization must be a float".to_string())?;
+            let v = val
+                .as_float()
+                .ok_or_else(|| "externalization must be a float".to_string())?;
             if v.is_finite() {
                 self.externalization.set_target(v);
                 self.rebuild_cached_parameters();
@@ -498,8 +500,10 @@ impl Plugin for BinauralDecoderPlugin {
                 self.input_channels,
             );
             let eq = if self.diffuse_field_eq {
-                Some(filter::compute_diffuse_field_eq(&sofa, self.fft_size, sr, &self.fft_r2c)
-                    .map_err(|e| format!("Diffuse field EQ calculation failed: {}", e))?)
+                Some(
+                    filter::compute_diffuse_field_eq(&sofa, self.fft_size, sr, &self.fft_r2c)
+                        .map_err(|e| format!("Diffuse field EQ calculation failed: {}", e))?,
+                )
             } else {
                 None
             };

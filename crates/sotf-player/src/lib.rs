@@ -1,4 +1,8 @@
 #![allow(clippy::collapsible_if)]
+pub mod audio_device;
+pub mod autoeq;
+pub mod bliss;
+pub mod config;
 /// Shared business logic for SOTF audio players (TUI, GPUI, etc.)
 ///
 /// This crate provides:
@@ -12,10 +16,6 @@
 /// - Bliss audio analysis (`bliss`)
 /// - Music recommendation engine (`recommendation`)
 pub mod controllers;
-pub mod audio_device;
-pub mod autoeq;
-pub mod bliss;
-pub mod config;
 pub mod database;
 pub mod headphone_eq_types;
 pub mod level_meter;
@@ -96,7 +96,6 @@ pub use sotf_plugins::param_specs;
 
 // Re-export controllers
 pub use controllers::{
-    LibraryController, PlaybackController, PluginController, PluginUpdateEffect,
-    QueueController, QueuePlaybackEffect, ScanController, get_param_count,
-    param_index_to_engine_param,
+    LibraryController, PlaybackController, PluginController, PluginUpdateEffect, QueueController,
+    QueuePlaybackEffect, ScanController, get_param_count, param_index_to_engine_param,
 };

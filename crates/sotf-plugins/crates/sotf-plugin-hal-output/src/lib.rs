@@ -2,9 +2,9 @@
 // HAL Output Plugin - Writes audio to macOS HAL driver
 // ============================================================================
 
+use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use serde::{Deserialize, Serialize};
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalOutputWriter;

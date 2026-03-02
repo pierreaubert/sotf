@@ -22,8 +22,7 @@ impl TestScenario for SpectrumAutoRunScenario {
 
         // Direct audio to a virtual device to avoid sending sound to speakers.
         driver.update_app(|app, _| {
-            app.audio_device_state.current_output_device_name =
-                Some("BlackHole 2ch".to_string());
+            app.audio_device_state.current_output_device_name = Some("BlackHole 2ch".to_string());
         });
 
         let mut page = PluginRackPage::new(&mut driver);

@@ -2,12 +2,12 @@
 // Crossover Plugin
 // ============================================================================
 
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::LogSmoother;
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrossoverPluginParams {
@@ -180,8 +180,8 @@ impl InPlacePlugin for CrossoverPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_crossover_basic() {
         let mut p = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();

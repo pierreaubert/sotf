@@ -171,6 +171,138 @@ impl RoomEqMeasurementsFile {
         }
         value
     }
+
+    /// Load measurements from a JSON file, supporting both the legacy
+    /// `RoomEqMeasurementsFile` format and the newer `autoeq::RoomConfig`
+    /// format (with `speakers` map and string version).
+    ///
+    /// `base_dir` is used to resolve relative wav/csv paths in the RoomConfig
+    /// format.  Pass the parent directory of the JSON file.
+    pub fn load_from_json(
+        json: &str,
+        base_dir: Option<&std::path::Path>,
+    ) -> Result<Vec<ChannelMeasurement>, String> {
+        // Try the new RoomConfig format first (has string version like "1.1.0")
+        if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(json) {
+            log::info!(
+                "Loaded {} speakers (RoomConfig format)",
+                room_config.speakers.len(),
+            );
+            let channels = Self::channels_from_room_config(room_config, base_dir);
+            if !channels.is_empty() {
+                return Ok(channels);
+            }
+            // Empty result from RoomConfig → fall through to legacy format
+        }
+
+        // Fall back to legacy RoomEqMeasurementsFile format
+        match Self::from_json_str(json) {
+            Ok(file) => Ok(file.channels),
+            Err(e) => Err(format!("Parse error: {}", e)),
+        }
+    }
+
+    /// Convert an `autoeq::RoomConfig` into `Vec<ChannelMeasurement>`.
+    fn channels_from_room_config(
+        room_config: autoeq::RoomConfig,
+        base_dir: Option<&std::path::Path>,
+    ) -> Vec<ChannelMeasurement> {
+        room_config
+            .speakers
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, (channel_name, speaker_config))| {
+                let inline = match speaker_config {
+                    autoeq::SpeakerConfig::Single(source) => match source {
+                        autoeq::MeasurementSource::Single(s) => {
+                            s.measurement.inline_data().cloned()
+                        }
+                        autoeq::MeasurementSource::Multiple(m) => m
+                            .measurements
+                            .first()
+                            .and_then(|r| r.inline_data())
+                            .cloned(),
+                        autoeq::MeasurementSource::InMemory(_) => None,
+                    },
+                    _ => None,
+                };
+
+                inline.map(|data| {
+                    let resolve = |rel: &str| -> String {
+                        match base_dir {
+                            Some(dir) => {
+                                let abs = dir.join(rel);
+                                if abs.exists() {
+                                    abs.to_string_lossy().to_string()
+                                } else {
+                                    rel.to_string()
+                                }
+                            }
+                            None => rel.to_string(),
+                        }
+                    };
+
+                    let wav_path = data.wav_path.as_deref().map(&resolve);
+                    let csv_path = data.csv_path.as_deref().map(&resolve);
+
+                    let (frequencies, magnitude_db, phase_deg) = if data.frequencies.is_empty() {
+                        // Try loading from CSV
+                        if let Some(ref csv) = csv_path {
+                            let csv_full = std::path::PathBuf::from(csv);
+                            if let Ok(curve) = autoeq::read::read_curve_from_csv(&csv_full) {
+                                (
+                                    curve.freq.iter().map(|&f| f as f32).collect(),
+                                    curve.spl.iter().map(|&s| s as f32).collect(),
+                                    curve
+                                        .phase
+                                        .map(|p| p.iter().map(|&v| v as f32).collect())
+                                        .unwrap_or_default(),
+                                )
+                            } else {
+                                (Vec::new(), Vec::new(), Vec::new())
+                            }
+                        } else {
+                            (Vec::new(), Vec::new(), Vec::new())
+                        }
+                    } else {
+                        (
+                            data.frequencies.iter().map(|&f| f as f32).collect(),
+                            data.magnitude_db.iter().map(|&m| m as f32).collect(),
+                            data.phase_deg
+                                .unwrap_or_default()
+                                .iter()
+                                .map(|&p| p as f32)
+                                .collect(),
+                        )
+                    };
+
+                    ChannelMeasurement {
+                        channel_name,
+                        measurement: RecordingResult {
+                            channel: idx,
+                            wav_path,
+                            csv_path,
+                            frequencies,
+                            magnitude_db,
+                            phase_deg,
+                            impulse_response: None,
+                            impulse_time_ms: None,
+                            excess_group_delay_ms: None,
+                            thd_percent: None,
+                            harmonic_distortion_db: None,
+                            rt60_ms: None,
+                            clarity_c50_db: None,
+                            clarity_c80_db: None,
+                            spectrogram_db: None,
+                        },
+                        is_group: false,
+                        group_drivers: Vec::new(),
+                    }
+                })
+            })
+            .filter(|ch| !ch.measurement.frequencies.is_empty())
+            .collect()
+    }
 }
 
 /// Measurement data for a single channel (may have multiple drivers)
@@ -821,5 +953,87 @@ impl CustomTargetCurve {
 
         let t = (log_freq - log_lower) / (log_upper - log_lower);
         lower.level_db + t * (upper.level_db - lower.level_db)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_from_json_legacy_format() {
+        let json = r#"{
+            "version": 2,
+            "channels": [{
+                "channel_name": "L",
+                "measurement": {
+                    "channel": 0,
+                    "frequencies": [100.0, 1000.0],
+                    "magnitude_db": [-3.0, 0.0],
+                    "phase_deg": [10.0, 20.0]
+                },
+                "is_group": false,
+                "group_drivers": []
+            }]
+        }"#;
+        let channels = RoomEqMeasurementsFile::load_from_json(json, None).unwrap();
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].channel_name, "L");
+        assert_eq!(channels[0].measurement.frequencies.len(), 2);
+    }
+
+    #[test]
+    fn load_from_json_room_config_format() {
+        let json = r#"{
+            "version": "1.1.0",
+            "speakers": {
+                "R": {
+                    "frequencies": [20.0, 100.0, 1000.0],
+                    "magnitude_db": [-10.0, -3.0, 0.0],
+                    "phase_deg": [5.0, 10.0, 15.0],
+                    "name": "R"
+                },
+                "L": {
+                    "frequencies": [20.0, 100.0, 1000.0],
+                    "magnitude_db": [-9.0, -2.0, 1.0],
+                    "name": "L"
+                }
+            },
+            "optimizer": {}
+        }"#;
+        let channels = RoomEqMeasurementsFile::load_from_json(json, None).unwrap();
+        assert_eq!(channels.len(), 2);
+        for ch in &channels {
+            assert_eq!(ch.measurement.frequencies.len(), 3);
+            assert_eq!(ch.measurement.magnitude_db.len(), 3);
+        }
+    }
+
+    #[test]
+    fn load_from_json_room_config_real_file() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("data_generated/recording-adam-20260114-142539/recordings.json");
+        if !path.exists() {
+            // Skip if test data not available
+            return;
+        }
+        let json = std::fs::read_to_string(&path).unwrap();
+        let base_dir = path.parent();
+        let channels = RoomEqMeasurementsFile::load_from_json(&json, base_dir).unwrap();
+        assert!(
+            !channels.is_empty(),
+            "Should load at least one channel from real recording file"
+        );
+        for ch in &channels {
+            assert!(
+                !ch.measurement.frequencies.is_empty(),
+                "Channel '{}' should have frequency data",
+                ch.channel_name
+            );
+        }
     }
 }

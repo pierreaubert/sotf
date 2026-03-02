@@ -106,20 +106,16 @@ impl MfccExtractor {
                 }
             }
 
-            mel_filters.push(MelFilter {
-                offset,
-                len: count,
-            });
+            mel_filters.push(MelFilter { offset, len: count });
         }
 
         // Pre-compute DCT-II matrix: dct[k][n] = cos(PI * k * (n + 0.5) / N)
         let mut dct_matrix = vec![0.0_f32; NUM_MFCCS * NUM_MEL_BANDS];
         for k in 0..NUM_MFCCS {
             for n in 0..NUM_MEL_BANDS {
-                dct_matrix[k * NUM_MEL_BANDS + n] = (std::f32::consts::PI * k as f32
-                    * (n as f32 + 0.5)
-                    / NUM_MEL_BANDS as f32)
-                    .cos();
+                dct_matrix[k * NUM_MEL_BANDS + n] =
+                    (std::f32::consts::PI * k as f32 * (n as f32 + 0.5) / NUM_MEL_BANDS as f32)
+                        .cos();
             }
         }
 
@@ -155,8 +151,7 @@ impl MfccExtractor {
             let mut energy = 0.0_f32;
             let pairs = &self.filter_weights[filter.offset..filter.offset + filter.len];
             for &(bin, weight) in pairs {
-                let power =
-                    (freq_left[bin].norm_sqr() + freq_right[bin].norm_sqr()) * 0.5;
+                let power = (freq_left[bin].norm_sqr() + freq_right[bin].norm_sqr()) * 0.5;
                 energy += power * weight;
             }
             self.mel_energies[band_idx] = energy;
@@ -250,14 +245,20 @@ mod tests {
 
         // MFCCs should be non-zero (we have energy in the signal)
         let mfcc_energy: f32 = features[..NUM_MFCCS].iter().map(|x| x * x).sum();
-        assert!(mfcc_energy > 0.0, "MFCCs should be non-zero for non-silent signal");
+        assert!(
+            mfcc_energy > 0.0,
+            "MFCCs should be non-zero for non-silent signal"
+        );
 
         // Second frame: deltas should be non-zero if input differs
         freq_left[target_bin] = Complex::new(2.0, 0.0);
         freq_right[target_bin] = Complex::new(2.0, 0.0);
         let features2 = extractor.compute(&freq_left, &freq_right);
         let delta_energy: f32 = features2[NUM_MFCCS..].iter().map(|x| x * x).sum();
-        assert!(delta_energy > 0.0, "Deltas should be non-zero when input changes");
+        assert!(
+            delta_energy > 0.0,
+            "Deltas should be non-zero when input changes"
+        );
     }
 
     #[test]
@@ -313,11 +314,7 @@ mod tests {
 
         // All filters should have non-zero weights
         for (i, filter) in extractor.mel_filters.iter().enumerate() {
-            assert!(
-                filter.len > 0,
-                "Mel filter band {} has no weights",
-                i
-            );
+            assert!(filter.len > 0, "Mel filter band {} has no weights", i);
         }
     }
 }

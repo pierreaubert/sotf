@@ -133,7 +133,9 @@ impl PluginEditingManager for App {
     }
 
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
-        let effect = self.plugin_state.set_plugin_param(plugin_idx, param_idx, value);
+        let effect = self
+            .plugin_state
+            .set_plugin_param(plugin_idx, param_idx, value);
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
@@ -155,11 +157,7 @@ impl PluginEditingManager for App {
         self.plugin_state.pending_plugin_update = effect_to_update_type(effect);
     }
 
-    fn set_spectrum_tilt_reference(
-        &mut self,
-        plugin_idx: usize,
-        reference: TiltReferenceFreq,
-    ) {
+    fn set_spectrum_tilt_reference(&mut self, plugin_idx: usize, reference: TiltReferenceFreq) {
         let effect = self
             .plugin_state
             .set_spectrum_tilt_reference(plugin_idx, reference);
@@ -239,10 +237,8 @@ impl PluginEditingManager for App {
             .save_to_file(&presets_dir, &self.input_state.plugin_file_input)
         {
             Ok(filename) => {
-                self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                    "Saved preset: {}",
-                    filename
-                )));
+                self.ui_state.toast_message =
+                    Some(ToastMessage::success(format!("Saved preset: {}", filename)));
             }
             Err(e) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(e.clone()));

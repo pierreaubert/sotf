@@ -4,11 +4,11 @@
 
 pub mod param_specs;
 
+use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::apply_per_channel_gain_simd;
 use sotf_host::smoothing::Smoother;
-use serde::{Deserialize, Serialize};
 
 /// Smoothing time in ms for mute/solo/dim transitions (~5ms fade to avoid clicks)
 const FADE_SMOOTH_MS: f32 = 5.0;
@@ -260,8 +260,8 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
 
     /// Number of frames to process for smoother convergence in tests
     const CONVERGE_FRAMES: usize = 2048;

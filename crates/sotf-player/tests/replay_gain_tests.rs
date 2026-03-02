@@ -1,8 +1,8 @@
 use sotf_audio_player::MusicLibrary;
 /// Integration tests for ReplayGain scanning functionality
 use sotf_audio_player::database::MusicDatabase;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 mod fixtures;
 

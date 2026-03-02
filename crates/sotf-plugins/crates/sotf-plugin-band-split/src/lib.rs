@@ -2,12 +2,12 @@
 // Band Split Plugin
 // ============================================================================
 
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::LogSmoother;
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BandSplitPluginParams {
@@ -105,7 +105,9 @@ impl Plugin for BandSplitPlugin {
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         self.validate_parameter(&id, &value)?;
         if id.0 == "frequency" {
-            let v = value.as_float().ok_or_else(|| "frequency must be a float".to_string())?;
+            let v = value
+                .as_float()
+                .ok_or_else(|| "frequency must be a float".to_string())?;
             if v.is_finite() {
                 self.freq_smoother.set_target(v);
                 self.rebuild_cached_parameters();
@@ -186,8 +188,8 @@ impl Plugin for BandSplitPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_band_split_basic() {
         let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();

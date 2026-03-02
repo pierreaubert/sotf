@@ -13,8 +13,8 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, gate::PARAMS as GT};
 use sotf_plugins::GateData;
+use sotf_plugins::param_specs::{find_by_key as pk, gate::PARAMS as GT};
 
 /// State for rendering the Gate plugin
 pub struct GateRenderState<'a> {

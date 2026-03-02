@@ -99,7 +99,9 @@ mod tests {
 
     #[test]
     fn test_normal_input() {
-        let samples: Vec<f32> = (0..48000).map(|i| (i as f32 / 48000.0 * 440.0 * std::f32::consts::TAU).sin()).collect();
+        let samples: Vec<f32> = (0..48000)
+            .map(|i| (i as f32 / 48000.0 * 440.0 * std::f32::consts::TAU).sin())
+            .collect();
         let waveform = compute_waveform(&samples);
         assert_eq!(waveform.len(), WAVEFORM_SAMPLES);
         assert!(waveform.iter().any(|&v| v > 0));

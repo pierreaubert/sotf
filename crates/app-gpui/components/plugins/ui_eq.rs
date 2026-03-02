@@ -17,7 +17,7 @@ use gpui_ui_kit::PotentiometerSize;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 // Tabs are now custom-rendered to avoid context issues
 use sotf_audio_player::EQFilter;
-use sotf_plugins::param_specs::{find_by_key as pk, eq::BAND_TEMPLATE as EQ};
+use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -103,7 +103,8 @@ const Q_BAR_HEIGHT: f32 = 3.0;
 
 /// Convert Q value to bar width (inverse: higher Q = narrower bar)
 fn q_to_bar_width(q: f64) -> f32 {
-    let t = ((q - pk(EQ, "q").min_f64()) / (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64())).clamp(0.0, 1.0) as f32;
+    let t = ((q - pk(EQ, "q").min_f64()) / (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()))
+        .clamp(0.0, 1.0) as f32;
     // Inverse mapping: pk(EQ, "q").min_f64() -> max width, pk(EQ, "q").max_f64() -> min width
     Q_BAR_MAX_WIDTH - t * (Q_BAR_MAX_WIDTH - Q_BAR_MIN_WIDTH)
 }
@@ -549,7 +550,8 @@ fn render_eq_visualization(
                         // drag_data.start_x is in local coordinates
                         let delta = drag_data.start_x - x_px;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change).clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
+                        let new_q = (drag_data.start_q + q_change)
+                            .clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -621,7 +623,8 @@ fn render_eq_visualization(
                         // For right handle: moving right increases Q, moving left decreases Q
                         let delta = x_px - drag_data.start_x;
                         let q_change = drag_delta_to_q_change(delta);
-                        let new_q = (drag_data.start_q + q_change).clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
+                        let new_q = (drag_data.start_q + q_change)
+                            .clamp(pk(EQ, "q").min_f64(), pk(EQ, "q").max_f64());
 
                         let plugin_idx = drag_data.plugin_idx;
                         let band_idx = drag_data.band_idx;
@@ -666,13 +669,17 @@ fn render_eq_visualization(
                             state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                             state.app.plugin_state.selected_eq_band = band_idx;
                             // Reset frequency to 1000 Hz
-                            state
-                                .app
-                                .set_plugin_param(plugin_idx, band_idx * 4, pk(EQ, "frequency").default_f64());
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                band_idx * 4,
+                                pk(EQ, "frequency").default_f64(),
+                            );
                             // Reset Q to 1.0
-                            state
-                                .app
-                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, pk(EQ, "q").default_f64());
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                band_idx * 4 + 1,
+                                pk(EQ, "q").default_f64(),
+                            );
                             // Reset gain to 0.0 dB
                             state.app.set_plugin_param(
                                 plugin_idx,

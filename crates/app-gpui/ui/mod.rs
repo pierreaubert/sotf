@@ -663,9 +663,17 @@ impl PlayerView {
 
         // Clear suspensions from previous track
         state.app.plugin_state.chain.clear_suspensions();
-        state.app.plugin_state.chain.update_channel_dependent_plugins();
+        state
+            .app
+            .plugin_state
+            .chain
+            .update_channel_dependent_plugins();
 
-        let conflicts = state.app.plugin_state.chain.find_channel_conflicts(track_channels);
+        let conflicts = state
+            .app
+            .plugin_state
+            .chain
+            .find_channel_conflicts(track_channels);
         if !conflicts.is_empty() {
             log::info!(
                 "[GPUI] Auto-advance: suspending {} incompatible plugin(s) for {}ch track",
@@ -674,7 +682,11 @@ impl PlayerView {
             );
             let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
             state.app.plugin_state.chain.suspend_plugins(&indices);
-            state.app.plugin_state.chain.update_channel_dependent_plugins();
+            state
+                .app
+                .plugin_state
+                .chain
+                .update_channel_dependent_plugins();
         }
 
         Self::play_track_at_inner(state, path, None, track_channels);
@@ -696,10 +708,18 @@ impl PlayerView {
 
         // Clear suspensions from previous track
         state.app.plugin_state.chain.clear_suspensions();
-        state.app.plugin_state.chain.update_channel_dependent_plugins();
+        state
+            .app
+            .plugin_state
+            .chain
+            .update_channel_dependent_plugins();
 
         // Check for channel conflicts with all fixed-channel plugins
-        let conflicts = state.app.plugin_state.chain.find_channel_conflicts(track_channels);
+        let conflicts = state
+            .app
+            .plugin_state
+            .chain
+            .find_channel_conflicts(track_channels);
         if !conflicts.is_empty() {
             log::info!(
                 "[GPUI] Channel conflict: {}ch file with {} incompatible plugin(s)",
@@ -785,11 +805,7 @@ impl PlayerView {
             .and_then(|track| state.app.playback.get_replay_gain_adjustment(track));
         state.app.plugin_state.chain.set_replay_gain(rg_gain);
 
-        let plugins = state
-            .app
-            .plugin_state
-            .chain
-            .to_plugin_configs(sample_rate);
+        let plugins = state.app.plugin_state.chain.to_plugin_configs(sample_rate);
 
         if let Err(e) = state.player.lock().load_and_play_at(
             path.clone(),

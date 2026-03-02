@@ -1,6 +1,6 @@
 use sotf_host::Plugin;
+use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
 use sotf_plugin_ab_compare::ABComparePlugin;
-use sotf_host::{CountingAlloc, run_standard_tests, generate_dc, measure_peak_db};
 
 #[global_allocator]
 static A: CountingAlloc = CountingAlloc;

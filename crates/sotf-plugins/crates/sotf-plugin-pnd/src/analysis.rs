@@ -19,7 +19,7 @@ pub struct PndAnalyzer {
     ring: RingAccumulator,
 
     // Partial tracking state
-    prev_peaks: Vec<(f32, f32)>, // (frequency_hz, magnitude)
+    prev_peaks: Vec<(f32, f32)>,    // (frequency_hz, magnitude)
     matched_peaks: Vec<(f32, f32)>, // (frequency_hz, magnitude)
 
     // Pre-allocated scratch buffers (reused via .clear())

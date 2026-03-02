@@ -17,7 +17,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_plugins::param_specs::{find_by_key as pk, denoiser::PARAMS as DN};
+use sotf_plugins::param_specs::{denoiser::PARAMS as DN, find_by_key as pk};
 
 /// State for rendering the Denoiser plugin
 pub struct DenoiserRenderState {

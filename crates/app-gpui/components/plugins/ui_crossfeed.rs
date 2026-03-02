@@ -13,7 +13,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Select, SelectOption, SelectSize};
-use sotf_plugins::param_specs::{find_by_key as pk, crossfeed::PARAMS as CF};
+use sotf_plugins::param_specs::{crossfeed::PARAMS as CF, find_by_key as pk};
 use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
 
 /// State for rendering the Crossfeed plugin

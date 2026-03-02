@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod upmixer_tests {
-    use sotf_host::*;
+    use crate::UpmixerPlugin;
     use sotf_host::ProcessContext;
-use crate::UpmixerPlugin;
+    use sotf_host::*;
 
     #[test]
     fn test_upmixer_creation_5_1() {
@@ -454,17 +454,22 @@ use crate::UpmixerPlugin;
             2048, "5.1", 1.0, 0.0, 0.0, 120.0, 0.5, 250.0, 0.0, 0.0, false, 0.0,
         );
         plugin.initialize(44100).unwrap();
-        
+
         // Force the HR path to be fully active
         plugin.enable_hr_direct = true;
         plugin.hr_direct_envelope = 1.0;
         plugin.hr_sharpen.set_target(1.0);
         plugin.hr_transient_env = 1.0;
-        
+
         // Make sure direct path doesn't mask the HR path by setting its smoothing
         // to be very fast and target to 0 if possible, but the plugin initialization
         // sets direct gain to 1.0 so we use parameter updates
-        plugin.set_parameter(ParameterId::from("gain_front_direct"), ParameterValue::Float(0.0001)).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("gain_front_direct"),
+                ParameterValue::Float(0.0001),
+            )
+            .unwrap();
         // For HR to work it needs a non-zero direct gain (checked in mix_hr_output),
         // so we set it tiny, but let HR scale boost it.
 
@@ -495,7 +500,7 @@ use crate::UpmixerPlugin;
 
         // Check for 50% duty cycle drops in the Front Left channel (0)
         let mut zero_blocks = 0;
-        
+
         let hr_hop = 256; // 512 / 2
 
         for offset in (0..num_frames).step_by(hr_hop) {
@@ -503,12 +508,10 @@ use crate::UpmixerPlugin;
             for i in 0..hr_hop {
                 block_energy += output[(offset + i) * plugin.num_output_channels].powi(2);
             }
-            
 
             if block_energy < 1e-9 {
                 zero_blocks += 1;
             } else {
-                
             }
         }
 
@@ -634,7 +637,6 @@ use crate::UpmixerPlugin;
                 channel_energies[ch] += output[i * num_channels + ch].powi(2);
             }
         }
-
 
         // Front left and right should have signal
         assert!(channel_energies[0] > 0.01, "Front left should have signal");

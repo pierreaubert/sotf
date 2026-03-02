@@ -54,7 +54,10 @@ impl TestScenario for MuteSoloLevelMeterScenario {
         meter_page.toggle_mute(0);
 
         println!("Verifying mute state...");
-        assert!(meter_page.is_muted(0), "Group 0 (L/R) should be muted in UI");
+        assert!(
+            meter_page.is_muted(0),
+            "Group 0 (L/R) should be muted in UI"
+        );
         assert!(
             meter_page.get_matrix_channel_mute_state(0),
             "Channel 0 (L) should be muted in Matrix"

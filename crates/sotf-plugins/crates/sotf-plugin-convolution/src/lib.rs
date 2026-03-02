@@ -2,14 +2,14 @@
 // Convolution Plugin - Partitioned FFT-based convolution
 // ============================================================================
 
-use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
-use sotf_host::simd::{complex_mul_add_simd, flush_denormals_inplace};
-use sotf_host::smoothing::Smoother;
 use arc_swap::ArcSwap;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
+use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
+use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use sotf_host::simd::{complex_mul_add_simd, flush_denormals_inplace};
+use sotf_host::smoothing::Smoother;
 use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
@@ -88,12 +88,18 @@ impl ConvolutionPlugin {
     }
 
     fn rebuild_cached_parameters(&mut self) {
-        use sotf_host::param_specs::{find_by_key as pk, convolution::PARAMS as CV};
+        use sotf_host::param_specs::{convolution::PARAMS as CV, find_by_key as pk};
         self.cached_parameters = vec![
-            Parameter::new_float("mix", "Mix", self.mix_value, pk(CV, "mix").min_f64() as f32, pk(CV, "mix").max_f64() as f32)
-                .with_description("Dry/wet mix (0 = dry, 1 = convolved)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "mix",
+                "Mix",
+                self.mix_value,
+                pk(CV, "mix").min_f64() as f32,
+                pk(CV, "mix").max_f64() as f32,
+            )
+            .with_description("Dry/wet mix (0 = dry, 1 = convolved)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "gain_db",
                 "Gain",

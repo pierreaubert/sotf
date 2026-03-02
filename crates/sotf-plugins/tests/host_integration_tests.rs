@@ -479,7 +479,9 @@ fn test_parallel_variable_frame_with_gain() {
     let input_node = g
         .add_node(
             "input".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(2, 0.0, 0.0))),
+            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+                2, 0.0, 0.0,
+            ))),
         )
         .unwrap();
     let n2 = g
@@ -501,7 +503,9 @@ fn test_parallel_variable_frame_with_gain() {
     let output_node = g
         .add_node(
             "out".into(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(2, 0.0, 0.0))),
+            Box::new(InPlacePluginAdapter::new(GainPlugin::with_smoothing(
+                2, 0.0, 0.0,
+            ))),
         )
         .unwrap();
     g.add_edge(GraphEdge::new(input_node, n2)).unwrap();

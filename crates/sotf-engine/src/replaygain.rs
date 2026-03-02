@@ -17,23 +17,21 @@ pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInf
     let mut decoder = create_decoder(path.as_ref())?;
     let spec = decoder.spec();
 
-    let mut analyzer =
-        ReplayGainAnalyzer::new(spec.channels as u32, spec.sample_rate).map_err(|e| {
-            AudioDecoderError::ConfigError(e)
-        })?;
+    let mut analyzer = ReplayGainAnalyzer::new(spec.channels as u32, spec.sample_rate)
+        .map_err(|e| AudioDecoderError::ConfigError(e))?;
 
     while let Some(decoded) = decoder.decode_next()? {
         if decoded.is_empty() {
             continue;
         }
-        analyzer.add_frames_f32(&decoded.samples).map_err(|e| {
-            AudioDecoderError::DecodingFailed(e)
-        })?;
+        analyzer
+            .add_frames_f32(&decoded.samples)
+            .map_err(|e| AudioDecoderError::DecodingFailed(e))?;
     }
 
-    analyzer.finalize().map_err(|e| {
-        AudioDecoderError::DecodingFailed(e)
-    })
+    analyzer
+        .finalize()
+        .map_err(|e| AudioDecoderError::DecodingFailed(e))
 }
 
 /// Analyze an audio file and return extended ReplayGain data including
@@ -42,23 +40,21 @@ pub fn analyze_file_extended<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Repl
     let mut decoder = create_decoder(path.as_ref())?;
     let spec = decoder.spec();
 
-    let mut analyzer =
-        ReplayGainAnalyzer::new(spec.channels as u32, spec.sample_rate).map_err(|e| {
-            AudioDecoderError::ConfigError(e)
-        })?;
+    let mut analyzer = ReplayGainAnalyzer::new(spec.channels as u32, spec.sample_rate)
+        .map_err(|e| AudioDecoderError::ConfigError(e))?;
 
     while let Some(decoded) = decoder.decode_next()? {
         if decoded.is_empty() {
             continue;
         }
-        analyzer.add_frames_f32(&decoded.samples).map_err(|e| {
-            AudioDecoderError::DecodingFailed(e)
-        })?;
+        analyzer
+            .add_frames_f32(&decoded.samples)
+            .map_err(|e| AudioDecoderError::DecodingFailed(e))?;
     }
 
-    analyzer.finalize_extended().map_err(|e| {
-        AudioDecoderError::DecodingFailed(e)
-    })
+    analyzer
+        .finalize_extended()
+        .map_err(|e| AudioDecoderError::DecodingFailed(e))
 }
 
 #[cfg(test)]

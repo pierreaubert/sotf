@@ -266,7 +266,11 @@ impl IconButton {
     }
 
     /// Build into element with theme
-    pub fn build_with_theme(self, global_theme: &crate::theme::Theme, icon_theme: &IconButtonTheme) -> Stateful<Div> {
+    pub fn build_with_theme(
+        self,
+        global_theme: &crate::theme::Theme,
+        icon_theme: &IconButtonTheme,
+    ) -> Stateful<Div> {
         let size = self.size.size();
         let (bg, bg_hover, text_color, border) = self.compute_colors(icon_theme);
 

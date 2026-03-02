@@ -2,13 +2,13 @@
 // Mono-to-Stereo Plugin
 // ============================================================================
 
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use rustfft::num_complex::Complex;
+use serde::{Deserialize, Serialize};
 use sotf_host::param_specs::{find_by_key as pk, mono_to_stereo::PARAMS as MS};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;
-use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
-use rustfft::num_complex::Complex;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 const FFT_SIZE: usize = 2048;
@@ -105,8 +105,16 @@ impl MonoToStereoPlugin {
             output_read_position: 0,
             analysis_window,
             output_scale,
-            stereo_width: Smoother::new(pk(MS, "stereo_width").default_f64() as f32, PARAM_SMOOTH_MS, 44100),
-            comp_eq_depth: Smoother::new(pk(MS, "comp_eq_depth_db").default_f64() as f32, PARAM_SMOOTH_MS, 44100),
+            stereo_width: Smoother::new(
+                pk(MS, "stereo_width").default_f64() as f32,
+                PARAM_SMOOTH_MS,
+                44100,
+            ),
+            comp_eq_depth: Smoother::new(
+                pk(MS, "comp_eq_depth_db").default_f64() as f32,
+                PARAM_SMOOTH_MS,
+                44100,
+            ),
             fft_input_buf: vec![0.0; FFT_SIZE],
             fft_output_buf: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_input_buf: vec![Complex::new(0.0, 0.0); num_bins],
@@ -234,12 +242,16 @@ impl Plugin for MonoToStereoPlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_stereo_width {
-            let v = value.as_float().unwrap_or(pk(MS, "stereo_width").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(MS, "stereo_width").default_f64() as f32);
             if v.is_finite() {
                 self.stereo_width.set_target(v);
             }
         } else if id == self.param_comp_eq_depth_db {
-            let v = value.as_float().unwrap_or(pk(MS, "comp_eq_depth_db").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(MS, "comp_eq_depth_db").default_f64() as f32);
             if v.is_finite() {
                 self.comp_eq_depth.set_target(v);
             }
@@ -348,8 +360,8 @@ impl Plugin for MonoToStereoPlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_mono_to_stereo_basic() {
         let mut p = MonoToStereoPlugin::new();

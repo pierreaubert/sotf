@@ -277,7 +277,8 @@ impl AudioEngineManager {
         }
 
         // Store engine handle lock-free
-        #[allow(clippy::arc_with_non_send_sync)] // AudioEngine is !Sync but access is serialized by cmd_mutex
+        #[allow(clippy::arc_with_non_send_sync)]
+        // AudioEngine is !Sync but access is serialized by cmd_mutex
         self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 
@@ -343,7 +344,8 @@ impl AudioEngineManager {
         })?;
 
         // Store engine handle lock-free
-        #[allow(clippy::arc_with_non_send_sync)] // AudioEngine is !Sync but access is serialized by cmd_mutex
+        #[allow(clippy::arc_with_non_send_sync)]
+        // AudioEngine is !Sync but access is serialized by cmd_mutex
         self.engine.store(Some(Arc::new(engine)));
         self.set_state(StreamingState::Playing);
 

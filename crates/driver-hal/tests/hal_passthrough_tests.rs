@@ -5,7 +5,9 @@
 //! for passthrough (e.g., EQ with zero gain filters).
 
 use driver_hal::SharedAudioBuffer;
-use sotf_plugins::{BiquadFilterConfig, EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_plugins::{
+    BiquadFilterConfig, EqPlugin, EqPluginParams, InPlacePluginAdapter, Plugin, ProcessContext,
+};
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, AtomicU64};
 use tempfile::NamedTempFile;

@@ -2,14 +2,14 @@
 // Gate Plugin
 // ============================================================================
 
+use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
+use serde::{Deserialize, Serialize};
 use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::{find_by_key as pk, gate::PARAMS as GT};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
-use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
-use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -190,18 +190,36 @@ impl GatePlugin {
             .with_description("Level below which gating starts (dB)")
             .with_group("Dynamics")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("ratio", "Ratio", self.ratio, pk(GT, "ratio").min_f64() as f32, pk(GT, "ratio").max_f64() as f32)
-                .with_description("Gate ratio (1:1 to 100:1)")
-                .with_group("Dynamics")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("attack", "Attack", self.attack_ms, pk(GT, "attack").min_f64() as f32, pk(GT, "attack").max_f64() as f32)
-                .with_description("Attack time (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("hold", "Hold", self.hold_ms, pk(GT, "hold").min_f64() as f32, pk(GT, "hold").max_f64() as f32)
-                .with_description("Hold time before closing (ms)")
-                .with_group("Timing")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "ratio",
+                "Ratio",
+                self.ratio,
+                pk(GT, "ratio").min_f64() as f32,
+                pk(GT, "ratio").max_f64() as f32,
+            )
+            .with_description("Gate ratio (1:1 to 100:1)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "attack",
+                "Attack",
+                self.attack_ms,
+                pk(GT, "attack").min_f64() as f32,
+                pk(GT, "attack").max_f64() as f32,
+            )
+            .with_description("Attack time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "hold",
+                "Hold",
+                self.hold_ms,
+                pk(GT, "hold").min_f64() as f32,
+                pk(GT, "hold").max_f64() as f32,
+            )
+            .with_description("Hold time before closing (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -212,10 +230,16 @@ impl GatePlugin {
             .with_description("Release time (ms)")
             .with_group("Timing")
             .with_importance(ParameterImportance::Critical),
-            Parameter::new_float("mix", "Mix", self.mix, pk(GT, "mix").min_f64() as f32, pk(GT, "mix").max_f64() as f32)
-                .with_description("Dry/wet mix (0 = dry, 1 = gated)")
-                .with_group("Output")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "mix",
+                "Mix",
+                self.mix,
+                pk(GT, "mix").min_f64() as f32,
+                pk(GT, "mix").max_f64() as f32,
+            )
+            .with_description("Dry/wet mix (0 = dry, 1 = gated)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
                 .with_description("Use linked sidechain for all channels")
                 .with_group("Channels")
@@ -296,43 +320,59 @@ impl InPlacePlugin for GatePlugin {
         self.validate_parameter(&id, &value)?;
 
         if id == self.param_threshold {
-            let v = value.as_float().unwrap_or(pk(GT, "threshold").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(GT, "threshold").default_f64() as f32);
             if v.is_finite() {
                 self.threshold_db = v;
                 self.threshold_smoother.set_target(self.threshold_db);
             }
         } else if id == self.param_ratio {
-            let v = value.as_float().unwrap_or(pk(GT, "ratio").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(GT, "ratio").default_f64() as f32);
             if v.is_finite() {
                 self.ratio = v.max(1.0);
             }
         } else if id == self.param_attack {
-            let v = value.as_float().unwrap_or(pk(GT, "attack").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(GT, "attack").default_f64() as f32);
             if v.is_finite() {
                 self.attack_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_hold {
-            let v = value.as_float().unwrap_or(pk(GT, "hold").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(GT, "hold").default_f64() as f32);
             if v.is_finite() {
                 self.hold_ms = v;
             }
         } else if id == self.param_release {
-            let v = value.as_float().unwrap_or(pk(GT, "release").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(GT, "release").default_f64() as f32);
             if v.is_finite() {
                 self.release_ms = v;
                 self.update_coefficients();
             }
         } else if id == self.param_mix {
-            let v = value.as_float().unwrap_or(pk(GT, "mix").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(GT, "mix").default_f64() as f32);
             if v.is_finite() {
                 self.mix = v.clamp(0.0, 1.0);
                 self.mix_smoother.set_target(self.mix);
             }
         } else if id == self.param_link_channels {
-            self.link_channels = value.as_bool().unwrap_or(pk(GT, "link_channels").default_bool());
+            self.link_channels = value
+                .as_bool()
+                .unwrap_or(pk(GT, "link_channels").default_bool());
         } else if id == self.param_sidechain_hpf_hz {
-            let v = value.as_float().unwrap_or(pk(GT, "sidechain_hpf_hz").default_f64() as f32);
+            let v = value
+                .as_float()
+                .unwrap_or(pk(GT, "sidechain_hpf_hz").default_f64() as f32);
             if v.is_finite() {
                 self.sidechain_hpf_hz = v.max(0.0);
                 self.update_coefficients();
@@ -483,8 +523,8 @@ impl InPlacePlugin for GatePlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_gate_basic() {
         let mut p = GatePlugin::new(1, -20.0, 100.0, 1.0, 10.0, 50.0);

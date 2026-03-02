@@ -2,10 +2,10 @@
 // Band Merge Plugin
 // ============================================================================
 
+use serde::{Deserialize, Serialize};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BandMergePluginParams {
@@ -119,8 +119,8 @@ impl Plugin for BandMergePlugin {
 
 #[cfg(test)]
 mod tests {
-    use sotf_host::*;
     use crate::*;
+    use sotf_host::*;
     #[test]
     fn test_band_merge_basic() {
         let mut p = BandMergePlugin::new(2, 2).unwrap();

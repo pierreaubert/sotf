@@ -28,8 +28,7 @@ use sotf_plugins::{
     GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin,
     LoudnessMonitorPlugin, MatrixPlugin, MultibandCompressorPlugin, MultibandExpanderPlugin,
     Plugin, ProcessContext, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin,
-    UpmixerPluginParams, XtcPlugin,
-    XtcPluginParams,
+    UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };
 
 // ============================================================================
