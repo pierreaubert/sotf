@@ -12,6 +12,28 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(area);
 
+    // Border types: Double for focused area, Plain for unfocused
+    let step_tab_border = if s.step_tab_focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let content_border = if s.step_tab_focused {
+        BorderType::Plain
+    } else {
+        BorderType::Double
+    };
+    let step_tab_border_color = if s.step_tab_focused {
+        app.theme.accent_primary
+    } else {
+        app.theme.border_color
+    };
+    let content_border_color = if s.step_tab_focused {
+        app.theme.border_color
+    } else {
+        app.theme.accent_primary
+    };
+
     // Step header tabs
     let steps = [
         SpinoramaStep::Select,
@@ -36,9 +58,27 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         spans.push(Span::styled(format!(" {} ", step.label()), style));
         spans.push(Span::raw(" "));
     }
-    let header = Paragraph::new(Line::from(spans))
-        .block(Block::default().borders(Borders::ALL).title("Spinorama EQ"));
+    let header = Paragraph::new(Line::from(spans)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(step_tab_border)
+            .border_style(Style::default().fg(step_tab_border_color))
+            .title("Spinorama EQ"),
+    );
     f.render_widget(header, chunks[0]);
+
+    // Content wrapper with focus-aware border
+    let content_wrapper = Block::default()
+        .borders(Borders::ALL)
+        .border_type(content_border)
+        .border_style(Style::default().fg(content_border_color));
+    f.render_widget(content_wrapper, chunks[1]);
+    let content_area = Rect {
+        x: chunks[1].x + 1,
+        y: chunks[1].y + 1,
+        width: chunks[1].width.saturating_sub(2),
+        height: chunks[1].height.saturating_sub(2),
+    };
 
     // Content per step
     match s.step {
@@ -51,7 +91,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     Constraint::Min(0),
                     Constraint::Length(3),
                 ])
-                .split(chunks[1]);
+                .split(content_area);
 
             // Search box
             let search_title = if s.loading_speakers {
@@ -124,7 +164,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             let cfg_layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Min(0), Constraint::Length(3)])
-                .split(chunks[1]);
+                .split(content_area);
 
             let speaker_name = s
                 .selected_speaker
@@ -244,9 +284,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .scroll((s.selected_field.saturating_sub(10) as u16, 0));
             f.render_widget(para, cfg_layout[0]);
 
-            let hint_widget = Paragraph::new(" ←/→=step  ↑/↓=select field  -/+=adjust  Enter=optimize")
-                .style(Style::default().fg(app.theme.fg_secondary))
-                .block(Block::default().borders(Borders::ALL));
+            let hint_widget =
+                Paragraph::new(" ←/→=step  ↑/↓=select field  -/+=adjust  Enter=optimize")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL));
             f.render_widget(hint_widget, cfg_layout[1]);
         }
 
@@ -258,7 +299,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     Constraint::Length(3),
                     Constraint::Min(0),
                 ])
-                .split(chunks[1]);
+                .split(content_area);
 
             // Status
             let (status_text, status_style) = match &s.opt_status {
@@ -342,25 +383,27 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         .style(Style::default().fg(app.theme.fg_secondary))
                         .alignment(Alignment::Center)
                         .block(Block::default().borders(Borders::ALL).title("Results"));
-                f.render_widget(msg, chunks[1]);
+                f.render_widget(msg, content_area);
             } else {
                 // Vertical split: summary + chart on top, filter table on bottom
                 let table_height = (s.filters.len() as u16 + 3).min(15); // rows + header + borders, capped
                 let rows_layout = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
-                        Constraint::Length(3),           // summary
-                        Constraint::Min(8),              // freq response chart
+                        Constraint::Length(3),            // summary
+                        Constraint::Min(8),               // freq response chart
                         Constraint::Length(table_height), // filter table
                     ])
-                    .split(chunks[1]);
+                    .split(content_area);
 
                 let initial_score = s.loss_history.iter().find_map(|(_, _, score)| *score);
                 let final_score = s.loss_history.iter().rev().find_map(|(_, _, score)| *score);
                 let score_part = match (initial_score, final_score) {
                     (Some(init), Some(fin)) => format!(
                         "  |  Score: {:.2} → {:.2} (Δ {:+.2})",
-                        init, fin, fin - init,
+                        init,
+                        fin,
+                        fin - init,
                     ),
                     _ => String::new(),
                 };
@@ -478,15 +521,38 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![Span::styled(
                             "  Save current preset before overwriting?",
-                            Style::default().fg(app.theme.fg_primary).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(app.theme.fg_primary)
+                                .add_modifier(Modifier::BOLD),
                         )]));
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![
-                            Span::styled("  y", Style::default().fg(app.theme.accent_success).add_modifier(Modifier::BOLD)),
-                            Span::styled(" = save preset then apply   ", Style::default().fg(app.theme.fg_secondary)),
-                            Span::styled("n", Style::default().fg(app.theme.accent_error).add_modifier(Modifier::BOLD)),
-                            Span::styled(" = apply without saving   ", Style::default().fg(app.theme.fg_secondary)),
-                            Span::styled("Esc", Style::default().fg(app.theme.fg_secondary).add_modifier(Modifier::BOLD)),
+                            Span::styled(
+                                "  y",
+                                Style::default()
+                                    .fg(app.theme.accent_success)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                " = save preset then apply   ",
+                                Style::default().fg(app.theme.fg_secondary),
+                            ),
+                            Span::styled(
+                                "n",
+                                Style::default()
+                                    .fg(app.theme.accent_error)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                " = apply without saving   ",
+                                Style::default().fg(app.theme.fg_secondary),
+                            ),
+                            Span::styled(
+                                "Esc",
+                                Style::default()
+                                    .fg(app.theme.fg_secondary)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
                             Span::styled(" = cancel", Style::default().fg(app.theme.fg_secondary)),
                         ]));
                     }
@@ -498,8 +564,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .borders(Borders::ALL)
                     .title("Update Plugin"),
             );
-            f.render_widget(para, chunks[1]);
+            f.render_widget(para, content_area);
         }
     }
 }
-

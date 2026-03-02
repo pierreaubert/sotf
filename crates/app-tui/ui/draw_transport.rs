@@ -64,10 +64,12 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
     let padding = 2_u16; // spaces around waveform
     let waveform_width = inner
         .width
-        .saturating_sub(buttons_width + time_width + padding)
-        as usize;
+        .saturating_sub(buttons_width + time_width + padding) as usize;
 
-    let block_chars: [char; 9] = [' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
+    let block_chars: [char; 9] = [
+        ' ', '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+        '\u{2588}',
+    ];
 
     let progress_ratio = if let Some(dur) = duration {
         if dur > 0 {
@@ -84,16 +86,14 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
     if waveform_width > 0 {
         if let Some(wf) = waveform {
             // Downsample 128 samples to waveform_width chars
-            let played_chars =
-                (progress_ratio * waveform_width as f64).round() as usize;
+            let played_chars = (progress_ratio * waveform_width as f64).round() as usize;
 
             for i in 0..waveform_width {
                 // Map display position to waveform sample range
                 let start = i * wf.len() / waveform_width;
                 let end = ((i + 1) * wf.len() / waveform_width).min(wf.len());
                 let avg = if end > start {
-                    wf[start..end].iter().map(|&s| s as u32).sum::<u32>()
-                        / (end - start) as u32
+                    wf[start..end].iter().map(|&s| s as u32).sum::<u32>() / (end - start) as u32
                 } else {
                     0
                 };
@@ -105,10 +105,7 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     app.theme.fg_muted
                 };
-                spans.push(Span::styled(
-                    ch.to_string(),
-                    Style::default().fg(color),
-                ));
+                spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
             }
         } else {
             // No waveform data — show empty bar
@@ -126,4 +123,3 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
     let paragraph = Paragraph::new(line);
     f.render_widget(paragraph, inner);
 }
-

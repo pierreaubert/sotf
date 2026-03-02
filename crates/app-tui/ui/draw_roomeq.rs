@@ -12,6 +12,28 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(5)])
         .split(area);
 
+    // Border types: Double for focused area, Plain for unfocused
+    let step_tab_border = if s.step_tab_focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let content_border = if s.step_tab_focused {
+        BorderType::Plain
+    } else {
+        BorderType::Double
+    };
+    let step_tab_border_color = if s.step_tab_focused {
+        app.theme.accent_primary
+    } else {
+        app.theme.border_color
+    };
+    let content_border_color = if s.step_tab_focused {
+        app.theme.border_color
+    } else {
+        app.theme.accent_primary
+    };
+
     // Step tabs
     let steps = RoomEqStep::all();
     let tab_titles: Vec<Line> = steps
@@ -27,19 +49,30 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             Line::from(Span::styled(st.label(), style))
         })
         .collect();
-    let tab_border_style = Style::default().fg(app.theme.border_color);
     let tabs = Tabs::new(tab_titles)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(tab_border_style)
+                .border_type(step_tab_border)
+                .border_style(Style::default().fg(step_tab_border_color))
                 .title("Room EQ"),
         )
         .select(s.step.index())
         .highlight_style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(tabs, outer[0]);
 
-    let content = outer[1];
+    // Content wrapper with focus-aware border
+    let content_wrapper = Block::default()
+        .borders(Borders::ALL)
+        .border_type(content_border)
+        .border_style(Style::default().fg(content_border_color));
+    f.render_widget(content_wrapper, outer[1]);
+    let content = Rect {
+        x: outer[1].x + 1,
+        y: outer[1].y + 1,
+        width: outer[1].width.saturating_sub(2),
+        height: outer[1].height.saturating_sub(2),
+    };
 
     match s.step {
         RoomEqStep::LoadData => {
@@ -130,8 +163,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 " Enter=browse for JSON  Tab=next step"
             };
-            let help = Paragraph::new(help_text)
-                .style(Style::default().fg(app.theme.fg_secondary));
+            let help = Paragraph::new(help_text).style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[3]);
         }
 
@@ -507,4 +539,3 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 }
-

@@ -1,4 +1,3 @@
-mod utilities;
 mod draw;
 mod draw_album_list;
 mod draw_configure;
@@ -20,6 +19,7 @@ mod draw_status_bar;
 mod draw_title;
 mod draw_transport;
 mod draw_volume;
+mod utilities;
 
 // Re-export the main draw entry point
 pub use draw::draw;
@@ -47,7 +47,7 @@ pub(crate) use draw_transport::*;
 pub(crate) use draw_volume::*;
 
 // Common imports shared by all draw submodules via `use super::*`
-pub(crate) use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem};
+pub(crate) use crate::app::{App, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem};
 pub(crate) use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -537,10 +537,7 @@ pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
         ),
         text_style,
     )));
-    lines.push(Line::from(Span::styled(
-        "are incompatible:",
-        text_style,
-    )));
+    lines.push(Line::from(Span::styled("are incompatible:", text_style)));
     lines.push(Line::from(""));
 
     for conflict in &app.channel_conflicts {

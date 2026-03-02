@@ -72,4 +72,3 @@ pub(crate) fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
 
     f.render_widget(search_box, area);
 }
-

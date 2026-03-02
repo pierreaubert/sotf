@@ -5,7 +5,6 @@ use sotf_plugins::speaker_config::{
 };
 
 impl App {
-
     /// Build channel groups from current speaker configuration or channel count
     /// Uses caching to avoid rebuilding every frame
     pub fn update_level_meter_groups(&mut self) {
@@ -308,5 +307,4 @@ impl App {
             self.level_meter_control_selection - 1
         };
     }
-
 }

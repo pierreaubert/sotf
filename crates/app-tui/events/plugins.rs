@@ -1,119 +1,9 @@
-//! Input mode handlers for text input dialogs and special modes
-
 use super::PlayerCommand;
 use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode, MatrixEditMode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use sotf_audio_player::{PluginSettings, PluginType};
 
-/// Handle search mode input
-pub fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::LibraryViewMode;
-
-    const PAGE_SIZE: usize = 20;
-
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            // Don't clear query, just exit mode to persist search
-            None
-        }
-        KeyCode::Enter => {
-            app.input_mode = InputMode::Normal;
-            app.selected_album_index = 0;
-            None
-        }
-        // Allow navigation while searching
-        KeyCode::Up => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.select_previous_album(),
-                LibraryViewMode::TreeView => app.select_previous_tree_item(),
-            }
-            None
-        }
-        KeyCode::Down => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.select_next_album(),
-                LibraryViewMode::TreeView => app.select_next_tree_item(),
-            }
-            None
-        }
-        KeyCode::PageUp => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.page_up_albums(PAGE_SIZE),
-                LibraryViewMode::TreeView => app.page_up_tree(PAGE_SIZE),
-            }
-            None
-        }
-        KeyCode::PageDown => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.page_down_albums(PAGE_SIZE),
-                LibraryViewMode::TreeView => app.page_down_tree(PAGE_SIZE),
-            }
-            None
-        }
-        KeyCode::Char(c) => {
-            app.search_query.push(c);
-            app.selected_album_index = 0;
-            app.request_filter_update();
-            None
-        }
-        KeyCode::Backspace => {
-            app.search_query.pop();
-            app.selected_album_index = 0;
-            app.request_filter_update();
-            None
-        }
-        _ => None,
-    }
-}
-
-/// Handle add directory mode input
-pub fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            app.directory_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Enter => {
-            if !app.directory_input.is_empty() {
-                let path = std::path::PathBuf::from(&app.directory_input);
-                app.add_directory(path);
-                app.directory_input.clear();
-            }
-            app.input_mode = InputMode::Normal;
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Tab => {
-            // Generate suggestions on first Tab, cycle through them on subsequent Tabs
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete();
-                }
-            } else {
-                app.next_autocomplete();
-            }
-            None
-        }
-        KeyCode::Char(c) => {
-            app.directory_input.push(c);
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Backspace => {
-            app.directory_input.pop();
-            app.clear_autocomplete();
-            None
-        }
-        _ => None,
-    }
-}
-
-/// Handle add plugin mode input
-pub fn handle_add_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+pub(super) fn handle_add_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     let mut plugin_types = PluginType::all();
     plugin_types.sort_by_key(|p| p.name());
     let num_plugins = plugin_types.len();
@@ -151,8 +41,75 @@ pub fn handle_add_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComm
     }
 }
 
-/// Handle edit plugin mode input
-pub fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+pub(super) fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift+Up: Move plugin up in the list
+            app.move_plugin_up(app.selected_plugin_index);
+            None
+        }
+        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift+Down: Move plugin down in the list
+            app.move_plugin_down(app.selected_plugin_index);
+            None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_plugin();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_plugin();
+            None
+        }
+        KeyCode::Char('e') | KeyCode::Enter => {
+            // Edit selected plugin
+            app.enter_plugin_edit_mode();
+            None
+        }
+        KeyCode::Char('s') => {
+            // Save plugin chain
+            app.input_mode = InputMode::SavePlugins;
+            app.plugin_file_input.clear();
+            // Refresh available presets to show in dialog
+            app.refresh_plugin_presets();
+            None
+        }
+        KeyCode::Char('l') => {
+            // Load plugin chain
+            app.input_mode = InputMode::LoadPlugins;
+            app.plugin_file_input.clear();
+            app.refresh_plugin_presets();
+            None
+        }
+        KeyCode::Char('a') => {
+            // Open plugin selection dialog
+            app.add_plugin_selected_index = 0;
+            app.input_mode = InputMode::AddPlugin;
+            None
+        }
+        KeyCode::Char('t') => {
+            // Toggle plugin enabled/disabled
+            app.toggle_plugin(app.selected_plugin_index);
+            None
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            app.remove_plugin(app.selected_plugin_index);
+            None
+        }
+        KeyCode::Char('u') | KeyCode::Char('U') => {
+            app.move_plugin_up(app.selected_plugin_index);
+            None
+        }
+        KeyCode::Char('w') | KeyCode::Char('W') => {
+            // Move plugin down (also available via Shift+Down)
+            app.move_plugin_down(app.selected_plugin_index);
+            None
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     // Check if we're editing a Matrix plugin
     let is_matrix = app
         .plugin_chain
@@ -386,8 +343,7 @@ fn handle_matrix_grid_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
     }
 }
 
-/// Handle save plugins mode input
-pub fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+pub(super) fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
@@ -450,8 +406,7 @@ pub fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
     }
 }
 
-/// Handle load plugins mode input
-pub fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+pub(super) fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
@@ -512,8 +467,7 @@ pub fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
     }
 }
 
-/// Handle load APO file mode input
-pub fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+pub(super) fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
@@ -562,8 +516,7 @@ pub fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerC
     }
 }
 
-/// Handle load SOFA file mode input
-pub fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+pub(super) fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
@@ -606,98 +559,6 @@ pub fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<Player
         KeyCode::Backspace => {
             app.sofa_file_input.pop();
             app.clear_autocomplete();
-            None
-        }
-        _ => None,
-    }
-}
-
-// Old handle_file_browser_mode removed — replaced by handle_file_explorer_mode in mod.rs
-
-/// Handle help mode input
-pub fn handle_help_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
-            app.input_mode = InputMode::Normal;
-            None
-        }
-        _ => None,
-    }
-}
-
-/// Handle error mode input
-pub fn handle_error_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('q') => {
-            app.input_mode = InputMode::Normal;
-            app.error_message = None;
-            None
-        }
-        _ => None,
-    }
-}
-
-/// Handle channel conflict mode input
-pub fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::ChannelConflictChoice;
-
-    const NUM_OPTIONS: usize = 3;
-
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.channel_conflict_selection > 0 {
-                app.channel_conflict_selection -= 1;
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.channel_conflict_selection < NUM_OPTIONS - 1 {
-                app.channel_conflict_selection += 1;
-            }
-            None
-        }
-        KeyCode::Enter => {
-            let choice = match app.channel_conflict_selection {
-                0 => ChannelConflictChoice::SuspendIncompatible,
-                1 => ChannelConflictChoice::RemoveIncompatible,
-                2 => ChannelConflictChoice::Cancel,
-                _ => ChannelConflictChoice::Cancel,
-            };
-
-            let path = app.channel_conflict_path.take();
-            let conflicts = std::mem::take(&mut app.channel_conflicts);
-            app.input_mode = InputMode::Normal;
-
-            match choice {
-                ChannelConflictChoice::SuspendIncompatible => {
-                    let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
-                    app.plugin_chain.suspend_plugins(&indices);
-                    app.plugin_chain.update_channel_dependent_plugins();
-                    log::info!("[TUI] Suspended {} incompatible plugin(s) (channel conflict)", indices.len());
-                    path.map(PlayerCommand::Play)
-                }
-                ChannelConflictChoice::RemoveIncompatible => {
-                    // Remove in reverse order to keep indices valid
-                    let mut indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
-                    indices.sort_unstable_by(|a, b| b.cmp(a));
-                    for idx in &indices {
-                        app.plugin_chain.remove_plugin(*idx);
-                    }
-                    log::info!("[TUI] Removed {} incompatible plugin(s) (channel conflict)", indices.len());
-                    path.map(PlayerCommand::Play)
-                }
-                ChannelConflictChoice::Cancel => {
-                    log::info!("[TUI] Playback cancelled by user (channel conflict)");
-                    app.is_playing = false;
-                    None
-                }
-            }
-        }
-        KeyCode::Esc | KeyCode::Char('q') => {
-            app.channel_conflict_path = None;
-            app.channel_conflicts.clear();
-            app.input_mode = InputMode::Normal;
-            app.is_playing = false;
             None
         }
         _ => None,

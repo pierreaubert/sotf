@@ -66,4 +66,3 @@ pub(crate) fn draw_loading_screen(f: &mut Frame, app: &App) {
     let bar = Paragraph::new(bar_str).style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(bar, bar_rect);
 }
-

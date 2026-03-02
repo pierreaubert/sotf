@@ -1,20 +1,52 @@
-use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode, MatrixEditMode, Screen};
+use crate::app::{App, InputMode, Screen};
 use crate::media_controls::TuiMediaControls;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use sotf_audio_player::{PluginSettings, PluginType};
 use souvlaki::MediaControlEvent;
 use std::time::Duration;
 
-pub mod configure;
-pub mod spinorama;
-pub mod headphone_eq;
-pub mod room_eq;
-pub mod recording;
+pub mod devices;
+pub mod file_explorer;
+pub mod level_meters;
+pub mod library;
+pub mod media_control;
+pub mod plugins;
+pub mod queue;
+pub mod search;
 
-pub use spinorama::{poll_spinorama_speaker_load, poll_spinorama_optimization};
-pub use headphone_eq::poll_headphone_eq_optimization;
-pub use room_eq::poll_room_eq_optimization;
-pub use recording::poll_recording;
+pub mod conf;
+pub mod conf_directories;
+pub mod conf_headphoneeq;
+pub mod conf_recordings;
+pub mod conf_roomeq;
+pub mod conf_spinoramaeq;
+
+pub use conf_headphoneeq::poll_headphone_eq_optimization;
+pub use conf_recordings::poll_recording;
+pub use conf_roomeq::poll_room_eq_optimization;
+pub use conf_spinoramaeq::{poll_spinorama_optimization, poll_spinorama_speaker_load};
+pub use media_control::handle_media_control_event;
+
+/// Cycle through a list of string options, wrapping around.
+pub(super) fn cycle_string(current: &str, options: &[&str], delta: i32) -> String {
+    let idx = options.iter().position(|&o| o == current).unwrap_or(0);
+    let new_idx = if delta > 0 {
+        (idx + 1) % options.len()
+    } else {
+        (idx + options.len() - 1) % options.len()
+    };
+    options[new_idx].to_string()
+}
+
+use devices::handle_devices_keys;
+use file_explorer::handle_file_explorer_mode;
+use library::handle_library_keys;
+use plugins::{
+    handle_add_plugin_mode, handle_edit_plugin_mode, handle_load_apo_file_mode,
+    handle_load_plugins_mode, handle_load_sofa_file_mode, handle_plugins_keys,
+    handle_save_plugins_mode,
+};
+use queue::handle_queue_keys;
+use search::handle_search_mode;
 
 pub enum AppEvent {
     Tick,
@@ -43,80 +75,6 @@ pub fn handle_events(
     }
 }
 
-pub fn handle_media_control_event(
-    app: &mut App,
-    event: MediaControlEvent,
-) -> Option<PlayerCommand> {
-    match event {
-        MediaControlEvent::Play => {
-            if app.current_queue_index.is_none() {
-                // Nothing playing yet — start the queue
-                app.start_queue().map(PlayerCommand::Play)
-            } else {
-                app.is_playing = true;
-                Some(PlayerCommand::Resume)
-            }
-        }
-        MediaControlEvent::Pause => {
-            app.is_playing = false;
-            Some(PlayerCommand::Pause)
-        }
-        MediaControlEvent::Toggle => {
-            if app.is_playing {
-                app.is_playing = false;
-                Some(PlayerCommand::Pause)
-            } else {
-                if app.current_queue_index.is_none() {
-                    app.start_queue().map(PlayerCommand::Play)
-                } else {
-                    app.is_playing = true;
-                    Some(PlayerCommand::Resume)
-                }
-            }
-        }
-        MediaControlEvent::Next => {
-            if let Some(path) = app.next_track() {
-                Some(PlayerCommand::Play(path))
-            } else {
-                app.is_playing = false;
-                Some(PlayerCommand::Stop)
-            }
-        }
-        MediaControlEvent::Previous => app.previous_track().map(PlayerCommand::Play),
-        MediaControlEvent::Stop => {
-            app.is_playing = false;
-            Some(PlayerCommand::Stop)
-        }
-        MediaControlEvent::SetPosition(pos) => Some(PlayerCommand::Seek(pos.0.as_secs_f64())),
-        MediaControlEvent::SetVolume(vol) => {
-            let clamped = vol.clamp(0.0, 1.0) as f32;
-            app.volume = clamped;
-            Some(PlayerCommand::SetVolume(clamped))
-        }
-        MediaControlEvent::Seek(direction) => {
-            let offset = match direction {
-                souvlaki::SeekDirection::Forward => 10.0,
-                souvlaki::SeekDirection::Backward => -10.0,
-            };
-            Some(PlayerCommand::SeekRelative(offset))
-        }
-        MediaControlEvent::SeekBy(direction, duration) => {
-            let secs = duration.as_secs_f64();
-            let offset = match direction {
-                souvlaki::SeekDirection::Forward => secs,
-                souvlaki::SeekDirection::Backward => -secs,
-            };
-            Some(PlayerCommand::SeekRelative(offset))
-        }
-        MediaControlEvent::Raise => None,
-        MediaControlEvent::Quit => {
-            app.should_quit = true;
-            None
-        }
-        MediaControlEvent::OpenUri(_) => None,
-    }
-}
-
 pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     // Ctrl+C always quits, regardless of input mode
     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -126,7 +84,6 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 
     match app.input_mode {
         InputMode::Search => handle_search_mode(app, key),
-        InputMode::AddDirectory => handle_add_directory_mode(app, key),
         InputMode::AddPlugin => handle_add_plugin_mode(app, key),
         InputMode::EditPlugin => handle_edit_plugin_mode(app, key),
         InputMode::SavePlugins => handle_save_plugins_mode(app, key),
@@ -137,1415 +94,131 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         InputMode::ShowHelp => handle_help_mode(app, key),
         InputMode::ShowError => handle_error_mode(app, key),
         InputMode::ChannelConflict => handle_channel_conflict_mode(app, key),
+        InputMode::LevelMeters => level_meters::handle_level_meters_keys(app, key),
+        InputMode::Configure
+        | InputMode::ConfigureDirectories
+        | InputMode::ConfigureRecording
+        | InputMode::ConfigureRoomEq
+        | InputMode::ConfigureHeadphoneEq
+        | InputMode::ConfigureSpinoramaEq => conf::handle_configure_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
     }
 }
 
-fn handle_file_explorer_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+/// Shared keys available across Normal and Configure modes.
+///
+/// Returns `Some(cmd)` when the key is handled (cmd may be `None`),
+/// or `None` when the key is not a shared key.
+fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerCommand>> {
     match key.code {
-        KeyCode::Esc => {
-            app.close_file_explorer();
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.file_explorer_select_prev();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.file_explorer_select_next();
-            None
-        }
-        KeyCode::Enter | KeyCode::Char('l') => {
-            if let Some(path) = app.file_explorer_current().cloned() {
-                if path.is_dir() {
-                    match app.file_picker_mode {
-                        FilePickerMode::Directory => {
-                            // Enter selects this directory
-                            apply_file_selection(app, path);
-                        }
-                        FilePickerMode::File => {
-                            // Enter navigates into directory
-                            app.file_explorer_enter_dir(path);
-                        }
-                    }
-                } else {
-                    // It's a file — select it
-                    apply_file_selection(app, path);
-                }
-            }
-            None
-        }
-        KeyCode::Right => {
-            // Right always navigates into directory (even in Directory mode)
-            if let Some(path) = app.file_explorer_current().cloned()
-                && path.is_dir()
-            {
-                app.file_explorer_enter_dir(path);
-            }
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') | KeyCode::Backspace => {
-            app.file_explorer_go_parent();
-            None
-        }
-        KeyCode::Char('H') => {
-            // Toggle hidden files
-            app.file_explorer_toggle_hidden();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
-    let path_str = path.to_string_lossy().to_string();
-    match app.file_picker_origin {
-        FilePickerOrigin::SofaFile => {
-            app.sofa_file_input = path_str;
-            if let Err(e) = app.load_sofa_file() {
-                app.status_message = Some(format!("Error: {}", e));
-            } else {
-                app.status_message = Some("SOFA file loaded".to_string());
-                app.request_plugin_update();
-            }
-        }
-        FilePickerOrigin::IrFile => {
-            if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
-                && let PluginSettings::Convolution {
-                    ref mut ir_file, ..
-                } = plugin.settings
-            {
-                *ir_file = path_str;
-                app.status_message = Some("IR file set".to_string());
-                app.request_plugin_update();
-            }
-        }
-        FilePickerOrigin::RecordingOutputDir => {
-            app.recording.output_directory = path_str;
-            app.recording.editing_output_dir = false;
-        }
-        FilePickerOrigin::RecordingMicCalibration => {
-            app.recording.mic_calibration_path = path_str;
-            app.recording.editing_mic_cal = false;
-        }
-        FilePickerOrigin::RoomEqFilePath => {
-            app.room_eq.file_path = path_str;
-            app.room_eq.editing_file_path = false;
-            room_eq::load_room_eq_measurements(app);
-        }
-        FilePickerOrigin::RoomEqExportPath => {
-            app.room_eq.export_path = path_str;
-            app.room_eq.editing_export_path = false;
-            room_eq::export_room_eq_results(app);
-        }
-        FilePickerOrigin::HeadphoneMeasurement => {
-            app.headphone_eq.measurement_path = path_str;
-            app.headphone_eq.editing_measurement = false;
-        }
-        FilePickerOrigin::HeadphoneCustomTarget => {
-            app.headphone_eq.custom_target_path = path_str;
-            app.headphone_eq.editing_custom_target = false;
-        }
-        FilePickerOrigin::AddDirectory => {
-            app.add_directory(path);
-        }
-        FilePickerOrigin::ApoFile => {
-            app.apo_file_input = path_str;
-            if let Err(e) = app.load_apo_file() {
-                app.status_message = Some(format!("APO error: {}", e));
-            } else {
-                app.status_message = Some("APO file loaded".to_string());
-                app.request_plugin_update();
-            }
-        }
-    }
-    app.close_file_explorer();
-}
-
-fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    // Configure screen owns Esc/Tab/BackTab — intercept before global handlers
-    if app.current_screen == Screen::Configure {
-        if matches!(key.code, KeyCode::Esc | KeyCode::Tab | KeyCode::BackTab) {
-            return configure::handle_configure_keys(app, key);
-        }
-    }
-
-    match key.code {
-        // Esc to return to Main pane from Meters (takes priority over quit)
-        KeyCode::Esc if app.focused_pane == crate::app::FocusedPane::Meters => {
-            app.focused_pane = crate::app::FocusedPane::Main;
-            None
-        }
-        // Quit — but first check if we're in a sub-screen and should go up
-        KeyCode::Esc => {
-            if app.current_screen == Screen::Configure {
-                // Go back to Library from Configure
-                app.current_screen = Screen::Library;
-            } else {
-                app.should_quit = true;
-            }
-            None
-        }
+        // Quit
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.should_quit = true;
-            None
+            Some(None)
         }
-        // Command-Q on macOS (crossterm treats it as SUPER modifier)
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::SUPER) => {
             app.should_quit = true;
-            None
+            Some(None)
         }
 
-        // TAB to cycle through screens and meters pane
-        KeyCode::Tab => {
-            use crate::app::FocusedPane;
-
-            match app.focused_pane {
-                FocusedPane::Main => {
-                    // Cycle through screens, then switch to Meters pane
-                    app.current_screen = match app.current_screen {
-                        Screen::Loading => Screen::Loading, // Stay on loading
-                        Screen::Library => Screen::Queue,
-                        Screen::Queue => Screen::Plugins,
-                        Screen::Plugins => Screen::Devices,
-                        Screen::Devices => Screen::Configure,
-                        Screen::Configure => {
-                            // After last screen, switch to Meters pane
-                            app.focused_pane = FocusedPane::Meters;
-                            Screen::Library // Stay on a screen (doesn't matter which)
-                        }
-                    };
-                }
-                FocusedPane::Meters => {
-                    // From Meters pane, go back to Main pane on Library screen
-                    app.focused_pane = FocusedPane::Main;
-                    app.current_screen = Screen::Library;
-                }
-            }
-            None
-        }
-
-        // Screen switching (uppercase only to avoid conflicts with screen-specific shortcuts)
+        // Screen switching
         KeyCode::Char('L') => {
             app.current_screen = Screen::Library;
-            None
+            app.input_mode = InputMode::Normal;
+            Some(None)
         }
-        KeyCode::Char('N') => {
+        KeyCode::Char('C') => {
             app.current_screen = Screen::Configure;
-            None
+            app.input_mode = InputMode::Configure;
+            Some(None)
         }
         KeyCode::Char('Q') => {
             app.current_screen = Screen::Queue;
-            None
+            app.input_mode = InputMode::Normal;
+            Some(None)
         }
         KeyCode::Char('P') => {
             app.current_screen = Screen::Plugins;
-            None
+            app.input_mode = InputMode::Normal;
+            Some(None)
         }
         KeyCode::Char('O') => {
             app.current_screen = Screen::Devices;
-            None
+            app.input_mode = InputMode::Normal;
+            Some(None)
         }
-
-        // Level meter controls (Shift + arrow keys)
-        KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            app.select_previous_level_meter_group();
-            None
-        }
-        KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            app.select_next_level_meter_group();
-            None
-        }
-        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            app.select_previous_level_meter_control();
-            None
-        }
-        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            app.select_next_level_meter_control();
-            None
-        }
-        KeyCode::Char('M') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift-M to focus on level meters pane
-            app.focused_pane = crate::app::FocusedPane::Meters;
-            None
-        }
-        KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift-S to toggle solo on selected group
-            app.toggle_level_meter_solo();
-            None
-        }
-        KeyCode::Char('C') => {
-            if app.focused_pane == crate::app::FocusedPane::Meters {
-                app.clear_level_meter_mutes_and_solos();
-            } else {
-                app.current_screen = Screen::Configure;
-            }
-            None
+        KeyCode::Char('N') => {
+            app.current_screen = Screen::Configure;
+            app.input_mode = InputMode::Configure;
+            Some(None)
         }
 
         // Help
         KeyCode::Char('?') => {
-            app.input_mode = InputMode::ShowHelp;
-            None
+            app.enter_overlay_mode(InputMode::ShowHelp);
+            Some(None)
         }
 
-        // ReplayGain toggle
-        KeyCode::Char('g') => {
-            app.replay_gain_enabled = !app.replay_gain_enabled;
-            let mode_str = if app.replay_gain_enabled {
-                match app.replay_gain_mode {
-                    crate::app::ReplayGainMode::Track => "ON (Track mode)",
-                    crate::app::ReplayGainMode::Album => "ON (Album mode)",
-                }
-            } else {
-                "OFF"
-            };
-            app.status_message = Some(format!("ReplayGain: {}", mode_str));
-            if app.is_playing {
-                app.needs_plugin_update = true;
-            }
-            None
-        }
-        // ReplayGain mode cycle
-        KeyCode::Char('G') => {
-            use crate::app::ReplayGainMode;
-            app.replay_gain_mode = match app.replay_gain_mode {
-                ReplayGainMode::Track => ReplayGainMode::Album,
-                ReplayGainMode::Album => ReplayGainMode::Track,
-            };
-            let mode_str = match app.replay_gain_mode {
-                ReplayGainMode::Track => "Track",
-                ReplayGainMode::Album => "Album",
-            };
-            app.status_message = Some(format!("ReplayGain mode: {}", mode_str));
-            if app.is_playing && app.replay_gain_enabled {
-                app.needs_plugin_update = true;
-            }
-            None
-        }
-
-        // Volume controls (in case Shift+Arrow doesn't work)
-        KeyCode::Char('+') | KeyCode::Char('=') => {
+        // Volume controls (not in configure sub-screens where +/- adjust fields)
+        KeyCode::Char('+') | KeyCode::Char('=') if !app.input_mode.is_configure_sub_screen() => {
             app.increase_volume();
-            Some(PlayerCommand::SetVolume(app.volume))
+            Some(Some(PlayerCommand::SetVolume(app.volume)))
         }
-        KeyCode::Char('-') | KeyCode::Char('_') => {
+        KeyCode::Char('-') | KeyCode::Char('_') if !app.input_mode.is_configure_sub_screen() => {
             app.decrease_volume();
-            Some(PlayerCommand::SetVolume(app.volume))
+            Some(Some(PlayerCommand::SetVolume(app.volume)))
         }
 
-        // Output device selection with Ctrl+Arrow keys
-        KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.select_next_output_device();
-            // Switch to the newly selected device
-            app.get_selected_output_device()
-                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
-        }
-        KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.select_previous_output_device();
-            // Switch to the newly selected device
-            app.get_selected_output_device()
-                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
-        }
-
-        // Level meter navigation when Meters pane is focused
-        KeyCode::Left if app.focused_pane == crate::app::FocusedPane::Meters => {
-            app.select_previous_level_meter_group();
-            None
-        }
-        KeyCode::Right if app.focused_pane == crate::app::FocusedPane::Meters => {
-            app.select_next_level_meter_group();
-            None
-        }
-        KeyCode::Up if app.focused_pane == crate::app::FocusedPane::Meters => {
-            app.select_previous_level_meter_control();
-            None
-        }
-        KeyCode::Down if app.focused_pane == crate::app::FocusedPane::Meters => {
-            app.select_next_level_meter_control();
-            None
-        }
-        KeyCode::Char('m') if app.focused_pane == crate::app::FocusedPane::Meters => {
-            // 'm' to toggle mute when in Meters pane
-            app.toggle_level_meter_mute();
-            None
-        }
-        KeyCode::Char('s') if app.focused_pane == crate::app::FocusedPane::Meters => {
-            // 's' to toggle solo when in Meters pane
-            app.toggle_level_meter_solo();
-            None
-        }
-        KeyCode::Char('d') if app.focused_pane == crate::app::FocusedPane::Meters => {
-            // 'd' to toggle dim when in Meters pane
-            app.toggle_level_meter_dim();
-            None
-        }
-        KeyCode::Char('c') if app.focused_pane == crate::app::FocusedPane::Meters => {
-            // 'c' to clear all mutes/solos/dims when in Meters pane
-            app.clear_level_meter_mutes_and_solos();
-            None
-        }
-
-        // Screen-specific controls
-        _ => match app.current_screen {
-            Screen::Loading => None, // Ignore keys during loading
-            Screen::Library => handle_library_keys(app, key),
-            Screen::Queue => handle_queue_keys(app, key),
-            Screen::Plugins => handle_plugins_keys(app, key),
-            Screen::Devices => handle_devices_keys(app, key),
-            Screen::Configure => configure::handle_configure_keys(app, key),
-        },
-    }
-}
-
-fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::{ChannelFilter, LibrarySortOrder, LibraryViewMode};
-
-    const PAGE_SIZE: usize = 20;
-
-    match key.code {
-        KeyCode::Char('/') => {
-            app.input_mode = InputMode::Search;
-            None
-        }
-        KeyCode::Char('X') => {
-            // Explicitly clear search query
-            app.search_query.clear();
-            app.selected_album_index = 0;
-            app.request_filter_update();
-            None
-        }
-        KeyCode::Char('t') => {
-            // Toggle between flat and tree view
-            app.toggle_library_view_mode();
-            None
-        }
-        KeyCode::Char('s') => {
-            // Cycle through sort orders
-            let next_order = match app.library_sort_order {
-                LibrarySortOrder::Year => LibrarySortOrder::Genre,
-                LibrarySortOrder::Genre => LibrarySortOrder::Artist,
-                LibrarySortOrder::Artist => LibrarySortOrder::Album,
-                LibrarySortOrder::Album => LibrarySortOrder::Tracks,
-                LibrarySortOrder::Tracks => LibrarySortOrder::Composer,
-                LibrarySortOrder::Composer => LibrarySortOrder::Popularity,
-                LibrarySortOrder::Popularity => LibrarySortOrder::Year,
-            };
-            app.set_library_sort_order(next_order);
-            None
-        }
-        KeyCode::Char('c') => {
-            // Cycle through channel filters
-            app.cycle_channel_filter();
-            None
-        }
-        KeyCode::Char('1') => {
-            // Sort by year
-            app.set_library_sort_order(LibrarySortOrder::Year);
-            None
-        }
-        KeyCode::Char('2') => {
-            // Sort by genre
-            app.set_library_sort_order(LibrarySortOrder::Genre);
-            None
-        }
-        KeyCode::Char('3') => {
-            // Sort by artist
-            app.set_library_sort_order(LibrarySortOrder::Artist);
-            None
-        }
-        KeyCode::Char('4') => {
-            // Sort by album
-            app.set_library_sort_order(LibrarySortOrder::Album);
-            None
-        }
-        KeyCode::Char('5') => {
-            // Filter: Show all
-            app.set_channel_filter(ChannelFilter::All);
-            None
-        }
-        KeyCode::Char('6') => {
-            // Filter: Mono only
-            app.set_channel_filter(ChannelFilter::Mono);
-            None
-        }
-        KeyCode::Char('7') => {
-            // Filter: Stereo only
-            app.set_channel_filter(ChannelFilter::Stereo);
-            None
-        }
-        KeyCode::Char('8') => {
-            // Filter: Surround only (5.0/5.1)
-            app.set_channel_filter(ChannelFilter::Surround);
-            None
-        }
-        KeyCode::Char('9') => {
-            // Filter: Mixed channels only
-            app.set_channel_filter(ChannelFilter::Mixed);
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.select_previous_album(),
-                LibraryViewMode::TreeView => app.select_previous_tree_item(),
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.select_next_album(),
-                LibraryViewMode::TreeView => app.select_next_tree_item(),
-            }
-            None
-        }
-        KeyCode::PageUp => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.page_up_albums(PAGE_SIZE),
-                LibraryViewMode::TreeView => app.page_up_tree(PAGE_SIZE),
-            }
-            None
-        }
-        KeyCode::PageDown => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.page_down_albums(PAGE_SIZE),
-                LibraryViewMode::TreeView => app.page_down_tree(PAGE_SIZE),
-            }
-            None
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            // Expand artist in tree view
-            if app.library_view_mode == LibraryViewMode::TreeView {
-                app.toggle_artist_expansion();
-            }
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            // Collapse artist in tree view
-            if app.library_view_mode == LibraryViewMode::TreeView {
-                app.toggle_artist_expansion();
-            }
-            None
-        }
-        KeyCode::Char('a') | KeyCode::Enter => {
-            let path = match app.library_view_mode {
-                LibraryViewMode::Flat => app.add_album_to_queue(),
-                LibraryViewMode::TreeView => app.add_tree_selection_to_queue(),
-            };
-            path.map(PlayerCommand::Play)
-        }
-        KeyCode::Char('f') => {
-            // Toggle favorite on selected album
-            app.toggle_selected_album_favorite();
-            None
-        }
-        KeyCode::Char('q') => {
-            app.current_screen = Screen::Queue;
-            None
-        }
         _ => None,
     }
 }
 
-pub(super) fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    const PAGE_SIZE: usize = 20;
-
-    match key.code {
-        KeyCode::Char('a') => {
-            app.input_mode = InputMode::AddDirectory;
-            app.directory_input.clear();
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_directory();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_directory();
-            None
-        }
-        KeyCode::PageUp => {
-            app.page_up_directories(PAGE_SIZE);
-            None
-        }
-        KeyCode::PageDown => {
-            app.page_down_directories(PAGE_SIZE);
-            None
-        }
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            // Toggle directory expansion to show/hide subdirectories
-            app.toggle_directory_expansion();
-            None
-        }
-        KeyCode::Char('d') | KeyCode::Delete => {
-            app.remove_selected_directory();
-            None
-        }
-        KeyCode::Char('s') => {
-            app.start_library_scan();
-            None
-        }
-        KeyCode::Char('m') => {
-            // Maintenance: clean up database
-            // The method handles all progress tracking and status messages
-            let _ = app.clean_library_database();
-            None
-        }
-        KeyCode::Char('r') => {
-            // Start ReplayGain scan for tracks missing data
-            if let Err(e) = app.start_replay_gain_scan() {
-                app.status_message = Some(format!("Error starting ReplayGain scan: {}", e));
-            }
-            None
-        }
-        KeyCode::Char('R') => {
-            // Force ReplayGain rescan of all tracks
-            if let Err(e) = app.start_force_replay_gain_scan() {
-                app.status_message = Some(format!("Error starting ReplayGain force scan: {}", e));
-            }
-            None
-        }
-        KeyCode::Char('b') => {
-            // Start Bliss audio analysis scan
-            if let Err(e) = app.start_bliss_scan() {
-                app.status_message = Some(format!("Error starting Bliss scan: {}", e));
-            }
-            None
-        }
-        KeyCode::Char('B') => {
-            // Force Bliss rescan of all tracks
-            if let Err(e) = app.start_force_bliss_scan() {
-                app.status_message = Some(format!("Error starting Bliss force scan: {}", e));
-            }
-            None
-        }
-        KeyCode::Char('w') => {
-            // Start waveform scan for tracks missing data
-            if let Err(e) = app.start_waveform_scan() {
-                app.status_message = Some(format!("Error starting Waveform scan: {}", e));
-            }
-            None
-        }
-        KeyCode::Char('W') => {
-            // Force waveform rescan of all tracks
-            if let Err(e) = app.start_force_waveform_scan() {
-                app.status_message = Some(format!("Error starting Waveform force scan: {}", e));
-            }
-            None
-        }
-        KeyCode::Char('S') => {
-            // Force rescan all files (ignores modification time, preserves ReplayGain)
-            app.start_force_library_scan();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_queue_item();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_queue_item();
-            None
-        }
-        KeyCode::Enter => {
-            // Jump to selected album and play its first track
-            app.jump_to_selected_album().map(PlayerCommand::Play)
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            // Expand the selected queue item
-            app.expand_queue_item();
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            // Collapse the selected queue item (or move to album header if on a track)
-            app.collapse_queue_item();
-            None
-        }
-        KeyCode::Char('d') | KeyCode::Delete => {
-            app.remove_from_queue(app.selected_queue_index);
-            None
-        }
-        KeyCode::Char('c') => {
-            app.clear_queue();
-            Some(PlayerCommand::Stop)
-        }
-        KeyCode::Char('p') => {
-            // Play from start or current position
-            if app.current_queue_index.is_none() {
-                if let Some(path) = app.start_queue() {
-                    return Some(PlayerCommand::Play(path));
-                }
-            } else {
-                app.is_playing = true;
-                return Some(PlayerCommand::Resume);
-            }
-            None
-        }
-        KeyCode::Char(' ') => {
-            // Toggle pause
-            if app.is_playing {
-                app.is_playing = false;
-                Some(PlayerCommand::Pause)
-            } else {
-                app.is_playing = true;
-                Some(PlayerCommand::Resume)
-            }
-        }
-        KeyCode::Char('n') | KeyCode::Char('>') => {
-            // Next track
-            if let Some(path) = app.next_track() {
-                Some(PlayerCommand::Play(path))
-            } else {
-                app.is_playing = false;
-                Some(PlayerCommand::Stop)
-            }
-        }
-        KeyCode::Char('b') | KeyCode::Char('<') => {
-            // Previous track
-            app.previous_track().map(PlayerCommand::Play)
-        }
-        KeyCode::Char('[') => {
-            // Previous album image
-            app.prev_album_image();
-            None
-        }
-        KeyCode::Char(']') => {
-            // Next album image
-            app.next_album_image();
-            None
-        }
-        // Seek controls
-        KeyCode::Char('.') => {
-            // Seek forward 10 seconds
-            Some(PlayerCommand::SeekRelative(10.0))
-        }
-        KeyCode::Char(',') => {
-            // Seek backward 10 seconds
-            Some(PlayerCommand::SeekRelative(-10.0))
-        }
-        KeyCode::Char(':') => {
-            // Seek forward 30 seconds (Shift + ;)
-            Some(PlayerCommand::SeekRelative(30.0))
-        }
-        KeyCode::Char(';') => {
-            // Seek backward 30 seconds
-            Some(PlayerCommand::SeekRelative(-30.0))
-        }
-        KeyCode::Char('f') => {
-            // Toggle favorite on current queue album
-            app.toggle_current_queue_album_favorite();
-            None
-        }
-        // Note: Volume controls (+/-) are now global (see handle_normal_mode)
-        _ => None,
-    }
-}
-
-fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::LibraryViewMode;
-
-    const PAGE_SIZE: usize = 20;
-
+/// Handle keys in Normal mode (no special sub-mode active).
+fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            // Don't clear query, just exit mode to persist search
+            app.should_quit = true;
             None
         }
-        KeyCode::Enter => {
-            app.input_mode = InputMode::Normal;
-            app.selected_album_index = 0;
-            None
-        }
-        // Allow navigation while searching
-        KeyCode::Up => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.select_previous_album(),
-                LibraryViewMode::TreeView => app.select_previous_tree_item(),
-            }
-            None
-        }
-        KeyCode::Down => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.select_next_album(),
-                LibraryViewMode::TreeView => app.select_next_tree_item(),
-            }
-            None
-        }
-        KeyCode::PageUp => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.page_up_albums(PAGE_SIZE),
-                LibraryViewMode::TreeView => app.page_up_tree(PAGE_SIZE),
-            }
-            None
-        }
-        KeyCode::PageDown => {
-            match app.library_view_mode {
-                LibraryViewMode::Flat => app.page_down_albums(PAGE_SIZE),
-                LibraryViewMode::TreeView => app.page_down_tree(PAGE_SIZE),
-            }
-            None
-        }
-        KeyCode::Char(c) => {
-            app.search_query.push(c);
-            app.selected_album_index = 0;
-            app.request_filter_update();
-            None
-        }
-        KeyCode::Backspace => {
-            app.search_query.pop();
-            app.selected_album_index = 0;
-            app.request_filter_update();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            app.directory_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Enter => {
-            if !app.directory_input.is_empty() {
-                let path = std::path::PathBuf::from(&app.directory_input);
-                app.add_directory(path);
-                app.directory_input.clear();
-            }
-            app.input_mode = InputMode::Normal;
-            app.clear_autocomplete();
-            None
-        }
+        // TAB to cycle through screens
         KeyCode::Tab => {
-            // Generate suggestions on first Tab, cycle through them on subsequent Tabs
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete();
-                }
-            } else {
-                app.next_autocomplete();
-            }
-            None
-        }
-        KeyCode::F(2) => {
-            let start = app.directory_input.clone();
-            app.open_file_explorer(
-                FilePickerOrigin::AddDirectory,
-                FilePickerMode::Directory,
-                "Select Music Directory",
-                Some(&start),
-                None,
-            );
-            None
-        }
-        KeyCode::Char(c) => {
-            app.directory_input.push(c);
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Backspace => {
-            app.directory_input.pop();
-            app.clear_autocomplete();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_add_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    let mut plugin_types = PluginType::all();
-    plugin_types.sort_by_key(|p| p.name());
-    let num_plugins = plugin_types.len();
-
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            None
-        }
-        KeyCode::Enter => {
-            // Add the selected plugin
-            if let Some(plugin_type) = plugin_types.get(app.add_plugin_selected_index) {
-                app.add_plugin(plugin_type);
-            }
-            app.input_mode = InputMode::Normal;
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.add_plugin_selected_index > 0 {
-                app.add_plugin_selected_index -= 1;
-            } else {
-                app.add_plugin_selected_index = num_plugins.saturating_sub(1);
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.add_plugin_selected_index + 1 < num_plugins {
-                app.add_plugin_selected_index += 1;
-            } else {
-                app.add_plugin_selected_index = 0;
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift+Up: Move plugin up in the list
-            app.move_plugin_up(app.selected_plugin_index);
-            None
-        }
-        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
-            // Shift+Down: Move plugin down in the list
-            app.move_plugin_down(app.selected_plugin_index);
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_plugin();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_plugin();
-            None
-        }
-        KeyCode::Char('e') | KeyCode::Enter => {
-            // Edit selected plugin
-            app.enter_plugin_edit_mode();
-            None
-        }
-        KeyCode::Char('s') => {
-            // Save plugin chain
-            app.input_mode = InputMode::SavePlugins;
-            app.plugin_file_input.clear();
-            // Refresh available presets to show in dialog
-            app.refresh_plugin_presets();
-            None
-        }
-        KeyCode::Char('l') => {
-            // Load plugin chain
-            app.input_mode = InputMode::LoadPlugins;
-            app.plugin_file_input.clear();
-            app.refresh_plugin_presets();
-            None
-        }
-        KeyCode::Char('a') => {
-            // Open plugin selection dialog
-            app.add_plugin_selected_index = 0;
-            app.input_mode = InputMode::AddPlugin;
-            None
-        }
-        KeyCode::Char('t') => {
-            // Toggle plugin enabled/disabled
-            app.toggle_plugin(app.selected_plugin_index);
-            None
-        }
-        KeyCode::Char('d') | KeyCode::Delete => {
-            app.remove_plugin(app.selected_plugin_index);
-            None
-        }
-        KeyCode::Char('u') | KeyCode::Char('U') => {
-            app.move_plugin_up(app.selected_plugin_index);
-            None
-        }
-        KeyCode::Char('w') | KeyCode::Char('W') => {
-            // Move plugin down (also available via Shift+Down)
-            app.move_plugin_down(app.selected_plugin_index);
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    // Check if we're editing a Matrix plugin
-    let is_matrix = app
-        .plugin_chain
-        .get_plugin(app.selected_plugin_index)
-        .is_some_and(|p| matches!(p.settings, PluginSettings::Matrix { .. }));
-
-    if is_matrix {
-        return handle_matrix_edit_mode(app, key);
-    }
-
-    // Standard plugin editing
-    match key.code {
-        KeyCode::Esc => {
-            app.exit_plugin_edit_mode();
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_param();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_param();
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            // Decrease parameter value
-            if app.adjust_selected_param(-1.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            // Increase parameter value
-            if app.adjust_selected_param(1.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Char('[') => {
-            // Large decrease
-            if app.adjust_selected_param(-10.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Char(']') => {
-            // Large increase
-            if app.adjust_selected_param(10.0) {
-                app.request_plugin_update();
-                None
-            } else {
-                None
-            }
-        }
-        KeyCode::Char('a') => {
-            // Load APO file (for EQ plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
-                if matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                    app.input_mode = InputMode::LoadApoFile;
-                    app.status_message = Some("Enter path to APO file:".to_string());
-                } else {
-                    app.status_message =
-                        Some("APO files can only be loaded for EQ plugins".to_string());
-                }
-            }
-            None
-        }
-        KeyCode::Char('o') => {
-            // Open SOFA file browser (for Binaural Decoder plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
-                if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
-                    app.open_file_explorer(
-                        FilePickerOrigin::SofaFile,
-                        FilePickerMode::File,
-                        "Select SOFA File",
-                        Some(&app.sofa_file_input.clone()),
-                        Some("sofa"),
-                    );
-                } else {
-                    app.status_message = Some(
-                        "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
-                    );
-                }
-            }
-            None
-        }
-        KeyCode::Char('f') => {
-            // Open IR file browser (for Convolution plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
-                if let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings {
-                    let current_path = ir_file.clone();
-                    app.open_file_explorer(
-                        FilePickerOrigin::IrFile,
-                        FilePickerMode::File,
-                        "Select Impulse Response (WAV)",
-                        Some(&current_path),
-                        Some("wav"),
-                    );
-                } else {
-                    app.status_message =
-                        Some("IR files can only be loaded for Convolution plugins".to_string());
-                }
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-/// Handle key events for Matrix plugin editing
-fn handle_matrix_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.exit_plugin_edit_mode();
-            None
-        }
-        KeyCode::Tab => {
-            // Toggle between Header and Grid mode
-            app.matrix_edit_mode = match app.matrix_edit_mode {
-                MatrixEditMode::Header => MatrixEditMode::Grid,
-                MatrixEditMode::Grid => MatrixEditMode::Header,
+            app.current_screen = match app.current_screen {
+                Screen::Loading => Screen::Loading,
+                Screen::Library => Screen::Queue,
+                Screen::Queue => Screen::Plugins,
+                Screen::Plugins => Screen::Devices,
+                Screen::Devices => Screen::Configure,
+                Screen::Configure => Screen::Library,
             };
+            if app.current_screen == Screen::Configure {
+                app.input_mode = InputMode::Configure;
+            } else {
+                app.input_mode = InputMode::Normal;
+            }
             None
         }
         _ => {
-            // Delegate to mode-specific handler
-            match app.matrix_edit_mode {
-                MatrixEditMode::Header => handle_matrix_header_keys(app, key),
-                MatrixEditMode::Grid => handle_matrix_grid_keys(app, key),
+            // Try shared keys
+            if let Some(cmd) = handle_shared_keys(app, key) {
+                return cmd;
+            }
+            // Dispatch based on current screen
+            match app.current_screen {
+                Screen::Loading => None,
+                Screen::Library => handle_library_keys(app, key),
+                Screen::Queue => handle_queue_keys(app, key),
+                Screen::Plugins => handle_plugins_keys(app, key),
+                Screen::Devices => handle_devices_keys(app, key),
+                Screen::Configure => conf::handle_tab_bar_keys(app, key),
             }
         }
-    }
-}
-
-/// Handle key events in Matrix header mode (input/output channels, preset)
-fn handle_matrix_header_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.matrix_header_selection > 0 {
-                app.matrix_header_selection -= 1;
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.matrix_header_selection < 2 {
-                app.matrix_header_selection += 1;
-            }
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            if app.adjust_matrix_header(-1) {
-                app.request_plugin_update();
-            }
-            None
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            if app.adjust_matrix_header(1) {
-                app.request_plugin_update();
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-/// Handle key events in Matrix grid mode (cell editing)
-fn handle_matrix_grid_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    // Get current matrix dimensions
-    let (in_ch, out_ch) = app.get_matrix_dimensions().unwrap_or((2, 2));
-
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if app.matrix_grid_row > 0 {
-                app.matrix_grid_row -= 1;
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if app.matrix_grid_row + 1 < out_ch {
-                app.matrix_grid_row += 1;
-            }
-            None
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            if app.matrix_grid_col > 0 {
-                app.matrix_grid_col -= 1;
-            }
-            None
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            if app.matrix_grid_col + 1 < in_ch {
-                app.matrix_grid_col += 1;
-            }
-            None
-        }
-        KeyCode::Char('-') | KeyCode::Char('[') => {
-            // Decrease gain by 0.5 dB
-            if app.adjust_matrix_cell(-0.5) {
-                app.request_plugin_update();
-            }
-            None
-        }
-        KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Char(']') => {
-            // Increase gain by 0.5 dB
-            if app.adjust_matrix_cell(0.5) {
-                app.request_plugin_update();
-            }
-            None
-        }
-        KeyCode::Char('0') => {
-            // Set cell to zero (−∞ dB / silence)
-            if app.set_matrix_cell(0.0) {
-                app.request_plugin_update();
-            }
-            None
-        }
-        KeyCode::Char('1') => {
-            // Set cell to unity gain (0 dB)
-            if app.set_matrix_cell(1.0) {
-                app.request_plugin_update();
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            app.plugin_file_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Enter => {
-            // If there are presets shown and input is empty, use selected preset (overwrite)
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
-                app.save_selected_preset();
-            } else if !app.plugin_file_input.is_empty() {
-                app.save_plugin_chain();
-            }
-            app.input_mode = InputMode::Normal;
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Tab => {
-            // Autocomplete from available presets (restricted to preset directory)
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions_for_save_preset();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete_to_plugin_file();
-                }
-            } else {
-                app.next_autocomplete_for_plugin_file();
-            }
-            None
-        }
-        KeyCode::Up => {
-            // Navigate preset list when input is empty
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
-                if app.selected_preset_index > 0 {
-                    app.selected_preset_index -= 1;
-                }
-            }
-            None
-        }
-        KeyCode::Down => {
-            // Navigate preset list when input is empty
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
-                if app.selected_preset_index < app.available_plugin_presets.len() - 1 {
-                    app.selected_preset_index += 1;
-                }
-            }
-            None
-        }
-        KeyCode::Char(c) => {
-            app.plugin_file_input.push(c);
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Backspace => {
-            app.plugin_file_input.pop();
-            app.clear_autocomplete();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            app.plugin_file_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Enter => {
-            // If there are presets shown and input is empty, load selected preset
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
-                app.load_selected_preset();
-            } else if !app.plugin_file_input.is_empty() {
-                app.load_plugin_chain();
-            }
-            app.input_mode = InputMode::Normal;
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Tab => {
-            // Autocomplete file path (only if user typed something)
-            if !app.plugin_file_input.is_empty() {
-                if app.autocomplete_suggestions.is_empty() {
-                    app.generate_autocomplete_suggestions_for_plugin_file();
-                    if !app.autocomplete_suggestions.is_empty() {
-                        app.apply_autocomplete_to_plugin_file();
-                    }
-                } else {
-                    app.next_autocomplete_for_plugin_file();
-                }
-            }
-            None
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            // Navigate through presets
-            if app.plugin_file_input.is_empty() {
-                app.select_previous_preset();
-            }
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            // Navigate through presets
-            if app.plugin_file_input.is_empty() {
-                app.select_next_preset();
-            }
-            None
-        }
-        KeyCode::Char(c) => {
-            app.plugin_file_input.push(c);
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Backspace => {
-            app.plugin_file_input.pop();
-            app.clear_autocomplete();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            app.apo_file_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Enter => {
-            match app.load_apo_file() {
-                Ok(()) => {
-                    app.status_message = Some("APO file loaded successfully".to_string());
-                    app.request_plugin_update();
-                }
-                Err(e) => {
-                    app.status_message = Some(format!("Failed to load APO file: {}", e));
-                }
-            }
-            app.input_mode = InputMode::Normal;
-            app.apo_file_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Tab => {
-            // Autocomplete file path
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions_for_apo_file();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete_to_apo_file();
-                }
-            } else {
-                app.next_autocomplete_for_apo_file();
-            }
-            None
-        }
-        KeyCode::Char(c) => {
-            app.apo_file_input.push(c);
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Backspace => {
-            app.apo_file_input.pop();
-            app.clear_autocomplete();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Esc => {
-            app.input_mode = InputMode::Normal;
-            app.sofa_file_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Enter => {
-            match app.load_sofa_file() {
-                Ok(()) => {
-                    app.status_message = Some("SOFA file path set successfully".to_string());
-                    app.request_plugin_update();
-                }
-                Err(e) => {
-                    app.status_message = Some(format!("Failed to set SOFA file: {}", e));
-                }
-            }
-            app.input_mode = InputMode::Normal;
-            app.sofa_file_input.clear();
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Tab => {
-            // Autocomplete file path
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions_for_sofa_file();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete_to_sofa_file();
-                }
-            } else {
-                app.next_autocomplete_for_sofa_file();
-            }
-            None
-        }
-        KeyCode::Char(c) => {
-            app.sofa_file_input.push(c);
-            app.clear_autocomplete();
-            None
-        }
-        KeyCode::Backspace => {
-            app.sofa_file_input.pop();
-            app.clear_autocomplete();
-            None
-        }
-        _ => None,
-    }
-}
-
-fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_output_device();
-            None
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_output_device();
-            None
-        }
-        KeyCode::Enter | KeyCode::Char(' ') => {
-            // Apply device change
-            app.get_selected_output_device()
-                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
-        }
-        _ => None,
     }
 }
 
 fn handle_help_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
-            app.input_mode = InputMode::Normal;
+            app.exit_overlay_mode();
             None
         }
         _ => None,
@@ -1555,7 +228,7 @@ fn handle_help_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 fn handle_error_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('q') => {
-            app.input_mode = InputMode::Normal;
+            app.exit_overlay_mode();
             app.error_message = None;
             None
         }
@@ -1591,15 +264,18 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
 
             let path = app.channel_conflict_path.take();
             let conflicts = std::mem::take(&mut app.channel_conflicts);
-            app.input_mode = InputMode::Normal;
+            app.exit_overlay_mode();
 
             match choice {
                 ChannelConflictChoice::SuspendIncompatible => {
                     let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
                     app.plugin_chain.suspend_plugins(&indices);
                     app.plugin_chain.update_channel_dependent_plugins();
-                    log::info!("[TUI] Suspended {} incompatible plugin(s) (channel conflict)", indices.len());
-                    path.map(PlayerCommand::Play)
+                    log::info!(
+                        "[TUI] Suspended {} incompatible plugin(s) (channel conflict)",
+                        indices.len()
+                    );
+                    path.map(PlayerCommand::PlayResolved)
                 }
                 ChannelConflictChoice::RemoveIncompatible => {
                     // Remove in reverse order to keep indices valid
@@ -1608,8 +284,11 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     for idx in &indices {
                         app.plugin_chain.remove_plugin(*idx);
                     }
-                    log::info!("[TUI] Removed {} incompatible plugin(s) (channel conflict)", indices.len());
-                    path.map(PlayerCommand::Play)
+                    log::info!(
+                        "[TUI] Removed {} incompatible plugin(s) (channel conflict)",
+                        indices.len()
+                    );
+                    path.map(PlayerCommand::PlayResolved)
                 }
                 ChannelConflictChoice::Cancel => {
                     log::info!("[TUI] Playback cancelled by user (channel conflict)");
@@ -1621,7 +300,7 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
         KeyCode::Esc | KeyCode::Char('q') => {
             app.channel_conflict_path = None;
             app.channel_conflicts.clear();
-            app.input_mode = InputMode::Normal;
+            app.exit_overlay_mode();
             app.is_playing = false;
             None
         }
@@ -1629,10 +308,11 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub enum PlayerCommand {
     Play(std::path::PathBuf),
+    /// Play after channel conflict was already resolved (skip conflict re-check)
+    PlayResolved(std::path::PathBuf),
     Pause,
     Resume,
     Stop,
@@ -1643,9 +323,6 @@ pub enum PlayerCommand {
     /// Seek relative to current position (positive = forward, negative = backward)
     SeekRelative(f64),
 }
-
-// (wizard functions moved to sub-modules: spinorama, headphone_eq, room_eq, recording)
-
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -1668,6 +345,8 @@ pub(crate) mod tests {
 }
 
 #[cfg(test)]
-mod navigation_tests;
+#[path = "../tests/test_events_navigation.rs"]
+mod test_events_navigation;
 #[cfg(test)]
-mod scenario_tests;
+#[path = "../tests/test_events_scenario.rs"]
+mod test_events_scenario;

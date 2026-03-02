@@ -108,9 +108,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         if app.bliss_manager.in_progress {
             scanner_parts.push(format!(
                 "Bliss {}/{}/{}",
-                app.bliss_manager.succeeded,
-                app.bliss_manager.failed,
-                app.bliss_manager.total
+                app.bliss_manager.succeeded, app.bliss_manager.failed, app.bliss_manager.total
             ));
         }
         if app.scan_in_progress {
@@ -145,4 +143,3 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
 
     f.render_widget(status, area);
 }
-

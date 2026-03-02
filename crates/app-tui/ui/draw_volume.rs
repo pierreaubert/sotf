@@ -18,4 +18,3 @@ pub(crate) fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
 
     f.render_widget(paragraph, area);
 }
-

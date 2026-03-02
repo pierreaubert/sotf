@@ -429,7 +429,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     let title_height = 1;
 
     // Highlight border when focused
-    let block = if app.focused_pane == FocusedPane::Meters {
+    let block = if app.input_mode == InputMode::LevelMeters {
         Block::default().borders(Borders::ALL).border_style(
             Style::default()
                 .fg(app.theme.accent_primary)
@@ -869,4 +869,3 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         x_offset += group_width + 1;
     }
 }
-

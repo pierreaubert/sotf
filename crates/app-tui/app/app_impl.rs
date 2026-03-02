@@ -3,15 +3,14 @@ use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{Album, ChannelConflict, MusicLibrary, PluginChain, Track};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 // Import types from sibling modules
 use super::parameters::TuiEditablePlugin;
 use super::types::{
-    ArtistNode, ChannelFilter, ChannelGroup, FilePickerMode, FilePickerOrigin,
-    FocusedPane, InputMode, LibrarySortOrder, LibraryViewMode, MatrixEditMode,
-    PendingParameterUpdate, QueueEntry, Screen,
+    ArtistNode, ChannelFilter, ChannelGroup, FilePickerMode, FilePickerOrigin, InputMode,
+    LibrarySortOrder, LibraryViewMode, MatrixEditMode, PendingParameterUpdate, QueueEntry, Screen,
 };
 
 pub struct App {
@@ -19,7 +18,7 @@ pub struct App {
     pub queue: Vec<QueueEntry>,
     pub current_screen: Screen,
     pub input_mode: InputMode,
-    pub focused_pane: FocusedPane, // Which pane (Main or Meters) has focus
+    pub saved_input_mode: InputMode, // Saved mode for overlay modals (ShowHelp, ShowError, ChannelConflict)
 
     // Theme
     pub theme: Theme,
@@ -27,6 +26,7 @@ pub struct App {
     // UI state
     pub search_query: String,
     pub directory_input: String,
+    pub editing_directory: bool,
     pub plugin_file_input: String, // For save/load plugin chain
     pub apo_file_input: String,    // For loading APO EQ files
     pub sofa_file_input: String,   // For loading SOFA HRTF files
@@ -41,10 +41,10 @@ pub struct App {
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
 
     // Channel conflict dialog state
-    pub channel_conflict_path: Option<PathBuf>,      // File pending playback
-    pub channel_conflict_selection: usize,            // Currently highlighted option (0-2)
-    pub channel_conflict_track_channels: usize,       // File's channel count
-    pub channel_conflicts: Vec<ChannelConflict>,      // All incompatible plugins
+    pub channel_conflict_path: Option<PathBuf>, // File pending playback
+    pub channel_conflict_selection: usize,      // Currently highlighted option (0-2)
+    pub channel_conflict_track_channels: usize, // File's channel count
+    pub channel_conflicts: Vec<ChannelConflict>, // All incompatible plugins
 
     // Cached filtered results
     pub cached_filtered_albums: Vec<Album>,
@@ -171,8 +171,6 @@ pub struct App {
 
     // Configure section sub-screen
     pub configure_sub_screen: super::types::ConfigureSubScreen,
-    /// When true, Left/Right arrows cycle the tab bar; when false, arrows go into the sub-screen.
-    pub configure_tab_focused: bool,
 
     // Spinorama EQ wizard state
     pub spinorama_eq: super::types::SpinoramaEqTuiState,
@@ -208,10 +206,11 @@ impl App {
             queue: Vec::new(),
             current_screen: Screen::Loading,
             input_mode: InputMode::Normal,
-            focused_pane: FocusedPane::Main,
+            saved_input_mode: InputMode::Normal,
             theme,
             search_query: String::new(),
             directory_input: String::new(),
+            editing_directory: false,
             plugin_file_input: String::new(),
             apo_file_input: String::new(),
             sofa_file_input: String::new(),
@@ -288,12 +287,12 @@ impl App {
             replay_gain_enabled: true,
             replay_gain_mode: super::types::ReplayGainMode::Track,
             replay_gain_preamp: 0.0,
-            waveform_manager: sotf_audio_player::WaveformScanManager::with_pause_flag(
-                Arc::clone(&scanner_pause_flag),
-            ),
-            bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(
-                Arc::clone(&scanner_pause_flag),
-            ),
+            waveform_manager: sotf_audio_player::WaveformScanManager::with_pause_flag(Arc::clone(
+                &scanner_pause_flag,
+            )),
+            bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(Arc::clone(
+                &scanner_pause_flag,
+            )),
             last_loaded_preset: None,
             file_explorer_items: Vec::new(),
             file_explorer_selected: 0,
@@ -311,7 +310,6 @@ impl App {
             image_protocol: None,
             image_protocol_path: None,
             configure_sub_screen: super::types::ConfigureSubScreen::Directories,
-            configure_tab_focused: true,
             spinorama_eq: super::types::SpinoramaEqTuiState::default(),
             headphone_eq: super::types::HeadphoneEqTuiState::default(),
             room_eq: super::types::RoomEqTuiState::default(),
@@ -719,7 +717,9 @@ impl App {
                 if p.is_dir() {
                     Some(p.to_path_buf())
                 } else {
-                    p.parent().filter(|pp| pp.is_dir()).map(|pp| pp.to_path_buf())
+                    p.parent()
+                        .filter(|pp| pp.is_dir())
+                        .map(|pp| pp.to_path_buf())
                 }
             })
             .unwrap_or_else(|| {
@@ -735,13 +735,32 @@ impl App {
 
     /// Close the file explorer and restore the appropriate input mode.
     pub fn close_file_explorer(&mut self) {
-        self.input_mode = match self.file_picker_origin {
-            FilePickerOrigin::SofaFile | FilePickerOrigin::IrFile | FilePickerOrigin::ApoFile => {
-                InputMode::EditPlugin
-            }
-            FilePickerOrigin::AddDirectory => InputMode::AddDirectory,
-            _ => InputMode::Normal,
-        };
+        self.input_mode =
+            match self.file_picker_origin {
+                FilePickerOrigin::SofaFile
+                | FilePickerOrigin::IrFile
+                | FilePickerOrigin::ApoFile => InputMode::EditPlugin,
+                FilePickerOrigin::AddDirectory => InputMode::ConfigureDirectories,
+                FilePickerOrigin::RecordingOutputDir
+                | FilePickerOrigin::RecordingMicCalibration => InputMode::ConfigureRecording,
+                FilePickerOrigin::RoomEqFilePath | FilePickerOrigin::RoomEqExportPath => {
+                    InputMode::ConfigureRoomEq
+                }
+                FilePickerOrigin::HeadphoneMeasurement
+                | FilePickerOrigin::HeadphoneCustomTarget => InputMode::ConfigureHeadphoneEq,
+            };
+    }
+
+    /// Save the current input mode and switch to an overlay modal.
+    pub fn enter_overlay_mode(&mut self, mode: InputMode) {
+        self.saved_input_mode = self.input_mode;
+        self.input_mode = mode;
+    }
+
+    /// Restore the input mode that was active before the overlay modal.
+    pub fn exit_overlay_mode(&mut self) {
+        self.input_mode = self.saved_input_mode;
+        self.saved_input_mode = InputMode::Normal;
     }
 
     pub fn refresh_file_explorer(&mut self) {
@@ -839,4 +858,3 @@ impl Default for App {
         Self::new(Theme::default(), false)
     }
 }
-

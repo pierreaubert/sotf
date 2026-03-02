@@ -159,4 +159,3 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
         }
     }
 }
-

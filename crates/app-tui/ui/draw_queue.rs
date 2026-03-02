@@ -331,4 +331,3 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
         .wrap(Wrap { trim: false });
     f.render_widget(paragraph, area);
 }
-

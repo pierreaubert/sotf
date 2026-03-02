@@ -6,6 +6,8 @@ edition.workspace = true
 description = "TUI music player frontend for SOTF"
 license.workspace = true
 repository.workspace = true
+# Disable auto-discovery: unit test files in tests/ are included via #[path] in lib modules.
+autotests = false
 
 [dependencies]
 # Shared audio player library (provides business logic, database, plugins, etc.)
@@ -87,3 +89,9 @@ path = "lib.rs"
 [[bin]]
 name = "sotf-tui"
 path = "main.rs"
+
+# Only parameter_sync_tests is a true integration test.
+# The other files in tests/ are unit tests included via #[path] in lib modules.
+[[test]]
+name = "parameter_sync_tests"
+path = "tests/parameter_sync_tests.rs"

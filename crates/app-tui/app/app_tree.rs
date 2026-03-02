@@ -25,7 +25,9 @@ impl App {
 
             // Single album/track: show directly without expand/collapse
             if visible_albums.len() == 1 {
-                items.push(TreeItem::Album { index: visible_albums[0] });
+                items.push(TreeItem::Album {
+                    index: visible_albums[0],
+                });
                 continue;
             }
 
@@ -122,5 +124,4 @@ impl App {
         }
         None
     }
-
 }

@@ -109,10 +109,7 @@ pub fn get_keybindings_for_screen(screen: crate::app::Screen) -> Vec<(&'static s
             ("s", "Save"),
             ("l", "Load"),
         ],
-        Screen::Devices => vec![
-            ("↑↓", "Browse"),
-            ("Enter", "Select"),
-        ],
+        Screen::Devices => vec![("↑↓", "Browse"), ("Enter", "Select")],
         Screen::Configure => vec![
             ("←→", "Navigate tabs"),
             ("↑↓", "Navigate fields"),
@@ -187,4 +184,3 @@ mod tests {
         assert_eq!(truncate_with_ellipsis("", 10), "");
     }
 }
-

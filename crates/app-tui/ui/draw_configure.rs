@@ -9,12 +9,7 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    draw_help_box_with_text(
-        f,
-        chunks[0],
-        app,
-        "↑↓=Navigate  Enter=Select  Esc=Back",
-    );
+    draw_help_box_with_text(f, chunks[0], app, "↑↓=Navigate  Enter=Select  Esc=Back");
 
     // Device list
     let items: Vec<ListItem> = app
@@ -48,7 +43,11 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
                 ),
                 Span::styled(
                     device.name.clone(),
-                    if is_selected { selected_style } else { normal_style },
+                    if is_selected {
+                        selected_style
+                    } else {
+                        normal_style
+                    },
                 ),
                 Span::styled(
                     default_tag.to_string(),
@@ -109,19 +108,34 @@ pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    draw_help_box_with_text(
-        f,
-        chunks[0],
-        app,
-        "↑↓=Navigate  Enter=Open  Esc=Back",
-    );
+    draw_help_box_with_text(f, chunks[0], app, "↑↓=Navigate  Enter=Open  Esc=Back");
 
     let options: &[(ConfigureSubScreen, &str, &str)] = &[
-        (ConfigureSubScreen::Directories,  "1", "Directories   – Music library folders"),
-        (ConfigureSubScreen::Recording,    "2", "Recording     – Measure impulse responses"),
-        (ConfigureSubScreen::RoomEq,       "3", "Room EQ       – Optimize room correction filters"),
-        (ConfigureSubScreen::HeadphoneEq,  "4", "Headphone EQ  – Target-curve EQ for headphones"),
-        (ConfigureSubScreen::SpinoramaEq,  "5", "Spinorama EQ  – Speaker EQ from spinorama data"),
+        (
+            ConfigureSubScreen::Directories,
+            "1",
+            "Directories   – Music library folders",
+        ),
+        (
+            ConfigureSubScreen::Recording,
+            "2",
+            "Recording     – Measure impulse responses",
+        ),
+        (
+            ConfigureSubScreen::RoomEq,
+            "3",
+            "Room EQ       – Optimize room correction filters",
+        ),
+        (
+            ConfigureSubScreen::HeadphoneEq,
+            "4",
+            "Headphone EQ  – Target-curve EQ for headphones",
+        ),
+        (
+            ConfigureSubScreen::SpinoramaEq,
+            "5",
+            "Spinorama EQ  – Speaker EQ from spinorama data",
+        ),
     ];
 
     let items: Vec<ListItem> = options
@@ -159,12 +173,24 @@ pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
     let mut list_state = ListState::default();
     list_state.select(Some(selected_idx));
 
+    // Use Double border when the configure menu is focused
+    let menu_border = if app.input_mode == InputMode::Configure {
+        BorderType::Double
+    } else {
+        BorderType::Rounded
+    };
+    let menu_border_color = if app.input_mode == InputMode::Configure {
+        app.theme.accent_primary
+    } else {
+        app.theme.border_color
+    };
+
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(app.theme.border_color))
+                .border_type(menu_border)
+                .border_style(Style::default().fg(menu_border_color))
                 .title(" Configure – select a workflow "),
         )
         .highlight_style(
@@ -188,8 +214,8 @@ pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
 
     let title = match app.configure_sub_screen {
         ConfigureSubScreen::Directories => " Directories ",
-        ConfigureSubScreen::Recording   => " Recording ",
-        ConfigureSubScreen::RoomEq      => " Room EQ ",
+        ConfigureSubScreen::Recording => " Recording ",
+        ConfigureSubScreen::RoomEq => " Room EQ ",
         ConfigureSubScreen::HeadphoneEq => " Headphone EQ ",
         ConfigureSubScreen::SpinoramaEq => " Spinorama EQ ",
     };
@@ -202,7 +228,11 @@ pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
                 .fg(app.theme.accent_primary)
                 .bg(app.theme.bg_primary),
         )
-        .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
+        .style(
+            Style::default()
+                .bg(app.theme.bg_primary)
+                .fg(app.theme.fg_primary),
+        )
         .title(format!("{} (Esc to close)", title));
 
     f.render_widget(outer, area);
@@ -217,8 +247,8 @@ pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
 
     match app.configure_sub_screen {
         ConfigureSubScreen::Directories => draw_directory_manager(f, inner, app),
-        ConfigureSubScreen::Recording   => draw_recording_screen(f, inner, app),
-        ConfigureSubScreen::RoomEq      => draw_room_eq_screen(f, inner, app),
+        ConfigureSubScreen::Recording => draw_recording_screen(f, inner, app),
+        ConfigureSubScreen::RoomEq => draw_room_eq_screen(f, inner, app),
         ConfigureSubScreen::HeadphoneEq => draw_headphone_eq_screen(f, inner, app),
         ConfigureSubScreen::SpinoramaEq => draw_spinorama_eq_screen(f, inner, app),
     }
@@ -237,6 +267,28 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(5)])
         .split(area);
+
+    // Border types: Double for focused area, Plain for unfocused
+    let step_tab_border = if s.step_tab_focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let content_border = if s.step_tab_focused {
+        BorderType::Plain
+    } else {
+        BorderType::Double
+    };
+    let step_tab_border_color = if s.step_tab_focused {
+        app.theme.accent_primary
+    } else {
+        app.theme.border_color
+    };
+    let content_border_color = if s.step_tab_focused {
+        app.theme.border_color
+    } else {
+        app.theme.accent_primary
+    };
 
     // Step tabs
     let steps = [
@@ -262,12 +314,29 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         .collect();
     let step_idx = steps.iter().position(|st| *st == s.step).unwrap_or(0);
     let tabs = Tabs::new(tab_titles)
-        .block(Block::default().borders(Borders::ALL).title("Recording"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(step_tab_border)
+                .border_style(Style::default().fg(step_tab_border_color))
+                .title("Recording"),
+        )
         .select(step_idx)
         .highlight_style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(tabs, outer[0]);
 
-    let content = outer[1];
+    // Content wrapper with focus-aware border
+    let content_wrapper = Block::default()
+        .borders(Borders::ALL)
+        .border_type(content_border)
+        .border_style(Style::default().fg(content_border_color));
+    f.render_widget(content_wrapper, outer[1]);
+    let content = Rect {
+        x: outer[1].x + 1,
+        y: outer[1].y + 1,
+        width: outer[1].width.saturating_sub(2),
+        height: outer[1].height.saturating_sub(2),
+    };
 
     match s.step {
         RecordingStep::Config => {
@@ -647,4 +716,3 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 }
-

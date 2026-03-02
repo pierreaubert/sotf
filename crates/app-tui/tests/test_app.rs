@@ -1711,8 +1711,8 @@ mod tests {
         app.input_mode = InputMode::Search;
         assert_eq!(app.input_mode, InputMode::Search);
 
-        app.input_mode = InputMode::AddDirectory;
-        assert_eq!(app.input_mode, InputMode::AddDirectory);
+        app.input_mode = InputMode::ConfigureDirectories;
+        assert_eq!(app.input_mode, InputMode::ConfigureDirectories);
 
         app.input_mode = InputMode::EditPlugin;
         assert_eq!(app.input_mode, InputMode::EditPlugin);

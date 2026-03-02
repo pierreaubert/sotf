@@ -1,15 +1,15 @@
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, InputMode, Screen};
 use sotf_audio_player_tui::events::{
+    AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
     poll_headphone_eq_optimization, poll_recording, poll_room_eq_optimization,
     poll_spinorama_optimization, poll_spinorama_speaker_load,
-    AppEvent, PlayerCommand, handle_events, handle_key_event, handle_media_control_event,
 };
 use sotf_audio_player_tui::media_controls::{self, TuiMediaControls};
 use sotf_audio_player_tui::ui;
@@ -160,8 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Explicit --scan flag provided, OR
     // 2. Database is empty and we have directories to scan
     // Never scan in read-only mode
-    let will_scan =
-        !read_only && (args.scan || db_is_empty) && !app.library.directories.is_empty();
+    let will_scan = !read_only && (args.scan || db_is_empty) && !app.library.directories.is_empty();
     if will_scan {
         log::info!(
             "Starting library scan (scan={}, db_empty={}, dirs={})",
@@ -251,7 +250,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         if let Err(e) = handle_player_command(player, app, cmd) {
                             log::error!("[TUI] Player command error: {}", e);
                             app.error_message = Some(e.to_string());
-                            app.input_mode = InputMode::ShowError;
+                            app.enter_overlay_mode(InputMode::ShowError);
                             app.is_playing = false;
                         }
                         update_media_controls(app, player, media_controls);
@@ -262,7 +261,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         if let Err(e) = handle_player_command(player, app, cmd) {
                             log::error!("[TUI] Media control command error: {}", e);
                             app.error_message = Some(e.to_string());
-                            app.input_mode = InputMode::ShowError;
+                            app.enter_overlay_mode(InputMode::ShowError);
                             app.is_playing = false;
                         }
                         update_media_controls(app, player, media_controls);
@@ -328,12 +327,12 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.error_message = Some(
                             "Audio engine crashed. Please play a new track to restart.".to_string(),
                         );
-                        app.input_mode = InputMode::ShowError;
+                        app.enter_overlay_mode(InputMode::ShowError);
                         app.is_playing = false;
                     } else if let Some(err) = state.last_error {
                         log::error!("[TUI] Playback error: {}", err);
                         app.error_message = Some(err);
-                        app.input_mode = InputMode::ShowError;
+                        app.enter_overlay_mode(InputMode::ShowError);
                         app.is_playing = false;
                     } else if state.engine_restarted {
                         log::info!("[TUI] Engine auto-restarted after crash, resuming playback");
@@ -364,7 +363,8 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                     conflicts.len()
                                 );
                                 // Auto-suspend without modal (user already consented by continuing playback)
-                                let indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
+                                let indices: Vec<usize> =
+                                    conflicts.iter().map(|c| c.index).collect();
                                 app.plugin_chain.suspend_plugins(&indices);
                                 app.plugin_chain.update_channel_dependent_plugins();
                             }
@@ -372,7 +372,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             if let Err(e) = start_playback(player, app, path, track_channels) {
                                 log::error!("[TUI] Failed to auto-advance: {}", e);
                                 app.error_message = Some(format!("Auto-advance failed: {}", e));
-                                app.input_mode = InputMode::ShowError;
+                                app.enter_overlay_mode(InputMode::ShowError);
                                 app.is_playing = false;
                             } else {
                                 log::info!("[TUI] Auto-advance successful");
@@ -577,6 +577,9 @@ fn start_playback(
         }
     }
 
+    // Sync volume to the engine before playback starts
+    player.set_volume(app.volume)?;
+
     let path_clone = path.clone();
     player.load_and_play(
         path,
@@ -620,10 +623,18 @@ fn handle_player_command(
                 app.channel_conflict_path = Some(path);
                 app.channel_conflict_selection = 0;
                 app.channel_conflict_track_channels = track_channels;
-                app.input_mode = InputMode::ChannelConflict;
+                app.enter_overlay_mode(InputMode::ChannelConflict);
                 return Ok(());
             }
 
+            start_playback(player, app, path, track_channels)?;
+        }
+        PlayerCommand::PlayResolved(path) => {
+            // Play after channel conflict was resolved — skip clearing suspensions
+            // and conflict re-check since the user already handled it.
+            app.stop_track_tracking();
+            app.load_album_images();
+            let track_channels = app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
             start_playback(player, app, path, track_channels)?;
         }
         PlayerCommand::Pause => {

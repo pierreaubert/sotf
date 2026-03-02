@@ -8,5 +8,4 @@ impl App {
     pub fn decrease_volume(&mut self) {
         self.volume = (self.volume - 0.05).max(0.0);
     }
-
 }

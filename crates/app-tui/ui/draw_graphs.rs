@@ -11,10 +11,7 @@ pub(crate) fn draw_loss_chart(
     }
 
     let x_bound = history.last().map(|h| h.0).unwrap_or(1) as f64;
-    let min_loss = history
-        .iter()
-        .map(|h| h.1)
-        .fold(f64::INFINITY, f64::min);
+    let min_loss = history.iter().map(|h| h.1).fold(f64::INFINITY, f64::min);
     let max_loss = history
         .iter()
         .map(|h| h.1)
@@ -31,12 +28,14 @@ pub(crate) fn draw_loss_chart(
         .map(|(iter, loss, _)| (*iter as f64, *loss))
         .collect();
 
-    let datasets = vec![Dataset::default()
-        .name("Loss")
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::default().fg(app.theme.accent_primary))
-        .data(&loss_data)];
+    let datasets = vec![
+        Dataset::default()
+            .name("Loss")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(app.theme.accent_primary))
+            .data(&loss_data),
+    ];
 
     let x_labels = vec![
         Span::raw("0"),
@@ -52,7 +51,11 @@ pub(crate) fn draw_loss_chart(
     let title = format!("Loss History  ({} iterations)", x_bound as usize);
 
     let chart = Chart::new(datasets)
-        .style(Style::default().fg(app.theme.fg_primary).bg(app.theme.bg_secondary))
+        .style(
+            Style::default()
+                .fg(app.theme.fg_primary)
+                .bg(app.theme.bg_secondary),
+        )
         .block(Block::default().borders(Borders::ALL).title(title))
         .x_axis(
             Axis::default()
@@ -119,8 +122,16 @@ pub(crate) fn draw_freq_response_chart(
         .collect();
 
     // Compute y bounds from filter response SPL for appropriate zoom
-    let y_min = s.curve_filter_response.iter().copied().fold(f64::INFINITY, f64::min);
-    let y_max = s.curve_filter_response.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let y_min = s
+        .curve_filter_response
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let y_max = s
+        .curve_filter_response
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
     let y_bound_lo = y_min.floor();
     let y_bound_hi = y_max.ceil();
 
@@ -161,7 +172,11 @@ pub(crate) fn draw_freq_response_chart(
     ];
 
     let chart = Chart::new(datasets)
-        .style(Style::default().fg(app.theme.fg_primary).bg(app.theme.bg_secondary))
+        .style(
+            Style::default()
+                .fg(app.theme.fg_primary)
+                .bg(app.theme.bg_secondary),
+        )
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -184,4 +199,3 @@ pub(crate) fn draw_freq_response_chart(
 
     f.render_widget(chart, area);
 }
-

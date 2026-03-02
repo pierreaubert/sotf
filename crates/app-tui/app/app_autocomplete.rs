@@ -1,7 +1,6 @@
 use super::app_impl::App;
 
 impl App {
-
     /// Generate autocomplete suggestions for the current directory input
     pub fn generate_autocomplete_suggestions(&mut self) {
         self.autocomplete_suggestions.clear();
@@ -186,6 +185,25 @@ impl App {
         }
     }
 
+    /// Handle a Tab press for path autocompletion on any string field.
+    /// On the first Tab (no suggestions yet), generates them from the filesystem.
+    /// On subsequent Tabs, cycles to the next suggestion.
+    /// Returns `Some(suggestion)` which the caller should assign to their field,
+    /// or `None` if no suggestions match.
+    pub fn tab_complete_path(&mut self, current_input: &str) -> Option<String> {
+        if self.autocomplete_suggestions.is_empty() {
+            self.generate_autocomplete_suggestions_for_input(current_input);
+        } else {
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+        }
+        if !self.autocomplete_suggestions.is_empty() {
+            Some(self.autocomplete_suggestions[self.autocomplete_index].clone())
+        } else {
+            None
+        }
+    }
+
     /// Generic autocomplete suggestions generator for any file input
     fn generate_autocomplete_suggestions_for_input(&mut self, input: &str) {
         self.autocomplete_suggestions.clear();
@@ -250,5 +268,4 @@ impl App {
         // Sort suggestions
         self.autocomplete_suggestions.sort();
     }
-
 }

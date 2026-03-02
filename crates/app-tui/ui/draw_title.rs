@@ -2,12 +2,14 @@ use super::*;
 
 pub(crate) fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     // Split title area into three parts: SOTF title, screen boxes, output device
+    let ouput_width = if f.area().width > 100 { 40 } else { 20 };
+
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(8), // SOTF title
-            Constraint::Min(0),     // Screen boxes (expandable)
-            Constraint::Length(40), // Output device
+            Constraint::Length(6),           // SOTF title
+            Constraint::Min(0),              // Screen boxes (expandable)
+            Constraint::Length(ouput_width), // Output device
         ])
         .split(area);
 
@@ -49,4 +51,3 @@ pub(crate) fn draw_title(f: &mut Frame, area: Rect, app: &App) {
 
     f.render_widget(device_widget, title_chunks[2]);
 }
-

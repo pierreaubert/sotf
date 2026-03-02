@@ -386,9 +386,7 @@ impl App {
             );
             self.status_message = Some(format!(
                 "Bliss scan complete: {}/{} succeeded, {} failed",
-                self.bliss_manager.succeeded,
-                self.bliss_manager.total,
-                self.bliss_manager.failed
+                self.bliss_manager.succeeded, self.bliss_manager.total, self.bliss_manager.failed
             ));
             self.clear_pause_override_if_idle();
         }
@@ -400,12 +398,13 @@ impl App {
         for entry in &mut self.queue {
             let album = &mut entry.item.album;
             // Find the matching library album by id
-            let lib_album = album.id.and_then(|id| {
-                self.library.albums.iter().find(|a| a.id == Some(id))
-            });
+            let lib_album = album
+                .id
+                .and_then(|id| self.library.albums.iter().find(|a| a.id == Some(id)));
             if let Some(lib_album) = lib_album {
                 for track in &mut album.tracks {
-                    if let Some(lib_track) = lib_album.tracks.iter().find(|t| t.path == track.path) {
+                    if let Some(lib_track) = lib_album.tracks.iter().find(|t| t.path == track.path)
+                    {
                         track.replay_gain = lib_track.replay_gain;
                         track.replay_peak = lib_track.replay_peak;
                         track.album_gain = lib_track.album_gain;
@@ -416,6 +415,4 @@ impl App {
             }
         }
     }
-
-
 }

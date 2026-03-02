@@ -972,4 +972,3 @@ pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
 
     f.render_widget(paragraph, inner);
 }
-

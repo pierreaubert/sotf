@@ -13,6 +13,28 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(5)])
         .split(area);
 
+    // Border types: Double for focused area, Plain for unfocused
+    let step_tab_border = if s.step_tab_focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let content_border = if s.step_tab_focused {
+        BorderType::Plain
+    } else {
+        BorderType::Double
+    };
+    let step_tab_border_color = if s.step_tab_focused {
+        app.theme.accent_primary
+    } else {
+        app.theme.border_color
+    };
+    let content_border_color = if s.step_tab_focused {
+        app.theme.border_color
+    } else {
+        app.theme.accent_primary
+    };
+
     // Step tabs
     let steps = [
         HeadphoneEqStep::SelectFile,
@@ -35,12 +57,29 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
     let tabs = Tabs::new(tab_titles)
-        .block(Block::default().borders(Borders::ALL).title("Headphone EQ"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(step_tab_border)
+                .border_style(Style::default().fg(step_tab_border_color))
+                .title("Headphone EQ"),
+        )
         .select(s.step as usize)
         .highlight_style(Style::default().fg(app.theme.accent_primary));
     f.render_widget(tabs, outer[0]);
 
-    let content = outer[1];
+    // Content wrapper with focus-aware border
+    let content_wrapper = Block::default()
+        .borders(Borders::ALL)
+        .border_type(content_border)
+        .border_style(Style::default().fg(content_border_color));
+    f.render_widget(content_wrapper, outer[1]);
+    let content = Rect {
+        x: outer[1].x + 1,
+        y: outer[1].y + 1,
+        width: outer[1].width.saturating_sub(2),
+        height: outer[1].height.saturating_sub(2),
+    };
 
     match s.step {
         HeadphoneEqStep::SelectFile => {
@@ -405,15 +444,38 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![Span::styled(
                             "  Save current preset before overwriting?",
-                            Style::default().fg(app.theme.fg_primary).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(app.theme.fg_primary)
+                                .add_modifier(Modifier::BOLD),
                         )]));
                         lines.push(Line::from(""));
                         lines.push(Line::from(vec![
-                            Span::styled("  y", Style::default().fg(app.theme.accent_success).add_modifier(Modifier::BOLD)),
-                            Span::styled(" = save preset then apply   ", Style::default().fg(app.theme.fg_secondary)),
-                            Span::styled("n", Style::default().fg(app.theme.accent_error).add_modifier(Modifier::BOLD)),
-                            Span::styled(" = apply without saving   ", Style::default().fg(app.theme.fg_secondary)),
-                            Span::styled("Esc", Style::default().fg(app.theme.fg_secondary).add_modifier(Modifier::BOLD)),
+                            Span::styled(
+                                "  y",
+                                Style::default()
+                                    .fg(app.theme.accent_success)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                " = save preset then apply   ",
+                                Style::default().fg(app.theme.fg_secondary),
+                            ),
+                            Span::styled(
+                                "n",
+                                Style::default()
+                                    .fg(app.theme.accent_error)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                " = apply without saving   ",
+                                Style::default().fg(app.theme.fg_secondary),
+                            ),
+                            Span::styled(
+                                "Esc",
+                                Style::default()
+                                    .fg(app.theme.fg_secondary)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
                             Span::styled(" = cancel", Style::default().fg(app.theme.fg_secondary)),
                         ]));
                     }
@@ -429,4 +491,3 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 }
-

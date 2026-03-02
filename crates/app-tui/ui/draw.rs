@@ -50,22 +50,33 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // Use fixed width for right column to avoid extra space
-    let right_col_width = meters_width.max(26) as u16; // Minimum 26 for LUFS/Volume boxes
+    let right_col_width = meters_width.max(20) as u16; // Minimum 26 for LUFS/Volume boxes
 
     // Check window height for responsive layout
+    let window_width = f.area().width;
     let window_height = f.area().height;
     let use_three_columns = window_height < 40;
 
     let main_chunks = if use_three_columns {
         // When height < 40, use 3 columns: main, loudness+volume, level meters
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(0),                  // Main content (takes remaining space)
-                Constraint::Length(26),              // Loudness + Volume column (fixed width)
-                Constraint::Length(right_col_width), // Level meters column (exact width)
-            ])
-            .split(chunks[1])
+        if window_width > 100 {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Min(0),                  // Main content (takes remaining space)
+                    Constraint::Length(26),              // Loudness + Volume column (fixed width)
+                    Constraint::Length(right_col_width), // Level meters column (exact width)
+                ])
+                .split(chunks[1])
+        } else {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Min(0),     // Main content (takes remaining space)
+                    Constraint::Length(26), // Loudness + Volume column (fixed width)
+                ])
+                .split(chunks[1])
+        }
     } else {
         // When height >= 40, use 2 columns: main, meters (with all components stacked)
         Layout::default()
@@ -110,7 +121,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if use_three_columns {
         // 3-column layout: loudness+volume in middle, level meters in right
         draw_loudness_and_volume_column(f, main_chunks[1], app);
-        draw_level_meter_box(f, main_chunks[2], app);
+        if window_width > 100 {
+            draw_level_meter_box(f, main_chunks[2], app);
+        }
     } else {
         // 2-column layout: all meters stacked vertically
         draw_meters_column(f, main_chunks[1], app);
@@ -170,11 +183,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Configure sub-screen modal (drawn when inside a sub-screen, not on the tab bar).
     // Skip when an overlay modal (file explorer, help, error, etc.) is active so the
     // configure wizard content doesn't paint over it.
-    if app.current_screen == Screen::Configure
-        && !app.configure_tab_focused
-        && app.input_mode == InputMode::Normal
-    {
+    if app.current_screen == Screen::Configure && app.input_mode.is_configure_sub_screen() {
         draw_configure_modal(f, app);
     }
 }
-

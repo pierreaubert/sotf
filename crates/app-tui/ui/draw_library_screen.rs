@@ -16,4 +16,3 @@ pub(crate) fn draw_library_screen(f: &mut Frame, area: Rect, app: &App) {
     let is_focused = app.current_screen == Screen::Library;
     draw_album_list(f, chunks[2], app, is_focused);
 }
-

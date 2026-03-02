@@ -2,7 +2,7 @@ use super::app_impl::App;
 use std::path::PathBuf;
 
 impl App {
-        /// Find and load all image files in the currently playing album's directory
+    /// Find and load all image files in the currently playing album's directory
     pub fn load_album_images(&mut self) {
         self.album_images.clear();
         self.selected_image_index = 0;
@@ -92,6 +92,4 @@ impl App {
     pub fn get_current_album_image(&self) -> Option<&PathBuf> {
         self.album_images.get(self.selected_image_index)
     }
-
-
 }

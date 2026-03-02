@@ -59,9 +59,9 @@ impl App {
         }
         // Populate device_name/device_id fields from selected devices
         if !self.recording.available_playback_devices.is_empty() {
-            let (id, name) =
-                self.recording.available_playback_devices[self.recording.selected_playback_idx]
-                    .clone();
+            let (id, name) = self.recording.available_playback_devices
+                [self.recording.selected_playback_idx]
+                .clone();
             self.recording.playback_config.device_name = name;
             self.recording.playback_config.device_id = id;
         }
@@ -830,6 +830,4 @@ impl App {
 
         indices
     }
-
-
 }

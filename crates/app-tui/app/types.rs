@@ -77,6 +77,9 @@ pub struct SpinoramaEqTuiState {
     // Step 2: configuration (shared config struct)
     pub config: SpinoramaOptimizerConfig,
     pub selected_field: usize, // which config field is selected
+    /// True when a numerical field is being directly edited via keyboard
+    pub editing_value: bool,
+    pub edit_buffer: String,
     // Step 3: optimization progress
     pub opt_status: OptimizationStatus,
     pub opt_error: Option<String>,
@@ -125,6 +128,8 @@ impl Default for SpinoramaEqTuiState {
             speakers_error: None,
             config,
             selected_field: 0,
+            editing_value: false,
+            edit_buffer: String::new(),
             opt_status: OptimizationStatus::Idle,
             opt_error: None,
             opt_progress: 0.0,
@@ -199,6 +204,8 @@ pub const HEADPHONE_TARGET_PRESETS: &[&str] = &[
 #[derive(Debug, Clone)]
 pub struct HeadphoneEqTuiState {
     pub step: HeadphoneEqStep,
+    /// When true, the wizard step tab bar has focus (Left/Right change step).
+    pub step_tab_focused: bool,
     // Step 1: file selection
     pub measurement_path: String,
     pub target_preset: String,
@@ -209,6 +216,9 @@ pub struct HeadphoneEqTuiState {
     // Step 2: configuration (shared config struct)
     pub config: HeadphoneEqOptimizerConfig,
     pub config_selected_field: usize,
+    /// True when a numerical field is being directly edited via keyboard
+    pub editing_value: bool,
+    pub edit_buffer: String,
     // Step 3: optimization progress
     pub opt_status: OptimizationStatus,
     pub opt_error: Option<String>,
@@ -236,6 +246,7 @@ impl Default for HeadphoneEqTuiState {
     fn default() -> Self {
         Self {
             step: HeadphoneEqStep::SelectFile,
+            step_tab_focused: false,
             measurement_path: String::new(),
             target_preset: "harman-over-ear-2018".to_string(),
             custom_target_path: String::new(),
@@ -244,6 +255,8 @@ impl Default for HeadphoneEqTuiState {
             selected_field: 0,
             config: HeadphoneEqOptimizerConfig::default(),
             config_selected_field: 0,
+            editing_value: false,
+            edit_buffer: String::new(),
             opt_status: OptimizationStatus::Idle,
             opt_error: None,
             opt_progress: 0.0,
@@ -281,6 +294,9 @@ pub struct RoomEqTuiState {
     pub config: RoomEqOptimizerConfig,
     pub selected_field: usize,
     pub selected_section: usize,
+    /// True when a numerical field is being directly edited via keyboard
+    pub editing_value: bool,
+    pub edit_buffer: String,
     // Step 3: optimization
     pub opt_status: OptimizationStatus,
     pub opt_error: Option<String>,
@@ -311,6 +327,8 @@ impl Default for RoomEqTuiState {
             config: RoomEqOptimizerConfig::default(),
             selected_field: 0,
             selected_section: 0,
+            editing_value: false,
+            edit_buffer: String::new(),
             opt_status: OptimizationStatus::Idle,
             opt_error: None,
             opt_progress: 0.0,
@@ -332,6 +350,8 @@ impl Default for RoomEqTuiState {
 #[derive(Debug, Clone)]
 pub struct RecordingTuiState {
     pub step: RecordingStep,
+    /// When true, the wizard step tab bar has focus (Left/Right change step).
+    pub step_tab_focused: bool,
     // Step 1: config
     pub playback_config: PlaybackDeviceConfig,
     pub recording_config: RecordingDeviceConfig,
@@ -349,6 +369,9 @@ pub struct RecordingTuiState {
     pub editing_output_dir: bool,
     pub editing_mic_cal: bool,
     pub selected_field: usize,
+    /// True when a numerical field is being directly edited via keyboard
+    pub editing_value: bool,
+    pub edit_buffer: String,
     // Step 2: capture
     pub channel_recordings: Vec<ChannelRecording>,
     pub current_channel: Option<usize>,
@@ -369,6 +392,7 @@ impl Default for RecordingTuiState {
     fn default() -> Self {
         Self {
             step: RecordingStep::Config,
+            step_tab_focused: false,
             playback_config: PlaybackDeviceConfig::default(),
             recording_config: RecordingDeviceConfig::default(),
             available_playback_devices: Vec::new(),
@@ -385,6 +409,8 @@ impl Default for RecordingTuiState {
             editing_output_dir: false,
             editing_mic_cal: false,
             selected_field: 0,
+            editing_value: false,
+            edit_buffer: String::new(),
             channel_recordings: Vec::new(),
             current_channel: None,
             recording_progress: 0.0,
@@ -404,7 +430,6 @@ impl Default for RecordingTuiState {
 pub enum InputMode {
     Normal,
     Search,
-    AddDirectory,
     AddPlugin,
     EditPlugin,
     SavePlugins,
@@ -416,6 +441,70 @@ pub enum InputMode {
     ShowError,
     /// Shown when a multichannel file conflicts with the upmixer plugin
     ChannelConflict,
+    /// Level meters pane is focused
+    LevelMeters,
+    /// Configure tab bar is focused
+    Configure,
+    /// Configure sub-screen: Directories
+    ConfigureDirectories,
+    /// Configure sub-screen: Recording
+    ConfigureRecording,
+    /// Configure sub-screen: Room EQ
+    ConfigureRoomEq,
+    /// Configure sub-screen: Headphone EQ
+    ConfigureHeadphoneEq,
+    /// Configure sub-screen: Spinorama EQ
+    ConfigureSpinoramaEq,
+}
+
+impl InputMode {
+    /// Returns true for Configure tab bar and all 5 sub-screens
+    pub fn is_configure(self) -> bool {
+        matches!(
+            self,
+            InputMode::Configure
+                | InputMode::ConfigureDirectories
+                | InputMode::ConfigureRecording
+                | InputMode::ConfigureRoomEq
+                | InputMode::ConfigureHeadphoneEq
+                | InputMode::ConfigureSpinoramaEq
+        )
+    }
+
+    /// Returns true for the 5 configure sub-screens only (not the tab bar)
+    pub fn is_configure_sub_screen(self) -> bool {
+        matches!(
+            self,
+            InputMode::ConfigureDirectories
+                | InputMode::ConfigureRecording
+                | InputMode::ConfigureRoomEq
+                | InputMode::ConfigureHeadphoneEq
+                | InputMode::ConfigureSpinoramaEq
+        )
+    }
+
+    /// Convert a ConfigureSubScreen to the corresponding InputMode
+    pub fn from_configure_sub_screen(sub: ConfigureSubScreen) -> Self {
+        match sub {
+            ConfigureSubScreen::Directories => InputMode::ConfigureDirectories,
+            ConfigureSubScreen::Recording => InputMode::ConfigureRecording,
+            ConfigureSubScreen::RoomEq => InputMode::ConfigureRoomEq,
+            ConfigureSubScreen::HeadphoneEq => InputMode::ConfigureHeadphoneEq,
+            ConfigureSubScreen::SpinoramaEq => InputMode::ConfigureSpinoramaEq,
+        }
+    }
+
+    /// Return the corresponding ConfigureSubScreen, if this is a configure sub-screen mode
+    pub fn configure_sub_screen(self) -> Option<ConfigureSubScreen> {
+        match self {
+            InputMode::ConfigureDirectories => Some(ConfigureSubScreen::Directories),
+            InputMode::ConfigureRecording => Some(ConfigureSubScreen::Recording),
+            InputMode::ConfigureRoomEq => Some(ConfigureSubScreen::RoomEq),
+            InputMode::ConfigureHeadphoneEq => Some(ConfigureSubScreen::HeadphoneEq),
+            InputMode::ConfigureSpinoramaEq => Some(ConfigureSubScreen::SpinoramaEq),
+            _ => None,
+        }
+    }
 }
 
 /// Whether the file picker selects a file or a directory
@@ -449,12 +538,6 @@ pub enum ChannelConflictChoice {
     RemoveIncompatible,
     /// Cancel playback
     Cancel,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FocusedPane {
-    Main,   // Main content area (library, queue, etc.)
-    Meters, // Right column with level meters
 }
 
 /// Matrix plugin editor mode

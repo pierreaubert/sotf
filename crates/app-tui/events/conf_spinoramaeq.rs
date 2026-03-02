@@ -1,7 +1,7 @@
 //! Spinorama EQ wizard event handlers
 
 use super::PlayerCommand;
-use crate::app::App;
+use crate::app::{App, InputMode};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::sync::{Arc, Mutex};
 
@@ -9,10 +9,10 @@ use std::sync::{Arc, Mutex};
 pub(crate) fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
-        SpinoramaStep::Select       => SpinoramaStep::Select, // no wrap
-        SpinoramaStep::Configure    => SpinoramaStep::Select,
-        SpinoramaStep::Optimize     => SpinoramaStep::Configure,
-        SpinoramaStep::Results      => SpinoramaStep::Optimize,
+        SpinoramaStep::Select => SpinoramaStep::Select, // no wrap
+        SpinoramaStep::Configure => SpinoramaStep::Select,
+        SpinoramaStep::Optimize => SpinoramaStep::Configure,
+        SpinoramaStep::Results => SpinoramaStep::Optimize,
         SpinoramaStep::UpdatePlugin => SpinoramaStep::Results,
     }
 }
@@ -21,10 +21,10 @@ pub(crate) fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::S
 pub(crate) fn spinorama_step_next(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
-        SpinoramaStep::Select       => SpinoramaStep::Configure,
-        SpinoramaStep::Configure    => SpinoramaStep::Optimize,
-        SpinoramaStep::Optimize     => SpinoramaStep::Results,
-        SpinoramaStep::Results      => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::Select => SpinoramaStep::Configure,
+        SpinoramaStep::Configure => SpinoramaStep::Optimize,
+        SpinoramaStep::Optimize => SpinoramaStep::Results,
+        SpinoramaStep::Results => SpinoramaStep::UpdatePlugin,
         SpinoramaStep::UpdatePlugin => SpinoramaStep::UpdatePlugin, // no wrap
     }
 }
@@ -32,10 +32,10 @@ pub(crate) fn spinorama_step_next(s: crate::app::SpinoramaStep) -> crate::app::S
 fn spinorama_step_prev_wrap(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
-        SpinoramaStep::Select       => SpinoramaStep::UpdatePlugin,
-        SpinoramaStep::Configure    => SpinoramaStep::Select,
-        SpinoramaStep::Optimize     => SpinoramaStep::Configure,
-        SpinoramaStep::Results      => SpinoramaStep::Optimize,
+        SpinoramaStep::Select => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::Configure => SpinoramaStep::Select,
+        SpinoramaStep::Optimize => SpinoramaStep::Configure,
+        SpinoramaStep::Results => SpinoramaStep::Optimize,
         SpinoramaStep::UpdatePlugin => SpinoramaStep::Results,
     }
 }
@@ -43,10 +43,10 @@ fn spinorama_step_prev_wrap(s: crate::app::SpinoramaStep) -> crate::app::Spinora
 fn spinorama_step_next_wrap(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
     use crate::app::SpinoramaStep;
     match s {
-        SpinoramaStep::Select       => SpinoramaStep::Configure,
-        SpinoramaStep::Configure    => SpinoramaStep::Optimize,
-        SpinoramaStep::Optimize     => SpinoramaStep::Results,
-        SpinoramaStep::Results      => SpinoramaStep::UpdatePlugin,
+        SpinoramaStep::Select => SpinoramaStep::Configure,
+        SpinoramaStep::Configure => SpinoramaStep::Optimize,
+        SpinoramaStep::Optimize => SpinoramaStep::Results,
+        SpinoramaStep::Results => SpinoramaStep::UpdatePlugin,
         SpinoramaStep::UpdatePlugin => SpinoramaStep::Select,
     }
 }
@@ -59,7 +59,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
     if key.code == KeyCode::Esc {
         if app.spinorama_eq.step_tab_focused {
             app.spinorama_eq.step_tab_focused = false;
-            app.configure_tab_focused = true;
+            app.input_mode = InputMode::Configure;
         } else {
             app.spinorama_eq.step_tab_focused = true;
         }
@@ -80,7 +80,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             }
             KeyCode::Up => {
                 app.spinorama_eq.step_tab_focused = false;
-                app.configure_tab_focused = true;
+                app.input_mode = InputMode::Configure;
                 return None;
             }
             KeyCode::Down | KeyCode::Enter => {
@@ -137,44 +137,74 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             _ => None,
         },
 
-        SpinoramaStep::Configure => match key.code {
-            KeyCode::Up => {
-                if app.spinorama_eq.selected_field > 0 {
-                    app.spinorama_eq.selected_field -= 1;
-                } else {
-                    app.spinorama_eq.step_tab_focused = true;
+        SpinoramaStep::Configure => {
+            // Numerical direct-edit mode
+            if app.spinorama_eq.editing_value {
+                match key.code {
+                    KeyCode::Enter => {
+                        set_spinorama_field_from_string(app);
+                        app.spinorama_eq.editing_value = false;
+                        app.spinorama_eq.edit_buffer.clear();
+                    }
+                    KeyCode::Esc => {
+                        app.spinorama_eq.editing_value = false;
+                        app.spinorama_eq.edit_buffer.clear();
+                    }
+                    KeyCode::Backspace => {
+                        app.spinorama_eq.edit_buffer.pop();
+                    }
+                    KeyCode::Char(c) if c.is_ascii_digit() || c == '.' || c == '-' => {
+                        app.spinorama_eq.edit_buffer.push(c);
+                    }
+                    _ => {}
                 }
-                None
+                return None;
             }
-            KeyCode::Down => {
-                if app.spinorama_eq.selected_field < 24 {
-                    app.spinorama_eq.selected_field += 1;
+            match key.code {
+                KeyCode::Up => {
+                    if app.spinorama_eq.selected_field > 0 {
+                        app.spinorama_eq.selected_field -= 1;
+                    } else {
+                        app.spinorama_eq.step_tab_focused = true;
+                    }
                 }
-                None
+                KeyCode::Down => {
+                    if app.spinorama_eq.selected_field < 24 {
+                        app.spinorama_eq.selected_field += 1;
+                    }
+                }
+                KeyCode::Left | KeyCode::Char('-') => {
+                    adjust_spinorama_field(app, -1);
+                }
+                KeyCode::Right | KeyCode::Char('+') => {
+                    adjust_spinorama_field(app, 1);
+                }
+                KeyCode::Tab => {
+                    if app.spinorama_eq.selected_field < 24 {
+                        app.spinorama_eq.selected_field += 1;
+                    } else {
+                        app.spinorama_eq.selected_field = 0;
+                    }
+                }
+                KeyCode::Enter => {
+                    let f = app.spinorama_eq.selected_field;
+                    if is_spinorama_field_numerical(f) {
+                        app.spinorama_eq.edit_buffer =
+                            spinorama_field_value_string(app, f);
+                        app.spinorama_eq.editing_value = true;
+                    }
+                    // Booleans: toggle
+                    else if matches!(f, 15 | 17 | 19) {
+                        adjust_spinorama_field(app, 1);
+                    }
+                }
+                KeyCode::BackTab => {
+                    app.spinorama_eq.step = SpinoramaStep::Select;
+                }
+                _ => {}
             }
-            KeyCode::Left | KeyCode::Char('-') => {
-                adjust_spinorama_field(app, -1);
-                None
-            }
-            KeyCode::Right | KeyCode::Char('+') => {
-                adjust_spinorama_field(app, 1);
-                None
-            }
-            KeyCode::Enter | KeyCode::Tab => {
-                // Reset optimization state so user can re-run with new parameters
-                app.spinorama_eq.opt_status = OptimizationStatus::Idle;
-                app.spinorama_eq.loss_history.clear();
-                app.spinorama_eq.opt_progress = 0.0;
-                app.spinorama_eq.opt_iteration = 0;
-                app.spinorama_eq.step = SpinoramaStep::Optimize;
-                None
-            }
-            KeyCode::BackTab => {
-                app.spinorama_eq.step = SpinoramaStep::Select;
-                None
-            }
-            _ => None,
-        },
+            None
+        }
 
         SpinoramaStep::Optimize => match key.code {
             KeyCode::Up => {
@@ -193,11 +223,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 }
                 None
             }
-            KeyCode::Tab => {
-                app.spinorama_eq.step = SpinoramaStep::Results;
-                None
-            }
-            KeyCode::BackTab | KeyCode::Left => {
+            KeyCode::BackTab => {
                 app.spinorama_eq.step = SpinoramaStep::Configure;
                 None
             }
@@ -209,11 +235,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 app.spinorama_eq.step_tab_focused = true;
                 None
             }
-            KeyCode::Tab => {
-                app.spinorama_eq.step = SpinoramaStep::UpdatePlugin;
-                None
-            }
-            KeyCode::BackTab | KeyCode::Left => {
+            KeyCode::BackTab => {
                 app.spinorama_eq.step = SpinoramaStep::Optimize;
                 None
             }
@@ -228,7 +250,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         app.spinorama_eq.step_tab_focused = true;
                         None
                     }
-                    KeyCode::BackTab | KeyCode::Left => {
+                    KeyCode::BackTab => {
                         app.spinorama_eq.step = SpinoramaStep::Results;
                         None
                     }
@@ -237,7 +259,8 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         if let Some((slot, count)) = app.find_last_eq_info() {
                             if count > 0 {
                                 app.spinorama_eq.update_existing_eq_info = Some((slot, count));
-                                app.spinorama_eq.update_substep = SpinUpdateSubStep::ConfirmOverwrite;
+                                app.spinorama_eq.update_substep =
+                                    SpinUpdateSubStep::ConfirmOverwrite;
                             } else {
                                 // Existing EQ but empty — apply directly
                                 match app.apply_spinorama_to_plugin_chain() {
@@ -259,13 +282,19 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 SpinUpdateSubStep::ConfirmOverwrite => match key.code {
                     KeyCode::Char('y') => {
                         // Auto-save preset before overwriting
-                        if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
+                        if let Some(presets_dir) =
+                            sotf_audio_player::config::get_plugin_presets_dir()
+                        {
                             let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
                             let filename = format!("pre-spinorama-{}.json", timestamp);
                             match app.plugin_chain.save_to_file(&presets_dir, &filename) {
                                 Ok(_) => {
-                                    app.status_message = Some(format!("Saved backup: {}", filename));
-                                    log::info!("Auto-saved preset before spinorama overwrite: {}", filename);
+                                    app.status_message =
+                                        Some(format!("Saved backup: {}", filename));
+                                    log::info!(
+                                        "Auto-saved preset before spinorama overwrite: {}",
+                                        filename
+                                    );
                                 }
                                 Err(e) => {
                                     app.status_message = Some(format!("Backup failed: {}", e));
@@ -304,18 +333,123 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     _ => None,
                 },
             }
-        },
+        }
     }
 }
 
-fn cycle_string(current: &str, options: &[&str], delta: i32) -> String {
-    let idx = options.iter().position(|&o| o == current).unwrap_or(0);
-    let new_idx = if delta > 0 {
-        (idx + 1) % options.len()
-    } else {
-        (idx + options.len() - 1) % options.len()
-    };
-    options[new_idx].to_string()
+fn is_spinorama_field_numerical(field: usize) -> bool {
+    matches!(field, 1..=7 | 10 | 11 | 13 | 14 | 18 | 20 | 21 | 22 | 23)
+}
+
+fn spinorama_field_value_string(app: &App, field: usize) -> String {
+    let c = &app.spinorama_eq.config;
+    match field {
+        1 => c.num_filters.to_string(),
+        2 => format!("{:.0}", c.min_freq),
+        3 => format!("{:.0}", c.max_freq),
+        4 => format!("{:.1}", c.min_db),
+        5 => format!("{:.1}", c.max_db),
+        6 => format!("{:.1}", c.min_q),
+        7 => format!("{:.1}", c.max_q),
+        10 => c.max_iter.to_string(),
+        11 => c.population.to_string(),
+        13 => format!("{:.1}", c.de_f),
+        14 => format!("{:.1}", c.de_cr),
+        18 => c.smooth_n.to_string(),
+        20 => format!("{:.0}", c.spacing_weight),
+        21 => format!("{:.2}", c.min_spacing_oct),
+        22 => format!("{:.6}", c.tolerance),
+        23 => format!("{:.6}", c.atolerance),
+        _ => String::new(),
+    }
+}
+
+fn set_spinorama_field_from_string(app: &mut App) {
+    let c = &mut app.spinorama_eq.config;
+    let buf = &app.spinorama_eq.edit_buffer;
+    match app.spinorama_eq.selected_field {
+        1 => {
+            if let Ok(v) = buf.parse::<usize>() {
+                c.num_filters = v.clamp(1, 30);
+            }
+        }
+        2 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.min_freq = v.clamp(20.0, 500.0);
+            }
+        }
+        3 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.max_freq = v.clamp(1000.0, 20000.0);
+            }
+        }
+        4 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.min_db = v.clamp(-24.0, 0.0);
+            }
+        }
+        5 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.max_db = v.clamp(0.0, 12.0);
+            }
+        }
+        6 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.min_q = v.clamp(0.1, 2.0);
+            }
+        }
+        7 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.max_q = v.clamp(1.0, 20.0);
+            }
+        }
+        10 => {
+            if let Ok(v) = buf.parse::<usize>() {
+                c.max_iter = v.clamp(1000, 100000);
+            }
+        }
+        11 => {
+            if let Ok(v) = buf.parse::<usize>() {
+                c.population = v.clamp(10, 200);
+            }
+        }
+        13 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.de_f = v.clamp(0.1, 2.0);
+            }
+        }
+        14 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.de_cr = v.clamp(0.1, 1.0);
+            }
+        }
+        18 => {
+            if let Ok(v) = buf.parse::<usize>() {
+                c.smooth_n = v.clamp(1, 24);
+            }
+        }
+        20 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.spacing_weight = v.clamp(0.0, 1000.0);
+            }
+        }
+        21 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.min_spacing_oct = v.clamp(0.01, 1.0);
+            }
+        }
+        22 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.tolerance = v.clamp(1e-6, 1e-1);
+            }
+        }
+        23 => {
+            if let Ok(v) = buf.parse::<f64>() {
+                c.atolerance = v.clamp(1e-6, 1e-1);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn adjust_spinorama_field(app: &mut App, delta: i32) {
@@ -323,7 +457,7 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
     match app.spinorama_eq.selected_field {
         // ── Loss ──
         0 => {
-            c.loss_function = cycle_string(
+            c.loss_function = super::cycle_string(
                 &c.loss_function,
                 &["flat", "flat-asymmetric", "score"],
                 delta,
@@ -341,8 +475,11 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
         6 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
         7 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
         8 => {
-            c.peq_model =
-                cycle_string(&c.peq_model, &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"], delta);
+            c.peq_model = super::cycle_string(
+                &c.peq_model,
+                &["pk", "hp-pk", "hp-pk-lp", "ls-pk", "ls-pk-hs"],
+                delta,
+            );
         }
         // ── Optimization ──
         9 => {
@@ -365,7 +502,7 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
             c.population = n.clamp(10, 200) as usize;
         }
         12 => {
-            c.strategy = cycle_string(
+            c.strategy = super::cycle_string(
                 &c.strategy,
                 &["currenttobest1bin", "best1bin", "rand1bin", "best2bin"],
                 delta,
@@ -376,7 +513,7 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
         // ── Refinement ──
         15 => c.refine = !c.refine,
         16 => {
-            c.local_algo = cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
+            c.local_algo = super::cycle_string(&c.local_algo, &["cobyla", "nelder-mead"], delta);
         }
         // ── Smoothing ──
         17 => c.smooth = !c.smooth,
@@ -422,16 +559,11 @@ static SPEAKERS_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<Vec<String>,
     std::sync::OnceLock::new();
 
 static OPT_RESULT: std::sync::OnceLock<
-    Arc<
-        Mutex<
-            Option<
-                Result<sotf_audio_player::autoeq::SpeakerOptimizationResult, String>,
-            >,
-        >,
-    >,
+    Arc<Mutex<Option<Result<sotf_audio_player::autoeq::SpeakerOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
-static OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f32, Option<f64>)>>>> =
-    std::sync::OnceLock::new();
+static OPT_PROGRESS: std::sync::OnceLock<
+    Arc<Mutex<Option<(usize, usize, f64, f32, Option<f64>)>>>,
+> = std::sync::OnceLock::new();
 
 /// Poll speaker-load result on every tick. Returns true if the UI needs a redraw.
 /// Also auto-triggers speaker list loading when entering the Select step.
@@ -480,7 +612,9 @@ fn spawn_spinorama_speaker_load() {
         .clone();
 
     // Clear any stale result from a previous load
-    if let Ok(mut g) = result_slot.lock() { *g = None; }
+    if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
 
     // Spawn background thread
     let slot = result_slot.clone();
@@ -623,8 +757,12 @@ fn spawn_spinorama_optimization(app: &mut App) {
         .clone();
 
     // Clear any stale result from a previous run
-    if let Ok(mut g) = result_slot2.lock() { *g = None; }
-    if let Ok(mut g) = progress_slot2.lock() { *g = None; }
+    if let Ok(mut g) = result_slot2.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = progress_slot2.lock() {
+        *g = None;
+    }
 
     std::thread::spawn(move || {
         use sotf_audio_player::autoeq::{
@@ -692,18 +830,17 @@ fn spawn_spinorama_optimization(app: &mut App) {
         };
 
         let progress_slot3 = progress_slot2.clone();
-        let callback: sotf_audio_player::autoeq::SpeakerOptimizationCallback =
-            Box::new(move |p| {
-                let pct = if p.max_iterations > 0 {
-                    p.iteration as f32 / p.max_iterations as f32
-                } else {
-                    0.0
-                };
-                if let Ok(mut guard) = progress_slot3.lock() {
-                    *guard = Some((p.iteration, p.max_iterations, p.loss, pct, p.score));
-                }
-                CallbackAction::Continue
-            });
+        let callback: sotf_audio_player::autoeq::SpeakerOptimizationCallback = Box::new(move |p| {
+            let pct = if p.max_iterations > 0 {
+                p.iteration as f32 / p.max_iterations as f32
+            } else {
+                0.0
+            };
+            if let Ok(mut guard) = progress_slot3.lock() {
+                *guard = Some((p.iteration, p.max_iterations, p.loss, pct, p.score));
+            }
+            CallbackAction::Continue
+        });
 
         let result = run_speaker_optimization_with_callback(&config, Some(callback));
         if let Ok(mut guard) = result_slot2.lock() {

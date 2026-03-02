@@ -2,12 +2,11 @@ use super::*;
 
 pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     // Calculate constraints based on whether we have autocomplete suggestions
-    let autocomplete_height =
-        if app.input_mode == InputMode::AddDirectory && !app.autocomplete_suggestions.is_empty() {
-            (app.autocomplete_suggestions.len().min(5) + 2) as u16 // Max 5 suggestions + borders
-        } else {
-            0
-        };
+    let autocomplete_height = if app.editing_directory && !app.autocomplete_suggestions.is_empty() {
+        (app.autocomplete_suggestions.len().min(5) + 2) as u16 // Max 5 suggestions + borders
+    } else {
+        0
+    };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -20,17 +19,18 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     // Help box with scan keybindings
-    let help_text = "a/F2=Add dir | s/S=Scan | r/R=ReplayGain | b/B=Bliss | w/W=Waveform (uppercase=force)";
+    let help_text =
+        "a/F2=Add dir | s/S=Scan | r/R=ReplayGain | b/B=Bliss | w/W=Waveform (uppercase=force)";
     draw_help_box_with_text(f, chunks[0], app, help_text);
 
     // Input box for adding directories
-    let input_style = if app.input_mode == InputMode::AddDirectory {
+    let input_style = if app.editing_directory {
         Style::default().fg(app.theme.title_color)
     } else {
         Style::default().fg(app.theme.fg_primary)
     };
 
-    let input_text = if app.input_mode == InputMode::AddDirectory {
+    let input_text = if app.editing_directory {
         format!("Path: {}█ (Tab to autocomplete)", app.directory_input)
     } else {
         "Path: (Press 'a' to add directory)".to_string()
@@ -45,7 +45,7 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(input_box, chunks[1]);
 
     // Show autocomplete suggestions if in add directory mode
-    if app.input_mode == InputMode::AddDirectory && !app.autocomplete_suggestions.is_empty() {
+    if app.editing_directory && !app.autocomplete_suggestions.is_empty() {
         let suggestion_items: Vec<ListItem> = app
             .autocomplete_suggestions
             .iter()
@@ -79,8 +79,8 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     let dir_status_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),      // Directory list
-            Constraint::Length(6),   // Status (4 lines + 2 border)
+            Constraint::Min(0),    // Directory list
+            Constraint::Length(6), // Status (4 lines + 2 border)
         ])
         .split(chunks[3]);
 
@@ -268,7 +268,10 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
             Span::styled(format!("{:<12}", name), label_style),
             status_span,
             Span::styled(format!("{:>4}", succeeded), ok_style),
-            Span::styled(format!("{:>6}", failed), if failed > 0 { err_style } else { idle_style }),
+            Span::styled(
+                format!("{:>6}", failed),
+                if failed > 0 { err_style } else { idle_style },
+            ),
             Span::styled(format!("{:>7}", total), idle_style),
         ])
     };
@@ -277,7 +280,10 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     let rg = &app.replay_gain_manager;
     if rg.in_progress {
         let rg_status = if rg.album_gain_phase == sotf_audio_player::AlbumGainPhase::Scanning {
-            format!("album {}/{}{}", rg.album_gain_done, rg.album_gain_total, pause_tag)
+            format!(
+                "album {}/{}{}",
+                rg.album_gain_done, rg.album_gain_total, pause_tag
+            )
         } else {
             let pct = if rg.total > 0 {
                 rg.processed as f32 / rg.total as f32 * 100.0
@@ -296,11 +302,10 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         ));
     } else {
         let missing = total_tracks.saturating_sub(tracks_with_rg);
-        let status = format!("{}/{} tracks", tracks_with_rg, total_tracks);
         lines.push(scanner_line(
             "ReplayGain",
             false,
-            status,
+            "idle".to_string(),
             tracks_with_rg,
             missing,
             total_tracks,
@@ -326,11 +331,10 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         ));
     } else {
         let missing = total_tracks.saturating_sub(tracks_with_waveform);
-        let status = format!("{}/{} tracks", tracks_with_waveform, total_tracks);
         lines.push(scanner_line(
             "Waveform",
             false,
-            status,
+            "idle".to_string(),
             tracks_with_waveform,
             missing,
             total_tracks,
@@ -355,7 +359,6 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
             bl.total,
         ));
     } else {
-        // Bliss data not on Track struct — use last scan counts if available
         lines.push(scanner_line(
             "Bliss",
             false,
@@ -386,15 +389,17 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(vec![
             Span::styled(format!("{:<12}", "Library"), label_style),
             Span::styled(
-                format!("{:<20}", format!("{} tracks / {} albums", total_tracks, album_count)),
+                format!(
+                    "{:<20}",
+                    format!("{} tracks / {} albums", total_tracks, album_count)
+                ),
                 idle_style,
             ),
         ]));
     }
 
-    let status = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Status"));
+    let status =
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("Status"));
 
     f.render_widget(status, area);
 }
-

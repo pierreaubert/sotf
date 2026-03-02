@@ -50,4 +50,3 @@ pub(crate) fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
 
     f.render_widget(boxes, area);
 }
-

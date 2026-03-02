@@ -255,4 +255,3 @@ pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
 
     f.render_widget(paragraph, inner);
 }
-
