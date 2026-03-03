@@ -164,13 +164,13 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         let sub_key = "lfe".to_string();
         system_speakers.insert("LFE".to_string(), sub_key.clone());
 
-        let config = SpeakerConfig::Cardioid(CardioidConfig {
+        let config = SpeakerConfig::Cardioid(Box::new(CardioidConfig {
             name: "Cardioid Stack".to_string(),
             speaker_name: None,
             front: make_csv_source("sub_bottom"),
             rear: make_csv_source("sub_top"),
             separation_meters: 0.5,
-        });
+        }));
 
         speakers.insert(sub_key.clone(), config);
 

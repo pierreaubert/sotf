@@ -376,20 +376,18 @@ pub(super) fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
         }
         KeyCode::Up => {
             // Navigate preset list when input is empty
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
-                if app.selected_preset_index > 0 {
+            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
+                && app.selected_preset_index > 0 {
                     app.selected_preset_index -= 1;
                 }
-            }
             None
         }
         KeyCode::Down => {
             // Navigate preset list when input is empty
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
-                if app.selected_preset_index < app.available_plugin_presets.len() - 1 {
+            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
+                && app.selected_preset_index < app.available_plugin_presets.len() - 1 {
                     app.selected_preset_index += 1;
                 }
-            }
             None
         }
         KeyCode::Char(c) => {

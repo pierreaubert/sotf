@@ -250,14 +250,24 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     }
                     Some(i) => {
                         let is_selected = *i == s.selected_field;
-                        let label_style = if is_selected {
+                        let is_editing = is_selected && s.editing_value;
+                        let display_value = if is_editing {
+                            format!("{}▏", s.edit_buffer)
+                        } else {
+                            value.clone()
+                        };
+                        let label_style = if is_editing {
+                            Style::default()
+                                .fg(app.theme.fg_selected)
+                                .add_modifier(Modifier::BOLD)
+                        } else if is_selected {
                             Style::default()
                                 .fg(app.theme.accent_primary)
                                 .add_modifier(Modifier::BOLD)
                         } else {
                             Style::default().fg(app.theme.fg_secondary)
                         };
-                        let value_style = if is_selected {
+                        let value_style = if is_editing || is_selected {
                             Style::default()
                                 .fg(app.theme.fg_selected)
                                 .bg(app.theme.bg_selected)
@@ -265,11 +275,17 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         } else {
                             Style::default().fg(app.theme.fg_primary)
                         };
-                        let prefix = if is_selected { "► " } else { "  " };
+                        let prefix = if is_editing {
+                            "✎ "
+                        } else if is_selected {
+                            "► "
+                        } else {
+                            "  "
+                        };
                         lines.push(Line::from(vec![
                             Span::raw(prefix),
                             Span::styled(format!("{:<20}", label), label_style),
-                            Span::styled(format!(" {}", value), value_style),
+                            Span::styled(format!(" {}", display_value), value_style),
                         ]));
                     }
                 }
@@ -284,10 +300,14 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .scroll((s.selected_field.saturating_sub(10) as u16, 0));
             f.render_widget(para, cfg_layout[0]);
 
-            let hint_widget =
-                Paragraph::new(" ←/→=step  ↑/↓=select field  -/+=adjust  Enter=optimize")
-                    .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL));
+            let hint = if s.editing_value {
+                " Type value, Enter=confirm  Esc=cancel"
+            } else {
+                " ↑/↓=select field  Left/Right=adjust  Enter=edit value  Tab=next field"
+            };
+            let hint_widget = Paragraph::new(hint)
+                .style(Style::default().fg(app.theme.fg_secondary))
+                .block(Block::default().borders(Borders::ALL));
             f.render_widget(hint_widget, cfg_layout[1]);
         }
 

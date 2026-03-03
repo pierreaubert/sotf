@@ -108,14 +108,16 @@ pub struct SpinoramaEqTuiState {
 impl Default for SpinoramaEqTuiState {
     fn default() -> Self {
         // TUI uses slightly different defaults than GPUI
-        let mut config = SpinoramaOptimizerConfig::default();
-        config.population = 50;
-        config.smooth = true;
-        config.smooth_n = 1;
-        config.spacing_weight = 20.0;
-        config.min_spacing_oct = 0.5;
-        config.tolerance = 1e-3;
-        config.atolerance = 1e-4;
+        let config = SpinoramaOptimizerConfig {
+            population: 50,
+            smooth: true,
+            smooth_n: 1,
+            spacing_weight: 20.0,
+            min_spacing_oct: 0.5,
+            tolerance: 1e-3,
+            atolerance: 1e-4,
+            ..SpinoramaOptimizerConfig::default()
+        };
         Self {
             step: SpinoramaStep::Select,
             step_tab_focused: false,

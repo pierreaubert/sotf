@@ -374,8 +374,8 @@ pub fn detect_latency(plugin: &mut dyn Plugin, sample_rate: f64) -> usize {
     let mut input = vec![0.0; total_frames * channels];
 
     // Create an impulse at frame 0
-    for c in 0..channels {
-        input[c] = 1.0;
+    for sample in input.iter_mut().take(channels) {
+        *sample = 1.0;
     }
 
     let mut output = vec![0.0; total_frames * plugin.output_channels()];

@@ -594,7 +594,7 @@ impl PlayerView {
         let progress = spinorama.progress;
         let status_msg = spinorama.status_message.clone();
         let error_msg = spinorama.error_message.clone();
-        let optimization_status = spinorama.optimization_status.clone();
+        let optimization_status = spinorama.optimization_status;
         let is_optimizing = spinorama.is_optimizing();
         let is_completed = optimization_status == OptimizationStatus::Completed;
         let is_failed = optimization_status == OptimizationStatus::Failed;

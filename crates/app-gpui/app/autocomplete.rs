@@ -144,14 +144,13 @@ impl App {
 
             if let Ok(entries) = std::fs::read_dir(&search_dir) {
                 for entry in entries.flatten() {
-                    if let Ok(file_name) = entry.file_name().into_string() {
-                        if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                    if let Ok(file_name) = entry.file_name().into_string()
+                        && file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
                             let full_path = search_dir.join(&file_name);
                             self.input_state
                                 .autocomplete_suggestions
                                 .push(full_path.to_string_lossy().to_string());
                         }
-                    }
                 }
             }
         } else {
@@ -295,8 +294,8 @@ impl App {
                         let is_dir = entry_path.is_dir();
 
                         // Apply extension filter for files (not directories)
-                        if !is_dir {
-                            if let Some(exts) = extensions {
+                        if !is_dir
+                            && let Some(exts) = extensions {
                                 let has_valid_ext = entry_path
                                     .extension()
                                     .and_then(|e| e.to_str())
@@ -306,7 +305,6 @@ impl App {
                                     continue;
                                 }
                             }
-                        }
 
                         let mut full_path = search_dir.join(&file_name);
 

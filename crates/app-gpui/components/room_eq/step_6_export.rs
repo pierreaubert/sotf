@@ -148,14 +148,14 @@ impl PlayerView {
                         match std::fs::write(file.path(), &json) {
                             Ok(()) => {
                                 log::info!("Exported room EQ config to {:?}", file.path());
-                                let _ = state_entity.update(cx, |state, _| {
+                                state_entity.update(cx, |state, _| {
                                     state.app.measurement_state.room_eq_state.status_message =
                                         format!("Saved to {}", file.path().display());
                                 });
                             }
                             Err(e) => {
                                 log::error!("Failed to write room EQ file: {}", e);
-                                let _ = state_entity.update(cx, |state, _| {
+                                state_entity.update(cx, |state, _| {
                                     state.app.measurement_state.room_eq_state.error_message =
                                         Some(format!("Failed to write: {}", e));
                                 });
@@ -164,7 +164,7 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("Failed to serialize room EQ JSON: {}", e);
-                        let _ = state_entity.update(cx, |state, _| {
+                        state_entity.update(cx, |state, _| {
                             state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Failed to serialize: {}", e));
                         });
@@ -208,7 +208,7 @@ impl PlayerView {
                 match plugin_chain.save_to_file(parent_dir, filename) {
                     Ok(()) => {
                         log::info!("Saved rack backup to {:?}", file_path);
-                        let _ = state_entity.update(cx, |state, _| {
+                        state_entity.update(cx, |state, _| {
                             state.app.measurement_state.room_eq_state.status_message =
                                 format!("Backup saved to {}", file_path.display());
                             state.app.ui_state.toast_message =
@@ -217,7 +217,7 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("Failed to save rack backup: {}", e);
-                        let _ = state_entity.update(cx, |state, _| {
+                        state_entity.update(cx, |state, _| {
                             state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Failed to save backup: {}", e));
                         });
@@ -289,13 +289,12 @@ impl PlayerView {
             if let Some(channel_dsp) = dsp_output.channels.get(channel_name) {
                 let mut channel_eq_filters: Vec<EQFilter> = Vec::new();
                 for plugin in &channel_dsp.plugins {
-                    if plugin.plugin_type == "EQ" {
-                        if let Some(filters) =
+                    if plugin.plugin_type == "EQ"
+                        && let Some(filters) =
                             plugin.parameters.get("filters").and_then(|f| f.as_array())
                         {
                             channel_eq_filters.extend(parse_filters(filters));
                         }
-                    }
                 }
                 per_channel_filters.push(channel_eq_filters);
             }

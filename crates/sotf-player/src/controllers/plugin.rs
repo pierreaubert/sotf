@@ -1026,15 +1026,15 @@ fn adjust_plugin_param(
                 match field_idx {
                     0 => {
                         filter.frequency =
-                            (filter.frequency + delta * 10.0).max(20.0).min(20_000.0);
+                            (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
                         true
                     }
                     1 => {
-                        filter.q = (filter.q + delta * 0.1).max(0.1).min(10.0);
+                        filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0);
                         true
                     }
                     2 => {
-                        filter.gain_db = (filter.gain_db + delta * 0.5).max(-24.0).min(24.0);
+                        filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0);
                         true
                     }
                     3 => {
@@ -1078,19 +1078,19 @@ fn adjust_plugin_param(
             ..
         } => match param_idx {
             0 => {
-                *num_bins = (*num_bins as i64 + delta as i64).max(10).min(100) as usize;
+                *num_bins = (*num_bins as i64 + delta as i64).clamp(10, 100) as usize;
                 true
             }
             1 => {
-                *min_freq = (*min_freq + delta as f32).max(10.0).min(100.0);
+                *min_freq = (*min_freq + delta as f32).clamp(10.0, 100.0);
                 true
             }
             2 => {
-                *max_freq = (*max_freq + delta as f32 * 100.0).max(1000.0).min(24000.0);
+                *max_freq = (*max_freq + delta as f32 * 100.0).clamp(1000.0, 24000.0);
                 true
             }
             3 => {
-                *smoothing = (*smoothing + delta as f32 * 0.01).max(0.0).min(1.0);
+                *smoothing = (*smoothing + delta as f32 * 0.01).clamp(0.0, 1.0);
                 true
             }
             _ => false,
@@ -1845,7 +1845,7 @@ fn set_plugin_param_value(
                     true
                 }
                 _ => {
-                    if param_idx >= 8 && param_idx < 24 {
+                    if (8..24).contains(&param_idx) {
                         let rel_idx = param_idx - 8;
                         let band_idx = (rel_idx / 4) + 1;
                         let field_idx = rel_idx % 4;

@@ -41,8 +41,7 @@ impl gpui::Action for UpdatePluginParam {
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
         other
             .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+            .downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "UpdatePluginParam"
@@ -62,8 +61,7 @@ impl gpui::Action for SelectPluginParam {
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
         other
             .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+            .downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "SelectPluginParam"
@@ -83,8 +81,7 @@ impl gpui::Action for ResetPluginParam {
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
         other
             .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+            .downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "ResetPluginParam"
@@ -104,8 +101,7 @@ impl gpui::Action for StartKnobDrag {
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
         other
             .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+            .downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "StartKnobDrag"
@@ -125,8 +121,7 @@ impl gpui::Action for ToggleUpmixerConfig {
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
         other
             .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+            .downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "ToggleUpmixerConfig"
@@ -150,8 +145,7 @@ impl gpui::Action for OpenSofaFile {
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
         other
             .as_any()
-            .downcast_ref::<Self>()
-            .map_or(false, |other| self == other)
+            .downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "OpenSofaFile"

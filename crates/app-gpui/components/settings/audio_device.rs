@@ -439,8 +439,8 @@ impl PlayerView {
                                                 Some(device.name.clone());
 
                                             // If playing, restart track with new device
-                                            if state.app.playback.is_playing {
-                                                if let Some(path) =
+                                            if state.app.playback.is_playing
+                                                && let Some(path) =
                                                     state.app.get_current_track_path()
                                                 {
                                                     let position = state.app.playback.position_secs;
@@ -450,7 +450,6 @@ impl PlayerView {
                                                         Some(position),
                                                     );
                                                 }
-                                            }
                                         }
                                     });
                                     cx.notify();

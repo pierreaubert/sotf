@@ -227,8 +227,7 @@ pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
                     let separator_line = format!(
                         "{}{}",
                         label,
-                        std::iter::repeat(suffix_char)
-                            .take(remaining)
+                        std::iter::repeat_n(suffix_char, remaining)
                             .collect::<String>()
                     );
                     lines.push(Line::from(Span::styled(

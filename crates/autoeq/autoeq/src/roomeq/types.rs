@@ -327,7 +327,7 @@ pub enum SpeakerConfig {
     Dba(DBAConfig),
 
     /// Gradient Cardioid subwoofer optimization
-    Cardioid(CardioidConfig),
+    Cardioid(Box<CardioidConfig>),
 
     /// Single channel (simple case)
     Single(MeasurementSource),

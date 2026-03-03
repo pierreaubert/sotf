@@ -72,7 +72,7 @@ impl From<PluginError> for c_int {
 }
 
 thread_local! {
-    static LAST_ERROR: std::cell::RefCell<Option<CString>> = std::cell::RefCell::new(None);
+    static LAST_ERROR: std::cell::RefCell<Option<CString>> = const { std::cell::RefCell::new(None) };
 }
 
 fn set_last_error(msg: &str) {

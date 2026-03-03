@@ -175,7 +175,7 @@ impl PlayerView {
                 match std::fs::read_to_string(&path) {
                     Ok(json) => match serde_json::from_str::<CustomTargetCurve>(&json) {
                         Ok(curve) => {
-                            let _ = state_entity.update(cx, |state, cx| {
+                            state_entity.update(cx, |state, cx| {
                                 state
                                     .app
                                     .measurement_state

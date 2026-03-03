@@ -205,7 +205,7 @@ impl PaginationState {
         if self.page_size == 0 {
             0
         } else {
-            (self.total_items + self.page_size - 1) / self.page_size
+            self.total_items.div_ceil(self.page_size)
         }
     }
 }
@@ -363,7 +363,7 @@ impl<T: 'static> Table<T> {
             let column_id = column.id.clone();
             let is_sorted = sort_state
                 .as_ref()
-                .map_or(false, |s| s.column_id == column_id);
+                .is_some_and(|s| s.column_id == column_id);
             let direction = if is_sorted {
                 sort_state.as_ref().map(|s| s.direction)
             } else {

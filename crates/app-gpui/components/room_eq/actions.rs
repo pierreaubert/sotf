@@ -247,7 +247,7 @@ impl PlayerView {
 
                             if channel_measurements.is_empty() {
                                 log::error!("No valid inline measurements found in RoomConfig");
-                                let _ = state_entity.update(cx, |state, _| {
+                                state_entity.update(cx, |state, _| {
                                     state.app.measurement_state.room_eq_state.error_message =
                                         Some("No valid measurement data found. The file may be an older format — try re-recording or re-exporting.".to_string());
                                 });
@@ -266,7 +266,7 @@ impl PlayerView {
                                 .collect();
 
                             let channel_count = channel_measurements.len();
-                            let _ = state_entity.update(cx, |state, _| {
+                            state_entity.update(cx, |state, _| {
                                 let max_ch = state.app.max_room_eq_channels();
                                 let truncated = max_ch > 0 && channel_count > max_ch;
                                 if truncated {
@@ -318,7 +318,7 @@ impl PlayerView {
 
                                     let channel_count = measurements_file.channels.len();
 
-                                    let _ = state_entity.update(cx, |state, _| {
+                                    state_entity.update(cx, |state, _| {
                                         // Use the recording state's migration modal
                                         let rec_state = &mut state.app.measurement_state.recording_state;
                                         rec_state.migration_modal_open = true;
@@ -336,7 +336,7 @@ impl PlayerView {
                                 // Validate that we have at least one channel
                                 if measurements_file.channels.is_empty() {
                                     log::error!("No channels found in measurements file");
-                                    let _ = state_entity.update(cx, |state, _| {
+                                    state_entity.update(cx, |state, _| {
                                         state.app.measurement_state.room_eq_state.error_message =
                                             Some("No channels found in the measurement file".to_string());
                                     });
@@ -351,7 +351,7 @@ impl PlayerView {
                                             idx,
                                             channel.channel_name
                                         );
-                                        let _ = state_entity.update(cx, |state, _| {
+                                        state_entity.update(cx, |state, _| {
                                             state.app.measurement_state.room_eq_state.error_message =
                                                 Some(format!(
                                                     "Channel '{}' has no frequency data",
@@ -394,7 +394,7 @@ impl PlayerView {
 
                                 let channel_count = measurements_file.channels.len();
                                 let mut channels = measurements_file.channels;
-                                let _ = state_entity.update(cx, |state, _| {
+                                state_entity.update(cx, |state, _| {
                                     let max_ch = state.app.max_room_eq_channels();
                                     let truncated = max_ch > 0 && channel_count > max_ch;
                                     if truncated {
@@ -451,7 +451,7 @@ impl PlayerView {
                                     format!("Failed to parse JSON: {}", e)
                                 };
 
-                                let _ = state_entity.update(cx, |state, _| {
+                                state_entity.update(cx, |state, _| {
                                     state.app.measurement_state.room_eq_state.error_message =
                                         Some(error_msg);
                                 });
@@ -460,7 +460,7 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("File read error: {}", e);
-                        let _ = state_entity.update(cx, |state, _| {
+                        state_entity.update(cx, |state, _| {
                             state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Failed to read file: {}", e));
                         });

@@ -433,7 +433,7 @@ fn generate_one(
 // WAV writing
 
 fn clip(sample: f32) -> f32 {
-    sample.max(-1.0).min(1.0)
+    sample.clamp(-1.0, 1.0)
 }
 
 fn write_wav(

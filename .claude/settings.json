@@ -6,12 +6,11 @@
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cargo check --message-format=short 2>&1 | head -20"
-          }
-        ]
+        "command": "cargo check --message-format=short 2>&1 | head -20"
+      },
+      {
+        "matcher": "Edit|Write",
+        "command": "cargo check --workspace --message-format short 2>&1 | head -20"
       }
     ]
   }

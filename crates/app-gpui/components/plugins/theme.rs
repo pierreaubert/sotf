@@ -40,6 +40,7 @@ pub struct MeterTheme {
 
 impl MeterTheme {
     /// Create default meter theme with green/yellow/red colors
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         use crate::theme::Theme;
         let theme = Theme::dark();
@@ -106,6 +107,7 @@ pub struct TruePeakConfig {
 }
 
 impl TruePeakConfig {
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self {
             min_db: -60.0,
@@ -134,6 +136,7 @@ pub struct LufsConfig {
 }
 
 impl LufsConfig {
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self {
             min_db: -60.0,

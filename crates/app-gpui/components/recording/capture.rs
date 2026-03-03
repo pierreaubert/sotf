@@ -575,6 +575,7 @@ impl PlayerView {
     }
 
     /// Start recording a single channel
+    #[allow(clippy::type_complexity)]
     pub fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         use sotf_audio_player::signal_recorder::{
             SignalParams, SignalType, generate_signal, write_temp_wav,
@@ -859,7 +860,7 @@ impl PlayerView {
                                     .iter()
                                     .zip(analysis_result.spl_db.iter())
                                 {
-                                    if freq >= 100.0 && freq <= 10000.0 {
+                                    if (100.0..=10000.0).contains(&freq) {
                                         sum += mag;
                                         count += 1;
                                     }
@@ -989,13 +990,13 @@ impl PlayerView {
             if should_auto_continue {
                 if let Some(next_idx) = next_channel_idx {
                     log::info!("Auto-recording: starting next channel {}", next_idx);
-                    let _ = view_entity.update(cx, |view, cx| {
+                    view_entity.update(cx, |view, cx| {
                         view.start_recording_channel(next_idx, cx);
                     });
                 } else {
                     // No more channels to record - auto-record complete
                     log::info!("Auto-recording complete - all channels recorded");
-                    let _ = view_entity.update(cx, |view, cx| {
+                    view_entity.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
                             state
                                 .app
@@ -1280,7 +1281,7 @@ impl PlayerView {
                                 .map(|m| m.channels.len())
                                 .unwrap_or(0);
 
-                            let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                            state_entity.update(&mut cx.clone(), |state, _| {
                                 let rec_state = &mut state.app.measurement_state.recording_state;
                                 rec_state.migration_modal_open = true;
                                 rec_state.migration_file_path =
@@ -1304,7 +1305,7 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("Failed to read recordings file: {}", e);
-                        let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                        state_entity.update(&mut cx.clone(), |state, _| {
                             state.app.measurement_state.recording_state.status_message =
                                 format!("Failed to read: {}", e);
                         });
@@ -1342,7 +1343,7 @@ impl PlayerView {
             );
 
             let file_path_display = file_path.display().to_string();
-            let _ = state_entity.update(cx, |state, _| {
+            state_entity.update(cx, |state, _| {
                 // Convert speakers to ChannelRecordings
                 let recordings: Vec<ChannelRecording> = room_config
                     .speakers
@@ -1506,7 +1507,7 @@ impl PlayerView {
                     .filter(|r| {
                         r.result
                             .as_ref()
-                            .map_or(false, |res| !res.frequencies.is_empty())
+                            .is_some_and(|res| !res.frequencies.is_empty())
                     })
                     .collect();
 
@@ -1538,7 +1539,7 @@ impl PlayerView {
                 );
 
                 let file_path_display = file_path.display().to_string();
-                let _ = state_entity.update(cx, |state, _| {
+                state_entity.update(cx, |state, _| {
                     // Convert ChannelMeasurement to ChannelRecording
                     let recordings: Vec<ChannelRecording> = measurements_file
                         .channels
@@ -1586,7 +1587,7 @@ impl PlayerView {
             }
             Err(e) => {
                 log::error!("Failed to parse recordings JSON: {}", e);
-                let _ = state_entity.update(cx, |state, _| {
+                state_entity.update(cx, |state, _| {
                     state.app.measurement_state.recording_state.status_message =
                         format!("Failed to parse: {}", e);
                 });

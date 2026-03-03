@@ -189,7 +189,7 @@ impl App {
 
         let added_albums = self
             .queue
-            .fill_magic(&db, &self.library_state.library.albums)?;
+            .fill_magic(db, &self.library_state.library.albums)?;
 
         let added_count = added_albums.len();
         for _ in &added_albums {

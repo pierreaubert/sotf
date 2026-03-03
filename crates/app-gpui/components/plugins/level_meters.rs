@@ -435,10 +435,8 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
     let ceiling_normalized = ((ceiling_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
 
     // Color based on level
-    let color = if peak_db > ceiling_db {
-        theme.meter_clip // Red - clipping
-    } else if peak_db > ceiling_db - 3.0 {
-        theme.meter_clip // Near ceiling
+    let color = if peak_db > ceiling_db - 3.0 {
+        theme.meter_clip // Red - clipping or near ceiling
     } else if peak_db > -12.0 {
         theme.meter_warning // Yellow - moderate
     } else {
@@ -1629,10 +1627,8 @@ impl LevelMeterManager for AppState {
                     g.soloed = false;
                 }
             }
-        } else {
-            if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
-                group.soloed = false;
-            }
+        } else if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+            group.soloed = false;
         }
         self.update_matrix_plugin();
     }
@@ -1703,8 +1699,8 @@ impl LevelMeterManager for AppState {
 
         // Find and update the LAST Matrix plugin (closest to output)
         for i in (0..self.plugin_state.chain.len()).rev() {
-            if let Some(plugin) = self.plugin_state.chain.get_plugin_mut(i) {
-                if matches!(&plugin.settings, PluginSettings::Matrix { .. }) {
+            if let Some(plugin) = self.plugin_state.chain.get_plugin_mut(i)
+                && matches!(&plugin.settings, PluginSettings::Matrix { .. }) {
                     // Update settings in memory
                     match &mut plugin.settings {
                         PluginSettings::Matrix {
@@ -1720,7 +1716,6 @@ impl LevelMeterManager for AppState {
                     self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                     return; // Only update the last matrix plugin found
                 }
-            }
         }
     }
 

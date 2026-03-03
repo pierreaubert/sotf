@@ -746,7 +746,7 @@ impl SharedAudioBuffer {
         let ciphertext_bytes = crate::encryption::AudioCipher::ciphertext_size(sample_count);
         let total_bytes = 8 + ciphertext_bytes; // 8 bytes for nonce prefix
         let encrypted_size =
-            (total_bytes + std::mem::size_of::<f32>() - 1) / std::mem::size_of::<f32>();
+            total_bytes.div_ceil(std::mem::size_of::<f32>());
 
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
@@ -848,7 +848,7 @@ impl SharedAudioBuffer {
         // Calculate expected encrypted size
         let ciphertext_bytes = crate::encryption::AudioCipher::ciphertext_size(sample_count);
         let total_bytes = 8 + ciphertext_bytes; // 8 bytes for nonce prefix
-        let encrypted_size = (total_bytes + 3) / 4; // Round up to f32 slots
+        let encrypted_size = total_bytes.div_ceil(4); // Round up to f32 slots
 
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
@@ -955,7 +955,7 @@ impl SharedAudioBuffer {
         // Calculate sizes
         let ciphertext_size = crate::encryption::encrypted_byte_size(sample_count);
         let total_bytes = 8 + ciphertext_size; // 8 bytes nonce + ciphertext
-        let encrypted_slots = (total_bytes + 3) / 4;
+        let encrypted_slots = total_bytes.div_ceil(4);
 
         // Ensure pre-allocated buffers are large enough
         if ciphertext_buf.len() < total_bytes {
@@ -1031,6 +1031,7 @@ impl SharedAudioBuffer {
 // =============================================================================
 
 /// Reader adapter for HAL input (compatible with old HalInputReader API)
+#[derive(Default)]
 pub struct HalInputReader {
     buffer: Option<SharedAudioBuffer>,
     cipher: Option<crate::encryption::AudioCipher>,
@@ -1092,7 +1093,7 @@ impl HalInputReader {
 
         if let Some(buf) = &self.buffer {
             // Log state every 100 reads (~2 seconds)
-            if count % 100 == 0 {
+            if count.is_multiple_of(100) {
                 let header = buf.header();
                 let write_pos = header
                     .write_position
@@ -1131,7 +1132,7 @@ impl HalInputReader {
                 let need_reload = self
                     .cipher
                     .as_ref()
-                    .map_or(true, |c| c.fingerprint() != &header_fingerprint);
+                    .is_none_or(|c| c.fingerprint() != &header_fingerprint);
 
                 if need_reload {
                     log::debug!("Encryption enabled/changed, loading key...");
@@ -1175,7 +1176,7 @@ impl HalInputReader {
             // Not encrypted
             buf.read_audio(buffer)
         } else {
-            if count % 100 == 0 {
+            if count.is_multiple_of(100) {
                 log::warn!("[HAL INPUT] No buffer available for read");
             }
             0
@@ -1204,21 +1205,12 @@ impl HalInputReader {
     }
 }
 
-impl Default for HalInputReader {
-    fn default() -> Self {
-        Self {
-            buffer: None,
-            cipher: None,
-            encrypted_samples_buf: Vec::new(),
-            ciphertext_buf: Vec::new(),
-        }
-    }
-}
 
 /// Writer adapter for HAL output (compatible with old HalOutputWriter API)
 ///
 /// Also provides configuration methods for setting sample rate, channel count,
 /// and buffer frames.
+#[derive(Default)]
 pub struct HalOutputWriter {
     buffer: Option<SharedAudioBuffer>,
     cipher: Option<crate::encryption::AudioCipher>,
@@ -1259,7 +1251,7 @@ impl HalOutputWriter {
     /// Write audio samples to the HAL
     pub fn write(&mut self, buffer: &[f32]) -> usize {
         // We need to split the borrow to access both buffer and other fields
-        let is_encrypted = self.buffer.as_ref().map_or(false, |b| b.is_encrypted());
+        let is_encrypted = self.buffer.as_ref().is_some_and(|b| b.is_encrypted());
 
         if is_encrypted {
             // Check if we need to load/reload cipher
@@ -1288,10 +1280,9 @@ impl HalOutputWriter {
                 }
             }
 
-            if self.cipher.is_some() {
+            if let Some(cipher) = self.cipher.as_ref() {
                 // Use allocation-free version with pre-allocated buffers
                 if let Some(buf) = &mut self.buffer {
-                    let cipher = self.cipher.as_ref().unwrap();
                     return buf.write_audio_encrypted_into(
                         buffer,
                         cipher,
@@ -1414,16 +1405,6 @@ impl HalOutputWriter {
     }
 }
 
-impl Default for HalOutputWriter {
-    fn default() -> Self {
-        Self {
-            buffer: None,
-            cipher: None,
-            ciphertext_buf: Vec::new(),
-            encrypted_buf: Vec::new(),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -218,8 +218,10 @@ impl Drop for ReplayGainScanner {
 
 /// Progress state for album gain scanning
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum AlbumGainPhase {
     /// Not running
+    #[default]
     Idle,
     /// Computing album gains
     Scanning,
@@ -254,11 +256,6 @@ pub struct ReplayGainScanManager {
     pause_flag: Arc<AtomicBool>,
 }
 
-impl Default for AlbumGainPhase {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
 
 impl Default for ReplayGainScanManager {
     fn default() -> Self {

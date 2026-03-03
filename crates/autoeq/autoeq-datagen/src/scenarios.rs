@@ -704,7 +704,7 @@ fn scenario_17_large_surround_5_1_4() -> Scenario {
 fn jitter_absorption_coefficient(rng: &mut SmallRng, base: f64, amount: f64) -> f64 {
     let delta: f64 = rng.random_range(-amount..amount);
     let value = base + delta;
-    value.max(0.02).min(0.9)
+    value.clamp(0.02, 0.9)
 }
 
 fn jitter_surface(rng: &mut SmallRng, surface: &SurfaceConfig, amount: f64) -> SurfaceConfig {
@@ -793,7 +793,7 @@ fn randomized_scenario_variant(base: &Scenario, variant_index: usize, seed: u64)
 
     for source in &mut simulation.sources {
         source.position =
-            jitter_point_within_room(&mut rng, source.position, max_dx, max_dy, max_dz, &room);
+            jitter_point_within_room(&mut rng, source.position, max_dx, max_dy, max_dz, room);
     }
 
     let lp_max_dx = room.width * 0.04;
@@ -801,7 +801,7 @@ fn randomized_scenario_variant(base: &Scenario, variant_index: usize, seed: u64)
     let lp_max_dz = room.height * 0.03;
 
     for lp in &mut simulation.listening_positions {
-        *lp = jitter_point_within_room(&mut rng, *lp, lp_max_dx, lp_max_dy, lp_max_dz, &room);
+        *lp = jitter_point_within_room(&mut rng, *lp, lp_max_dx, lp_max_dy, lp_max_dz, room);
     }
 
     simulation.boundaries = jitter_boundaries(&mut rng, &simulation.boundaries, 0.05);

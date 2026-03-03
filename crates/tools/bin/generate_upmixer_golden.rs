@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use sotf_plugins::plugin::{Plugin, ProcessContext};
 use sotf_plugins::plugin_upmixer::UpmixerPlugin;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const OUTPUT_DIR: &str = "data_generated/test-plugin-upmixer";
 
@@ -135,7 +135,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn generate_config(
-    out_dir: &PathBuf,
+    out_dir: &Path,
     config_id: &str,
     config_desc: &str,
     sample_rate: u32,
@@ -217,7 +217,7 @@ fn generate_config(
 fn generate_signal(name: &str, sample_rate: u32, num_frames: usize) -> anyhow::Result<Vec<f32>> {
     // Ensure num_frames is a multiple of fft_size for block processing
     let fft_size = 2048;
-    let num_blocks = (num_frames + fft_size - 1) / fft_size;
+    let num_blocks = num_frames.div_ceil(fft_size);
     let actual_frames = num_blocks * fft_size;
     let mut data = vec![0.0_f32; actual_frames * 2]; // Stereo
 
@@ -289,7 +289,7 @@ fn generate_signal(name: &str, sample_rate: u32, num_frames: usize) -> anyhow::R
                 let white = rand_f32();
                 b0 = 0.99886 * b0 + white * 0.0555179;
                 b1 = 0.99332 * b1 + white * 0.0750759;
-                b2 = 0.96900 * b2 + white * 0.1538520;
+                b2 = 0.96900 * b2 + white * 0.153_852;
                 b3 = 0.86650 * b3 + white * 0.3104856;
                 b4 = 0.55000 * b4 + white * 0.5329522;
                 b5 = -0.7616 * b5 - white * 0.0168980;

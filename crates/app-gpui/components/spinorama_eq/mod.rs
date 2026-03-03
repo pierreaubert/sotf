@@ -37,6 +37,7 @@ mod step_4_export;
 
 // Global for sharing optimization result between threads
 // Format: (success, result, full_result, error_message)
+#[allow(clippy::type_complexity)]
 static SPINORAMA_RESULT: Mutex<
     Option<(
         bool,
@@ -51,6 +52,7 @@ static PHASE_CHECK_RESULT: Mutex<Option<bool>> = Mutex::new(None);
 
 // Global mutex for sharing optimization progress between threads
 // Format: Vec<(iteration, loss, optional_score, progress_pct)>
+#[allow(clippy::type_complexity)]
 static SPINORAMA_PROGRESS: Mutex<Vec<(usize, f64, Option<f64>, f32)>> = Mutex::new(Vec::new());
 
 // Global mutex for sharing spinorama CEA2034 curves result between threads
@@ -330,7 +332,7 @@ impl PlayerView {
                     };
 
                     if let Some(result) = spinorama_result {
-                        let _ = state_for_poll.update(cx, |state, cx| {
+                        state_for_poll.update(cx, |state, cx| {
                             state
                                 .app
                                 .measurement_state
@@ -610,7 +612,7 @@ impl PlayerView {
                     match result {
                         Ok(speakers) => {
                             log::info!("Fetched {} speakers from spinorama.org", speakers.len());
-                            let _ = state_entity.update(cx, |state, cx| {
+                            state_entity.update(cx, |state, cx| {
                                 state
                                     .app
                                     .measurement_state
@@ -636,7 +638,7 @@ impl PlayerView {
                         }
                         Err(e) => {
                             log::error!("Failed to fetch speakers: {}", e);
-                            let _ = state_entity.update(cx, |state, cx| {
+                            state_entity.update(cx, |state, cx| {
                                 state
                                     .app
                                     .measurement_state
@@ -742,7 +744,7 @@ impl PlayerView {
                             );
                             let first_version = versions.first().cloned();
                             let selected_version = first_version.clone();
-                            let _ = state_entity.update(cx, |state, cx| {
+                            state_entity.update(cx, |state, cx| {
                                 state
                                     .app
                                     .measurement_state
@@ -776,7 +778,7 @@ impl PlayerView {
                         }
                         Err(e) => {
                             log::error!("Failed to fetch versions: {}", e);
-                            let _ = state_entity.update(cx, |state, cx| {
+                            state_entity.update(cx, |state, cx| {
                                 state
                                     .app
                                     .measurement_state
@@ -881,7 +883,7 @@ impl PlayerView {
                                     .unwrap_or_else(|| "CEA2034".to_string())
                             };
                             let measurement_for_phase = selected_measurement.clone();
-                            let _ = state_entity.update(cx, |state, cx| {
+                            state_entity.update(cx, |state, cx| {
                                 state
                                     .app
                                     .measurement_state
@@ -929,9 +931,9 @@ impl PlayerView {
                                     .await;
 
                                 // Check for phase result
-                                if !phase_done {
-                                    if let Some(has_phase) = lock!(PHASE_CHECK_RESULT).take() {
-                                        let _ = state_entity.update(cx, |state, cx| {
+                                if !phase_done
+                                    && let Some(has_phase) = lock!(PHASE_CHECK_RESULT).take() {
+                                        state_entity.update(cx, |state, cx| {
                                             state
                                                 .app
                                                 .measurement_state
@@ -942,7 +944,6 @@ impl PlayerView {
                                         });
                                         phase_done = true;
                                     }
-                                }
 
                                 // Check for spinorama curves result
                                 if !spinorama_done {
@@ -951,7 +952,7 @@ impl PlayerView {
                                         guard.take()
                                     };
                                     if let Some(result) = spinorama_result {
-                                        let _ = state_entity.update(cx, |state, cx| {
+                                        state_entity.update(cx, |state, cx| {
                                             state
                                                 .app
                                                 .measurement_state
@@ -998,7 +999,7 @@ impl PlayerView {
                         }
                         Err(e) => {
                             log::error!("Failed to fetch measurements: {}", e);
-                            let _ = state_entity.update(cx, |state, cx| {
+                            state_entity.update(cx, |state, cx| {
                                 state
                                     .app
                                     .measurement_state
@@ -1370,7 +1371,7 @@ impl PlayerView {
                 };
 
                 if !new_progress.is_empty() {
-                    let _ = state_for_poll.update(cx, |state, cx| {
+                    state_for_poll.update(cx, |state, cx| {
                         // Append new progress points to history
                         for (iter, loss, score, _) in &new_progress {
                             state
@@ -1392,7 +1393,7 @@ impl PlayerView {
                 let result_ready = lock!(SPINORAMA_RESULT).take();
 
                 if let Some((success, result, full_result, error)) = result_ready {
-                    let _ = state_for_poll.update(cx, |state, cx| {
+                    state_for_poll.update(cx, |state, cx| {
                         if success {
                             state
                                 .app
@@ -1426,7 +1427,7 @@ impl PlayerView {
                 }
 
                 // Update progress message
-                let _ = state_for_poll.update(cx, |state, cx| {
+                state_for_poll.update(cx, |state, cx| {
                     if state
                         .app
                         .measurement_state
@@ -1555,7 +1556,7 @@ impl PlayerView {
             // Mark that plugin chain was modified and needs sync
             state.app.plugin_state.plugin_chain_modified = true;
             state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(&format!(
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(format!(
                 "Applied {} filter Spinorama EQ",
                 num_filters
             )));
@@ -1622,9 +1623,7 @@ impl PlayerView {
         let extension = sotf_audio_player::autoeq::get_export_extension(&export_format);
 
         let safe_speaker_name = speaker_name
-            .replace(' ', "_")
-            .replace('/', "_")
-            .replace('\\', "_");
+            .replace([' ', '/', '\\'], "_");
         let default_filename = format!("spinorama_eq_{}.{}", safe_speaker_name, extension);
 
         let state_entity = self.state.clone();
@@ -1661,9 +1660,9 @@ impl PlayerView {
                 match std::fs::write(file.path(), content) {
                     Ok(()) => {
                         log::info!("Saved Spinorama EQ to {:?}", file.path());
-                        let _ = state_entity.update(cx, |state, cx| {
+                        state_entity.update(cx, |state, cx| {
                             state.app.ui_state.toast_message =
-                                Some(crate::app::ToastMessage::success(&format!(
+                                Some(crate::app::ToastMessage::success(format!(
                                     "Saved to {}",
                                     file.path().display()
                                 )));
@@ -1672,9 +1671,9 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("Failed to save Spinorama EQ: {}", e);
-                        let _ = state_entity.update(cx, |state, cx| {
+                        state_entity.update(cx, |state, cx| {
                             state.app.ui_state.toast_message = Some(
-                                crate::app::ToastMessage::error(&format!("Failed to save: {}", e)),
+                                crate::app::ToastMessage::error(format!("Failed to save: {}", e)),
                             );
                             cx.notify();
                         });

@@ -664,7 +664,6 @@ impl RenderOnce for NumberInput {
                 if let Some(value) = parsed
                     && let Some(handler) = self.on_change.as_ref()
                 {
-                    let value = value;
                     // SAFETY: we re-read on_change below; clone the Rc wrapper
                     // by wrapping in cx.defer which runs after the render pass.
                     let _ = (handler, value); // handler consumed below via on_change_rc

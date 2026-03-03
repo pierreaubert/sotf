@@ -576,27 +576,51 @@ struct MultibandCompressorArgs {
     mix: f32,
 
     /// Multiband compressor number of bands (2-5)
-    #[arg(id = "mb_compressor_num_bands", long = "mb-compressor-num-bands", default_value = "3")]
+    #[arg(
+        id = "mb_compressor_num_bands",
+        long = "mb-compressor-num-bands",
+        default_value = "3"
+    )]
     num_bands: usize,
 
     /// Multiband compressor crossover preset (0=custom, 1=default)
-    #[arg(id = "mb_compressor_crossover_preset", long = "mb-compressor-crossover-preset", default_value = "1")]
+    #[arg(
+        id = "mb_compressor_crossover_preset",
+        long = "mb-compressor-crossover-preset",
+        default_value = "1"
+    )]
     crossover_preset: i32,
 
     /// Multiband compressor crossover frequency 1 in Hz
-    #[arg(id = "mb_compressor_crossover_freq_1", long = "mb-compressor-crossover-freq-1", default_value = "200.0")]
+    #[arg(
+        id = "mb_compressor_crossover_freq_1",
+        long = "mb-compressor-crossover-freq-1",
+        default_value = "200.0"
+    )]
     crossover_freq_1: f32,
 
     /// Multiband compressor crossover frequency 2 in Hz
-    #[arg(id = "mb_compressor_crossover_freq_2", long = "mb-compressor-crossover-freq-2", default_value = "2000.0")]
+    #[arg(
+        id = "mb_compressor_crossover_freq_2",
+        long = "mb-compressor-crossover-freq-2",
+        default_value = "2000.0"
+    )]
     crossover_freq_2: f32,
 
     /// Multiband compressor crossover frequency 3 in Hz
-    #[arg(id = "mb_compressor_crossover_freq_3", long = "mb-compressor-crossover-freq-3", default_value = "8000.0")]
+    #[arg(
+        id = "mb_compressor_crossover_freq_3",
+        long = "mb-compressor-crossover-freq-3",
+        default_value = "8000.0"
+    )]
     crossover_freq_3: f32,
 
     /// Multiband compressor crossover frequency 4 in Hz
-    #[arg(id = "mb_compressor_crossover_freq_4", long = "mb-compressor-crossover-freq-4", default_value = "12000.0")]
+    #[arg(
+        id = "mb_compressor_crossover_freq_4",
+        long = "mb-compressor-crossover-freq-4",
+        default_value = "12000.0"
+    )]
     crossover_freq_4: f32,
 
     /// Disable multiband compressor channel linking
@@ -691,27 +715,51 @@ struct MultibandExpanderArgs {
     mix: f32,
 
     /// Multiband expander number of bands (2-5)
-    #[arg(id = "mb_expander_num_bands", long = "mb-expander-num-bands", default_value = "3")]
+    #[arg(
+        id = "mb_expander_num_bands",
+        long = "mb-expander-num-bands",
+        default_value = "3"
+    )]
     num_bands: usize,
 
     /// Multiband expander crossover preset (0=custom, 1=default)
-    #[arg(id = "mb_expander_crossover_preset", long = "mb-expander-crossover-preset", default_value = "1")]
+    #[arg(
+        id = "mb_expander_crossover_preset",
+        long = "mb-expander-crossover-preset",
+        default_value = "1"
+    )]
     crossover_preset: i32,
 
     /// Multiband expander crossover frequency 1 in Hz
-    #[arg(id = "mb_expander_crossover_freq_1", long = "mb-expander-crossover-freq-1", default_value = "200.0")]
+    #[arg(
+        id = "mb_expander_crossover_freq_1",
+        long = "mb-expander-crossover-freq-1",
+        default_value = "200.0"
+    )]
     crossover_freq_1: f32,
 
     /// Multiband expander crossover frequency 2 in Hz
-    #[arg(id = "mb_expander_crossover_freq_2", long = "mb-expander-crossover-freq-2", default_value = "2000.0")]
+    #[arg(
+        id = "mb_expander_crossover_freq_2",
+        long = "mb-expander-crossover-freq-2",
+        default_value = "2000.0"
+    )]
     crossover_freq_2: f32,
 
     /// Multiband expander crossover frequency 3 in Hz
-    #[arg(id = "mb_expander_crossover_freq_3", long = "mb-expander-crossover-freq-3", default_value = "8000.0")]
+    #[arg(
+        id = "mb_expander_crossover_freq_3",
+        long = "mb-expander-crossover-freq-3",
+        default_value = "8000.0"
+    )]
     crossover_freq_3: f32,
 
     /// Multiband expander crossover frequency 4 in Hz
-    #[arg(id = "mb_expander_crossover_freq_4", long = "mb-expander-crossover-freq-4", default_value = "12000.0")]
+    #[arg(
+        id = "mb_expander_crossover_freq_4",
+        long = "mb-expander-crossover-freq-4",
+        default_value = "12000.0"
+    )]
     crossover_freq_4: f32,
 
     /// Disable multiband expander channel linking
@@ -853,7 +901,11 @@ struct DenoiserArgs {
     floor_db: f32,
 
     /// Denoiser temporal smoothing (0.0-0.99)
-    #[arg(id = "denoiser_smoothing", long = "denoiser-smoothing", default_value = "0.8")]
+    #[arg(
+        id = "denoiser_smoothing",
+        long = "denoiser-smoothing",
+        default_value = "0.8"
+    )]
     smoothing: f32,
 
     /// Denoiser attack time (ms)
@@ -1081,7 +1133,11 @@ struct SpectrumAnalyzerArgs {
     max_freq: f32,
 
     /// Spectrum analyzer smoothing factor (0.0-1.0)
-    #[arg(id = "spectrum_smoothing", long = "spectrum-smoothing", default_value = "0.7")]
+    #[arg(
+        id = "spectrum_smoothing",
+        long = "spectrum-smoothing",
+        default_value = "0.7"
+    )]
     smoothing: f32,
 }
 
@@ -1226,11 +1282,7 @@ struct MonoToStereoArgs {
 #[derive(Debug, Clone, clap::Args)]
 struct CrossfeedArgs {
     /// Enable crossfeed plugin (headphone crossfeed for speaker-like listening)
-    #[arg(
-        id = "crossfeed_enabled",
-        long = "crossfeed",
-        default_value_t = false
-    )]
+    #[arg(id = "crossfeed_enabled", long = "crossfeed", default_value_t = false)]
     enabled: bool,
 
     /// Crossfeed mode: bauer, meier, multiband (default: bauer)
@@ -1242,11 +1294,7 @@ struct CrossfeedArgs {
     preset: String,
 
     /// Crossfeed wet/dry mix (0.0 to 1.0)
-    #[arg(
-        id = "crossfeed_mix",
-        long = "crossfeed-mix",
-        default_value = "1.0"
-    )]
+    #[arg(id = "crossfeed_mix", long = "crossfeed-mix", default_value = "1.0")]
     mix: f32,
 
     /// Bauer mode: crossfeed cutoff frequency in Hz (400-1000)
@@ -1766,7 +1814,9 @@ fn create_convolution_plugin_config(args: &ConvolutionArgs) -> Result<PluginConf
     })
 }
 
-fn create_spectrum_analyzer_plugin_config(args: &SpectrumAnalyzerArgs) -> Result<PluginConfig, String> {
+fn create_spectrum_analyzer_plugin_config(
+    args: &SpectrumAnalyzerArgs,
+) -> Result<PluginConfig, String> {
     use serde_json::json;
     Ok(PluginConfig {
         plugin_type: "spectrum_analyzer".to_string(),
@@ -2401,6 +2451,7 @@ fn parse_filters(filter_strings: &[String]) -> Result<Vec<Biquad>, String> {
 }
 
 /// Parse channel mapping specification and create matrix plugin config
+#[allow(clippy::type_complexity)]
 fn parse_channel_mapping(mapping_str: &str) -> Result<(Vec<usize>, Vec<usize>, Vec<f32>), String> {
     let parts: Vec<&str> = mapping_str.split("->").collect();
     if parts.len() != 2 {
@@ -2564,7 +2615,11 @@ fn play_stream(
     println!();
 
     // Build plugin chain
-    let loudness_auto_gain_params = (loudness_auto_gain, loudness_auto_gain_max_db, loudness_auto_gain_smoothing_ms);
+    let loudness_auto_gain_params = (
+        loudness_auto_gain,
+        loudness_auto_gain_max_db,
+        loudness_auto_gain_smoothing_ms,
+    );
     let (plugin_configs, output_channels, loudness_plugin_index) = if !rack.is_empty() {
         build_rack_mode_plugins(
             &rack,
@@ -2740,7 +2795,8 @@ fn build_rack_mode_plugins(
                         enable_hr_direct: plugins.upmixer.hr_direct,
                         hr_sharpen: plugins.upmixer.hr_sharpen as f64,
                         height_hf_cap_hz: plugins.upmixer.height_hf_cap_hz as f64,
-                        height_transient_reduction: plugins.upmixer.height_transient_reduction as f64,
+                        height_transient_reduction: plugins.upmixer.height_transient_reduction
+                            as f64,
                         height_direct_leak: plugins.upmixer.height_direct_leak as f64,
                         ambient_boost: plugins.upmixer.ambient_boost as f64,
                         safety_cap_db: plugins.upmixer.safety_cap_db as f64,
@@ -2780,7 +2836,8 @@ fn build_rack_mode_plugins(
                 log::info!("Rack: Added BinauralDecoder plugin");
             }
             "loudness" | "loudness-compensation" => {
-                let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) = loudness_auto_gain_params;
+                let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) =
+                    loudness_auto_gain_params;
                 if let Some(lc) = loudness {
                     let idx = chain.add_plugin(&PluginType::LoudnessCompensation);
                     if let Some(plugin) = chain.get_plugin_mut(idx) {
@@ -2974,7 +3031,11 @@ fn build_rack_mode_plugins(
                         head_tracking_smooth_s: plugins.xtc.head_tracking_smooth_s as f64,
                         spectral_normalization: plugins.xtc.spectral_normalization,
                         room_reflections_enabled: plugins.xtc.room_reflections,
-                        room_ir_file: plugins.xtc.room_ir_file.as_ref().map(|p| p.to_string_lossy().to_string()),
+                        room_ir_file: plugins
+                            .xtc
+                            .room_ir_file
+                            .as_ref()
+                            .map(|p| p.to_string_lossy().to_string()),
                         room_width_m: plugins.xtc.room_width_m as f64,
                         room_depth_m: plugins.xtc.room_depth_m as f64,
                         wall_absorption: plugins.xtc.wall_absorption as f64,
@@ -3191,7 +3252,10 @@ fn build_rack_mode_plugins(
                         autogain_smoothing_ms: plugins.crossfeed.autogain_smoothing_ms as f64,
                     };
                 }
-                log::info!("Rack: Added Crossfeed plugin (mode={})", plugins.crossfeed.mode);
+                log::info!(
+                    "Rack: Added Crossfeed plugin (mode={})",
+                    plugins.crossfeed.mode
+                );
             }
             "matrix" => {
                 let input_channels = chain.output_channels();
@@ -3205,7 +3269,9 @@ fn build_rack_mode_plugins(
                                 s.trim().parse::<f32>().map_err(|e| {
                                     format!(
                                         "Invalid matrix coefficient '{}' in row {}: {}",
-                                        s.trim(), row_idx, e
+                                        s.trim(),
+                                        row_idx,
+                                        e
                                     )
                                 })
                             })
@@ -3213,7 +3279,9 @@ fn build_rack_mode_plugins(
                         if row_values.len() != input_channels {
                             return Err(format!(
                                 "Matrix row {} has {} values but expected {} (input channels)",
-                                row_idx, row_values.len(), input_channels
+                                row_idx,
+                                row_values.len(),
+                                input_channels
                             ));
                         }
                         m.extend(row_values);
@@ -3235,7 +3303,11 @@ fn build_rack_mode_plugins(
                         channel_states: vec![],
                     };
                 }
-                log::info!("Rack: Added Matrix plugin ({}ch -> {}ch)", input_channels, out_ch);
+                log::info!(
+                    "Rack: Added Matrix plugin ({}ch -> {}ch)",
+                    input_channels,
+                    out_ch
+                );
             }
             "lufs" | "loudness-monitor" => {
                 chain.add_plugin(&PluginType::LoudnessMonitor);
@@ -3471,10 +3543,7 @@ fn build_traditional_mode_plugins(
     if plugins.crossfeed.enabled {
         let crossfeed_plugin = create_crossfeed_plugin_config(&plugins.crossfeed)?;
         plugin_configs.push(crossfeed_plugin);
-        log::info!(
-            "Enabled crossfeed plugin (mode={})",
-            plugins.crossfeed.mode
-        );
+        log::info!("Enabled crossfeed plugin (mode={})", plugins.crossfeed.mode);
     }
 
     // 22. Matrix (standalone, before downmix)

@@ -38,15 +38,15 @@ impl App {
         }
 
         // Get the currently playing album
-        if let Some(queue_index) = self.current_queue_index {
-            if let Some(entry) = self.queue.get(queue_index) {
-                if let Some(first_track) = entry.item.album.tracks.first() {
-                    if let Some(parent_dir) = first_track.path.parent() {
+        if let Some(queue_index) = self.current_queue_index
+            && let Some(entry) = self.queue.get(queue_index)
+                && let Some(first_track) = entry.item.album.tracks.first()
+                    && let Some(parent_dir) = first_track.path.parent() {
                         // Find all image files in the directory
                         if let Ok(entries) = std::fs::read_dir(parent_dir) {
                             for entry in entries.flatten() {
-                                if let Ok(path) = entry.path().canonicalize() {
-                                    if let Some(ext) = path.extension() {
+                                if let Ok(path) = entry.path().canonicalize()
+                                    && let Some(ext) = path.extension() {
                                         let ext_lower = ext.to_string_lossy().to_lowercase();
                                         if matches!(
                                             ext_lower.as_str(),
@@ -55,15 +55,11 @@ impl App {
                                             self.album_images.push(path);
                                         }
                                     }
-                                }
                             }
                         }
                         // Sort images for consistent order
                         self.album_images.sort();
                     }
-                }
-            }
-        }
     }
 
     /// Cycle to the next image in the album directory

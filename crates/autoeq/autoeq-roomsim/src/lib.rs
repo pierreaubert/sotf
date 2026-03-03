@@ -3559,8 +3559,8 @@ impl RoomSimulatorWasm {
         }
 
         // Modal and modal-ISM hybrid methods
-        if method == "modal" || method == "hybrid" {
-            if let RoomGeometry::Rectangular(_) = &self.room_geometry {
+        if (method == "modal" || method == "hybrid")
+            && let RoomGeometry::Rectangular(_) = &self.room_geometry {
                 let amplitude = source.amplitude_towards(point, frequency);
                 let phase_factor = source.phase_factor(frequency);
 
@@ -3605,7 +3605,6 @@ impl RoomSimulatorWasm {
                 let ism_pressure = self.calculate_single_source_ism(source_idx, point, frequency);
                 return modal_pressure * (1.0 - ism_weight) + ism_pressure * ism_weight;
             }
-        }
 
         // Standard ISM calculation
         self.calculate_single_source_ism(source_idx, point, frequency)
@@ -3812,8 +3811,8 @@ impl RoomSimulatorWasm {
             }
 
             // Higher-order reflections for rectangular rooms only
-            if reflection_order >= 2 {
-                if let RoomGeometry::Rectangular(_) = &self.room_geometry {
+            if reflection_order >= 2
+                && let RoomGeometry::Rectangular(_) = &self.room_geometry {
                     for nx in -2i32..=2 {
                         for ny in -2i32..=2 {
                             for nz in -2i32..=2 {
@@ -3860,7 +3859,6 @@ impl RoomSimulatorWasm {
                         }
                     }
                 }
-            }
         }
 
         total_pressure

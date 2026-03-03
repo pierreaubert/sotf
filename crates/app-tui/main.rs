@@ -52,6 +52,10 @@ struct Args {
     /// Force a full library rescan on startup
     #[arg(long)]
     scan: bool,
+
+    /// Use a custom data directory (for QA testing)
+    #[arg(long)]
+    qa: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -67,6 +71,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize app state
     let args: Args = clap::Parser::parse();
+
+    // Apply QA directory override before any config dir access
+    if let Some(qa_dir) = args.qa {
+        sotf_audio_player::config::set_config_dir_override(qa_dir);
+    }
+
     let theme = sotf_audio_player_tui::theme::Theme::default();
 
     // Try to acquire exclusive lock — second instance becomes read-only
@@ -203,11 +213,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = run_app(&mut terminal, &mut app, &mut player, &mut media_controls);
 
     // Save configuration before exit (skip in read-only mode)
-    if !app.read_only {
-        if let Err(e) = app.save_config() {
+    if !app.read_only
+        && let Err(e) = app.save_config() {
             log::error!("Failed to save configuration: {}", e);
         }
-    }
 
     // Restore terminal
     disable_raw_mode()?;
@@ -566,8 +575,8 @@ fn start_playback(
     // Clamp output channels to device max — the playback thread will
     // downmix automatically when the processing chain outputs more
     // channels than the hardware supports.
-    if let Some(max_channels) = device_max {
-        if output_channels > max_channels {
+    if let Some(max_channels) = device_max
+        && output_channels > max_channels {
             log::info!(
                 "[TUI] Clamping output from {} to {} channels (device limit)",
                 output_channels,
@@ -575,7 +584,6 @@ fn start_playback(
             );
             output_channels = max_channels;
         }
-    }
 
     // Sync volume to the engine before playback starts
     player.set_volume(app.volume)?;

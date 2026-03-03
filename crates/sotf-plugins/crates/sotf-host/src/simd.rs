@@ -2468,13 +2468,13 @@ pub fn find_max_abs_simd(samples: &[f32]) -> f32 {
 
         let mut max_val = unsafe { vmaxvq_f32(max_vec) };
 
-        for i in simd_len..len {
-            let v = samples[i].abs();
+        for sample in &samples[simd_len..len] {
+            let v = sample.abs();
             if v > max_val {
                 max_val = v;
             }
         }
-        return max_val;
+        max_val
     }
 
     #[cfg(not(any(

@@ -651,7 +651,7 @@ fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
 
         let height = 80.0 + (input_ports.max(output_ports) as f32 * 8.0);
         let workflow_node = WorkflowNodeData::new(
-            &special_node.display_name(),
+            special_node.display_name(),
             Position::new(special_node.position.x, special_node.position.y),
         )
         .with_ports(input_ports, output_ports)

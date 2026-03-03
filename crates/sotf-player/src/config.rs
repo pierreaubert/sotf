@@ -1,5 +1,19 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+/// Global override for the app config directory (set via `--qa` flag).
+static CONFIG_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Set a custom config directory, overriding the platform default.
+/// Must be called before any `get_app_config_dir()` usage.
+/// Creates the directory if it doesn't exist.
+pub fn set_config_dir_override(path: PathBuf) {
+    std::fs::create_dir_all(&path).expect("Failed to create config dir override");
+    CONFIG_DIR_OVERRIDE
+        .set(path)
+        .expect("Config dir override already set");
+}
 
 /// Application state that persists between sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +57,10 @@ impl Default for AppConfig {
 /// - Windows: ~/.config/sotf (same as Linux)
 /// - iOS: ~/Library/Application Support/org.spinorama.sotf (same as macOS)
 pub fn get_app_config_dir() -> Option<PathBuf> {
+    if let Some(dir) = CONFIG_DIR_OVERRIDE.get() {
+        return Some(dir.clone());
+    }
+
     #[cfg(target_os = "macos")]
     {
         if let Ok(home) = std::env::var("HOME") {

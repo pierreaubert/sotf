@@ -26,13 +26,11 @@ pub fn handle_media_control_event(
             if app.is_playing {
                 app.is_playing = false;
                 Some(PlayerCommand::Pause)
+            } else if app.current_queue_index.is_none() {
+                app.start_queue().map(PlayerCommand::Play)
             } else {
-                if app.current_queue_index.is_none() {
-                    app.start_queue().map(PlayerCommand::Play)
-                } else {
-                    app.is_playing = true;
-                    Some(PlayerCommand::Resume)
-                }
+                app.is_playing = true;
+                Some(PlayerCommand::Resume)
             }
         }
         souvlaki::MediaControlEvent::Next => {

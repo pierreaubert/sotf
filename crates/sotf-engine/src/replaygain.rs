@@ -18,7 +18,7 @@ pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInf
     let spec = decoder.spec();
 
     let mut analyzer = ReplayGainAnalyzer::new(spec.channels as u32, spec.sample_rate)
-        .map_err(|e| AudioDecoderError::ConfigError(e))?;
+        .map_err(AudioDecoderError::ConfigError)?;
 
     while let Some(decoded) = decoder.decode_next()? {
         if decoded.is_empty() {
@@ -26,12 +26,12 @@ pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInf
         }
         analyzer
             .add_frames_f32(&decoded.samples)
-            .map_err(|e| AudioDecoderError::DecodingFailed(e))?;
+            .map_err(AudioDecoderError::DecodingFailed)?;
     }
 
     analyzer
         .finalize()
-        .map_err(|e| AudioDecoderError::DecodingFailed(e))
+        .map_err(AudioDecoderError::DecodingFailed)
 }
 
 /// Analyze an audio file and return extended ReplayGain data including
@@ -41,7 +41,7 @@ pub fn analyze_file_extended<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Repl
     let spec = decoder.spec();
 
     let mut analyzer = ReplayGainAnalyzer::new(spec.channels as u32, spec.sample_rate)
-        .map_err(|e| AudioDecoderError::ConfigError(e))?;
+        .map_err(AudioDecoderError::ConfigError)?;
 
     while let Some(decoded) = decoder.decode_next()? {
         if decoded.is_empty() {
@@ -49,12 +49,12 @@ pub fn analyze_file_extended<P: AsRef<Path>>(path: P) -> AudioDecoderResult<Repl
         }
         analyzer
             .add_frames_f32(&decoded.samples)
-            .map_err(|e| AudioDecoderError::DecodingFailed(e))?;
+            .map_err(AudioDecoderError::DecodingFailed)?;
     }
 
     analyzer
         .finalize_extended()
-        .map_err(|e| AudioDecoderError::DecodingFailed(e))
+        .map_err(AudioDecoderError::DecodingFailed)
 }
 
 #[cfg(test)]

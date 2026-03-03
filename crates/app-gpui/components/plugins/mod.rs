@@ -472,7 +472,7 @@ pub fn render_plugin_content(
                 min_freq: *min_freq,
                 max_freq: *max_freq,
                 smoothing: *smoothing,
-                tilt_correction: tilt_correction.clone(),
+                tilt_correction: *tilt_correction,
                 tilt_reference: *tilt_reference,
                 tilt_select_open: spectrum_tilt_select_open,
                 reference_select_open: spectrum_reference_select_open,

@@ -34,7 +34,7 @@ pub const fn encrypted_byte_size(sample_count: usize) -> usize {
 
 /// Required f32 buffer size for storing encrypted data (ceiling division)
 pub const fn encrypted_sample_slots(sample_count: usize) -> usize {
-    (encrypted_byte_size(sample_count) + 3) / 4
+    encrypted_byte_size(sample_count).div_ceil(4)
 }
 
 /// Audio encryption cipher using ChaCha20-Poly1305
@@ -217,7 +217,7 @@ impl AudioCipher {
 
 /// Convert f32 samples to bytes (native endian) - allocating version
 fn samples_to_bytes(samples: &[f32]) -> Vec<u8> {
-    let byte_len = samples.len() * std::mem::size_of::<f32>();
+    let byte_len = std::mem::size_of_val(samples);
     let mut bytes = vec![0u8; byte_len];
     samples_to_bytes_into(samples, &mut bytes);
     bytes
@@ -320,7 +320,7 @@ pub fn fingerprint_to_hex(fingerprint: &[u8; 8]) -> String {
 /// The resulting samples are NOT audio data - they're encrypted bytes stored as f32.
 pub fn encrypted_to_samples(ciphertext: &[u8]) -> Vec<f32> {
     // Round up to ensure we have space for all bytes
-    let sample_count = (ciphertext.len() + 3) / 4;
+    let sample_count = ciphertext.len().div_ceil(4);
     let mut samples = vec![0.0f32; sample_count];
     encrypted_to_samples_into(ciphertext, &mut samples);
     samples
@@ -331,7 +331,7 @@ pub fn encrypted_to_samples(ciphertext: &[u8]) -> Vec<f32> {
 /// # Returns
 /// Number of f32 slots written
 pub fn encrypted_to_samples_into(ciphertext: &[u8], output: &mut [f32]) -> usize {
-    let sample_count = (ciphertext.len() + 3) / 4;
+    let sample_count = ciphertext.len().div_ceil(4);
     let to_write = sample_count.min(output.len());
 
     for (i, chunk) in ciphertext.chunks(4).take(to_write).enumerate() {

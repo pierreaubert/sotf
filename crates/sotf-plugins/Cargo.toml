@@ -10,7 +10,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["sofa_support"]
-hal = ["sotf-plugin-hal-input", "sotf-plugin-hal-output", "driver-hal"]
+hal = ["sotf-plugin-hal-input", "sotf-plugin-hal-input/hal", "sotf-plugin-hal-output", "sotf-plugin-hal-output/hal", "driver-hal"]
 sofa_support = ["sotf-host/sofa_support", "dep:netcdf"]
 qa = ["sotf-host/qa", "dep:criterion"]
 

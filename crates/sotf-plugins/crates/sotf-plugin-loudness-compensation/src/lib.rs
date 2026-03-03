@@ -338,11 +338,10 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             do_measure = true;
         }
 
-        if let Some(ag) = &mut self.auto_gain {
-            if do_measure {
+        if let Some(ag) = &mut self.auto_gain
+            && do_measure {
                 let _ = ag.measure_input(buffer);
             }
-        }
 
         for frame in 0..nf {
             for ch in 0..self.num_channels {

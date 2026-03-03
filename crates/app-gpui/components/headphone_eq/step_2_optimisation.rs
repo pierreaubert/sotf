@@ -511,7 +511,7 @@ impl PlayerView {
                     .content({
                         let progress = headphone_eq.progress;
                         let status_msg = headphone_eq.status_message.clone();
-                        let optimization_status = headphone_eq.optimization_status.clone();
+                        let optimization_status = headphone_eq.optimization_status;
                         let is_optimizing = headphone_eq.is_optimizing();
                         let is_completed = optimization_status == OptimizationStatus::Completed;
                         let is_failed = optimization_status == OptimizationStatus::Failed;

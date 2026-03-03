@@ -8,8 +8,11 @@ edition.workspace = true
 name = "sotf_plugin_hal_output"
 path = "src/lib.rs"
 
+[features]
+hal = ["driver-hal"]
+
 [target.'cfg(target_os = "macos")'.dependencies]
-driver-hal = { workspace = true }
+driver-hal = { workspace = true, optional = true }
 
 [dependencies]
 sotf-host = { workspace = true }

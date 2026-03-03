@@ -439,7 +439,7 @@ impl PlayerView {
 
                 log::info!("Created recording directory: {}", full_path);
 
-                let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                state_entity.update(&mut cx.clone(), |state, _| {
                     state
                         .app
                         .measurement_state
@@ -837,7 +837,9 @@ impl PlayerView {
                     };
 
                     // Build the speaker row content
-                    let speaker_content = if is_multi {
+                    
+
+                    if is_multi {
                         // Multi mode: show header row + channel list below
                         VStack::new()
                             .spacing(StackSpacing::Xs)
@@ -914,13 +916,11 @@ impl PlayerView {
                                                     .playback_config
                                                     .channel_mappings
                                                     .get_mut(speaker_idx)
-                                                {
-                                                    if let Some(ch) =
+                                                    && let Some(ch) =
                                                         m.interface_channels.get_mut(0)
                                                     {
                                                         *ch = (value as usize).saturating_sub(1);
                                                     }
-                                                }
                                                 // Sync total channel count
                                                 state
                                                     .app
@@ -935,9 +935,7 @@ impl PlayerView {
                                 })
                             })
                             .into_any_element()
-                    };
-
-                    speaker_content
+                    }
                 },
             ))
             .into_any_element()
@@ -1097,13 +1095,11 @@ impl PlayerView {
                                                     .playback_config
                                                     .channel_mappings
                                                     .get_mut(speaker_idx)
-                                                {
-                                                    if let Some(ch) =
+                                                    && let Some(ch) =
                                                         mapping.interface_channels.get_mut(ch_idx)
                                                     {
                                                         *ch = (value as usize).saturating_sub(1);
                                                     }
-                                                }
                                             });
                                             cx.notify();
                                         });
@@ -1631,7 +1627,7 @@ impl PlayerView {
         };
 
         let chart_theme = theme_to_chart_theme(theme);
-        let stroke_color = rgba_to_u32(theme.text_primary.into());
+        let stroke_color = rgba_to_u32(theme.text_primary);
 
         let chart_element = line(&data.frequencies, &data.spl_db)
             .x_scale(ScaleType::Log)
@@ -1707,7 +1703,7 @@ impl PlayerView {
                     );
                 }
 
-                let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                state_entity.update(&mut cx.clone(), |state, _| {
                     state
                         .app
                         .measurement_state

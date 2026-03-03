@@ -135,11 +135,10 @@ impl PlaybackEventStore {
 
         // Throttle position updates to avoid flooding
         if matches!(event, PlaybackEvent::PositionUpdated { .. }) {
-            if let Some(last) = self.last_position_update {
-                if last.elapsed() < self.position_update_interval {
+            if let Some(last) = self.last_position_update
+                && last.elapsed() < self.position_update_interval {
                     return;
                 }
-            }
             self.last_position_update = Some(Instant::now());
         }
 

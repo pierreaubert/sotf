@@ -28,21 +28,17 @@ pub fn check_needs_migration(json: &str, file_size: u64) -> bool {
         if let Some(channels) = value.get("channels").and_then(|c| c.as_array()) {
             for channel in channels {
                 // Check measurement.frequencies array
-                if let Some(measurement) = channel.get("measurement") {
-                    if let Some(freqs) = measurement.get("frequencies").and_then(|f| f.as_array()) {
-                        if freqs.len() > 100 {
+                if let Some(measurement) = channel.get("measurement")
+                    && let Some(freqs) = measurement.get("frequencies").and_then(|f| f.as_array())
+                        && freqs.len() > 100 {
                             return true;
                         }
-                    }
-                }
                 // Check result.frequencies for older format
-                if let Some(result) = channel.get("result") {
-                    if let Some(freqs) = result.get("frequencies").and_then(|f| f.as_array()) {
-                        if freqs.len() > 100 {
+                if let Some(result) = channel.get("result")
+                    && let Some(freqs) = result.get("frequencies").and_then(|f| f.as_array())
+                        && freqs.len() > 100 {
                             return true;
                         }
-                    }
-                }
             }
         }
     }
@@ -360,22 +356,20 @@ pub fn load_extended_metrics(
 
     // Try absolute path first
     let abs_path = Path::new(csv_path);
-    if abs_path.exists() {
-        if let Ok(metrics) = read_extended_metrics_from_csv(abs_path) {
+    if abs_path.exists()
+        && let Ok(metrics) = read_extended_metrics_from_csv(abs_path) {
             log::info!("Loaded extended metrics from {:?}", abs_path);
             return Some(metrics);
         }
-    }
 
     // Try relative to base_dir
     if let Some(base) = base_dir {
         let rel_path = base.join(csv_path);
-        if rel_path.exists() {
-            if let Ok(metrics) = read_extended_metrics_from_csv(&rel_path) {
+        if rel_path.exists()
+            && let Ok(metrics) = read_extended_metrics_from_csv(&rel_path) {
                 log::info!("Loaded extended metrics from {:?}", rel_path);
                 return Some(metrics);
             }
-        }
     }
 
     log::debug!("No extended metrics found for CSV: {}", csv_path);

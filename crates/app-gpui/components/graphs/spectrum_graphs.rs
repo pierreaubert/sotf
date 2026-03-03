@@ -10,9 +10,8 @@ use gpui::*;
 
 use gpui_px::{ColorScale, ScaleType, heatmap};
 
-/// Data grid for spectrum plotting (Frequency x Y-Axis)
-
-/// Y-Axis can be Time (Spectrogram) or Angle (Directivity)
+/// Data grid for spectrum plotting (Frequency x Y-Axis).
+/// Y-Axis can be Time (Spectrogram) or Angle (Directivity).
 #[derive(Clone)]
 pub struct SpectrumGrid {
     pub x_values: Vec<f64>, // Frequency bins

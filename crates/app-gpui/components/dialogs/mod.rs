@@ -666,8 +666,7 @@ impl PlayerView {
                                                 // Play the first track of the queue item
                                                 if let Some(queue_item) =
                                                     state.app.queue.get(item_idx)
-                                                {
-                                                    if let Some(first_track) =
+                                                    && let Some(first_track) =
                                                         queue_item.album.tracks.first()
                                                     {
                                                         Self::play_track(
@@ -675,7 +674,6 @@ impl PlayerView {
                                                             first_track.path.clone(),
                                                         );
                                                     }
-                                                }
                                             }
                                             (
                                                 crate::app::ContextMenuType::Plugin,

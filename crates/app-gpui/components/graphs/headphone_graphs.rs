@@ -156,7 +156,7 @@ fn render_error_plot(
     let ref_freqs: Vec<f64> = freqs
         .iter()
         .copied()
-        .filter(|&f| f >= 50.0 && f <= 5000.0)
+        .filter(|&f| (50.0..=5000.0).contains(&f))
         .collect();
     let plus_one: Vec<f64> = vec![1.0; ref_freqs.len()];
     let minus_one: Vec<f64> = vec![-1.0; ref_freqs.len()];

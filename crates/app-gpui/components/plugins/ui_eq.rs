@@ -77,7 +77,7 @@ impl Element for EqChartWrapper {
         cx: &mut App,
     ) -> Self::PrepaintState {
         self.child.prepaint(window, cx);
-        ()
+        
     }
 
     fn paint(
@@ -124,9 +124,13 @@ struct EqControlPointDrag {
     band_idx: usize,
     plugin_idx: usize,
     color: u32,
+    #[allow(dead_code)]
     start_freq: f64,
+    #[allow(dead_code)]
     start_gain: f64,
+    #[allow(dead_code)]
     start_x: f32,
+    #[allow(dead_code)]
     start_y: f32,
 }
 
@@ -149,6 +153,7 @@ impl Render for EqControlPointDrag {
 struct EqQHandleDrag {
     band_idx: usize,
     plugin_idx: usize,
+    #[allow(dead_code)]
     is_right_handle: bool, // true = right handle (increase Q), false = left handle (decrease Q)
     start_x: f32,
     start_q: f64,
@@ -465,7 +470,7 @@ fn render_eq_visualization(
     for (i, filter) in filters.iter().enumerate() {
         let is_selected = selected_band == Some(i);
         let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
-        let rgba_color = gpui::rgba(color as u32 * 256 + 0xFF);
+        let rgba_color = gpui::rgba(color * 256 + 0xFF);
 
         // Calculate position
         let x = freq_to_x(filter.frequency, plot_width);
@@ -1085,7 +1090,6 @@ pub fn render_eq_plugin(
                                         s.bg(if is_muted { error } else { surface_hover })
                                     })
                                     .on_mouse_down(MouseButton::Left, {
-                                        let plugin_idx = plugin_idx;
                                         move |_event, _window, cx| {
                                             cx.stop_propagation();
                                             entity_clone2.update(cx, |state, cx| {
@@ -1127,7 +1131,6 @@ pub fn render_eq_plugin(
                                         s.bg(if is_soloed { success } else { surface_hover })
                                     })
                                     .on_mouse_down(MouseButton::Left, {
-                                        let plugin_idx = plugin_idx;
                                         move |_event, _window, cx| {
                                             cx.stop_propagation();
                                             entity_clone3.update(cx, |state, cx| {
@@ -1156,7 +1159,6 @@ pub fn render_eq_plugin(
                 // Add band button
                 .child({
                     let entity_clone = entity.clone();
-                    let plugin_idx = plugin_idx;
                     div()
                         .id("eq-add-band")
                         .focusable()
@@ -1268,7 +1270,9 @@ pub fn render_eq_plugin(
         });
 
     // Combine sections based on layout mode
-    let main_container = if use_horizontal_layout {
+    
+
+    if use_horizontal_layout {
         // Horizontal: graph on left, controls on right
         div()
             .flex()
@@ -1285,9 +1289,7 @@ pub fn render_eq_plugin(
             .gap_8() // Increased gap between graph and controls
             .child(graph_section)
             .child(controls_section)
-    };
-
-    main_container
+    }
 }
 
 /// Calculate the actual plot width based on chart width and legend configuration.

@@ -222,6 +222,7 @@ fn main() {
                     }
 
                     let layout = cx.new(|_| layout_state);
+                    #[allow(clippy::arc_with_non_send_sync)]
                     let player_arc = Arc::new(parking_lot::Mutex::new(player));
 
                     // Create application state

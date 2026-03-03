@@ -54,9 +54,9 @@ impl Render for PlayerView {
                                     window_height * layout.rack_v_ratio
                                 }
                             };
-                            state.app.rack_display_mode = if layout.rack_panel_collapsed {
-                                crate::app::RackDisplayMode::Collapsed
-                            } else if rack_dimension < 100.0 {
+                            state.app.rack_display_mode = if layout.rack_panel_collapsed
+                                || rack_dimension < 100.0
+                            {
                                 crate::app::RackDisplayMode::Collapsed
                             } else if rack_dimension < 200.0 {
                                 crate::app::RackDisplayMode::Mini
@@ -107,7 +107,7 @@ impl Render for PlayerView {
                 let _ = this.update(cx, |view, cx| {
                     view.state.update(cx, |state, cx| {
                         let layout = state.layout.read(cx);
-                        if let Err(e) = state.app.save_config_with_geometry(&layout, Some(geometry)) {
+                        if let Err(e) = state.app.save_config_with_geometry(layout, Some(geometry)) {
                             log::warn!("Failed to save window geometry: {}", e);
                         } else {
                             log::debug!("Debounced window geometry saved successfully");

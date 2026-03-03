@@ -1,5 +1,6 @@
 impl PlayerView {
     /// Render split view with Library on top and Queue on bottom (expanded mode)
+    #[allow(dead_code)]
     fn render_split_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, queue_ratio) = {
             let state = self.state.read(cx);
@@ -99,8 +100,8 @@ impl PlayerView {
                 }
 
                 // Handle volume dragging (drag up = increase, drag down = decrease)
-                if is_dragging_volume {
-                    if let Some(start_y) = volume_start_y {
+                if is_dragging_volume
+                    && let Some(start_y) = volume_start_y {
                         let mouse_y: f32 = mouse_pos.y.into();
                         let delta_y = start_y - mouse_y; // Inverted: up = positive
                         // Scale: 100px drag = full volume range
@@ -112,7 +113,6 @@ impl PlayerView {
                         });
                         cx.notify();
                     }
-                }
             }))
             // Global mouse up handler to stop dragging even if mouse is outside divider
             .on_mouse_up(
@@ -176,7 +176,7 @@ impl PlayerView {
 
                         if needs_save {
                             let layout = state.layout.read(cx);
-                            if let Err(e) = state.app.save_config(&layout) {
+                            if let Err(e) = state.app.save_config(layout) {
                                 log::warn!("Failed to save panel layout: {}", e);
                             }
                         }

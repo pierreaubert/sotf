@@ -57,6 +57,12 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
     // Esc goes up one level within the wizard
     if key.code == KeyCode::Esc {
+        // First dismiss numerical direct-edit mode
+        if app.spinorama_eq.editing_value {
+            app.spinorama_eq.editing_value = false;
+            app.spinorama_eq.edit_buffer.clear();
+            return None;
+        }
         if app.spinorama_eq.step_tab_focused {
             app.spinorama_eq.step_tab_focused = false;
             app.input_mode = InputMode::Configure;
@@ -555,12 +561,15 @@ fn adjust_spinorama_field(app: &mut App, delta: i32) {
     }
 }
 
+#[allow(clippy::type_complexity)]
 static SPEAKERS_RESULT: std::sync::OnceLock<Arc<Mutex<Option<Result<Vec<String>, String>>>>> =
     std::sync::OnceLock::new();
 
+#[allow(clippy::type_complexity)]
 static OPT_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<sotf_audio_player::autoeq::SpeakerOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
+#[allow(clippy::type_complexity)]
 static OPT_PROGRESS: std::sync::OnceLock<
     Arc<Mutex<Option<(usize, usize, f64, f32, Option<f64>)>>>,
 > = std::sync::OnceLock::new();
@@ -588,8 +597,8 @@ pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
     let result_slot = SPEAKERS_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
-    if let Ok(mut guard) = result_slot.lock() {
-        if let Some(result) = guard.take() {
+    if let Ok(mut guard) = result_slot.lock()
+        && let Some(result) = guard.take() {
             app.spinorama_eq.loading_speakers = false;
             match result {
                 Ok(speakers) => {
@@ -602,7 +611,6 @@ pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
             }
             return true;
         }
-    }
     false
 }
 
@@ -646,8 +654,8 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
 
-    if let Ok(mut guard) = result_slot.lock() {
-        if let Some(result) = guard.take() {
+    if let Ok(mut guard) = result_slot.lock()
+        && let Some(result) = guard.take() {
             match result {
                 Ok(r) => {
                     app.spinorama_eq.pre_loss = r.initial_loss;
@@ -686,10 +694,9 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
             }
             return true;
         }
-    }
 
-    if let Ok(mut guard) = progress_slot.lock() {
-        if let Some((iter, max_iter, loss, pct, score)) = guard.take() {
+    if let Ok(mut guard) = progress_slot.lock()
+        && let Some((iter, max_iter, loss, pct, score)) = guard.take() {
             app.spinorama_eq.opt_iteration = iter;
             app.spinorama_eq.opt_max_iter = max_iter;
             app.spinorama_eq.opt_loss = loss;
@@ -697,7 +704,6 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
             app.spinorama_eq.loss_history.push((iter, loss, score));
             return true;
         }
-    }
 
     false
 }

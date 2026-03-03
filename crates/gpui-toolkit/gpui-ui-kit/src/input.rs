@@ -593,6 +593,7 @@ impl EditState {
     }
 
     /// Select word at the given position
+    #[allow(dead_code)]
     fn select_word_at(&mut self, pos: usize) {
         let text = &self.text;
         let len = text.chars().count();
@@ -1053,11 +1054,10 @@ impl RenderOnce for Input {
                     state.start_selection(char_pos);
                     drop(state);
 
-                    if !was_editing {
-                        if let Some(ref handler) = on_edit_start_click {
+                    if !was_editing
+                        && let Some(ref handler) = on_edit_start_click {
                             handler(window, cx);
                         }
-                    }
                     window.refresh();
                 });
 

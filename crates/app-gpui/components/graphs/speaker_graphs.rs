@@ -224,8 +224,8 @@ pub fn render_speaker_preview_graph(
         .size(width, height);
 
     // Add target curve if available
-    if let Some(target) = target_curve {
-        if !target.is_empty() {
+    if let Some(target) = target_curve
+        && !target.is_empty() {
             chart_builder = chart_builder.add_series(
                 target,
                 Some("Target"),
@@ -234,7 +234,6 @@ pub fn render_speaker_preview_graph(
                 0.8,
             );
         }
-    }
 
     let chart = chart_builder.build();
 
@@ -402,7 +401,7 @@ pub fn render_spinorama_horizontal_graph(
         .x_range(20.0, 20000.0)
         .y_label("SPL (dB)")
         .y_range(-40.0, 10.0)
-        .label(&format!("{:.0}°", base.angle))
+        .label(format!("{:.0}°", base.angle))
         .legend_position(LegendPosition::Bottom)
         .color(angle_colors[0])
         .stroke_width(2.0)
@@ -481,7 +480,7 @@ pub fn render_spinorama_vertical_graph(
         .x_range(20.0, 20000.0)
         .y_label("SPL (dB)")
         .y_range(-40.0, 10.0)
-        .label(&format!("{:.0}°", base.angle))
+        .label(format!("{:.0}°", base.angle))
         .color(angle_colors[0])
         .stroke_width(2.0)
         .theme(chart_theme)
@@ -612,8 +611,8 @@ fn render_tonal_balance_plot(
         let mut count = 0.0;
 
         for (i, &f) in freqs.iter().enumerate() {
-            if f >= min_freq && f <= max_freq {
-                if let Some(&y) = values.get(i) {
+            if f >= min_freq && f <= max_freq
+                && let Some(&y) = values.get(i) {
                     let x = f.log10();
                     sum_x += x;
                     sum_y += y;
@@ -621,7 +620,6 @@ fn render_tonal_balance_plot(
                     sum_xx += x * x;
                     count += 1.0;
                 }
-            }
         }
 
         if count < 2.0 {
@@ -653,7 +651,7 @@ fn render_tonal_balance_plot(
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
         .y_range(-15.0, 5.0)
-        .label(&format!("{} Orig", curve_type))
+        .label(format!("{} Orig", curve_type))
         .y_label("SPL (dB)")
         .legend_position(LegendPosition::Bottom)
         .color(BLUE)
@@ -680,8 +678,8 @@ fn render_tonal_balance_plot(
                 let mut bins = vec![0.0; 9];
 
                 for (i, &f) in freqs.iter().enumerate() {
-                    if f >= min_freq && f <= max_freq {
-                        if let Some(&y) = values.get(i) {
+                    if f >= min_freq && f <= max_freq
+                        && let Some(&y) = values.get(i) {
                             let trend_y = slope * f.log10() + intercept;
                             let deviation = (y - trend_y).abs();
 
@@ -692,7 +690,6 @@ fn render_tonal_balance_plot(
                                 bins[8] += 1.0; // Overflow bin
                             }
                         }
-                    }
                 }
                 bins
             };
@@ -715,7 +712,7 @@ fn render_tonal_balance_plot(
         // Use a grouped bar chart
         let chart = bar(&labels, &hist_orig)
             .color(BLUE)
-            .label(&format!("{} Original", curve_type))
+            .label(format!("{} Original", curve_type))
             .theme(bar_theme)
             .size(width, height / 2.0)
             .bar_gap(4.0)

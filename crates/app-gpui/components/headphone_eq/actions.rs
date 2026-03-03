@@ -19,7 +19,7 @@ impl PlayerView {
 
             if let Some(file) = file {
                 let path = file.path().to_string_lossy().to_string();
-                let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                state_entity.update(&mut cx.clone(), |state, _| {
                     state
                         .app
                         .measurement_state
@@ -135,7 +135,7 @@ impl PlayerView {
                 })
                 .await;
 
-            let _ = state_entity.update(&mut cx.clone(), |state, cx| {
+            state_entity.update(&mut cx.clone(), |state, cx| {
                 match result {
                     Ok(opt_result) => {
                         // Map result to App state
@@ -309,7 +309,7 @@ impl PlayerView {
                     // Write to file
                     let write_res = std::fs::write(&path, result_json);
 
-                    let _ = state_entity.update(&mut cx.clone(), |state, cx| {
+                    state_entity.update(&mut cx.clone(), |state, cx| {
                         match write_res {
                             Ok(_) => {
                                 state.app.ui_state.toast_message =

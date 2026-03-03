@@ -149,8 +149,8 @@ impl App {
     /// Get the dimensions of the currently editing Matrix plugin
     pub fn get_matrix_dimensions(&self) -> Option<(usize, usize)> {
         use sotf_audio_player::PluginSettings;
-        if let Some(plugin) = self.get_editing_plugin() {
-            if let PluginSettings::Matrix {
+        if let Some(plugin) = self.get_editing_plugin()
+            && let PluginSettings::Matrix {
                 input_channels,
                 output_channels,
                 ..
@@ -158,7 +158,6 @@ impl App {
             {
                 return Some((*input_channels, *output_channels));
             }
-        }
         None
     }
 
@@ -236,16 +235,14 @@ impl App {
         }; // Mutable borrow ends here
 
         // Clamp grid selection after borrow is released
-        if let Some(max_col) = clamp_col_to {
-            if self.matrix_grid_col >= max_col {
+        if let Some(max_col) = clamp_col_to
+            && self.matrix_grid_col >= max_col {
                 self.matrix_grid_col = max_col.saturating_sub(1);
             }
-        }
-        if let Some(max_row) = clamp_row_to {
-            if self.matrix_grid_row >= max_row {
+        if let Some(max_row) = clamp_row_to
+            && self.matrix_grid_row >= max_row {
                 self.matrix_grid_row = max_row.saturating_sub(1);
             }
-        }
 
         result
     }

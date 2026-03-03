@@ -93,12 +93,11 @@ impl App {
                         if artist_node.artist == *name {
                             // Add only albums that pass the current filter
                             for &album_idx in &artist_node.album_indices {
-                                if filtered_indices.contains(&album_idx) {
-                                    if let Some(album) = self.library.albums.get(album_idx) {
+                                if filtered_indices.contains(&album_idx)
+                                    && let Some(album) = self.library.albums.get(album_idx) {
                                         self.queue
                                             .push(QueueEntry::new(QueueItem::new(album.clone())));
                                     }
-                                }
                             }
                             // Auto-play if queue was empty OR if nothing was playing
                             if was_empty || was_not_playing {

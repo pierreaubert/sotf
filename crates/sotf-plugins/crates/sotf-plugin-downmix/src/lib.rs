@@ -427,9 +427,9 @@ impl DownmixPlugin {
 
             // Complex multiply-accumulate: out += channel * gain
             // Since gains are real, we can optimize the loop easily.
-            for i in 0..num_bins {
-                self.out_freq_l[i] += channel_fft[i] * gl;
-                self.out_freq_r[i] += channel_fft[i] * gr;
+            for (i, &cf) in channel_fft.iter().enumerate() {
+                self.out_freq_l[i] += cf * gl;
+                self.out_freq_r[i] += cf * gr;
             }
         }
 

@@ -195,8 +195,19 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             ];
 
             for (idx, label, value) in &rows {
-                let is_selected = idx.map_or(false, |i| i == s.config_selected_field);
-                let style = if is_selected {
+                let is_selected = idx.is_some_and(|i| i == s.config_selected_field);
+                let is_editing = is_selected && s.editing_value;
+                let display_value = if is_editing {
+                    format!("{}▏", s.edit_buffer)
+                } else {
+                    value.clone()
+                };
+                let style = if is_editing {
+                    Style::default()
+                        .fg(app.theme.fg_selected)
+                        .bg(app.theme.bg_selected)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_selected {
                     Style::default()
                         .fg(app.theme.accent_primary)
                         .add_modifier(Modifier::BOLD)
@@ -207,15 +218,26 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     Style::default().fg(app.theme.fg_primary)
                 };
-                let arrow = if is_selected { "> " } else { "  " };
+                let arrow = if is_editing {
+                    "✎ "
+                } else if is_selected {
+                    "> "
+                } else {
+                    "  "
+                };
                 lines.push(Line::from(Span::styled(
-                    format!("{}{:<22} {}", arrow, label, value),
+                    format!("{}{:<22} {}", arrow, label, display_value),
                     style,
                 )));
             }
             lines.push(Line::from(""));
+            let hint = if s.editing_value {
+                " Type value, Enter=confirm  Esc=cancel"
+            } else {
+                " Up/Down=navigate  Left/Right=adjust  Enter=edit value  Tab=next field"
+            };
             lines.push(Line::from(Span::styled(
-                " Up/Down=navigate  -/+=adjust  Left/Right=step  Enter/Tab=optimize",
+                hint,
                 Style::default().fg(app.theme.fg_secondary),
             )));
 

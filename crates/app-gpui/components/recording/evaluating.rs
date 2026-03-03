@@ -245,11 +245,10 @@ impl PlayerView {
             .iter()
             .enumerate()
             .filter_map(|(idx, r)| {
-                if let Some(selected) = selected_channel {
-                    if idx != selected {
+                if let Some(selected) = selected_channel
+                    && idx != selected {
                         return None;
                     }
-                }
                 r.result
                     .as_ref()
                     .map(|res| (r.channel_name.clone(), idx, res.clone()))
@@ -494,15 +493,13 @@ impl PlayerView {
         sample_rate: f32,
     ) -> impl IntoElement {
         // We only visualize the first selected channel's spectrogram for now
-        if let Some((_, _, result)) = results.first() {
-            if let Some(spectrogram) = &result.spectrogram_db {
-                if !spectrogram.is_empty() {
+        if let Some((_, _, result)) = results.first()
+            && let Some(spectrogram) = &result.spectrogram_db
+                && !spectrogram.is_empty() {
                     return self
                         .render_spectrogram_canvas(spectrogram, theme, sample_rate)
                         .into_any_element();
                 }
-            }
-        }
 
         div()
             .h(px(300.0))
@@ -522,7 +519,7 @@ impl PlayerView {
 
     fn render_spectrogram_canvas(
         &self,
-        spectrogram: &Vec<Vec<f32>>,
+        spectrogram: &[Vec<f32>],
         theme: &crate::theme::Theme,
         sample_rate: f32,
     ) -> impl IntoElement {
@@ -553,8 +550,8 @@ impl PlayerView {
         // We need [Freq0_Time0, Freq0_Time1...], [Freq1_Time0...]
         let mut z_values = Vec::with_capacity(num_time_slices * num_freq_bins);
         for f in 0..num_freq_bins {
-            for t in 0..num_time_slices {
-                z_values.push(spectrogram[t][f] as f64);
+            for row in spectrogram.iter().take(num_time_slices) {
+                z_values.push(row[f] as f64);
             }
         }
 
@@ -608,7 +605,7 @@ impl PlayerView {
         let mut sum = 0.0_f32;
         let mut count = 0;
         for (&freq, &mag) in frequencies.iter().zip(magnitude_db.iter()) {
-            if freq >= 100.0 && freq <= 10000.0 {
+            if (100.0..=10000.0).contains(&freq) {
                 sum += mag;
                 count += 1;
             }
@@ -859,9 +856,7 @@ impl PlayerView {
             .flat_map(|s| s.y_values.iter())
             .fold(0.0_f64, |max, &v| max.max(v));
 
-        let y_max = if max_thd > 10.0 {
-            max_thd.ceil()
-        } else if max_thd > 1.0 {
+        let y_max = if max_thd > 1.0 {
             max_thd.ceil()
         } else if max_thd > 0.1 {
             1.0
@@ -1043,6 +1038,7 @@ impl PlayerView {
     }
 
     /// Render impulse response chart with first channel as timing reference
+    #[allow(clippy::type_complexity)]
     fn render_impulse_response_chart(
         &self,
         results: &[(String, usize, RecordingResult)],
@@ -1108,7 +1104,7 @@ impl PlayerView {
             -2.0
         };
         let x_max = if max_time.is_finite() {
-            max_time.max(10.0).min(20.0)
+            max_time.clamp(10.0, 20.0)
         } else {
             10.0
         };

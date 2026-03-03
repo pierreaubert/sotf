@@ -177,8 +177,8 @@ impl PlayerView {
                                         )
                                         .child({
                                             // Dynamic truncation based on panel width
-                                            let max_title_chars = state.app.max_chars_queue_list_title(&layout);
-                                            let max_artist_chars = state.app.max_chars_queue_list_artist(&layout);
+                                            let max_title_chars = state.app.max_chars_queue_list_title(layout);
+                                            let max_artist_chars = state.app.max_chars_queue_list_artist(layout);
 
                                             let album_title = item.album.title.clone();
                                             let album_title_truncated = if album_title.chars().count() > max_title_chars {
@@ -521,8 +521,8 @@ impl PlayerView {
             let art_path = album.album_art_path.clone();
 
             // Dynamic truncation based on window/panel size
-            let max_title_chars = state.app.max_chars_now_playing_title(&layout);
-            let max_artist_chars = state.app.max_chars_now_playing_artist(&layout);
+            let max_title_chars = state.app.max_chars_now_playing_title(layout);
+            let max_artist_chars = state.app.max_chars_now_playing_artist(layout);
 
             let album_title = if album_title_full.chars().count() > max_title_chars {
                 album_title_full
@@ -770,7 +770,7 @@ impl PlayerView {
         // Get dynamic max chars for track titles based on window size
         let state = self.state.read(cx);
         let layout = state.layout.read(cx);
-        let max_track_chars = state.app.max_chars_track_title(&layout);
+        let max_track_chars = state.app.max_chars_track_title(layout);
 
         // Find common prefix to strip from track names
         // For albums like "Monteverdi: Vespro della Beata...", tracks often start with "Vespro della Beata..."
@@ -854,11 +854,9 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     // Update the track index in the current queue item
                                     if let Some(queue_idx) = state.app.playback.current_queue_index
-                                    {
-                                        if let Some(item) = state.app.queue.get_mut(queue_idx) {
+                                        && let Some(item) = state.app.queue.get_mut(queue_idx) {
                                             item.current_track_index = idx;
                                         }
-                                    }
                                     Self::play_track(state, path);
                                 });
                                 cx.notify();

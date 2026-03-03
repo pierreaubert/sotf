@@ -129,6 +129,7 @@ impl TreemapRect {
 }
 
 /// Treemap chart builder.
+#[allow(clippy::type_complexity)]
 pub struct Treemap {
     root: TreemapNode,
     title: Option<String>,

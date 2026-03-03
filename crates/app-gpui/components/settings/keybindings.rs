@@ -8,6 +8,7 @@ use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use std::collections::HashMap;
 
 impl PlayerView {
+    #[allow(clippy::type_complexity)]
     pub(crate) fn render_keybindings_settings_content(
         &self,
         cx: &mut Context<Self>,

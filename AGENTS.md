@@ -3,6 +3,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Structure
+
+This is a multi-crate Rust workspace. Always use correct crate/package names (check Cargo.toml) when running cargo commands. Use `cargo test --workspace` for full runs, or `cargo test -p <exact-package-name>` for targeted runs.
+
 ## Interaction Rules
 - **Verify Compilation**: Always ensure the code compiles (`cargo check` or `cargo build`) before submitting an answer or marking a task as complete.
 - **Engine & Plugins crates**: When modifying `crates/engine/` or `crates/plugins/`, always create a dedicated PR (not part of a larger PR) and run a code review before merging.
@@ -676,6 +680,10 @@ just validate-au      # Run auval validation
 
 When fixing audio bugs (crackling, saturation, speed issues), always investigate the full signal chain — don't stop at the first symptom fix. Check: sample rate mismatches, frame allocation in hot paths, plugin propagation, and normalization. A surface-level fix often masks a deeper root cause.
 
+When diagnosing Rust compilation or CLI issues involving clap flatten, check for duplicate field names across all flattened structs first before investigating default values or other causes.
+
+When a first fix attempt fails, stop and re-analyze the root cause before trying a variation. Especially for audio/DSP algorithms: naive normalization or scaling fixes often make problems worse. Prefer bounded/clamped approaches over unbounded normalization.
+
 ## Python / Visualization
 
 Python visualization scripts use the virtual environment at `./venv`. Use `./venv/bin/python` to run scripts and `./venv/bin/pyright` for type checking. Do not use the system Python.
@@ -688,6 +696,16 @@ When working with clap CLI argument structs, be aware that flattened plugin stru
 
 For roomeq/EQ work: filters must be placed within measurement data frequency bounds. Passband detection uses relative-to-peak thresholds, not absolute dB values. Always verify optimizer frequency ranges against actual data bounds.
 
+## Common Pitfalls
+
+Before editing any Rust file, verify it is actively compiled (not commented out, not behind a disabled feature flag, not dead code). Check the parent module's mod declarations and Cargo.toml feature flags.
+
+## Code Review
+
+For code reviews, always include: (1) correctness bugs with test cases, (2) edge cases in algorithm logic, (3) missing error handling, and (4) concrete fix suggestions. Do NOT produce surface-level reviews — the user will reject them and ask again.
+
 ## Workflow Rules
+
+When fixing bugs or refactoring, always run the full test suite (`cargo test --workspace`) after changes and confirm all tests pass before reporting completion. Do not assume tests pass based on compilation alone.
 
 Before implementing a fix, read any relevant format docs or specifications the user points to. Do not start editing code until you understand the data format or protocol involved.

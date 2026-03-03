@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use gpui::Entity;
-use gpui::prelude::*;
 use gpui_ui_kit::workflow::NodeId;
 use sotf_audio_player::Player;
 
@@ -202,6 +201,12 @@ pub struct AppState {
     pub app: App,
     pub layout: Entity<LayoutState>,
     pub player: Arc<parking_lot::Mutex<Player>>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
@@ -516,8 +521,8 @@ impl App {
             (&self.current_track_path, self.current_track_start_time)
         {
             let elapsed = start_time.elapsed().as_secs();
-            if elapsed >= 30 {
-                if let Some(db) = self.library_state.library.get_database() {
+            if elapsed >= 30
+                && let Some(db) = self.library_state.library.get_database() {
                     let duration = self.playback.position_secs as u64;
                     if let Err(e) = db.record_play(path, duration) {
                         log::error!("Failed to record play: {}", e);
@@ -543,7 +548,6 @@ impl App {
                         }
                     }
                 }
-            }
         }
     }
 
@@ -850,12 +854,11 @@ impl App {
             .recording_base_directory = config.recording_config.recording_base_directory;
 
         // Reload calibration data if path exists
-        if let Some(ref path) = self.measurement_state.recording_state.mic_calibration_path {
-            if let Ok(content) = std::fs::read_to_string(path) {
+        if let Some(ref path) = self.measurement_state.recording_state.mic_calibration_path
+            && let Ok(content) = std::fs::read_to_string(path) {
                 self.measurement_state.recording_state.mic_calibration_data =
                     crate::app::types::CalibrationData::parse(&content);
             }
-        }
 
         // Restore plugin presets path if we had a last loaded preset
         if let Some(preset_name) = config.last_loaded_plugin_preset {
@@ -918,8 +921,7 @@ impl App {
             window_geometry: window_geometry.unwrap_or_else(|| {
                 // If no geometry provided, use current saved value or default
                 Config::load()
-                    .ok()
-                    .and_then(|c| Some(c.window_geometry))
+                    .ok().map(|c| c.window_geometry)
                     .unwrap_or_default()
             }),
             volume: self.playback.volume,
@@ -971,11 +973,10 @@ impl App {
 
     /// Check and dismiss expired toast messages
     pub fn update_toast(&mut self) {
-        if let Some(ref toast) = self.ui_state.toast_message {
-            if toast.should_dismiss() {
+        if let Some(ref toast) = self.ui_state.toast_message
+            && toast.should_dismiss() {
                 self.ui_state.toast_message = None;
             }
-        }
     }
 
     /// Dismiss the current toast message manually

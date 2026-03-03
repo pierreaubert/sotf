@@ -406,8 +406,19 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 
             let mut lines: Vec<Line> = Vec::new();
             for (idx, label, value) in &rows {
-                let is_selected = idx.map_or(false, |i| i == s.selected_field);
-                let style = if is_selected {
+                let is_selected = idx.is_some_and(|i| i == s.selected_field);
+                let is_editing = is_selected && s.editing_value;
+                let display_value = if is_editing {
+                    format!("{}▏", s.edit_buffer)
+                } else {
+                    value.clone()
+                };
+                let style = if is_editing {
+                    Style::default()
+                        .fg(app.theme.fg_selected)
+                        .bg(app.theme.bg_selected)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_selected {
                     Style::default()
                         .fg(app.theme.accent_primary)
                         .add_modifier(Modifier::BOLD)
@@ -418,9 +429,15 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     Style::default().fg(app.theme.fg_primary)
                 };
-                let arrow = if is_selected { "> " } else { "  " };
+                let arrow = if is_editing {
+                    "✎ "
+                } else if is_selected {
+                    "> "
+                } else {
+                    "  "
+                };
                 lines.push(Line::from(Span::styled(
-                    format!("{}{:<22} {}", arrow, label, value),
+                    format!("{}{:<22} {}", arrow, label, display_value),
                     style,
                 )));
             }
@@ -450,8 +467,13 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             }
 
             lines.push(Line::from(""));
+            let hint = if s.editing_value {
+                " Type value, Enter=confirm  Esc=cancel"
+            } else {
+                " Up/Down=navigate  Left/Right=adjust  Enter=edit value/path  Tab=next field"
+            };
             lines.push(Line::from(Span::styled(
-                " Up/Down=navigate  Left/Right=adjust  Enter=edit path  Tab=capture",
+                hint,
                 Style::default().fg(app.theme.fg_secondary),
             )));
 
@@ -622,8 +644,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             f.render_widget(table, inner[0]);
 
             // Selected channel details
-            if let Some(ch) = completed.get(s.selected_channel_view) {
-                if let Some(ref result) = ch.result {
+            if let Some(ch) = completed.get(s.selected_channel_view)
+                && let Some(ref result) = ch.result {
                     let mut details = vec![
                         Line::from(Span::styled(
                             format!(" Channel: {}", ch.channel_name),
@@ -647,7 +669,6 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                         .block(Block::default().borders(Borders::ALL).title("Details"));
                     f.render_widget(detail_para, inner[1]);
                 }
-            }
 
             let help = Paragraph::new(" Up/Down=select channel  Tab=save  BackTab=capture")
                 .style(Style::default().fg(app.theme.fg_secondary));

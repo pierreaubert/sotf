@@ -736,7 +736,7 @@ fn distance(a: &Array1<f64>, b: &Array1<f64>) -> f64 {
 /// For accuracy in quasi-singular integration, we use sqrt(area) as it
 /// provides a consistent measure regardless of element shape.
 fn estimate_element_size(element_coords: &Array2<f64>, element_type: ElementType) -> f64 {
-    let num_nodes = element_type.num_nodes();
+    let _num_nodes = element_type.num_nodes();
 
     // Compute element area using cross product
     match element_type {

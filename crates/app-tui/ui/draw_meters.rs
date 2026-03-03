@@ -425,7 +425,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     let loudness = app.loudness_info.as_ref().unwrap();
 
     // Draw border with simple title
-    let title_lines = vec![Line::from("Levels (help: ?)")];
+    let title_lines = [Line::from("Levels (help: ?)")];
     let title_height = 1;
 
     // Highlight border when focused

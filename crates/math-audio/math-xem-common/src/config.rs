@@ -207,9 +207,11 @@ impl SourceConfig {
 /// Directivity pattern configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[derive(Default)]
 pub enum DirectivityConfig {
     /// Omnidirectional (spherical) radiation pattern
     #[serde(rename = "omnidirectional")]
+    #[default]
     Omnidirectional,
     /// Classical frequency-dependent directional source
     #[serde(rename = "classical")]
@@ -231,11 +233,6 @@ pub enum DirectivityConfig {
     },
 }
 
-impl Default for DirectivityConfig {
-    fn default() -> Self {
-        Self::Omnidirectional
-    }
-}
 
 impl DirectivityConfig {
     /// Convert to Directivity

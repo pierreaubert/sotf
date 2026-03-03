@@ -730,7 +730,7 @@ impl XtcPlugin {
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
-                &current_filters,
+                current_filters,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
@@ -761,7 +761,7 @@ impl XtcPlugin {
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
-                &current_filters,
+                current_filters,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
@@ -783,7 +783,7 @@ impl XtcPlugin {
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
-                &filters,
+                filters,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
@@ -800,7 +800,7 @@ impl XtcPlugin {
                 &mut self.ifft_input,
                 &self.fft_output_l,
                 &self.fft_output_r,
-                &filters,
+                filters,
             );
             self.fft_inverse
                 .process(&mut self.ifft_input, &mut self.ifft_output)
@@ -1113,11 +1113,10 @@ impl Plugin for XtcPlugin {
         }
 
         // Measure input loudness for auto-gain (before any processing)
-        if do_measure {
-            if let Some(ag) = &mut self.auto_gain {
+        if do_measure
+            && let Some(ag) = &mut self.auto_gain {
                 let _ = ag.measure_input(input);
             }
-        }
 
         // Bypass if disabled
         if !self.params.enabled {

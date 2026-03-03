@@ -68,7 +68,7 @@ impl HalConfig {
 
 /// Format sample rate for display (e.g., 48000 -> "48 kHz")
 pub fn format_sample_rate(sample_rate: u32) -> String {
-    if sample_rate % 1000 == 0 {
+    if sample_rate.is_multiple_of(1000) {
         format!("{} kHz", sample_rate / 1000)
     } else {
         format!("{:.1} kHz", sample_rate as f32 / 1000.0)

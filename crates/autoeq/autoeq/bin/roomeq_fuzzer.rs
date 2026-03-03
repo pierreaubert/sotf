@@ -429,6 +429,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 /// Generate a random RoomConfig
+#[allow(clippy::type_complexity)]
 fn generate_random_config(
     output_dir: &Path,
     test_idx: usize,

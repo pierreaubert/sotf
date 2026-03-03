@@ -109,7 +109,7 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
             }
         } else {
             // No waveform data — show empty bar
-            let bar: String = std::iter::repeat(' ').take(waveform_width).collect();
+            let bar: String = std::iter::repeat_n(' ', waveform_width).collect();
             spans.push(Span::styled(bar, Style::default().fg(app.theme.fg_muted)));
         }
     }

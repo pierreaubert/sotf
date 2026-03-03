@@ -42,6 +42,12 @@ pub fn auto_open_load_data(app: &mut App) {
 pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     // Esc: exit editing if active, then two-level focus (content → step tab → configure tab)
     if key.code == KeyCode::Esc {
+        // First dismiss numerical direct-edit mode
+        if app.room_eq.editing_value {
+            app.room_eq.editing_value = false;
+            app.room_eq.edit_buffer.clear();
+            return None;
+        }
         match app.room_eq.step {
             RoomEqStep::LoadData if app.room_eq.editing_file_path => {
                 app.room_eq.editing_file_path = false;
@@ -527,6 +533,7 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
     }
 }
 
+#[allow(clippy::type_complexity)]
 static ROOM_OPT_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<sotf_audio_player::autoeq::RoomOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
@@ -548,8 +555,8 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
 
-    if let Ok(mut guard) = result_slot.lock() {
-        if let Some(result) = guard.take() {
+    if let Ok(mut guard) = result_slot.lock()
+        && let Some(result) = guard.take() {
             match result {
                 Ok(r) => {
                     // Convert autoeq results to TUI ChannelOptResult
@@ -601,10 +608,9 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
             }
             return true;
         }
-    }
 
-    if let Ok(mut guard) = progress_slot.lock() {
-        if let Some(p) = guard.take() {
+    if let Ok(mut guard) = progress_slot.lock()
+        && let Some(p) = guard.take() {
             app.room_eq.opt_progress = p.overall_progress as f32;
             app.room_eq.opt_iteration = p.iteration;
             app.room_eq.opt_max_iter = p.max_iterations;
@@ -612,7 +618,6 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
             app.room_eq.loss_history.push((p.iteration, p.loss));
             return true;
         }
-    }
 
     false
 }

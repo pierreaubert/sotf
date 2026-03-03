@@ -676,7 +676,7 @@ impl PlayerView {
         cx.spawn({
             async move |_, cx| {
                 while let Ok((iteration, loss, overall_progress)) = progress_rx.recv().await {
-                    let _ = state_for_progress.update(&mut cx.clone(), |state, cx| {
+                    state_for_progress.update(&mut cx.clone(), |state, cx| {
                         state.app.measurement_state.room_eq_state.current_iteration = iteration;
                         state.app.measurement_state.room_eq_state.current_loss = loss;
                         state.app.measurement_state.room_eq_state.overall_progress =
@@ -709,7 +709,7 @@ impl PlayerView {
         // Spawn the optimization task
         cx.spawn(async move |_, cx| {
             // Update status
-            let _ = state_clone.update(&mut cx.clone(), |state, cx| {
+            state_clone.update(&mut cx.clone(), |state, cx| {
                 state.app.measurement_state.room_eq_state.status_message =
                     "Optimizing all channels (parallel)...".to_string();
                 cx.notify();
@@ -807,7 +807,7 @@ impl PlayerView {
                     let avg_post = room_result.combined_post_score;
 
                     // Update final state
-                    let _ = state_clone.update(&mut cx.clone(), |state, cx| {
+                    state_clone.update(&mut cx.clone(), |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -874,7 +874,7 @@ impl PlayerView {
                 }
                 Err(e) => {
                     log::error!("Room optimization failed: {}", e);
-                    let _ = state_clone.update(&mut cx.clone(), |state, cx| {
+                    state_clone.update(&mut cx.clone(), |state, cx| {
                         state
                             .app
                             .measurement_state

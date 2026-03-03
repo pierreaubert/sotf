@@ -81,7 +81,7 @@ impl Element for WaveformElement {
         _window: &mut Window,
         _cx: &mut App,
     ) -> Self::PrepaintState {
-        ()
+        
     }
 
     fn paint(
@@ -970,13 +970,12 @@ impl PlayerView {
                                 let mut player = state.player.lock();
                                 if let Err(e) = player.set_output_device(device_name.clone()) {
                                     log::error!("Failed to set output device: {}", e);
-                                } else if was_playing {
-                                    if let Some(path) = current_path {
+                                } else if was_playing
+                                    && let Some(path) = current_path {
                                         // Drop the player lock before calling play_track which also locks it
                                         drop(player);
                                         Self::play_track_at(state, path, Some(current_pos));
                                     }
-                                }
                             });
                             cx.notify();
                         }),

@@ -34,7 +34,13 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
     // Esc: exit editing if active, then two-level focus (content → step tab → configure tab)
     if key.code == KeyCode::Esc {
-        // First dismiss any text editing
+        // First dismiss numerical direct-edit mode
+        if app.recording.editing_value {
+            app.recording.editing_value = false;
+            app.recording.edit_buffer.clear();
+            return None;
+        }
+        // Then dismiss text editing
         if app.recording.editing_output_dir {
             app.recording.editing_output_dir = false;
             app.clear_autocomplete();
@@ -735,8 +741,8 @@ pub fn poll_recording(app: &mut App) -> bool {
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
 
-    if let Ok(mut guard) = result_slot.lock() {
-        if let Some(result) = guard.take() {
+    if let Ok(mut guard) = result_slot.lock()
+        && let Some(result) = guard.take() {
             match result {
                 Ok((ch_idx, rec_result)) => {
                     if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
@@ -760,7 +766,6 @@ pub fn poll_recording(app: &mut App) -> bool {
             }
             return true;
         }
-    }
 
     false
 }

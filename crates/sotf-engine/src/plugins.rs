@@ -3489,8 +3489,8 @@ impl PluginChain {
                 continue;
             }
 
-            if let Some(required) = plugin.settings.required_input_channels() {
-                if required != running_channels {
+            if let Some(required) = plugin.settings.required_input_channels()
+                && required != running_channels {
                     conflicts.push(ChannelConflict {
                         index,
                         plugin_type: plugin.plugin_type(),
@@ -3499,7 +3499,6 @@ impl PluginChain {
                     });
                     continue;
                 }
-            }
 
             // Track channel changes through the chain
             match &plugin.settings {

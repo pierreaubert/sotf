@@ -137,7 +137,7 @@ impl PlayerView {
                             let item_count = state.app.library_state.items_per_page;
                             let total_albums = state.app.filtered_albums().len();
                             let columns = state.app.library_state.library_columns.max(1);
-                            let rows = (item_count + columns - 1) / columns;
+                            let rows = item_count.div_ceil(columns);
                             let card_height = 220.0;
                             let estimated_height = rows as f32 * card_height;
                             let window_height = state.app.ui_state.window_height;
@@ -175,36 +175,31 @@ impl PlayerView {
                         if playback_state.is_playing {
                             let chain = &state.app.plugin_state.chain;
 
-                            if let Some(idx) = chain.input_monitor_engine_index() {
-                                if let Some(data) = player.get_cached_plugin_data(idx) {
-                                    if let Some(loudness) =
+                            if let Some(idx) = chain.input_monitor_engine_index()
+                                && let Some(data) = player.get_cached_plugin_data(idx)
+                                    && let Some(loudness) =
                                         data.downcast_ref::<sotf_audio_player::LoudnessData>()
                                     {
                                         state.app.playback.input_loudness_info =
                                             Some(loudness.clone());
                                     }
-                                }
-                            }
 
-                            if let Some(idx) = chain.output_monitor_engine_index() {
-                                if let Some(data) = player.get_cached_plugin_data(idx) {
-                                    if let Some(loudness) =
+                            if let Some(idx) = chain.output_monitor_engine_index()
+                                && let Some(data) = player.get_cached_plugin_data(idx)
+                                    && let Some(loudness) =
                                         data.downcast_ref::<sotf_audio_player::LoudnessData>()
                                     {
                                         state.app.playback.loudness_info = Some(loudness.clone());
                                     }
-                                }
-                            }
 
-                            if include_spectrum {
-                                if let Some(idx) = chain.spectrum_engine_index() {
+                            if include_spectrum
+                                && let Some(idx) = chain.spectrum_engine_index() {
                                     state.app.playback.spectrum_info =
                                         player.get_cached_plugin_data(idx).and_then(|d| {
                                             d.downcast_ref::<sotf_audio_player::SpectrumData>()
                                                 .cloned()
                                         });
                                 }
-                            }
 
                             if let Some(idx) = chain.compressor_engine_index() {
                                 state.app.playback.compressor_info =
@@ -380,7 +375,7 @@ impl PlayerView {
         self.state.update(cx, |state, cx| {
             let layout = state.layout.read(cx);
             // Save configuration
-            if let Err(e) = state.app.save_config_with_geometry(&layout, Some(geometry)) {
+            if let Err(e) = state.app.save_config_with_geometry(layout, Some(geometry)) {
                 log::error!("Failed to save config on quit: {}", e);
             }
 
@@ -411,7 +406,7 @@ impl PlayerView {
         self.state.update(cx, |state, cx| {
             state.app.next_theme();
             let layout = state.layout.read(cx);
-            if let Err(e) = state.app.save_config(&layout) {
+            if let Err(e) = state.app.save_config(layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -422,7 +417,7 @@ impl PlayerView {
         self.state.update(cx, |state, cx| {
             state.app.next_language();
             let layout = state.layout.read(cx);
-            if let Err(e) = state.app.save_config(&layout) {
+            if let Err(e) = state.app.save_config(layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -434,7 +429,7 @@ impl PlayerView {
             // Increase by 10%, max 2.0 (200%)
             state.app.ui_state.font_scale = (state.app.ui_state.font_scale * 1.1).min(2.0);
             let layout = state.layout.read(cx);
-            if let Err(e) = state.app.save_config(&layout) {
+            if let Err(e) = state.app.save_config(layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -446,7 +441,7 @@ impl PlayerView {
             // Decrease by 10%, min 0.5 (50%)
             state.app.ui_state.font_scale = (state.app.ui_state.font_scale / 1.1).max(0.5);
             let layout = state.layout.read(cx);
-            if let Err(e) = state.app.save_config(&layout) {
+            if let Err(e) = state.app.save_config(layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -457,7 +452,7 @@ impl PlayerView {
         self.state.update(cx, |state, cx| {
             state.app.ui_state.font_scale = 1.0;
             let layout = state.layout.read(cx);
-            if let Err(e) = state.app.save_config(&layout) {
+            if let Err(e) = state.app.save_config(layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -615,7 +610,7 @@ impl PlayerView {
             }
             // Save directories to config after successful scan
             let layout = state.layout.read(_cx);
-            if let Err(e) = state.app.save_config(&layout) {
+            if let Err(e) = state.app.save_config(layout) {
                 log::warn!("Failed to save config: {}", e);
             }
         });
@@ -639,7 +634,7 @@ impl PlayerView {
             }
             // Save directories to config after successful scan
             let layout = state.layout.read(_cx);
-            if let Err(e) = state.app.save_config(&layout) {
+            if let Err(e) = state.app.save_config(layout) {
                 log::warn!("Failed to save config: {}", e);
             }
         });
@@ -784,8 +779,8 @@ impl PlayerView {
         // Clamp output channels to device max — the playback thread will
         // downmix automatically when the processing chain outputs more
         // channels than the hardware supports.
-        if let Some(max_ch) = state.app.get_device_max_channels() {
-            if output_channels > max_ch {
+        if let Some(max_ch) = state.app.get_device_max_channels()
+            && output_channels > max_ch {
                 log::info!(
                     "[GPUI] Clamping output from {} to {} channels (device limit)",
                     output_channels,
@@ -793,7 +788,6 @@ impl PlayerView {
                 );
                 output_channels = max_ch;
             }
-        }
 
         // Apply ReplayGain correction to the permanent Gain plugin
         let rg_gain = state

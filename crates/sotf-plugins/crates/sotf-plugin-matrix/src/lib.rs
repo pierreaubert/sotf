@@ -2,7 +2,6 @@
 // Matrix Plugin - Channel mixer with configurable gain matrix
 // ============================================================================
 
-use serde_json;
 use sotf_host::parameters::{Parameter, ParameterId, ParameterValue};
 use sotf_host::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::smoothing::Smoother;

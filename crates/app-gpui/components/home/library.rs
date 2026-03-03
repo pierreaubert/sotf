@@ -804,7 +804,7 @@ impl PlayerView {
             let mut filtered: Vec<(String, usize)> = artist_counts
                 .iter()
                 .filter(|(name, _)| {
-                    name.chars().next().map_or(false, |c| {
+                    name.chars().next().is_some_and(|c| {
                         let first = c.to_ascii_uppercase();
                         if letter == '#' {
                             !first.is_ascii_alphabetic()
@@ -981,7 +981,7 @@ impl PlayerView {
             let mut filtered: Vec<(String, usize)> = composer_counts
                 .iter()
                 .filter(|(name, _)| {
-                    name.chars().next().map_or(false, |c| {
+                    name.chars().next().is_some_and(|c| {
                         let first = c.to_ascii_uppercase();
                         if letter == '#' {
                             !first.is_ascii_alphabetic()

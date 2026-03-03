@@ -169,8 +169,7 @@ impl App {
                     .directories
                     .iter()
                     .position(|d| d.path == *path)
-                {
-                    if self.library_state.remove_directory(dir_index).is_some() {
+                    && self.library_state.remove_directory(dir_index).is_some() {
                         let tree_items = self.get_directory_tree_items();
                         if self.selected_directory_index >= tree_items.len()
                             && self.selected_directory_index > 0
@@ -180,7 +179,6 @@ impl App {
                         self.ui_state.toast_message =
                             Some(ToastMessage::success("Directory removed and cleaned up."));
                     }
-                }
             } else {
                 self.ui_state.toast_message =
                     Some(ToastMessage::error("Cannot remove subdirectory."));
@@ -261,14 +259,13 @@ impl App {
             }
         }
 
-        if reload_needed {
-            if let Err(e) = self.load_library_from_database() {
+        if reload_needed
+            && let Err(e) = self.load_library_from_database() {
                 log::error!("Failed to reload library after scan: {}", e);
                 self.ui_state.toast_message = Some(ToastMessage::error(
                     "Scan complete but failed to reload library.",
                 ));
             }
-        }
     }
 
     /// Get flattened directory tree for display
@@ -279,9 +276,9 @@ impl App {
     /// Toggle directory expansion
     pub fn toggle_directory_expansion(&mut self) {
         let tree_items = self.get_directory_tree_items();
-        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
-            if *level == 0 {
-                if let Some(dir_info) = self
+        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index)
+            && *level == 0
+                && let Some(dir_info) = self
                     .library_state
                     .library
                     .directories
@@ -290,7 +287,5 @@ impl App {
                 {
                     dir_info.expanded = !dir_info.expanded;
                 }
-            }
-        }
     }
 }

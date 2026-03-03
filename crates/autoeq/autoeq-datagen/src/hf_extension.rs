@@ -185,7 +185,7 @@ fn hf_off_axis_tilt(freq: f64, angle_deg: f64) -> f64 {
         return 0.0;
     }
 
-    let clamped_angle = angle_deg.max(0.0).min(120.0);
+    let clamped_angle = angle_deg.clamp(0.0, 120.0);
     let base_db = if clamped_angle <= 15.0 {
         0.0
     } else {
@@ -194,7 +194,7 @@ fn hf_off_axis_tilt(freq: f64, angle_deg: f64) -> f64 {
     };
 
     let hf_ratio = (freq / 2000.0).log2() / (HF_MAX_FREQ / 2000.0).log2();
-    let hf_factor = hf_ratio.max(0.0).min(1.0);
+    let hf_factor = hf_ratio.clamp(0.0, 1.0);
     base_db * hf_factor
 }
 

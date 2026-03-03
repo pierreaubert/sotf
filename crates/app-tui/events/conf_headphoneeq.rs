@@ -61,7 +61,13 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
 
     // Esc: exit editing if active, then two-level focus (content → step tab → configure tab)
     if key.code == KeyCode::Esc {
-        // First dismiss any text editing
+        // First dismiss numerical direct-edit mode
+        if app.headphone_eq.editing_value {
+            app.headphone_eq.editing_value = false;
+            app.headphone_eq.edit_buffer.clear();
+            return None;
+        }
+        // Then dismiss text editing
         if app.headphone_eq.editing_measurement {
             app.headphone_eq.editing_measurement = false;
             app.clear_autocomplete();
@@ -595,6 +601,7 @@ fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
     }
 }
 
+#[allow(clippy::type_complexity)]
 static HEADPHONE_OPT_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<sotf_audio_player::autoeq::HeadphoneOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
@@ -611,8 +618,8 @@ pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
 
-    if let Ok(mut guard) = result_slot.lock() {
-        if let Some(result) = guard.take() {
+    if let Ok(mut guard) = result_slot.lock()
+        && let Some(result) = guard.take() {
             match result {
                 Ok(r) => {
                     app.headphone_eq.pre_loss = r.initial_loss;
@@ -643,7 +650,6 @@ pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
             }
             return true;
         }
-    }
 
     false
 }
