@@ -27,6 +27,59 @@ use std::any::Any;
 use std::sync::Arc;
 
 // ============================================================================
+// Delay Line for Latency Compensation
+// ============================================================================
+
+/// Minimal fixed-delay ring buffer for aligning two processing paths.
+struct DelayLine {
+    buffer: Vec<f32>,
+    pos: usize,
+    len: usize,
+}
+
+impl DelayLine {
+    fn new() -> Self {
+        Self {
+            buffer: Vec::new(),
+            pos: 0,
+            len: 0,
+        }
+    }
+
+    /// Set delay in frames (interleaved samples = frames * channels).
+    /// Allocates only when size changes.
+    fn set_delay(&mut self, frames: usize, channels: usize) {
+        let new_len = frames * channels;
+        if new_len != self.len {
+            self.buffer.resize(new_len, 0.0);
+            self.buffer.fill(0.0);
+            self.pos = 0;
+            self.len = new_len;
+        }
+    }
+
+    /// Swap each sample in `data` with the delayed version. No-op when len == 0.
+    #[inline]
+    fn process(&mut self, data: &mut [f32]) {
+        if self.len == 0 {
+            return;
+        }
+        for sample in data.iter_mut() {
+            std::mem::swap(&mut self.buffer[self.pos], sample);
+            self.pos += 1;
+            if self.pos >= self.len {
+                self.pos = 0;
+            }
+        }
+    }
+
+    fn reset(&mut self) {
+        self.buffer.fill(0.0);
+        self.pos = 0;
+    }
+}
+
+// ============================================================================
 // Exposed Data Structure
 // ============================================================================
 
@@ -76,6 +129,10 @@ pub struct ABComparePlugin {
     selected_path: i32,
     bypass: bool,
     mix_transition_ms: f32,
+
+    // Latency compensation delay lines
+    delay_a: DelayLine,
+    delay_b: DelayLine,
 
     // Internal buffers
     buffer_a: Vec<f32>,
@@ -129,6 +186,8 @@ impl ABComparePlugin {
             selected_path: params.selected_path,
             bypass: params.bypass,
             mix_transition_ms: params.mix_transition_ms,
+            delay_a: DelayLine::new(),
+            delay_b: DelayLine::new(),
             buffer_a: Vec::new(),
             buffer_b: Vec::new(),
             last_peak_a: 0.0,
@@ -244,6 +303,7 @@ impl ABComparePlugin {
     fn rebuild_path_a(&mut self) -> Result<(), String> {
         self.host_a =
             build_path_from_config(&self.path_a_config, self.num_channels, self.sample_rate)?;
+        self.update_latency_compensation();
         Ok(())
     }
 
@@ -251,7 +311,24 @@ impl ABComparePlugin {
     fn rebuild_path_b(&mut self) -> Result<(), String> {
         self.host_b =
             build_path_from_config(&self.path_b_config, self.num_channels, self.sample_rate)?;
+        self.update_latency_compensation();
         Ok(())
+    }
+
+    /// Align both paths by delaying the shorter one.
+    fn update_latency_compensation(&mut self) {
+        // Ensure hosts are built so latency queries work
+        let _ = self.host_a.build();
+        let _ = self.host_b.build();
+        let lat_a = self.host_a.total_latency_samples();
+        let lat_b = self.host_b.total_latency_samples();
+        if lat_a > lat_b {
+            self.delay_a.set_delay(0, self.num_channels);
+            self.delay_b.set_delay(lat_a - lat_b, self.num_channels);
+        } else {
+            self.delay_a.set_delay(lat_b - lat_a, self.num_channels);
+            self.delay_b.set_delay(0, self.num_channels);
+        }
     }
 }
 
@@ -434,6 +511,10 @@ impl Plugin for ABComparePlugin {
         // Reset auto-gain (also resets loudness monitors)
         self.auto_gain.reset();
 
+        // Reset delay lines
+        self.delay_a.reset();
+        self.delay_b.reset();
+
         // Reset mix smoother
         self.mix_smoother.reset(self.mix);
 
@@ -501,6 +582,10 @@ impl Plugin for ABComparePlugin {
 
         // Process path B
         self.host_b.process(input, &mut self.buffer_b)?;
+
+        // Apply latency compensation (delays the shorter path)
+        self.delay_a.process(&mut self.buffer_a[..expected_samples]);
+        self.delay_b.process(&mut self.buffer_b[..expected_samples]);
 
         // Measure loudness and peaks using AutoGain (throttled)
         // A's output is the "input reference" (what we want B to match)

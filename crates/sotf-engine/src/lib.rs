@@ -40,7 +40,8 @@ pub mod plugins;
 pub use plugins::{
     ChannelConflict, EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
     apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label,
-    get_channel_label_from_config, linear_to_db_string, resize_matrix,
+    get_channel_label_from_config, linear_to_db_string, preset_file_to_path_config_json,
+    resize_matrix,
 };
 
 // Re-export plugin types for convenience

@@ -2371,6 +2371,8 @@ pub mod ab_compare {
             "ms",
             "Mix",
         ),
+        ParamSpec::file_path("Path A Config", "path_a_config", "Configuration"),
+        ParamSpec::file_path("Path B Config", "path_b_config", "Configuration"),
     ];
 }
 

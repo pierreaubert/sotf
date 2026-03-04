@@ -1359,6 +1359,12 @@ impl PluginSettings {
                     Self::BinauralDecoder { sofa_file, .. } if index == 0 => {
                         Some(sofa_file.clone())
                     }
+                    Self::ABCompare { path_a_file, .. } if index == 9 => {
+                        Some(path_a_file.clone())
+                    }
+                    Self::ABCompare { path_b_file, .. } if index == 10 => {
+                        Some(path_b_file.clone())
+                    }
                     _ => None,
                 }
             }

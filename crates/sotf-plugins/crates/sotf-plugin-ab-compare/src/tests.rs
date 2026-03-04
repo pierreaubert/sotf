@@ -1,4 +1,52 @@
 use super::*;
+use sotf_host::host::DawHost;
+use sotf_host::plugin::{PluginInfo, ProcessContext};
+
+/// Pass-through plugin that reports a fixed latency for testing.
+struct LatencyPassthrough {
+    channels: usize,
+    latency: usize,
+}
+
+impl Plugin for LatencyPassthrough {
+    fn info(&self) -> PluginInfo {
+        PluginInfo::new("LatencyPassthrough", "0.1", "test")
+    }
+    fn input_channels(&self) -> usize {
+        self.channels
+    }
+    fn output_channels(&self) -> usize {
+        self.channels
+    }
+    fn parameters(&self) -> Vec<sotf_host::parameters::Parameter> {
+        vec![]
+    }
+    fn set_parameter(
+        &mut self,
+        _: sotf_host::parameters::ParameterId,
+        _: sotf_host::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        Err("none".into())
+    }
+    fn get_parameter(
+        &self,
+        _: &sotf_host::parameters::ParameterId,
+    ) -> Option<sotf_host::parameters::ParameterValue> {
+        None
+    }
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
+        output[..input.len()].copy_from_slice(input);
+        Ok(context.num_frames)
+    }
+    fn latency_samples(&self) -> usize {
+        self.latency
+    }
+}
 
 #[test]
 fn test_ab_compare_creation() {
@@ -906,4 +954,192 @@ fn test_auto_gain_params_serialization() {
     assert_eq!(deserialized.loudness_type, LoudnessType::ShortTerm);
     assert!((deserialized.max_auto_gain_db - 15.0).abs() < 0.01);
     assert!((deserialized.gain_smoothing_ms - 150.0).abs() < 0.01);
+}
+
+// ========================================================================
+// Latency Compensation Tests
+// ========================================================================
+
+#[test]
+fn test_latency_compensation() {
+    // Path A: passthrough (0 latency)
+    // Path B: passthrough reporting 64 samples latency
+    // The plugin should delay path A by 64 frames to align them.
+    let channels = 2;
+    let latency_frames = 64;
+
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Replace host_b with one containing a latency-reporting plugin
+    let mut host_b = DawHost::new(channels, 48000);
+    host_b
+        .add_plugin(Box::new(LatencyPassthrough {
+            channels,
+            latency: latency_frames,
+        }))
+        .unwrap();
+    host_b.build().unwrap();
+    plugin.host_b = host_b;
+    plugin.update_latency_compensation();
+
+    // Verify reported latency = max of both paths
+    assert_eq!(plugin.latency_samples(), latency_frames);
+
+    // Verify delay_a compensates the shorter path A
+    assert_eq!(plugin.delay_a.len, latency_frames * channels);
+    assert_eq!(plugin.delay_b.len, 0);
+
+    // Send an impulse and verify alignment:
+    // Path A output should be delayed by latency_frames relative to input.
+    let num_frames = 256;
+    let mut input = vec![0.0f32; num_frames * channels];
+    // Impulse at frame 0
+    for ch in 0..channels {
+        input[ch] = 1.0;
+    }
+
+    let mut output = vec![0.0f32; num_frames * channels];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+
+    // Use pure-A mode (mix = -1) with auto-gain disabled
+    plugin
+        .set_parameter(
+            ParameterId("mix".to_string()),
+            ParameterValue::Float(-1.0),
+        )
+        .unwrap();
+    plugin
+        .set_parameter(
+            ParameterId("auto_gain_enabled".to_string()),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
+    // Set very fast transition so smoother doesn't interfere
+    plugin
+        .set_parameter(
+            ParameterId("mix_transition_ms".to_string()),
+            ParameterValue::Float(5.0),
+        )
+        .unwrap();
+
+    // Process a few silent blocks first to settle the smoother at -1.0
+    let silent = vec![0.0f32; num_frames * channels];
+    let mut discard = vec![0.0f32; num_frames * channels];
+    for _ in 0..10 {
+        plugin.process(&silent, &mut discard, &context).unwrap();
+    }
+
+    // Now send the impulse
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    // Path A's impulse (frame 0) should appear at frame latency_frames in output
+    // because delay_a delays it by latency_frames.
+    let impulse_idx = latency_frames * channels;
+    for ch in 0..channels {
+        // Before the delay point: should be ~0
+        // (tiny leakage from crossfade smoother is acceptable)
+        if latency_frames > 0 {
+            assert!(
+                output[ch].abs() < 0.001,
+                "Frame 0 ch {} should be silent (delayed), got {}",
+                ch,
+                output[ch]
+            );
+        }
+        // At the delay point: should be ~1.0
+        assert!(
+            (output[impulse_idx + ch] - 1.0).abs() < 0.01,
+            "Frame {} ch {} should be ~1.0 (impulse), got {}",
+            latency_frames,
+            ch,
+            output[impulse_idx + ch]
+        );
+    }
+}
+
+#[test]
+fn test_latency_compensation_reset() {
+    let channels = 2;
+
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Add latency to path B
+    let mut host_b = DawHost::new(channels, 48000);
+    host_b
+        .add_plugin(Box::new(LatencyPassthrough {
+            channels,
+            latency: 32,
+        }))
+        .unwrap();
+    host_b.build().unwrap();
+    plugin.host_b = host_b;
+    plugin.update_latency_compensation();
+
+    // Fill delay with non-zero data
+    let num_frames = 64;
+    let input = vec![1.0f32; num_frames * channels];
+    let mut output = vec![0.0f32; num_frames * channels];
+    let context = ProcessContext {
+        sample_rate: 48000,
+        num_frames,
+    };
+    plugin.process(&input, &mut output, &context).unwrap();
+
+    // Reset should clear delay line contents
+    plugin.reset();
+
+    // Delay buffer should be all zeros after reset
+    assert!(plugin.delay_a.buffer.iter().all(|&s| s == 0.0));
+    assert!(plugin.delay_b.buffer.iter().all(|&s| s == 0.0));
+}
+
+#[test]
+fn test_latency_compensation_equal_latency() {
+    let channels = 2;
+
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Both paths: 32 samples latency
+    let mut host_a = DawHost::new(channels, 48000);
+    host_a
+        .add_plugin(Box::new(LatencyPassthrough {
+            channels,
+            latency: 32,
+        }))
+        .unwrap();
+    host_a.build().unwrap();
+    let mut host_b = DawHost::new(channels, 48000);
+    host_b
+        .add_plugin(Box::new(LatencyPassthrough {
+            channels,
+            latency: 32,
+        }))
+        .unwrap();
+    host_b.build().unwrap();
+    plugin.host_a = host_a;
+    plugin.host_b = host_b;
+    plugin.update_latency_compensation();
+
+    // No compensation needed — both delays should be 0
+    assert_eq!(plugin.delay_a.len, 0);
+    assert_eq!(plugin.delay_b.len, 0);
+}
+
+#[test]
+fn test_latency_compensation_no_latency() {
+    let channels = 2;
+
+    let mut plugin = ABComparePlugin::new(channels).unwrap();
+    plugin.initialize(48000).unwrap();
+
+    // Default paths have 0 latency
+    assert_eq!(plugin.delay_a.len, 0);
+    assert_eq!(plugin.delay_b.len, 0);
+    assert_eq!(plugin.latency_samples(), 0);
 }

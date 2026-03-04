@@ -1148,6 +1148,12 @@ pub enum PluginSettings {
         /// Path B configuration (JSON)
         #[serde(default = "default_ab_path_config")]
         path_b_config: String,
+        /// Path A config source file (for display only)
+        #[serde(default)]
+        path_a_file: String,
+        /// Path B config source file (for display only)
+        #[serde(default)]
+        path_b_file: String,
     },
     BandSplit {
         /// Number of input channels
@@ -1966,6 +1972,7 @@ impl PluginSettings {
                 mix_transition_ms,
                 path_a_config,
                 path_b_config,
+                ..
             } => {
                 let loudness_type_str = match loudness_type {
                     0 => "Momentary",
@@ -1975,6 +1982,10 @@ impl PluginSettings {
                     0 => "Potentiometer",
                     _ => "Binary",
                 };
+                let path_a_val: serde_json::Value =
+                    serde_json::from_str(path_a_config).unwrap_or(json!({"type": "None"}));
+                let path_b_val: serde_json::Value =
+                    serde_json::from_str(path_b_config).unwrap_or(json!({"type": "None"}));
                 PluginConfig::new(
                     "ab_compare",
                     json!({
@@ -1987,8 +1998,8 @@ impl PluginSettings {
                         "max_auto_gain_db": max_auto_gain_db,
                         "gain_smoothing_ms": gain_smoothing_ms,
                         "mix_transition_ms": mix_transition_ms,
-                        "path_a_config": path_a_config,
-                        "path_b_config": path_b_config,
+                        "path_a": path_a_val,
+                        "path_b": path_b_val,
                     }),
                 )
             }
@@ -2381,6 +2392,8 @@ impl PluginSettings {
                     mix_transition_ms: p(ab, "mix_transition_ms").default_f64(),
                     path_a_config: default_ab_path_config(),
                     path_b_config: default_ab_path_config(),
+                    path_a_file: String::new(),
+                    path_b_file: String::new(),
                 }
             }
             PluginType::BandSplit => Self::BandSplit {
@@ -2774,6 +2787,39 @@ struct PluginPreset {
 
 fn default_plugin_preset_version() -> u32 {
     1
+}
+
+/// Convert plugin entries from a preset file into a PathConfig JSON string
+/// suitable for the AB Compare plugin's path_a_config / path_b_config fields.
+pub fn plugins_to_path_config_json(plugins: &[Plugin], sample_rate: f64) -> String {
+    let configs: Vec<serde_json::Value> = plugins
+        .iter()
+        .filter(|p| p.enabled)
+        .map(|p| {
+            let pc = p.settings.to_plugin_config(sample_rate);
+            json!({"plugin_type": pc.plugin_type, "parameters": pc.parameters})
+        })
+        .collect();
+    let path_config = match configs.len() {
+        0 => json!({"type": "None"}),
+        1 => {
+            json!({
+                "type": "Plugin",
+                "plugin_type": configs[0]["plugin_type"],
+                "parameters": configs[0]["parameters"],
+            })
+        }
+        _ => json!({"type": "Rack", "plugins": configs}),
+    };
+    serde_json::to_string(&path_config).unwrap()
+}
+
+/// Parse a preset JSON file into a PathConfig JSON string for use in AB Compare.
+/// The file is expected to be a `PluginPreset` (with version + plugins array).
+pub fn preset_file_to_path_config_json(json_content: &str, sample_rate: f64) -> Result<String, String> {
+    let preset: PluginPreset = serde_json::from_str(json_content)
+        .map_err(|e| format!("Invalid preset file: {}", e))?;
+    Ok(plugins_to_path_config_json(&preset.plugins, sample_rate))
 }
 
 /// A plugin that is incompatible with the current channel count.
