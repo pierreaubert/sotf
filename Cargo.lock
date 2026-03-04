@@ -9005,7 +9005,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.201"
+version = "0.5.202"
 dependencies = [
  "autoeq",
  "chrono",

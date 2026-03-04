@@ -152,6 +152,29 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             )
             .style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[3]);
+
+            // Autocomplete overlay below the active input field
+            let editing_field_rect = if s.editing_measurement {
+                Some(inner[0])
+            } else if s.editing_custom_target {
+                Some(inner[2])
+            } else {
+                None
+            };
+            if let Some(field_rect) = editing_field_rect {
+                let ac_h = autocomplete_dropdown_height(app);
+                if ac_h > 0 {
+                    let ac_area = Rect {
+                        x: field_rect.x,
+                        y: field_rect.y + field_rect.height,
+                        width: field_rect.width,
+                        height: ac_h
+                            .min(area.height.saturating_sub(field_rect.y + field_rect.height)),
+                    };
+                    f.render_widget(Clear, ac_area);
+                    render_autocomplete_dropdown(f, ac_area, app);
+                }
+            }
         }
 
         HeadphoneEqStep::Configure => {
@@ -334,11 +357,13 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 return;
             }
 
+            let table_height = (s.filters.len() as u16 + 3).min(15);
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3), // summary
-                    Constraint::Min(5),    // filter table
+                    Constraint::Length(3),            // summary
+                    Constraint::Min(8),               // freq response chart
+                    Constraint::Length(table_height), // filter table
                 ])
                 .split(content);
 
@@ -349,17 +374,22 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ),
                 Span::raw("  |  "),
                 Span::styled(
-                    format!("Pre: {:.2}", s.pre_loss),
-                    Style::default().fg(app.theme.fg_secondary),
-                ),
-                Span::raw(" → "),
-                Span::styled(
-                    format!("Post: {:.2}", s.post_loss),
+                    format!("Loss: {:.4} → {:.4} (Δ {:.4})", s.pre_loss, s.post_loss, s.pre_loss - s.post_loss),
                     Style::default().fg(app.theme.accent_success),
                 ),
             ])])
             .block(Block::default().borders(Borders::ALL).title("Summary"));
             f.render_widget(summary, inner[0]);
+
+            draw_freq_response_chart(
+                f,
+                inner[1],
+                app,
+                &s.curve_frequencies,
+                &s.curve_input,
+                &s.curve_corrected,
+                &s.curve_filter_response,
+            );
 
             // Filter table
             let header = Row::new(vec![
@@ -402,7 +432,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             )
             .header(header)
             .block(Block::default().borders(Borders::ALL).title("Filters"));
-            f.render_widget(table, inner[1]);
+            f.render_widget(table, inner[2]);
         }
 
         HeadphoneEqStep::UpdatePlugin => {

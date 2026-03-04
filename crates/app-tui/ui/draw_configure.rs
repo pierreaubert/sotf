@@ -407,9 +407,23 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             let mut lines: Vec<Line> = Vec::new();
             for (idx, label, value) in &rows {
                 let is_selected = idx.is_some_and(|i| i == s.selected_field);
-                let is_editing = is_selected && s.editing_value;
-                let display_value = if is_editing {
+                let is_editing_numerical = is_selected && s.editing_value;
+                let is_editing_path = is_selected
+                    && match idx {
+                        Some(8) => s.editing_output_dir,
+                        Some(9) => s.editing_mic_cal,
+                        _ => false,
+                    };
+                let is_editing = is_editing_numerical || is_editing_path;
+                let display_value = if is_editing_numerical {
                     format!("{}▏", s.edit_buffer)
+                } else if is_editing_path {
+                    let path_val = match idx {
+                        Some(8) => &s.output_directory,
+                        Some(9) => &s.mic_calibration_path,
+                        _ => value,
+                    };
+                    format!("{}▏", path_val)
                 } else {
                     value.clone()
                 };
@@ -469,6 +483,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             lines.push(Line::from(""));
             let hint = if s.editing_value {
                 " Type value, Enter=confirm  Esc=cancel"
+            } else if s.editing_output_dir || s.editing_mic_cal {
+                " Type path, Tab=complete  Enter=confirm  F2=browse  Esc=cancel"
             } else {
                 " Up/Down=navigate  Left/Right=adjust  Enter=edit value/path  Tab=next field"
             };
@@ -481,6 +497,26 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 .block(Block::default().borders(Borders::ALL).title("Configure"))
                 .wrap(Wrap { trim: false });
             f.render_widget(para, content);
+
+            // Autocomplete overlay for output_dir / mic_cal path fields
+            if s.editing_output_dir || s.editing_mic_cal {
+                let ac_h = autocomplete_dropdown_height(app);
+                if ac_h > 0 {
+                    // Position below the config block
+                    let ac_y = content.y + content.height;
+                    let available = area.height.saturating_sub(ac_y);
+                    if available > 2 {
+                        let ac_area = Rect {
+                            x: content.x,
+                            y: ac_y,
+                            width: content.width,
+                            height: ac_h.min(available),
+                        };
+                        f.render_widget(Clear, ac_area);
+                        render_autocomplete_dropdown(f, ac_area, app);
+                    }
+                }
+            }
         }
 
         RecordingStep::Capture => {

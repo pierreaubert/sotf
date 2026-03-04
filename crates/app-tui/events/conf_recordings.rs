@@ -108,10 +108,16 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         app.clear_autocomplete();
                     }
                     KeyCode::Tab => {
-                        let input = app.recording.output_directory.clone();
-                        if let Some(s) = app.tab_complete_path(&input) {
-                            app.recording.output_directory = s;
-                        }
+                        app.zsh_tab_complete(
+                            crate::app::app_autocomplete::get_recording_output_dir,
+                            crate::app::app_autocomplete::set_recording_output_dir,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
+                    }
+                    KeyCode::BackTab => {
+                        app.zsh_backtab_complete(
+                            crate::app::app_autocomplete::set_recording_output_dir,
+                        );
                     }
                     KeyCode::Backspace => {
                         app.recording.output_directory.pop();
@@ -142,10 +148,16 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         app.clear_autocomplete();
                     }
                     KeyCode::Tab => {
-                        let input = app.recording.mic_calibration_path.clone();
-                        if let Some(s) = app.tab_complete_path(&input) {
-                            app.recording.mic_calibration_path = s;
-                        }
+                        app.zsh_tab_complete(
+                            crate::app::app_autocomplete::get_recording_mic_cal_path,
+                            crate::app::app_autocomplete::set_recording_mic_cal_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
+                    }
+                    KeyCode::BackTab => {
+                        app.zsh_backtab_complete(
+                            crate::app::app_autocomplete::set_recording_mic_cal_path,
+                        );
                     }
                     KeyCode::Backspace => {
                         app.recording.mic_calibration_path.pop();

@@ -1,5 +1,6 @@
 mod draw;
 mod draw_album_list;
+mod draw_autocomplete;
 mod draw_configure;
 mod draw_directory;
 mod draw_file_explorer;
@@ -26,6 +27,7 @@ pub use draw::draw;
 
 // Re-export all draw functions so sibling submodules can use them via `use super::*`
 pub(crate) use draw_album_list::*;
+pub(crate) use draw_autocomplete::*;
 pub(crate) use draw_configure::*;
 pub(crate) use draw_directory::*;
 pub(crate) use draw_file_explorer::*;

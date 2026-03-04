@@ -1,210 +1,129 @@
 use super::app_impl::App;
 
+/// Compute the longest common prefix of all suggestions.
+fn common_prefix(suggestions: &[String]) -> String {
+    let Some(first) = suggestions.first() else {
+        return String::new();
+    };
+    let mut prefix_len = first.len();
+    for s in &suggestions[1..] {
+        prefix_len = first
+            .chars()
+            .zip(s.chars())
+            .take_while(|(a, b)| a.eq_ignore_ascii_case(b))
+            .count()
+            .min(prefix_len);
+    }
+    // Use byte-safe slicing via chars
+    first.chars().take(prefix_len).collect()
+}
+
+/// Which autocomplete generator to use.
+pub enum AutocompleteKind {
+    /// Filesystem path completion from `generate_autocomplete_suggestions_for_input`
+    FilePath,
+    /// Preset name completion from `generate_autocomplete_suggestions_for_save_preset`
+    PresetName,
+}
+
 impl App {
-    /// Generate autocomplete suggestions for the current directory input
-    pub fn generate_autocomplete_suggestions(&mut self) {
-        self.autocomplete_suggestions.clear();
-        self.autocomplete_index = 0;
+    // ========================================================================
+    // Zsh-style Tab completion — unified entry point
+    // ========================================================================
 
-        let input = if self.directory_input.is_empty() {
-            "./"
-        } else {
-            &self.directory_input
-        };
-
-        // Expand tilde to home directory
-        let expanded_input = if input.starts_with('~') {
-            if let Ok(home) = std::env::var("HOME") {
-                input.replacen('~', &home, 1)
-            } else {
-                input.to_string()
+    /// Handle a Tab press with zsh-style behavior.
+    ///
+    /// - First Tab: generate suggestions. If none → "no matches". If one → apply it.
+    ///   If many → complete to common prefix, show menu, highlight first item.
+    /// - Subsequent Tabs: cycle forward through the menu.
+    ///
+    /// `get_input` reads the current input, `set_input` writes it back.
+    /// `kind` selects which generator to use.
+    pub fn zsh_tab_complete(
+        &mut self,
+        get_input: fn(&Self) -> &str,
+        set_input: fn(&mut Self, String),
+        kind: AutocompleteKind,
+    ) {
+        if self.autocomplete_menu_active {
+            // Menu is showing — check if the user has already selected a suggestion
+            // (inline refresh shows the menu but doesn't set the input to a suggestion)
+            let current_input = get_input(self).to_string();
+            let already_selected = self.autocomplete_suggestions.get(self.autocomplete_index)
+                .is_some_and(|s| *s == current_input);
+            if already_selected {
+                // Cycle forward to next suggestion
+                self.autocomplete_index =
+                    (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
             }
-        } else {
-            input.to_string()
-        };
+            // Apply current suggestion
+            let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+            set_input(self, value);
+            return;
+        }
 
-        let path = std::path::Path::new(&expanded_input);
+        // First Tab: generate suggestions
+        let input = get_input(self).to_string();
+        match kind {
+            AutocompleteKind::FilePath => {
+                self.generate_autocomplete_suggestions_for_input(&input);
+            }
+            AutocompleteKind::PresetName => {
+                self.generate_autocomplete_suggestions_for_save_preset_from(&input);
+            }
+        }
 
-        // Determine the directory to search and the prefix to match
-        let (search_dir, prefix) = if path.is_dir() && expanded_input.ends_with('/') {
-            // User typed a complete directory with trailing slash
-            (path.to_path_buf(), String::new())
-        } else if let Some(parent) = path.parent() {
-            // User is typing a partial name
-            let prefix = path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            (parent.to_path_buf(), prefix)
-        } else {
-            // Fallback to current directory
-            (std::path::PathBuf::from("."), expanded_input.clone())
-        };
+        match self.autocomplete_suggestions.len() {
+            0 => {
+                // No matches
+                self.status_message = Some("No matches".to_string());
+            }
+            1 => {
+                // Single match — apply directly, no menu
+                let value = self.autocomplete_suggestions[0].clone();
+                set_input(self, value);
+                self.clear_autocomplete();
+            }
+            _ => {
+                // Multiple matches — complete to common prefix, show menu
+                let prefix = common_prefix(&self.autocomplete_suggestions);
+                self.autocomplete_menu_active = true;
+                self.autocomplete_index = 0;
 
-        // Read directory and find matching entries
-        if let Ok(entries) = std::fs::read_dir(&search_dir) {
-            for entry in entries.flatten() {
-                if let Ok(file_name) = entry.file_name().into_string() {
-                    // Skip hidden files unless prefix starts with '.'
-                    if file_name.starts_with('.') && !prefix.starts_with('.') {
-                        continue;
-                    }
-
-                    // Check if filename starts with prefix
-                    if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
-                        let mut full_path = search_dir.join(&file_name);
-
-                        // Add trailing slash for directories
-                        if entry.path().is_dir() {
-                            full_path = full_path.join("");
-                        }
-
-                        let suggestion = full_path.to_string_lossy().to_string();
-                        self.autocomplete_suggestions.push(suggestion);
-                    }
+                // If common prefix is longer than input, apply it but don't select any item yet
+                if prefix.len() > input.len() {
+                    set_input(self, prefix);
+                } else {
+                    // Common prefix doesn't extend input — highlight first item
+                    let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+                    set_input(self, value);
                 }
             }
         }
-
-        // Sort suggestions
-        self.autocomplete_suggestions.sort();
     }
 
-    /// Apply the current autocomplete suggestion to the directory input
-    pub fn apply_autocomplete(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
-            self.directory_input = suggestion.clone();
+    /// Handle Shift+Tab (BackTab) — cycle backward through menu.
+    pub fn zsh_backtab_complete(
+        &mut self,
+        set_input: fn(&mut Self, String),
+    ) {
+        if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
+            return;
         }
-    }
-
-    /// Cycle to the next autocomplete suggestion
-    pub fn next_autocomplete(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            self.autocomplete_index =
-                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
-            self.apply_autocomplete();
-        }
-    }
-
-    /// Clear autocomplete suggestions
-    pub fn clear_autocomplete(&mut self) {
-        self.autocomplete_suggestions.clear();
-        self.autocomplete_index = 0;
-    }
-
-    /// Generate autocomplete suggestions for saving presets (restricted to preset directory)
-    /// This filters available presets by the current input and provides suggestions
-    pub fn generate_autocomplete_suggestions_for_save_preset(&mut self) {
-        self.autocomplete_suggestions.clear();
-        self.autocomplete_index = 0;
-
-        // Get the current input (without .json extension if present)
-        let input = self
-            .plugin_file_input
-            .trim_end_matches(".json")
-            .to_lowercase();
-
-        // Filter available presets by prefix match
-        for preset in &self.available_plugin_presets {
-            let preset_without_ext = preset.trim_end_matches(".json");
-            if preset_without_ext.to_lowercase().starts_with(&input) {
-                // Add suggestion without .json extension (save_to_file will add it)
-                self.autocomplete_suggestions
-                    .push(preset_without_ext.to_string());
-            }
-        }
-
-        // Sort suggestions alphabetically
-        self.autocomplete_suggestions.sort();
-    }
-
-    /// Generate autocomplete suggestions for plugin file input
-    pub fn generate_autocomplete_suggestions_for_plugin_file(&mut self) {
-        self.generate_autocomplete_suggestions_for_input(&self.plugin_file_input.clone());
-    }
-
-    /// Apply autocomplete to plugin file input
-    pub fn apply_autocomplete_to_plugin_file(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
-            self.plugin_file_input = suggestion.clone();
-        }
-    }
-
-    /// Cycle to next autocomplete for plugin file input
-    pub fn next_autocomplete_for_plugin_file(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            self.autocomplete_index =
-                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
-            self.apply_autocomplete_to_plugin_file();
-        }
-    }
-
-    /// Generate autocomplete suggestions for APO file input
-    pub fn generate_autocomplete_suggestions_for_apo_file(&mut self) {
-        self.generate_autocomplete_suggestions_for_input(&self.apo_file_input.clone());
-    }
-
-    /// Apply autocomplete to APO file input
-    pub fn apply_autocomplete_to_apo_file(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
-            self.apo_file_input = suggestion.clone();
-        }
-    }
-
-    /// Cycle to next autocomplete for APO file input
-    pub fn next_autocomplete_for_apo_file(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            self.autocomplete_index =
-                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
-            self.apply_autocomplete_to_apo_file();
-        }
-    }
-
-    /// Generate autocomplete suggestions for SOFA file input
-    pub fn generate_autocomplete_suggestions_for_sofa_file(&mut self) {
-        self.generate_autocomplete_suggestions_for_input(&self.sofa_file_input.clone());
-    }
-
-    /// Apply autocomplete to SOFA file input
-    pub fn apply_autocomplete_to_sofa_file(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
-            self.sofa_file_input = suggestion.clone();
-        }
-    }
-
-    /// Cycle to next autocomplete for SOFA file input
-    pub fn next_autocomplete_for_sofa_file(&mut self) {
-        if !self.autocomplete_suggestions.is_empty() {
-            self.autocomplete_index =
-                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
-            self.apply_autocomplete_to_sofa_file();
-        }
-    }
-
-    /// Handle a Tab press for path autocompletion on any string field.
-    /// On the first Tab (no suggestions yet), generates them from the filesystem.
-    /// On subsequent Tabs, cycles to the next suggestion.
-    /// Returns `Some(suggestion)` which the caller should assign to their field,
-    /// or `None` if no suggestions match.
-    pub fn tab_complete_path(&mut self, current_input: &str) -> Option<String> {
-        if self.autocomplete_suggestions.is_empty() {
-            self.generate_autocomplete_suggestions_for_input(current_input);
+        if self.autocomplete_index == 0 {
+            self.autocomplete_index = self.autocomplete_suggestions.len() - 1;
         } else {
-            self.autocomplete_index =
-                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.autocomplete_index -= 1;
         }
-        if !self.autocomplete_suggestions.is_empty() {
-            Some(self.autocomplete_suggestions[self.autocomplete_index].clone())
-        } else {
-            None
-        }
+        let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+        set_input(self, value);
     }
 
-    /// Generic autocomplete suggestions generator for any file input
+    // ========================================================================
+    // Generators
+    // ========================================================================
+
+    /// Generate filesystem-based autocomplete suggestions from an input path.
     fn generate_autocomplete_suggestions_for_input(&mut self, input: &str) {
         self.autocomplete_suggestions.clear();
         self.autocomplete_index = 0;
@@ -226,17 +145,14 @@ impl App {
 
         // Determine the directory to search and the prefix to match
         let (search_dir, prefix) = if path.is_dir() && expanded_input.ends_with('/') {
-            // User typed a complete directory with trailing slash
             (path.to_path_buf(), String::new())
         } else if let Some(parent) = path.parent() {
-            // User is typing a partial name
             let prefix = path
                 .file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
             (parent.to_path_buf(), prefix)
         } else {
-            // Fallback to current directory
             (std::path::PathBuf::from("."), expanded_input.clone())
         };
 
@@ -249,7 +165,6 @@ impl App {
                         continue;
                     }
 
-                    // Check if filename starts with prefix
                     if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
                         let mut full_path = search_dir.join(&file_name);
 
@@ -265,7 +180,140 @@ impl App {
             }
         }
 
-        // Sort suggestions
         self.autocomplete_suggestions.sort();
     }
+
+    /// Generate preset name suggestions filtered by prefix.
+    fn generate_autocomplete_suggestions_for_save_preset_from(&mut self, input: &str) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
+
+        let input_lower = input.trim_end_matches(".json").to_lowercase();
+
+        for preset in &self.available_plugin_presets {
+            let preset_without_ext = preset.trim_end_matches(".json");
+            if preset_without_ext.to_lowercase().starts_with(&input_lower) {
+                self.autocomplete_suggestions
+                    .push(preset_without_ext.to_string());
+            }
+        }
+
+        self.autocomplete_suggestions.sort();
+    }
+
+    // ========================================================================
+    // State management
+    // ========================================================================
+
+    /// Clear autocomplete suggestions and menu state.
+    pub fn clear_autocomplete(&mut self) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
+        self.autocomplete_menu_active = false;
+    }
+
+    /// Refresh autocomplete suggestions inline (as-you-type).
+    ///
+    /// Regenerates the suggestion list from the current input without
+    /// modifying the input text. The dropdown is shown if any matches
+    /// exist, but Tab-cycling state is reset so the next Tab still works
+    /// as a first-press.
+    pub fn refresh_autocomplete_inline(
+        &mut self,
+        get_input: fn(&Self) -> &str,
+        kind: AutocompleteKind,
+    ) {
+        let input = get_input(self).to_string();
+        if input.is_empty() {
+            self.clear_autocomplete();
+            return;
+        }
+        match kind {
+            AutocompleteKind::FilePath => {
+                self.generate_autocomplete_suggestions_for_input(&input);
+            }
+            AutocompleteKind::PresetName => {
+                self.generate_autocomplete_suggestions_for_save_preset_from(&input);
+            }
+        }
+        self.autocomplete_menu_active = !self.autocomplete_suggestions.is_empty();
+        self.autocomplete_index = 0;
+    }
+
+}
+
+// ============================================================================
+// Input accessor/setter helpers for each field
+// ============================================================================
+
+// These are free functions matching `fn(&App) -> &str` and `fn(&mut App, String)`.
+
+pub fn get_directory_input(app: &App) -> &str {
+    &app.directory_input
+}
+pub fn set_directory_input(app: &mut App, val: String) {
+    app.directory_input = val;
+}
+
+pub fn get_plugin_file_input(app: &App) -> &str {
+    &app.plugin_file_input
+}
+pub fn set_plugin_file_input(app: &mut App, val: String) {
+    app.plugin_file_input = val;
+}
+
+pub fn get_apo_file_input(app: &App) -> &str {
+    &app.apo_file_input
+}
+pub fn set_apo_file_input(app: &mut App, val: String) {
+    app.apo_file_input = val;
+}
+
+pub fn get_sofa_file_input(app: &App) -> &str {
+    &app.sofa_file_input
+}
+pub fn set_sofa_file_input(app: &mut App, val: String) {
+    app.sofa_file_input = val;
+}
+
+pub fn get_headphone_measurement_path(app: &App) -> &str {
+    &app.headphone_eq.measurement_path
+}
+pub fn set_headphone_measurement_path(app: &mut App, val: String) {
+    app.headphone_eq.measurement_path = val;
+}
+
+pub fn get_headphone_custom_target_path(app: &App) -> &str {
+    &app.headphone_eq.custom_target_path
+}
+pub fn set_headphone_custom_target_path(app: &mut App, val: String) {
+    app.headphone_eq.custom_target_path = val;
+}
+
+pub fn get_room_eq_file_path(app: &App) -> &str {
+    &app.room_eq.file_path
+}
+pub fn set_room_eq_file_path(app: &mut App, val: String) {
+    app.room_eq.file_path = val;
+}
+
+pub fn get_room_eq_export_path(app: &App) -> &str {
+    &app.room_eq.export_path
+}
+pub fn set_room_eq_export_path(app: &mut App, val: String) {
+    app.room_eq.export_path = val;
+}
+
+pub fn get_recording_output_dir(app: &App) -> &str {
+    &app.recording.output_directory
+}
+pub fn set_recording_output_dir(app: &mut App, val: String) {
+    app.recording.output_directory = val;
+}
+
+pub fn get_recording_mic_cal_path(app: &App) -> &str {
+    &app.recording.mic_calibration_path
+}
+pub fn set_recording_mic_cal_path(app: &mut App, val: String) {
+    app.recording.mic_calibration_path = val;
 }

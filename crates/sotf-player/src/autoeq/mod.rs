@@ -56,7 +56,8 @@ pub use params::{
 // Re-export headphone types
 pub use headphone::{
     HeadphoneOptResult, HeadphoneOptimizationResult, VisualizationCurves, load_target_curve,
-    parse_csv_curve, run_headphone_optimization, target_curves,
+    parse_csv_curve, run_headphone_optimization, run_headphone_optimization_with_callback,
+    target_curves,
 };
 
 // Re-export speaker types

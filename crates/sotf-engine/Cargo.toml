@@ -1,7 +1,7 @@
 [package]
 name = "sotf-engine"
 description = "an audio player and recorder that support audio plugins"
-version = "1.0.11"
+version = "1.0.12"
 edition.workspace = true
 
 [lib]

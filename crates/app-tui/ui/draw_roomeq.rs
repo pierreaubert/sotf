@@ -159,12 +159,27 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             }
 
             let help_text = if s.editing_file_path {
-                " Enter=confirm  F2=browse  Esc=cancel"
+                " Enter=confirm  F2=browse  Tab=autocomplete  Esc=cancel"
             } else {
                 " Enter=browse for JSON  Tab=next step"
             };
             let help = Paragraph::new(help_text).style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[3]);
+
+            // Autocomplete overlay below the file path input
+            if s.editing_file_path {
+                let ac_h = autocomplete_dropdown_height(app);
+                if ac_h > 0 {
+                    let ac_area = Rect {
+                        x: inner[0].x,
+                        y: inner[0].y + inner[0].height,
+                        width: inner[0].width,
+                        height: ac_h.min(area.height.saturating_sub(inner[0].y + inner[0].height)),
+                    };
+                    f.render_widget(Clear, ac_area);
+                    render_autocomplete_dropdown(f, ac_area, app);
+                }
+            }
         }
 
         RoomEqStep::Configure => {
@@ -321,9 +336,11 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(5), // status
-                    Constraint::Length(3), // progress bar
-                    Constraint::Min(3),    // loss chart or hint
+                    Constraint::Length(3),     // status
+                    Constraint::Length(3),     // progress bar
+                    Constraint::Percentage(40), // loss chart or hint
+                    Constraint::Percentage(40), // logs box
+                    Constraint::Length(1),     // hint line
                 ])
                 .split(content);
 
@@ -374,7 +391,54 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 let history: Vec<_> = s.loss_history.iter().map(|(i, l)| (*i, *l, None)).collect();
                 draw_loss_chart(f, inner[2], app, &history);
             } else {
-                let hint = match &s.opt_status {
+                let chart_hint = match &s.opt_status {
+                    OptimizationStatus::Idle => "Waiting for optimization...",
+                    OptimizationStatus::Running => "Waiting for loss data...",
+                    _ => "No loss data recorded",
+                };
+                let hint_para = Paragraph::new(chart_hint)
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(Block::default().borders(Borders::ALL).title("Loss History"));
+                f.render_widget(hint_para, inner[2]);
+            }
+
+            // Logs box
+            let log_count = s.opt_log_lines.len();
+            let log_title = format!("Logs ({} lines)", log_count);
+            if log_count > 0 {
+                // inner[3] height minus 2 for borders
+                let visible_height = inner[3].height.saturating_sub(2) as usize;
+                let scroll_offset = s.opt_log_scroll.min(log_count.saturating_sub(visible_height));
+                // Calculate the start index from the bottom
+                let end = log_count.saturating_sub(scroll_offset);
+                let start = end.saturating_sub(visible_height);
+                let visible_lines: Vec<Line> = s
+                    .opt_log_lines
+                    .iter()
+                    .skip(start)
+                    .take(end - start)
+                    .map(|line| Line::from(Span::styled(line.as_str(), Style::default().fg(app.theme.fg_secondary))))
+                    .collect();
+                let log_para = Paragraph::new(visible_lines).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(log_title),
+                );
+                f.render_widget(log_para, inner[3]);
+            } else {
+                let log_para = Paragraph::new("No log messages yet")
+                    .style(Style::default().fg(app.theme.fg_secondary))
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(log_title),
+                    );
+                f.render_widget(log_para, inner[3]);
+            }
+
+            // Hint line
+            let hint = if s.opt_log_lines.is_empty() {
+                match &s.opt_status {
                     OptimizationStatus::Idle => " Enter=start  BackTab=configure",
                     OptimizationStatus::Running => " Optimization running...",
                     OptimizationStatus::Completed => {
@@ -383,12 +447,13 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     OptimizationStatus::Failed | OptimizationStatus::Cancelled => {
                         " Enter=retry  BackTab=configure"
                     }
-                };
-                let hint_para = Paragraph::new(hint)
-                    .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(Block::default().borders(Borders::ALL).title("Loss History"));
-                f.render_widget(hint_para, inner[2]);
-            }
+                }
+            } else {
+                " j/k=scroll logs  Enter=start/re-run  BackTab=configure"
+            };
+            let hint_para = Paragraph::new(hint)
+                .style(Style::default().fg(app.theme.fg_secondary));
+            f.render_widget(hint_para, inner[4]);
         }
 
         RoomEqStep::Review => {
@@ -558,6 +623,21 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             let help = Paragraph::new(" Enter=edit/export  Tab=back to load  BackTab=review")
                 .style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(help, inner[2]);
+
+            // Autocomplete overlay below the export path input
+            if s.editing_export_path {
+                let ac_h = autocomplete_dropdown_height(app);
+                if ac_h > 0 {
+                    let ac_area = Rect {
+                        x: inner[0].x,
+                        y: inner[0].y + inner[0].height,
+                        width: inner[0].width,
+                        height: ac_h.min(area.height.saturating_sub(inner[0].y + inner[0].height)),
+                    };
+                    f.render_widget(Clear, ac_area);
+                    render_autocomplete_dropdown(f, ac_area, app);
+                }
+            }
         }
     }
 }

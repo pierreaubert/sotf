@@ -126,6 +126,16 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
             app.exit_plugin_edit_mode();
             None
         }
+        KeyCode::Enter | KeyCode::Char('e') => {
+            // Open file explorer for FilePath parameters
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+                && let Some(spec) = plugin.settings.param_specs().get(app.plugin_param_selection)
+                && matches!(spec.param_type, sotf_audio_player::param_specs::ParamType::FilePath)
+            {
+                open_file_path_param(app, spec.engine_key);
+            }
+            None
+        }
         KeyCode::Up | KeyCode::Char('k') => {
             app.select_previous_param();
             None
@@ -221,7 +231,93 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
             }
             None
         }
+        KeyCode::Char('A') => {
+            // Load Path A config from preset file (for A/B Compare plugins)
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+                if matches!(plugin.settings, PluginSettings::ABCompare { .. }) {
+                    let start = sotf_audio_player::config::get_plugin_presets_dir()
+                        .map(|d| d.to_string_lossy().to_string());
+                    app.open_file_explorer(
+                        FilePickerOrigin::ABConfigA,
+                        FilePickerMode::File,
+                        "Select Path A Config (JSON)",
+                        start.as_deref(),
+                        Some("json"),
+                    );
+                }
+            }
+            None
+        }
+        KeyCode::Char('B') => {
+            // Load Path B config from preset file (for A/B Compare plugins)
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+                if matches!(plugin.settings, PluginSettings::ABCompare { .. }) {
+                    let start = sotf_audio_player::config::get_plugin_presets_dir()
+                        .map(|d| d.to_string_lossy().to_string());
+                    app.open_file_explorer(
+                        FilePickerOrigin::ABConfigB,
+                        FilePickerMode::File,
+                        "Select Path B Config (JSON)",
+                        start.as_deref(),
+                        Some("json"),
+                    );
+                }
+            }
+            None
+        }
         _ => None,
+    }
+}
+
+/// Open the file explorer for a FilePath parameter identified by its engine key.
+fn open_file_path_param(app: &mut App, engine_key: &str) {
+    match engine_key {
+        "path_a_config" => {
+            let start = sotf_audio_player::config::get_plugin_presets_dir()
+                .map(|d| d.to_string_lossy().to_string());
+            app.open_file_explorer(
+                FilePickerOrigin::ABConfigA,
+                FilePickerMode::File,
+                "Select Path A Config (JSON)",
+                start.as_deref(),
+                Some("json"),
+            );
+        }
+        "path_b_config" => {
+            let start = sotf_audio_player::config::get_plugin_presets_dir()
+                .map(|d| d.to_string_lossy().to_string());
+            app.open_file_explorer(
+                FilePickerOrigin::ABConfigB,
+                FilePickerMode::File,
+                "Select Path B Config (JSON)",
+                start.as_deref(),
+                Some("json"),
+            );
+        }
+        "ir_file" => {
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+                && let PluginSettings::Convolution { ref ir_file, .. } = plugin.settings
+            {
+                let current_path = ir_file.clone();
+                app.open_file_explorer(
+                    FilePickerOrigin::IrFile,
+                    FilePickerMode::File,
+                    "Select Impulse Response (WAV)",
+                    Some(&current_path),
+                    Some("wav"),
+                );
+            }
+        }
+        "sofa_file" => {
+            app.open_file_explorer(
+                FilePickerOrigin::SofaFile,
+                FilePickerMode::File,
+                "Select SOFA File",
+                Some(&app.sofa_file_input.clone()),
+                Some("sofa"),
+            );
+        }
+        _ => {}
     }
 }
 
@@ -363,15 +459,15 @@ pub(super) fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
             None
         }
         KeyCode::Tab => {
-            // Autocomplete from available presets (restricted to preset directory)
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions_for_save_preset();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete_to_plugin_file();
-                }
-            } else {
-                app.next_autocomplete_for_plugin_file();
-            }
+            app.zsh_tab_complete(
+                crate::app::app_autocomplete::get_plugin_file_input,
+                crate::app::app_autocomplete::set_plugin_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::PresetName,
+            );
+            None
+        }
+        KeyCode::BackTab => {
+            app.zsh_backtab_complete(crate::app::app_autocomplete::set_plugin_file_input);
             None
         }
         KeyCode::Up => {
@@ -424,17 +520,17 @@ pub(super) fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
             None
         }
         KeyCode::Tab => {
-            // Autocomplete file path (only if user typed something)
             if !app.plugin_file_input.is_empty() {
-                if app.autocomplete_suggestions.is_empty() {
-                    app.generate_autocomplete_suggestions_for_plugin_file();
-                    if !app.autocomplete_suggestions.is_empty() {
-                        app.apply_autocomplete_to_plugin_file();
-                    }
-                } else {
-                    app.next_autocomplete_for_plugin_file();
-                }
+                app.zsh_tab_complete(
+                    crate::app::app_autocomplete::get_plugin_file_input,
+                    crate::app::app_autocomplete::set_plugin_file_input,
+                    crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                );
             }
+            None
+        }
+        KeyCode::BackTab => {
+            app.zsh_backtab_complete(crate::app::app_autocomplete::set_plugin_file_input);
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
@@ -489,15 +585,15 @@ pub(super) fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<
             None
         }
         KeyCode::Tab => {
-            // Autocomplete file path
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions_for_apo_file();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete_to_apo_file();
-                }
-            } else {
-                app.next_autocomplete_for_apo_file();
-            }
+            app.zsh_tab_complete(
+                crate::app::app_autocomplete::get_apo_file_input,
+                crate::app::app_autocomplete::set_apo_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
+            None
+        }
+        KeyCode::BackTab => {
+            app.zsh_backtab_complete(crate::app::app_autocomplete::set_apo_file_input);
             None
         }
         KeyCode::Char(c) => {
@@ -538,15 +634,15 @@ pub(super) fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option
             None
         }
         KeyCode::Tab => {
-            // Autocomplete file path
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions_for_sofa_file();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete_to_sofa_file();
-                }
-            } else {
-                app.next_autocomplete_for_sofa_file();
-            }
+            app.zsh_tab_complete(
+                crate::app::app_autocomplete::get_sofa_file_input,
+                crate::app::app_autocomplete::set_sofa_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
+            None
+        }
+        KeyCode::BackTab => {
+            app.zsh_backtab_complete(crate::app::app_autocomplete::set_sofa_file_input);
             None
         }
         KeyCode::Char(c) => {

@@ -53,6 +53,7 @@ pub struct App {
     // Autocomplete state
     pub autocomplete_suggestions: Vec<String>,
     pub autocomplete_index: usize,
+    pub autocomplete_menu_active: bool,
 
     // Plugin preset selection
     pub available_plugin_presets: Vec<String>, // List of preset filenames
@@ -231,6 +232,7 @@ impl App {
             needs_filter_update: true,
             autocomplete_suggestions: Vec::new(),
             autocomplete_index: 0,
+            autocomplete_menu_active: false,
             available_plugin_presets: Vec::new(),
             selected_preset_index: 0,
             library_view_mode: LibraryViewMode::Flat,
@@ -734,7 +736,9 @@ impl App {
             match self.file_picker_origin {
                 FilePickerOrigin::SofaFile
                 | FilePickerOrigin::IrFile
-                | FilePickerOrigin::ApoFile => InputMode::EditPlugin,
+                | FilePickerOrigin::ApoFile
+                | FilePickerOrigin::ABConfigA
+                | FilePickerOrigin::ABConfigB => InputMode::EditPlugin,
                 FilePickerOrigin::AddDirectory => InputMode::ConfigureDirectories,
                 FilePickerOrigin::RecordingOutputDir
                 | FilePickerOrigin::RecordingMicCalibration => InputMode::ConfigureRecording,

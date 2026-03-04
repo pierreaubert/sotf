@@ -108,6 +108,39 @@ pub fn run_headphone_optimization(
     Ok(HeadphoneOptimizationResult::from(result))
 }
 
+/// Run headphone EQ optimization with a progress callback
+pub fn run_headphone_optimization_with_callback<F>(
+    curve_path: &str,
+    target: &str,
+    target_custom_path: &str,
+    args: &autoeq::Args,
+    progress_callback: Option<F>,
+) -> Result<HeadphoneOptimizationResult, String>
+where
+    F: FnMut(&autoeq::ProgressUpdate) -> autoeq::de::CallbackAction + Send + 'static,
+{
+    let curve_path = PathBuf::from(curve_path);
+    let target_curve = load_target_curve(target, target_custom_path)?;
+
+    let progress_config = Some(autoeq::ProgressCallbackConfig {
+        interval: 50,
+        include_biquads: false,
+        include_filter_response: false,
+        frequencies: Vec::new(),
+    });
+
+    let result = autoeq::optimize_headphone(
+        &curve_path,
+        &target_curve,
+        args,
+        progress_config,
+        progress_callback,
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(HeadphoneOptimizationResult::from(result))
+}
+
 /// Load target curve from bundled data or custom file
 pub fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curve, String> {
     match target {

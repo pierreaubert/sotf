@@ -1,6 +1,7 @@
 //! Core types for the TUI application state management
 pub use sotf_audio_player::QueueItem;
 use sotf_audio_player::headphone_eq_types::{HeadphoneEqBiquad, HeadphoneEqOptimizerConfig};
+use std::collections::VecDeque;
 use sotf_audio_player::recording_types::{
     ChannelRecording, PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType,
     RecordingStep,
@@ -308,6 +309,10 @@ pub struct RoomEqTuiState {
     pub opt_loss: f64,
     pub channel_results: Vec<ChannelOptResult>,
     pub loss_history: Vec<(usize, f64)>,
+    /// Log buffer for optimization messages (max 300 lines)
+    pub opt_log_lines: VecDeque<String>,
+    /// Scroll offset from bottom (0 = bottom)
+    pub opt_log_scroll: usize,
     // Step 4: review
     pub selected_channel: usize,
     // Step 5: export
@@ -339,6 +344,8 @@ impl Default for RoomEqTuiState {
             opt_loss: 0.0,
             channel_results: Vec::new(),
             loss_history: Vec::new(),
+            opt_log_lines: VecDeque::new(),
+            opt_log_scroll: 0,
             selected_channel: 0,
             export_path: String::new(),
             editing_export_path: false,
@@ -529,6 +536,8 @@ pub enum FilePickerOrigin {
     HeadphoneCustomTarget,
     AddDirectory,
     ApoFile,
+    ABConfigA,
+    ABConfigB,
 }
 
 /// Options presented in the channel conflict dialog

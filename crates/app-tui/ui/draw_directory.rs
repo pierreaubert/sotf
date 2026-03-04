@@ -2,8 +2,8 @@ use super::*;
 
 pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     // Calculate constraints based on whether we have autocomplete suggestions
-    let autocomplete_height = if app.editing_directory && !app.autocomplete_suggestions.is_empty() {
-        (app.autocomplete_suggestions.len().min(5) + 2) as u16 // Max 5 suggestions + borders
+    let ac_height = if app.editing_directory {
+        autocomplete_dropdown_height(app)
     } else {
         0
     };
@@ -11,10 +11,10 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),                   // Help box
-            Constraint::Length(3),                   // Input box
-            Constraint::Length(autocomplete_height), // Autocomplete suggestions
-            Constraint::Min(0),                      // Directory list + status
+            Constraint::Length(3),          // Help box
+            Constraint::Length(3),          // Input box
+            Constraint::Length(ac_height),  // Autocomplete suggestions
+            Constraint::Min(0),            // Directory list + status
         ])
         .split(area);
 
@@ -44,35 +44,9 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 
     f.render_widget(input_box, chunks[1]);
 
-    // Show autocomplete suggestions if in add directory mode
-    if app.editing_directory && !app.autocomplete_suggestions.is_empty() {
-        let suggestion_items: Vec<ListItem> = app
-            .autocomplete_suggestions
-            .iter()
-            .take(5) // Show max 5 suggestions
-            .enumerate()
-            .map(|(i, suggestion)| {
-                let style = if i == app.autocomplete_index {
-                    Style::default()
-                        .fg(app.theme.fg_selected)
-                        .bg(app.theme.accent_primary)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(app.theme.fg_secondary)
-                };
-                ListItem::new(suggestion.as_str()).style(style)
-            })
-            .collect();
-
-        let suggestions_list = List::new(suggestion_items).block(
-            Block::default().borders(Borders::ALL).title(format!(
-                "Suggestions ({}/{})",
-                app.autocomplete_index + 1,
-                app.autocomplete_suggestions.len()
-            )),
-        );
-
-        f.render_widget(suggestions_list, chunks[2]);
+    // Show autocomplete suggestions
+    if app.editing_directory {
+        render_autocomplete_dropdown(f, chunks[2], app);
     }
 
     // Split remaining area: directory list on top, status below

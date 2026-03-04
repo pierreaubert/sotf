@@ -79,9 +79,12 @@ pub(crate) fn draw_freq_response_chart(
     f: &mut Frame,
     area: Rect,
     app: &App,
-    s: &crate::app::SpinoramaEqTuiState,
+    frequencies: &[f64],
+    input: &[f64],
+    corrected: &[f64],
+    filter_response: &[f64],
 ) {
-    if s.curve_frequencies.len() < 2 {
+    if frequencies.len() < 2 {
         let placeholder = Paragraph::new("No curve data")
             .style(Style::default().fg(app.theme.fg_secondary))
             .alignment(Alignment::Center)
@@ -94,7 +97,7 @@ pub(crate) fn draw_freq_response_chart(
         return;
     }
 
-    let freqs = &s.curve_frequencies;
+    let freqs = frequencies;
     let n = freqs.len();
 
     // Downsample to at most 300 points
@@ -102,38 +105,35 @@ pub(crate) fn draw_freq_response_chart(
 
     let input_data: Vec<(f64, f64)> = freqs
         .iter()
-        .zip(s.curve_input.iter())
+        .zip(input.iter())
         .step_by(step)
         .map(|(f, v)| (*f, *v))
         .collect();
 
     let corrected_data: Vec<(f64, f64)> = freqs
         .iter()
-        .zip(s.curve_corrected.iter())
+        .zip(corrected.iter())
         .step_by(step)
         .map(|(f, v)| (*f, *v))
         .collect();
 
     let filter_data: Vec<(f64, f64)> = freqs
         .iter()
-        .zip(s.curve_filter_response.iter())
+        .zip(filter_response.iter())
         .step_by(step)
         .map(|(f, v)| (*f, *v))
         .collect();
 
-    // Compute y bounds from filter response SPL for appropriate zoom
-    let y_min = s
-        .curve_filter_response
+    // Compute y bounds from the max absolute SPL across all 3 curves, symmetric around 0
+    let y_abs_max = input
         .iter()
+        .chain(corrected.iter())
+        .chain(filter_response.iter())
         .copied()
-        .fold(f64::INFINITY, f64::min);
-    let y_max = s
-        .curve_filter_response
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max);
-    let y_bound_lo = y_min.floor();
-    let y_bound_hi = y_max.ceil();
+        .map(f64::abs)
+        .fold(0.0_f64, f64::max);
+    let y_bound_hi = y_abs_max.ceil();
+    let y_bound_lo = -y_bound_hi;
 
     let x_min = freqs.first().copied().unwrap_or(20.0);
     let x_max = freqs.last().copied().unwrap_or(20000.0);

@@ -77,6 +77,7 @@ pub use sotf_audio::plugins::{
     get_channel_label,
     get_channel_label_from_config,
     linear_to_db_string,
+    preset_file_to_path_config_json,
     resize_matrix,
 };
 pub use sotf_audio::replaygain::ReplayGainInfo;

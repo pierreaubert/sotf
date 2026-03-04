@@ -871,6 +871,7 @@ pub fn render_plugin_content(
             mix_transition_ms,
             path_a_config,
             path_b_config,
+            ..
         } => {
             // Read dropdown states from plugin state
             let app_state = entity.read(cx);

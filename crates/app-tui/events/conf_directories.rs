@@ -120,15 +120,15 @@ fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCom
             None
         }
         KeyCode::Tab => {
-            // Generate suggestions on first Tab, cycle through them on subsequent Tabs
-            if app.autocomplete_suggestions.is_empty() {
-                app.generate_autocomplete_suggestions();
-                if !app.autocomplete_suggestions.is_empty() {
-                    app.apply_autocomplete();
-                }
-            } else {
-                app.next_autocomplete();
-            }
+            app.zsh_tab_complete(
+                crate::app::app_autocomplete::get_directory_input,
+                crate::app::app_autocomplete::set_directory_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
+            None
+        }
+        KeyCode::BackTab => {
+            app.zsh_backtab_complete(crate::app::app_autocomplete::set_directory_input);
             None
         }
         KeyCode::F(2) => {
@@ -144,12 +144,18 @@ fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCom
         }
         KeyCode::Char(c) => {
             app.directory_input.push(c);
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_directory_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         KeyCode::Backspace => {
             app.directory_input.pop();
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_directory_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         _ => None,

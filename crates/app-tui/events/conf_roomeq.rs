@@ -26,6 +26,15 @@ fn room_eq_step_next_wrap(s: RoomEqStep) -> RoomEqStep {
     }
 }
 
+/// Auto-start optimization when entering the Optimize step, if data is loaded and not already running.
+pub fn auto_start_optimization(app: &mut App) {
+    if app.room_eq.opt_status == OptimizationStatus::Idle
+        && !app.room_eq.channel_measurements.is_empty()
+    {
+        spawn_room_eq_optimization(app);
+    }
+}
+
 /// Open the file explorer for Room EQ measurement selection if no data is loaded.
 pub fn auto_open_load_data(app: &mut App) {
     if app.room_eq.file_path.is_empty() && app.room_eq.channel_measurements.is_empty() {
@@ -89,6 +98,9 @@ pub fn handle_room_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             }
             _ => {}
         }
+        if app.room_eq.step == RoomEqStep::Optimize {
+            auto_start_optimization(app);
+        }
         return None;
     }
 
@@ -110,10 +122,16 @@ fn handle_load_data_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 load_room_eq_measurements(app);
             }
             KeyCode::Tab => {
-                let input = app.room_eq.file_path.clone();
-                if let Some(s) = app.tab_complete_path(&input) {
-                    app.room_eq.file_path = s;
-                }
+                app.zsh_tab_complete(
+                    crate::app::app_autocomplete::get_room_eq_file_path,
+                    crate::app::app_autocomplete::set_room_eq_file_path,
+                    crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                );
+            }
+            KeyCode::BackTab => {
+                app.zsh_backtab_complete(
+                    crate::app::app_autocomplete::set_room_eq_file_path,
+                );
             }
             KeyCode::Backspace => {
                 app.room_eq.file_path.pop();
@@ -226,16 +244,32 @@ fn handle_configure_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
 
 fn handle_optimize_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
-        KeyCode::Up => {
-            app.room_eq.step_tab_focused = true;
+        KeyCode::Up | KeyCode::Char('k') => {
+            if !app.room_eq.opt_log_lines.is_empty()
+                && app.room_eq.opt_log_scroll < app.room_eq.opt_log_lines.len().saturating_sub(1)
+            {
+                app.room_eq.opt_log_scroll += 1;
+            } else {
+                app.room_eq.step_tab_focused = true;
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.room_eq.opt_log_scroll > 0 {
+                app.room_eq.opt_log_scroll -= 1;
+            }
+        }
+        KeyCode::Home => {
+            app.room_eq.opt_log_scroll =
+                app.room_eq.opt_log_lines.len().saturating_sub(1);
+        }
+        KeyCode::End => {
+            app.room_eq.opt_log_scroll = 0;
         }
         KeyCode::Enter => match &app.room_eq.opt_status {
             OptimizationStatus::Idle
             | OptimizationStatus::Failed
-            | OptimizationStatus::Cancelled => {
-                spawn_room_eq_optimization(app);
-            }
-            OptimizationStatus::Completed => {
+            | OptimizationStatus::Cancelled
+            | OptimizationStatus::Completed => {
                 spawn_room_eq_optimization(app);
             }
             OptimizationStatus::Running => {}
@@ -281,10 +315,16 @@ fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 export_room_eq_results(app);
             }
             KeyCode::Tab => {
-                let input = app.room_eq.export_path.clone();
-                if let Some(s) = app.tab_complete_path(&input) {
-                    app.room_eq.export_path = s;
-                }
+                app.zsh_tab_complete(
+                    crate::app::app_autocomplete::get_room_eq_export_path,
+                    crate::app::app_autocomplete::set_room_eq_export_path,
+                    crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                );
+            }
+            KeyCode::BackTab => {
+                app.zsh_backtab_complete(
+                    crate::app::app_autocomplete::set_room_eq_export_path,
+                );
             }
             KeyCode::Backspace => {
                 app.room_eq.export_path.pop();
@@ -615,7 +655,17 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
             app.room_eq.opt_iteration = p.iteration;
             app.room_eq.opt_max_iter = p.max_iterations;
             app.room_eq.opt_loss = p.loss;
-            app.room_eq.loss_history.push((p.iteration, p.loss));
+            if p.loss > 0.0 {
+                app.room_eq.loss_history.push((p.speaker_index, p.loss));
+            }
+            if let Some(msg) = p.message {
+                for line in msg.lines() {
+                    app.room_eq.opt_log_lines.push_back(line.to_string());
+                }
+                while app.room_eq.opt_log_lines.len() > 300 {
+                    app.room_eq.opt_log_lines.pop_front();
+                }
+            }
             return true;
         }
 
@@ -636,6 +686,8 @@ fn spawn_room_eq_optimization(app: &mut App) {
     app.room_eq.opt_loss = 0.0;
     app.room_eq.channel_results.clear();
     app.room_eq.loss_history.clear();
+    app.room_eq.opt_log_lines.clear();
+    app.room_eq.opt_log_scroll = 0;
 
     // Build curves from loaded measurements
     let measurements = app.room_eq.channel_measurements.clone();

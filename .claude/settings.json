@@ -5,12 +5,22 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Edit|Write",
-        "command": "cargo check --message-format=short 2>&1 | head -20"
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo check --workspace --message-format=short 2>&1 | head -20"
+          }
+        ]
       },
       {
-        "matcher": "Edit|Write",
-        "command": "cargo check --workspace --message-format short 2>&1 | head -20"
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo check --workspace --message-format=short 2>&1 | head -20"
+          }
+        ]
       }
     ]
   }

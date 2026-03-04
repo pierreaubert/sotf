@@ -440,7 +440,15 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .block(Block::default().borders(Borders::ALL).title("Summary"));
                 f.render_widget(summary_para, rows_layout[0]);
 
-                draw_freq_response_chart(f, rows_layout[1], app, s);
+                draw_freq_response_chart(
+                    f,
+                    rows_layout[1],
+                    app,
+                    &s.curve_frequencies,
+                    &s.curve_input,
+                    &s.curve_corrected,
+                    &s.curve_filter_response,
+                );
 
                 // Bottom: filter table
                 let header_cells = ["#", "Type", "Freq", "Q", "dB"].iter().map(|h| {

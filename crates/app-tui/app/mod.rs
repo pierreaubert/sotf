@@ -1,6 +1,6 @@
 //! TUI application state management and related types
 
-mod app_autocomplete;
+pub(crate) mod app_autocomplete;
 mod app_image;
 mod app_impl;
 mod app_level_meter;

@@ -11,7 +11,6 @@ use log::{debug, info, warn};
 use math_audio_dsp::analysis::{compute_average_response, find_db_point};
 use math_audio_iir_fir::Biquad;
 use ndarray::Array1;
-use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -218,6 +217,8 @@ pub struct RoomOptimizationProgress {
     pub loss: f64,
     /// Overall progress (0.0 - 1.0)
     pub overall_progress: f64,
+    /// Optional log message for display
+    pub message: Option<String>,
 }
 
 /// Callback type for room optimization progress
@@ -310,7 +311,7 @@ pub struct SpeakerOptimizationResult {
 pub fn optimize_room(
     config: &RoomConfig,
     sample_rate: f64,
-    _callback: Option<RoomOptimizationCallback>,
+    mut callback: Option<RoomOptimizationCallback>,
     output_dir: Option<&Path>,
 ) -> Result<RoomOptimizationResult> {
     // Validate configuration
@@ -325,6 +326,18 @@ pub fn optimize_room(
         });
     }
 
+    /// Helper to invoke the callback if present, returning true if Stop was requested.
+    fn send_progress(
+        cb: &mut Option<RoomOptimizationCallback>,
+        progress: &RoomOptimizationProgress,
+    ) -> bool {
+        if let Some(f) = cb {
+            f(progress) == CallbackAction::Stop
+        } else {
+            false
+        }
+    }
+
     // Dispatch to specific workflows based on topology
     if let Some(sys) = &config.system {
         // If any channel uses SpeakerConfig::Group, fall through to the generic path
@@ -334,6 +347,39 @@ pub fn optimize_room(
             .values()
             .any(|key| matches!(config.speakers.get(key), Some(SpeakerConfig::Group(_))));
         if !has_group {
+            let workflow_name = match sys.model {
+                SystemModel::Stereo => {
+                    if sys.subwoofers.is_some() {
+                        "Stereo 2.1"
+                    } else {
+                        "Stereo 2.0"
+                    }
+                }
+                SystemModel::HomeCinema => "Home Cinema",
+                SystemModel::Custom => "Custom",
+            };
+
+            // Send pre-workflow progress message
+            if sys.model != SystemModel::Custom {
+                send_progress(
+                    &mut callback,
+                    &RoomOptimizationProgress {
+                        current_speaker: String::new(),
+                        speaker_index: 0,
+                        total_speakers: sys.speakers.len(),
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: 0.0,
+                        overall_progress: 0.0,
+                        message: Some(format!(
+                            "Starting {} workflow ({} channels)",
+                            workflow_name,
+                            sys.speakers.len()
+                        )),
+                    },
+                );
+            }
+
             let workflow_result = match sys.model {
                 SystemModel::Stereo => {
                     if sys.subwoofers.is_some() {
@@ -363,6 +409,32 @@ pub fn optimize_room(
 
             if let Some(result) = workflow_result {
                 let mut result = result?;
+
+                // Send post-workflow summary
+                let summary: Vec<String> = result
+                    .channel_results
+                    .iter()
+                    .map(|(name, ch)| {
+                        format!("  {}: {:.4} -> {:.4}", name, ch.pre_score, ch.post_score)
+                    })
+                    .collect();
+                send_progress(
+                    &mut callback,
+                    &RoomOptimizationProgress {
+                        current_speaker: String::new(),
+                        speaker_index: result.channel_results.len(),
+                        total_speakers: result.channel_results.len(),
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: result.combined_post_score,
+                        overall_progress: 1.0,
+                        message: Some(format!(
+                            "{} workflow complete:\n{}",
+                            workflow_name,
+                            summary.join("\n")
+                        )),
+                    },
+                );
                 // Workflows only do IIR. If FIR/mixed mode is requested, post-generate
                 // FIR coefficients for each channel from its initial measurement curve.
                 if config.optimizer.processing_mode != ProcessingMode::LowLatency {
@@ -435,46 +507,84 @@ pub fn optimize_room(
             .collect()
     };
 
-    info!("Processing {} channels", channels_to_process.len());
+    let total_speakers = channels_to_process.len();
+    info!("Processing {} channels", total_speakers);
 
-    // Process each speaker in parallel
-    let results: Vec<SpeakerProcessResult> = channels_to_process
-        .into_par_iter()
-        .map(|(channel_name, speaker_config)| {
-            info!("Processing channel: {}", channel_name);
+    send_progress(
+        &mut callback,
+        &RoomOptimizationProgress {
+            current_speaker: String::new(),
+            speaker_index: 0,
+            total_speakers,
+            iteration: 0,
+            max_iterations: 0,
+            loss: 0.0,
+            overall_progress: 0.0,
+            message: Some(format!(
+                "Starting optimization for {} channels",
+                total_speakers
+            )),
+        },
+    );
 
-            let (
-                chain,
-                pre_score,
-                post_score,
-                initial_curve,
-                final_curve,
-                biquads,
-                mean_spl,
-                arrival_time_ms,
-                fir_coeffs,
-            ) = process_speaker_internal(
-                &channel_name,
-                &speaker_config,
-                config,
-                sample_rate,
-                output_dir,
-            )?;
+    // Process each speaker sequentially so we can report progress
+    let mut results: Vec<SpeakerProcessResult> = Vec::with_capacity(total_speakers);
+    for (speaker_idx, (channel_name, speaker_config)) in
+        channels_to_process.into_iter().enumerate()
+    {
+        info!("Processing channel: {}", channel_name);
 
-            Ok((
-                channel_name,
-                chain,
-                pre_score,
-                post_score,
-                initial_curve,
-                final_curve,
-                biquads,
-                mean_spl,
-                arrival_time_ms,
-                fir_coeffs,
-            ))
-        })
-        .collect();
+        send_progress(
+            &mut callback,
+            &RoomOptimizationProgress {
+                current_speaker: channel_name.clone(),
+                speaker_index: speaker_idx,
+                total_speakers,
+                iteration: 0,
+                max_iterations: 0,
+                loss: 0.0,
+                overall_progress: speaker_idx as f64 / total_speakers as f64,
+                message: Some(format!("Processing channel: {}", channel_name)),
+            },
+        );
+
+        let result = process_speaker_internal(
+            &channel_name,
+            &speaker_config,
+            config,
+            sample_rate,
+            output_dir,
+        );
+
+        match result {
+            Ok((chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms, fir_coeffs)) => {
+                send_progress(
+                    &mut callback,
+                    &RoomOptimizationProgress {
+                        current_speaker: channel_name.clone(),
+                        speaker_index: speaker_idx,
+                        total_speakers,
+                        iteration: 0,
+                        max_iterations: 0,
+                        loss: post_score,
+                        overall_progress: (speaker_idx + 1) as f64 / total_speakers as f64,
+                        message: Some(format!(
+                            "Channel {}: {:.4} -> {:.4}",
+                            channel_name, pre_score, post_score
+                        )),
+                    },
+                );
+
+                results.push(Ok((
+                    channel_name, chain, pre_score, post_score, initial_curve, final_curve,
+                    biquads, mean_spl, arrival_time_ms, fir_coeffs,
+                )));
+            }
+            Err(e) => {
+                results.push(Err(e));
+            }
+        }
+    }
 
     // Collect results
     let mut channel_chains: HashMap<String, ChannelDspChain> = HashMap::new();

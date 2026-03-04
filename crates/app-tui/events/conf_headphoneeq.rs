@@ -115,6 +115,12 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             }
             KeyCode::Down | KeyCode::Enter => {
                 app.headphone_eq.step_tab_focused = false;
+                // Auto-start optimization when entering the Optimize step content
+                if app.headphone_eq.step == HeadphoneEqStep::Optimize
+                    && app.headphone_eq.opt_status == OptimizationStatus::Idle
+                {
+                    spawn_headphone_eq_optimization(app);
+                }
                 return None;
             }
             _ => return None,
@@ -130,10 +136,16 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         app.clear_autocomplete();
                     }
                     KeyCode::Tab => {
-                        let input = app.headphone_eq.measurement_path.clone();
-                        if let Some(s) = app.tab_complete_path(&input) {
-                            app.headphone_eq.measurement_path = s;
-                        }
+                        app.zsh_tab_complete(
+                            crate::app::app_autocomplete::get_headphone_measurement_path,
+                            crate::app::app_autocomplete::set_headphone_measurement_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
+                    }
+                    KeyCode::BackTab => {
+                        app.zsh_backtab_complete(
+                            crate::app::app_autocomplete::set_headphone_measurement_path,
+                        );
                     }
                     KeyCode::Backspace => {
                         app.headphone_eq.measurement_path.pop();
@@ -164,10 +176,16 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         app.clear_autocomplete();
                     }
                     KeyCode::Tab => {
-                        let input = app.headphone_eq.custom_target_path.clone();
-                        if let Some(s) = app.tab_complete_path(&input) {
-                            app.headphone_eq.custom_target_path = s;
-                        }
+                        app.zsh_tab_complete(
+                            crate::app::app_autocomplete::get_headphone_custom_target_path,
+                            crate::app::app_autocomplete::set_headphone_custom_target_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
+                    }
+                    KeyCode::BackTab => {
+                        app.zsh_backtab_complete(
+                            crate::app::app_autocomplete::set_headphone_custom_target_path,
+                        );
                     }
                     KeyCode::Backspace => {
                         app.headphone_eq.custom_target_path.pop();
@@ -605,6 +623,10 @@ fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
 static HEADPHONE_OPT_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<sotf_audio_player::autoeq::HeadphoneOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
+#[allow(clippy::type_complexity)]
+static HEADPHONE_OPT_PROGRESS: std::sync::OnceLock<
+    Arc<Mutex<Option<(usize, usize, f64, f32)>>>,
+> = std::sync::OnceLock::new();
 
 pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
     use sotf_audio_player::headphone_eq_types::HeadphoneEqBiquad;
@@ -615,6 +637,9 @@ pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
     }
 
     let result_slot = HEADPHONE_OPT_RESULT
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
+    let progress_slot = HEADPHONE_OPT_PROGRESS
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
 
@@ -639,15 +664,30 @@ pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
                     app.headphone_eq.curve_target = r.target_curve.clone();
                     app.headphone_eq.curve_corrected = r.corrected_curve.clone();
                     app.headphone_eq.curve_filter_response = r.filter_response.clone();
-                    app.headphone_eq.loss_history = r.optimization_history.clone();
+                    // Keep the progress-based loss_history; only override if empty
+                    if app.headphone_eq.loss_history.is_empty() {
+                        app.headphone_eq.loss_history = r.optimization_history.clone();
+                    }
                     app.headphone_eq.opt_status = OptimizationStatus::Completed;
                     app.headphone_eq.opt_progress = 1.0;
+                    // Auto-advance to Results
+                    app.headphone_eq.step = crate::app::HeadphoneEqStep::Results;
                 }
                 Err(e) => {
                     app.headphone_eq.opt_status = OptimizationStatus::Failed;
                     app.headphone_eq.opt_error = Some(e);
                 }
             }
+            return true;
+        }
+
+    if let Ok(mut guard) = progress_slot.lock()
+        && let Some((iter, max_iter, loss, pct)) = guard.take() {
+            app.headphone_eq.opt_iteration = iter;
+            app.headphone_eq.opt_max_iter = max_iter;
+            app.headphone_eq.opt_loss = loss;
+            app.headphone_eq.opt_progress = pct;
+            app.headphone_eq.loss_history.push((iter, loss));
             return true;
         }
 
@@ -669,6 +709,7 @@ fn spawn_headphone_eq_optimization(app: &mut App) {
     app.headphone_eq.opt_iteration = 0;
     app.headphone_eq.opt_loss = 0.0;
     app.headphone_eq.filters.clear();
+    app.headphone_eq.loss_history.clear();
 
     let curve_path = app.headphone_eq.measurement_path.clone();
     let target = app.headphone_eq.target_preset.clone();
@@ -699,20 +740,42 @@ fn spawn_headphone_eq_optimization(app: &mut App) {
     let result_slot = HEADPHONE_OPT_RESULT
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
+    let progress_slot = HEADPHONE_OPT_PROGRESS
+        .get_or_init(|| Arc::new(Mutex::new(None)))
+        .clone();
 
-    // Clear stale result
+    // Clear stale results
     if let Ok(mut g) = result_slot.lock() {
+        *g = None;
+    }
+    if let Ok(mut g) = progress_slot.lock() {
         *g = None;
     }
 
     std::thread::spawn(move || {
-        let result = sotf_audio_player::autoeq::headphone::run_headphone_optimization(
-            &curve_path,
-            &target,
-            &custom_target,
-            &args,
-            "json",
-        );
+        use sotf_audio_player::autoeq::CallbackAction;
+
+        let progress_slot2 = progress_slot.clone();
+        let callback = move |p: &sotf_audio_player::autoeq::ProgressUpdate| {
+            let pct = if p.max_iterations > 0 {
+                p.iteration as f32 / p.max_iterations as f32
+            } else {
+                0.0
+            };
+            if let Ok(mut guard) = progress_slot2.lock() {
+                *guard = Some((p.iteration, p.max_iterations, p.loss, pct));
+            }
+            CallbackAction::Continue
+        };
+
+        let result =
+            sotf_audio_player::autoeq::headphone::run_headphone_optimization_with_callback(
+                &curve_path,
+                &target,
+                &custom_target,
+                &args,
+                Some(callback),
+            );
         if let Ok(mut guard) = result_slot.lock() {
             *guard = Some(result);
         }

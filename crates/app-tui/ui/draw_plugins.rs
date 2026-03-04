@@ -596,12 +596,13 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<Par
 }
 
 pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
-    // Create a larger centered dialog for preset list (70% width, 60% height)
     let area = f.area();
     let dialog_width = (area.width as f32 * 0.7) as u16;
-    let dialog_height = (area.height as f32 * 0.6) as u16;
+    let ac_height = autocomplete_dropdown_height(app);
+    let base_height = (area.height as f32 * 0.6) as u16;
+    let dialog_height = base_height + ac_height;
     let dialog_x = (area.width - dialog_width) / 2;
-    let dialog_y = (area.height - dialog_height) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
 
     let dialog_area = Rect {
         x: dialog_x,
@@ -730,15 +731,27 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
 
         f.render_widget(paragraph, inner);
     }
+
+    // Autocomplete dropdown below dialog
+    if ac_height > 0 {
+        let ac_area = Rect {
+            x: dialog_area.x,
+            y: dialog_area.y + base_height,
+            width: dialog_area.width,
+            height: ac_height,
+        };
+        render_autocomplete_dropdown(f, ac_area, app);
+    }
 }
 
 pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
-    // Create a larger centered dialog for preset list (70% width, 60% height)
     let area = f.area();
     let dialog_width = (area.width as f32 * 0.7) as u16;
-    let dialog_height = (area.height as f32 * 0.6) as u16;
+    let ac_height = autocomplete_dropdown_height(app);
+    let base_height = (area.height as f32 * 0.6) as u16;
+    let dialog_height = base_height + ac_height;
     let dialog_x = (area.width - dialog_width) / 2;
-    let dialog_y = (area.height - dialog_height) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
 
     let dialog_area = Rect {
         x: dialog_x,
@@ -850,15 +863,27 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
 
         f.render_widget(paragraph, inner);
     }
+
+    // Autocomplete dropdown below dialog
+    if ac_height > 0 {
+        let ac_area = Rect {
+            x: dialog_area.x,
+            y: dialog_area.y + base_height,
+            width: dialog_area.width,
+            height: ac_height,
+        };
+        render_autocomplete_dropdown(f, ac_area, app);
+    }
 }
 
 pub(crate) fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
-    // Create a centered dialog
     let area = f.area();
     let dialog_width = (area.width as f32 * 0.6) as u16;
-    let dialog_height = 10;
+    let ac_height = autocomplete_dropdown_height(app);
+    let base_height: u16 = 10;
+    let dialog_height = base_height + ac_height;
     let dialog_x = (area.width - dialog_width) / 2;
-    let dialog_y = (area.height - dialog_height) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
 
     let dialog_area = Rect {
         x: dialog_x,
@@ -913,15 +938,27 @@ pub(crate) fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
         .wrap(Wrap { trim: false });
 
     f.render_widget(paragraph, inner);
+
+    // Autocomplete dropdown below dialog
+    if ac_height > 0 {
+        let ac_area = Rect {
+            x: dialog_area.x,
+            y: dialog_area.y + base_height,
+            width: dialog_area.width,
+            height: ac_height,
+        };
+        render_autocomplete_dropdown(f, ac_area, app);
+    }
 }
 
 pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
-    // Create a centered dialog
     let area = f.area();
     let dialog_width = (area.width as f32 * 0.6) as u16;
-    let dialog_height = 8;
+    let ac_height = autocomplete_dropdown_height(app);
+    let base_height: u16 = 8;
+    let dialog_height = base_height + ac_height;
     let dialog_x = (area.width - dialog_width) / 2;
-    let dialog_y = (area.height - dialog_height) / 2;
+    let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
 
     let dialog_area = Rect {
         x: dialog_x,
@@ -970,4 +1007,15 @@ pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
         .wrap(Wrap { trim: false });
 
     f.render_widget(paragraph, inner);
+
+    // Autocomplete dropdown below dialog
+    if ac_height > 0 {
+        let ac_area = Rect {
+            x: dialog_area.x,
+            y: dialog_area.y + base_height,
+            width: dialog_area.width,
+            height: ac_height,
+        };
+        render_autocomplete_dropdown(f, ac_area, app);
+    }
 }

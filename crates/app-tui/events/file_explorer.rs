@@ -1,7 +1,7 @@
 use super::PlayerCommand;
 use crate::app::{App, FilePickerMode, FilePickerOrigin};
 use crossterm::event::{KeyCode, KeyEvent};
-use sotf_audio_player::PluginSettings;
+use sotf_audio_player::{preset_file_to_path_config_json, PluginSettings};
 
 pub(super) fn handle_file_explorer_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
@@ -118,6 +118,49 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
             } else {
                 app.status_message = Some("APO file loaded".to_string());
                 app.request_plugin_update();
+            }
+        }
+        FilePickerOrigin::ABConfigA | FilePickerOrigin::ABConfigB => {
+            let is_path_a = app.file_picker_origin == FilePickerOrigin::ABConfigA;
+            match std::fs::read_to_string(&path) {
+                Ok(json_content) => {
+                    let sample_rate = app.get_current_sample_rate();
+                    match preset_file_to_path_config_json(&json_content, sample_rate) {
+                        Ok(path_config_json) => {
+                            if let Some(plugin) =
+                                app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
+                            {
+                                if let PluginSettings::ABCompare {
+                                    ref mut path_a_config,
+                                    ref mut path_b_config,
+                                    ref mut path_a_file,
+                                    ref mut path_b_file,
+                                    ..
+                                } = plugin.settings
+                                {
+                                    if is_path_a {
+                                        *path_a_config = path_config_json;
+                                        *path_a_file = path_str;
+                                    } else {
+                                        *path_b_config = path_config_json;
+                                        *path_b_file = path_str;
+                                    }
+                                }
+                            }
+                            let filename =
+                                path.file_name().unwrap_or_default().to_string_lossy();
+                            app.status_message =
+                                Some(format!("Config loaded from {}", filename));
+                            app.request_plugin_update();
+                        }
+                        Err(e) => {
+                            app.status_message = Some(format!("Invalid preset: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    app.status_message = Some(format!("Failed to read config: {}", e));
+                }
             }
         }
     }
