@@ -253,7 +253,7 @@ pub struct VolumeKnob {
     id: ElementId,
     value: f32,
     label: SharedString,
-    size: Pixels,
+    size: DefiniteLength,
     muted: bool,
     /// Optional theme (uses global theme if not set)
     theme: Option<VolumeKnobTheme>,
@@ -279,7 +279,7 @@ impl VolumeKnob {
             id: ElementId::Name(SharedString::from(format!("volume-knob-{}", counter))),
             value: 0.0,
             label: "".into(),
-            size: px(40.0),
+            size: px(40.0).into(),
             muted: false,
             theme: None,
             accent_color: None,
@@ -313,7 +313,7 @@ impl VolumeKnob {
         self
     }
 
-    pub fn size(mut self, size: impl Into<Pixels>) -> Self {
+    pub fn size(mut self, size: impl Into<DefiniteLength>) -> Self {
         self.size = size.into();
         self
     }
@@ -376,7 +376,19 @@ impl Default for VolumeKnob {
 }
 
 impl RenderOnce for VolumeKnob {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Resolve DefiniteLength to Pixels using window's rem_size
+        let resolved_size = match self.size {
+            DefiniteLength::Absolute(abs) => match abs {
+                AbsoluteLength::Pixels(px_val) => px_val,
+                AbsoluteLength::Rems(rem_val) => {
+                    let rem_px: f32 = window.rem_size().into();
+                    px(rem_val.0 * rem_px)
+                }
+            },
+            DefiniteLength::Fraction(_) => px(40.0), // fallback
+        };
+
         // Get theme: use explicit theme, or derive from global theme
         let global_theme = cx.theme();
         let theme = self
@@ -415,7 +427,7 @@ impl RenderOnce for VolumeKnob {
 
         // Capture values for closures
         let current_muted = self.muted;
-        let knob_size_f32 = self.size.to_f64() as f32;
+        let knob_size_f32 = resolved_size.to_f64() as f32;
 
         // Shared current value tracker and interaction config (with media keys enabled)
         let current_value = value_tracker(self.value as f64);
@@ -425,8 +437,8 @@ impl RenderOnce for VolumeKnob {
         let mut container = div()
             .id(self.id)
             .relative()
-            .w(self.size)
-            .h(self.size)
+            .w(resolved_size)
+            .h(resolved_size)
             .cursor_pointer();
 
         if let Some(ref focus_handle) = self.focus_handle {
@@ -467,7 +479,7 @@ impl RenderOnce for VolumeKnob {
         // Drag support and hover focus
         {
             let drag_handler = on_change_rc.clone();
-            let knob_size_f32 = self.size.to_f64() as f32;
+            let knob_size_f32 = resolved_size.to_f64() as f32;
             let focus_handle_hover = self.focus_handle.clone();
 
             container = container.on_mouse_move(move |event, window, cx| {
@@ -531,7 +543,7 @@ impl RenderOnce for VolumeKnob {
         container
             // Custom painted fill element
             .child(div().absolute().inset_0().child(VolumeKnobFillElement::new(
-                self.size,
+                resolved_size,
                 display_value,
                 bg_color,
                 fill_color,
