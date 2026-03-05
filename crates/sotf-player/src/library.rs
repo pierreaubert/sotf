@@ -2585,6 +2585,44 @@ mod tests {
     }
 
     #[test]
+    fn test_different_artists_same_title_not_merged() {
+        // Bug: "Greatest Hits" by Queen and "Greatest Hits" by Fleetwood Mac
+        // were merged into one album because grouping key was title-only.
+        let album_a = create_test_album("Greatest Hits", "Queen", 1);
+        let album_b = create_test_album("Greatest Hits", "Fleetwood Mac", 1);
+
+        let albums = vec![album_a, album_b];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(
+            merged.len(),
+            2,
+            "Albums with same title but different artists must not merge"
+        );
+    }
+
+    #[test]
+    fn test_unknown_artist_merges_with_known_artist() {
+        // "2CELLOS" with "Unknown Artist" should merge with "2Cellos" by "2Cellos"
+        let album_a = create_test_album("2Cellos", "Unknown Artist", 1);
+        let mut album_b = create_test_album("2Cellos", "2Cellos", 1);
+        album_b.tracks[0].title = Some("Smooth Criminal".to_string());
+
+        let albums = vec![album_a, album_b];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(
+            merged.len(),
+            1,
+            "Unknown artist album should merge with known artist album of same title"
+        );
+        // Should pick the known artist
+        assert_eq!(merged[0].artist(), "2Cellos");
+    }
+
+    #[test]
     fn test_real_albums_still_merge() {
         // Tracks that DO have a real album tag should still merge normally
         let album1 = create_test_album("Abbey Road (CD 1)", "The Beatles", 1);
@@ -2608,19 +2646,60 @@ mod tests {
 /// - Keep the album metadata (year, art) from the album with highest DR
 /// - Prefer albums with known artists over "Unknown Artist" or "Various Artists"
 pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
-    // Group by normalized title only (ignoring artist) to consolidate editions
-    // This handles cases like the same album appearing with different artist names
-    // (e.g., "2CELLOS" with "Unknown Artist" vs "2Cellos")
-    let mut groups: std::collections::HashMap<String, Vec<&Album>> =
+    // Group by (normalized_title, normalized_artist) to keep different artists separate.
+    // Albums with unknown/various artists are merged into a matching known-artist group
+    // if one exists for the same title.
+
+    let is_unknown_artist = |artist: &str| -> bool {
+        let lower = artist.to_lowercase();
+        lower.contains("unknown") || lower.contains("various")
+    };
+
+    // First pass: group by (title, artist)
+    let mut groups: std::collections::HashMap<(String, String), Vec<&Album>> =
         std::collections::HashMap::new();
 
-    for album in albums {
+    for album in &albums {
         let title = album.title.trim();
-        let normalized_title = clean_album_title(title);
+        let normalized_title = clean_album_title(title).trim().to_lowercase();
+        let artist = album.artist();
+        let normalized_artist = normalize_album_key(&artist);
+        groups
+            .entry((normalized_title, normalized_artist))
+            .or_default()
+            .push(album);
+    }
 
-        // Group by title only - we'll select the best artist when merging
-        let key = normalized_title.trim().to_lowercase();
-        groups.entry(key).or_default().push(album);
+    // Second pass: merge unknown-artist groups into known-artist groups with the same title
+    let unknown_keys: Vec<(String, String)> = groups
+        .keys()
+        .filter(|(title, artist_key)| {
+            // Check if all albums in this group have unknown artists
+            groups[&(title.clone(), artist_key.clone())]
+                .iter()
+                .all(|a| is_unknown_artist(&a.artist()))
+        })
+        .cloned()
+        .collect();
+
+    for (title, unknown_artist_key) in unknown_keys {
+        // Find a known-artist group with the same title
+        let known_key = groups
+            .keys()
+            .find(|(t, ak)| {
+                *t == title
+                    && *ak != unknown_artist_key
+                    && groups[&(t.clone(), ak.clone())]
+                        .iter()
+                        .any(|a| !is_unknown_artist(&a.artist()))
+            })
+            .cloned();
+
+        if let Some(target_key) = known_key {
+            if let Some(unknown_albums) = groups.remove(&(title, unknown_artist_key)) {
+                groups.get_mut(&target_key).unwrap().extend(unknown_albums);
+            }
+        }
     }
 
     // Merge albums and deduplicate tracks
@@ -2671,6 +2750,25 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
                 all_tracks.extend(g_album.tracks.clone());
             }
             album.tracks = all_tracks;
+
+            // Normalize album_artist on merged tracks to the best album's artist
+            // so that Album::artist() doesn't return "Various Artists" due to
+            // unknown-artist tracks mixed with known-artist tracks.
+            let best_artist = best_album.artist();
+            if is_known_artist(&best_artist) {
+                for track in &mut album.tracks {
+                    if let Some(ref aa) = track.album_artist {
+                        if !is_known_artist(aa) {
+                            track.album_artist = Some(best_artist.clone());
+                        }
+                    }
+                    if let Some(ref a) = track.artist {
+                        if !is_known_artist(a) {
+                            track.artist = Some(best_artist.clone());
+                        }
+                    }
+                }
+            }
         }
 
         // Deduplicate tracks by (title + disc + track number)
