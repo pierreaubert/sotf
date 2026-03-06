@@ -572,7 +572,7 @@ pub fn render_plugin_content(
             bands,
             ..
         } => {
-            let selected_band_idx = selected_band_idx.min(*num_bands);
+            let selected_band_idx = selected_band_idx.min(bands.len());
 
             // If a band is selected (>0), we show its values if they exist, otherwise global
             let (
@@ -657,7 +657,7 @@ pub fn render_plugin_content(
             bands,
             ..
         } => {
-            let selected_band_idx = selected_band_idx.min(*num_bands);
+            let selected_band_idx = selected_band_idx.min(bands.len());
 
             // If a band is selected (>0), we show its values if they exist, otherwise global
             let (

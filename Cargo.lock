@@ -700,7 +700,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -3525,6 +3525,7 @@ dependencies = [
  "glam",
  "gpui",
  "gpui-ui-kit",
+ "gpui_macos",
  "image",
  "ndarray 0.17.2",
  "pollster 0.4.0",
@@ -3554,7 +3555,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.7"
+version = "0.6.9"
 dependencies = [
  "gpui",
  "gpui-ui-kit-macros",
@@ -8419,7 +8420,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-engine"
-version = "1.0.11"
+version = "1.0.12"
 dependencies = [
  "arc-swap",
  "autoeq-env",
@@ -8555,7 +8556,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-player"
-version = "0.5.111"
+version = "0.5.112"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -8604,7 +8605,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-ab-compare"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -10055,7 +10056,7 @@ checksum = "ab16f14aed21ee8bfd8ec22513f7287cd4a91aa92e44edfe2c17ddd004e92607"
 
 [[package]]
 name = "tools"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "anyhow",
  "bincode",

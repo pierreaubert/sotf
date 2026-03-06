@@ -471,29 +471,39 @@ pub(super) fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
             None
         }
         KeyCode::Up => {
-            // Navigate preset list when input is empty
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
-                && app.selected_preset_index > 0 {
-                    app.selected_preset_index -= 1;
-                }
+            if !app.autocomplete_up(crate::app::app_autocomplete::set_plugin_file_input) {
+                // Navigate preset list when input is empty
+                if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
+                    && app.selected_preset_index > 0 {
+                        app.selected_preset_index -= 1;
+                    }
+            }
             None
         }
         KeyCode::Down => {
-            // Navigate preset list when input is empty
-            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
-                && app.selected_preset_index < app.available_plugin_presets.len() - 1 {
-                    app.selected_preset_index += 1;
-                }
+            if !app.autocomplete_down(crate::app::app_autocomplete::set_plugin_file_input) {
+                // Navigate preset list when input is empty
+                if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
+                    && app.selected_preset_index < app.available_plugin_presets.len() - 1 {
+                        app.selected_preset_index += 1;
+                    }
+            }
             None
         }
         KeyCode::Char(c) => {
             app.plugin_file_input.push(c);
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_plugin_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::PresetName,
+            );
             None
         }
         KeyCode::Backspace => {
             app.plugin_file_input.pop();
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_plugin_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::PresetName,
+            );
             None
         }
         _ => None,
@@ -534,27 +544,37 @@ pub(super) fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            // Navigate through presets
-            if app.plugin_file_input.is_empty() {
-                app.select_previous_preset();
+            if !app.autocomplete_up(crate::app::app_autocomplete::set_plugin_file_input) {
+                // Navigate through presets
+                if app.plugin_file_input.is_empty() {
+                    app.select_previous_preset();
+                }
             }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            // Navigate through presets
-            if app.plugin_file_input.is_empty() {
-                app.select_next_preset();
+            if !app.autocomplete_down(crate::app::app_autocomplete::set_plugin_file_input) {
+                // Navigate through presets
+                if app.plugin_file_input.is_empty() {
+                    app.select_next_preset();
+                }
             }
             None
         }
         KeyCode::Char(c) => {
             app.plugin_file_input.push(c);
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_plugin_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         KeyCode::Backspace => {
             app.plugin_file_input.pop();
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_plugin_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         _ => None,
@@ -596,14 +616,28 @@ pub(super) fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<
             app.zsh_backtab_complete(crate::app::app_autocomplete::set_apo_file_input);
             None
         }
+        KeyCode::Down => {
+            app.autocomplete_down(crate::app::app_autocomplete::set_apo_file_input);
+            None
+        }
+        KeyCode::Up => {
+            app.autocomplete_up(crate::app::app_autocomplete::set_apo_file_input);
+            None
+        }
         KeyCode::Char(c) => {
             app.apo_file_input.push(c);
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_apo_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         KeyCode::Backspace => {
             app.apo_file_input.pop();
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_apo_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         _ => None,
@@ -645,14 +679,28 @@ pub(super) fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option
             app.zsh_backtab_complete(crate::app::app_autocomplete::set_sofa_file_input);
             None
         }
+        KeyCode::Down => {
+            app.autocomplete_down(crate::app::app_autocomplete::set_sofa_file_input);
+            None
+        }
+        KeyCode::Up => {
+            app.autocomplete_up(crate::app::app_autocomplete::set_sofa_file_input);
+            None
+        }
         KeyCode::Char(c) => {
             app.sofa_file_input.push(c);
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_sofa_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         KeyCode::Backspace => {
             app.sofa_file_input.pop();
-            app.clear_autocomplete();
+            app.refresh_autocomplete_inline(
+                crate::app::app_autocomplete::get_sofa_file_input,
+                crate::app::app_autocomplete::AutocompleteKind::FilePath,
+            );
             None
         }
         _ => None,

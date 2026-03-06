@@ -83,7 +83,7 @@ pub struct UpmixerRenderState<'a> {
     pub config_open: bool,
 }
 
-/// Parameter indices for set_plugin_param calls
+/// Parameter indices matching PARAMS ordering in param_specs::upmixer::PARAMS
 mod param_idx {
     pub const SPEAKER_CONFIG: usize = 0;
     pub const GAIN_FRONT_DIRECT: usize = 1;
@@ -92,18 +92,18 @@ mod param_idx {
     pub const HEIGHT_GAIN: usize = 4;
     pub const LFE_GAIN: usize = 5;
     pub const LFE_CUTOFF_HZ: usize = 6;
-    pub const STEREO_WIDTH: usize = 7;
-    pub const CENTER_SPREAD: usize = 8;
-    pub const _BANDPASS_HZ: usize = 9; // Reserved but currently unused in UI
-    pub const ENABLE_SUBHARMONIC_SYNTH: usize = 10;
-    pub const SUBHARMONIC_GAIN: usize = 11;
-    pub const ENABLE_HR_DIRECT: usize = 12;
-    pub const HR_SHARPEN: usize = 13;
-    pub const SAFETY_CAP_DB: usize = 14;
-    pub const DECORRELATION_MODE: usize = 15;
-    pub const SUBHARMONIC_FREQ_HZ: usize = 16;
-    pub const SUBHARMONIC_ATTACK_MS: usize = 17;
-    pub const SUBHARMONIC_RELEASE_MS: usize = 18;
+    pub const ENABLE_SUBHARMONIC_SYNTH: usize = 7;
+    pub const SUBHARMONIC_GAIN: usize = 8;
+    pub const SUBHARMONIC_FREQ_HZ: usize = 9;
+    pub const SUBHARMONIC_ATTACK_MS: usize = 10;
+    pub const SUBHARMONIC_RELEASE_MS: usize = 11;
+    pub const STEREO_WIDTH: usize = 12;
+    pub const CENTER_SPREAD: usize = 13;
+    pub const _BANDPASS_HZ: usize = 14; // Reserved but currently unused in UI
+    pub const ENABLE_HR_DIRECT: usize = 15;
+    pub const HR_SHARPEN: usize = 16;
+    pub const AMBIENT_BOOST: usize = 17;
+    pub const DECORRELATION_MODE: usize = 18;
     pub const DECORRELATION_LFO_RATE_HZ: usize = 19;
     pub const VELVET_NOISE_DURATION_MS: usize = 20;
     pub const VELVET_NOISE_DENSITY: usize = 21;
@@ -113,13 +113,13 @@ mod param_idx {
     pub const SURROUND_DIRECT_BLEED: usize = 25;
     pub const REAR_AMBIENT_BOOST: usize = 26;
     pub const REAR_LATE_REFLECTION: usize = 27;
-    pub const AMBIENT_BOOST: usize = 28;
-    pub const DIALOGUE_WEIGHT: usize = 29;
-    pub const VOICE_FREQ_MIN_HZ: usize = 30;
-    pub const VOICE_FREQ_MAX_HZ: usize = 31;
-    pub const DIALOGUE_CENTROID_WEIGHT: usize = 32;
-    pub const DIALOGUE_VARIANCE_WEIGHT: usize = 33;
-    pub const DIALOGUE_COHERENCE_WEIGHT: usize = 34;
+    pub const DIALOGUE_WEIGHT: usize = 28;
+    pub const VOICE_FREQ_MIN_HZ: usize = 29;
+    pub const VOICE_FREQ_MAX_HZ: usize = 30;
+    pub const DIALOGUE_CENTROID_WEIGHT: usize = 31;
+    pub const DIALOGUE_VARIANCE_WEIGHT: usize = 32;
+    pub const DIALOGUE_COHERENCE_WEIGHT: usize = 33;
+    pub const SAFETY_CAP_DB: usize = 34;
     pub const BYPASS_DECORRELATION: usize = 35;
     pub const BYPASS_TRANSIENT_DETECTION: usize = 36;
     pub const BYPASS_ALL_PROCESSING: usize = 37;

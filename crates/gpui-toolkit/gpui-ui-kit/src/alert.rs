@@ -34,7 +34,8 @@ impl AlertVariant {
             ThemeVariant::Dark
             | ThemeVariant::Midnight
             | ThemeVariant::Forest
-            | ThemeVariant::BlackAndWhite => match self {
+            | ThemeVariant::BlackAndWhite
+            | ThemeVariant::Onyx => match self {
                 AlertVariant::Info => (rgb(0x1a2a3a), theme.info, theme.info),
                 AlertVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
                 AlertVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),

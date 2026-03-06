@@ -309,6 +309,10 @@ impl PlayerView {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.meters_panel_ratio = if collapsed { 0.0 } else { 0.25 };
+                                    // Mutual exclusion: opening meters collapses rack
+                                    if !collapsed {
+                                        layout.rack_panel_collapsed = true;
+                                    }
                                     let _ = state.app.save_config(layout);
                                 });
                             });

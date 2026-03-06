@@ -38,6 +38,8 @@ pub enum ThemeVariant {
     Forest,
     /// Black & White theme (monochrome high contrast)
     BlackAndWhite,
+    /// Onyx theme (near-black with warm amber/gold accent)
+    Onyx,
 }
 
 impl ThemeVariant {
@@ -49,6 +51,7 @@ impl ThemeVariant {
             ThemeVariant::Midnight,
             ThemeVariant::Forest,
             ThemeVariant::BlackAndWhite,
+            ThemeVariant::Onyx,
         ]
     }
 
@@ -60,6 +63,7 @@ impl ThemeVariant {
             ThemeVariant::Midnight => "Midnight",
             ThemeVariant::Forest => "Forest",
             ThemeVariant::BlackAndWhite => "Black & White",
+            ThemeVariant::Onyx => "Onyx",
         }
     }
 
@@ -70,7 +74,8 @@ impl ThemeVariant {
             ThemeVariant::Light => ThemeVariant::Midnight,
             ThemeVariant::Midnight => ThemeVariant::Forest,
             ThemeVariant::Forest => ThemeVariant::BlackAndWhite,
-            ThemeVariant::BlackAndWhite => ThemeVariant::Dark,
+            ThemeVariant::BlackAndWhite => ThemeVariant::Onyx,
+            ThemeVariant::Onyx => ThemeVariant::Dark,
         }
     }
 }
@@ -384,6 +389,51 @@ impl Theme {
         }
     }
 
+    /// Onyx theme (near-black with warm amber/gold accent)
+    pub fn onyx() -> Self {
+        Self {
+            variant: ThemeVariant::Onyx,
+            // Backgrounds
+            background: rgb(0x0c0c0e),
+            surface: rgb(0x1a1a1e),
+            surface_hover: rgb(0x242428),
+            muted: rgb(0x111114),
+            transparent: rgba(0x00000000),
+            overlay_bg: rgba(0x000000a6),
+            // Text
+            text_primary: rgb(0xfafaf9),
+            text_secondary: rgb(0xd6d3d1),
+            text_muted: rgb(0xa8a29e),
+            text_on_accent: rgb(0x0c0c0e),
+            icon_on_accent: rgb(0x0c0c0e),
+            // Accent (amber/gold)
+            accent: rgb(0xf59e0b),
+            accent_hover: rgb(0xfbbf24),
+            accent_muted: rgba(0x78350f33),
+            // Semantic
+            success: rgb(0x4ade80),
+            warning: rgb(0xfb923c),
+            error: rgb(0xef4444),
+            info: rgb(0x38bdf8),
+            // Border
+            border: rgb(0x2a2a2e),
+            border_hover: rgb(0xf59e0b),
+            // Typography
+            font_family: "B612".into(),
+            // Badge colors
+            badge_primary_bg: rgb(0x451a03),
+            badge_primary_text: rgb(0xfbbf24),
+            badge_success_bg: rgb(0x14532d),
+            badge_success_text: rgb(0x4ade80),
+            badge_warning_bg: rgb(0x451a03),
+            badge_warning_text: rgb(0xfb923c),
+            badge_error_bg: rgb(0x450a0a),
+            badge_error_text: rgb(0xef4444),
+            badge_info_bg: rgb(0x0c2d48),
+            badge_info_text: rgb(0x38bdf8),
+        }
+    }
+
     /// Get theme for variant
     pub fn for_variant(variant: ThemeVariant) -> Self {
         match variant {
@@ -392,6 +442,7 @@ impl Theme {
             ThemeVariant::Midnight => Self::midnight(),
             ThemeVariant::Forest => Self::forest(),
             ThemeVariant::BlackAndWhite => Self::black_and_white(),
+            ThemeVariant::Onyx => Self::onyx(),
         }
     }
 

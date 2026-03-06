@@ -1197,4 +1197,61 @@ mod tests {
         assert_eq!(app.recording.selected_field, 0);
         assert_eq!(app.recording.step, RecordingStep::Config);
     }
+
+    // ── Directory autocomplete arrow navigation ─────────────────────────
+
+    /// Helper: create an app in directory editing mode with autocomplete menu active.
+    fn app_editing_directory_with_suggestions(suggestions: Vec<String>) -> crate::app::App {
+        let mut app = app_on_library();
+        app.current_screen = Screen::Configure;
+        app.configure_sub_screen = ConfigureSubScreen::Directories;
+        app.input_mode = InputMode::ConfigureDirectories;
+        app.editing_directory = true;
+        app.directory_input = "test".to_string();
+        app.autocomplete_suggestions = suggestions;
+        app.autocomplete_menu_active = true;
+        app.autocomplete_index = 0;
+        app
+    }
+
+    #[test]
+    fn directory_autocomplete_down_arrow_cycles_suggestions() {
+        let mut app = app_editing_directory_with_suggestions(vec![
+            "/test/aaa/".to_string(),
+            "/test/bbb/".to_string(),
+            "/test/ccc/".to_string(),
+        ]);
+
+        // Down arrow should select next suggestion
+        send_keys(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.autocomplete_index, 1);
+        assert_eq!(app.directory_input, "/test/bbb/");
+
+        send_keys(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.autocomplete_index, 2);
+        assert_eq!(app.directory_input, "/test/ccc/");
+
+        // Wrap around
+        send_keys(&mut app, &[KeyCode::Down]);
+        assert_eq!(app.autocomplete_index, 0);
+        assert_eq!(app.directory_input, "/test/aaa/");
+    }
+
+    #[test]
+    fn directory_autocomplete_up_arrow_cycles_suggestions() {
+        let mut app = app_editing_directory_with_suggestions(vec![
+            "/test/aaa/".to_string(),
+            "/test/bbb/".to_string(),
+            "/test/ccc/".to_string(),
+        ]);
+
+        // Up arrow from index 0 should wrap to last
+        send_keys(&mut app, &[KeyCode::Up]);
+        assert_eq!(app.autocomplete_index, 2);
+        assert_eq!(app.directory_input, "/test/ccc/");
+
+        send_keys(&mut app, &[KeyCode::Up]);
+        assert_eq!(app.autocomplete_index, 1);
+        assert_eq!(app.directory_input, "/test/bbb/");
+    }
 }

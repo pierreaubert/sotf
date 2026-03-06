@@ -444,7 +444,10 @@ impl App {
             {
                 self.selected_directory_index = self.library.directories.len() - 1;
             }
-            self.needs_rescan = true;
+            // Reload library from database (tracks already removed by remove_directory)
+            if let Err(e) = self.load_library_from_database() {
+                log::warn!("Failed to reload library after directory removal: {}", e);
+            }
         }
     }
 

@@ -32,22 +32,36 @@ impl PlayerView {
             .flex_row()
             .size_full()
             .bg(theme.background)
-            // Global mouse move handler for 3-panel divider dragging
+            // Global mouse move handler for all divider dragging
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
-                let (is_dragging_lib_queue, is_dragging_queue_rack) = {
-                    let layout = view.state.read(cx).layout.read(cx);
+                let (
+                    is_dragging_lib_queue,
+                    is_dragging_queue_rack,
+                    is_dragging_queue_list,
+                    is_dragging_meters,
+                    library_h_ratio,
+                    rack_h_ratio,
+                    rack_collapsed,
+                ) = {
+                    let state = view.state.read(cx);
+                    let layout = state.layout.read(cx);
                     (
                         layout.is_dragging_library_queue_divider,
                         layout.is_dragging_queue_rack_divider,
+                        layout.is_dragging_queue_list_divider,
+                        layout.is_dragging_meters_divider,
+                        layout.library_h_ratio,
+                        layout.rack_h_ratio,
+                        layout.rack_panel_collapsed,
                     )
                 };
 
                 let window_size = window.bounds().size;
                 let mouse_pos = event.position;
+                let window_width: f32 = window_size.width.into();
+                let mouse_x: f32 = mouse_pos.x.into();
 
                 if is_dragging_lib_queue {
-                    let window_width: f32 = window_size.width.into();
-                    let mouse_x: f32 = mouse_pos.x.into();
                     let new_ratio = (mouse_x / window_width).clamp(0.15, 0.50);
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
@@ -57,9 +71,6 @@ impl PlayerView {
                 }
 
                 if is_dragging_queue_rack {
-                    let window_width: f32 = window_size.width.into();
-                    let mouse_x: f32 = mouse_pos.x.into();
-                    // Rack ratio is from the right edge
                     let new_ratio = (1.0 - (mouse_x / window_width)).clamp(0.15, 0.50);
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
@@ -67,18 +78,53 @@ impl PlayerView {
                         });
                     });
                 }
+
+                // Inner queue dividers: compute position relative to queue panel
+                if is_dragging_queue_list || is_dragging_meters {
+                    // Queue panel spans from library_h_ratio to (1.0 - rack_h_ratio) in window coords
+                    let queue_start = library_h_ratio * window_width;
+                    let rack_width = if rack_collapsed { 0.0 } else { rack_h_ratio * window_width };
+                    let queue_width = window_width - queue_start - rack_width;
+
+                    if queue_width > 0.0 {
+                        let local_x = mouse_x - queue_start;
+
+                        if is_dragging_queue_list {
+                            let new_ratio = (local_x / queue_width).clamp(0.1, 0.5);
+                            view.state.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.queue_list_ratio = new_ratio;
+                                });
+                            });
+                        }
+
+                        if is_dragging_meters {
+                            let new_ratio = (1.0 - (local_x / queue_width)).clamp(0.1, 0.5);
+                            view.state.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.meters_panel_ratio = new_ratio;
+                                });
+                            });
+                        }
+                    }
+                }
             }))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
-                            if layout.is_dragging_library_queue_divider
+                            let any_dragging = layout.is_dragging_library_queue_divider
                                 || layout.is_dragging_queue_rack_divider
-                            {
-                                layout.is_dragging_library_queue_divider = false;
-                                layout.is_dragging_queue_rack_divider = false;
-                                // Save panel layout
+                                || layout.is_dragging_queue_list_divider
+                                || layout.is_dragging_meters_divider;
+
+                            layout.is_dragging_library_queue_divider = false;
+                            layout.is_dragging_queue_rack_divider = false;
+                            layout.is_dragging_queue_list_divider = false;
+                            layout.is_dragging_meters_divider = false;
+
+                            if any_dragging {
                                 if let Err(e) = state.app.save_config(layout) {
                                     log::warn!("Failed to save panel layout: {}", e);
                                 }
@@ -135,37 +181,36 @@ impl PlayerView {
                     .overflow_hidden()
                     .child(self.render_queue_content(cx)),
             )
-            // Queue-Rack divider
-            .child({
-                PaneDivider::vertical("queue-rack-h-divider", CollapseDirection::Right)
-                    .label("Rack")
-                    .collapsed(rack_collapsed)
-                    .theme(divider_theme)
-                    .on_toggle({
-                        let state_handle = self.state.clone();
-                        move |collapsed, _window, cx| {
-                            state_handle.update(cx, |state, cx| {
-                                state.layout.update(cx, |layout, _| {
-                                    layout.rack_panel_collapsed = collapsed;
-                                    let _ = state.app.save_config(layout);
-                                });
-                            });
-                        }
-                    })
-                    .on_drag_start({
-                        let state_handle = self.state.clone();
-                        move |_pos, _window, cx| {
-                            state_handle.update(cx, |state, cx| {
-                                state.layout.update(cx, |layout, _| {
-                                    layout.is_dragging_queue_rack_divider = true;
-                                });
-                            });
-                        }
-                    })
-            })
-            // Rack panel (right)
+            // Queue-Rack divider + Rack panel (only when rack is open)
             .when(!rack_collapsed, |d| {
-                d.child(
+                d.child({
+                    PaneDivider::vertical("queue-rack-h-divider", CollapseDirection::Right)
+                        .label("Rack")
+                        .collapsed(false)
+                        .theme(divider_theme)
+                        .on_toggle({
+                            let state_handle = self.state.clone();
+                            move |collapsed, _window, cx| {
+                                state_handle.update(cx, |state, cx| {
+                                    state.layout.update(cx, |layout, _| {
+                                        layout.rack_panel_collapsed = collapsed;
+                                        let _ = state.app.save_config(layout);
+                                    });
+                                });
+                            }
+                        })
+                        .on_drag_start({
+                            let state_handle = self.state.clone();
+                            move |_pos, _window, cx| {
+                                state_handle.update(cx, |state, cx| {
+                                    state.layout.update(cx, |layout, _| {
+                                        layout.is_dragging_queue_rack_divider = true;
+                                    });
+                                });
+                            }
+                        })
+                })
+                .child(
                     div()
                         .w(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
                             rack_ratio,
@@ -206,13 +251,20 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .bg(theme.background)
-            // Global mouse move handler for 3-panel divider dragging (vertical)
+            // Global mouse move handler for all divider dragging (vertical layout)
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
-                let (is_dragging_lib_queue, is_dragging_queue_rack) = {
+                let (
+                    is_dragging_lib_queue,
+                    is_dragging_queue_rack,
+                    is_dragging_queue_list,
+                    is_dragging_meters,
+                ) = {
                     let layout = view.state.read(cx).layout.read(cx);
                     (
                         layout.is_dragging_library_queue_divider,
                         layout.is_dragging_queue_rack_divider,
+                        layout.is_dragging_queue_list_divider,
+                        layout.is_dragging_meters_divider,
                     )
                 };
 
@@ -233,7 +285,6 @@ impl PlayerView {
                 if is_dragging_queue_rack {
                     let window_height: f32 = window_size.height.into();
                     let mouse_y: f32 = mouse_pos.y.into();
-                    // Rack ratio is from the bottom edge
                     let new_ratio = (1.0 - (mouse_y / window_height)).clamp(0.15, 0.50);
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
@@ -241,18 +292,47 @@ impl PlayerView {
                         });
                     });
                 }
+
+                // Inner queue dividers: queue panel spans full width in vertical mode
+                if is_dragging_queue_list || is_dragging_meters {
+                    let window_width: f32 = window_size.width.into();
+                    let mouse_x: f32 = mouse_pos.x.into();
+
+                    if is_dragging_queue_list {
+                        let new_ratio = (mouse_x / window_width).clamp(0.1, 0.5);
+                        view.state.update(cx, |state, cx| {
+                            state.layout.update(cx, |layout, _| {
+                                layout.queue_list_ratio = new_ratio;
+                            });
+                        });
+                    }
+
+                    if is_dragging_meters {
+                        let new_ratio = (1.0 - (mouse_x / window_width)).clamp(0.1, 0.5);
+                        view.state.update(cx, |state, cx| {
+                            state.layout.update(cx, |layout, _| {
+                                layout.meters_panel_ratio = new_ratio;
+                            });
+                        });
+                    }
+                }
             }))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _event: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
-                            if layout.is_dragging_library_queue_divider
+                            let any_dragging = layout.is_dragging_library_queue_divider
                                 || layout.is_dragging_queue_rack_divider
-                            {
-                                layout.is_dragging_library_queue_divider = false;
-                                layout.is_dragging_queue_rack_divider = false;
-                                // Save panel layout
+                                || layout.is_dragging_queue_list_divider
+                                || layout.is_dragging_meters_divider;
+
+                            layout.is_dragging_library_queue_divider = false;
+                            layout.is_dragging_queue_rack_divider = false;
+                            layout.is_dragging_queue_list_divider = false;
+                            layout.is_dragging_meters_divider = false;
+
+                            if any_dragging {
                                 if let Err(e) = state.app.save_config(layout) {
                                     log::warn!("Failed to save panel layout: {}", e);
                                 }
@@ -309,37 +389,36 @@ impl PlayerView {
                     .overflow_hidden()
                     .child(self.render_queue_content(cx)),
             )
-            // Queue-Rack divider (horizontal)
-            .child({
-                PaneDivider::horizontal("queue-rack-v-divider", CollapseDirection::Down)
-                    .label("Rack")
-                    .collapsed(rack_collapsed)
-                    .theme(divider_theme)
-                    .on_toggle({
-                        let state_handle = self.state.clone();
-                        move |collapsed, _window, cx| {
-                            state_handle.update(cx, |state, cx| {
-                                state.layout.update(cx, |layout, _| {
-                                    layout.rack_panel_collapsed = collapsed;
-                                    let _ = state.app.save_config(layout);
-                                });
-                            });
-                        }
-                    })
-                    .on_drag_start({
-                        let state_handle = self.state.clone();
-                        move |_pos, _window, cx| {
-                            state_handle.update(cx, |state, cx| {
-                                state.layout.update(cx, |layout, _| {
-                                    layout.is_dragging_queue_rack_divider = true;
-                                });
-                            });
-                        }
-                    })
-            })
-            // Rack panel (bottom)
+            // Queue-Rack divider + Rack panel (only when rack is open)
             .when(!rack_collapsed, |d| {
-                d.child(
+                d.child({
+                    PaneDivider::horizontal("queue-rack-v-divider", CollapseDirection::Down)
+                        .label("Rack")
+                        .collapsed(false)
+                        .theme(divider_theme)
+                        .on_toggle({
+                            let state_handle = self.state.clone();
+                            move |collapsed, _window, cx| {
+                                state_handle.update(cx, |state, cx| {
+                                    state.layout.update(cx, |layout, _| {
+                                        layout.rack_panel_collapsed = collapsed;
+                                        let _ = state.app.save_config(layout);
+                                    });
+                                });
+                            }
+                        })
+                        .on_drag_start({
+                            let state_handle = self.state.clone();
+                            move |_pos, _window, cx| {
+                                state_handle.update(cx, |state, cx| {
+                                    state.layout.update(cx, |layout, _| {
+                                        layout.is_dragging_queue_rack_divider = true;
+                                    });
+                                });
+                            }
+                        })
+                })
+                .child(
                     div()
                         .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
                             rack_ratio,

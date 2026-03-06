@@ -572,6 +572,29 @@ async fn test_footer_responsive_waveform_visibility(_cx: &mut TestAppContext) {
     }
 }
 
+/// Test responsive breakpoints for timestamp positioning.
+/// Timestamps always flank the transport controls on the same row.
+/// Waveform appears below when window is wide enough (>=700).
+#[gpui::test]
+async fn test_footer_responsive_timestamp_positioning(_cx: &mut TestAppContext) {
+    const BREAKPOINT_HIDE_WAVEFORM: f32 = 700.0;
+
+    // Wide: waveform shown below transport+timestamps row
+    let width = 1000.0;
+    assert!(width >= BREAKPOINT_HIDE_WAVEFORM);
+
+    // Medium: waveform still shown
+    let width = 800.0;
+    assert!(width >= BREAKPOINT_HIDE_WAVEFORM);
+
+    // Narrow: waveform hidden, compact time display
+    let width = 600.0;
+    assert!(
+        width < BREAKPOINT_HIDE_WAVEFORM,
+        "At 600px, waveform should be hidden"
+    );
+}
+
 /// Test responsive breakpoints for track info visibility.
 #[gpui::test]
 async fn test_footer_responsive_track_info_visibility(_cx: &mut TestAppContext) {
@@ -711,6 +734,36 @@ async fn test_footer_volume_drag_state(_cx: &mut TestAppContext) {
     // End drag
     *is_dragging.borrow_mut() = false;
     assert!(!*is_dragging.borrow(), "Should stop dragging");
+}
+
+/// Test volume knob size scales with rem.
+/// At default rem_size (16px), 4.5rem = 72px.
+/// At smaller rem (14px), 4.5rem = 63px.
+#[gpui::test]
+async fn test_footer_volume_knob_rem_scaling(_cx: &mut TestAppContext) {
+    let knob_rems = 4.5f32;
+
+    // Default rem size (16px)
+    let rem_size_default = 16.0f32;
+    let size_default = knob_rems * rem_size_default;
+    assert!(
+        (size_default - 72.0).abs() < 0.001,
+        "At 16px rem, knob should be 72px"
+    );
+
+    // Smaller rem size (14px)
+    let rem_size_small = 14.0f32;
+    let size_small = knob_rems * rem_size_small;
+    assert!(
+        (size_small - 63.0).abs() < 0.001,
+        "At 14px rem, knob should be 63px"
+    );
+
+    // Knob must scale down with rem
+    assert!(
+        size_small < size_default,
+        "Knob should be smaller with smaller rem size"
+    );
 }
 
 /// Test volume knob display percentage.

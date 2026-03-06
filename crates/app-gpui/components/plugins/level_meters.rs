@@ -1130,7 +1130,6 @@ impl PlayerView {
                 state.app.level_meter_peak_hold.clone(),
             )
         };
-        let theme_c = theme.clone();
         div()
             .flex()
             .flex_col()
@@ -1139,40 +1138,12 @@ impl PlayerView {
             .bg(theme.background)
             .child(
                 div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
                     .mb_2()
                     .child(
                         div()
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Level Meters"),
-                    )
-                    .child(
-                        div()
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded(px(3.0))
-                            .text_xs()
-                            .bg(theme.surface)
-                            .text_color(theme.text_secondary)
-                            .cursor_pointer()
-                            .hover(|style| style.bg(theme_c.surface_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        for group in &mut state.app.level_meter_groups {
-                                            group.muted = false;
-                                            group.soloed = false;
-                                            group.dimmed = false;
-                                        }
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child("Clear All"),
                     ),
             )
             .child({

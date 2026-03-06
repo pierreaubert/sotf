@@ -1,6 +1,6 @@
 [package]
 name = "gpui-ui-kit"
-version = "0.6.8"
+version = "0.6.9"
 authors.workspace = true
 edition.workspace = true
 description = "A reusable UI component library for GPUI applications"

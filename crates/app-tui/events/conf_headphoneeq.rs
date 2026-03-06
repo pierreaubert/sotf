@@ -147,9 +147,22 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                             crate::app::app_autocomplete::set_headphone_measurement_path,
                         );
                     }
+                    KeyCode::Down => {
+                        app.autocomplete_down(
+                            crate::app::app_autocomplete::set_headphone_measurement_path,
+                        );
+                    }
+                    KeyCode::Up => {
+                        app.autocomplete_up(
+                            crate::app::app_autocomplete::set_headphone_measurement_path,
+                        );
+                    }
                     KeyCode::Backspace => {
                         app.headphone_eq.measurement_path.pop();
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_headphone_measurement_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     KeyCode::F(2) => {
                         let start = app.headphone_eq.measurement_path.clone();
@@ -163,7 +176,10 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     }
                     KeyCode::Char(c) => {
                         app.headphone_eq.measurement_path.push(c);
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_headphone_measurement_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     _ => {}
                 }
@@ -187,9 +203,22 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                             crate::app::app_autocomplete::set_headphone_custom_target_path,
                         );
                     }
+                    KeyCode::Down => {
+                        app.autocomplete_down(
+                            crate::app::app_autocomplete::set_headphone_custom_target_path,
+                        );
+                    }
+                    KeyCode::Up => {
+                        app.autocomplete_up(
+                            crate::app::app_autocomplete::set_headphone_custom_target_path,
+                        );
+                    }
                     KeyCode::Backspace => {
                         app.headphone_eq.custom_target_path.pop();
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_headphone_custom_target_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     KeyCode::F(2) => {
                         let start = app.headphone_eq.custom_target_path.clone();
@@ -203,7 +232,10 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     }
                     KeyCode::Char(c) => {
                         app.headphone_eq.custom_target_path.push(c);
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_headphone_custom_target_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     _ => {}
                 }

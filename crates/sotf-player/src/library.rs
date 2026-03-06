@@ -109,6 +109,37 @@ pub fn clean_album_title(title: &str) -> String {
         }
     }
 
+    // Also try to remove catalog numbers in square brackets at the end
+    // Pattern: title ends with "[...]" where content looks like a catalog number
+    // e.g., "Passion [RWCD 1]", "Us [PGCD 7]", "Album [ABC-123]"
+    if let Some(bracket_start) = lower.rfind(" [") {
+        let suffix = &lower[bracket_start..];
+        if suffix.ends_with(']') {
+            let inner = &suffix[2..suffix.len() - 1].trim();
+            let has_digit = inner.chars().any(|c| c.is_ascii_digit());
+            let is_disc_marker =
+                inner.starts_with("cd") || inner.starts_with("disc") || inner.starts_with("vol");
+            let is_album_suffix = inner.contains("remaster")
+                || inner.contains("deluxe")
+                || inner.contains("edition")
+                || inner.contains("live")
+                || inner.contains("bonus")
+                || inner.contains("anniversary");
+            let letter_count = inner.chars().filter(|c| c.is_ascii_lowercase()).count();
+            let digit_count = inner.chars().filter(|c| c.is_ascii_digit()).count();
+            let looks_like_catalog = has_digit
+                && !is_disc_marker
+                && !is_album_suffix
+                && inner.len() <= 15
+                && inner.len() >= 3
+                && (inner.contains('-')
+                    || (letter_count >= 1 && digit_count >= 1));
+            if looks_like_catalog {
+                return title[..bracket_start].trim().to_string();
+            }
+        }
+    }
+
     // List of markers to look for at the end of the string
     // We look for the last occurrence to avoid false positives in the middle of titles
     let markers = [
@@ -1200,22 +1231,12 @@ impl MusicLibrary {
                             let raw_album_title = if has_album_tag {
                                 metadata.album.clone().unwrap()
                             } else {
-                                // Use track title (or filename) as the standalone album name.
-                                // Prepend the parent directory name to disambiguate tracks
-                                // with identical titles in different folders.
-                                let track_name = metadata.title.clone().unwrap_or_else(|| {
-                                    path.file_stem()
-                                        .map(|s| s.to_string_lossy().to_string())
-                                        .unwrap_or_else(|| "Unknown".to_string())
-                                });
-                                let parent_name = path
-                                    .parent()
+                                // Use parent folder name as album title so all untagged
+                                // files in the same directory are grouped together.
+                                path.parent()
                                     .and_then(|p| p.file_name())
-                                    .map(|n| n.to_string_lossy().to_string());
-                                match parent_name {
-                                    Some(dir) => format!("{} - {}", dir, track_name),
-                                    None => track_name,
-                                }
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| "Unknown Album".to_string())
                             };
 
                             let album_title = clean_album_title(&raw_album_title);
@@ -1232,8 +1253,13 @@ impl MusicLibrary {
                                     .unwrap_or_default();
                                 format!("{}|{}", normalized_title, edition_key)
                             } else {
-                                // Unique key per file so each loose track is its own album
-                                format!("__standalone__|{}", path.to_string_lossy())
+                                // Group by folder path so all untagged files in the same
+                                // directory become one album.
+                                let folder = path
+                                    .parent()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                format!("__folder__|{}", folder)
                             };
 
                             let album = album_map.entry(key).or_insert_with(|| {
@@ -2291,6 +2317,24 @@ mod tests {
         assert_eq!(clean_album_title("Album Title (ABC-12345)"), "Album Title");
         assert_eq!(clean_album_title("Album Title (MFSL 1234)"), "Album Title");
 
+        // Catalog numbers in square brackets
+        assert_eq!(
+            clean_album_title("Passion [RWCD 1]"),
+            "Passion"
+        );
+        assert_eq!(
+            clean_album_title("Shaking The Tree [PGCD 7]"),
+            "Shaking The Tree"
+        );
+        assert_eq!(
+            clean_album_title("Us [PGCD 7] - Digipack"),
+            "Us [PGCD 7] - Digipack" // not at end, so not stripped
+        );
+        assert_eq!(
+            clean_album_title("Album Title [ABC-123]"),
+            "Album Title"
+        );
+
         // Should NOT clean
         assert_eq!(clean_album_title("AC/DC"), "AC/DC");
         assert_eq!(clean_album_title("Disco Volante"), "Disco Volante");
@@ -2620,6 +2664,30 @@ mod tests {
         );
         // Should pick the known artist
         assert_eq!(merged[0].artist(), "2Cellos");
+    }
+
+    #[test]
+    fn test_bracket_catalog_numbers_merge() {
+        // Bug: albums with catalog numbers in brackets like [RWCD 1] and [RWCD 2]
+        // were not merged because clean_album_title didn't strip bracket catalogs.
+        let mut album1 = create_test_album("Passion [RWCD 1]", "Unknown Artist", 1);
+        album1.tracks[0].title = Some("Track A".to_string());
+        let mut album2 = create_test_album("Passion [RWCD 2]", "Unknown Artist", 2);
+        album2.tracks[0].title = Some("Track B".to_string());
+        let mut album3 = create_test_album("Passion [RWCD 3]", "Unknown Artist", 3);
+        album3.tracks[0].title = Some("Track C".to_string());
+
+        let albums = vec![album1, album2, album3];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(
+            merged.len(),
+            1,
+            "Albums with same title but different bracket catalog numbers should merge"
+        );
+        assert_eq!(merged[0].title, "Passion");
+        assert_eq!(merged[0].tracks.len(), 3);
     }
 
     #[test]

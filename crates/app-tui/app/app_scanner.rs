@@ -135,6 +135,9 @@ impl App {
                     self.request_filter_update();
 
                     // Start background scans for new tracks
+                    if let Err(e) = self.start_replay_gain_scan() {
+                        log::warn!("Failed to start replay gain scan: {}", e);
+                    }
                     if let Err(e) = self.start_waveform_scan() {
                         log::warn!("Failed to start waveform scan: {}", e);
                     }

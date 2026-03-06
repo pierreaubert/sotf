@@ -54,7 +54,7 @@ impl Default for LayoutState {
             rack_v_ratio: 0.25,
             library_panel_collapsed: false,
             queue_panel_collapsed: false,
-            rack_panel_collapsed: false,
+            rack_panel_collapsed: true,
             is_dragging_queue_divider: false,
             is_dragging_queue_list_divider: false,
             is_dragging_meters_divider: false,

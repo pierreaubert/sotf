@@ -142,6 +142,14 @@ fn handle_directory_text_input(app: &mut App, key: KeyEvent) -> Option<PlayerCom
             );
             None
         }
+        KeyCode::Down => {
+            app.autocomplete_down(crate::app::app_autocomplete::set_directory_input);
+            None
+        }
+        KeyCode::Up => {
+            app.autocomplete_up(crate::app::app_autocomplete::set_directory_input);
+            None
+        }
         KeyCode::Char(c) => {
             app.directory_input.push(c);
             app.refresh_autocomplete_inline(

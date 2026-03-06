@@ -30,6 +30,7 @@ mod tabs_test;
 mod wizard_test;
 
 // Component integration tests - Layout Components
+mod pane_divider_drag_test;
 mod pane_divider_test;
 mod stack_test;
 

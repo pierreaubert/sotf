@@ -463,16 +463,28 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_0() // No gap - we use explicit margins
-            .pt_2() // Top padding to push transport down from border
+            .gap_2p5()
+            .pt_2()
             .flex_1()
             .max_w(rems(37.5))
-            // Transport controls row
+            // Row 1: [time] [<< < ▶ > >>] [time]
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_1()
+                    .when(!is_hal_mode, |el| {
+                        el.child(
+                            div()
+                                .text_xs()
+                                .text_color(text_muted)
+                                .min_w(rems(2.5))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(position_str.clone()),
+                        )
+                    })
                     // Previous track
                     .child(
                         div()
@@ -521,7 +533,7 @@ impl PlayerView {
                                 .theme(theme_clone.to_icon_button_theme()),
                             ),
                     )
-                    // Play/Pause (large, accent background)
+                    // Play/Pause
                     .child({
                         let play_icon = if is_playing {
                             IconName::Pause
@@ -543,7 +555,7 @@ impl PlayerView {
                                 .variant(IconButtonVariant::Filled)
                                 .size(IconButtonSize::Md)
                                 .rounded_full()
-                                .selected(true) // Use selected state for accent background
+                                .selected(true)
                                 .theme(theme_clone.to_icon_button_theme()),
                             )
                     })
@@ -595,85 +607,62 @@ impl PlayerView {
                                 .rounded_full()
                                 .theme(theme_clone.to_icon_button_theme()),
                             ),
-                    ),
-            )
-            // Waveform/progress row - conditionally shown based on screen width (hidden in HAL mode)
-            .when(show_waveform && !is_hal_mode, |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .w_full()
-                        .mt_3() // Space between transport and waveform row
-                        // Current position - vertically centered with waveform
-                        .child(
+                    )
+                    .when(!is_hal_mode, |el| {
+                        el.child(
                             div()
                                 .text_xs()
                                 .text_color(text_muted)
                                 .min_w(rems(2.5))
-                                .mb_6()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(position_str.clone()),
-                        )
-                        // Waveform visualization from track data
-                        .child(
-                            div()
-                                .id("waveform-bar")
-                                .flex_1()
-                                .gap_0()
-                                .h(rems(1.5)) // Waveform height
-                                .cursor_pointer()
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(
-                                        move |view, event: &MouseDownEvent, _window, cx| {
-                                            if let Some(bounds) = *bounds_ref_clone.borrow() {
-                                                // Calculate relative position
-                                                let x = event.position.x - bounds.origin.x;
-                                                let width = bounds.size.width;
-                                                let ratio = (x / width).clamp(0.0, 1.0);
-
-                                                view.state.update(cx, |state, _cx| {
-                                                    let new_pos = state.app.playback.duration_secs
-                                                        * ratio as f64;
-                                                    state.app.playback.position_secs = new_pos;
-                                                    if let Err(e) =
-                                                        state.player.lock().seek(new_pos)
-                                                    {
-                                                        log::error!(
-                                                            "Failed to seek from waveform: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                });
-                                                cx.notify();
-                                            }
-                                        },
-                                    ),
-                                )
-                                .child(WaveformElement::new(
-                                    waveform.clone(),
-                                    progress,
-                                    progress_bar_fill,
-                                    progress_bar_bg,
-                                    bounds_ref,
-                                )),
-                        )
-                        // Total duration - vertically centered with waveform
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(text_muted)
-                                .min_w(rems(2.5))
-                                .mb_6()
                                 .flex()
                                 .items_center()
                                 .justify_center()
                                 .child(duration_str.clone()),
-                        ),
+                        )
+                    }),
+            )
+            // Row 2: Waveform spanning full width (hidden in HAL mode or narrow screens)
+            .when(show_waveform && !is_hal_mode, |el| {
+                el.child(
+                    div()
+                        .id("waveform-bar")
+                        .w_full()
+                        .h(rems(1.5))
+                        .cursor_pointer()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(
+                                move |view, event: &MouseDownEvent, _window, cx| {
+                                    if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                        let x = event.position.x - bounds.origin.x;
+                                        let width = bounds.size.width;
+                                        let ratio = (x / width).clamp(0.0, 1.0);
+
+                                        view.state.update(cx, |state, _cx| {
+                                            let new_pos = state.app.playback.duration_secs
+                                                * ratio as f64;
+                                            state.app.playback.position_secs = new_pos;
+                                            if let Err(e) =
+                                                state.player.lock().seek(new_pos)
+                                            {
+                                                log::error!(
+                                                    "Failed to seek from waveform: {}",
+                                                    e
+                                                );
+                                            }
+                                        });
+                                        cx.notify();
+                                    }
+                                },
+                            ),
+                        )
+                        .child(WaveformElement::new(
+                            waveform.clone(),
+                            progress,
+                            progress_bar_fill,
+                            progress_bar_bg,
+                            bounds_ref,
+                        )),
                 )
             })
             // When waveform is hidden, show compact time display below transport (not in HAL mode)
@@ -1158,7 +1147,7 @@ impl PlayerView {
                 VolumeKnob::new()
                     .value(volume)
                     .label(format!("{}", volume_percent))
-                    .size(px(72.0)) // Fixed pixel size: VolumeKnob paints via canvas paths, not rem-based layout
+                    .size(rems(4.5))
                     .muted(muted)
                     .accent_color(accent_color)
                     .muted_color(muted_color)

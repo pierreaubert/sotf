@@ -1665,6 +1665,12 @@ impl MusicDatabase {
             }
         }
 
+        // Clean up orphaned albums (albums with no tracks)
+        tx.execute(
+            "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)",
+            [],
+        )?;
+
         tx.commit()?;
         Ok(())
     }
@@ -3255,6 +3261,53 @@ mod tests {
 
         // Cleanup
         std::fs::remove_dir_all(&test_dir).ok();
+    }
+
+    #[test]
+    fn test_remove_directory_cleans_up_albums() {
+        let dir = std::env::temp_dir().join("sotf_test_remove_dir_cleanup");
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("test.sqlite");
+
+        // Clean up any previous run
+        let _ = std::fs::remove_file(&db_path);
+
+        let mut db = MusicDatabase::open_for_testing(&db_path).unwrap();
+
+        // Create an album with one track in /music/dir1
+        let albums = vec![crate::library::Album {
+            title: "Test Album".to_string(),
+            tracks: vec![crate::library::Track {
+                path: PathBuf::from("/music/dir1/track1.flac"),
+                title: Some("Track 1".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+
+        db.save_albums(&albums).unwrap();
+
+        // Verify album exists
+        let loaded = db.load_library().unwrap();
+        assert_eq!(loaded.len(), 1, "should have 1 album after save");
+        assert_eq!(loaded[0].tracks.len(), 1);
+
+        // Remove the directory
+        let removed = db
+            .remove_tracks_from_directory(Path::new("/music/dir1"))
+            .unwrap();
+        assert_eq!(removed, 1, "should have removed 1 track");
+
+        // Verify database is empty
+        let loaded = db.load_library().unwrap();
+        assert_eq!(
+            loaded.len(),
+            0,
+            "should have 0 albums after removing the only directory"
+        );
+
+        // Cleanup
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     fn count_backups(dir: &Path) -> usize {

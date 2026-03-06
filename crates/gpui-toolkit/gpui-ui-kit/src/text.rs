@@ -291,7 +291,8 @@ impl Code {
             crate::theme::ThemeVariant::Dark
             | crate::theme::ThemeVariant::Midnight
             | crate::theme::ThemeVariant::Forest
-            | crate::theme::ThemeVariant::BlackAndWhite => rgb(0xe06c75),
+            | crate::theme::ThemeVariant::BlackAndWhite
+            | crate::theme::ThemeVariant::Onyx => rgb(0xe06c75),
         };
 
         if self.inline {

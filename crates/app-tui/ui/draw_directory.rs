@@ -20,7 +20,7 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 
     // Help box with scan keybindings
     let help_text =
-        "a/F2=Add dir | s/S=Scan | r/R=ReplayGain | b/B=Bliss | w/W=Waveform (uppercase=force)";
+        "a=add | s/S=scan | r/R=replay gain | b/B=bliss | w/W=waveform | d=delete | m=maintenance (uppercase=force)";
     draw_help_box_with_text(f, chunks[0], app, help_text);
 
     // Input box for adding directories

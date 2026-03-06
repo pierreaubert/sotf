@@ -1552,27 +1552,27 @@ fn set_plugin_param_value(
                 4 => set!(height_gain, "height_gain"),
                 5 => set!(lfe_gain, "lfe_gain"),
                 6 => set!(lfe_cutoff_hz, "lfe_cutoff_hz"),
-                7 => set!(stereo_width, "stereo_width"),
-                8 => set!(center_spread, "center_spread"),
-                9 => set!(bandpass_hz, "bandpass_hz"),
-                10 => {
+                7 => {
                     *enable_subharmonic_synth = value > 0.5;
                     true
                 }
-                11 => set!(subharmonic_gain, "subharmonic_gain"),
-                12 => {
+                8 => set!(subharmonic_gain, "subharmonic_gain"),
+                9 => set!(subharmonic_freq_hz, "subharmonic_freq_hz"),
+                10 => set!(subharmonic_attack_ms, "subharmonic_attack_ms"),
+                11 => set!(subharmonic_release_ms, "subharmonic_release_ms"),
+                12 => set!(stereo_width, "stereo_width"),
+                13 => set!(center_spread, "center_spread"),
+                14 => set!(bandpass_hz, "bandpass_hz"),
+                15 => {
                     *enable_hr_direct = value > 0.5;
                     true
                 }
-                13 => set!(hr_sharpen, "hr_sharpen"),
-                14 => set!(safety_cap_db, "safety_cap_db"),
-                15 => {
+                16 => set!(hr_sharpen, "hr_sharpen"),
+                17 => set!(ambient_boost, "ambient_boost"),
+                18 => {
                     *decorrelation_mode = if value > 0.5 { 1 } else { 0 };
                     true
                 }
-                16 => set!(subharmonic_freq_hz, "subharmonic_freq_hz"),
-                17 => set!(subharmonic_attack_ms, "subharmonic_attack_ms"),
-                18 => set!(subharmonic_release_ms, "subharmonic_release_ms"),
                 19 => set!(decorrelation_lfo_rate_hz, "decorrelation_lfo_rate_hz"),
                 20 => set!(velvet_noise_duration_ms, "velvet_noise_duration_ms"),
                 21 => set!(velvet_noise_density, "velvet_noise_density"),
@@ -1582,13 +1582,13 @@ fn set_plugin_param_value(
                 25 => set!(surround_direct_bleed, "surround_direct_bleed"),
                 26 => set!(rear_ambient_boost, "rear_ambient_boost"),
                 27 => set!(rear_late_reflection, "rear_late_reflection"),
-                28 => set!(ambient_boost, "ambient_boost"),
-                29 => set!(dialogue_weight, "dialogue_weight"),
-                30 => set!(voice_freq_min_hz, "voice_freq_min_hz"),
-                31 => set!(voice_freq_max_hz, "voice_freq_max_hz"),
-                32 => set!(dialogue_centroid_weight, "dialogue_centroid_weight"),
-                33 => set!(dialogue_variance_weight, "dialogue_variance_weight"),
-                34 => set!(dialogue_coherence_weight, "dialogue_coherence_weight"),
+                28 => set!(dialogue_weight, "dialogue_weight"),
+                29 => set!(voice_freq_min_hz, "voice_freq_min_hz"),
+                30 => set!(voice_freq_max_hz, "voice_freq_max_hz"),
+                31 => set!(dialogue_centroid_weight, "dialogue_centroid_weight"),
+                32 => set!(dialogue_variance_weight, "dialogue_variance_weight"),
+                33 => set!(dialogue_coherence_weight, "dialogue_coherence_weight"),
+                34 => set!(safety_cap_db, "safety_cap_db"),
                 35 => {
                     *bypass_decorrelation = value > 0.5;
                     true
@@ -1654,11 +1654,12 @@ fn set_plugin_param_value(
         PluginSettings::Convolution { mix, gain_db, .. } => {
             use sotf_plugins::param_specs::{convolution::PARAMS as CV, find_by_key as pk};
             match param_idx {
-                0 => {
+                // 0 = ir_file (handled by set_plugin_param_string)
+                1 => {
                     *mix = pk(CV, "mix").clamp_f64(value);
                     true
                 }
-                1 => {
+                2 => {
                     *gain_db = pk(CV, "gain_db").clamp_f64(value);
                     true
                 }

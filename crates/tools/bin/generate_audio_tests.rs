@@ -13,7 +13,6 @@
 //! - m_noise: M-weighted noise (ITU-R 468 weighting for acoustic measurements)
 
 use clap::{Parser, ValueEnum};
-use hound::{SampleFormat, WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
 use sotf_audio::signals::*;
 use std::fs;
@@ -411,11 +410,9 @@ fn generate_one(
     let filename = format!("{}_ch{}_sr{}_b{}.wav", signal.as_str(), channels, sr, bits);
     let wav_path = subdir.join(&filename);
 
-    // Write WAV file
-    write_wav(&wav_path, &audio_data, sr, channels, bits)?;
-
-    // Tag with Artist and Album
-    write_riff_info_tags(&wav_path, "SotF", "SotF")?;
+    // Write WAV file with metadata tags before data chunk
+    let tags: &[(&[u8; 4], &str)] = &[(b"IART", "SotF"), (b"IPRD", "SotF")];
+    write_wav(&wav_path, &audio_data, sr, channels, bits, tags)?;
 
     // Write sidecar JSON
     let sidecar = Sidecar {
@@ -435,20 +432,17 @@ fn generate_one(
 
 // WAV writing
 
-/// Append a RIFF LIST-INFO chunk with Artist (IART) and Album (IPRD) tags.
-///
-/// WAV is a RIFF container: the outer RIFF chunk size must be updated to
-/// include the new LIST chunk appended after the data chunk.
-fn write_riff_info_tags(path: &Path, artist: &str, album: &str) -> Result<(), String> {
-    use std::io::{Read as _, Seek, SeekFrom, Write as _};
+fn clip(sample: f32) -> f32 {
+    sample.clamp(-1.0, 1.0)
+}
 
-    // Build INFO sub-chunks
+/// Build a RIFF LIST INFO chunk containing the given tag pairs.
+fn build_info_chunk(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     fn info_subchunk(id: &[u8; 4], value: &str) -> Vec<u8> {
         let mut v = value.as_bytes().to_vec();
         v.push(0); // null terminator
-        // Pad to even length (RIFF alignment)
         if v.len() % 2 != 0 {
-            v.push(0);
+            v.push(0); // RIFF word-alignment pad
         }
         let mut buf = Vec::with_capacity(8 + v.len());
         buf.extend_from_slice(id);
@@ -457,92 +451,98 @@ fn write_riff_info_tags(path: &Path, artist: &str, album: &str) -> Result<(), St
         buf
     }
 
-    let iart = info_subchunk(b"IART", artist);
-    let iprd = info_subchunk(b"IPRD", album);
-
-    // LIST chunk: "LIST" + size(u32) + "INFO" + sub-chunks
-    let list_data_len = 4 + iart.len() + iprd.len(); // "INFO" + sub-chunks
-    let mut list_chunk = Vec::with_capacity(8 + list_data_len);
-    list_chunk.extend_from_slice(b"LIST");
-    list_chunk.extend_from_slice(&(list_data_len as u32).to_le_bytes());
-    list_chunk.extend_from_slice(b"INFO");
-    list_chunk.extend_from_slice(&iart);
-    list_chunk.extend_from_slice(&iprd);
-
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .map_err(|e| format!("Failed to open WAV for tagging: {}", e))?;
-
-    // Read current RIFF size (bytes 4..8)
-    let mut riff_size_buf = [0u8; 4];
-    file.seek(SeekFrom::Start(4))
-        .map_err(|e| format!("Seek failed: {}", e))?;
-    file.read_exact(&mut riff_size_buf)
-        .map_err(|e| format!("Read failed: {}", e))?;
-    let old_riff_size = u32::from_le_bytes(riff_size_buf);
-
-    // Append LIST chunk at end of file
-    file.seek(SeekFrom::End(0))
-        .map_err(|e| format!("Seek failed: {}", e))?;
-    file.write_all(&list_chunk)
-        .map_err(|e| format!("Write failed: {}", e))?;
-
-    // Update RIFF size
-    let new_riff_size = old_riff_size + list_chunk.len() as u32;
-    file.seek(SeekFrom::Start(4))
-        .map_err(|e| format!("Seek failed: {}", e))?;
-    file.write_all(&new_riff_size.to_le_bytes())
-        .map_err(|e| format!("Write failed: {}", e))?;
-
-    Ok(())
+    let sub_chunks: Vec<u8> = tags.iter().flat_map(|(id, val)| info_subchunk(id, val)).collect();
+    let list_data_len = 4 + sub_chunks.len(); // "INFO" + sub-chunks
+    let mut chunk = Vec::with_capacity(8 + list_data_len);
+    chunk.extend_from_slice(b"LIST");
+    chunk.extend_from_slice(&(list_data_len as u32).to_le_bytes());
+    chunk.extend_from_slice(b"INFO");
+    chunk.extend_from_slice(&sub_chunks);
+    chunk
 }
 
-fn clip(sample: f32) -> f32 {
-    sample.clamp(-1.0, 1.0)
-}
-
+/// Write a WAV file with RIFF INFO tags placed before the data chunk so that
+/// Symphonia (which stops parsing at the data chunk) can read them.
+///
+/// Layout: RIFF header | fmt chunk | LIST INFO chunk | data chunk
 fn write_wav(
     path: &Path,
     interleaved: &[f32],
     sr: u32,
     channels: u16,
     bits: u16,
+    tags: &[(&[u8; 4], &str)],
 ) -> Result<(), String> {
-    let spec = WavSpec {
-        channels,
-        sample_rate: sr,
-        bits_per_sample: bits,
-        sample_format: SampleFormat::Int,
-    };
+    use std::io::Write;
 
-    let mut writer =
-        WavWriter::create(path, spec).map_err(|e| format!("Failed to create WAV writer: {}", e))?;
+    let bytes_per_sample = (bits / 8) as u32;
+    let block_align = channels as u32 * bytes_per_sample;
+    let byte_rate = sr * block_align;
+    let num_samples = interleaved.len();
+    let data_size = num_samples as u32 * bytes_per_sample;
 
+    // Build audio data bytes
+    let mut pcm_data = Vec::with_capacity(data_size as usize);
     match bits {
         16 => {
             for &sample in interleaved {
                 let pcm = (clip(sample) * 32767.0).round() as i16;
-                writer
-                    .write_sample(pcm)
-                    .map_err(|e| format!("Failed to write sample: {}", e))?;
+                pcm_data.extend_from_slice(&pcm.to_le_bytes());
             }
         }
         24 => {
             for &sample in interleaved {
                 let pcm = (clip(sample) * 8388607.0).round() as i32;
-                writer
-                    .write_sample(pcm)
-                    .map_err(|e| format!("Failed to write sample: {}", e))?;
+                let bytes = pcm.to_le_bytes();
+                pcm_data.extend_from_slice(&bytes[..3]); // 24-bit = 3 bytes LE
             }
         }
         _ => return Err(format!("Unsupported bit depth: {}", bits)),
     }
 
-    writer
-        .finalize()
-        .map_err(|e| format!("Failed to finalize WAV: {}", e))?;
+    // Build fmt chunk (16 bytes payload for PCM)
+    let mut fmt_chunk = Vec::with_capacity(24);
+    fmt_chunk.extend_from_slice(b"fmt ");
+    fmt_chunk.extend_from_slice(&16u32.to_le_bytes()); // chunk size
+    fmt_chunk.extend_from_slice(&1u16.to_le_bytes()); // PCM format
+    fmt_chunk.extend_from_slice(&channels.to_le_bytes());
+    fmt_chunk.extend_from_slice(&sr.to_le_bytes());
+    fmt_chunk.extend_from_slice(&byte_rate.to_le_bytes());
+    fmt_chunk.extend_from_slice(&(block_align as u16).to_le_bytes());
+    fmt_chunk.extend_from_slice(&bits.to_le_bytes());
+
+    // Build LIST INFO chunk
+    let info_chunk = if tags.is_empty() {
+        Vec::new()
+    } else {
+        build_info_chunk(tags)
+    };
+
+    // Build data chunk header
+    let mut data_header = Vec::with_capacity(8);
+    data_header.extend_from_slice(b"data");
+    data_header.extend_from_slice(&(pcm_data.len() as u32).to_le_bytes());
+
+    // RIFF header: total size = 4 ("WAVE") + fmt + info + data_header + pcm_data
+    let riff_size = 4 + fmt_chunk.len() + info_chunk.len() + data_header.len() + pcm_data.len();
+
+    let mut file =
+        std::fs::File::create(path).map_err(|e| format!("Failed to create WAV file: {}", e))?;
+
+    file.write_all(b"RIFF")
+        .map_err(|e| format!("Write failed: {}", e))?;
+    file.write_all(&(riff_size as u32).to_le_bytes())
+        .map_err(|e| format!("Write failed: {}", e))?;
+    file.write_all(b"WAVE")
+        .map_err(|e| format!("Write failed: {}", e))?;
+    file.write_all(&fmt_chunk)
+        .map_err(|e| format!("Write failed: {}", e))?;
+    file.write_all(&info_chunk)
+        .map_err(|e| format!("Write failed: {}", e))?;
+    file.write_all(&data_header)
+        .map_err(|e| format!("Write failed: {}", e))?;
+    file.write_all(&pcm_data)
+        .map_err(|e| format!("Write failed: {}", e))?;
 
     Ok(())
 }

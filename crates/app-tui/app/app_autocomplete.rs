@@ -119,6 +119,41 @@ impl App {
         set_input(self, value);
     }
 
+    /// Move autocomplete selection down (next suggestion).
+    /// Returns true if the event was consumed.
+    pub fn autocomplete_down(
+        &mut self,
+        set_input: fn(&mut Self, String),
+    ) -> bool {
+        if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
+            return false;
+        }
+        self.autocomplete_index =
+            (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+        let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+        set_input(self, value);
+        true
+    }
+
+    /// Move autocomplete selection up (previous suggestion).
+    /// Returns true if the event was consumed.
+    pub fn autocomplete_up(
+        &mut self,
+        set_input: fn(&mut Self, String),
+    ) -> bool {
+        if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
+            return false;
+        }
+        if self.autocomplete_index == 0 {
+            self.autocomplete_index = self.autocomplete_suggestions.len() - 1;
+        } else {
+            self.autocomplete_index -= 1;
+        }
+        let value = self.autocomplete_suggestions[self.autocomplete_index].clone();
+        set_input(self, value);
+        true
+    }
+
     // ========================================================================
     // Generators
     // ========================================================================

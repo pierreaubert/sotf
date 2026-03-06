@@ -18,6 +18,7 @@ pub enum ThemeId {
     Midnight,
     Forest,
     BlackAndWhite,
+    Onyx,
 }
 
 pub mod black;
@@ -25,6 +26,7 @@ pub mod black_and_white;
 pub mod forest;
 pub mod light;
 pub mod midnight;
+pub mod onyx;
 
 impl ThemeId {
     pub fn all() -> &'static [ThemeId] {
@@ -34,6 +36,7 @@ impl ThemeId {
             ThemeId::Midnight,
             ThemeId::Forest,
             ThemeId::BlackAndWhite,
+            ThemeId::Onyx,
         ]
     }
 
@@ -44,6 +47,7 @@ impl ThemeId {
             ThemeId::Midnight => "Midnight",
             ThemeId::Forest => "Forest",
             ThemeId::BlackAndWhite => "Black & White",
+            ThemeId::Onyx => "Onyx",
         }
     }
 
@@ -53,7 +57,8 @@ impl ThemeId {
             ThemeId::Light => ThemeId::Midnight,
             ThemeId::Midnight => ThemeId::Forest,
             ThemeId::Forest => ThemeId::BlackAndWhite,
-            ThemeId::BlackAndWhite => ThemeId::Dark,
+            ThemeId::BlackAndWhite => ThemeId::Onyx,
+            ThemeId::Onyx => ThemeId::Dark,
         }
     }
 }
@@ -66,6 +71,7 @@ impl From<ThemeId> for UiKitThemeVariant {
             ThemeId::Midnight => UiKitThemeVariant::Midnight,
             ThemeId::Forest => UiKitThemeVariant::Forest,
             ThemeId::BlackAndWhite => UiKitThemeVariant::BlackAndWhite,
+            ThemeId::Onyx => UiKitThemeVariant::Onyx,
         }
     }
 }
@@ -271,6 +277,7 @@ impl Theme {
             ThemeId::Midnight => Self::midnight(),
             ThemeId::Forest => Self::forest(),
             ThemeId::BlackAndWhite => Self::black_and_white(),
+            ThemeId::Onyx => Self::onyx(),
         }
     }
 }

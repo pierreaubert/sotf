@@ -119,9 +119,22 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                             crate::app::app_autocomplete::set_recording_output_dir,
                         );
                     }
+                    KeyCode::Down => {
+                        app.autocomplete_down(
+                            crate::app::app_autocomplete::set_recording_output_dir,
+                        );
+                    }
+                    KeyCode::Up => {
+                        app.autocomplete_up(
+                            crate::app::app_autocomplete::set_recording_output_dir,
+                        );
+                    }
                     KeyCode::Backspace => {
                         app.recording.output_directory.pop();
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_recording_output_dir,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     KeyCode::F(2) => {
                         let start = app.recording.output_directory.clone();
@@ -135,7 +148,10 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     }
                     KeyCode::Char(c) => {
                         app.recording.output_directory.push(c);
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_recording_output_dir,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     _ => {}
                 }
@@ -159,9 +175,22 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                             crate::app::app_autocomplete::set_recording_mic_cal_path,
                         );
                     }
+                    KeyCode::Down => {
+                        app.autocomplete_down(
+                            crate::app::app_autocomplete::set_recording_mic_cal_path,
+                        );
+                    }
+                    KeyCode::Up => {
+                        app.autocomplete_up(
+                            crate::app::app_autocomplete::set_recording_mic_cal_path,
+                        );
+                    }
                     KeyCode::Backspace => {
                         app.recording.mic_calibration_path.pop();
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_recording_mic_cal_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     KeyCode::F(2) => {
                         let start = app.recording.mic_calibration_path.clone();
@@ -175,7 +204,10 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     }
                     KeyCode::Char(c) => {
                         app.recording.mic_calibration_path.push(c);
-                        app.clear_autocomplete();
+                        app.refresh_autocomplete_inline(
+                            crate::app::app_autocomplete::get_recording_mic_cal_path,
+                            crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                        );
                     }
                     _ => {}
                 }

@@ -133,9 +133,22 @@ fn handle_load_data_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                     crate::app::app_autocomplete::set_room_eq_file_path,
                 );
             }
+            KeyCode::Down => {
+                app.autocomplete_down(
+                    crate::app::app_autocomplete::set_room_eq_file_path,
+                );
+            }
+            KeyCode::Up => {
+                app.autocomplete_up(
+                    crate::app::app_autocomplete::set_room_eq_file_path,
+                );
+            }
             KeyCode::Backspace => {
                 app.room_eq.file_path.pop();
-                app.clear_autocomplete();
+                app.refresh_autocomplete_inline(
+                    crate::app::app_autocomplete::get_room_eq_file_path,
+                    crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                );
             }
             KeyCode::F(2) => {
                 let start = app.room_eq.file_path.clone();
@@ -149,7 +162,10 @@ fn handle_load_data_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
             }
             KeyCode::Char(c) => {
                 app.room_eq.file_path.push(c);
-                app.clear_autocomplete();
+                app.refresh_autocomplete_inline(
+                    crate::app::app_autocomplete::get_room_eq_file_path,
+                    crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                );
             }
             _ => {}
         }
@@ -326,9 +342,22 @@ fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                     crate::app::app_autocomplete::set_room_eq_export_path,
                 );
             }
+            KeyCode::Down => {
+                app.autocomplete_down(
+                    crate::app::app_autocomplete::set_room_eq_export_path,
+                );
+            }
+            KeyCode::Up => {
+                app.autocomplete_up(
+                    crate::app::app_autocomplete::set_room_eq_export_path,
+                );
+            }
             KeyCode::Backspace => {
                 app.room_eq.export_path.pop();
-                app.clear_autocomplete();
+                app.refresh_autocomplete_inline(
+                    crate::app::app_autocomplete::get_room_eq_export_path,
+                    crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                );
             }
             KeyCode::F(2) => {
                 let start = app.room_eq.export_path.clone();
@@ -342,7 +371,10 @@ fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
             KeyCode::Char(c) => {
                 app.room_eq.export_path.push(c);
-                app.clear_autocomplete();
+                app.refresh_autocomplete_inline(
+                    crate::app::app_autocomplete::get_room_eq_export_path,
+                    crate::app::app_autocomplete::AutocompleteKind::FilePath,
+                );
             }
             _ => {}
         }

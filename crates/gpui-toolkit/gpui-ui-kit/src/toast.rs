@@ -43,7 +43,8 @@ impl ToastVariant {
             ThemeVariant::Dark
             | ThemeVariant::Midnight
             | ThemeVariant::Forest
-            | ThemeVariant::BlackAndWhite => match self {
+            | ThemeVariant::BlackAndWhite
+            | ThemeVariant::Onyx => match self {
                 ToastVariant::Info => (theme.surface, theme.info, theme.info),
                 ToastVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
                 ToastVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),
