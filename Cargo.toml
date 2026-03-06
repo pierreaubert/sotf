@@ -183,6 +183,7 @@ sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer" 
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-player = { path = "crates/sotf-player" }
+player-midi = { path = "crates/midi" }
 sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
 driver-hal = { path = "crates/driver-hal" }  # macOS only
 

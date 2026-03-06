@@ -23,6 +23,7 @@ gpui-px = { workspace = true }
 sotf-player = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
+player-midi = { workspace = true }
 
 # math libraries
 math-iir-fir = { workspace = true }

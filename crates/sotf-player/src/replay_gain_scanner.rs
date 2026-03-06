@@ -170,6 +170,11 @@ impl ReplayGainScanner {
                     }
                 }
 
+                // Checkpoint WAL before exiting to prevent unbounded growth
+                if let Err(e) = db.checkpoint_wal() {
+                    log::warn!("[ReplayGain Worker {}] WAL checkpoint failed: {}", worker_id, e);
+                }
+
                 log::info!("[ReplayGain Worker {}] Finished", worker_id);
             });
 

@@ -440,6 +440,11 @@ impl BlissScanner {
                     }
                 }
 
+                // Checkpoint WAL before exiting to prevent unbounded growth
+                if let Err(e) = db.checkpoint_wal() {
+                    log::warn!("[Bliss Worker {}] WAL checkpoint failed: {}", worker_id, e);
+                }
+
                 log::info!("[Bliss Worker {}] Finished", worker_id);
             });
 

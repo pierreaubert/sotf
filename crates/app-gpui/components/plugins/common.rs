@@ -10,6 +10,8 @@ use gpui_ui_kit::{
     VerticalSliderTheme,
 };
 pub use sotf_audio_player::param_index_to_engine_param;
+use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
+use sotf_audio_player_midi::PhysicalControlKind;
 
 /// Render a parameter row with name and value
 pub fn render_param_row(
@@ -73,6 +75,148 @@ pub fn render_param_row(
                 .text_color(theme.text_primary)
                 .child(value.to_string()),
         )
+}
+
+/// Render a parameter row with name, value, and optional MIDI assignment badge
+pub fn render_param_row_with_midi(
+    name: &str,
+    value: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    theme: &Theme,
+    midi_overlay: Option<&MidiOverlay>,
+) -> impl IntoElement {
+    let is_selected = selected_param == idx && is_editing;
+    let is_learn_target = midi_overlay
+        .and_then(|o| o.learn_target)
+        .map_or(false, |t| t == idx);
+
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .px_3()
+        .py_2()
+        .rounded_lg()
+        .bg(if is_learn_target {
+            Theme::with_opacity(theme.warning, 0.2)
+        } else if is_selected {
+            theme.accent_muted
+        } else {
+            theme.surface
+        })
+        .border_l_4()
+        .border_color(if is_learn_target {
+            theme.warning
+        } else if is_selected {
+            theme.accent
+        } else {
+            theme.surface
+        })
+        // Parameter name + MIDI badge
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(if is_selected {
+                            theme.text_primary
+                        } else {
+                            theme.text_secondary
+                        })
+                        .font_weight(if is_selected {
+                            FontWeight::MEDIUM
+                        } else {
+                            FontWeight::NORMAL
+                        })
+                        .child(name.to_string()),
+                )
+                .children(
+                    midi_overlay
+                        .and_then(|o| o.assignments.get(&idx))
+                        .map(|assignment| render_midi_badge(assignment, theme)),
+                ),
+        )
+        // Value
+        .child(
+            div()
+                .min_w(rems(5.0))
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .bg(if is_selected {
+                    theme.background
+                } else {
+                    theme.background_secondary
+                })
+                .text_sm()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_primary)
+                .child(value.to_string()),
+        )
+}
+
+/// Render a small MIDI control badge (e.g., "K1", "F3") next to a parameter name
+pub fn render_midi_badge(assignment: &ParamAssignment, theme: &Theme) -> impl IntoElement {
+    let icon = match assignment.control_kind {
+        PhysicalControlKind::Fader => "▏",
+        PhysicalControlKind::Pot => "◎",
+        PhysicalControlKind::Encoder | PhysicalControlKind::EncoderWithButton => "↻",
+        PhysicalControlKind::Button => "◻",
+    };
+
+    let badge_color = if assignment.is_override {
+        theme.warning
+    } else {
+        theme.accent
+    };
+
+    div()
+        .flex()
+        .items_center()
+        .gap(px(2.0))
+        .px(px(4.0))
+        .py(px(1.0))
+        .rounded(px(3.0))
+        .bg(Theme::with_opacity(badge_color, 0.2))
+        .child(
+            div()
+                .text_xs()
+                .text_color(badge_color)
+                .child(icon.to_string()),
+        )
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(badge_color)
+                .child(assignment.control_label.clone()),
+        )
+}
+
+/// Render a MIDI page indicator (e.g., "Page 1/3")
+pub fn render_midi_page_indicator(
+    current_page: usize,
+    total_pages: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .bg(theme.surface)
+        .child(div().text_xs().text_color(theme.text_muted).child(format!(
+            "MIDI {}/{}",
+            current_page + 1,
+            total_pages
+        )))
 }
 
 /// Render a section header (with bottom margin - use for bordered sections)

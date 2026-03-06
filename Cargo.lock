@@ -9222,6 +9222,7 @@ dependencies = [
  "ndarray 0.17.2",
  "num-complex",
  "parking_lot",
+ "player-midi",
  "proptest",
  "reqwest 0.13.2",
  "rfd",

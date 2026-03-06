@@ -1098,6 +1098,13 @@ impl MusicLibrary {
             for dir_info in &self.directories {
                 db.record_scan(&dir_info.path, total_tracks, self.albums.len())?;
             }
+
+            // Checkpoint the WAL to prevent unbounded growth during scanning.
+            // Without this, the WAL grows indefinitely when other connections
+            // (e.g., the TUI read connection) hold read snapshots.
+            if let Err(e) = db.checkpoint_wal() {
+                log::warn!("Failed to checkpoint WAL after scan: {}", e);
+            }
         }
 
         log::info!(

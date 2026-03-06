@@ -1344,6 +1344,31 @@ impl MusicDatabase {
         Ok(())
     }
 
+    /// Force a WAL checkpoint to prevent unbounded WAL growth.
+    ///
+    /// In WAL mode, SQLite auto-checkpoints at 1000 pages, but this only works
+    /// when no other connection holds a read snapshot from before the WAL data.
+    /// When the TUI keeps a persistent read connection open, the WAL can grow
+    /// indefinitely during scanning. This method forces a TRUNCATE checkpoint
+    /// which resets the WAL file to zero bytes.
+    pub fn checkpoint_wal(&self) -> SqlResult<()> {
+        // PRAGMA wal_checkpoint(TRUNCATE) returns (busy, log_pages, checkpointed_pages)
+        // TRUNCATE mode checkpoints all frames and truncates the WAL file to zero bytes
+        let mut stmt = self.conn.prepare("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        let (busy, log_pages, checkpointed): (i32, i32, i32) =
+            stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        if busy != 0 {
+            log::warn!("WAL checkpoint was blocked (busy), WAL may still be large");
+        } else {
+            log::info!(
+                "WAL checkpoint complete: {}/{} pages checkpointed",
+                checkpointed,
+                log_pages
+            );
+        }
+        Ok(())
+    }
+
     /// Get the file modification time for a track by path
     pub fn get_track_mtime(&self, path: &Path) -> SqlResult<Option<u64>> {
         let path_str = path.to_string_lossy();

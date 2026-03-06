@@ -161,6 +161,11 @@ impl WaveformScanner {
                     }
                 }
 
+                // Checkpoint WAL before exiting to prevent unbounded growth
+                if let Err(e) = db.checkpoint_wal() {
+                    log::warn!("[Waveform Worker {}] WAL checkpoint failed: {}", worker_id, e);
+                }
+
                 log::info!("[Waveform Worker {}] Finished", worker_id);
             });
 

@@ -19,6 +19,7 @@ use gpui_ui_kit::{
 };
 use sotf_audio_player::PluginSettings;
 use sotf_audio_player::ui_params::{TuiEditablePlugin, TuiParamType};
+use sotf_audio_player_midi::mapping::MidiOverlay;
 use std::collections::HashSet;
 
 /// Row data for the parameter table
@@ -32,6 +33,10 @@ struct ParamRow {
     global_param_idx: usize,
     /// For Bool params: whether currently true
     bool_value: bool,
+    /// MIDI assignment info (if mapped)
+    midi_assignment: Option<sotf_audio_player_midi::mapping::ParamAssignment>,
+    /// Whether this param is the MIDI learn target
+    is_learn_target: bool,
 }
 
 /// Render a simple table-based parameter list for any plugin
@@ -42,6 +47,7 @@ pub fn render_simple_plugin_view(
     is_editing: bool,
     selected_param: usize,
     theme: &Theme,
+    midi_overlay: Option<&MidiOverlay>,
 ) -> impl IntoElement {
     let descriptors = settings.get_descriptors();
     let params = settings.get_params();
@@ -68,6 +74,11 @@ pub fn render_simple_plugin_view(
             "true" | "on" | "yes" | "1"
         );
 
+        let midi_assignment = midi_overlay.and_then(|o| o.assignments.get(&i).cloned());
+        let is_learn_target = midi_overlay
+            .and_then(|o| o.learn_target)
+            .map_or(false, |t| t == i);
+
         if let Some(last) = groups.last_mut() {
             last.1.push(ParamRow {
                 name: param.name.clone(),
@@ -77,6 +88,8 @@ pub fn render_simple_plugin_view(
                 unit: desc.unit.clone(),
                 global_param_idx: i,
                 bool_value,
+                midi_assignment,
+                is_learn_target,
             });
         }
     }
@@ -99,6 +112,7 @@ pub fn render_simple_plugin_view(
 
     let accent = theme.accent;
     let text_primary = theme.text_primary;
+    let warning_color = theme.warning;
 
     let mut container = div().flex().flex_col().gap_2();
 
@@ -128,6 +142,7 @@ pub fn render_simple_plugin_view(
         // Track which rows are selected for conditional styling in cell_render
         let selected_in_group_for_name = selected_in_group.clone();
         let selected_in_group_for_value = selected_in_group.clone();
+        let theme_for_name = theme.clone();
 
         let entity_for_value = entity.clone();
 
@@ -142,10 +157,32 @@ pub fn render_simple_plugin_view(
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
                     let is_sel = selected_in_group_for_name.contains(&row_idx);
-                    div().w_full().flex().justify_end().child(
+                    let mut name_row = div()
+                        .w_full()
+                        .flex()
+                        .justify_end()
+                        .items_center()
+                        .gap_1();
+
+                    // MIDI badge (before param name)
+                    if let Some(ref assignment) = row.midi_assignment {
+                        name_row = name_row.child(
+                            super::common::render_midi_badge(assignment, &theme_for_name),
+                        );
+                    }
+
+                    let name_color = if row.is_learn_target {
+                        warning_color
+                    } else if is_sel {
+                        accent
+                    } else {
+                        text_primary
+                    };
+
+                    name_row.child(
                         div()
                             .text_sm()
-                            .text_color(if is_sel { accent } else { text_primary })
+                            .text_color(name_color)
                             .child(row.name.clone()),
                     )
                 }),

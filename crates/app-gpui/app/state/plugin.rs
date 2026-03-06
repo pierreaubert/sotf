@@ -9,6 +9,7 @@ use crate::app::types::PluginUpdateType;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginController, PluginGraph};
+use sotf_audio_player_midi::MidiMappingEngine;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,8 @@ pub struct PluginState {
     pub ab_compare_dropdowns: ABCompareDropdowns,
     /// When true, show a simple text-based parameter list instead of the graphical plugin view
     pub simple_view: bool,
+    /// MIDI controller → plugin parameter mapping engine
+    pub midi_mapping: MidiMappingEngine,
 }
 
 impl Deref for PluginState {
@@ -87,6 +90,7 @@ impl Default for PluginState {
             editing_plugin_node: None,
             ab_compare_dropdowns: ABCompareDropdowns::default(),
             simple_view: false,
+            midi_mapping: MidiMappingEngine::new(),
         }
     }
 }

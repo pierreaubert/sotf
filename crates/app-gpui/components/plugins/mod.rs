@@ -44,6 +44,7 @@ mod ui_upmixer;
 mod ui_xtc;
 
 pub use common::*;
+pub use sotf_audio_player_midi::mapping::MidiOverlay;
 pub use editing::get_param_count;
 pub use level_meters::{
     LevelMeterElement, MeterColors, db_to_position, render_gr_meter, render_gradient_meter,
