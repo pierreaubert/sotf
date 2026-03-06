@@ -12,6 +12,9 @@ name = "sotf_audio_player_midi"
 path = "src/lib.rs"
 
 [dependencies]
+# Plugin parameter specs
+sotf-host = { workspace = true }
+
 # MIDI I/O
 midir = { workspace = true }
 

@@ -60,15 +60,25 @@
 //! # }
 //! ```
 
+pub mod auto_map;
 pub mod config;
 pub mod device;
 pub mod error;
+pub mod layout;
+pub mod layouts;
 pub mod manager;
+pub mod mapping;
+pub mod mapping_engine;
 pub mod message;
 pub mod profiles;
+pub mod templates;
 
 pub use config::{DeviceConfig, DeviceProfile, MidiConfig};
 pub use device::{MidiDevice, MidiDeviceInfo};
 pub use error::{MidiError, Result};
+pub use layout::{ControllerLayout, MidiControlId, PhysicalControl, PhysicalControlKind};
 pub use manager::MidiManager;
+pub use mapping::{ControlBinding, MidiMapping, MidiOverlay, ValueScaling};
+pub use mapping_engine::{MappingAction, MidiMappingEngine};
 pub use message::MidiMessage;
+pub use templates::TemplateRegistry;
