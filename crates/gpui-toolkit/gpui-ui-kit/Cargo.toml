@@ -10,7 +10,15 @@ repository.workspace = true
 [dependencies]
 # GPUI framework
 gpui = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
 gpui_macos = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui_linux = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui_windows = { workspace = true }
 
 # Serialization for Color type
 serde = { workspace = true }

@@ -29,6 +29,22 @@
 use crate::i18n::{I18nState, Language};
 use crate::theme::{ThemeState, ThemeVariant};
 use gpui::*;
+use std::rc::Rc;
+
+fn current_platform() -> Rc<dyn gpui::Platform> {
+    #[cfg(target_os = "macos")]
+    {
+        Rc::new(gpui_macos::MacPlatform::new(false))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        gpui_linux::current_platform(false)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Rc::new(gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"))
+    }
+}
 
 /// Configuration for a MiniApp instance
 #[derive(Clone)]
@@ -199,7 +215,7 @@ impl MiniApp {
     {
         let config_clone = config.clone();
 
-        gpui::Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false)))
+        gpui::Application::with_platform(current_platform())
             .run(move |cx: &mut App| {
                 // Initialize theme state if enabled
                 if config_clone.with_theme {
