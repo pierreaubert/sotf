@@ -134,15 +134,14 @@ impl App {
                     self.rebuild_artist_tree();
                     self.request_filter_update();
 
-                    // Start background scans for new tracks
+                    // Start background scans for new tracks.
+                    // Bliss scan will auto-start when waveform completes to avoid
+                    // excessive memory usage from concurrent full-file decodings.
                     if let Err(e) = self.start_replay_gain_scan() {
                         log::warn!("Failed to start replay gain scan: {}", e);
                     }
                     if let Err(e) = self.start_waveform_scan() {
                         log::warn!("Failed to start waveform scan: {}", e);
-                    }
-                    if let Err(e) = self.start_bliss_scan() {
-                        log::warn!("Failed to start bliss scan: {}", e);
                     }
                     self.clear_pause_override_if_idle();
                 }
@@ -340,6 +339,14 @@ impl App {
             self.rebuild_artist_tree();
             self.request_filter_update();
             self.refresh_queue_metadata();
+
+            // Start bliss scan now that waveform is complete.
+            // This serializes the two scans to avoid excessive memory usage
+            // from concurrent full-file decodings.
+            if let Err(e) = self.start_bliss_scan() {
+                log::warn!("Failed to start bliss scan after waveform: {}", e);
+            }
+
             self.clear_pause_override_if_idle();
         }
     }

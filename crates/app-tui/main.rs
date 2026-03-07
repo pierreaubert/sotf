@@ -56,6 +56,10 @@ struct Args {
     /// Use a custom data directory (for QA testing)
     #[arg(long)]
     qa: Option<PathBuf>,
+
+    /// Number of scanner threads for waveform/bliss/replaygain analysis (1-8, default: auto)
+    #[arg(long, value_parser = clap::value_parser!(u8).range(1..=8))]
+    scanner_threads: Option<u8>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -107,6 +111,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut app = App::new(theme, read_only);
 
+    // Apply scanner thread count from CLI
+    if let Some(threads) = args.scanner_threads {
+        app.set_scanner_threads(Some(threads as usize));
+    }
+
     // Initialize audio player
     let mut player = Player::new();
 
@@ -142,11 +151,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         app.request_filter_update();
 
                         if !read_only {
+                            // Start waveform scan first; bliss scan will start
+                            // automatically when waveform completes to avoid
+                            // excessive concurrent memory usage from parallel
+                            // full-file decodings.
                             if let Err(e) = app.start_waveform_scan() {
                                 log::warn!("Failed to start waveform scan: {}", e);
-                            }
-                            if let Err(e) = app.start_bliss_scan() {
-                                log::warn!("Failed to start bliss scan: {}", e);
                             }
                         }
                         db_empty = album_count == 0;

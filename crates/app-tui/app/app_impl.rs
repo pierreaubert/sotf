@@ -150,6 +150,9 @@ pub struct App {
     // Bliss audio analysis scanner manager
     pub bliss_manager: sotf_audio_player::BlissScanManager,
 
+    // Scanner thread count (None = auto-detect)
+    pub scanner_threads: Option<usize>,
+
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
 
@@ -295,6 +298,7 @@ impl App {
             bliss_manager: sotf_audio_player::BlissScanManager::with_pause_flag(Arc::clone(
                 &scanner_pause_flag,
             )),
+            scanner_threads: None,
             last_loaded_preset: None,
             file_explorer_items: Vec::new(),
             file_explorer_selected: 0,
@@ -316,6 +320,18 @@ impl App {
             headphone_eq: super::types::HeadphoneEqTuiState::default(),
             room_eq: super::types::RoomEqTuiState::default(),
             recording: super::types::RecordingTuiState::default(),
+        }
+    }
+
+    /// Set the number of scanner threads for all background scanners.
+    /// If None, each scanner will auto-detect (capped at 4).
+    pub fn set_scanner_threads(&mut self, threads: Option<usize>) {
+        self.scanner_threads = threads;
+        self.replay_gain_manager.set_num_threads(threads);
+        self.waveform_manager.set_num_threads(threads);
+        self.bliss_manager.set_num_threads(threads);
+        if let Some(t) = threads {
+            log::info!("Scanner thread count set to {}", t);
         }
     }
 
