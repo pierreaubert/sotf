@@ -92,6 +92,8 @@ pub struct UIState {
     pub font_scale: f32,
     /// Feature release channel controlling visibility of beta/alpha features
     pub release_channel: ReleaseChannel,
+    /// Number of scanner threads (None = auto-detect, capped at 4)
+    pub scanner_threads: Option<u8>,
 }
 
 impl Default for UIState {
@@ -120,6 +122,7 @@ impl Default for UIState {
             startup_db_check_done: false,
             font_scale: 1.0,
             release_channel: ReleaseChannel::default(),
+            scanner_threads: None,
         }
     }
 }

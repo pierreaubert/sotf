@@ -885,6 +885,12 @@ impl App {
             }
         }
 
+        // Restore scanner thread count
+        self.ui_state.scanner_threads = config.scanner_threads;
+        if let Some(threads) = config.scanner_threads {
+            self.scan_ctrl.set_num_threads(Some(threads as usize));
+        }
+
         Ok(layout_state)
     }
 
@@ -958,6 +964,7 @@ impl App {
             },
             font_scale: self.ui_state.font_scale,
             release_channel: self.ui_state.release_channel,
+            scanner_threads: self.ui_state.scanner_threads,
         };
         config.save()?;
         Ok(())

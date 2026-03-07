@@ -614,6 +614,8 @@ impl PlayerView {
                             ),
                     ),
             )
+            // Scanner Threads Section
+            .child(self.render_scanner_threads_section(cx))
             // Database Maintenance Section
             .child(
                 div()
@@ -705,5 +707,141 @@ impl PlayerView {
                         ),
                 )
             })
+    }
+
+    /// Render the scanner threads section for library settings
+    fn render_scanner_threads_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let current_threads = state.app.ui_state.scanner_threads;
+
+        div()
+            .mt_4()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::BOLD)
+                    .child("Scanner Threads"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    .p_4()
+                    .bg(theme.background_secondary)
+                    .rounded_md()
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_1()
+                                    .flex_col()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(FontWeight::BOLD)
+                                            .child("Thread Count"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.text_secondary)
+                                            .child("Number of threads for background scanning (waveform, bliss, replaygain). Lower values reduce memory usage."),
+                                    ),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(
+                                        Button::new("scanner-threads-auto", "Auto")
+                                            .variant(if current_threads.is_none() {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Ghost
+                                            })
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.ui_state.scanner_threads = None;
+                                                        state.app.scan_ctrl.set_num_threads(None);
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new("scanner-threads-1", "1")
+                                            .variant(if current_threads == Some(1) {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Ghost
+                                            })
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.ui_state.scanner_threads = Some(1);
+                                                        state.app.scan_ctrl.set_num_threads(Some(1));
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new("scanner-threads-2", "2")
+                                            .variant(if current_threads == Some(2) {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Ghost
+                                            })
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.ui_state.scanner_threads = Some(2);
+                                                        state.app.scan_ctrl.set_num_threads(Some(2));
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new("scanner-threads-4", "4")
+                                            .variant(if current_threads == Some(4) {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Ghost
+                                            })
+                                            .size(ButtonSize::Xs)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                |view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.ui_state.scanner_threads = Some(4);
+                                                        state.app.scan_ctrl.set_num_threads(Some(4));
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            )),
+                                    ),
+                            ),
+                    ),
+            )
     }
 }

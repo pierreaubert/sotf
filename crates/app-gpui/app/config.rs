@@ -207,6 +207,9 @@ pub struct Config {
     /// Feature release channel (Prod/Beta/Alpha)
     #[serde(default)]
     pub release_channel: ReleaseChannel,
+    /// Number of scanner threads for waveform/bliss/replaygain (None = auto-detect)
+    #[serde(default)]
+    pub scanner_threads: Option<u8>,
 }
 
 fn default_font_scale() -> f32 {
@@ -236,6 +239,7 @@ impl Config {
                 recording_config: RecordingConfigState::default(),
                 font_scale: default_font_scale(),
                 release_channel: ReleaseChannel::default(),
+                scanner_threads: None,
             });
         }
 
@@ -354,6 +358,8 @@ mod tests {
             muted: true,
             recording_config: RecordingConfigState::default(),
             font_scale: 1.0,
+            release_channel: ReleaseChannel::default(),
+            scanner_threads: Some(2),
         };
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: Config = serde_json::from_str(&json).unwrap();
@@ -363,6 +369,7 @@ mod tests {
         );
         assert!((deserialized.volume - 0.75).abs() < 0.001);
         assert!(deserialized.muted);
+        assert_eq!(deserialized.scanner_threads, Some(2));
     }
 
     #[test]
