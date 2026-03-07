@@ -80,7 +80,14 @@ fn main() {
 
     log::info!("SOTF GPUI Player starting...");
 
-    gpui::Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false)))
+    #[cfg(target_os = "macos")]
+    let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
+    #[cfg(target_os = "linux")]
+    let platform = gpui_linux::current_platform(false);
+    #[cfg(target_os = "windows")]
+    let platform = gpui_windows::current_platform(false);
+
+    gpui::Application::with_platform(platform)
         .with_assets(Assets)
         .run(move |cx| {
             // Load custom fonts

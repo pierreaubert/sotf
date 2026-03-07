@@ -49,6 +49,7 @@ struct LearnState {
 }
 
 /// Runtime mapping engine
+#[derive(Debug, Clone)]
 pub struct MidiMappingEngine {
     layout: Option<ControllerLayout>,
     mapping: Option<MidiMapping>,

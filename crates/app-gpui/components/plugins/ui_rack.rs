@@ -1576,6 +1576,7 @@ impl PlayerView {
                                             is_editing,
                                             param_selection,
                                             &theme,
+                                            None, // midi_overlay
                                         )
                                         .into_any_element()
                                     } else {

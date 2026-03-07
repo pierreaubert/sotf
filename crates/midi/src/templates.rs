@@ -58,6 +58,7 @@ impl MappingTemplate {
 }
 
 /// Registry of mapping templates, loaded from disk or built-in defaults
+#[derive(Debug, Clone)]
 pub struct TemplateRegistry {
     templates: Vec<MappingTemplate>,
 }

@@ -14,10 +14,12 @@ hal = ["sotf-engine/hal", "sotf-player/hal", "driver-hal"]
 [dependencies]
 # GPUI framework
 gpui = { workspace = true }
-gpui_macos = { workspace = true }
 gpui-autoeq = { workspace = true }
 gpui-ui-kit = { workspace = true }
 gpui-px = { workspace = true }
+
+# Force naga termcolor feature to fix WriteColor trait compilation error
+naga = { version = "28", features = ["termcolor"] }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-player = { workspace = true }
@@ -93,9 +95,15 @@ mimalloc = { workspace = true }
 
 rustfft = { workspace = true }
 
-# HAL dependency (macOS only, optional)
 [target.'cfg(target_os = "macos")'.dependencies]
+gpui_macos = { workspace = true }
 driver-hal = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui_linux = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui_windows = { workspace = true }
 
 [lib]
 name = "sotf_audio_player_gpui"
