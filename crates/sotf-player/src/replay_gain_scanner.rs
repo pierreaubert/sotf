@@ -259,6 +259,9 @@ pub struct ReplayGainScanManager {
 
     // Shared pause flag — scanners sleep while this is true
     pause_flag: Arc<AtomicBool>,
+
+    // Configurable thread count (None = auto-detect, capped at 4)
+    num_threads: Option<usize>,
 }
 
 
@@ -286,7 +289,22 @@ impl ReplayGainScanManager {
             album_gain_done: 0,
             album_gain_total: 0,
             pause_flag,
+            num_threads: None,
         }
+    }
+
+    /// Set the number of scanner threads. If None, auto-detect (capped at 4).
+    pub fn set_num_threads(&mut self, threads: Option<usize>) {
+        self.num_threads = threads;
+    }
+
+    /// Get the effective number of threads to use.
+    fn effective_num_threads(&self) -> usize {
+        self.num_threads.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get().min(4))
+                .unwrap_or(2)
+        })
     }
 
     /// Start scanning all tracks in the database that are missing replaygain data
@@ -336,12 +354,9 @@ impl ReplayGainScanManager {
             already_succeeded + already_failed
         );
 
-        // Determine number of threads (use CPU count or max 4)
-        let num_threads = std::thread::available_parallelism()
-            .map(|n| n.get().min(4))
-            .unwrap_or(2);
-
-        // Create scanner
+        // Create scanner with configured thread count
+        let num_threads = self.effective_num_threads();
+        log::info!("ReplayGain scanner using {} threads", num_threads);
         let scanner = Arc::new(ReplayGainScanner::new(
             num_threads,
             db_path,

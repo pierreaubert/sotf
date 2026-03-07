@@ -56,4 +56,15 @@ impl ScanController {
             || self.waveform_manager.in_progress
             || self.bliss_manager.in_progress
     }
+
+    /// Set the number of scanner threads for all managers.
+    /// If None, each manager will auto-detect (capped at 4).
+    pub fn set_num_threads(&mut self, threads: Option<usize>) {
+        self.replay_gain_manager.set_num_threads(threads);
+        self.waveform_manager.set_num_threads(threads);
+        self.bliss_manager.set_num_threads(threads);
+        if let Some(t) = threads {
+            log::info!("Scanner thread count set to {}", t);
+        }
+    }
 }

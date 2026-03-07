@@ -471,7 +471,16 @@ impl BlissScanner {
 
     /// Signal all workers to stop
     pub fn stop(&self) {
-        let _ = self.stop_tx.send(());
+        // Send stop signal to all workers
+        for _ in 0..self._workers.len() {
+            let _ = self.stop_tx.send(());
+        }
+    }
+}
+
+impl Drop for BlissScanner {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -487,6 +496,9 @@ pub struct BlissScanManager {
 
     // Shared pause flag — scanners sleep while this is true
     pause_flag: Arc<AtomicBool>,
+
+    // Configurable thread count (None = auto-detect, capped at 4)
+    num_threads: Option<usize>,
 }
 
 impl Default for BlissScanManager {
@@ -509,7 +521,18 @@ impl BlissScanManager {
             succeeded: 0,
             failed: 0,
             pause_flag,
+            num_threads: None,
         }
+    }
+
+    /// Set the number of scanner threads. If None, auto-detect (capped at 4).
+    pub fn set_num_threads(&mut self, threads: Option<usize>) {
+        self.num_threads = threads;
+    }
+
+    /// Get the effective number of threads to use.
+    fn effective_num_threads(&self) -> usize {
+        self.num_threads.unwrap_or_else(|| num_cpus::get().clamp(1, 4))
     }
 
     /// Populate succeeded/failed/total from the database without starting a scan.
@@ -596,7 +619,8 @@ impl BlissScanManager {
             return;
         }
 
-        let num_threads = num_cpus::get().clamp(1, 4); // Limit to 4 threads
+        let num_threads = self.effective_num_threads();
+        log::info!("Bliss scanner using {} threads", num_threads);
         let scanner = Arc::new(BlissScanner::new(
             num_threads,
             db_path,
