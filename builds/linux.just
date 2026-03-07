@@ -38,7 +38,8 @@ install-ubuntu-common:
 			 libnetcdf-dev \
 			 libopencv-dev \
 			 libclang-dev \
-			 webkit2gtk-driver
+			 webkit2gtk-driver \
+			 libchacha2-dev
 
 [group('install')]
 install-ubuntu-x86-driver :
