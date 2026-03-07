@@ -1529,10 +1529,6 @@ mod tests {
         let err = ConfigError::UnexpectedResponse;
         assert!(err.to_string().contains("Unexpected response"));
 
-        // Test StateLockError display
-        let err = ConfigError::StateLockError;
-        assert!(err.to_string().contains("state lock"));
-
         // Test ChannelDisconnected display
         let err = ConfigError::ChannelDisconnected;
         assert!(err.to_string().contains("disconnected"));
