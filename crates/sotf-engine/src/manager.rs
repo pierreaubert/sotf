@@ -7,41 +7,47 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
-use crate::devices::get_device_current_sample_rate;
+use crate::devices::{get_device_current_sample_rate, verify_working_sample_rate};
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
 
 /// Select the output sample rate for playback
 ///
-/// Always uses the device's actual current sample rate. On macOS, devices report a wide
-/// range of "supported" rates but don't actually switch their hardware rate — so playing
-/// 44100 samples on a device running at 48000 causes speed/pitch errors and artifacts.
+/// Uses the device's actual current sample rate, verified by creating a brief test stream.
+/// On some ALSA systems, the device reports a default rate that doesn't produce working
+/// audio callbacks (e.g., dmix configured for 44100Hz but hardware only works at 48000Hz).
 /// The decoder will resample when the file rate differs from the device rate.
 pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
-    match get_device_current_sample_rate(output_device) {
-        Some(device_rate) => {
-            if device_rate == file_sample_rate {
-                log::info!(
-                    "[AudioEngineManager] Device rate matches file: {}Hz (no resampling)",
-                    device_rate
-                );
-            } else {
-                log::info!(
-                    "[AudioEngineManager] Device running at {}Hz, file is {}Hz (will resample)",
-                    device_rate,
-                    file_sample_rate
-                );
-            }
-            device_rate
-        }
-        None => {
-            log::debug!(
-                "[AudioEngineManager] Could not query device rate, using file rate: {}Hz",
+    // Query the device's reported rate first
+    let device_rate = get_device_current_sample_rate(output_device);
+
+    // Use the device rate as our initial candidate, falling back to file rate
+    let candidate_rate = device_rate.unwrap_or(file_sample_rate);
+
+    // Verify the candidate rate actually produces working audio callbacks.
+    // This catches ALSA systems where the reported default rate doesn't work.
+    if let Some(verified_rate) = verify_working_sample_rate(output_device, candidate_rate) {
+        if verified_rate == file_sample_rate {
+            log::info!(
+                "[AudioEngineManager] Verified device rate matches file: {}Hz (no resampling)",
+                verified_rate
+            );
+        } else {
+            log::info!(
+                "[AudioEngineManager] Verified device rate: {}Hz, file is {}Hz (will resample)",
+                verified_rate,
                 file_sample_rate
             );
-            file_sample_rate
         }
+        return verified_rate;
     }
+
+    // Verification failed for all rates — fall back to device reported rate or file rate
+    log::warn!(
+        "[AudioEngineManager] Could not verify any working sample rate, using candidate: {}Hz",
+        candidate_rate
+    );
+    candidate_rate
 }
 
 /// High-level audio streaming manager using native AudioEngine

@@ -474,15 +474,163 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
 
     // Find the device
     let device = if let Some(identifier) = device_identifier {
-        host.output_devices()
-            .ok()?
+        let devices = match host.output_devices() {
+            Ok(d) => d,
+            Err(e) => {
+                log::warn!(
+                    "[AUDIO] Failed to enumerate output devices for sample rate query: {}",
+                    e
+                );
+                return None;
+            }
+        };
+        match devices
+            .into_iter()
             .find(|d| device_matches_str(d, identifier))
+        {
+            Some(d) => d,
+            None => {
+                log::warn!(
+                    "[AUDIO] Device '{}' not found for sample rate query",
+                    identifier
+                );
+                return None;
+            }
+        }
     } else {
-        host.default_output_device()
-    }?;
+        match host.default_output_device() {
+            Some(d) => d,
+            None => {
+                log::warn!("[AUDIO] No default output device available for sample rate query");
+                return None;
+            }
+        }
+    };
 
-    let config = device.default_output_config().ok()?;
-    Some(config.sample_rate())
+    match device.default_output_config() {
+        Ok(config) => {
+            let rate = config.sample_rate();
+            log::debug!(
+                "[AUDIO] Device sample rate query successful: {}Hz",
+                rate
+            );
+            Some(rate)
+        }
+        Err(e) => {
+            log::warn!(
+                "[AUDIO] Failed to get default output config for sample rate: {}",
+                e
+            );
+            None
+        }
+    }
+}
+
+/// Verify which sample rate actually produces working audio callbacks on a device.
+///
+/// On some Linux/ALSA systems, `default_output_config()` reports a rate (e.g., 44100Hz)
+/// that doesn't actually produce callbacks. This function creates a brief test stream
+/// at each candidate rate and checks that the audio callback fires.
+///
+/// Returns the first working sample rate, or None if none work.
+pub fn verify_working_sample_rate(
+    device_identifier: Option<&str>,
+    requested_rate: u32,
+) -> Option<u32> {
+    use cpal::traits::StreamTrait;
+    use cpal::StreamConfig;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let host = cpal::default_host();
+    let device = if let Some(id) = device_identifier {
+        let devices = host.output_devices().ok()?;
+        devices.into_iter().find(|d| device_matches_str(d, id))?
+    } else {
+        host.default_output_device()?
+    };
+
+    let device_default = device
+        .default_output_config()
+        .map(|c| c.sample_rate())
+        .ok();
+
+    // Build candidate list: requested rate first, then common alternatives
+    let mut candidates = vec![requested_rate];
+    for &rate in &[48000, 44100, 96000, 192000] {
+        if !candidates.contains(&rate) {
+            candidates.push(rate);
+        }
+    }
+    if let Some(dr) = device_default {
+        if !candidates.contains(&dr) {
+            candidates.push(dr);
+        }
+    }
+
+    for &rate in &candidates {
+        let config = StreamConfig {
+            channels: 2,
+            sample_rate: rate,
+            buffer_size: cpal::BufferSize::Default,
+        };
+
+        let callback_count = Arc::new(AtomicU64::new(0));
+        let cc = callback_count.clone();
+
+        let stream = match device.build_output_stream(
+            &config,
+            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                cc.fetch_add(1, Ordering::Relaxed);
+                data.fill(0.0); // silence
+            },
+            |_err| {},
+            None,
+        ) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        if stream.play().is_err() {
+            continue;
+        }
+
+        // Give the stream 150ms to fire callbacks
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let count = callback_count.load(Ordering::Relaxed);
+
+        // Explicitly stop and drop the stream before trying the next rate
+        drop(stream);
+        std::thread::sleep(std::time::Duration::from_millis(30));
+
+        if count > 0 {
+            if rate != requested_rate {
+                log::warn!(
+                    "[AUDIO] Device rate verification: requested {}Hz doesn't work, using {}Hz ({} callbacks in 150ms)",
+                    requested_rate,
+                    rate,
+                    count
+                );
+            } else {
+                log::info!(
+                    "[AUDIO] Device rate verification: {}Hz works ({} callbacks in 150ms)",
+                    rate,
+                    count
+                );
+            }
+            return Some(rate);
+        }
+
+        log::debug!(
+            "[AUDIO] Device rate verification: {}Hz - no callbacks in 150ms",
+            rate
+        );
+    }
+
+    log::warn!(
+        "[AUDIO] Device rate verification: no working rate found (tried {:?})",
+        candidates
+    );
+    None
 }
 
 /// Helper to match device by string identifier

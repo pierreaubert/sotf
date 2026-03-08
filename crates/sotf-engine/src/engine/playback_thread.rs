@@ -228,7 +228,8 @@ fn run_playback_thread(
     // Track current channel count (can change dynamically)
     let mut channels = initial_channels;
 
-    // Create stream config
+    // Create stream config - the sample rate has already been verified by the manager
+    // via verify_working_sample_rate() before the engine was created.
     let mut config = StreamConfig {
         channels: channels as u16,
         sample_rate,
@@ -270,17 +271,15 @@ fn run_playback_thread(
         device_name
     );
 
-    // Verify actual device config matches what we requested
+    // Log device config for diagnostics
     if let Ok(actual_config) = device.default_output_config() {
-        let actual_sr = actual_config.sample_rate();
-        let actual_ch = actual_config.channels();
-        log::warn!(
-            "[Playback Thread] Requested: {}Hz {}ch, Device default config reports: {}Hz {}ch (format: {:?})",
+        log::debug!(
+            "[Playback Thread] Device default config: {}Hz {}ch {:?} (using {}Hz {}ch)",
+            actual_config.sample_rate(),
+            actual_config.channels(),
+            actual_config.sample_format(),
             sample_rate,
             channels,
-            actual_sr,
-            actual_ch,
-            actual_config.sample_format(),
         );
     }
 
