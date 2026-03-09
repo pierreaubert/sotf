@@ -71,8 +71,6 @@ symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 
-# bliss audio analysis (no ffmpeg, we use our own Symphonia decoder)
-bliss-audio = { workspace = true }
 rubato = { workspace = true }
 num_cpus = { workspace = true }
 

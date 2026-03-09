@@ -174,7 +174,7 @@ fn analyze_single_file(path: &Path, verbose: bool) -> Result<(), Box<dyn std::er
     println!("Analyzing: {}", path.display());
 
     let start = Instant::now();
-    let analysis = analyze_file(path)?;
+    let analysis = analyze_file(path).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     let elapsed = start.elapsed();
 
     println!("\nBliss Analysis Results:");

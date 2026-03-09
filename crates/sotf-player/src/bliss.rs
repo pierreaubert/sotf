@@ -1,24 +1,22 @@
-//! Bliss audio analysis integration
+//! Audio feature analysis for music similarity
 //!
-//! This module provides audio analysis using the bliss-rs library with a custom
-//! Symphonia-based decoder (instead of ffmpeg). Bliss extracts audio features
-//! that can be used to compute similarity between tracks for intelligent
-//! playlist generation.
+//! This module provides audio analysis using a pure Rust implementation
+//! (math-dsp audio_features) with a Symphonia-based decoder. It extracts
+//! features that can be used to compute similarity between tracks for
+//! intelligent playlist generation.
 //!
-//! # Features extracted
-//! - Tempo
+//! # Features extracted (23 total, bliss v2 compatible)
+//! - Tempo (BPM)
 //! - Zero-crossing rate (ZCR)
 //! - Spectral centroid (mean/std deviation)
 //! - Spectral rolloff (mean/std deviation)
 //! - Spectral flatness (mean/std deviation)
 //! - Loudness (mean/std deviation)
-//! - Chroma features (for key/mode detection)
+//! - Chroma interval features (13)
 
 use crate::database::MusicDatabase;
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
-use bliss_audio::decoder::Decoder as BlissDecoder;
-use bliss_audio::decoder::PreAnalyzedSong;
-use bliss_audio::{Analysis, AnalysisIndex, BlissError, BlissResult};
+use math_audio_dsp::audio_features;
 use rubato::{Fft, FixedSync, Resampler};
 use sotf_audio::decoder::create_decoder;
 use std::path::{Path, PathBuf};
@@ -26,15 +24,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
-/// Number of bliss analysis features stored
-pub const BLISS_FEATURES_COUNT: usize = 20;
+/// Number of audio analysis features stored
+pub const BLISS_FEATURES_COUNT: usize = audio_features::FEATURES_COUNT;
 
-/// Bliss analysis sample rate (fixed by the bliss library)
-const BLISS_SAMPLE_RATE: u32 = 22050;
+/// Analysis sample rate (matches bliss convention)
+const ANALYSIS_SAMPLE_RATE: u32 = 22050;
 
-/// Bliss analysis result for a single track
+/// Audio analysis result for a single track
 #[derive(Debug, Clone)]
 pub struct BlissAnalysis {
     /// All analysis features as a vector
@@ -54,17 +51,16 @@ pub struct BlissAnalysis {
 }
 
 impl BlissAnalysis {
-    /// Create from a bliss Analysis object
-    pub fn from_analysis(analysis: &Analysis) -> Self {
-        let features = analysis.as_vec();
+    /// Create from a feature vector (23 elements, bliss v2 order)
+    pub fn from_features(features: Vec<f32>) -> Self {
         Self {
-            features: features.clone(),
-            tempo: analysis[AnalysisIndex::Tempo],
-            zcr: analysis[AnalysisIndex::Zcr],
-            spectral_centroid_mean: analysis[AnalysisIndex::MeanSpectralCentroid],
-            spectral_rolloff_mean: analysis[AnalysisIndex::MeanSpectralRolloff],
-            spectral_flatness_mean: analysis[AnalysisIndex::MeanSpectralFlatness],
-            loudness_mean: analysis[AnalysisIndex::MeanLoudness],
+            tempo: features.first().copied().unwrap_or(0.0),
+            zcr: features.get(1).copied().unwrap_or(0.0),
+            spectral_centroid_mean: features.get(2).copied().unwrap_or(0.0),
+            spectral_rolloff_mean: features.get(4).copied().unwrap_or(0.0),
+            spectral_flatness_mean: features.get(6).copied().unwrap_or(0.0),
+            loudness_mean: features.get(8).copied().unwrap_or(0.0),
+            features,
         }
     }
 
@@ -87,19 +83,12 @@ impl BlissAnalysis {
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect();
 
-        if features.len() < BLISS_FEATURES_COUNT {
+        // Accept both old 20-feature and new 23-feature vectors
+        if features.len() < 20 {
             return None;
         }
 
-        Some(Self {
-            features: features.clone(),
-            tempo: features.first().copied().unwrap_or(0.0),
-            zcr: features.get(1).copied().unwrap_or(0.0),
-            spectral_centroid_mean: features.get(2).copied().unwrap_or(0.0),
-            spectral_rolloff_mean: features.get(6).copied().unwrap_or(0.0),
-            spectral_flatness_mean: features.get(8).copied().unwrap_or(0.0),
-            loudness_mean: features.get(10).copied().unwrap_or(0.0),
-        })
+        Some(Self::from_features(features))
     }
 
     /// Compute Euclidean distance to another analysis (for similarity)
@@ -117,34 +106,14 @@ impl BlissAnalysis {
     }
 }
 
-/// Custom Symphonia-based decoder for bliss-rs
-///
-/// This implements the bliss_audio::decoder::Decoder trait using our existing
-/// Symphonia-based decoder instead of requiring ffmpeg.
-pub struct SymphoniaBlissDecoder;
-
-impl BlissDecoder for SymphoniaBlissDecoder {
-    fn decode(path: &Path) -> BlissResult<PreAnalyzedSong> {
-        decode_for_bliss(path)
-    }
-}
-
-/// Decode an audio file and prepare it for bliss analysis
-///
-/// This function:
-/// 1. Decodes the audio file using Symphonia
-/// 2. Converts to mono if stereo/multi-channel
-/// 3. Resamples to 22050 Hz (bliss requirement)
-/// 4. Returns a PreAnalyzedSong ready for bliss analysis
-pub fn decode_for_bliss(path: &Path) -> BlissResult<PreAnalyzedSong> {
-    // Create decoder
-    let mut decoder = create_decoder(path).map_err(|e| BlissError::DecodingError(e.to_string()))?;
+/// Decode an audio file to mono 22050 Hz samples for analysis
+fn decode_for_analysis(path: &Path) -> Result<Vec<f32>, String> {
+    let mut decoder = create_decoder(path).map_err(|e| e.to_string())?;
 
     let spec = decoder.spec().clone();
     let channels = spec.channels as usize;
     let source_sample_rate = spec.sample_rate;
 
-    // Collect all samples
     let mut all_samples: Vec<f32> = Vec::new();
 
     loop {
@@ -152,18 +121,16 @@ pub fn decode_for_bliss(path: &Path) -> BlissResult<PreAnalyzedSong> {
             Ok(Some(audio)) => {
                 all_samples.extend_from_slice(&audio.samples);
             }
-            Ok(None) => break, // EOF
-            Err(e) => return Err(BlissError::DecodingError(e.to_string())),
+            Ok(None) => break,
+            Err(e) => return Err(e.to_string()),
         }
     }
 
     if all_samples.is_empty() {
-        return Err(BlissError::DecodingError(
-            "No audio samples decoded".to_string(),
-        ));
+        return Err("No audio samples decoded".to_string());
     }
 
-    // Convert to mono by averaging channels
+    // Convert to mono
     let mono_samples: Vec<f32> = if channels == 1 {
         all_samples
     } else {
@@ -177,47 +144,21 @@ pub fn decode_for_bliss(path: &Path) -> BlissResult<PreAnalyzedSong> {
             .collect()
     };
 
-    // Resample to BLISS_SAMPLE_RATE (22050 Hz) if needed
-    let resampled = if source_sample_rate == BLISS_SAMPLE_RATE {
-        mono_samples
+    // Resample to ANALYSIS_SAMPLE_RATE if needed
+    if source_sample_rate == ANALYSIS_SAMPLE_RATE {
+        Ok(mono_samples)
     } else {
-        resample_to_bliss_rate(&mono_samples, source_sample_rate, BLISS_SAMPLE_RATE)?
-    };
-
-    // Calculate duration
-    let duration_secs = resampled.len() as f64 / BLISS_SAMPLE_RATE as f64;
-    let duration = Duration::from_secs_f64(duration_secs);
-
-    Ok(PreAnalyzedSong {
-        path: path.to_path_buf(),
-        sample_array: resampled,
-        duration,
-        // Metadata fields - we don't extract them here since we have them in the database
-        artist: None,
-        album_artist: None,
-        title: None,
-        album: None,
-        track_number: None,
-        disc_number: None,
-        genre: None,
-    })
+        resample(&mono_samples, source_sample_rate, ANALYSIS_SAMPLE_RATE)
+    }
 }
 
 /// Resample audio to the target sample rate using rubato
-fn resample_to_bliss_rate(
-    samples: &[f32],
-    source_rate: u32,
-    target_rate: u32,
-) -> BlissResult<Vec<f32>> {
+fn resample(samples: &[f32], source_rate: u32, target_rate: u32) -> Result<Vec<f32>, String> {
     if source_rate == target_rate {
         return Ok(samples.to_vec());
     }
 
-    // Calculate resampling ratio
     let resample_ratio = target_rate as f64 / source_rate as f64;
-
-    // Use FFT-based resampler for quality
-    // chunk_size should be a power of 2 for FFT efficiency
     let chunk_size = 1024;
 
     let mut resampler = Fft::<f32>::new(
@@ -228,7 +169,7 @@ fn resample_to_bliss_rate(
         1,
         FixedSync::Both,
     )
-    .map_err(|e| BlissError::DecodingError(format!("Failed to create resampler: {}", e)))?;
+    .map_err(|e| format!("Failed to create resampler: {e}"))?;
 
     let input_frames_needed = resampler.input_frames_next();
     let output_frames_per_chunk = resampler.output_frames_next();
@@ -237,13 +178,11 @@ fn resample_to_bliss_rate(
     let mut output = Vec::with_capacity(estimated_output_len);
     let mut output_channels = vec![vec![0.0f32; output_frames_per_chunk]];
 
-    // Process in chunks
     let mut pos = 0;
     while pos < samples.len() {
         let end = (pos + input_frames_needed).min(samples.len());
         let chunk = &samples[pos..end];
 
-        // Pad last chunk if needed
         let input_chunk: Vec<f32> = if chunk.len() < input_frames_needed {
             let mut padded = chunk.to_vec();
             padded.resize(input_frames_needed, 0.0);
@@ -254,20 +193,17 @@ fn resample_to_bliss_rate(
 
         let input_channels = vec![input_chunk];
         let input_adapter = SequentialSliceOfVecs::new(&input_channels, 1, input_frames_needed)
-            .map_err(|e| BlissError::DecodingError(format!("Input adapter error: {}", e)))?;
+            .map_err(|e| format!("Input adapter error: {e}"))?;
         let mut output_adapter =
             SequentialSliceOfVecs::new_mut(&mut output_channels, 1, output_frames_per_chunk)
-                .map_err(|e| BlissError::DecodingError(format!("Output adapter error: {}", e)))?;
+                .map_err(|e| format!("Output adapter error: {e}"))?;
 
         match resampler.process_into_buffer(&input_adapter, &mut output_adapter, None) {
             Ok((_, written)) => {
                 output.extend_from_slice(&output_channels[0][..written]);
             }
             Err(e) => {
-                return Err(BlissError::DecodingError(format!(
-                    "Resampling error: {}",
-                    e
-                )));
+                return Err(format!("Resampling error: {e}"));
             }
         }
 
@@ -277,17 +213,19 @@ fn resample_to_bliss_rate(
     Ok(output)
 }
 
-/// Analyze a single audio file and return bliss features
-pub fn analyze_file(path: &Path) -> BlissResult<BlissAnalysis> {
-    let song = SymphoniaBlissDecoder::song_from_path(path)?;
-    Ok(BlissAnalysis::from_analysis(&song.analysis))
+/// Analyze a single audio file and return analysis features
+pub fn analyze_file(path: &Path) -> Result<BlissAnalysis, String> {
+    let samples = decode_for_analysis(path)?;
+    let features = audio_features::analyze_audio_features(&samples, ANALYSIS_SAMPLE_RATE)
+        .map_err(|e| e.to_string())?;
+    Ok(BlissAnalysis::from_features(features))
 }
 
 // ============================================================================
 // Scanner for batch processing
 // ============================================================================
 
-/// Message sent by bliss scanner thread
+/// Message sent by scanner thread
 #[derive(Debug, Clone)]
 pub enum BlissScanMessage {
     /// Started scanning a track
@@ -308,7 +246,7 @@ pub enum BlissScanMessage {
     },
 }
 
-/// Bliss scanner with thread pool for background processing
+/// Scanner with thread pool for background processing
 #[derive(Debug)]
 pub struct BlissScanner {
     _workers: Vec<thread::JoinHandle<()>>,
@@ -324,7 +262,6 @@ impl BlissScanner {
         let (message_tx, message_rx) = mpsc::channel::<BlissScanMessage>();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
 
-        // Shared state for task distribution
         let task_rx = Arc::new(Mutex::new(task_rx));
         let stop_rx = Arc::new(Mutex::new(stop_rx));
 
@@ -340,7 +277,6 @@ impl BlissScanner {
             let worker = thread::spawn(move || {
                 log::info!("[Bliss Worker {}] Started", worker_id);
 
-                // Open database once per worker thread (not per track)
                 let db = match MusicDatabase::open(&db_path) {
                     Ok(db) => db,
                     Err(e) => {
@@ -354,13 +290,11 @@ impl BlissScanner {
                 };
 
                 loop {
-                    // Check if we should stop
                     if stop_rx.lock().unwrap().try_recv().is_ok() {
                         log::info!("[Bliss Worker {}] Stopping", worker_id);
                         break;
                     }
 
-                    // Wait while paused (check every 200ms, also check for stop)
                     while pause_flag.load(Ordering::Relaxed) {
                         if stop_rx.lock().unwrap().try_recv().is_ok() {
                             log::info!("[Bliss Worker {}] Stopping while paused", worker_id);
@@ -369,7 +303,6 @@ impl BlissScanner {
                         std::thread::sleep(std::time::Duration::from_millis(200));
                     }
 
-                    // Get next task
                     let path = match task_rx
                         .lock()
                         .unwrap()
@@ -389,13 +322,10 @@ impl BlissScanner {
                         path.display()
                     );
 
-                    // Send started message
                     let _ = message_tx.send(BlissScanMessage::Started { path: path.clone() });
 
-                    // Analyze the file
                     match analyze_file(&path) {
                         Ok(analysis) => {
-                            // Update database (reuse connection)
                             if let Err(e) = db.update_bliss(&path, &analysis) {
                                 log::error!(
                                     "[Bliss Worker {}] Failed to update database for {}: {}",
@@ -405,7 +335,7 @@ impl BlissScanner {
                                 );
                                 let _ = message_tx.send(BlissScanMessage::Error {
                                     path: path.clone(),
-                                    error: format!("Database error: {}", e),
+                                    error: format!("Database error: {e}"),
                                 });
                                 continue;
                             }
@@ -440,7 +370,6 @@ impl BlissScanner {
                     }
                 }
 
-                // Checkpoint WAL before exiting to prevent unbounded growth
                 if let Err(e) = db.checkpoint_wal() {
                     log::warn!("[Bliss Worker {}] WAL checkpoint failed: {}", worker_id, e);
                 }
@@ -471,7 +400,6 @@ impl BlissScanner {
 
     /// Signal all workers to stop
     pub fn stop(&self) {
-        // Send stop signal to all workers
         for _ in 0..self._workers.len() {
             let _ = self.stop_tx.send(());
         }
@@ -484,7 +412,7 @@ impl Drop for BlissScanner {
     }
 }
 
-/// Bliss scan manager for coordinating background analysis
+/// Scan manager for coordinating background analysis
 #[derive(Debug)]
 pub struct BlissScanManager {
     pub scanner: Option<Arc<BlissScanner>>,
@@ -494,10 +422,7 @@ pub struct BlissScanManager {
     pub succeeded: usize,
     pub failed: usize,
 
-    // Shared pause flag — scanners sleep while this is true
     pause_flag: Arc<AtomicBool>,
-
-    // Configurable thread count (None = auto-detect, capped at 4)
     num_threads: Option<usize>,
 }
 
@@ -525,18 +450,15 @@ impl BlissScanManager {
         }
     }
 
-    /// Set the number of scanner threads. If None, auto-detect (capped at 4).
     pub fn set_num_threads(&mut self, threads: Option<usize>) {
         self.num_threads = threads;
     }
 
-    /// Get the effective number of threads to use.
     fn effective_num_threads(&self) -> usize {
-        self.num_threads.unwrap_or_else(|| num_cpus::get().clamp(1, 4))
+        self.num_threads
+            .unwrap_or_else(|| num_cpus::get().clamp(1, 4))
     }
 
-    /// Populate succeeded/failed/total from the database without starting a scan.
-    /// Call after library load so the status display shows meaningful counts.
     pub fn refresh_counts(&mut self) {
         if self.in_progress {
             return;
@@ -556,7 +478,6 @@ impl BlissScanManager {
         self.failed = failed;
     }
 
-    /// Clear all bliss data and rescan every track.
     pub fn start_force_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         if self.in_progress {
             return Ok("Bliss scan already in progress".to_string());
@@ -570,17 +491,13 @@ impl BlissScanManager {
         self.start_scan()
     }
 
-    /// Start scanning all tracks in the database that are missing bliss analysis data
     pub fn start_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
-        // Skip if already in progress
         if self.in_progress {
             return Ok("Bliss scan already in progress".to_string());
         }
 
-        // Get database path
         let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
 
-        // Get tracks that need analysis and total counts
         let db = MusicDatabase::open(&db_path)?;
         let tracks = db.get_tracks_without_bliss()?;
         let total_tracks = db.get_track_count()?;
@@ -601,7 +518,6 @@ impl BlissScanManager {
             already_succeeded + already_failed
         );
 
-        // Start the scan — total/succeeded/failed reflect the whole library
         self.start(db_path, tracks);
         self.total = total_tracks;
         self.succeeded = already_succeeded;
@@ -613,7 +529,6 @@ impl BlissScanManager {
         ))
     }
 
-    /// Start a bliss scan for the given tracks
     pub fn start(&mut self, db_path: PathBuf, tracks: Vec<PathBuf>) {
         if self.in_progress {
             return;
@@ -633,7 +548,6 @@ impl BlissScanManager {
         self.failed = 0;
         self.in_progress = true;
 
-        // Queue all tracks
         for path in tracks {
             if scanner.queue(path).is_err() {
                 log::error!("Failed to queue track for bliss analysis");
@@ -643,7 +557,6 @@ impl BlissScanManager {
         self.scanner = Some(scanner);
     }
 
-    /// Process pending messages and update state
     pub fn update(&mut self) {
         if let Some(scanner) = &self.scanner {
             let rx = scanner.messages();
@@ -666,14 +579,12 @@ impl BlissScanManager {
                 }
             }
 
-            // Check if done
             if self.processed >= self.total {
                 self.in_progress = false;
             }
         }
     }
 
-    /// Stop the current scan
     pub fn stop(&mut self) {
         if let Some(scanner) = &self.scanner {
             scanner.stop();
@@ -681,7 +592,6 @@ impl BlissScanManager {
         self.in_progress = false;
     }
 
-    /// Get progress as a percentage
     pub fn progress(&self) -> f32 {
         if self.total == 0 {
             return 0.0;
@@ -707,7 +617,7 @@ mod tests {
         };
 
         let bytes = analysis.to_bytes();
-        assert_eq!(bytes.len(), 5 * 4); // 5 features * 4 bytes each
+        assert_eq!(bytes.len(), 5 * 4);
     }
 
     #[test]
@@ -733,6 +643,24 @@ mod tests {
         };
 
         let dist = a.distance(&b);
-        assert!((dist - 5.0).abs() < 0.001); // 3-4-5 triangle
+        assert!((dist - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_from_bytes_old_format() {
+        // 20 features (old bliss v1 format) should still work
+        let features: Vec<f32> = (0..20).map(|i| i as f32).collect();
+        let bytes: Vec<u8> = features.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let analysis = BlissAnalysis::from_bytes(&bytes).unwrap();
+        assert_eq!(analysis.features.len(), 20);
+    }
+
+    #[test]
+    fn test_from_bytes_new_format() {
+        // 23 features (new v2 format)
+        let features: Vec<f32> = (0..23).map(|i| i as f32).collect();
+        let bytes: Vec<u8> = features.iter().flat_map(|f| f.to_le_bytes()).collect();
+        let analysis = BlissAnalysis::from_bytes(&bytes).unwrap();
+        assert_eq!(analysis.features.len(), 23);
     }
 }

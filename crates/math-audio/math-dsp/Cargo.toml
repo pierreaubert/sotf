@@ -21,6 +21,7 @@ path = "bin/wav2csv.rs"
 # FFT and math
 rustfft = { workspace = true }
 num-complex = { workspace = true }
+ndarray = { workspace = true }
 
 # Audio file I/O
 hound = { workspace = true }

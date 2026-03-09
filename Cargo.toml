@@ -186,10 +186,6 @@ sotf-plugins = { path = "crates/sotf-plugins", default-features = false }
 driver-hal = { path = "crates/driver-hal" }  # macOS only
 
 # audio
-# bliss-audio for music similarity analysis
-# We use aubio-static to avoid runtime aubio dependency, and our own Symphonia decoder
-# update-aubio-bindings uses bindgen to generate bindings (needed for macOS which has no prebuilt)
-bliss-audio = { version = "0.11", default-features = false, features = ["aubio-static", "update-aubio-bindings"] }
 cpal = "0.17"
 hound = "3.5"
 id3 = "1.16"

@@ -68,8 +68,8 @@ symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 
-# bliss audio analysis (no ffmpeg, we use our own Symphonia decoder)
-bliss-audio = { workspace = true }
+# Audio feature analysis (pure Rust replacement for bliss-audio)
+math-dsp = { workspace = true }
 rubato = { workspace = true }
 audioadapter-buffers = { workspace = true }
 num_cpus = { workspace = true }
