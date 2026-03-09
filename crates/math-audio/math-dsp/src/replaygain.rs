@@ -1,4 +1,4 @@
-use ebur128::{EbuR128, Mode};
+use crate::ebur128::{EbuR128, Mode, energy_to_loudness};
 use serde::{Deserialize, Serialize};
 
 /// ReplayGain 2.0 Reference Gain
@@ -124,7 +124,7 @@ pub fn compute_album_gain(tracks: &[(f64, u64, f64)]) -> Option<(f64, f64)> {
         return None;
     }
 
-    let album_loudness = ebur128::energy_to_loudness(total_energy / total_blocks as f64);
+    let album_loudness = energy_to_loudness(total_energy / total_blocks as f64);
     let album_gain = REPLAYGAIN2_REFERENCE_LUFS - album_loudness;
 
     Some((album_gain, album_peak))

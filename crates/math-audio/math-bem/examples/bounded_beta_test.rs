@@ -147,8 +147,7 @@ fn solve_system(
     a: &ndarray::Array2<num_complex::Complex64>,
     b: &ndarray::Array1<num_complex::Complex64>,
 ) -> ndarray::Array1<num_complex::Complex64> {
-    use ndarray_linalg::Solve;
-    a.solve(b).expect("Failed to solve linear system")
+    oxiblas_ndarray::lapack::solve_ndarray(a, b).expect("Failed to solve linear system")
 }
 
 #[cfg(not(feature = "pure-rust"))]

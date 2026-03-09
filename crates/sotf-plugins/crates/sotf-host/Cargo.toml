@@ -25,7 +25,6 @@ rustfft = { workspace = true }
 realfft = { workspace = true }
 math-dsp = { workspace = true }
 math-iir-fir = { workspace = true }
-ebur128 = { workspace = true }
 rand = { workspace = true }
 rtrb = { workspace = true }
 thiserror = { workspace = true }

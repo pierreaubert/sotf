@@ -8,9 +8,6 @@ use ndarray::{Array1, Array2};
 use num_traits::FromPrimitive;
 use thiserror::Error;
 
-#[cfg(feature = "ndarray-linalg")]
-use ndarray_linalg::Solve;
-
 /// Errors that can occur during LU factorization
 #[derive(Error, Debug)]
 pub enum LuError {
@@ -140,18 +137,18 @@ pub fn lu_factorize<T: ComplexField>(a: &Array2<T>) -> Result<LuFactorization<T>
 /// Solve Ax = b using LU decomposition
 ///
 /// This is a convenience function that combines factorization and solve.
-#[cfg(feature = "ndarray-linalg")]
-pub fn lu_solve<T: ComplexField + ndarray_linalg::Lapack>(
+#[cfg(feature = "oxiblas-ndarray")]
+pub fn lu_solve<T: ComplexField + oxiblas_core::Field + Clone + bytemuck::Zeroable>(
     a: &Array2<T>,
     b: &Array1<T>,
 ) -> Result<Array1<T>, LuError> {
-    a.solve_into(b.clone()).map_err(|_| LuError::SingularMatrix)
+    oxiblas_ndarray::lapack::solve_ndarray(a, b).map_err(|_| LuError::SingularMatrix)
 }
 
 /// Solve Ax = b using LU decomposition
 ///
 /// This is a convenience function that combines factorization and solve.
-#[cfg(not(feature = "ndarray-linalg"))]
+#[cfg(not(feature = "oxiblas-ndarray"))]
 pub fn lu_solve<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, LuError> {
     let factorization = lu_factorize(a)?;
     factorization.solve(b)

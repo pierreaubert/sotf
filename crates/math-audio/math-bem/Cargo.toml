@@ -36,7 +36,7 @@ ndarray = { version = "0.17", default-features = false, features = ["rayon", "se
 num-complex = { workspace = true, features = ["serde"] }
 
 # BLAS/LAPACK (native only - not portable to WASM)
-ndarray-linalg = { workspace = true, optional = true }
+oxiblas-ndarray = { workspace = true, optional = true }
 
 # Parallel processing
 rayon = { workspace = true }
@@ -64,12 +64,6 @@ chrono = { workspace = true }
 # CLI (optional, native only)
 clap = { workspace = true, optional = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
-
-[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
-ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
-
 [dev-dependencies]
 directories = { workspace = true }
 
@@ -81,7 +75,7 @@ default = ["native", "cli"]
 native = [
     "ndarray/blas",
     "ndarray/rayon",
-    "ndarray-linalg",
+    "oxiblas-ndarray",
     "dep:env_logger",
 ]
 

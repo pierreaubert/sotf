@@ -28,8 +28,7 @@ hound = { workspace = true }
 # Filters
 math-iir-fir = { workspace = true }
 
-# ReplayGain (EBU R128)
-ebur128 = { workspace = true }
+# ReplayGain / serialization
 serde = { workspace = true }
 
 # Utilities

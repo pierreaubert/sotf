@@ -20,7 +20,9 @@ num-complex = { workspace = true, features = ["serde"] }
 num-traits = { workspace = true }
 
 # BLAS/LAPACK (native only)
-ndarray-linalg = { workspace = true, optional = true }
+oxiblas-ndarray = { workspace = true, optional = true }
+oxiblas-core = { version = "0.2", optional = true }
+bytemuck = { version = "1", optional = true }
 
 # Parallel processing
 rayon = { workspace = true, optional = true }
@@ -36,12 +38,6 @@ log = { workspace = true }
 wasm-bindgen = { workspace = true, optional = true }
 wasm-bindgen-rayon = { workspace = true, optional = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
-
-[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
-ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
-
 [dev-dependencies]
 approx = { workspace = true }
 
@@ -52,7 +48,9 @@ default = ["native"]
 native = [
     "ndarray/blas",
     "ndarray/rayon",
-    "ndarray-linalg",
+    "oxiblas-ndarray",
+    "oxiblas-core",
+    "bytemuck",
     "rayon",
 ]
 

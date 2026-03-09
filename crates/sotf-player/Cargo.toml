@@ -33,7 +33,6 @@ sotf-engine = { workspace = true }
 
 # math
 ndarray = { workspace = true }
-ndarray-linalg = { workspace = true }
 num-complex = { workspace = true }
 
 # common stuff
@@ -68,7 +67,6 @@ symphonia-codec-aac = { workspace = true }
 symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
-ebur128 = { workspace = true }
 
 # bliss audio analysis (no ffmpeg, we use our own Symphonia decoder)
 bliss-audio = { workspace = true }

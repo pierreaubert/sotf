@@ -53,7 +53,6 @@ symphonia-codec-vorbis = { workspace = true }
 symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
-ebur128 = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
 id3 = { workspace = true }

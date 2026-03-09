@@ -19,6 +19,7 @@
 //! ```
 
 pub mod analysis;
+pub mod ebur128;
 pub mod fast_math;
 pub mod replaygain;
 pub mod signals;

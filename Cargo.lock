@@ -217,7 +217,6 @@ dependencies = [
  "ctrlc",
  "directories",
  "driver-hal",
- "ebur128",
  "env_logger",
  "hound",
  "id3",
@@ -1328,18 +1327,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cauchy"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ff11ddd2af3b5e80dd0297fee6e56ac038d9bdc549573cdb51bd6d2efe7f05e"
-dependencies = [
- "num-complex",
- "num-traits",
- "rand 0.8.5",
- "serde",
-]
-
-[[package]]
 name = "cbc"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2359,15 +2346,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dasp_frame"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2a3937f5fe2135702897535c8d4a5553f8b116f76c1529088797f2eee7c5cd6"
-dependencies = [
- "dasp_sample",
-]
-
-[[package]]
 name = "dasp_sample"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2697,18 +2675,6 @@ name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
-
-[[package]]
-name = "ebur128"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e227cc62d64d6fe01abbef48134b9c1f17d470cef1e7a56337ad05b1f81df7f9"
-dependencies = [
- "bitflags 1.3.2",
- "dasp_frame",
- "dasp_sample",
- "smallvec",
-]
 
 [[package]]
 name = "either"
@@ -4866,17 +4832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "katexit"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccfb0b7ce7938f84a5ecbdca5d0a991e46bc9d6d078934ad5e92c5270fe547db"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4938,29 +4893,6 @@ name = "lab"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf36173d4167ed999940f804952e6b08197cae5ad5d572eb4db150ce8ad5d58f"
-
-[[package]]
-name = "lapack-sys"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "314b879030845b68571809a6978e52d3b67ac5fba07e77b1b317b484092e2fb5"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "lax"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bda593cb87a3b1c06625e73710812005caf1523e45b0b898adcd7716602f8ba2"
-dependencies = [
- "cauchy",
- "katexit",
- "lapack-sys",
- "num-traits",
- "openblas-src",
- "thiserror 2.0.18",
-]
 
 [[package]]
 name = "lazy_static"
@@ -5351,8 +5283,8 @@ dependencies = [
  "math-wave",
  "math-xem-common",
  "ndarray 0.17.2",
- "ndarray-linalg",
  "num-complex",
+ "oxiblas-ndarray",
  "rayon",
  "serde",
  "serde_json",
@@ -5383,7 +5315,6 @@ version = "0.4.2"
 dependencies = [
  "approx",
  "clap",
- "ebur128",
  "hound",
  "log",
  "math-iir-fir",
@@ -5434,11 +5365,13 @@ name = "math-solvers"
 version = "0.4.0"
 dependencies = [
  "approx",
+ "bytemuck",
  "log",
  "ndarray 0.17.2",
- "ndarray-linalg",
  "num-complex",
  "num-traits",
+ "oxiblas-core",
+ "oxiblas-ndarray",
  "rayon",
  "thiserror 2.0.18",
  "wasm-bindgen",
@@ -5777,7 +5710,6 @@ version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "520080814a7a6b4a6e9070823bb24b4531daac8c4627e08ba5de8c5ef2f2752d"
 dependencies = [
- "approx",
  "cblas-sys",
  "libc",
  "matrixmultiply",
@@ -5789,22 +5721,6 @@ dependencies = [
  "rawpointer",
  "rayon",
  "serde",
-]
-
-[[package]]
-name = "ndarray-linalg"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb0783188ff249ab498417e0477f7fade3b312d1d287314ca76de570d9a83ee0"
-dependencies = [
- "cauchy",
- "katexit",
- "lax",
- "ndarray 0.17.2",
- "num-complex",
- "num-traits",
- "rand 0.8.5",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -6049,8 +5965,8 @@ version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73f88a1307638156682bada9d7604135552957b7818057dcef22705b4d509495"
 dependencies = [
+ "bytemuck",
  "num-traits",
- "rand 0.8.5",
  "serde",
 ]
 
@@ -6474,32 +6390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "openblas-build"
-version = "0.10.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20d370acc586f21e12b1922e462439f0e98412e617f7642eb5e63df7ea211066"
-dependencies = [
- "anyhow",
- "cc",
- "flate2",
- "tar",
- "thiserror 2.0.18",
- "ureq",
-]
-
-[[package]]
-name = "openblas-src"
-version = "0.10.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e1042a867cd2effa3a188ab302acd8851b7eac58a7ae06496456e1172a1b456"
-dependencies = [
- "dirs 6.0.0",
- "openblas-build",
- "pkg-config",
- "vcpkg",
-]
-
-[[package]]
 name = "openssl"
 version = "0.10.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6606,6 +6496,72 @@ name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
+
+[[package]]
+name = "oxiblas-blas"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89966ff29b23d8cb75bf5841a0bc74c740d364d0de0e812be6eb45fd1f555593"
+dependencies = [
+ "bytemuck",
+ "num-complex",
+ "num-traits",
+ "oxiblas-core",
+ "oxiblas-matrix",
+]
+
+[[package]]
+name = "oxiblas-core"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a5cbf55bac31493f3d1607801b59ffbeaf0b468e47388a75541eae73edccec"
+dependencies = [
+ "bytemuck",
+ "libc",
+ "num-complex",
+ "num-traits",
+]
+
+[[package]]
+name = "oxiblas-lapack"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2f73e5832fa199ba0b46c81bd737acbc74c0989c09f899aa7d30bf625175c"
+dependencies = [
+ "bytemuck",
+ "num-complex",
+ "num-traits",
+ "oxiblas-blas",
+ "oxiblas-core",
+ "oxiblas-matrix",
+]
+
+[[package]]
+name = "oxiblas-matrix"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc1025ee056681229f7eaff4ebe1db10a183be6d65514af36c4b85dc65b3d0f2"
+dependencies = [
+ "bytemuck",
+ "num-complex",
+ "num-traits",
+ "oxiblas-core",
+]
+
+[[package]]
+name = "oxiblas-ndarray"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdaecead39a7a05abafc5ee1d72125250f58a08a89033ff3ea2e73a731526be2"
+dependencies = [
+ "bytemuck",
+ "ndarray 0.17.2",
+ "num-complex",
+ "oxiblas-blas",
+ "oxiblas-core",
+ "oxiblas-lapack",
+ "oxiblas-matrix",
+]
 
 [[package]]
 name = "page_size"
@@ -8955,7 +8911,6 @@ dependencies = [
  "ctrlc",
  "directories",
  "driver-hal",
- "ebur128",
  "env_logger",
  "hound",
  "id3",
@@ -9066,7 +9021,6 @@ dependencies = [
  "chrono",
  "clap",
  "criterion",
- "ebur128",
  "log",
  "math-dsp",
  "math-iir-fir",
@@ -9094,7 +9048,6 @@ dependencies = [
  "chrono",
  "clap",
  "directories",
- "ebur128",
  "env_logger",
  "image",
  "log",
@@ -9102,7 +9055,6 @@ dependencies = [
  "math-iir-fir",
  "md-5",
  "ndarray 0.17.2",
- "ndarray-linalg",
  "num-complex",
  "num_cpus",
  "parking_lot",
@@ -9457,7 +9409,6 @@ dependencies = [
  "ctrlc",
  "directories",
  "driver-hal",
- "ebur128",
  "env_logger",
  "hound",
  "id3",
@@ -9541,7 +9492,6 @@ dependencies = [
  "core-foundation-sys",
  "crossterm",
  "directories",
- "ebur128",
  "env_logger",
  "image",
  "libc",
@@ -10629,14 +10579,12 @@ dependencies = [
  "chrono",
  "clap",
  "directories",
- "ebur128",
  "env_logger",
  "gpui",
  "hound",
  "image",
  "log",
  "ndarray 0.17.2",
- "ndarray-linalg",
  "num-complex",
  "num_cpus",
  "parking_lot",
@@ -11929,7 +11877,7 @@ dependencies = [
  "ndk-sys 0.6.0+11769913",
  "objc",
  "once_cell",
- "ordered-float 4.6.0",
+ "ordered-float 5.1.0",
  "parking_lot",
  "portable-atomic",
  "portable-atomic-util",
