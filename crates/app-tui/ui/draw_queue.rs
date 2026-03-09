@@ -18,22 +18,25 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     let content_area = vchunks[1];
     let transport_area = vchunks[2];
 
-    // Check if we have album images to display
-    let has_images = !app.album_images.is_empty();
-
-    // Split the area horizontally if we have images
-    let (queue_area, image_area) = if has_images {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(60), // Queue list
-                Constraint::Percentage(40), // Album art
-            ])
-            .split(content_area);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (content_area, None)
+    // Split the area horizontally if we have album images (not available on Windows)
+    #[cfg(not(target_os = "windows"))]
+    let (queue_area, image_area) = {
+        let has_images = !app.album_images.is_empty();
+        if has_images {
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(60), // Queue list
+                    Constraint::Percentage(40), // Album art
+                ])
+                .split(content_area);
+            (chunks[0], Some(chunks[1]))
+        } else {
+            (content_area, None)
+        }
     };
+    #[cfg(target_os = "windows")]
+    let queue_area = content_area;
 
     let mut items: Vec<ListItem> = Vec::new();
     let mut selected_visual_index: Option<usize> = None;
@@ -155,7 +158,8 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     list_state.select(selected_visual_index);
     f.render_stateful_widget(list, queue_area, &mut list_state);
 
-    // Render album art if available
+    // Render album art if available (not on Windows)
+    #[cfg(not(target_os = "windows"))]
     if let Some(image_area) = image_area {
         draw_album_art(f, image_area, app);
     }
@@ -163,6 +167,7 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     draw_transport(f, transport_area, app);
 }
 
+#[cfg(not(target_os = "windows"))]
 pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
     use ratatui_image::StatefulImage;
 

@@ -167,10 +167,15 @@ pub struct App {
     pub file_picker_title: String,
 
     // Album cover image display
+    #[cfg(not(target_os = "windows"))]
     pub album_images: Vec<PathBuf>, // List of image files in current album directory
+    #[cfg(not(target_os = "windows"))]
     pub selected_image_index: usize, // Current image being displayed
+    #[cfg(not(target_os = "windows"))]
     pub image_picker: Option<ratatui_image::picker::Picker>, // Image protocol picker
+    #[cfg(not(target_os = "windows"))]
     pub image_protocol: Option<ratatui_image::protocol::StatefulProtocol>, // Cached protocol for current image
+    #[cfg(not(target_os = "windows"))]
     pub image_protocol_path: Option<PathBuf>, // Path the cached protocol was created from
 
     // Configure section sub-screen
@@ -310,10 +315,15 @@ impl App {
             file_picker_mode: FilePickerMode::File,
             file_picker_origin: FilePickerOrigin::SofaFile,
             file_picker_title: String::new(),
+            #[cfg(not(target_os = "windows"))]
             album_images: Vec::new(),
+            #[cfg(not(target_os = "windows"))]
             selected_image_index: 0,
+            #[cfg(not(target_os = "windows"))]
             image_picker: None,
+            #[cfg(not(target_os = "windows"))]
             image_protocol: None,
+            #[cfg(not(target_os = "windows"))]
             image_protocol_path: None,
             configure_sub_screen: super::types::ConfigureSubScreen::Directories,
             spinorama_eq: super::types::SpinoramaEqTuiState::default(),

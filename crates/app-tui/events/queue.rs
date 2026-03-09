@@ -69,11 +69,13 @@ pub(super) fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
             // Previous track
             app.previous_track().map(PlayerCommand::Play)
         }
+        #[cfg(not(target_os = "windows"))]
         KeyCode::Char('[') => {
             // Previous album image
             app.prev_album_image();
             None
         }
+        #[cfg(not(target_os = "windows"))]
         KeyCode::Char(']') => {
             // Next album image
             app.next_album_image();

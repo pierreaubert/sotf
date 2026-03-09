@@ -638,6 +638,7 @@ fn handle_player_command(
             app.stop_track_tracking();
 
             // Load album images when starting playback
+            #[cfg(not(target_os = "windows"))]
             app.load_album_images();
 
             let track_channels = app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
@@ -668,6 +669,7 @@ fn handle_player_command(
             // Play after channel conflict was resolved — skip clearing suspensions
             // and conflict re-check since the user already handled it.
             app.stop_track_tracking();
+            #[cfg(not(target_os = "windows"))]
             app.load_album_images();
             let track_channels = app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
             start_playback(player, app, path, track_channels)?;

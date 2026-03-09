@@ -21,7 +21,6 @@ autoeq = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }
-ratatui-image = { workspace = true }
 crossterm = { workspace = true }
 
 # Synchronous mutex (faster than std::sync::Mutex)
@@ -49,8 +48,6 @@ symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 ebur128 = { workspace = true }
 
-# Image processing for album art thumbnails
-image = { workspace = true }
 
 # CLI
 clap = { workspace = true }
@@ -69,6 +66,10 @@ thiserror = { workspace = true }
 
 # Media controls (Now Playing / media keys)
 souvlaki = { workspace = true }
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+ratatui-image = { workspace = true }
+image = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
