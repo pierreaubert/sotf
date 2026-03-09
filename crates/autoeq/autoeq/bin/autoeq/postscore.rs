@@ -124,22 +124,37 @@ pub(super) async fn compute_post_optimization_metrics(
 }
 
 /// Print pre and post optimization scores
-pub(super) fn print_optimization_scores(args: &autoeq::cli::Args, post: &PostOptMetrics) {
+pub(super) fn print_optimization_scores(
+    args: &autoeq::cli::Args,
+    post: &PostOptMetrics,
+    pre_objective: Option<f64>,
+    post_objective: Option<f64>,
+) {
+    // Always print loss values
+    if let (Some(pre), Some(post_obj)) = (pre_objective, post_objective) {
+        log::info!("📉  Pre-Optimization Loss: {:.6}", pre);
+        log::info!("📉 Post-Optimization Loss: {:.6}", post_obj);
+        if pre > 0.0 {
+            log::info!(
+                "📉 Improvement: {:.2}%",
+                (pre - post_obj) / pre * 100.0
+            );
+        }
+    }
+
+    // Print scores for score-based loss functions
     match args.loss {
-        autoeq::LossType::HeadphoneFlat | autoeq::LossType::HeadphoneScore => {
+        autoeq::LossType::HeadphoneScore => {
             if let Some(before) = post.pre_headphone_loss {
-                autoeq::qa_println!(args, "✅  Pre-Optimization Headphone Score: {:.3}", before);
+                log::info!("✅  Pre-Optimization Headphone Score: {:.3}", before);
             }
             if let Some(after) = post.headphone_loss {
-                autoeq::qa_println!(args, "✅ Post-Optimization Headphone Score: {:.3}", after);
+                log::info!("✅ Post-Optimization Headphone Score: {:.3}", after);
             }
         }
-        autoeq::LossType::SpeakerFlat
-        | autoeq::LossType::SpeakerFlatAsymmetric
-        | autoeq::LossType::SpeakerScore => {
+        autoeq::LossType::SpeakerScore => {
             if let Some(before) = &post.pre_cea2034 {
-                autoeq::qa_println!(
-                    args,
+                log::info!(
                     "✅  Pre-Optimization CEA2034 Score: pref={:.3} | nbd_on={:.3} nbd_pir={:.3} lfx={:.0}Hz sm_pir={:.3}",
                     before.pref_score,
                     before.nbd_on,
@@ -149,9 +164,8 @@ pub(super) fn print_optimization_scores(args: &autoeq::cli::Args, post: &PostOpt
                 );
             }
             if let Some(after) = &post.cea2034_metrics {
-                autoeq::qa_println!(
-                    args,
-                    "✅ Post-Optimization CEA2034 Score: pref={:.3} | nbd_on={:.3} nbd_pir={:.3} lfx={:.0}hz sm_pir={:.3}",
+                log::info!(
+                    "✅ Post-Optimization CEA2034 Score: pref={:.3} | nbd_on={:.3} nbd_pir={:.3} lfx={:.0}Hz sm_pir={:.3}",
                     after.pref_score,
                     after.nbd_on,
                     after.nbd_pir,
@@ -160,8 +174,12 @@ pub(super) fn print_optimization_scores(args: &autoeq::cli::Args, post: &PostOpt
                 );
             }
         }
+        autoeq::LossType::HeadphoneFlat
+        | autoeq::LossType::SpeakerFlat
+        | autoeq::LossType::SpeakerFlatAsymmetric => {
+            // Loss values already printed above, no additional scores
+        }
         autoeq::LossType::DriversFlat | autoeq::LossType::MultiSubFlat => {
-            // Unreachable: DriversFlat mode uses a separate code path
             unreachable!("DriversFlat mode should not reach this point");
         }
     }

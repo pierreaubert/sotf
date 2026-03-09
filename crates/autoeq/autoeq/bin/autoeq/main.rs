@@ -140,7 +140,7 @@ async fn run(args: autoeq::cli::Args) -> Result<()> {
     .context("Failed to compute post-optimization metrics")?;
 
     // Print pre and post optimization scores
-    postscore::print_optimization_scores(&args, &post_metrics);
+    postscore::print_optimization_scores(&args, &post_metrics, opt_result.pre_objective, opt_result.post_objective);
 
     // Extract scores for QA summary
     let (pre_score, post_score) = match objective_data.loss_type {

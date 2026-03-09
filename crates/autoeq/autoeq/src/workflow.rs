@@ -604,7 +604,9 @@ pub fn setup_bounds(args: &crate::cli::Args) -> (Vec<f64>, Vec<f64>) {
     // Debug: Display bounds for each filter (unless in QA mode)
     if args.qa.is_none() {
         log::info!("\n📏 Parameter Bounds (Model: {}):", model);
-        log::info!("+-# -|---Freq Range (Hz)---|----Q Range----|---Gain Range (dB)---|--Type--+");
+        log::info!("+----+-------------------+---------------+-----------------+--------+");
+        log::info!("|  # | Freq Range (Hz)   | Q Range       | Gain Range (dB) | Type   |");
+        log::info!("+----+-------------------+---------------+-----------------+--------+");
         for i in 0..args.num_filters {
             let offset = i * ppf;
             let (freq_idx, q_idx, gain_idx) = if ppf == 3 {
@@ -648,7 +650,7 @@ pub fn setup_bounds(args: &crate::cli::Args) -> (Vec<f64>, Vec<f64>) {
                 filter_type
             );
         }
-        log::info!("+----|--------------------|---------------|---------------------|---------+\n");
+        log::info!("+----+-------------------+---------------+-----------------+--------+\n");
     }
 
     (lower_bounds, upper_bounds)

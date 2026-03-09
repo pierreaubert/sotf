@@ -92,6 +92,6 @@ mod tests {
         };
 
         // Should not panic
-        crate::postscore::print_optimization_scores(&args, &metrics);
+        crate::postscore::print_optimization_scores(&args, &metrics, Some(0.5), Some(0.3));
     }
 }
