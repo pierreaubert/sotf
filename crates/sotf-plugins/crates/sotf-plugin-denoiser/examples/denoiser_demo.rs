@@ -29,6 +29,8 @@ fn main() {
     println!("  Transient suppression: {}", params.transient_enabled);
     println!("  Spectral smoothing: {}", params.spectral_smoothing_enabled);
     println!("  Temporal smoothing: {}", params.temporal_smoothing_enabled);
+    println!("  Hiss remover: {}", params.hiss_enabled);
+    println!("  Spectral subtraction: {}", params.spectral_sub_enabled);
     println!();
 
     let sample_rate = 48000;
@@ -183,6 +185,24 @@ fn main() {
         )
         .expect("Failed to set temporal_smoothing_enabled");
     println!("  Disabled temporal smoothing");
+
+    // Enable hiss remover
+    plugin
+        .set_parameter(
+            ParameterId::from("hiss_enabled"),
+            ParameterValue::Bool(true),
+        )
+        .expect("Failed to set hiss_enabled");
+    println!("  Enabled hiss remover");
+
+    // Enable spectral subtraction
+    plugin
+        .set_parameter(
+            ParameterId::from("spectral_sub_enabled"),
+            ParameterValue::Bool(true),
+        )
+        .expect("Failed to set spectral_sub_enabled");
+    println!("  Enabled spectral subtraction");
 
     // Change attack/release
     plugin

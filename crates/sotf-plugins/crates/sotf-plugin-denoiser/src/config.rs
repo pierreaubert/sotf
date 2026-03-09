@@ -75,6 +75,34 @@ pub fn default_temporal_smoothing_enabled() -> bool {
     pk(DN, "temporal_smoothing_enabled").default_bool()
 }
 
+pub fn default_hiss_enabled() -> bool {
+    pk(DN, "hiss_enabled").default_bool()
+}
+
+pub fn default_hiss_threshold_db() -> f32 {
+    pk(DN, "hiss_threshold_db").default_f32()
+}
+
+pub fn default_hiss_frequency_hz() -> f32 {
+    pk(DN, "hiss_frequency_hz").default_f32()
+}
+
+pub fn default_hiss_strength() -> f32 {
+    pk(DN, "hiss_strength").default_f32()
+}
+
+pub fn default_spectral_sub_enabled() -> bool {
+    pk(DN, "spectral_sub_enabled").default_bool()
+}
+
+pub fn default_spectral_sub_alpha() -> f32 {
+    pk(DN, "spectral_sub_alpha").default_f32()
+}
+
+pub fn default_spectral_sub_beta() -> f32 {
+    pk(DN, "spectral_sub_beta").default_f32()
+}
+
 pub fn default_transparency() -> f32 {
     pk(DN, "transparency").default_f32()
 }
@@ -171,6 +199,34 @@ pub struct DenoiserPluginParams {
     /// Enable temporal (attack/release) gain smoothing
     #[serde(default = "default_temporal_smoothing_enabled")]
     pub temporal_smoothing_enabled: bool,
+
+    /// Enable hiss remover (high-frequency noise reduction)
+    #[serde(default = "default_hiss_enabled")]
+    pub hiss_enabled: bool,
+
+    /// Hiss detection SNR threshold (dB)
+    #[serde(default = "default_hiss_threshold_db")]
+    pub hiss_threshold_db: f32,
+
+    /// Frequency above which hiss removal applies (Hz)
+    #[serde(default = "default_hiss_frequency_hz")]
+    pub hiss_frequency_hz: f32,
+
+    /// Hiss removal strength (0.0 to 1.0)
+    #[serde(default = "default_hiss_strength")]
+    pub hiss_strength: f32,
+
+    /// Enable spectral subtraction
+    #[serde(default = "default_spectral_sub_enabled")]
+    pub spectral_sub_enabled: bool,
+
+    /// Spectral subtraction oversubtraction factor
+    #[serde(default = "default_spectral_sub_alpha")]
+    pub spectral_sub_alpha: f32,
+
+    /// Spectral subtraction floor
+    #[serde(default = "default_spectral_sub_beta")]
+    pub spectral_sub_beta: f32,
 }
 
 impl Default for DenoiserPluginParams {
@@ -196,6 +252,13 @@ impl Default for DenoiserPluginParams {
             transient_enabled: default_transient_enabled(),
             spectral_smoothing_enabled: default_spectral_smoothing_enabled(),
             temporal_smoothing_enabled: default_temporal_smoothing_enabled(),
+            hiss_enabled: default_hiss_enabled(),
+            hiss_threshold_db: default_hiss_threshold_db(),
+            hiss_frequency_hz: default_hiss_frequency_hz(),
+            hiss_strength: default_hiss_strength(),
+            spectral_sub_enabled: default_spectral_sub_enabled(),
+            spectral_sub_alpha: default_spectral_sub_alpha(),
+            spectral_sub_beta: default_spectral_sub_beta(),
         }
     }
 }

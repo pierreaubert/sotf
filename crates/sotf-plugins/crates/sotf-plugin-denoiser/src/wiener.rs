@@ -67,6 +67,16 @@ impl DenoiserPlugin {
                 self.gain[ch][k] = gain;
             }
 
+            // Pass 1b: Spectral subtraction (combine with Wiener via min)
+            if self.spectral_sub_enabled {
+                self.calculate_spectral_subtraction_gains_for_channel(ch);
+            }
+
+            // Pass 1c: Hiss removal (additional high-frequency attenuation)
+            if self.hiss_enabled {
+                self.apply_hiss_removal(ch);
+            }
+
             // Pass 2: Smooth gains across frequency bins
             if self.spectral_smoothing_enabled {
                 self.smooth_gains_across_frequency(ch);

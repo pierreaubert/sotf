@@ -31,10 +31,12 @@ use sotf_host::analyzer::RealTimeCache;
 
 mod config;
 mod fft;
+mod hiss;
 mod masking;
 mod mcra;
 mod noise_profile;
 mod polyphonic;
+mod spectral_sub;
 mod tests;
 mod transient;
 mod wiener;
@@ -252,6 +254,26 @@ pub struct DenoiserPlugin {
     param_temporal_smoothing_enabled: ParameterId,
     temporal_smoothing_enabled: bool,
 
+    // Hiss remover
+    param_hiss_enabled: ParameterId,
+    hiss_enabled: bool,
+    param_hiss_threshold_db: ParameterId,
+    hiss_threshold_db: f32,
+    param_hiss_frequency_hz: ParameterId,
+    hiss_frequency_hz: f32,
+    param_hiss_strength: ParameterId,
+    hiss_strength: f32,
+    hiss_cutoff_bin: usize,
+    hiss_threshold_linear: f32,
+
+    // Spectral subtraction
+    param_spectral_sub_enabled: ParameterId,
+    spectral_sub_enabled: bool,
+    param_spectral_sub_alpha: ParameterId,
+    spectral_sub_alpha: f32,
+    param_spectral_sub_beta: ParameterId,
+    spectral_sub_beta: f32,
+
     // Transient Suppressor
     transient_suppressor: transient::TransientSuppressor,
 
@@ -424,6 +446,24 @@ impl DenoiserPlugin {
             param_temporal_smoothing_enabled: ParameterId::from("temporal_smoothing_enabled"),
             temporal_smoothing_enabled: pk(DN, "temporal_smoothing_enabled").default_bool(),
 
+            param_hiss_enabled: ParameterId::from("hiss_enabled"),
+            hiss_enabled: pk(DN, "hiss_enabled").default_bool(),
+            param_hiss_threshold_db: ParameterId::from("hiss_threshold_db"),
+            hiss_threshold_db: pk(DN, "hiss_threshold_db").default_f32(),
+            param_hiss_frequency_hz: ParameterId::from("hiss_frequency_hz"),
+            hiss_frequency_hz: pk(DN, "hiss_frequency_hz").default_f32(),
+            param_hiss_strength: ParameterId::from("hiss_strength"),
+            hiss_strength: pk(DN, "hiss_strength").default_f32(),
+            hiss_cutoff_bin: 0, // computed in initialize()
+            hiss_threshold_linear: 10.0_f32.powf(pk(DN, "hiss_threshold_db").default_f32() / 10.0),
+
+            param_spectral_sub_enabled: ParameterId::from("spectral_sub_enabled"),
+            spectral_sub_enabled: pk(DN, "spectral_sub_enabled").default_bool(),
+            param_spectral_sub_alpha: ParameterId::from("spectral_sub_alpha"),
+            spectral_sub_alpha: pk(DN, "spectral_sub_alpha").default_f32(),
+            param_spectral_sub_beta: ParameterId::from("spectral_sub_beta"),
+            spectral_sub_beta: pk(DN, "spectral_sub_beta").default_f32(),
+
             transient_suppressor: transient::TransientSuppressor::new(channels),
             pnd_analyzers,
 
@@ -554,6 +594,63 @@ impl DenoiserPlugin {
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("hiss_enabled", "Hiss Remover", self.hiss_enabled)
+                .with_group("Hiss")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "hiss_threshold_db",
+                "Hiss Threshold",
+                self.hiss_threshold_db,
+                pk(DN, "hiss_threshold_db").min_f64() as f32,
+                pk(DN, "hiss_threshold_db").max_f64() as f32,
+            )
+            .with_unit("dB")
+            .with_group("Hiss")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "hiss_frequency_hz",
+                "Hiss Frequency",
+                self.hiss_frequency_hz,
+                pk(DN, "hiss_frequency_hz").min_f64() as f32,
+                pk(DN, "hiss_frequency_hz").max_f64() as f32,
+            )
+            .with_unit("Hz")
+            .with_group("Hiss")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "hiss_strength",
+                "Hiss Strength",
+                self.hiss_strength,
+                pk(DN, "hiss_strength").min_f64() as f32,
+                pk(DN, "hiss_strength").max_f64() as f32,
+            )
+            .with_group("Hiss")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool(
+                "spectral_sub_enabled",
+                "Spectral Subtraction",
+                self.spectral_sub_enabled,
+            )
+            .with_group("Spectral Sub")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "spectral_sub_alpha",
+                "Oversubtraction",
+                self.spectral_sub_alpha,
+                pk(DN, "spectral_sub_alpha").min_f64() as f32,
+                pk(DN, "spectral_sub_alpha").max_f64() as f32,
+            )
+            .with_group("Spectral Sub")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float(
+                "spectral_sub_beta",
+                "Spectral Floor",
+                self.spectral_sub_beta,
+                pk(DN, "spectral_sub_beta").min_f64() as f32,
+                pk(DN, "spectral_sub_beta").max_f64() as f32,
+            )
+            .with_group("Spectral Sub")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool("learn_noise", "Learn Noise", false).with_group("Profile"),
             Parameter::new_bool(
                 "use_captured_profile",
@@ -616,6 +713,25 @@ impl DenoiserPlugin {
         plugin.transient_enabled = params.transient_enabled;
         plugin.spectral_smoothing_enabled = params.spectral_smoothing_enabled;
         plugin.temporal_smoothing_enabled = params.temporal_smoothing_enabled;
+
+        plugin.hiss_enabled = params.hiss_enabled;
+        plugin.hiss_threshold_db = params.hiss_threshold_db;
+        plugin.hiss_frequency_hz = params.hiss_frequency_hz;
+        plugin.hiss_strength = params.hiss_strength.clamp(
+            pk(DN, "hiss_strength").min_f64() as f32,
+            pk(DN, "hiss_strength").max_f64() as f32,
+        );
+        plugin.update_hiss_threshold_linear();
+
+        plugin.spectral_sub_enabled = params.spectral_sub_enabled;
+        plugin.spectral_sub_alpha = params.spectral_sub_alpha.clamp(
+            pk(DN, "spectral_sub_alpha").min_f64() as f32,
+            pk(DN, "spectral_sub_alpha").max_f64() as f32,
+        );
+        plugin.spectral_sub_beta = params.spectral_sub_beta.clamp(
+            pk(DN, "spectral_sub_beta").min_f64() as f32,
+            pk(DN, "spectral_sub_beta").max_f64() as f32,
+        );
 
         plugin.reduction_linear = 10.0_f32.powf(plugin.reduction_db / 10.0);
         plugin.floor_linear = 10.0_f32.powf(plugin.floor_db / 20.0);
@@ -885,6 +1001,66 @@ impl InPlacePlugin for DenoiserPlugin {
             self.temporal_smoothing_enabled = value
                 .as_bool()
                 .unwrap_or(pk(DN, "temporal_smoothing_enabled").default_bool());
+        } else if id == self.param_hiss_enabled {
+            self.hiss_enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "hiss_enabled").default_bool());
+        } else if id == self.param_hiss_threshold_db {
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "hiss_threshold_db").default_f32());
+            if val.is_finite() {
+                self.hiss_threshold_db = val.clamp(
+                    pk(DN, "hiss_threshold_db").min_f64() as f32,
+                    pk(DN, "hiss_threshold_db").max_f64() as f32,
+                );
+                self.update_hiss_threshold_linear();
+            }
+        } else if id == self.param_hiss_frequency_hz {
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "hiss_frequency_hz").default_f32());
+            if val.is_finite() {
+                self.hiss_frequency_hz = val.clamp(
+                    pk(DN, "hiss_frequency_hz").min_f64() as f32,
+                    pk(DN, "hiss_frequency_hz").max_f64() as f32,
+                );
+                self.update_hiss_cutoff_bin();
+            }
+        } else if id == self.param_hiss_strength {
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "hiss_strength").default_f32());
+            if val.is_finite() {
+                self.hiss_strength = val.clamp(
+                    pk(DN, "hiss_strength").min_f64() as f32,
+                    pk(DN, "hiss_strength").max_f64() as f32,
+                );
+            }
+        } else if id == self.param_spectral_sub_enabled {
+            self.spectral_sub_enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "spectral_sub_enabled").default_bool());
+        } else if id == self.param_spectral_sub_alpha {
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "spectral_sub_alpha").default_f32());
+            if val.is_finite() {
+                self.spectral_sub_alpha = val.clamp(
+                    pk(DN, "spectral_sub_alpha").min_f64() as f32,
+                    pk(DN, "spectral_sub_alpha").max_f64() as f32,
+                );
+            }
+        } else if id == self.param_spectral_sub_beta {
+            let val = value
+                .as_float()
+                .unwrap_or(pk(DN, "spectral_sub_beta").default_f32());
+            if val.is_finite() {
+                self.spectral_sub_beta = val.clamp(
+                    pk(DN, "spectral_sub_beta").min_f64() as f32,
+                    pk(DN, "spectral_sub_beta").max_f64() as f32,
+                );
+            }
         } else if id == self.param_learn_noise {
             let trigger = value.as_bool().unwrap_or(false);
             if trigger {
@@ -937,6 +1113,20 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Bool(self.spectral_smoothing_enabled))
         } else if id == &self.param_temporal_smoothing_enabled {
             Some(ParameterValue::Bool(self.temporal_smoothing_enabled))
+        } else if id == &self.param_hiss_enabled {
+            Some(ParameterValue::Bool(self.hiss_enabled))
+        } else if id == &self.param_hiss_threshold_db {
+            Some(ParameterValue::Float(self.hiss_threshold_db))
+        } else if id == &self.param_hiss_frequency_hz {
+            Some(ParameterValue::Float(self.hiss_frequency_hz))
+        } else if id == &self.param_hiss_strength {
+            Some(ParameterValue::Float(self.hiss_strength))
+        } else if id == &self.param_spectral_sub_enabled {
+            Some(ParameterValue::Bool(self.spectral_sub_enabled))
+        } else if id == &self.param_spectral_sub_alpha {
+            Some(ParameterValue::Float(self.spectral_sub_alpha))
+        } else if id == &self.param_spectral_sub_beta {
+            Some(ParameterValue::Float(self.spectral_sub_beta))
         } else if id == &self.param_learn_noise {
             Some(ParameterValue::Bool(self.is_learning))
         } else if id == &self.param_use_captured_profile {
@@ -952,6 +1142,7 @@ impl InPlacePlugin for DenoiserPlugin {
         self.sample_rate = sample_rate;
         self.update_envelope_coefficients();
         self.precompute_bark_mapping();
+        self.update_hiss_cutoff_bin();
 
         // Update PND analyzers with correct sample rate
         for analyzer in &mut self.pnd_analyzers {
