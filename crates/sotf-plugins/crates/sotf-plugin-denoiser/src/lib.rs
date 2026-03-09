@@ -244,6 +244,14 @@ pub struct DenoiserPlugin {
     mcra_l: usize,
     mcra_delta: f32,
 
+    // Technique enable flags
+    param_transient_enabled: ParameterId,
+    transient_enabled: bool,
+    param_spectral_smoothing_enabled: ParameterId,
+    spectral_smoothing_enabled: bool,
+    param_temporal_smoothing_enabled: ParameterId,
+    temporal_smoothing_enabled: bool,
+
     // Transient Suppressor
     transient_suppressor: transient::TransientSuppressor,
 
@@ -409,6 +417,13 @@ impl DenoiserPlugin {
             mcra_l: pk(DN, "mcra_l").default_usize(),
             mcra_delta: pk(DN, "mcra_delta").default_f32(),
 
+            param_transient_enabled: ParameterId::from("transient_enabled"),
+            transient_enabled: pk(DN, "transient_enabled").default_bool(),
+            param_spectral_smoothing_enabled: ParameterId::from("spectral_smoothing_enabled"),
+            spectral_smoothing_enabled: pk(DN, "spectral_smoothing_enabled").default_bool(),
+            param_temporal_smoothing_enabled: ParameterId::from("temporal_smoothing_enabled"),
+            temporal_smoothing_enabled: pk(DN, "temporal_smoothing_enabled").default_bool(),
+
             transient_suppressor: transient::TransientSuppressor::new(channels),
             pnd_analyzers,
 
@@ -522,6 +537,23 @@ impl DenoiserPlugin {
             )
             .with_group("Analysis")
             .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("transient_enabled", "Transient", self.transient_enabled)
+                .with_group("Analysis")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "spectral_smoothing_enabled",
+                "Spectral Smoothing",
+                self.spectral_smoothing_enabled,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "temporal_smoothing_enabled",
+                "Temporal Smoothing",
+                self.temporal_smoothing_enabled,
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("learn_noise", "Learn Noise", false).with_group("Profile"),
             Parameter::new_bool(
                 "use_captured_profile",
@@ -581,6 +613,9 @@ impl DenoiserPlugin {
         );
         plugin.psychoacoustic_masking = params.psychoacoustic_masking;
         plugin.use_captured_profile = params.use_captured_profile;
+        plugin.transient_enabled = params.transient_enabled;
+        plugin.spectral_smoothing_enabled = params.spectral_smoothing_enabled;
+        plugin.temporal_smoothing_enabled = params.temporal_smoothing_enabled;
 
         plugin.reduction_linear = 10.0_f32.powf(plugin.reduction_db / 10.0);
         plugin.floor_linear = 10.0_f32.powf(plugin.floor_db / 20.0);
@@ -838,6 +873,18 @@ impl InPlacePlugin for DenoiserPlugin {
                     pk(DN, "dd_alpha").max_f64() as f32,
                 );
             }
+        } else if id == self.param_transient_enabled {
+            self.transient_enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "transient_enabled").default_bool());
+        } else if id == self.param_spectral_smoothing_enabled {
+            self.spectral_smoothing_enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "spectral_smoothing_enabled").default_bool());
+        } else if id == self.param_temporal_smoothing_enabled {
+            self.temporal_smoothing_enabled = value
+                .as_bool()
+                .unwrap_or(pk(DN, "temporal_smoothing_enabled").default_bool());
         } else if id == self.param_learn_noise {
             let trigger = value.as_bool().unwrap_or(false);
             if trigger {
@@ -884,6 +931,12 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Bool(self.dd_enabled))
         } else if id == &self.param_dd_alpha {
             Some(ParameterValue::Float(self.dd_alpha))
+        } else if id == &self.param_transient_enabled {
+            Some(ParameterValue::Bool(self.transient_enabled))
+        } else if id == &self.param_spectral_smoothing_enabled {
+            Some(ParameterValue::Bool(self.spectral_smoothing_enabled))
+        } else if id == &self.param_temporal_smoothing_enabled {
+            Some(ParameterValue::Bool(self.temporal_smoothing_enabled))
         } else if id == &self.param_learn_noise {
             Some(ParameterValue::Bool(self.is_learning))
         } else if id == &self.param_use_captured_profile {
@@ -955,7 +1008,9 @@ impl InPlacePlugin for DenoiserPlugin {
         };
 
         // Pre-process: Time-domain transient suppression (de-clicking)
-        self.transient_suppressor.process(buffer);
+        if self.transient_enabled {
+            self.transient_suppressor.process(buffer);
+        }
 
         let num_frames = context.num_frames;
         let total_samples = num_frames * self.channels;

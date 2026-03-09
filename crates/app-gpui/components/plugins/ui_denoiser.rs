@@ -37,6 +37,9 @@ pub struct DenoiserRenderState {
     pub dd_enabled: bool,
     pub dd_alpha: f64,
     pub psychoacoustic_masking: bool,
+    pub transient_enabled: bool,
+    pub spectral_smoothing_enabled: bool,
+    pub temporal_smoothing_enabled: bool,
     pub learn_noise: bool,
     pub use_captured_profile: bool,
     pub clear_profile: bool,
@@ -325,6 +328,51 @@ pub fn render_denoiser_plugin(
                                 .text_xs()
                                 .text_color(theme.text_muted)
                                 .child("Masking"),
+                        )
+                        .child(render_toggle_button(
+                            entity.clone(),
+                            plugin_idx,
+                            state.transient_enabled,
+                            16,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Transient"),
+                        )
+                        .child(render_toggle_button(
+                            entity.clone(),
+                            plugin_idx,
+                            state.spectral_smoothing_enabled,
+                            17,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Spec Smooth"),
+                        )
+                        .child(render_toggle_button(
+                            entity.clone(),
+                            plugin_idx,
+                            state.temporal_smoothing_enabled,
+                            18,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Temp Smooth"),
                         ),
                 )
                 // Column 6: Profile
@@ -338,7 +386,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             state.learn_noise,
-                            16,
+                            19,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -348,7 +396,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             state.use_captured_profile,
-                            17,
+                            20,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -363,7 +411,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             state.clear_profile,
-                            18,
+                            21,
                             state.selected_param,
                             state.is_editing,
                             theme,

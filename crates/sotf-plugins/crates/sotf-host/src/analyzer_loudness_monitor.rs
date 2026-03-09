@@ -63,7 +63,7 @@ impl LoudnessMonitor {
     }
 
     /// Update LoudnessData in-place to avoid allocations
-    pub fn update_loudness_data(&self, d: &mut LoudnessData) {
+    pub fn update_loudness_data(&mut self, d: &mut LoudnessData) {
         d.momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(-120.0);
         d.shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(-120.0);
         d.integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
@@ -92,7 +92,7 @@ impl LoudnessMonitor {
         d.correlation_lr = self.correlation_lr;
     }
 
-    pub fn get_loudness(&self) -> LoudnessData {
+    pub fn get_loudness(&mut self) -> LoudnessData {
         let mut d = LoudnessData::new(self.channels as usize);
         self.update_loudness_data(&mut d);
         d
@@ -241,9 +241,11 @@ impl Plugin for LoudnessMonitorPlugin {
             let _ = self.monitor.add_frames(s2);
             chunk.commit_all();
 
-            // Update cache in-place (real-time safe)
+            // Update cache: read loudness data then swap into cache.
+            // Split borrows to avoid &mut self.cache + &mut self.monitor conflict.
+            let monitor = &mut self.monitor;
             self.cache.update(|d| {
-                self.monitor.update_loudness_data(d);
+                monitor.update_loudness_data(d);
             });
         }
         Ok(context.num_frames)

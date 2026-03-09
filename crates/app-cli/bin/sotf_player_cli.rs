@@ -968,6 +968,18 @@ struct DenoiserArgs {
     #[arg(long = "denoiser-psychoacoustic-masking", default_value_t = true)]
     psychoacoustic_masking: bool,
 
+    /// Enable denoiser transient suppression (de-clicking)
+    #[arg(long = "denoiser-transient", default_value_t = true)]
+    transient_enabled: bool,
+
+    /// Enable denoiser spectral (frequency-domain) gain smoothing
+    #[arg(long = "denoiser-spectral-smoothing", default_value_t = true)]
+    spectral_smoothing_enabled: bool,
+
+    /// Enable denoiser temporal (attack/release) gain smoothing
+    #[arg(long = "denoiser-temporal-smoothing", default_value_t = true)]
+    temporal_smoothing_enabled: bool,
+
     /// Enable denoiser noise learning
     #[arg(long = "denoiser-learn-noise", default_value_t = false)]
     learn_noise: bool,
@@ -1741,6 +1753,9 @@ fn create_denoiser_plugin_config(args: &DenoiserArgs) -> Result<PluginConfig, St
             "dd_enabled": args.dd_enabled,
             "dd_alpha": args.dd_alpha,
             "psychoacoustic_masking": args.psychoacoustic_masking,
+            "transient_enabled": args.transient_enabled,
+            "spectral_smoothing_enabled": args.spectral_smoothing_enabled,
+            "temporal_smoothing_enabled": args.temporal_smoothing_enabled,
             "learn_noise": args.learn_noise,
             "use_captured_profile": args.use_captured_profile,
             "clear_profile": args.clear_profile,
@@ -3071,6 +3086,9 @@ fn build_rack_mode_plugins(
                         dd_enabled: plugins.denoiser.dd_enabled,
                         dd_alpha: plugins.denoiser.dd_alpha as f64,
                         psychoacoustic_masking: plugins.denoiser.psychoacoustic_masking,
+                        transient_enabled: plugins.denoiser.transient_enabled,
+                        spectral_smoothing_enabled: plugins.denoiser.spectral_smoothing_enabled,
+                        temporal_smoothing_enabled: plugins.denoiser.temporal_smoothing_enabled,
                         learn_noise: plugins.denoiser.learn_noise,
                         use_captured_profile: plugins.denoiser.use_captured_profile,
                         clear_profile: plugins.denoiser.clear_profile,

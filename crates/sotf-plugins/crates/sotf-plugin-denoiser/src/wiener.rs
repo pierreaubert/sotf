@@ -68,7 +68,9 @@ impl DenoiserPlugin {
             }
 
             // Pass 2: Smooth gains across frequency bins
-            self.smooth_gains_across_frequency(ch);
+            if self.spectral_smoothing_enabled {
+                self.smooth_gains_across_frequency(ch);
+            }
 
             // Pass 2b: Psychoacoustic masking — skip denoising for masked bins
             if self.psychoacoustic_masking {
@@ -81,19 +83,27 @@ impl DenoiserPlugin {
             }
 
             // Pass 3: Apply temporal smoothing with attack/release
-            for k in 0..self.spectrum_size {
-                let gain = self.gain[ch][k];
-                let prev_gain = self.smoothed_gain[ch][k];
-                let coeff = if gain > prev_gain {
-                    self.attack_coeff
-                } else {
-                    self.release_coeff
-                };
-                let smoothed = gain + coeff * (prev_gain - gain);
-                self.smoothed_gain[ch][k] = smoothed;
+            if self.temporal_smoothing_enabled {
+                for k in 0..self.spectrum_size {
+                    let gain = self.gain[ch][k];
+                    let prev_gain = self.smoothed_gain[ch][k];
+                    let coeff = if gain > prev_gain {
+                        self.attack_coeff
+                    } else {
+                        self.release_coeff
+                    };
+                    let smoothed = gain + coeff * (prev_gain - gain);
+                    self.smoothed_gain[ch][k] = smoothed;
 
-                total_reduction += (1.0 - smoothed).max(0.0);
-                bin_count += 1;
+                    total_reduction += (1.0 - smoothed).max(0.0);
+                    bin_count += 1;
+                }
+            } else {
+                for k in 0..self.spectrum_size {
+                    self.smoothed_gain[ch][k] = self.gain[ch][k];
+                    total_reduction += (1.0 - self.gain[ch][k]).max(0.0);
+                    bin_count += 1;
+                }
             }
         }
 

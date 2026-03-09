@@ -26,6 +26,9 @@ fn main() {
     println!("  Attack: {} ms", params.attack_ms);
     println!("  Release: {} ms", params.release_ms);
     println!("  Low latency: {}", params.low_latency);
+    println!("  Transient suppression: {}", params.transient_enabled);
+    println!("  Spectral smoothing: {}", params.spectral_smoothing_enabled);
+    println!("  Temporal smoothing: {}", params.temporal_smoothing_enabled);
     println!();
 
     let sample_rate = 48000;
@@ -155,6 +158,31 @@ fn main() {
         .set_parameter(ParameterId::from("floor_db"), ParameterValue::Float(-40.0))
         .expect("Failed to set floor_db");
     println!("  Set floor to -40 dB");
+
+    // Toggle technique flags
+    plugin
+        .set_parameter(
+            ParameterId::from("transient_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .expect("Failed to set transient_enabled");
+    println!("  Disabled transient suppression");
+
+    plugin
+        .set_parameter(
+            ParameterId::from("spectral_smoothing_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .expect("Failed to set spectral_smoothing_enabled");
+    println!("  Disabled spectral smoothing");
+
+    plugin
+        .set_parameter(
+            ParameterId::from("temporal_smoothing_enabled"),
+            ParameterValue::Bool(false),
+        )
+        .expect("Failed to set temporal_smoothing_enabled");
+    println!("  Disabled temporal smoothing");
 
     // Change attack/release
     plugin

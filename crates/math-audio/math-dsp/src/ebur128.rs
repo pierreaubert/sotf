@@ -475,6 +475,14 @@ impl EbuR128 {
         if self.mode.has(Mode::I) && self.momentary_ring.is_full()
             && let Some(mean_energy) = self.momentary_ring.mean()
         {
+            // Cap at ~1 hour of blocks (36000 at 10 blocks/sec) to prevent
+            // unbounded memory growth during long playback sessions.
+            // When full, drop the oldest block (approximation acceptable for
+            // integrated loudness which is already a long-term average).
+            const MAX_GATING_BLOCKS: usize = 36_000;
+            if self.gating_blocks.len() >= MAX_GATING_BLOCKS {
+                self.gating_blocks.remove(0);
+            }
             self.gating_blocks.push(mean_energy);
         }
 
@@ -546,22 +554,30 @@ impl EbuR128 {
     }
 
     /// Previous sample peak for a given channel (since last snapshot).
-    pub fn prev_sample_peak(&self, channel: u32) -> Result<f64, String> {
+    /// Resets the stored value after reading (snapshot-and-reset semantics).
+    pub fn prev_sample_peak(&mut self, channel: u32) -> Result<f64, String> {
         let ch = channel as usize;
         if ch >= self.channels as usize {
             return Err(format!("channel {} out of range", channel));
         }
-        Ok(self.prev_sample_peak[ch])
+        let val = self.prev_sample_peak[ch];
+        self.prev_sample_peak[ch] = 0.0;
+        Ok(val)
     }
 
     /// Previous true peak for a given channel (since last snapshot).
-    pub fn prev_true_peak(&self, channel: u32) -> Result<f64, String> {
+    /// Resets the stored value after reading (snapshot-and-reset semantics).
+    pub fn prev_true_peak(&mut self, channel: u32) -> Result<f64, String> {
         let ch = channel as usize;
         if ch >= self.channels as usize {
             return Err(format!("channel {} out of range", channel));
         }
-        match &self.true_peak_detector {
-            Some(tp) => Ok(tp.prev_peak[ch]),
+        match &mut self.true_peak_detector {
+            Some(tp) => {
+                let val = tp.prev_peak[ch];
+                tp.prev_peak[ch] = 0.0;
+                Ok(val)
+            }
             None => Ok(0.0),
         }
     }

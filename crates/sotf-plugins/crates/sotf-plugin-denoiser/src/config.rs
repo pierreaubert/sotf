@@ -63,6 +63,18 @@ pub fn default_use_captured_profile() -> bool {
     pk(DN, "use_captured_profile").default_bool()
 }
 
+pub fn default_transient_enabled() -> bool {
+    pk(DN, "transient_enabled").default_bool()
+}
+
+pub fn default_spectral_smoothing_enabled() -> bool {
+    pk(DN, "spectral_smoothing_enabled").default_bool()
+}
+
+pub fn default_temporal_smoothing_enabled() -> bool {
+    pk(DN, "temporal_smoothing_enabled").default_bool()
+}
+
 pub fn default_transparency() -> f32 {
     pk(DN, "transparency").default_f32()
 }
@@ -147,6 +159,18 @@ pub struct DenoiserPluginParams {
     /// Use captured noise profile instead of live MCRA estimation
     #[serde(default = "default_use_captured_profile")]
     pub use_captured_profile: bool,
+
+    /// Enable transient suppression (de-clicking)
+    #[serde(default = "default_transient_enabled")]
+    pub transient_enabled: bool,
+
+    /// Enable spectral (frequency-domain) gain smoothing
+    #[serde(default = "default_spectral_smoothing_enabled")]
+    pub spectral_smoothing_enabled: bool,
+
+    /// Enable temporal (attack/release) gain smoothing
+    #[serde(default = "default_temporal_smoothing_enabled")]
+    pub temporal_smoothing_enabled: bool,
 }
 
 impl Default for DenoiserPluginParams {
@@ -169,6 +193,9 @@ impl Default for DenoiserPluginParams {
             dd_alpha: default_dd_alpha(),
             psychoacoustic_masking: default_psychoacoustic_masking(),
             use_captured_profile: default_use_captured_profile(),
+            transient_enabled: default_transient_enabled(),
+            spectral_smoothing_enabled: default_spectral_smoothing_enabled(),
+            temporal_smoothing_enabled: default_temporal_smoothing_enabled(),
         }
     }
 }

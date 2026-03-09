@@ -566,6 +566,9 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_mcra_l() -> usize = "mcra_l";
     fn default_denoiser_mcra_delta() -> f64 = "mcra_delta";
     fn default_denoiser_crack_sensitivity() -> f64 = "crack_sensitivity";
+    fn default_denoiser_transient_enabled() -> bool = "transient_enabled";
+    fn default_denoiser_spectral_smoothing_enabled() -> bool = "spectral_smoothing_enabled";
+    fn default_denoiser_temporal_smoothing_enabled() -> bool = "temporal_smoothing_enabled";
 }
 
 sotf_plugins::serde_param_default! {
@@ -1102,6 +1105,12 @@ pub enum PluginSettings {
         dd_alpha: f64,
         #[serde(default = "default_denoiser_psychoacoustic_masking")]
         psychoacoustic_masking: bool,
+        #[serde(default = "default_denoiser_transient_enabled")]
+        transient_enabled: bool,
+        #[serde(default = "default_denoiser_spectral_smoothing_enabled")]
+        spectral_smoothing_enabled: bool,
+        #[serde(default = "default_denoiser_temporal_smoothing_enabled")]
+        temporal_smoothing_enabled: bool,
         #[serde(default)]
         learn_noise: bool,
         #[serde(default = "default_denoiser_use_captured_profile")]
@@ -1924,6 +1933,9 @@ impl PluginSettings {
                 dd_enabled,
                 dd_alpha,
                 psychoacoustic_masking,
+                transient_enabled,
+                spectral_smoothing_enabled,
+                temporal_smoothing_enabled,
                 learn_noise,
                 use_captured_profile,
                 clear_profile,
@@ -1946,6 +1958,9 @@ impl PluginSettings {
                     "dd_enabled": dd_enabled,
                     "dd_alpha": dd_alpha,
                     "psychoacoustic_masking": psychoacoustic_masking,
+                    "transient_enabled": transient_enabled,
+                    "spectral_smoothing_enabled": spectral_smoothing_enabled,
+                    "temporal_smoothing_enabled": temporal_smoothing_enabled,
                     "learn_noise": learn_noise,
                     "use_captured_profile": use_captured_profile,
                     "clear_profile": clear_profile,
@@ -2368,6 +2383,9 @@ impl PluginSettings {
                     dd_enabled: p(d, "dd_enabled").default_bool(),
                     dd_alpha: p(d, "dd_alpha").default_f64(),
                     psychoacoustic_masking: p(d, "psychoacoustic_masking").default_bool(),
+                    transient_enabled: p(d, "transient_enabled").default_bool(),
+                    spectral_smoothing_enabled: p(d, "spectral_smoothing_enabled").default_bool(),
+                    temporal_smoothing_enabled: p(d, "temporal_smoothing_enabled").default_bool(),
                     learn_noise: p(d, "learn_noise").default_bool(),
                     use_captured_profile: p(d, "use_captured_profile").default_bool(),
                     clear_profile: p(d, "clear_profile").default_bool(),

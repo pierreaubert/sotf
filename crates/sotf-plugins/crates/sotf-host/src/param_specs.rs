@@ -1554,6 +1554,9 @@ pub mod denoiser {
             "DD Alpha", "dd_alpha", 0.98, 0.5, 0.999, 0.001, "", "Analysis",
         ),
         ParamSpec::bool_param("Psychoacoustic", "psychoacoustic_masking", true, "Analysis"),
+        ParamSpec::bool_param("Transient", "transient_enabled", true, "Analysis"),
+        ParamSpec::bool_param("Spectral Smooth", "spectral_smoothing_enabled", true, "Analysis"),
+        ParamSpec::bool_param("Temporal Smooth", "temporal_smoothing_enabled", true, "Analysis"),
         ParamSpec::bool_labeled(
             "Learn Noise",
             "learn_noise",
