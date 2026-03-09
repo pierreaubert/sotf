@@ -22,6 +22,7 @@ use sotf_plugins::{
 const SAMPLE_RATE: u32 = 48000;
 const BUFFER_SIZE: usize = 1024;
 
+#[allow(clippy::vec_init_then_push)]
 fn get_all_plugins() -> Vec<Box<dyn Plugin>> {
     let mut plugins: Vec<Box<dyn Plugin>> = Vec::new();
 

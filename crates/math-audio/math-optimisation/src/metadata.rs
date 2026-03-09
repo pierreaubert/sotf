@@ -1,6 +1,7 @@
 //! Tests for metadata-driven optimization examples
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use crate::{
         DEConfig, DEConfigBuilder, Mutation, Strategy, differential_evolution,

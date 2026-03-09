@@ -1,3 +1,4 @@
+#![allow(clippy::arc_with_non_send_sync)]
 use sotf_audio_player::MusicLibrary;
 /// Integration tests for ReplayGain scanning functionality
 use sotf_audio_player::database::MusicDatabase;
@@ -407,10 +408,8 @@ fn test_replay_gain_range_values() {
     for (gain, peak) in test_cases {
         db_mut
             .update_replay_gain(&test_file, gain, peak)
-            .expect(&format!(
-                "Failed to update ReplayGain with gain={}, peak={}",
-                gain, peak
-            ));
+            .unwrap_or_else(|_| panic!("Failed to update ReplayGain with gain={}, peak={}",
+                gain, peak));
 
         // Verify it's no longer needed
         let tracks = db_mut

@@ -417,9 +417,9 @@ mod upmixer_tests {
 
         // Measure per-channel energy in the HR output block
         let mut energies = vec![0.0f32; plugin.num_output_channels];
-        for ch in 0..plugin.num_output_channels {
-            for i in 0..plugin.hr_fft_size {
-                energies[ch] += plugin.hr_time_out_channels[ch][i].powi(2);
+        for (ch, energy) in energies.iter_mut().enumerate().take(plugin.num_output_channels) {
+            for &sample in plugin.hr_time_out_channels[ch][..plugin.hr_fft_size].iter() {
+                *energy += sample.powi(2);
             }
         }
 
@@ -432,12 +432,12 @@ mod upmixer_tests {
         );
 
         // LFE and surrounds should stay effectively silent in HR path
-        for ch in 3..plugin.num_output_channels {
+        for (ch, &energy) in energies.iter().enumerate().skip(3).take(plugin.num_output_channels - 3) {
             assert!(
-                energies[ch] < 1e-6,
+                energy < 1e-6,
                 "Non-front channel {} should be near zero in HR path (got {})",
                 ch,
-                energies[ch]
+                energy
             );
         }
     }
@@ -511,8 +511,7 @@ mod upmixer_tests {
 
             if block_energy < 1e-9 {
                 zero_blocks += 1;
-            } else {
-            }
+            } 
         }
 
         // If the bug exists, exactly half the blocks will be zero.
@@ -922,7 +921,7 @@ mod upmixer_tests {
         }
 
         // Calculate energy per channel
-        let mut channel_energies = vec![0.0; 10];
+        let mut channel_energies = [0.0; 10];
         for i in 0..2048 {
             for ch in 0..10 {
                 channel_energies[ch] += output[i * 10 + ch].powi(2);
@@ -1085,11 +1084,10 @@ mod upmixer_tests {
             let l = plugin.freq_domain_left[i];
             let r = plugin.freq_domain_right[i];
             let energy = l.norm_sqr() + r.norm_sqr();
-            if energy > 1e-6_f32 {
-                if plugin.height_band_gains[i] > max_mask {
+            if energy > 1e-6_f32
+                && plugin.height_band_gains[i] > max_mask {
                     max_mask = plugin.height_band_gains[i];
                 }
-            }
         }
         assert!(
             max_mask < 0.2,

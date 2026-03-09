@@ -30,7 +30,7 @@ fn test_full_optimization_workflow_csv() {
     let output_path = temp_dir.path().join("results");
 
     let output = Command::new(get_autoeq_binary())
-        .args(&[
+        .args([
             "--curve",
             &csv_path.to_string_lossy(),
             "--output",
@@ -92,7 +92,7 @@ fn test_multi_driver_optimization() {
     let output_path = temp_dir.path().join("driver_results");
 
     let output = Command::new(get_autoeq_binary())
-        .args(&[
+        .args([
             "--loss",
             "drivers-flat", // Must specify loss type for drivers
             "--driver1",
@@ -138,7 +138,7 @@ fn test_output_format_validation() {
     let output_path = temp_dir.path().join("output");
 
     let _ = Command::new(get_autoeq_binary())
-        .args(&[
+        .args([
             "--curve",
             &csv_path.to_string_lossy(),
             "--output",
@@ -181,7 +181,7 @@ fn test_invalid_input_handling() {
     let output_path = temp_dir.path().join("output");
 
     let output = Command::new(get_autoeq_binary())
-        .args(&[
+        .args([
             "--curve",
             &csv_path.to_string_lossy(),
             "--output",
@@ -209,7 +209,7 @@ fn test_qa_mode_output() {
     std::fs::write(&csv_path, csv_content).unwrap();
 
     let output = Command::new(get_autoeq_binary())
-        .args(&["--curve", &csv_path.to_string_lossy(), "--qa", "0.5"])
+        .args(["--curve", &csv_path.to_string_lossy(), "--qa", "0.5"])
         .output()
         .expect("Failed to execute autoeq");
 

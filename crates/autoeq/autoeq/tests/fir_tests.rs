@@ -124,7 +124,7 @@ fn load_test_csv(filename: &str) -> Curve {
         .join("tests/data/fir")
         .join(filename);
 
-    autoeq::read_curve_from_csv(&path).expect(&format!("Failed to load {}", filename))
+    autoeq::read_curve_from_csv(&path).unwrap_or_else(|_| panic!("Failed to load {}", filename))
 }
 
 // ============================================================================

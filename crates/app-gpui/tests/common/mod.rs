@@ -1,7 +1,6 @@
 //! Common test helpers for GPUI component tests
 //!
 //! Provides test fixtures and utilities for testing component logic.
-
 pub mod state_builder;
 
 use std::path::{Path, PathBuf};

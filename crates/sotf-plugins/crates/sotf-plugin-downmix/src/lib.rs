@@ -760,7 +760,6 @@ impl Plugin for DownmixPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_downmix_basic() {
         let mut p = DownmixPlugin::new(2);

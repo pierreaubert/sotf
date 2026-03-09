@@ -4,7 +4,7 @@
 //! window creation, and result collection.
 
 use gpui::{
-    Context, Render, TestAppContext, VisualTestContext, Window, WindowHandle, div, prelude::*,
+    TestAppContext, VisualTestContext, WindowHandle, prelude::*,
 };
 use std::error::Error;
 
@@ -73,7 +73,7 @@ pub trait TestScenario {
     /// This is where interactions and assertions happen.
     fn execute(
         &self,
-        cx: &mut VisualTestContext,
+        _cx: &mut VisualTestContext,
         window: WindowHandle<PlayerView>,
     ) -> Result<(), Box<dyn Error>> {
         let _ = window; // Default implementation ignores window

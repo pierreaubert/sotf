@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use sotf_plugins::{
-        CompressorPlugin, GainPlugin, InPlacePlugin, InPlacePluginAdapter, ParameterId, Plugin,
+        CompressorPlugin, GainPlugin, InPlacePlugin, InPlacePluginAdapter, ParameterId,
         test_parameter_ramp,
     };
 

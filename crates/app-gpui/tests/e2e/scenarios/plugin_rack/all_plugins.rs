@@ -2,7 +2,7 @@ use crate::driver::AppDriver;
 use crate::pages::plugin_rack::PluginRackPage;
 use crate::runner::{E2ERunner, TestScenario};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
-use sotf_audio::plugins::{PluginSettings, PluginType};
+use sotf_audio::plugins::PluginType;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
@@ -61,17 +61,15 @@ impl TestScenario for AllPluginsScenario {
 
             // Mute (Disable)
             page.toggle_plugin(plugin_index);
-            assert_eq!(
-                page.is_plugin_enabled(plugin_index),
-                false,
+            assert!(
+                !page.is_plugin_enabled(plugin_index),
                 "Plugin should be disabled (muted)"
             );
 
             // Unmute (Enable)
             page.toggle_plugin(plugin_index);
-            assert_eq!(
+            assert!(
                 page.is_plugin_enabled(plugin_index),
-                true,
                 "Plugin should be enabled (unmuted)"
             );
 

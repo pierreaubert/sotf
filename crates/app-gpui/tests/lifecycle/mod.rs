@@ -12,6 +12,7 @@
 //! - Plugin configuration sequences
 
 #[path = "../common/mod.rs"]
+#[allow(dead_code)]
 mod common;
 
 mod input_sequences;

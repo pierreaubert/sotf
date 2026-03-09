@@ -33,7 +33,7 @@ fn test_plugin_parameter_sync() {
             );
 
             // Value should be readable
-            let value = settings.get_value_as_string(i);
+            let _value = settings.get_value_as_string(i);
             // Some values might be empty for unimplemented or non-displayable params,
             // but for now let's assume most should have something.
             // Actually, for Upmixer 31-33 they are empty, so we won't assert non-empty.

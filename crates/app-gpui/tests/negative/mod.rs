@@ -1,7 +1,8 @@
 //! Negative Tests for player-gpui
 //!
 //! These tests verify that things that SHOULD NOT happen, don't happen.
-//! They catch bugs like keybinding conflicts, state corruption, and invalid configurations.
+//! They test REAL production types (LibraryController, QueueController,
+//! PlaybackController, InputMode) — not test doubles.
 //!
 //! # Philosophy
 //!

@@ -124,6 +124,7 @@ math-iir-fir = { workspace = true }
 cpal = { workspace = true }
 hound = { workspace = true }
 sotf-engine = { workspace = true }
+sotf-player = { workspace = true }
 proptest = "1.6"
 
 [[test]]

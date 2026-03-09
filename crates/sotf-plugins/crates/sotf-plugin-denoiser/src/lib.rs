@@ -37,6 +37,8 @@ mod mcra;
 mod noise_profile;
 mod polyphonic;
 mod spectral_sub;
+#[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests;
 mod transient;
 mod wiener;

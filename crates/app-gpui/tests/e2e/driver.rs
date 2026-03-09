@@ -1,5 +1,5 @@
 use crate::pages::spinorama::SpinoramaPage;
-use gpui::{Context, VisualTestContext, WindowHandle, prelude::*};
+use gpui::{Context, VisualTestContext, WindowHandle};
 use sotf_audio_player_gpui::app::{App, AppState, Screen, SettingsTab};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
@@ -63,11 +63,10 @@ impl<'a> AppDriver<'a> {
         self.view
             .update(self.cx, |view, _window, cx| {
                 let state = view.state.read(cx);
-                if let Some(toast) = &state.app.ui_state.toast_message {
-                    if toast.message.contains(message_part) {
+                if let Some(toast) = &state.app.ui_state.toast_message
+                    && toast.message.contains(message_part) {
                         return Ok(());
                     }
-                }
                 Err(format!(
                     "Expected toast containing '{}', found '{}'",
                     message_part,

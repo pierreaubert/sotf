@@ -4093,21 +4093,19 @@ mod tests {
         chain.add_plugin(&PluginType::BinauralDecoder);
 
         // Initially, BinauralDecoder should have default 6 channels (from default_for)
-        if let Some(plugin) = chain.get_plugin(1) {
-            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+        if let Some(plugin) = chain.get_plugin(1)
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
                 assert_eq!(input_channels, 6); // Default value
             }
-        }
 
         // Update binaural decoder channels
         chain.update_channel_dependent_plugins();
 
         // Now it should be correctly set to 6 (output of upmixer)
-        if let Some(plugin) = chain.get_plugin(1) {
-            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+        if let Some(plugin) = chain.get_plugin(1)
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
                 assert_eq!(input_channels, 6);
             }
-        }
 
         // Change upmixer to 7.1 (8 channels)
         if let Some(plugin) = chain.get_plugin_mut(0) {
@@ -4158,22 +4156,20 @@ mod tests {
         chain.update_channel_dependent_plugins();
 
         // Now BinauralDecoder should have 8 input channels
-        if let Some(plugin) = chain.get_plugin(1) {
-            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+        if let Some(plugin) = chain.get_plugin(1)
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
                 assert_eq!(input_channels, 8);
             }
-        }
 
         // Remove the upmixer
         chain.remove_plugin(0);
         chain.update_channel_dependent_plugins();
 
         // Now BinauralDecoder should have 2 input channels (stereo)
-        if let Some(plugin) = chain.get_plugin(0) {
-            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+        if let Some(plugin) = chain.get_plugin(0)
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
                 assert_eq!(input_channels, 2);
             }
-        }
     }
 
     #[test]
@@ -4379,14 +4375,13 @@ mod tests {
     fn chain_with_upmixer(speaker_config: &str) -> PluginChain {
         let mut chain = PluginChain::new();
         chain.add_plugin(&PluginType::Upmixer);
-        if let Some(p) = chain.get_plugin_mut(0) {
-            if let PluginSettings::Upmixer {
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::Upmixer {
                 speaker_config: sc, ..
             } = &mut p.settings
             {
                 *sc = speaker_config.to_string();
             }
-        }
         chain
     }
 
@@ -4464,8 +4459,8 @@ mod tests {
         // Matrix with custom output size
         let mut chain = PluginChain::new();
         chain.add_plugin(&PluginType::Matrix);
-        if let Some(p) = chain.get_plugin_mut(0) {
-            if let PluginSettings::Matrix {
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::Matrix {
                 input_channels,
                 output_channels,
                 matrix,
@@ -4477,7 +4472,6 @@ mod tests {
                 *output_channels = 4;
                 channel_states.resize(4, sotf_plugins::ChannelState::default());
             }
-        }
         assert_eq!(chain.output_channels_for_input(6), 4);
     }
 
@@ -4664,11 +4658,10 @@ mod tests {
         assert_eq!(get_matrix_dims(&chain), Some((6, 6)));
 
         // Change upmixer to 7.1.4
-        if let Some(p) = chain.get_plugin_mut(0) {
-            if let PluginSettings::Upmixer { speaker_config, .. } = &mut p.settings {
+        if let Some(p) = chain.get_plugin_mut(0)
+            && let PluginSettings::Upmixer { speaker_config, .. } = &mut p.settings {
                 *speaker_config = "7.1.4".to_string();
             }
-        }
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((12, 12)));
     }

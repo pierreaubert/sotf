@@ -110,7 +110,7 @@ impl<'a, 'b> RecordingPage<'a, 'b> {
             let in_match = inputs.iter().find(|n| n.contains(candidate));
             let out_match = outputs.iter().find(|n| n.contains(candidate));
 
-            if let (Some(in_name), Some(out_name)) = (in_match, out_match) {
+            if let (Some(in_name), Some(_out_name)) = (in_match, out_match) {
                 // They must be somewhat similar or the same device
                 return Some(in_name.clone());
             }
@@ -253,7 +253,7 @@ impl<'a, 'b> RecordingPage<'a, 'b> {
     }
 
     pub fn start_recording_all(&mut self) {
-        self.driver
+        let _ = self.driver
             .view
             .update(self.driver.cx, |view, _window, cx| {
                 view.start_recording_all_channels(cx);

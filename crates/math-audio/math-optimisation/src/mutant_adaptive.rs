@@ -45,7 +45,6 @@ pub(crate) fn mutant_adaptive<R: Rng + ?Sized>(
 }
 
 /// Tests for adaptive differential evolution strategies
-
 #[cfg(test)]
 mod tests {
     use crate::{AdaptiveConfig, DEConfigBuilder, Mutation, Strategy, differential_evolution};

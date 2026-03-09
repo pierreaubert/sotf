@@ -893,7 +893,6 @@ impl InPlacePlugin for MultibandCompressorPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_mb_comp_basic() {
         let mut p = MultibandCompressorPlugin::new(1);

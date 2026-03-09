@@ -28,7 +28,7 @@ mod tests {
         let mut mean = 0.0;
         for &s in &buffer {
             mean += s;
-            assert!(s >= -1.0 && s <= 1.0);
+            assert!((-1.0..=1.0).contains(&s));
         }
         mean /= buffer.len() as f32;
         // Mean of white noise should be roughly 0
@@ -71,8 +71,8 @@ mod tests {
         let buffer = signal_gen.generate(10);
 
         assert!((buffer[0] - 1.0).abs() < 1e-5);
-        for i in 1..10 {
-            assert_eq!(buffer[i], 0.0);
+        for &sample in &buffer[1..10] {
+            assert_eq!(sample, 0.0);
         }
     }
 
@@ -81,8 +81,8 @@ mod tests {
         let mut signal_gen = SignalGen::new_step();
         let buffer = signal_gen.generate(10);
 
-        for i in 0..10 {
-            assert!((buffer[i] - 1.0).abs() < 1e-5);
+        for &sample in &buffer[..10] {
+            assert!((sample - 1.0).abs() < 1e-5);
         }
     }
 

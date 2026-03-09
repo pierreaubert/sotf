@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_xtc::{XtcPlugin, XtcPluginParams};
 use std::f32::consts::PI;

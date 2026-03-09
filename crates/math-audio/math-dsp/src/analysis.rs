@@ -2502,12 +2502,12 @@ mod tests {
         let mut recorded = vec![0.0; 100];
 
         // Create a pulse pattern that will correlate well
-        for i in 10..20 {
-            reference[i] = (i - 10) as f32 / 10.0;
+        for (j, val) in reference[10..20].iter_mut().enumerate() {
+            *val = j as f32 / 10.0;
         }
         // Same pattern but delayed by 5 samples
-        for i in 15..25 {
-            recorded[i] = (i - 15) as f32 / 10.0;
+        for (j, val) in recorded[15..25].iter_mut().enumerate() {
+            *val = j as f32 / 10.0;
         }
 
         let lag = estimate_lag(&reference, &recorded).unwrap();

@@ -32,6 +32,7 @@ fn generate_sine_stereo(
 }
 
 /// Generate a mono sine wave buffer
+#[allow(dead_code)]
 fn generate_sine_mono(sample_rate: u32, freq: f32, amplitude: f32, num_frames: usize) -> Vec<f32> {
     (0..num_frames)
         .map(|i| {

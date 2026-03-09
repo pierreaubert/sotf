@@ -5,7 +5,7 @@ use sotf_audio_player_gpui::app::state::library::{
 };
 
 #[gpui::test]
-fn test_library_workflow(cx: &mut TestAppContext) {
+fn test_library_workflow(_cx: &mut TestAppContext) {
     // 1. Setup: Create LibraryState directly (unit testing the manager)
     // We use new_for_test() to avoid database loading in tests
     let mut manager = LibraryState::new_for_test();

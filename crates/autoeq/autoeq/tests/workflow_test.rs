@@ -4,7 +4,7 @@ mod tests {
         CrossoverConfig, OptimizerConfig, RoomConfig, SpeakerConfig, SubwooferStrategy,
         SubwooferSystemConfig, SystemConfig, SystemModel,
     };
-    use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
+    use autoeq::MeasurementSource;
     use std::collections::HashMap;
 
     fn make_test_curve(base_level: f64) -> autoeq::Curve {

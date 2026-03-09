@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use sotf_audio::{AudioEngine, EngineConfig, PluginConfig};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

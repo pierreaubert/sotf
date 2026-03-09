@@ -7,7 +7,7 @@
 //! - RMSE < 0.01
 //! - Correlation > 0.99
 
-use hound::{SampleFormat, WavReader, WavSpec};
+use hound::{SampleFormat, WavReader};
 use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_upmixer::UpmixerPlugin;
 use std::fs::File;
@@ -24,13 +24,14 @@ const CORRELATION_THRESHOLD: f32 = 0.99;
 struct AudioMetrics {
     rmse: f32,
     correlation: f32,
+    #[allow(dead_code)]
     max_abs_error: f32,
 }
 
 fn load_wav(path: &Path) -> Vec<f32> {
-    let file = File::open(path).expect(&format!("Failed to open: {}", path.display()));
+    let file = File::open(path).unwrap_or_else(|_| panic!("Failed to open: {}", path.display()));
     let reader = BufReader::new(file);
-    let wav = WavReader::new(reader).expect(&format!("Failed to read WAV: {}", path.display()));
+    let wav = WavReader::new(reader).unwrap_or_else(|_| panic!("Failed to read WAV: {}", path.display()));
 
     let samples: Vec<f32> = if wav.spec().sample_format == SampleFormat::Float {
         wav.into_samples::<f32>().filter_map(|s| s.ok()).collect()
@@ -209,7 +210,7 @@ fn generate_test_signal(name: &str) -> Vec<f32> {
                 let white = rand_f32();
                 b0 = 0.99886 * b0 + white * 0.0555179;
                 b1 = 0.99332 * b1 + white * 0.0750759;
-                b2 = 0.96900 * b2 + white * 0.1538520;
+                b2 = 0.96900 * b2 + white * 0.153_852;
                 b3 = 0.86650 * b3 + white * 0.3104856;
                 b4 = 0.55000 * b4 + white * 0.5329522;
                 b5 = -0.7616 * b5 - white * 0.0168980;
@@ -373,7 +374,7 @@ fn test_upmixer_no_clipping() {
     plugin.initialize(SAMPLE_RATE).unwrap();
 
     // Process loud signal
-    let mut loud_input = vec![0.9_f32; FFT_SIZE * 2];
+    let loud_input = vec![0.9_f32; FFT_SIZE * 2];
     let mut output = vec![0.0_f32; FFT_SIZE * plugin.output_channels()];
 
     let context = ProcessContext {
@@ -382,7 +383,7 @@ fn test_upmixer_no_clipping() {
     };
 
     plugin
-        .process(&mut loud_input, &mut output, &context)
+        .process(&loud_input, &mut output, &context)
         .unwrap();
 
     let max_sample = output.iter().fold(0.0_f32, |m, &x| m.max(x.abs()));
@@ -440,7 +441,7 @@ fn test_upmixer_stereo_imaging_preserved() {
     };
 
     plugin
-        .process(&mut mono_input, &mut output, &context)
+        .process(&mono_input, &mut output, &context)
         .unwrap();
 
     // Front left and front right should have similar energy for mono input

@@ -28,8 +28,7 @@ fn test_value(spec: &sotf_audio_player::param_specs::ParamSpec) -> Option<f64> {
 
 fn roundtrip_test(name: &str, settings: &mut PluginSettings) {
     let specs = settings.param_specs();
-    for idx in 0..specs.len() {
-        let spec = &specs[idx];
+    for (idx, spec) in specs.iter().enumerate() {
         let val = match test_value(spec) {
             Some(v) => v,
             None => continue,

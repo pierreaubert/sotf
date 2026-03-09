@@ -377,7 +377,7 @@ fn test_realistic_browsing_session() {
     state.items_per_page = 5;
 
     // User browses first page
-    assert!(state.filtered_albums().len() > 0);
+    assert!(!state.filtered_albums().is_empty());
 
     // User searches for "Blue"
     state.search_query = "Blue".to_string();

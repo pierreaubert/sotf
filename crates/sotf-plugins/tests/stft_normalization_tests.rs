@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use sotf_plugins::{
     Plugin, ProcessContext, UpmixerPlugin, UpmixerPluginParams, XtcPlugin, XtcPluginParams,
 };

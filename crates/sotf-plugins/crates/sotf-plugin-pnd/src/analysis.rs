@@ -397,6 +397,6 @@ mod tests {
 
         // Very small window should clamp to 1
         let cap_min = compute_drift_history_capacity(1.0, 44100, 512);
-        assert_eq!(cap_min, 1.max(44 / 512).max(1));
+        assert_eq!(cap_min, 1);
     }
 }

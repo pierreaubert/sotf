@@ -28,6 +28,7 @@ mod config;
 mod filters;
 mod reflections;
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests;
 pub mod validation;
 

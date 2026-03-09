@@ -311,10 +311,10 @@ async fn test_removing_exclude_pattern(_cx: &mut TestAppContext) {
 async fn test_exclude_pattern_matching(_cx: &mut TestAppContext) {
     fn matches_exclude_pattern(path: &str, pattern: &str) -> bool {
         // Simple glob matching
-        if pattern.starts_with('*') {
-            path.ends_with(&pattern[1..])
-        } else if pattern.ends_with('*') {
-            path.starts_with(&pattern[..pattern.len() - 1])
+        if let Some(suffix) = pattern.strip_prefix('*') {
+            path.ends_with(suffix)
+        } else if let Some(prefix) = pattern.strip_suffix('*') {
+            path.starts_with(prefix)
         } else {
             path.contains(pattern)
         }

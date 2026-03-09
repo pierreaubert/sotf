@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 //! Engine Types Integration Tests
 //!
 //! Tests for the audio engine types including:

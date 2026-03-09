@@ -129,7 +129,7 @@ fn test_parameter_updates() {
     plugin
         .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(false))
         .unwrap();
-    assert_eq!(plugin.params.enabled, false);
+    assert!(!plugin.params.enabled);
 }
 
 #[test]

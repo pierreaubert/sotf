@@ -105,9 +105,7 @@ mod tests {
         let mut buffer = Vec::new();
 
         // 1. Quiet section
-        for _ in 0..10 {
-            buffer.push(0.0);
-        }
+        buffer.extend(std::iter::repeat_n(0.0, 10));
 
         // 2. Normal signal (Sine wave approximation - smooth changes)
         for i in 0..100 {
@@ -124,9 +122,7 @@ mod tests {
         buffer.push(2.0);
 
         // 4. Return to normal
-        for _ in 0..10 {
-            buffer.push(0.0);
-        }
+        buffer.extend(std::iter::repeat_n(0.0, 10));
 
         let original_click = buffer[click_idx];
         suppressor.process(&mut buffer);

@@ -1927,7 +1927,7 @@ mod tests {
         assert_eq!(config.total_channels, 6);
         assert_eq!(config.speakers.len(), 6);
         assert_eq!(config.speakers[0].label, "FL");
-        assert_eq!(config.speakers[3].is_lfe, true);
+        assert!(config.speakers[3].is_lfe);
     }
 
     #[test]

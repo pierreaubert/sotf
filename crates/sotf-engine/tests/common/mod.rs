@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 //! Common test utilities for audio engine tests
 //!
 //! All tests should use a virtual audio device (BlackHole or SotF HAL driver)

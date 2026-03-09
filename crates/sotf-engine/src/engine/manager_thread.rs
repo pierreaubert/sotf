@@ -1601,7 +1601,7 @@ mod tests {
             let settings = PluginSettings::default_for(&plugin_type);
             let config = settings.to_plugin_config(sample_rate);
 
-            let result = validate_plugin_configs(&[config.clone()]);
+            let result = validate_plugin_configs(std::slice::from_ref(&config));
             assert!(
                 result.is_ok(),
                 "validate_plugin_configs rejected '{}': {:?}",

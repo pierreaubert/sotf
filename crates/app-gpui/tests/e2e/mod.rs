@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! End-to-End Testing Framework for playder-gpui
 //!
 //! Headless E2E tests that simulate real user interactions with the application.
@@ -30,6 +31,7 @@
 
 pub mod driver;
 pub mod pages;
+#[allow(clippy::arc_with_non_send_sync)]
 pub mod runner;
 pub mod scenarios;
 pub mod simulator;

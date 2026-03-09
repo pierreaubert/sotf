@@ -1,5 +1,32 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use sotf_host::{InPlacePlugin, InPlacePluginAdapter, benchmark_plugin_full};
+use sotf_host::{InPlacePlugin, InPlacePluginAdapter};
+
+fn benchmark_plugin_full(
+    c: &mut Criterion,
+    name: &str,
+    mut plugin: Box<dyn sotf_host::Plugin>,
+    sample_rate: f64,
+) {
+    let channels = 2;
+    let frame_size = 512;
+    let input = vec![0.5f32; frame_size * channels];
+    let mut output = vec![0.0f32; frame_size * channels];
+    let context = sotf_host::ProcessContext {
+        num_frames: frame_size,
+        sample_rate: sample_rate as u32,
+    };
+    c.bench_function(name, |b| {
+        b.iter(|| {
+            plugin
+                .process(
+                    criterion::black_box(&input),
+                    criterion::black_box(&mut output),
+                    criterion::black_box(&context),
+                )
+                .unwrap();
+        });
+    });
+}
 use sotf_plugin_compressor::{CompressorPlugin, CompressorPluginParams};
 
 fn benchmark_compressor(c: &mut Criterion) {

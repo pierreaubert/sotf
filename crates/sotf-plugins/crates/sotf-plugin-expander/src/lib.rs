@@ -653,7 +653,6 @@ impl InPlacePlugin for ExpanderPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_expander_basic() {
         let mut p = ExpanderPlugin::new(1);

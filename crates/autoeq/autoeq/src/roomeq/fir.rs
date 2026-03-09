@@ -119,6 +119,7 @@ pub fn generate_fir_correction(
 #[cfg(test)]
 pub use math_audio_iir_fir::{WindowType, generate_window};
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::roomeq::types::FirConfig;

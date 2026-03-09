@@ -322,6 +322,7 @@ pub fn assemble_stiffness_parallel(mesh: &Mesh, degree: PolynomialDegree) -> Sti
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
     use crate::mesh::unit_square_triangles;

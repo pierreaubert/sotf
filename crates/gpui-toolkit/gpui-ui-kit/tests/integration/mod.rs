@@ -8,6 +8,7 @@ mod button_set_test;
 mod button_test;
 mod checkbox_test;
 mod color_picker_test;
+#[allow(clippy::arc_with_non_send_sync)]
 mod input_test;
 mod number_input_test;
 mod select_test;

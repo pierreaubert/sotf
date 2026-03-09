@@ -13,7 +13,7 @@ use std::time::Duration;
 #[test]
 fn stress_rapid_play_stop() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(0.5, 48000, 2);
     let path = temp_file.path().to_path_buf();
@@ -33,7 +33,7 @@ fn stress_rapid_play_stop() {
 #[test]
 fn stress_rapid_pause_resume() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -60,7 +60,7 @@ fn stress_rapid_pause_resume() {
 #[test]
 fn stress_rapid_seek() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(5.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -81,7 +81,7 @@ fn stress_rapid_seek() {
 #[test]
 fn stress_rapid_volume_changes() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -101,7 +101,7 @@ fn stress_rapid_volume_changes() {
 #[test]
 fn stress_rapid_mute_toggle() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -114,7 +114,7 @@ fn stress_rapid_mute_toggle() {
     thread::sleep(Duration::from_millis(50));
 
     let state = engine.get_state();
-    assert!(state.muted == true || state.muted == false);
+    let _ = state.muted; // Any state is valid after rapid toggling
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn stress_concurrent_state_queries() {
                     if let Ok(engine) = engine.lock() {
                         let _ = engine.get_state();
                     }
-                    if let Ok(mut engine) = engine.lock() {
+                    if let Ok(engine) = engine.lock() {
                         engine.get_position().ok();
                     }
                     thread::sleep(Duration::from_millis(1));
@@ -172,11 +172,11 @@ fn stress_concurrent_commands() {
         let path = Arc::clone(&path);
         handles.push(thread::spawn(move || {
             for _ in 0..20 {
-                if let Ok(mut engine) = engine.lock() {
+                if let Ok(engine) = engine.lock() {
                     engine.play((*path).clone()).ok();
                 }
                 thread::sleep(Duration::from_millis(50));
-                if let Ok(mut engine) = engine.lock() {
+                if let Ok(engine) = engine.lock() {
                     engine.stop().ok();
                 }
                 thread::sleep(Duration::from_millis(30));
@@ -189,7 +189,7 @@ fn stress_concurrent_commands() {
         let engine = Arc::clone(&engine);
         handles.push(thread::spawn(move || {
             for i in 0..100 {
-                if let Ok(mut engine) = engine.lock() {
+                if let Ok(engine) = engine.lock() {
                     engine.set_volume(i as f32 / 100.0).ok();
                 }
                 thread::sleep(Duration::from_millis(10));
@@ -202,7 +202,7 @@ fn stress_concurrent_commands() {
         let engine = Arc::clone(&engine);
         handles.push(thread::spawn(move || {
             for i in 0..50 {
-                if let Ok(mut engine) = engine.lock() {
+                if let Ok(engine) = engine.lock() {
                     engine.set_mute(i % 2 == 0).ok();
                 }
                 thread::sleep(Duration::from_millis(20));
@@ -222,7 +222,7 @@ fn stress_concurrent_commands() {
 #[test]
 fn stress_plugin_chain_updates() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(3.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -254,7 +254,7 @@ fn stress_plugin_chain_updates() {
 #[test]
 fn stress_long_playback() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a longer file
     let temp_file = common::create_test_wav(10.0, 48000, 2);
@@ -283,7 +283,7 @@ fn stress_long_playback() {
 #[test]
 fn stress_many_short_files() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Play many short files in sequence
     for _ in 0..20 {
@@ -305,7 +305,7 @@ fn stress_many_short_files() {
 #[test]
 fn stress_seek_to_extremes() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(5.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -327,7 +327,7 @@ fn stress_seek_to_extremes() {
 #[test]
 fn stress_bypass_toggle() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Set up a plugin chain
     let plugins = vec![PluginConfig::new(
@@ -348,13 +348,13 @@ fn stress_bypass_toggle() {
     }
 
     let state = engine.get_state();
-    assert!(state.processing_bypassed == true || state.processing_bypassed == false);
+    let _ = state.processing_bypassed; // Any state is valid after rapid toggling
 }
 
 #[test]
 fn stress_interleaved_operations() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(5.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
@@ -399,7 +399,7 @@ fn stress_rapid_engine_recreation() {
     // Create and destroy engines rapidly
     for _ in 0..10 {
         let config = common::test_engine_config();
-        let mut engine = AudioEngine::new(config).unwrap();
+        let engine = AudioEngine::new(config).unwrap();
 
         let temp_file = common::create_test_wav(0.5, 48000, 2);
         engine.play(temp_file.path().to_path_buf()).ok();
@@ -414,7 +414,7 @@ fn stress_rapid_engine_recreation() {
 #[test]
 fn stress_position_polling() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(3.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -431,7 +431,7 @@ fn stress_position_polling() {
 #[test]
 fn stress_state_polling() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(3.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -443,13 +443,13 @@ fn stress_state_polling() {
 
     // Should still be able to get valid state
     let state = engine.get_state();
-    assert!(state.playback_state != PlaybackState::Paused || true); // Any state is valid
+    let _ = state.playback_state; // Any state is valid
 }
 
 #[test]
 fn stress_empty_plugin_chain_updates() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -478,7 +478,7 @@ fn stress_empty_plugin_chain_updates() {
 #[test]
 fn stress_volume_extremes() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Test extreme volume values
     let extreme_volumes = [0.0, 0.0001, 0.001, 0.01, 0.5, 1.0, 1.5, 2.0, 5.0, 10.0];
@@ -502,14 +502,14 @@ fn stress_different_sample_rates() {
         });
 
         match AudioEngine::new(config) {
-            Ok(mut engine) => {
+            Ok(engine) => {
                 let temp_file = common::create_test_wav(0.5, sr, 2);
                 engine.play(temp_file.path().to_path_buf()).ok();
 
                 thread::sleep(Duration::from_millis(100));
 
                 let state = engine.get_state();
-                assert!(state.playback_state != PlaybackState::Paused || true);
+                let _ = state.playback_state; // Any state is valid
             }
             Err(_) => {
                 // BlackHole might not support this rate
@@ -521,7 +521,7 @@ fn stress_different_sample_rates() {
 #[test]
 fn stress_mixed_sample_rate_files() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let sample_rates = [44100, 48000, 88200];
 

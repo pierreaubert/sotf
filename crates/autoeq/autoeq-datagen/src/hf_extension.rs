@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(noise.len(), 100);
         for &v in &noise {
             assert!(
-                v >= -6.0 && v <= 4.0,
+                (-6.0..=4.0).contains(&v),
                 "Noise value {v:.2} out of expected range"
             );
         }

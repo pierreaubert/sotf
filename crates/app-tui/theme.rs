@@ -199,7 +199,7 @@ mod tests {
     fn test_theme_copy_and_clone() {
         let theme = Theme::dark();
         let copied = theme;
-        let cloned = theme.clone();
+        let cloned = theme;
 
         assert_eq!(theme.bg_primary, copied.bg_primary);
         assert_eq!(theme.bg_primary, cloned.bg_primary);

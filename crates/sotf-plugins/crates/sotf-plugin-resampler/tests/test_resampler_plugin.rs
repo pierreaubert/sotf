@@ -103,7 +103,7 @@ fn test_resampler_surround_sound() {
     // Generate different content per channel
     for i in 0..num_frames {
         let t = i as f32 / 44100.0;
-        input[i * 6 + 0] = (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.2; // FL
+        input[i * 6] = (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.2; // FL
         input[i * 6 + 1] = (2.0 * std::f32::consts::PI * 247.0 * t).sin() * 0.2; // FR
         input[i * 6 + 2] = (2.0 * std::f32::consts::PI * 277.0 * t).sin() * 0.2; // C
         input[i * 6 + 3] = (2.0 * std::f32::consts::PI * 110.0 * t).sin() * 0.15; // LFE
@@ -168,8 +168,7 @@ fn test_resampler_multiple_blocks() {
         println!("Block {}: processed successfully", block);
     }
 
-    // All blocks should process without errors
-    assert!(true);
+    // All blocks processed without errors
 }
 
 #[test]

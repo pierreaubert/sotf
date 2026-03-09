@@ -116,7 +116,7 @@ mod tests {
         // All values should be in reasonable range [-1, 1]
         for (i, &f) in features.iter().enumerate() {
             assert!(
-                f >= -1.5 && f <= 1.5,
+                (-1.5..=1.5).contains(&f),
                 "feature[{i}] = {f} out of expected range"
             );
         }

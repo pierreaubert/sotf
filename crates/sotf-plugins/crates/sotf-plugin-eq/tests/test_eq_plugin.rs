@@ -116,7 +116,7 @@ fn test_eq_plugin_filter_update() {
         6.0,
     )];
 
-    let mut eq = EqPlugin::new(2, initial_filters);
+    let eq = EqPlugin::new(2, initial_filters);
     let mut plugin = InPlacePluginAdapter::new(eq);
     plugin.initialize(48000).unwrap();
 
@@ -189,7 +189,7 @@ fn test_eq_plugin_multi_channel() {
     // Fill each channel with a different frequency
     for i in 0..num_frames {
         let t = i as f32 / 48000.0;
-        input[i * 5 + 0] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.3; // FL
+        input[i * 5] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.3; // FL
         input[i * 5 + 1] = (2.0 * std::f32::consts::PI * 550.0 * t).sin() * 0.3; // FR
         input[i * 5 + 2] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.3; // C
         input[i * 5 + 3] = (2.0 * std::f32::consts::PI * 770.0 * t).sin() * 0.3; // RL

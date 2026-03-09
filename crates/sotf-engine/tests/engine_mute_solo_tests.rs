@@ -24,7 +24,7 @@ fn test_engine_with_mute_solo_plugin() {
         )];
     });
 
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
     let temp_file = common::create_multichannel_test_wav(1.0, 48000, 2);
@@ -58,7 +58,7 @@ fn test_mute_channel_via_parameter_update() {
         )];
     });
 
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
     let temp_file = common::create_multichannel_test_wav(2.0, 48000, 2);
@@ -108,7 +108,7 @@ fn test_solo_channel_via_parameter_update() {
         )];
     });
 
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
     let temp_file = common::create_multichannel_test_wav(2.0, 48000, 2);
@@ -158,7 +158,7 @@ fn test_multiple_mute_solo_updates() {
         )];
     });
 
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
     let temp_file = common::create_multichannel_test_wav(3.0, 48000, 2);
@@ -278,7 +278,7 @@ fn test_multichannel_selective_muting() {
         ];
     });
 
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file (will be upmixed to 5.1)
     let temp_file = common::create_multichannel_test_wav(2.0, 48000, 2);
@@ -336,7 +336,7 @@ fn test_zero_dropout_rapid_updates() {
         )];
     });
 
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file (longer duration for rapid updates)
     let temp_file = common::create_multichannel_test_wav(5.0, 48000, 2);

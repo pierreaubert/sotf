@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(tree_items.len(), 1);
         assert_eq!(tree_items[0].0, PathBuf::from("/test/dir0"));
         assert_eq!(tree_items[0].1, 0); // level
-        assert_eq!(tree_items[0].2, false); // not expanded
+        assert!(!tree_items[0].2); // not expanded
 
         // Expand
         app.toggle_directory_expansion();
@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(tree_items.len(), 3);
         assert_eq!(tree_items[0].0, PathBuf::from("/test/dir0"));
         assert_eq!(tree_items[0].1, 0); // level
-        assert_eq!(tree_items[0].2, true); // expanded
+        assert!(tree_items[0].2); // expanded
 
         assert_eq!(tree_items[1].0, PathBuf::from("/test/dir0/subdir1"));
         assert_eq!(tree_items[1].1, 1); // level
@@ -352,9 +352,9 @@ mod tests {
             orig_subharm_freq,
             orig_subharm_attack,
             orig_subharm_release,
-            orig_enable_hr_direct,
-            orig_hr_sharpen,
-            orig_safety_cap_db,
+            _orig_enable_hr_direct,
+            _orig_hr_sharpen,
+            _orig_safety_cap_db,
         ) = match &plugin.settings {
             PluginSettings::Upmixer {
                 speaker_config,

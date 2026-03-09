@@ -30,41 +30,46 @@ pub struct PluginDragInfo {
 
 impl Render for PluginDragInfo {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // Drag preview - a smaller version of the plugin module
+        // Drag preview — matches the Ozone-style card
         div()
-            .w(rems(4.375))
-            .h(rems(3.75))
+            .w(rems(7.0))
+            .h(rems(4.0))
             .flex()
-            .flex_col()
-            .rounded_lg()
+            .flex_row()
+            .rounded_md()
+            .border_1()
             .border_color(self.color)
             .bg(Theme::opacity_20pct(self.surface))
             .shadow_lg()
-            .opacity(0.9)
-            // Top bar with color
-            .child(div().h(rems(0.1875)).w_full().bg(self.color).rounded_t_md())
-            // Icon
+            .opacity(0.85)
+            // Left color bar
+            .child(div().w(px(3.0)).h_full().bg(self.color).rounded_l_md())
+            // Content
             .child(
                 div()
                     .flex_1()
                     .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_xl()
-                    .text_color(self.color)
-                    .child(self.icon),
-            )
-            // Name
-            .child(
-                div()
-                    .px_2()
-                    .pb_1()
-                    .text_xs()
-                    .text_color(self.text_on_accent)
-                    .font_weight(FontWeight::MEDIUM)
+                    .flex_col()
                     .overflow_hidden()
-                    .text_ellipsis()
-                    .child(self.name.clone()),
+                    .child(
+                        div()
+                            .px_2()
+                            .pt_1()
+                            .text_xs()
+                            .text_color(self.color)
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(self.name.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_xl()
+                            .text_color(self.color)
+                            .child(self.icon),
+                    ),
             )
     }
 }
@@ -423,458 +428,89 @@ impl PlayerView {
                                     .child(format!("{} plugins", plugin_count)),
                             ),
                     )
-                    // Add plugin buttons on the right
-                    .child(self.render_add_plugin_buttons(cx))
+                    // Spacer to balance home button
+                    .child(div().w(rems(2.5)))
             })
-            // Plugin modules strip
+            // Plugin modules strip — Ozone-style rack
             .child(
                 div()
                     .id("plugin-rack")
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap_1()
                     .px_4()
                     .py_3()
                     .overflow_x_scroll()
-                    .min_h(rems(8.75))
-                    // Input Meter removed from rack strip (moved to detail panel)
-                    // Plugin modules - inline creation with drag-and-drop
+                    .min_h(rems(7.0))
+                    // Plugin modules - Ozone-style cards with left button column
                     .children(modules_info.into_iter().map(
-                        |(idx, color, icon, name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
+                        |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
                                 source_index: idx,
-                                name: name.clone(),
+                                name: short_name(&plugin_type, is_input_mon, is_output_mon).to_string(),
                                 color,
                                 icon,
                                 surface: theme_c.surface,
                                 text_on_accent: theme_c.text_on_accent,
                             };
-                            // Drop zone colors
                             let drop_highlight = theme_c.drag_over_highlight;
                             let drop_border = theme_c.drag_over_border;
-                            let line_color = if enabled {
-                                theme_c.accent
-                            } else {
-                                theme_c.text_muted
-                            };
 
+                            // Module card with drop target
                             div()
+                                .id(("plugin-module", idx))
+                                .group("plugin-module")
+                                .w(rems(8.0))
+                                .h(rems(5.5))
                                 .flex()
-                                .items_center()
-                                .gap_1()
-                                // Connection line before - also a drop zone for inserting between plugins
-                                .child(
-                                    div()
-                                        .id(("plugin-gap", idx))
-                                        .w(rems(1.25))
-                                        .h(rems(5.625)) // Full height for easier targeting
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .child(
-                                            div()
-                                                .w_full()
-                                                .h(px(2.0))
-                                                .bg(line_color),
-                                        )
-                                        // Visual feedback when dragging over gap
-                                        .drag_over::<PluginDragInfo>({
-                                            move |style, _, _, _| {
-                                                style
-                                                    .bg(drop_highlight)
-                                                    .border_2()
-                                                    .border_color(drop_border)
-                                                    .rounded_md()
-                                            }
-                                        })
-                                        // Drop on gap inserts at this position
-                                        .on_drop(cx.listener(
-                                            move |view, info: &PluginDragInfo, _window, cx| {
-                                                let source = info.source_index;
-                                                // Dropping on gap before idx means insert at idx
-                                                let target = idx;
-                                                log::info!(
-                                                    "[GPUI] Plugin drop on gap: source={} target={}",
-                                                    source,
-                                                    target
-                                                );
-                                                // Calculate the actual insert position
-                                                // If dragging forward (source < target), we insert before target
-                                                // If dragging backward (source > target), we insert at target
-                                                let insert_pos = if source < target {
-                                                    target - 1
-                                                } else {
-                                                    target
-                                                };
-                                                if source != insert_pos {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        let chain_len =
-                                                            state.app.plugin_state.chain.plugins().len();
-
-                                                        // Check if source plugin is a LoudnessMonitor
-                                                        let source_is_monitor = state
-                                                            .app
-                                                            .plugin_state
-                                                            .chain
-                                                            .get_plugin(source)
-                                                            .map(|p| {
-                                                                matches!(
-                                                                    p.plugin_type(),
-                                                                    PluginType::LoudnessMonitor
-                                                                )
-                                                            })
-                                                            .unwrap_or(false);
-
-                                                        if source_is_monitor
-                                                            && insert_pos != 0
-                                                            && insert_pos != chain_len - 1
-                                                        {
-                                                            return;
-                                                        }
-
-                                                        log::info!(
-                                                            "[GPUI] Moving plugin {} -> {} (gap insert)",
-                                                            source,
-                                                            insert_pos
-                                                        );
-                                                        state
-                                                            .app
-                                                            .plugin_state
-                                                            .chain
-                                                            .move_plugin(source, insert_pos);
-                                                        state.app.plugin_state.selected_plugin_index =
-                                                            insert_pos;
-                                                        state
-                                                            .app
-                                                            .plugin_state
-                                                            .chain
-                                                            .update_channel_dependent_plugins();
-                                                        state.app.plugin_state.pending_plugin_update =
-                                                            Some(PluginUpdateType::Structural);
-                                                        state.app.update_level_meter_groups();
-                                                    });
-                                                    cx.notify();
-                                                }
-                                            },
-                                        )),
-                                )
-                                // Plugin module box - draggable and droppable
-                                .child(
-                                    div()
-                                        .id(("plugin-module", idx))
-                                        .group("plugin-module")
-                                        .w(rems(5.0))
-                                        .h(rems(5.625))
-                                        .flex()
-                                        .flex_col()
-                                        .rounded_lg()
-                                        // Permanent plugins have dashed border
-                                        .when(is_permanent, |d| d.border_1())
-                                        .when(!is_permanent, |d| d.border_2())
-                                        .border_color(if is_selected {
-                                            color
-                                        } else if is_permanent {
-                                            theme_c.text_muted
-                                        } else {
-                                            theme_c.border
-                                        })
-                                        .bg(if is_permanent {
-                                            theme_c.background_secondary
-                                        } else {
-                                            theme_c.surface
-                                        })
-                                        .when(!enabled, |d| d.opacity(0.6))
-                                        .shadow_md()
-                                        // Permanent plugins can't be dragged
-                                        .when(!is_permanent, |d| d.cursor_grab())
-                                        .hover(|s| s.border_color(color))
-                                        // Drag-over visual feedback - highlight when dragging over
-                                        .drag_over::<PluginDragInfo>({
-                                            let highlight = theme_c.drag_over_highlight;
-                                            let border = theme_c.drag_over_border;
-                                            move |style, _, _, _| {
-                                                style.bg(highlight).border_color(border)
-                                            }
-                                        })
-                                        // Handle drop - reorder plugins
-                                        .on_drop(cx.listener(
-                                            move |view, info: &PluginDragInfo, _window, cx| {
-                                                let source = info.source_index;
-                                                let target = idx;
-                                                log::info!(
-                                                    "[GPUI] Plugin drop: source={} target={}",
-                                                    source,
-                                                    target
-                                                );
-                                                if source != target {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        let chain_len =
-                                                            state.app.plugin_state.chain.plugins().len();
-
-                                                        // Check if source plugin is a LoudnessMonitor
-                                                        let source_is_monitor = state
-                                                            .app
-                                                            .plugin_state.chain
-                                                            .get_plugin(source)
-                                                            .map(|p| {
-                                                                matches!(
-                                                                    p.plugin_type(),
-                                                                    PluginType::LoudnessMonitor
-                                                                )
-                                                            })
-                                                            .unwrap_or(false);
-
-                                                        // Monitors can only be at first or last position
-                                                        // Don't allow moving monitor to middle positions
-                                                        if source_is_monitor
-                                                            && target != 0
-                                                            && target != chain_len - 1
-                                                        {
-                                                            log::info!(
-                                                                "[GPUI] Rejecting monitor move to middle position"
-                                                            );
-                                                            return; // Reject move
-                                                        }
-
-                                                        log::info!(
-                                                            "[GPUI] Moving plugin {} -> {}",
-                                                            source,
-                                                            target
-                                                        );
-                                                        state
-                                                            .app
-                                                            .plugin_state
-                                                            .chain
-                                                            .move_plugin(source, target);
-                                                        state.app.plugin_state.selected_plugin_index = target;
-                                                        // Update channel-dependent plugins after move
-                                                        state
-                                                            .app
-                                                            .plugin_state
-                                                            .chain
-                                                            .update_channel_dependent_plugins();
-                                                        state.app.plugin_state.pending_plugin_update =
-                                                            Some(PluginUpdateType::Structural);
-                                                        state.app.update_level_meter_groups(); // Reconfigure metering
-                                                    });
-                                                    cx.notify();
-                                                }
-                                            },
-                                        ))
-                                        // Start drag - only for non-permanent plugins
-                                        .when(!is_permanent, |d| {
-                                            d.on_drag(drag_info, |info, _position, _window, cx| {
-                                                cx.new(|_| info.clone())
-                                            })
-                                        })
-                                        // Click to select
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(
-                                                move |view, _: &MouseUpEvent, _window, cx| {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        state.app.plugin_state.selected_plugin_index = idx
-                                                    });
-                                                    cx.notify();
-                                                },
-                                            ),
-                                        )
-                                        // Top bar with color (thinner for permanent)
-                                        .child(
-                                            div()
-                                                .h(if is_permanent { px(2.0) } else { px(4.0) })
-                                                .w_full()
-                                                .bg(color)
-                                                .rounded_t_md(),
-                                        )
-                                        // Remove button (X) - only for non-permanent plugins, visible on group hover
-                                        .when(!is_permanent, |d| {
-                                            d.child(
-                                                div()
-                                                    .absolute()
-                                                    .top(rems(0.5))
-                                                    .right(rems(0.25))
-                                                    .w(rems(0.75))
-                                                    .h(rems(0.75))
-                                                    .rounded_full()
-                                                    .bg(theme_c.error)
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .text_xs()
-                                                    .text_color(theme_c.text_on_accent)
-                                                    .cursor_pointer()
-                                                    .opacity(0.0)
-                                                    .group_hover("plugin-module", |s| s.opacity(1.0))
-                                                    .hover(|s| s.bg(theme_c.error))
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(
-                                                            move |view, _e: &MouseUpEvent, _, cx| {
-                                                                cx.stop_propagation();
-                                                                view.state.update(cx, |state, _cx| {
-                                                                    state.app.remove_plugin(idx);
-                                                                    state
-                                                                        .app
-                                                                        .update_level_meter_groups();
-                                                                });
-                                                                cx.notify();
-                                                            },
-                                                        ),
-                                                    )
-                                                    .child("×"),
-                                            )
-                                        })
-                                        // Lock icon for permanent plugins (top right)
-                                        .when(is_permanent, |d| {
-                                            d.child(
-                                                div()
-                                                    .absolute()
-                                                    .top(rems(0.5))
-                                                    .right(rems(0.25))
-                                                    .text_xs()
-                                                    .text_color(theme_c.text_muted)
-                                                    .child("🔒"),
-                                            )
-                                        })
-                                        // Power indicator (top left)
-                                        .child(
-                                            div()
-                                                .absolute()
-                                                .top(rems(0.5))
-                                                .left(rems(0.25))
-                                                .w(rems(0.75))
-                                                .h(rems(0.75))
-                                                .rounded_full()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .cursor_pointer()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(
-                                                        move |view, _e: &MouseUpEvent, _, cx| {
-                                                            cx.stop_propagation();
-                                                            view.state.update(cx, |state, _cx| {
-                                                                state.app.toggle_plugin(idx);
-                                                                state
-                                                                    .app
-                                                                    .update_level_meter_groups(); // Reconfigure metering
-                                                            });
-                                                            cx.notify();
-                                                        },
-                                                    ),
-                                                )
-                                                .bg(if enabled {
-                                                    theme_c.success
-                                                } else {
-                                                    theme_c.error
-                                                })
-                                                .text_size(rems(0.5))
-                                                .text_color(theme_c.text_on_accent)
-                                                .child(if enabled { "●" } else { "○" }),
-                                        )
-                                        // Icon
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .text_xl()
-                                                .text_color(color)
-                                                .child(icon),
-                                        )
-                                        // Name
-                                        .child(
-                                            div()
-                                                .px_2()
-                                                .pb_2()
-                                                .text_xs()
-                                                .text_color(theme_c.text_primary)
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .text_align(TextAlign::Center)
-                                                .overflow_hidden()
-                                                .text_ellipsis()
-                                                .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
-                                        ),
-                                )
-                        },
-                    ))
-                    // Trailing drop zone after all plugins (for dropping at the end)
-                    .when(!is_empty, |d| {
-                        let drop_highlight = theme.drag_over_highlight;
-                        let drop_border = theme.drag_over_border;
-                        let line_color = theme.accent;
-                        let end_idx = plugin_count;
-
-                        d.child(
-                            div()
-                                .id("plugin-gap-end")
-                                .w(rems(1.25))
-                                .h(rems(5.625))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(div().w_full().h(px(2.0)).bg(line_color))
+                                .flex_row()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(if is_selected {
+                                    color
+                                } else {
+                                    theme_c.border
+                                })
+                                .bg(if is_selected {
+                                    Theme::opacity_20pct(color)
+                                } else if is_permanent {
+                                    theme_c.background_secondary
+                                } else {
+                                    theme_c.surface
+                                })
+                                .when(!enabled, |d| d.opacity(0.5))
+                                .shadow_sm()
+                                .when(!is_permanent, |d| d.cursor_grab())
+                                .hover(|s| s.border_color(color))
+                                .overflow_hidden()
+                                // Drag-over feedback
                                 .drag_over::<PluginDragInfo>({
                                     move |style, _, _, _| {
-                                        style
-                                            .bg(drop_highlight)
-                                            .border_2()
-                                            .border_color(drop_border)
-                                            .rounded_md()
+                                        style.bg(drop_highlight).border_color(drop_border)
                                     }
                                 })
+                                // Drop to reorder
                                 .on_drop(cx.listener(
                                     move |view, info: &PluginDragInfo, _window, cx| {
                                         let source = info.source_index;
-                                        log::info!(
-                                            "[GPUI] Plugin drop on end gap: source={} end_idx={}",
-                                            source,
-                                            end_idx
-                                        );
-                                        // Move to last position
-                                        let target = end_idx - 1;
+                                        let target = idx;
                                         if source != target {
                                             view.state.update(cx, |state, _cx| {
                                                 let chain_len =
                                                     state.app.plugin_state.chain.plugins().len();
-
                                                 let source_is_monitor = state
                                                     .app
-                                                    .plugin_state
-                                                    .chain
+                                                    .plugin_state.chain
                                                     .get_plugin(source)
-                                                    .map(|p| {
-                                                        matches!(
-                                                            p.plugin_type(),
-                                                            PluginType::LoudnessMonitor
-                                                        )
-                                                    })
+                                                    .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
                                                     .unwrap_or(false);
-
-                                                if source_is_monitor && target != chain_len - 1 {
+                                                if source_is_monitor && target != 0 && target != chain_len - 1 {
                                                     return;
                                                 }
-
-                                                log::info!(
-                                                    "[GPUI] Moving plugin {} -> {} (end)",
-                                                    source,
-                                                    target
-                                                );
-                                                state
-                                                    .app
-                                                    .plugin_state
-                                                    .chain
-                                                    .move_plugin(source, target);
+                                                state.app.plugin_state.chain.move_plugin(source, target);
                                                 state.app.plugin_state.selected_plugin_index = target;
-                                                state
-                                                    .app
-                                                    .plugin_state
-                                                    .chain
-                                                    .update_channel_dependent_plugins();
+                                                state.app.plugin_state.chain.update_channel_dependent_plugins();
                                                 state.app.plugin_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
                                                 state.app.update_level_meter_groups();
@@ -882,8 +518,253 @@ impl PlayerView {
                                             cx.notify();
                                         }
                                     },
-                                )),
-                        )
+                                ))
+                                // Start drag
+                                .when(!is_permanent, |d| {
+                                    d.on_drag(drag_info, |info, _position, _window, cx| {
+                                        cx.new(|_| info.clone())
+                                    })
+                                })
+                                // Click to select
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(
+                                        move |view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.plugin_state.selected_plugin_index = idx
+                                            });
+                                            cx.notify();
+                                        },
+                                    ),
+                                )
+                                // Left button column: power, solo, close
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_between()
+                                        .py_1()
+                                        .px(px(4.0))
+                                        .gap_1()
+                                        .h_full()
+                                        .border_r_1()
+                                        .border_color(theme_c.border)
+                                        // Power button (colored circle)
+                                        .child(
+                                            div()
+                                                .id(("plugin-power", idx))
+                                                .w(rems(1.125))
+                                                .h(rems(1.125))
+                                                .rounded_full()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .cursor_pointer()
+                                                .bg(if enabled { color } else { theme_c.text_muted })
+                                                .when(!enabled, |d| d.opacity(0.4))
+                                                .hover(|s| s.opacity(0.8))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state.app.toggle_plugin(idx);
+                                                                state.app.update_level_meter_groups();
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
+                                                .text_size(rems(0.625))
+                                                .text_color(theme_c.text_on_accent)
+                                                .font_weight(FontWeight::BOLD)
+                                                .child("I"),
+                                        )
+                                        // Solo button (S)
+                                        .child(
+                                            div()
+                                                .id(("plugin-solo", idx))
+                                                .w(rems(1.125))
+                                                .h(rems(1.125))
+                                                .rounded_full()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .cursor_pointer()
+                                                .border_1()
+                                                .border_color(theme_c.text_muted)
+                                                .hover(|s| s.border_color(theme_c.warning))
+                                                .text_size(rems(0.5625))
+                                                .text_color(theme_c.text_muted)
+                                                .font_weight(FontWeight::BOLD)
+                                                .child("S"),
+                                        )
+                                        // Close button (X) — only for non-permanent
+                                        .when(!is_permanent, |d| {
+                                            d.child(
+                                                div()
+                                                    .id(("plugin-close", idx))
+                                                    .w(rems(1.125))
+                                                    .h(rems(1.125))
+                                                    .rounded_full()
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .cursor_pointer()
+                                                    .opacity(0.0)
+                                                    .group_hover("plugin-module", |s| s.opacity(1.0))
+                                                    .hover(|s| s.bg(theme_c.error))
+                                                    .text_size(rems(0.625))
+                                                    .text_color(theme_c.text_muted)
+                                                    .hover(|s| s.text_color(theme_c.text_on_accent))
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(
+                                                            move |view, _e: &MouseUpEvent, _, cx| {
+                                                                cx.stop_propagation();
+                                                                view.state.update(cx, |state, _cx| {
+                                                                    state.app.remove_plugin(idx);
+                                                                    state.app.update_level_meter_groups();
+                                                                });
+                                                                cx.notify();
+                                                            },
+                                                        ),
+                                                    )
+                                                    .child("X"),
+                                            )
+                                        })
+                                        // Drag handle (dots) for permanent plugins (instead of close)
+                                        .when(is_permanent, |d| {
+                                            d.child(
+                                                div()
+                                                    .w(rems(1.125))
+                                                    .h(rems(1.125))
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .text_size(rems(0.5))
+                                                    .text_color(theme_c.text_muted)
+                                                    .child("::"),
+                                            )
+                                        }),
+                                )
+                                // Right content area: name on top, icon preview center, drag handle bottom
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .flex()
+                                        .flex_col()
+                                        .h_full()
+                                        .overflow_hidden()
+                                        // Plugin name row (top)
+                                        .child(
+                                            div()
+                                                .px_2()
+                                                .pt_1()
+                                                .text_xs()
+                                                .text_color(if is_selected { color } else { theme_c.text_primary })
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .overflow_hidden()
+                                                .text_ellipsis()
+                                                .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
+                                        )
+                                        // Icon / preview area (center)
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_2xl()
+                                                .text_color(color)
+                                                .child(icon),
+                                        )
+                                        // Drag handle (bottom-right)
+                                        .when(!is_permanent, |d| {
+                                            d.child(
+                                                div()
+                                                    .flex()
+                                                    .justify_end()
+                                                    .px_1()
+                                                    .pb(px(2.0))
+                                                    .text_size(rems(0.5))
+                                                    .text_color(theme_c.text_muted)
+                                                    .child(":::"),
+                                            )
+                                        }),
+                                )
+                        },
+                    ))
+                    // "+" Add plugin slot (dashed border, Ozone-style)
+                    .child({
+                        let theme_add = theme.clone();
+                        let drop_highlight = theme.drag_over_highlight;
+                        let drop_border = theme.drag_over_border;
+                        let end_idx = plugin_count;
+
+                        div()
+                            .id("plugin-add-slot")
+                            .w(rems(4.0))
+                            .h(rems(5.5))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded_md()
+                            .border_2()
+                            .border_color(theme_add.text_muted)
+                            .cursor_pointer()
+                            .hover(|s| s.border_color(theme_add.accent))
+                            .text_2xl()
+                            .text_color(theme_add.text_muted)
+                            .hover(|s| s.text_color(theme_add.accent))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.show_add_plugin_menu = !state.app.show_add_plugin_menu;
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            // Drop zone at the end
+                            .drag_over::<PluginDragInfo>({
+                                move |style, _, _, _| {
+                                    style.bg(drop_highlight).border_color(drop_border)
+                                }
+                            })
+                            .on_drop(cx.listener(
+                                move |view, info: &PluginDragInfo, _window, cx| {
+                                    let source = info.source_index;
+                                    let target = if end_idx > 0 { end_idx - 1 } else { 0 };
+                                    if source != target {
+                                        view.state.update(cx, |state, _cx| {
+                                            let chain_len =
+                                                state.app.plugin_state.chain.plugins().len();
+                                            let source_is_monitor = state
+                                                .app
+                                                .plugin_state
+                                                .chain
+                                                .get_plugin(source)
+                                                .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
+                                                .unwrap_or(false);
+                                            if source_is_monitor && target != chain_len - 1 {
+                                                return;
+                                            }
+                                            state.app.plugin_state.chain.move_plugin(source, target);
+                                            state.app.plugin_state.selected_plugin_index = target;
+                                            state.app.plugin_state.chain.update_channel_dependent_plugins();
+                                            state.app.plugin_state.pending_plugin_update =
+                                                Some(PluginUpdateType::Structural);
+                                            state.app.update_level_meter_groups();
+                                        });
+                                        cx.notify();
+                                    }
+                                },
+                            ))
+                            .child("+")
                     })
                     // Empty state
                     .when(is_empty, |d| {
@@ -894,10 +775,22 @@ impl PlayerView {
                                 .items_center()
                                 .justify_center()
                                 .text_color(theme.text_muted)
-                                .child("Click + Add Plugin to insert effects"),
+                                .child("Click + to add plugins"),
                         )
                     }),
             )
+            // Add plugin menu (shown when "+" is clicked)
+            .when(self.state.read(cx).app.show_add_plugin_menu, |d| {
+                d.child(
+                    div()
+                        .px_4()
+                        .py_2()
+                        .bg(theme.surface)
+                        .border_t_1()
+                        .border_color(theme.border)
+                        .child(self.render_add_plugin_buttons(cx)),
+                )
+            })
     }
 
     /// Render a side level meter group for the detail panel
@@ -1192,6 +1085,7 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.add_plugin(&pt);
                                     state.app.update_level_meter_groups();
+                                    state.app.show_add_plugin_menu = false;
                                 });
                                 cx.notify();
                             }),
@@ -1244,6 +1138,7 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.add_plugin(&pt);
                                     state.app.update_level_meter_groups();
+                                    state.app.show_add_plugin_menu = false;
                                 });
                                 cx.notify();
                             }),

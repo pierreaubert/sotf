@@ -120,7 +120,6 @@ impl Plugin for BandMergePlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_band_merge_basic() {
         let mut p = BandMergePlugin::new(2, 2).unwrap();

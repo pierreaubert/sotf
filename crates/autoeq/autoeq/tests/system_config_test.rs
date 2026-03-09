@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests {
     use autoeq::roomeq::{
-        CrossoverConfig, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig,
+        CrossoverConfig, OptimizerConfig, RoomConfig, SpeakerConfig,
         SubwooferStrategy, SystemConfig, SystemModel, optimize_room,
     };
-    use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
+    use autoeq::MeasurementSource;
     use std::collections::HashMap;
-    use std::path::PathBuf;
+    
 
     // Helper to create a dummy curve in memory
     fn make_test_curve(base_level: f64) -> autoeq::Curve {

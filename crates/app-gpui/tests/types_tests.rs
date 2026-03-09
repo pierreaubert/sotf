@@ -39,7 +39,7 @@ fn test_screen_variants() {
 fn test_screen_copy_clone() {
     let screen = Screen::Library;
     let copied = screen;
-    let cloned = screen.clone();
+    let cloned = screen;
     assert_eq!(screen, copied);
     assert_eq!(screen, cloned);
 }

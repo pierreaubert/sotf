@@ -3,7 +3,7 @@
 // ============================================================================
 
 use sotf_host::{
-    InPlacePlugin, InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext,
+    InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext,
 };
 use sotf_plugin_loudness_compensation::LoudnessCompensationPlugin;
 

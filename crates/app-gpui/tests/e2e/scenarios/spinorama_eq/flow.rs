@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
 use crate::runner::{E2ERunner, TestScenario};
-use gpui::{TestAppContext, VisualTestContext, WindowHandle, prelude::*};
+use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
@@ -65,6 +65,6 @@ impl TestScenario for SpinoramaFlowScenario {
 #[gpui::test]
 async fn spinorama_flow(cx: &mut TestAppContext) {
     let scenario = SpinoramaFlowScenario;
-    let mut runner = E2ERunner::new(scenario);
+    let runner = E2ERunner::new(scenario);
     runner.run(cx).await.unwrap();
 }

@@ -803,11 +803,11 @@ fn test_volume_control_multichannel() {
         .collect();
 
     for frame in 0..num_frames {
-        for ch in 0..num_channels {
+        for (ch, &gain) in linear_gains.iter().enumerate().take(num_channels) {
             let idx = frame * num_channels + ch;
             let t = frame as f32 / sample_rate as f32;
             let original = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amplitude;
-            let expected = original * linear_gains[ch];
+            let expected = original * gain;
 
             assert!(
                 (buffer[idx] - expected).abs() < 0.01,

@@ -457,6 +457,7 @@ fn is_valid_speaker_name(name: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::roomeq::types::*;

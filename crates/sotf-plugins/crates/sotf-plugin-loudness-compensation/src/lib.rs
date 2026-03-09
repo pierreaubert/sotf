@@ -381,7 +381,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
+    
     #[test]
     fn test_loudness_basic() {
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);

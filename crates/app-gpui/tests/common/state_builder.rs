@@ -88,24 +88,23 @@ impl TestLibraryState {
             });
         }
 
-        if let Some((decade_start, decade_end)) = self.selected_decade {
-            if self.selected_year.is_none() {
+        if let Some((decade_start, decade_end)) = self.selected_decade
+            && self.selected_year.is_none() {
                 result.retain(|album| {
                     album
                         .year
                         .is_some_and(|y| y >= decade_start && y <= decade_end)
                 });
             }
-        }
 
         if let Some(year) = self.selected_year {
             result.retain(|album| album.year == Some(year));
         }
 
-        if let Some(letter) = self.selected_artist_letter {
-            if self.selected_artist.is_none() {
+        if let Some(letter) = self.selected_artist_letter
+            && self.selected_artist.is_none() {
                 result.retain(|album| {
-                    album.artist.chars().next().map_or(false, |c| {
+                    album.artist.chars().next().is_some_and(|c| {
                         let first = c.to_ascii_uppercase();
                         if letter == '#' {
                             !first.is_ascii_alphabetic()
@@ -115,7 +114,6 @@ impl TestLibraryState {
                     })
                 });
             }
-        }
 
         if let Some(ref artist) = self.selected_artist {
             result.retain(|album| album.artist.eq_ignore_ascii_case(artist));
@@ -131,7 +129,7 @@ impl TestLibraryState {
         if self.items_per_page == 0 || filtered_count == 0 {
             return 1;
         }
-        (filtered_count + self.items_per_page - 1) / self.items_per_page
+        filtered_count.div_ceil(self.items_per_page)
     }
 
     /// Recalculate pagination bounds

@@ -210,7 +210,8 @@ fn test_mono_mix_down_laws() {
     let num_frames = 64;
 
     // -3dB Law Matrix: [0.707, 0.707]
-    let mut plugin_3db = MatrixPlugin::with_matrix(2, 1, vec![0.70710678, 0.70710678]).unwrap();
+    let frac_1_sqrt2 = std::f32::consts::FRAC_1_SQRT_2;
+    let mut plugin_3db = MatrixPlugin::with_matrix(2, 1, vec![frac_1_sqrt2, frac_1_sqrt2]).unwrap();
 
     // -6dB Law Matrix: [0.5, 0.5]
     let mut plugin_6db = MatrixPlugin::with_matrix(2, 1, vec![0.5, 0.5]).unwrap();
@@ -233,7 +234,7 @@ fn test_mono_mix_down_laws() {
         .unwrap();
 
     // -3dB sum of 1+1 = 1.414 (+3dB)
-    assert!((output_3db[0] - 1.41421356_f32).abs() < 1e-5);
+    assert!((output_3db[0] - std::f32::consts::SQRT_2).abs() < 1e-5);
     // -6dB sum of 1+1 = 1.0 (0dB)
     assert!((output_6db[0] - 1.0_f32).abs() < 1e-5);
 
@@ -252,7 +253,7 @@ fn test_mono_mix_down_laws() {
         .unwrap();
 
     // -3dB: 0.707 output
-    assert!((output_3db[0] - 0.70710678_f32).abs() < 1e-5);
+    assert!((output_3db[0] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5);
     // -6dB: 0.5 output
     assert!((output_6db[0] - 0.5_f32).abs() < 1e-5);
 }

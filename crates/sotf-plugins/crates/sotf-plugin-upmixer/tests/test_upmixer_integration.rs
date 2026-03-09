@@ -36,7 +36,7 @@ fn test_upmixer_stereo_to_5ch() {
     assert!(total_energy > 0.0, "Should have non-zero output");
 
     // Check individual channels
-    let mut channel_energies = vec![0.0; 6];
+    let mut channel_energies = [0.0; 6];
     for i in 0..2048 {
         for ch in 0..6 {
             channel_energies[ch] += output_6ch[i * 6 + ch].powi(2);

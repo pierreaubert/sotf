@@ -524,7 +524,6 @@ impl InPlacePlugin for GatePlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_gate_basic() {
         let mut p = GatePlugin::new(1, -20.0, 100.0, 1.0, 10.0, 50.0);

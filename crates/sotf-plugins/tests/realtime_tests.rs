@@ -21,7 +21,7 @@ fn percentile(times: &[Duration], p: f64) -> Duration {
     let mut sorted: Vec<_> = times.iter().collect();
     sorted.sort();
     let idx = (p / 100.0 * sorted.len() as f64) as usize;
-    sorted[idx.min(sorted.len() - 1)].clone()
+    *sorted[idx.min(sorted.len() - 1)]
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_no_allocations_in_processing_loop() {
         gain.process_in_place(&mut output, &context).unwrap();
     }
 
-    assert!(true);
+
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn test_memory_usage_stability() {
         gain.process_in_place(&mut output, &context).unwrap();
     }
 
-    assert!(true);
+
 }
 
 #[test]

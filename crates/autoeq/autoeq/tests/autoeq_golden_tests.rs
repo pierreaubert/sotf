@@ -20,7 +20,7 @@ fn test_apo_output_format_golden() {
     let output = temp_dir.child("output");
 
     let status = Command::new(get_autoeq_binary())
-        .args(&[
+        .args([
             "--curve",
             csv.path().to_str().unwrap(),
             "--output",
@@ -70,7 +70,7 @@ fn test_peq_parameters_reasonable() {
     let output = temp_dir.child("output");
 
     let _ = Command::new(get_autoeq_binary())
-        .args(&[
+        .args([
             "--curve",
             csv.path().to_str().unwrap(),
             "--output",
@@ -115,7 +115,7 @@ fn test_peq_parameters_reasonable() {
         let freq_str = parts[fc_idx.unwrap() + 1];
         let freq: f64 = freq_str.parse().expect("Failed to parse frequency");
         assert!(
-            freq >= 20.0 && freq <= 20000.0,
+            (20.0..=20000.0).contains(&freq),
             "Frequency out of range: {}",
             freq
         );
@@ -123,11 +123,11 @@ fn test_peq_parameters_reasonable() {
         // Check Gain
         let gain_str = parts[gain_idx.unwrap() + 1];
         let gain: f64 = gain_str.parse().expect("Failed to parse gain");
-        assert!(gain >= -20.0 && gain <= 20.0, "Gain out of range: {}", gain);
+        assert!((-20.0..=20.0).contains(&gain), "Gain out of range: {}", gain);
 
         // Check Q
         let q_str = parts[q_idx.unwrap() + 1];
         let q: f64 = q_str.parse().expect("Failed to parse Q");
-        assert!(q >= 0.1 && q <= 50.0, "Q out of range: {}", q);
+        assert!((0.1..=50.0).contains(&q), "Q out of range: {}", q);
     }
 }

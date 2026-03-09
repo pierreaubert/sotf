@@ -1,3 +1,4 @@
+#![allow(clippy::assertions_on_constants)]
 //! Component Tests for GPUI App
 //!
 //! Tests for component logic extracted from the UI layer.
@@ -9,6 +10,7 @@
 //! - Component (UI): Builder verification, prop propagation
 //! - Edge Cases: Empty data, boundary values, invalid inputs
 
+#[allow(dead_code)]
 mod common;
 
 use common::*;

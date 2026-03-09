@@ -56,6 +56,7 @@ struct BindingConflict {
 }
 
 /// Keybindings state
+#[derive(Default)]
 struct KeybindingsState {
     bindings: Vec<KeyBinding>,
     filtered_bindings: Vec<KeyBinding>,
@@ -67,20 +68,6 @@ struct KeybindingsState {
     show_customized_only: bool,
 }
 
-impl Default for KeybindingsState {
-    fn default() -> Self {
-        Self {
-            bindings: Vec::new(),
-            filtered_bindings: Vec::new(),
-            selected_category: None,
-            search_query: String::new(),
-            editing_binding: None,
-            pending_key: None,
-            conflict: None,
-            show_customized_only: false,
-        }
-    }
-}
 
 // =============================================================================
 // Binding Display Tests

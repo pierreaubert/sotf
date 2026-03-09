@@ -1,10 +1,10 @@
 use gpui::TestAppContext;
-use sotf_audio_player_gpui::app::manager::{Manager, ManagerError};
+use sotf_audio_player_gpui::app::manager::Manager;
 use sotf_audio_player_gpui::app::state::app::{App, AppMessage};
 use sotf_audio_player_gpui::app::state::library::{LibraryEvent, LibraryQuery, LibraryResponse};
 
 #[gpui::test]
-fn test_manager_protocol(cx: &mut TestAppContext) {
+fn test_manager_protocol(_cx: &mut TestAppContext) {
     // 1. Initialize App
     let mut app = App::new();
 

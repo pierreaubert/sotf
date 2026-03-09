@@ -47,7 +47,7 @@ impl TestScenario for FletcherMunsonScenario {
         });
 
         // 3. Verify Reference Level Update
-        driver.read_app(|app| {
+        let _ = driver.read_app(|app| {
             println!("Verifying Reference Level...");
             let plugin_idx = app
                 .plugin_state
@@ -61,7 +61,7 @@ impl TestScenario for FletcherMunsonScenario {
                 .plugin_state
                 .chain
                 .get_plugin(plugin_idx)
-                .ok_or_else(|| "Plugin not found")?;
+                .ok_or("Plugin not found")?;
 
             if let PluginSettings::FletcherMunson {
                 reference_level_db, ..

@@ -189,7 +189,6 @@ impl Plugin for BandSplitPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_band_split_basic() {
         let mut p = BandSplitPlugin::new(1, 1000.0, "LR24").unwrap();

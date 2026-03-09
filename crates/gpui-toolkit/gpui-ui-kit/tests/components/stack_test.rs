@@ -104,7 +104,7 @@ fn test_stack_size_variants() {
 #[test]
 fn test_vstack_creation() {
     let stack = VStack::new();
-    drop(stack);
+    let _ = stack;
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn test_vstack_configuration() {
         .height(StackSize::Fixed(gpui::px(400.0)))
         .overflow(StackOverflow::Hidden);
 
-    drop(stack);
+    let _ = stack;
 }
 
 #[test]
@@ -129,7 +129,7 @@ fn test_vstack_flex_methods() {
         .basis(gpui::px(100.0))
         .flex_1();
 
-    drop(stack);
+    let _ = stack;
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn test_vstack_min_max() {
         .max_w(gpui::px(800.0))
         .max_h(gpui::px(600.0));
 
-    drop(stack);
+    let _ = stack;
 }
 
 #[test]
@@ -149,13 +149,13 @@ fn test_vstack_overflow_axes() {
         .overflow_x(StackOverflow::Hidden)
         .overflow_y(StackOverflow::Scroll);
 
-    drop(stack);
+    let _ = stack;
 }
 
 #[test]
 fn test_hstack_creation() {
     let stack = HStack::new();
-    drop(stack);
+    let _ = stack;
 }
 
 #[test]
@@ -167,25 +167,25 @@ fn test_hstack_configuration() {
         .width(StackSize::Full)
         .wrap(true);
 
-    drop(stack);
+    let _ = stack;
 }
 
 #[test]
 fn test_spacer_creation() {
     let spacer = Spacer::new();
-    drop(spacer);
+    let _ = spacer;
 }
 
 #[test]
 fn test_divider_horizontal() {
     let divider = Divider::new().id("h-div");
-    drop(divider);
+    let _ = divider;
 }
 
 #[test]
 fn test_divider_vertical() {
     let divider = Divider::vertical().id("v-div");
-    drop(divider);
+    let _ = divider;
 }
 
 #[test]
@@ -197,5 +197,5 @@ fn test_divider_configuration() {
         .thickness(gpui::px(2.0))
         .interactive();
 
-    drop(divider);
+    let _ = divider;
 }

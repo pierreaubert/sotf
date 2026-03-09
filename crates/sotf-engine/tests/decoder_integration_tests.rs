@@ -340,7 +340,7 @@ fn test_decode_wav_16bit() {
                 // Verify samples are in valid range
                 for &sample in &audio.samples {
                     assert!(
-                        sample >= -1.0 && sample <= 1.0,
+                        (-1.0..=1.0).contains(&sample),
                         "Sample out of range: {}",
                         sample
                     );
@@ -354,7 +354,7 @@ fn test_decode_wav_16bit() {
 
     // 0.5 seconds at 48000 Hz = 24000 frames
     assert!(
-        total_frames >= 23000 && total_frames <= 25000,
+        (23000..=25000).contains(&total_frames),
         "Expected ~24000 frames, got {}",
         total_frames
     );
@@ -371,7 +371,7 @@ fn test_decode_wav_24bit() {
         total_frames += audio.frame_count();
         // Verify samples are normalized
         for &sample in &audio.samples {
-            assert!(sample >= -1.0 && sample <= 1.0);
+            assert!((-1.0..=1.0).contains(&sample));
         }
     }
 
@@ -482,7 +482,7 @@ fn test_decode_very_short_file() {
 
     // 10ms at 48kHz = 480 frames
     assert!(
-        total_frames >= 400 && total_frames <= 600,
+        (400..=600).contains(&total_frames),
         "Expected ~480 frames, got {}",
         total_frames
     );

@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
@@ -48,14 +49,13 @@ fn test_gate_loopback_verification() {
     let mut input_setup = None;
 
     for name in device_names {
-        if let Some(out) = find_device(name, false) {
-            if let Some(in_) = find_device(name, true) {
+        if let Some(out) = find_device(name, false)
+            && let Some(in_) = find_device(name, true) {
                 output_setup = Some(out);
                 input_setup = Some(in_);
                 println!("Found device: {}", name);
                 break;
             }
-        }
     }
 
     if output_setup.is_none() || input_setup.is_none() {
@@ -112,7 +112,7 @@ fn test_gate_loopback_verification() {
             "mix": 1.0
         }),
     )];
-    let mut engine = match AudioEngine::new(config) {
+    let engine = match AudioEngine::new(config) {
         Ok(e) => e,
         Err(e) => {
             println!("Engine init failed: {}", e);
@@ -209,14 +209,14 @@ fn test_gate_loopback_verification() {
     }
 
     let mut first_half_sum_sq = 0.0f32;
-    for i in first_half_start..first_half_end {
-        first_half_sum_sq += captured_ch0[i] * captured_ch0[i];
+    for &sample in &captured_ch0[first_half_start..first_half_end] {
+        first_half_sum_sq += sample * sample;
     }
     let first_half_rms = (first_half_sum_sq / (first_half_end - first_half_start) as f32).sqrt();
 
     let mut second_half_sum_sq = 0.0f32;
-    for i in second_half_start..second_half_end {
-        second_half_sum_sq += captured_ch0[i] * captured_ch0[i];
+    for &sample in &captured_ch0[second_half_start..second_half_end] {
+        second_half_sum_sq += sample * sample;
     }
     let second_half_rms =
         (second_half_sum_sq / (second_half_end - second_half_start) as f32).sqrt();

@@ -385,7 +385,6 @@ impl InPlacePlugin for LimiterPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_limiter_basic() {
         let mut p = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);

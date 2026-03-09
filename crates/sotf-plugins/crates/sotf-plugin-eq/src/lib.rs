@@ -409,10 +409,7 @@ mod tests {
             ParameterValue::Bool(false),
         )
         .unwrap();
-        let mut b = vec![0.0; 1024];
-        for k in 0..1024 {
-            b[k] = (k as f32 * 0.1).sin();
-        }
+        let mut b: Vec<f32> = (0..1024).map(|k| (k as f32 * 0.1).sin()).collect();
         let i = b.clone();
         p.process_in_place(
             &mut b,

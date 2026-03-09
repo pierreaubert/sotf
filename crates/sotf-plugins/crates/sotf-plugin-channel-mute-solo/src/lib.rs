@@ -261,7 +261,6 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
 
     /// Number of frames to process for smoother convergence in tests
     const CONVERGE_FRAMES: usize = 2048;

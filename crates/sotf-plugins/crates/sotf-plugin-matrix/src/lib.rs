@@ -487,7 +487,6 @@ impl Plugin for MatrixPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
 
     #[test]
     fn test_identity_matrix_2x2() {

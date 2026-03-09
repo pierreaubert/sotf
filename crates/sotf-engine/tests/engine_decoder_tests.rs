@@ -290,12 +290,11 @@ fn test_decoder_invalid_file() {
     let mut got_error = false;
 
     while start.elapsed() < timeout {
-        if let Ok(event) = event_rx.recv_timeout(Duration::from_millis(100)) {
-            if let ThreadEvent::DecoderError(_) = event {
+        if let Ok(event) = event_rx.recv_timeout(Duration::from_millis(100))
+            && let ThreadEvent::DecoderError(_) = event {
                 got_error = true;
                 break;
             }
-        }
     }
 
     assert!(got_error, "Should receive error event for invalid file");

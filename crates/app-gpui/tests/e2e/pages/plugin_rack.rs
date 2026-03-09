@@ -1,4 +1,5 @@
 use crate::driver::AppDriver;
+#[allow(unused_imports)]
 use gpui::*;
 use sotf_audio::plugins::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::components::plugins::editing::PluginEditingManager;
@@ -29,17 +30,17 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
             app.add_plugin(&plugin_type);
         });
 
-        let new_id = self.driver.read_app(move |app| {
+        
+
+        self.driver.read_app(move |app| {
             app.plugin_state
                 .chain
                 .plugins()
                 .iter()
                 .map(|p| p.id)
-                .find(|&id| max_id_opt.map_or(true, |max| id > max))
+                .find(|&id| max_id_opt.is_none_or(|max| id > max))
                 .expect("Should have at least one plugin now")
-        });
-
-        new_id
+        })
     }
 
     pub fn get_plugin_count(&mut self) -> usize {

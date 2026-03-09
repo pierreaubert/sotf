@@ -975,7 +975,6 @@ impl InPlacePlugin for MultibandExpanderPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_mb_exp_basic() {
         let mut p = MultibandExpanderPlugin::new(1);

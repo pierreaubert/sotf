@@ -13,6 +13,7 @@
 //! and action_tests.rs can be uncommented to enable full event simulation.
 
 #[path = "../common/mod.rs"]
+#[allow(dead_code)]
 mod common;
 
 mod event_types;

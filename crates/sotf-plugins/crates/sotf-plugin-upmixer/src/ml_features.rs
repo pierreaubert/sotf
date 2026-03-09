@@ -239,8 +239,8 @@ mod tests {
         assert_eq!(features.len(), FEATURE_SIZE);
 
         // First frame: deltas should be zero
-        for k in NUM_MFCCS..FEATURE_SIZE {
-            assert_eq!(features[k], 0.0, "First frame deltas should be zero");
+        for &feat in &features[NUM_MFCCS..FEATURE_SIZE] {
+            assert_eq!(feat, 0.0, "First frame deltas should be zero");
         }
 
         // MFCCs should be non-zero (we have energy in the signal)
@@ -289,8 +289,8 @@ mod tests {
 
         // After reset, deltas should be zero again
         let features = extractor.compute(&freq, &freq);
-        for k in NUM_MFCCS..FEATURE_SIZE {
-            assert_eq!(features[k], 0.0, "Post-reset deltas should be zero");
+        for &feat in &features[NUM_MFCCS..FEATURE_SIZE] {
+            assert_eq!(feat, 0.0, "Post-reset deltas should be zero");
         }
     }
 

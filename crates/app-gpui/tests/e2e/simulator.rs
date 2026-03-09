@@ -3,7 +3,7 @@
 //! High-level user interaction simulation for E2E tests.
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TouchPhase, VisualTestContext, point,
+    Modifiers, MouseButton, VisualTestContext,
 };
 use std::error::Error;
 

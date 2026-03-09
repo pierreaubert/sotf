@@ -30,6 +30,7 @@ enum Language {
 
 /// Date format preference
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(clippy::upper_case_acronyms)]
 enum DateFormat {
     #[default]
     MDY, // MM/DD/YYYY (US)
@@ -47,6 +48,7 @@ enum TimeFormat {
 
 /// Number format preference
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(clippy::enum_variant_names)]
 enum NumberFormat {
     #[default]
     CommaSeparator, // 1,000.00

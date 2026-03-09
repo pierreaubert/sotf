@@ -73,7 +73,7 @@ fn test_album_art_discovery_and_thumbnail_generation() {
         "Album art thumbnail should be generated"
     );
     assert!(
-        album.album_art_thumbnail.as_ref().unwrap().len() > 0,
+        !album.album_art_thumbnail.as_ref().unwrap().is_empty(),
         "Thumbnail should not be empty"
     );
 

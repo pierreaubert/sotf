@@ -638,8 +638,8 @@ mod tests {
         let signal = gen_impulse(0.5, 48000, 0.1);
         assert_eq!(signal.len(), 4800);
         assert_eq!(signal[0], 0.5);
-        for i in 1..4800 {
-            assert_eq!(signal[i], 0.0);
+        for &sample in &signal[1..4800] {
+            assert_eq!(sample, 0.0);
         }
     }
 
@@ -647,8 +647,8 @@ mod tests {
     fn test_gen_step() {
         let signal = gen_step(0.5, 48000, 0.1);
         assert_eq!(signal.len(), 4800);
-        for i in 0..4800 {
-            assert_eq!(signal[i], 0.5);
+        for &sample in &signal[..4800] {
+            assert_eq!(sample, 0.5);
         }
     }
 

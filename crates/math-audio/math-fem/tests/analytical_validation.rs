@@ -1414,10 +1414,9 @@ fn sphere_scattering_point(
 
         let pn = legendre_p(n, cos_theta);
 
-        let coeff;
-        if bc_type == "dirichlet" {
+        let coeff = if bc_type == "dirichlet" {
             // Sound-soft: jn(ka) / hn(ka)
-            coeff = jn_ka / hn_ka;
+            jn_ka / hn_ka
         } else {
             // Rigid: jn'(ka) / hn'(ka)
             let jn_prev = if n == 0 {
@@ -1435,8 +1434,8 @@ fn sphere_scattering_point(
             let yn_prime = yn_prev - (n_f64 + 1.0) / ka * yn_ka;
 
             let hn_prime = Complex64::new(jn_prime, yn_prime);
-            coeff = Complex64::new(jn_prime, 0.0) / hn_prime;
-        }
+            Complex64::new(jn_prime, 0.0) / hn_prime
+        };
 
         // Total field = incident + scattered
         // u = Σ (2n+1) i^n [jn(kr) - coeff * hn(kr)] Pn(cos theta)

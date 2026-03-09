@@ -311,6 +311,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_format_fixed() {
         let spec = parse_specifier(".2f");
         assert_eq!(DEFAULT_LOCALE.format(&spec, 3.14159), "3.14");

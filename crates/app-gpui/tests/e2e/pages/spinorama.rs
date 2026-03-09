@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
 use sotf_audio_player_gpui::app::types::{
-    OptimizationStatus, SpinoramaOptimizationMode, SpinoramaTargetCurve,
+    OptimizationStatus, SpinoramaOptimizationMode,
 };
 
 pub struct SpinoramaPage<'a, 'b> {
@@ -39,7 +39,7 @@ impl<'a, 'b> SpinoramaPage<'a, 'b> {
         self.driver
             .view
             .update(self.driver.cx, |view, _window, cx| {
-                view.state.update(cx, |state, _cx| {
+                view.state.update(cx, |_state, _cx| {
                     // Logic placeholder
                 });
             })
@@ -99,8 +99,7 @@ impl<'a, 'b> SpinoramaPage<'a, 'b> {
                             .app
                             .measurement_state
                             .spinorama_eq_state
-                            .optimization_status
-                            .clone(),
+                            .optimization_status,
                         state
                             .app
                             .measurement_state

@@ -361,7 +361,6 @@ impl Plugin for MonoToStereoPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_mono_to_stereo_basic() {
         let mut p = MonoToStereoPlugin::new();

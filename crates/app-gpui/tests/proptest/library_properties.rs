@@ -1,48 +1,40 @@
-//! Property-based tests for library filtering and sorting.
+//! Property-based tests for LibraryController filtering, sorting, and pagination.
 //!
-//! These tests use proptest to generate random inputs and verify invariants.
+//! Tests the real `LibraryController` from `sotf-player` with generated data.
 
-#[path = "../common/mod.rs"]
-mod common;
-
-use common::state_builder::{
-    TestAlbum, TestChannelFilter, TestLibrarySortOrder, TestLibraryState, TestTrack,
-};
 use proptest::prelude::*;
+use sotf_audio_player::{
+    Album, ChannelFilter, LibraryController, LibrarySortOrder, MusicLibrary, Track,
+};
+use std::path::PathBuf;
 
 // =============================================================================
-// Strategies for generating test data
+// Strategies for generating real Album/Track data
 // =============================================================================
 
-/// Generate a valid search query (printable ASCII, limited length)
-fn search_query_strategy() -> impl Strategy<Value = String> {
-    prop::string::string_regex("[a-zA-Z0-9 ]{0,30}")
-        .unwrap()
-        .prop_map(|s| s.trim().to_string())
+fn make_track(
+    album_title: &str,
+    index: usize,
+    channels: u32,
+    artist: &str,
+    genre: Option<&str>,
+) -> Track {
+    Track {
+        path: PathBuf::from(format!("/music/{}/track_{}.flac", album_title, index)),
+        title: Some(format!("Track {}", index)),
+        channels: Some(channels),
+        artist: Some(artist.to_string()),
+        album_artist: Some(artist.to_string()),
+        genre: genre.map(|g| g.to_string()),
+        ..Default::default()
+    }
 }
 
-/// Generate an album title
-fn album_title_strategy() -> impl Strategy<Value = String> {
-    prop::string::string_regex("[A-Za-z0-9 ]{1,20}")
-        .unwrap()
-        .prop_map(|s| s.trim().to_string())
-        .prop_filter("non-empty", |s| !s.is_empty())
-}
-
-/// Generate an artist name
-fn artist_strategy() -> impl Strategy<Value = String> {
-    prop::string::string_regex("[A-Za-z ]{1,15}")
-        .unwrap()
-        .prop_map(|s| s.trim().to_string())
-        .prop_filter("non-empty", |s| !s.is_empty())
-}
-
-/// Generate a test album
-fn album_strategy() -> impl Strategy<Value = TestAlbum> {
+fn album_strategy() -> impl Strategy<Value = Album> {
     (
-        album_title_strategy(),
-        artist_strategy(),
-        prop::option::of(1950i32..2030), // year
+        "[A-Za-z0-9]{1,15}",
+        "[A-Za-z]{1,10}",
+        prop::option::of(1950u32..2030),
         prop::option::of(prop::sample::select(vec![
             "Rock",
             "Jazz",
@@ -51,46 +43,50 @@ fn album_strategy() -> impl Strategy<Value = TestAlbum> {
             "Pop",
             "Metal",
         ])),
-        1usize..=8, // channels
-        1usize..10, // track count
+        prop::sample::select(vec![1u32, 2, 2, 2, 5, 6, 8]),
+        1usize..8,
     )
         .prop_map(|(title, artist, year, genre, channels, track_count)| {
-            let tracks: Vec<TestTrack> = (1..=track_count)
-                .map(|i| TestTrack::new(&format!("{}_track{}.flac", title, i)))
+            let tracks: Vec<Track> = (1..=track_count)
+                .map(|i| make_track(&title, i, channels, &artist, genre))
                 .collect();
 
-            let mut album = TestAlbum::new(&title, &artist)
-                .with_channels(channels)
-                .with_tracks(tracks);
-
-            if let Some(y) = year {
-                album = album.with_year(y);
+            Album {
+                title,
+                year,
+                tracks,
+                ..Default::default()
             }
-            if let Some(g) = genre {
-                album = album.with_genre(g);
-            }
-            album
         })
 }
 
-/// Generate a channel filter
-fn channel_filter_strategy() -> impl Strategy<Value = TestChannelFilter> {
+fn channel_filter_strategy() -> impl Strategy<Value = ChannelFilter> {
     prop_oneof![
-        Just(TestChannelFilter::All),
-        Just(TestChannelFilter::Stereo),
-        Just(TestChannelFilter::Multichannel),
-        Just(TestChannelFilter::Mono),
+        Just(ChannelFilter::All),
+        Just(ChannelFilter::Stereo),
+        Just(ChannelFilter::Mono),
+        Just(ChannelFilter::Surround),
+        Just(ChannelFilter::Surround71),
     ]
 }
 
-/// Generate a sort order
-fn sort_order_strategy() -> impl Strategy<Value = TestLibrarySortOrder> {
+fn sort_order_strategy() -> impl Strategy<Value = LibrarySortOrder> {
     prop_oneof![
-        Just(TestLibrarySortOrder::Title),
-        Just(TestLibrarySortOrder::Artist),
-        Just(TestLibrarySortOrder::Year),
-        Just(TestLibrarySortOrder::Genre),
+        Just(LibrarySortOrder::Album),
+        Just(LibrarySortOrder::Artist),
+        Just(LibrarySortOrder::Year),
+        Just(LibrarySortOrder::Genre),
+        Just(LibrarySortOrder::Tracks),
     ]
+}
+
+/// Build a LibraryController with in-memory library populated with albums.
+fn controller_with_albums(albums: Vec<Album>) -> LibraryController {
+    let mut lib = MusicLibrary::new();
+    lib.albums = albums;
+    let mut ctrl = LibraryController::with_library(lib);
+    ctrl.ensure_cache_valid();
+    ctrl
 }
 
 // =============================================================================
@@ -98,157 +94,172 @@ fn sort_order_strategy() -> impl Strategy<Value = TestLibrarySortOrder> {
 // =============================================================================
 
 proptest! {
-    /// INVARIANT: Search results are always a subset of unfiltered results
-    #[test]
-    fn search_results_subset_of_all(
-        query in search_query_strategy(),
-        albums in prop::collection::vec(album_strategy(), 0..50)
-    ) {
-        let mut state = TestLibraryState::default().with_albums(albums);
-
-        // Get unfiltered count
-        let unfiltered = state.filtered_albums().len();
-
-        // Apply search
-        state.search_query = query;
-        let filtered = state.filtered_albums().len();
-
-        // Invariant: filtered <= unfiltered
-        prop_assert!(
-            filtered <= unfiltered,
-            "Search returned MORE results than unfiltered: {} > {}",
-            filtered, unfiltered
-        );
-    }
-
-    /// INVARIANT: Empty search returns same as no search
-    #[test]
-    fn empty_search_is_identity(
-        albums in prop::collection::vec(album_strategy(), 0..30)
-    ) {
-        let state_no_search = TestLibraryState::default().with_albums(albums.clone());
-        let state_empty_search = TestLibraryState::default()
-            .with_albums(albums.clone())
-            .with_search("");
-        let state_whitespace_search = TestLibraryState::default()
-            .with_albums(albums)
-            .with_search("   ");
-
-        let count_no_search = state_no_search.filtered_albums().len();
-        let count_empty = state_empty_search.filtered_albums().len();
-        let count_whitespace = state_whitespace_search.filtered_albums().len();
-
-        prop_assert_eq!(count_no_search, count_empty);
-        prop_assert_eq!(count_no_search, count_whitespace);
-    }
-
-    /// INVARIANT: Channel filter reduces or maintains result count
+    /// INVARIANT: Channel filter never increases result count vs All.
     #[test]
     fn channel_filter_reduces_results(
         albums in prop::collection::vec(album_strategy(), 0..50),
         filter in channel_filter_strategy()
     ) {
-        let state_all = TestLibraryState::default().with_albums(albums.clone());
-        let mut state_filtered = TestLibraryState::default().with_albums(albums);
-        state_filtered.channel_filter = filter;
+        let mut ctrl_all = controller_with_albums(albums.clone());
+        ctrl_all.set_filter(ChannelFilter::All);
+        ctrl_all.ensure_cache_valid();
+        let count_all = ctrl_all.filtered_albums().len();
 
-        let count_all = state_all.filtered_albums().len();
-        let count_filtered = state_filtered.filtered_albums().len();
+        let mut ctrl_filtered = controller_with_albums(albums);
+        ctrl_filtered.set_filter(filter);
+        ctrl_filtered.ensure_cache_valid();
+        let count_filtered = ctrl_filtered.filtered_albums().len();
 
-        // Filtered count should be <= all count
         prop_assert!(
             count_filtered <= count_all,
-            "Channel filter {:?} increased results: {} > {}",
+            "Filter {:?} increased results: {} > {}",
             filter, count_filtered, count_all
         );
     }
 
-    /// INVARIANT: Page index is always valid after recalculation
+    /// INVARIANT: Search results are a subset of unfiltered results.
     #[test]
-    fn page_index_always_valid(
-        albums in prop::collection::vec(album_strategy(), 0..100),
-        page in 0usize..50,
-        items_per_page in 1usize..30
+    fn search_results_subset(
+        albums in prop::collection::vec(album_strategy(), 0..50),
+        query in "[a-zA-Z0-9 ]{0,10}"
     ) {
-        let mut state = TestLibraryState::default().with_albums(albums);
-        state.current_page = page;
-        state.items_per_page = items_per_page;
+        let mut ctrl = controller_with_albums(albums);
+        let count_all = ctrl.filtered_albums().len();
 
-        state.recalculate_pagination();
+        ctrl.set_search_query(query);
+        ctrl.ensure_cache_valid();
+        let count_search = ctrl.filtered_albums().len();
 
-        let max_page = state.total_pages().saturating_sub(1);
         prop_assert!(
-            state.current_page <= max_page,
-            "Page {} exceeds max {} (total_pages={})",
-            state.current_page, max_page, state.total_pages()
+            count_search <= count_all,
+            "Search returned MORE results: {} > {}",
+            count_search, count_all
         );
     }
 
-    /// INVARIANT: Applying then clearing search returns same as no search
+    /// INVARIANT: Clearing search restores unfiltered count (for same channel filter).
     #[test]
-    fn clear_search_restores_state(
+    fn clear_search_restores_count(
         albums in prop::collection::vec(album_strategy(), 0..30),
-        query in search_query_strategy(),
-        channel_filter in channel_filter_strategy()
+        query in "[a-zA-Z]{1,5}",
+        filter in channel_filter_strategy()
     ) {
-        let mut state = TestLibraryState::default().with_albums(albums);
-        state.channel_filter = channel_filter;
+        let mut ctrl = controller_with_albums(albums);
+        ctrl.set_filter(filter);
+        ctrl.ensure_cache_valid();
+        let initial_count = ctrl.filtered_albums().len();
 
-        // Get initial filtered count (with channel filter, no search)
-        let initial_count = state.filtered_albums().len();
+        ctrl.set_search_query(query);
+        ctrl.ensure_cache_valid();
 
-        // Apply search
-        state.search_query = query;
-        let _search_count = state.filtered_albums().len();
+        ctrl.clear_search();
+        ctrl.ensure_cache_valid();
+        let restored_count = ctrl.filtered_albums().len();
 
-        // Clear search
-        state.clear_search();
-        let restored_count = state.filtered_albums().len();
-
-        // Should be back to initial state
         prop_assert_eq!(
             restored_count, initial_count,
-            "Clear search didn't restore initial state"
+            "Clear search didn't restore count"
         );
-
-        // Channel filter should still be active
-        prop_assert_eq!(state.channel_filter, channel_filter);
     }
 
-    /// INVARIANT: Genre filter reduces or maintains result count
+    /// INVARIANT: Total pages >= 1, and page count is consistent with item count.
     #[test]
-    fn genre_filter_reduces_results(
+    fn total_pages_consistent(
+        albums in prop::collection::vec(album_strategy(), 0..60),
+        items_per_page in 1usize..30
+    ) {
+        let mut ctrl = controller_with_albums(albums);
+        ctrl.items_per_page = items_per_page;
+        ctrl.ensure_cache_valid();
+
+        let total = ctrl.total_pages();
+        let item_count = ctrl.filtered_albums().len();
+
+        let expected = if item_count == 0 {
+            1
+        } else {
+            item_count.div_ceil(items_per_page)
+        };
+
+        prop_assert_eq!(total, expected);
+    }
+
+    /// INVARIANT: Sorting does not change the number of results.
+    #[test]
+    fn sorting_preserves_count(
+        albums in prop::collection::vec(album_strategy(), 0..40),
+        order in sort_order_strategy()
+    ) {
+        let mut ctrl = controller_with_albums(albums);
+        let count_before = ctrl.filtered_albums().len();
+
+        ctrl.set_sort_order(order);
+        ctrl.ensure_cache_valid();
+        let count_after = ctrl.filtered_albums().len();
+
+        prop_assert_eq!(count_before, count_after);
+    }
+
+    /// INVARIANT: selected_index resets to 0 after set_sort_order.
+    #[test]
+    fn sort_resets_selection(
+        albums in prop::collection::vec(album_strategy(), 1..20),
+        order in sort_order_strategy()
+    ) {
+        let mut ctrl = controller_with_albums(albums);
+        ctrl.selected_index = 5;
+
+        ctrl.set_sort_order(order);
+
+        prop_assert_eq!(ctrl.selected_index, 0);
+    }
+
+    /// INVARIANT: Genre selection filter only returns albums matching that genre.
+    #[test]
+    fn genre_filter_correctness(
         albums in prop::collection::vec(album_strategy(), 5..30)
     ) {
-        let state_all = TestLibraryState::default().with_albums(albums.clone());
-        let count_all = state_all.filtered_albums().len();
+        let mut ctrl = controller_with_albums(albums);
+        ctrl.ensure_cache_valid();
+        let count_all = ctrl.selection_filtered_albums().len();
 
-        let mut state_filtered = TestLibraryState::default().with_albums(albums);
-        state_filtered.selected_genre = Some("Rock".to_string());
-        let count_filtered = state_filtered.filtered_albums().len();
+        ctrl.selected_genre = Some("Rock".to_string());
+        let filtered = ctrl.selection_filtered_albums();
 
-        prop_assert!(
-            count_filtered <= count_all,
-            "Genre filter increased results: {} > {}",
-            count_filtered, count_all
-        );
+        prop_assert!(filtered.len() <= count_all);
+
+        for album in &filtered {
+            let genre = album
+                .tracks
+                .first()
+                .and_then(|t| t.genre.as_ref())
+                .map(|g: &String| g.to_lowercase());
+            prop_assert_eq!(
+                genre.as_deref(),
+                Some("rock"),
+                "Album '{}' has wrong genre",
+                album.title
+            );
+        }
     }
 
-    /// INVARIANT: Decade filter only includes years in range
+    /// INVARIANT: Decade filter only returns albums within the decade range.
     #[test]
-    fn decade_filter_correct_years(
+    fn decade_filter_correctness(
         albums in prop::collection::vec(album_strategy(), 5..30),
         decade_start in (1950i32..2020).prop_map(|y| (y / 10) * 10)
     ) {
         let decade_end = decade_start + 9;
 
-        let mut state = TestLibraryState::default().with_albums(albums);
-        state.selected_decade = Some((decade_start, decade_end));
+        let mut ctrl = controller_with_albums(albums);
+        ctrl.ensure_cache_valid();
+        ctrl.selected_decade = Some((decade_start, decade_end));
 
-        let filtered = state.filtered_albums();
+        let filtered = ctrl.selection_filtered_albums();
 
-        for album in filtered {
+        for album in &filtered {
             if let Some(year) = album.year {
+                let year = year as i32;
                 prop_assert!(
                     year >= decade_start && year <= decade_end,
                     "Album year {} outside decade {}-{}",
@@ -258,61 +269,94 @@ proptest! {
         }
     }
 
-    /// INVARIANT: Search with active query bypasses selection filters
+    /// INVARIANT: search active -> selection filters are bypassed.
     #[test]
     fn search_bypasses_selection_filters(
         albums in prop::collection::vec(album_strategy(), 5..30),
-        query in "[a-zA-Z]{1,5}".prop_filter("non-empty", |s| !s.is_empty())
+        query in "[a-zA-Z]{1,5}"
     ) {
-        let mut state = TestLibraryState::default().with_albums(albums);
+        let mut ctrl = controller_with_albums(albums);
 
-        // Apply restrictive selection filters
-        state.selected_genre = Some("NonexistentGenre".to_string());
-        state.selected_year = Some(1900); // Unlikely year
+        // Set restrictive selection filter
+        ctrl.selected_genre = Some("NonexistentGenre12345".to_string());
+        let without_search = ctrl.selection_filtered_albums().len();
 
-        // Without search, should return very few or zero results
-        let without_search = state.filtered_albums().len();
+        // Now set search -- selection filters should be bypassed
+        ctrl.set_search_query(query);
+        ctrl.ensure_cache_valid();
+        ctrl.selected_genre = Some("NonexistentGenre12345".to_string());
+        let with_search = ctrl.selection_filtered_albums();
 
-        // With search, selection filters should be bypassed
-        state.search_query = query;
-        let with_search = state.filtered_albums().len();
+        // With search active, genre filter should NOT be applied
+        let search_only_count = ctrl.filtered_albums().len();
+        prop_assert_eq!(
+            with_search.len(),
+            search_only_count,
+            "Selection filters were applied during search"
+        );
 
-        // Search may return more results because it bypasses selection filters
-        // (We can't assert equality because search also filters by query)
-        // This test primarily verifies the code doesn't panic with restrictive filters
-        // and that the filtered_albums() method handles both scenarios correctly.
-        let _ = (with_search, without_search); // Verify values are computed without panic
+        // Without search, restrictive genre should give 0 or few results
+        prop_assert!(without_search <= search_only_count || search_only_count == 0);
     }
 
-    /// INVARIANT: Total pages calculation is consistent
+    /// INVARIANT: Navigation wraps correctly.
     #[test]
-    fn total_pages_consistent(
-        album_count in 0usize..100,
-        items_per_page in 1usize..30
-    ) {
-        let albums = (0..album_count)
-            .map(|i| TestAlbum::new(&format!("Album {}", i), "Artist"))
+    fn navigation_wraps(album_count in 2usize..20) {
+        let albums: Vec<Album> = (0..album_count)
+            .map(|i| Album {
+                title: format!("Album {}", i),
+                tracks: vec![Track {
+                    path: PathBuf::from(format!("/music/album_{}/track.flac", i)),
+                    title: Some(format!("Track {}", i)),
+                    channels: Some(2),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
             .collect();
 
-        let mut state = TestLibraryState::default().with_albums(albums);
-        state.items_per_page = items_per_page;
+        let mut ctrl = controller_with_albums(albums);
+        ctrl.ensure_cache_valid();
+        let count = ctrl.filtered_albums().len();
 
-        let total_pages = state.total_pages();
-        let expected_pages = (album_count + items_per_page - 1) / items_per_page;
-        let expected_pages = if expected_pages == 0 { 1 } else { expected_pages };
+        // Go to last, then next wraps to first
+        ctrl.selected_index = count - 1;
+        ctrl.select_next();
+        prop_assert_eq!(ctrl.selected_index, 0, "Didn't wrap to first");
 
-        // Account for empty library case (always 1 page minimum is wrong in our impl)
-        let filtered_count = state.filtered_albums().len();
-        let computed_pages = if filtered_count == 0 {
-            1
-        } else {
-            (filtered_count + items_per_page - 1) / items_per_page
-        };
+        // Go backward from first wraps to last
+        ctrl.select_prev();
+        prop_assert_eq!(ctrl.selected_index, count - 1, "Didn't wrap to last");
+    }
 
-        prop_assert_eq!(
-            total_pages, computed_pages,
-            "Total pages mismatch: expected {}, got {}",
-            computed_pages, total_pages
-        );
+    /// INVARIANT: Paginated albums are a contiguous slice of filtered albums.
+    #[test]
+    fn paginated_albums_are_correct_slice(
+        albums in prop::collection::vec(album_strategy(), 1..50),
+        items_per_page in 1usize..15,
+        page in 0usize..10
+    ) {
+        let mut ctrl = controller_with_albums(albums);
+        ctrl.items_per_page = items_per_page;
+        ctrl.ensure_cache_valid();
+
+        let total = ctrl.total_pages();
+        ctrl.current_page = page.min(total.saturating_sub(1));
+
+        let paginated = ctrl.get_paginated_albums();
+        let all = ctrl.filtered_albums();
+        let start = ctrl.current_page * items_per_page;
+
+        prop_assert!(paginated.len() <= items_per_page);
+
+        for (i, album) in paginated.iter().enumerate() {
+            prop_assert_eq!(
+                &album.title,
+                &all[start + i].title,
+                "Paginated album at {} doesn't match filtered album at {}",
+                i,
+                start + i
+            );
+        }
     }
 }

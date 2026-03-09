@@ -81,7 +81,7 @@ fn test_queue_diverse_albums() {
     // Single: 0 calls (1 track, next returns None)
     // EP: 3 calls, Album: 11 calls, Double: 23 calls
     // Plus transitions: 3 transitions
-    assert_eq!(total_tracks, (1 - 1) + (4 - 1) + (12 - 1) + (24 - 1) + 3);
+    assert_eq!(total_tracks, (4 - 1) + (12 - 1) + (24 - 1) + 3);
 }
 
 // =============================================================================
@@ -371,7 +371,7 @@ fn test_queue_with_duplicates() {
     let mut album_transitions = 0;
     let mut last_album_idx = 0;
 
-    while let Some(_) = state.next_track() {
+    while state.next_track().is_some() {
         let current_album = state.current_queue_index.unwrap();
         if current_album != last_album_idx {
             album_transitions += 1;

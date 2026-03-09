@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 #[cfg(test)]
 mod tests {
     use sotf_host::{InPlacePlugin, ParameterId, ParameterValue, ProcessContext};

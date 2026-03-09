@@ -205,7 +205,6 @@ impl InPlacePlugin for DelayPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_delay_basic() {
         let mut p = DelayPlugin::new(1, 10.0, 0.5, 0.5);

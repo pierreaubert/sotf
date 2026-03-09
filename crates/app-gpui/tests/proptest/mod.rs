@@ -1,3 +1,4 @@
+#![allow(clippy::duplicate_mod)]
 //! Property-Based Tests for player-gpui
 //!
 //! Uses proptest to automatically generate test inputs and verify invariants

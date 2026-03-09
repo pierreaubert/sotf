@@ -47,11 +47,10 @@ async fn test_footer_prev_track(_cx: &mut TestAppContext) {
     // Navigate to previous track
     {
         let idx = *queue_index.borrow();
-        if let Some(i) = idx {
-            if i > 0 {
+        if let Some(i) = idx
+            && i > 0 {
                 *queue_index.borrow_mut() = Some(i - 1);
             }
-        }
     }
     assert_eq!(
         *queue_index.borrow(),
@@ -63,11 +62,10 @@ async fn test_footer_prev_track(_cx: &mut TestAppContext) {
     *queue_index.borrow_mut() = Some(0);
     {
         let idx = *queue_index.borrow();
-        if let Some(i) = idx {
-            if i > 0 {
+        if let Some(i) = idx
+            && i > 0 {
                 *queue_index.borrow_mut() = Some(i - 1);
             }
-        }
     }
     assert_eq!(*queue_index.borrow(), Some(0), "Should stay at first track");
 }
@@ -81,11 +79,10 @@ async fn test_footer_next_track(_cx: &mut TestAppContext) {
     // Navigate to next track
     {
         let idx = *queue_index.borrow();
-        if let Some(i) = idx {
-            if i < queue_len - 1 {
+        if let Some(i) = idx
+            && i < queue_len - 1 {
                 *queue_index.borrow_mut() = Some(i + 1);
             }
-        }
     }
     assert_eq!(
         *queue_index.borrow(),
@@ -97,11 +94,10 @@ async fn test_footer_next_track(_cx: &mut TestAppContext) {
     *queue_index.borrow_mut() = Some(4);
     {
         let idx = *queue_index.borrow();
-        if let Some(i) = idx {
-            if i < queue_len - 1 {
+        if let Some(i) = idx
+            && i < queue_len - 1 {
                 *queue_index.borrow_mut() = Some(i + 1);
             }
-        }
     }
     assert_eq!(*queue_index.borrow(), Some(4), "Should stay at last track");
 }
@@ -472,7 +468,7 @@ async fn test_footer_device_popup_toggle(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_footer_device_selection(_cx: &mut TestAppContext) {
     let selected_index = Rc::new(RefCell::new(0usize));
-    let device_names = vec!["Default", "BlackHole 2ch", "External DAC"];
+    let device_names = ["Default", "BlackHole 2ch", "External DAC"];
 
     // Select second device
     *selected_index.borrow_mut() = 1;
@@ -559,8 +555,8 @@ async fn test_footer_studio_menu_navigation(_cx: &mut TestAppContext) {
 async fn test_footer_responsive_waveform_visibility(_cx: &mut TestAppContext) {
     const BREAKPOINT_HIDE_WAVEFORM: f32 = 700.0;
 
-    let window_widths = vec![800.0, 700.0, 600.0, 500.0];
-    let expected_visible = vec![true, true, false, false];
+    let window_widths = [800.0, 700.0, 600.0, 500.0];
+    let expected_visible = [true, true, false, false];
 
     for (width, expected) in window_widths.iter().zip(expected_visible.iter()) {
         let show_waveform = *width >= BREAKPOINT_HIDE_WAVEFORM;
@@ -600,8 +596,8 @@ async fn test_footer_responsive_timestamp_positioning(_cx: &mut TestAppContext) 
 async fn test_footer_responsive_track_info_visibility(_cx: &mut TestAppContext) {
     const BREAKPOINT_HIDE_TRACK_INFO: f32 = 550.0;
 
-    let window_widths = vec![600.0, 550.0, 500.0, 400.0];
-    let expected_visible = vec![true, true, false, false];
+    let window_widths = [600.0, 550.0, 500.0, 400.0];
+    let expected_visible = [true, true, false, false];
 
     for (width, expected) in window_widths.iter().zip(expected_visible.iter()) {
         let show_track_info = *width >= BREAKPOINT_HIDE_TRACK_INFO;
@@ -618,8 +614,8 @@ async fn test_footer_responsive_track_info_visibility(_cx: &mut TestAppContext) 
 async fn test_footer_responsive_studio_device_visibility(_cx: &mut TestAppContext) {
     const BREAKPOINT_HIDE_STUDIO_DEVICE: f32 = 400.0;
 
-    let window_widths = vec![500.0, 400.0, 350.0, 300.0];
-    let expected_visible = vec![true, true, false, false];
+    let window_widths = [500.0, 400.0, 350.0, 300.0];
+    let expected_visible = [true, true, false, false];
 
     for (width, expected) in window_widths.iter().zip(expected_visible.iter()) {
         let show_studio_device = *width >= BREAKPOINT_HIDE_STUDIO_DEVICE;

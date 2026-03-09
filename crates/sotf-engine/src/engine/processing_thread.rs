@@ -1244,7 +1244,7 @@ mod tests {
             let config = settings.to_plugin_config(sample_rate as f64);
             let channels = input_channels_for(&plugin_type);
 
-            match build_plugin_host(&[config.clone()], sample_rate, channels) {
+            match build_plugin_host(std::slice::from_ref(&config), sample_rate, channels) {
                 Ok(_) => {}
                 Err(e) => panic!(
                     "build_plugin_host failed for '{}': {}",
@@ -1279,7 +1279,7 @@ mod tests {
             let config = settings.to_plugin_config(sample_rate as f64);
             let in_channels = input_channels_for(&plugin_type);
 
-            let mut host = build_plugin_host(&[config.clone()], sample_rate, in_channels)
+            let mut host = build_plugin_host(std::slice::from_ref(&config), sample_rate, in_channels)
                 .unwrap_or_else(|e| panic!("build failed for '{}': {}", config.plugin_type, e));
 
             let out_channels = host.output_channels();

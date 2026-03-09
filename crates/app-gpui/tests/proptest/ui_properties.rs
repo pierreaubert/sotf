@@ -1,287 +1,324 @@
-//! Property-based tests for UI state and playback.
+//! Property-based tests for Queue, QueueController, and PlaybackController.
+//!
+//! Tests the real types from `sotf-player` with generated data.
 
-#[path = "../common/mod.rs"]
-mod common;
-
-use common::state_builder::{
-    TestAction, TestAlbum, TestInputMode, TestInputState, TestPlaybackState, TestQueueItem,
-    TestTrack,
-};
 use proptest::prelude::*;
+use sotf_audio_player::{
+    Album, PlaybackController, Queue, QueueController, QueuePlaybackEffect, Track,
+};
+use std::path::PathBuf;
 
 // =============================================================================
 // Strategies
 // =============================================================================
 
-/// Generate a valid volume value (may be out of range to test clamping)
+fn make_album(title: &str, track_count: usize) -> Album {
+    Album {
+        title: title.to_string(),
+        tracks: (0..track_count)
+            .map(|i| Track {
+                path: PathBuf::from(format!("/music/{}/track_{}.flac", title, i + 1)),
+                title: Some(format!("Track {}", i + 1)),
+                duration_secs: Some(180),
+                channels: Some(2),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+fn album_strategy() -> impl Strategy<Value = Album> {
+    (1usize..10, 0u32..1000)
+        .prop_map(|(track_count, id)| make_album(&format!("Album_{}", id), track_count))
+}
+
+fn queue_albums_strategy() -> impl Strategy<Value = Vec<Album>> {
+    prop::collection::vec(album_strategy(), 1..8)
+}
+
 fn volume_strategy() -> impl Strategy<Value = f32> {
     -1.0f32..2.0
 }
 
-/// Generate a seek position
-fn seek_position_strategy() -> impl Strategy<Value = f64> {
-    -10.0f64..500.0
-}
-
-/// Generate an input mode
-fn input_mode_strategy() -> impl Strategy<Value = TestInputMode> {
-    prop_oneof![
-        Just(TestInputMode::Normal),
-        Just(TestInputMode::Search),
-        Just(TestInputMode::AddDirectory),
-        Just(TestInputMode::SavePlugins),
-        Just(TestInputMode::LoadPlugins),
-    ]
-}
-
-/// Generate a key that might conflict with keybindings
-fn key_strategy() -> impl Strategy<Value = char> {
-    prop_oneof![
-        Just('0'),
-        Just('1'),
-        Just('2'),
-        Just('3'),
-        Just('4'),
-        Just('5'),
-        Just(' '),
-        Just('+'),
-        Just('-'),
-        Just('/'),
-        Just('\x1b'), // Escape
-        Just('\x08'), // Backspace
-        "[a-zA-Z]".prop_map(|s| s.chars().next().unwrap()),
-    ]
-}
-
-/// Generate a test action
-fn action_strategy() -> impl Strategy<Value = TestAction> {
-    prop_oneof![
-        Just(TestAction::PlayPause),
-        Just(TestAction::NextTrack),
-        Just(TestAction::PrevTrack),
-        volume_strategy().prop_map(TestAction::SetVolume),
-        seek_position_strategy().prop_map(TestAction::SeekTo),
-        Just(TestAction::ToggleSearch),
-        Just(TestAction::ClearSearch),
-        "[a-z]{1,5}".prop_map(TestAction::TypeInSearch),
-    ]
-}
-
-/// Generate a track list
-fn track_list_strategy() -> impl Strategy<Value = Vec<TestTrack>> {
-    prop::collection::vec(
-        (1u32..1000).prop_map(|i| TestTrack::new(&format!("track{}.flac", i))),
-        1..10,
-    )
-}
-
-/// Generate a queue
-fn queue_strategy() -> impl Strategy<Value = Vec<TestQueueItem>> {
-    prop::collection::vec(
-        track_list_strategy().prop_map(|tracks| {
-            let album = TestAlbum::new("Album", "Artist").with_tracks(tracks);
-            TestQueueItem::from_album(album)
-        }),
-        1..5,
-    )
-}
-
 // =============================================================================
-// Property Tests
+// Queue Property Tests
 // =============================================================================
 
 proptest! {
-    /// INVARIANT: Volume is always clamped to [0.0, 1.0]
+    /// INVARIANT: Queue current_index is always valid or None.
     #[test]
-    fn volume_always_clamped(volume in volume_strategy()) {
-        let mut state = TestPlaybackState::default();
-        state.set_volume(volume);
-
-        prop_assert!(
-            state.volume >= 0.0 && state.volume <= 1.0,
-            "Volume {} not clamped to [0, 1]: got {}",
-            volume, state.volume
-        );
-    }
-
-    /// INVARIANT: Volume is preserved after next_track()
-    #[test]
-    fn volume_preserved_after_next_track(
-        volume in 0.0f32..1.0,
-        queue in queue_strategy()
+    fn queue_index_always_valid(
+        albums in queue_albums_strategy(),
+        ops in prop::collection::vec(0u8..3, 1..30)
     ) {
-        let mut state = TestPlaybackState::default()
-            .with_volume(volume)
-            .with_queue(queue);
-        state.is_playing = true;
-
-        // Try multiple next_track calls
-        for _ in 0..5 {
-            state.next_track();
-
-            prop_assert_eq!(
-                state.volume, volume,
-                "Volume changed from {} to {} after next_track",
-                volume, state.volume
-            );
+        let mut queue = Queue::new();
+        for album in &albums {
+            queue.add(album.clone());
         }
-    }
+        queue.start();
 
-    /// INVARIANT: Seek position is clamped to [0, duration]
-    #[test]
-    fn seek_position_clamped(
-        position in seek_position_strategy(),
-        duration in 60.0f64..600.0
-    ) {
-        let album = TestAlbum::new("Album", "Artist")
-            .with_tracks(vec![TestTrack::new("track.flac").with_duration(duration)]);
-        let mut state = TestPlaybackState::default()
-            .with_queue(vec![TestQueueItem::from_album(album)]);
-        state.duration_secs = duration;
+        for op in ops {
+            match op {
+                0 => { queue.next_track(); }
+                1 => { queue.previous_track(); }
+                _ => {
+                    if !queue.is_empty() {
+                        queue.remove(0);
+                    }
+                }
+            }
 
-        let _ = state.seek_to(position);
-
-        prop_assert!(
-            state.position_secs >= 0.0 && state.position_secs <= duration,
-            "Position {} not clamped to [0, {}]: got {}",
-            position, duration, state.position_secs
-        );
-    }
-
-    /// INVARIANT: InputMode transitions are reversible
-    #[test]
-    fn input_mode_reversible(mode in input_mode_strategy()) {
-        let mut state = TestInputState::default();
-
-        // Enter mode
-        state.enter_input_mode(mode);
-        prop_assert_eq!(state.input_mode, mode);
-
-        // Exit mode
-        state.exit_input_mode();
-        prop_assert_eq!(
-            state.input_mode,
-            TestInputMode::Normal,
-            "Exiting {:?} didn't return to Normal",
-            mode
-        );
-    }
-
-    /// INVARIANT: Search mode consumes all non-control keys
-    #[test]
-    fn search_mode_consumes_keys(key in key_strategy()) {
-        let mut state = TestInputState::default();
-        state.enter_input_mode(TestInputMode::Search);
-
-        let consumed = state.process_key(key);
-
-        prop_assert!(
-            consumed,
-            "Key {:?} was not consumed in search mode",
-            key
-        );
-    }
-
-    /// INVARIANT: Normal mode triggers global actions for bound keys
-    #[test]
-    fn normal_mode_triggers_actions(key in key_strategy()) {
-        let mut state = TestInputState::default();
-
-        let consumed = state.process_key(key);
-
-        // Certain keys should trigger actions in normal mode
-        let should_trigger = matches!(key, '0'..='5' | ' ' | '+' | '-' | '=' | '_' | '/');
-
-        if should_trigger {
-            prop_assert!(
-                !state.triggered_actions.is_empty() || state.input_mode == TestInputMode::Search,
-                "Key {:?} should trigger action or mode change in normal mode",
-                key
-            );
-        }
-    }
-
-    /// INVARIANT: Search mode does NOT trigger global actions
-    #[test]
-    fn search_mode_blocks_actions(key in key_strategy()) {
-        let mut state = TestInputState::default();
-        state.enter_input_mode(TestInputMode::Search);
-
-        state.process_key(key);
-
-        // Check that no global actions were triggered
-        let action_triggered = !state.triggered_actions.is_empty();
-
-        prop_assert!(
-            !action_triggered,
-            "Key {:?} triggered action {:?} in search mode",
-            key, state.triggered_actions
-        );
-    }
-
-    /// INVARIANT: Escape in search mode clears query and exits
-    #[test]
-    fn escape_clears_and_exits_search(query in "[a-zA-Z0-9]{0,20}") {
-        let mut state = TestInputState::default();
-        state.enter_input_mode(TestInputMode::Search);
-        state.search_query = query;
-
-        state.process_key('\x1b'); // Escape
-
-        prop_assert_eq!(state.input_mode, TestInputMode::Normal);
-        prop_assert!(state.search_query.is_empty(), "Search query not cleared");
-    }
-
-    /// INVARIANT: Backspace removes exactly one character
-    #[test]
-    fn backspace_removes_one_char(query in "[a-zA-Z]{1,20}") {
-        let mut state = TestInputState::default();
-        state.enter_input_mode(TestInputMode::Search);
-        state.search_query = query.clone();
-
-        let len_before = state.search_query.len();
-        state.process_key('\x08'); // Backspace
-        let len_after = state.search_query.len();
-
-        prop_assert_eq!(
-            len_after, len_before - 1,
-            "Backspace should remove exactly one character"
-        );
-    }
-
-    /// INVARIANT: Queue position is always valid or None
-    #[test]
-    fn queue_index_always_valid(queue in queue_strategy()) {
-        let mut state = TestPlaybackState::default().with_queue(queue);
-        state.is_playing = true;
-
-        // Advance through queue
-        for _ in 0..20 {
-            state.next_track();
-
-            if let Some(idx) = state.current_queue_index {
+            if let Some(idx) = queue.current_index {
                 prop_assert!(
-                    idx < state.queue.len(),
-                    "Queue index {} exceeds queue length {}",
-                    idx, state.queue.len()
+                    idx < queue.len(),
+                    "current_index {} >= queue.len() {}",
+                    idx,
+                    queue.len()
                 );
             }
         }
     }
 
-    /// INVARIANT: Playing state becomes false when queue exhausted
+    /// INVARIANT: Exhausting queue via next_track returns None at the end.
     #[test]
-    fn playing_stops_at_queue_end(queue in queue_strategy()) {
-        let mut state = TestPlaybackState::default().with_queue(queue);
-        state.is_playing = true;
+    fn queue_exhaustion(albums in queue_albums_strategy()) {
+        let total_tracks: usize = albums.iter().map(|a| a.tracks.len()).sum();
 
-        // Exhaust queue
-        while state.next_track().is_some() {}
+        let mut queue = Queue::new();
+        for album in &albums {
+            queue.add(album.clone());
+        }
+        queue.start();
 
-        // At queue end, should stop playing
+        let mut steps = 0;
+        while queue.next_track().is_some() {
+            steps += 1;
+            prop_assert!(
+                steps < total_tracks + 1,
+                "Queue didn't terminate after {} steps (expected max {})",
+                steps,
+                total_tracks
+            );
+        }
+
+        // We started at track 1, so advancing (total-1) times reaches the end
+        prop_assert_eq!(steps, total_tracks - 1);
+    }
+
+    /// INVARIANT: Removing an item before current_index adjusts the index correctly.
+    #[test]
+    fn remove_before_current_adjusts_index(album_count in 3usize..10) {
+        let mut queue = Queue::new();
+        for i in 0..album_count {
+            queue.add(make_album(&format!("Album_{}", i), 1));
+        }
+        queue.start();
+
+        // Advance to last album
+        for _ in 0..album_count - 1 {
+            queue.next_track();
+        }
+        prop_assert_eq!(queue.current_index, Some(album_count - 1));
+
+        // Remove first album -- current should shift down
+        let was_current = queue.remove(0);
+        prop_assert!(!was_current);
+        prop_assert_eq!(queue.current_index, Some(album_count - 2));
+        prop_assert_eq!(queue.len(), album_count - 1);
+    }
+
+    /// INVARIANT: jump_to always lands on the first track of the target album.
+    #[test]
+    fn jump_to_resets_track_index(
+        albums in queue_albums_strategy(),
+        target in 0usize..8
+    ) {
+        let mut queue = Queue::new();
+        for album in &albums {
+            queue.add(album.clone());
+        }
+        queue.start();
+
+        // Advance some tracks in the first album
+        queue.next_track();
+
+        let target = target % queue.len();
+        let path = queue.jump_to(target);
+
+        prop_assert!(path.is_some());
+        prop_assert_eq!(queue.current_index, Some(target));
+
+        // Verify it's the first track
+        let item = &queue.items[target];
+        prop_assert_eq!(item.current_track_index, 0);
+    }
+
+    /// INVARIANT: clear() leaves queue empty with no current index.
+    #[test]
+    fn clear_empties_queue(albums in queue_albums_strategy()) {
+        let mut queue = Queue::new();
+        for album in &albums {
+            queue.add(album.clone());
+        }
+        queue.start();
+
+        queue.clear();
+        prop_assert!(queue.is_empty());
+        prop_assert_eq!(queue.current_index, None);
+    }
+}
+
+// =============================================================================
+// QueueController Property Tests
+// =============================================================================
+
+proptest! {
+    /// INVARIANT: QueueController.next_track returns Stop when queue is exhausted.
+    #[test]
+    fn controller_stops_at_end(albums in queue_albums_strategy()) {
+        let mut ctrl = QueueController::new();
+        for album in &albums {
+            ctrl.add_album(album.clone());
+        }
+        ctrl.start();
+
+        let total_tracks: usize = albums.iter().map(|a| a.tracks.len()).sum();
+        for _ in 0..total_tracks {
+            let effect = ctrl.next_track();
+            if matches!(effect, QueuePlaybackEffect::Stop) {
+                break;
+            }
+        }
+
+        // One more should definitely be Stop
+        let effect = ctrl.next_track();
+        prop_assert_eq!(effect, QueuePlaybackEffect::Stop);
+    }
+
+    /// INVARIANT: play_album_now always returns Play effect and jumps to the new album.
+    #[test]
+    fn play_now_jumps_to_new_album(
+        initial_albums in prop::collection::vec(album_strategy(), 1..4),
+        new_album in album_strategy()
+    ) {
+        let mut ctrl = QueueController::new();
+        for album in &initial_albums {
+            ctrl.add_album(album.clone());
+        }
+        ctrl.start();
+
+        let expected_index = ctrl.len();
+        let effect = ctrl.play_album_now(new_album);
+
+        prop_assert!(matches!(effect, QueuePlaybackEffect::Play(_)));
+        prop_assert_eq!(ctrl.current_index(), Some(expected_index));
+    }
+
+    /// INVARIANT: Removing all items produces Stop effect.
+    #[test]
+    fn removing_all_stops(albums in queue_albums_strategy()) {
+        let mut ctrl = QueueController::new();
+        for album in &albums {
+            ctrl.add_album(album.clone());
+        }
+        ctrl.start();
+
+        let mut got_stop = false;
+        while !ctrl.is_empty() {
+            let (effect, _) = ctrl.remove(0);
+            if effect == QueuePlaybackEffect::Stop {
+                got_stop = true;
+            }
+        }
+
+        prop_assert!(got_stop, "Never got Stop effect after removing all items");
+        prop_assert!(ctrl.is_empty());
+    }
+}
+
+// =============================================================================
+// PlaybackController Property Tests
+// =============================================================================
+
+proptest! {
+    /// INVARIANT: Volume is always clamped to [0.0, 1.0].
+    #[test]
+    fn volume_always_clamped(volume in volume_strategy()) {
+        let mut ctrl = PlaybackController::new();
+        ctrl.set_volume(volume);
+
         prop_assert!(
-            !state.is_playing,
-            "Should stop playing at queue end"
+            ctrl.volume >= 0.0 && ctrl.volume <= 1.0,
+            "Volume {} not clamped: got {}",
+            volume,
+            ctrl.volume
         );
+    }
+
+    /// INVARIANT: Effective volume is 0 when muted, regardless of volume setting.
+    #[test]
+    fn muted_effective_volume_zero(volume in 0.0f32..1.0) {
+        let mut ctrl = PlaybackController::new();
+        ctrl.set_volume(volume);
+        ctrl.toggle_mute();
+
+        prop_assert_eq!(ctrl.effective_volume(), 0.0);
+    }
+
+    /// INVARIANT: increase_volume + decrease_volume is approximately identity.
+    #[test]
+    fn volume_increase_decrease_roundtrip(volume in 0.1f32..0.9) {
+        let mut ctrl = PlaybackController::new();
+        ctrl.set_volume(volume);
+        let initial = ctrl.volume;
+
+        ctrl.increase_volume();
+        ctrl.decrease_volume();
+
+        let diff = (ctrl.volume - initial).abs();
+        prop_assert!(
+            diff < 0.001,
+            "Volume roundtrip drift: {} -> {}",
+            initial,
+            ctrl.volume
+        );
+    }
+
+    /// INVARIANT: toggle_mute is its own inverse.
+    #[test]
+    fn toggle_mute_inverse(_dummy in 0u8..1) {
+        let mut ctrl = PlaybackController::new();
+        prop_assert!(!ctrl.muted);
+
+        ctrl.toggle_mute();
+        prop_assert!(ctrl.muted);
+
+        ctrl.toggle_mute();
+        prop_assert!(!ctrl.muted);
+    }
+
+    /// INVARIANT: Repeated increase_volume never exceeds 1.0.
+    #[test]
+    fn volume_increase_bounded(steps in 1usize..100) {
+        let mut ctrl = PlaybackController::new();
+        ctrl.set_volume(0.5);
+
+        for _ in 0..steps {
+            ctrl.increase_volume();
+            prop_assert!(ctrl.volume <= 1.0, "Volume exceeded 1.0: {}", ctrl.volume);
+        }
+    }
+
+    /// INVARIANT: Repeated decrease_volume never goes below 0.0.
+    #[test]
+    fn volume_decrease_bounded(steps in 1usize..100) {
+        let mut ctrl = PlaybackController::new();
+        ctrl.set_volume(0.5);
+
+        for _ in 0..steps {
+            ctrl.decrease_volume();
+            prop_assert!(ctrl.volume >= 0.0, "Volume below 0.0: {}", ctrl.volume);
+        }
     }
 }

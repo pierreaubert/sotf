@@ -169,6 +169,7 @@ impl EventTrace {
         self.events.push(event.to_string());
     }
 
+    #[allow(dead_code)]
     fn next_timestamp(&mut self) -> u64 {
         self.timestamp_counter += 1;
         self.timestamp_counter

@@ -34,7 +34,7 @@ fn test_engine_initial_state() {
 fn test_engine_play_file() {
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(0.5, 48000, 2);
     let path = temp_file.path().to_path_buf();
@@ -52,7 +52,7 @@ fn test_engine_play_file() {
 #[test]
 fn test_engine_pause_resume() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -77,7 +77,7 @@ fn test_engine_pause_resume() {
 #[test]
 fn test_engine_stop() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -97,7 +97,7 @@ fn test_engine_stop() {
 fn test_engine_seek() {
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -121,7 +121,7 @@ fn test_engine_seek() {
 #[test]
 fn test_engine_volume_control() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Test various volume levels
     let volumes = [0.0, 0.5, 1.0, 1.5, 2.0];
@@ -139,7 +139,7 @@ fn test_engine_volume_control() {
 fn test_engine_mute() {
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Mute
     engine.set_mute(true).unwrap();
@@ -159,7 +159,7 @@ fn test_engine_mute() {
 #[test]
 fn test_engine_update_plugin_chain() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Create a simple plugin chain with a gain plugin
     let plugins = vec![PluginConfig::new(
@@ -178,7 +178,7 @@ fn test_engine_update_plugin_chain() {
 #[test]
 fn test_engine_bypass_processing() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Enable bypass
     engine.set_bypass(true).unwrap();
@@ -198,7 +198,7 @@ fn test_engine_bypass_processing() {
 #[test]
 fn test_engine_invalid_file() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let _result = engine.play(PathBuf::from("/nonexistent/file.wav"));
 
@@ -217,7 +217,7 @@ fn test_engine_invalid_file() {
 #[test]
 fn test_engine_multiple_plays() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     // Play first file
     let temp_file1 = common::create_test_wav(0.3, 48000, 2);
@@ -237,7 +237,7 @@ fn test_engine_multiple_plays() {
 #[test]
 fn test_engine_rapid_commands() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(2.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
@@ -267,7 +267,7 @@ fn test_engine_rapid_commands() {
 #[test]
 fn test_engine_shutdown() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -287,7 +287,7 @@ fn test_engine_shutdown() {
 #[test]
 fn test_engine_position_tracking() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
@@ -318,7 +318,7 @@ fn test_engine_position_tracking() {
 #[test]
 fn test_engine_state_consistency() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(1.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
@@ -390,7 +390,7 @@ fn test_engine_custom_sample_rate() {
 #[test]
 fn test_engine_drop_cleanup() {
     let config = common::test_engine_config();
-    let mut engine = AudioEngine::new(config).unwrap();
+    let engine = AudioEngine::new(config).unwrap();
 
     let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();

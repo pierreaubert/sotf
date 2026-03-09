@@ -1,6 +1,4 @@
-use parking_lot::Mutex;
 use sotf_audio::manager::AudioEngineManager;
-use std::sync::Arc;
 
 // We need to simulate the structure of AudioDaemon in sotf_daemon.rs
 // but since it's in a binary, we can't easily import it.
@@ -8,7 +6,7 @@ use std::sync::Arc;
 
 #[test]
 fn test_audio_engine_manager_state_reporting() {
-    let mut manager = AudioEngineManager::new();
+    let manager = AudioEngineManager::new();
 
     // Initial state
     assert_eq!(
@@ -33,7 +31,7 @@ fn test_audio_engine_manager_state_reporting() {
 #[test]
 fn test_device_matching_priority_logic() {
     // This tests the logic we refactored the daemon to use
-    use cpal::traits::HostTrait;
+    
     let host = cpal::default_host();
 
     // We can't easily mock cpal::Host, so we'll test the logic in sotf_audio::devices

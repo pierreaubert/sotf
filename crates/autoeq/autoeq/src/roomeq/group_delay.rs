@@ -525,7 +525,7 @@ mod tests {
         ];
         let unwrapped = unwrap_phase(&phase);
 
-        let expected = vec![-170.0, -175.0, -185.0, -190.0];
+        let expected = [-170.0, -175.0, -185.0, -190.0];
         for (u, e) in unwrapped.iter().zip(expected.iter()) {
             assert!(
                 (u.to_degrees() - e).abs() < 1e-5,
@@ -637,7 +637,7 @@ mod tests {
         let range_indices: Vec<usize> = freqs
             .iter()
             .enumerate()
-            .filter(|&(_, &f)| f >= 30.0 && f <= 200.0)
+            .filter(|&(_, &f)| (30.0..=200.0).contains(&f))
             .map(|(i, _)| i)
             .collect();
 

@@ -9,7 +9,7 @@ use std::rc::Rc;
 /// Scenario: Verify startup test infrastructure works.
 #[gpui::test]
 async fn test_startup_infrastructure(_cx: &mut TestAppContext) {
-    assert!(true, "Startup test infrastructure works");
+    // Test infrastructure verification - if we reach this point, the test passes
 }
 
 /// Scenario: Volume tracker test infrastructure.

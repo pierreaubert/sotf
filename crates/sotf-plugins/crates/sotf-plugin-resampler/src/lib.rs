@@ -322,7 +322,6 @@ impl Plugin for ResamplerPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
 
     #[test]
     fn test_resampler_creation() {
@@ -425,7 +424,7 @@ mod tests {
         // Different frequency on each channel
         for i in 0..num_frames {
             let t = i as f32 / 44100.0;
-            input[i * 5 + 0] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2; // FL
+            input[i * 5] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2; // FL
             input[i * 5 + 1] = (2.0 * std::f32::consts::PI * 550.0 * t).sin() * 0.2; // FR
             input[i * 5 + 2] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.2; // C
             input[i * 5 + 3] = (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.2; // RL

@@ -3,7 +3,7 @@
 // ============================================================================
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use sotf_host::{Plugin, ProcessContext};
+use sotf_host::{InPlacePlugin, ProcessContext};
 use sotf_plugin_loudness_compensation::LoudnessCompensationPlugin;
 use std::time::Duration;
 
@@ -25,21 +25,17 @@ fn benchmark_loudness_plugin(c: &mut Criterion) {
                     LoudnessCompensationPlugin::new(channels, 100.0, 6.0, 10000.0, 6.0);
                 plugin.initialize(sample_rate).unwrap();
 
-                let input = vec![0.5f32; block_size * channels];
-                let mut output = vec![0.0f32; block_size * channels];
+                let mut buffer = vec![0.5f32; block_size * channels];
                 let context = ProcessContext {
                     sample_rate,
                     num_frames: block_size,
                 };
 
                 b.iter(|| {
-                    plugin
-                        .process(
-                            black_box(&input),
-                            black_box(&mut output),
-                            black_box(&context),
-                        )
-                        .unwrap();
+                    plugin.process_in_place(
+                        black_box(&mut buffer),
+                        black_box(&context),
+                    );
                 });
             },
         );

@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 // Integration tests for XTC (Crosstalk Cancellation) plugin
 
 use sotf_host::{Plugin, ProcessContext};

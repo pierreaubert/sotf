@@ -401,8 +401,8 @@ mod tests {
         let j = spherical_bessel_j(order, x);
 
         // All values should be finite
-        for n in 0..order {
-            assert!(j[n].is_finite(), "j_{} is not finite", n);
+        for (n, &jn) in j.iter().enumerate().take(order) {
+            assert!(jn.is_finite(), "j_{} is not finite", n);
         }
 
         // Values should decrease for n >> x

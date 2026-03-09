@@ -634,7 +634,7 @@ mod tests {
     fn test_bem_problem_creation() {
         let problem = BemProblem::rigid_sphere_scattering(0.1, 1000.0, 343.0, 1.21);
 
-        assert!(problem.mesh.elements.len() > 0);
+        assert!(!problem.mesh.elements.is_empty());
         assert!(problem.mesh.nodes.nrows() > 0);
         assert!(problem.ka() > 0.0);
     }

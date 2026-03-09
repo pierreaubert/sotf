@@ -6,7 +6,6 @@
 
 use sotf_audio::engine::{AudioEngine, EngineConfig};
 use sotf_audio::plugins::{PluginChain, PluginSettings, PluginType};
-use std::path::PathBuf;
 use std::time::Duration;
 
 #[test]
@@ -25,11 +24,10 @@ fn test_fft_chain_arbitrary_frame_sizes() {
     let _spectrum_idx = chain.add_plugin(&PluginType::SpectrumAnalyzer);
 
     // Configure Upmixer for 5.1
-    if let Some(plugin) = chain.get_plugin_mut(upmixer_idx) {
-        if let PluginSettings::Upmixer { speaker_config, .. } = &mut plugin.settings {
+    if let Some(plugin) = chain.get_plugin_mut(upmixer_idx)
+        && let PluginSettings::Upmixer { speaker_config, .. } = &mut plugin.settings {
             *speaker_config = "5.1".to_string();
         }
-    }
 
     chain.update_channel_dependent_plugins();
 
@@ -54,7 +52,7 @@ fn test_fft_chain_arbitrary_frame_sizes() {
         hal_mode: false,
     };
 
-    let mut engine = AudioEngine::new(config).expect("Failed to create engine");
+    let engine = AudioEngine::new(config).expect("Failed to create engine");
 
     // Generate a test file (sine wave at 1kHz)
     let temp_dir = tempfile::tempdir().unwrap();

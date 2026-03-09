@@ -106,17 +106,17 @@ fn test_real_shared_memory_connection() {
 
     // Verify reasonable values
     assert!(
-        sample_rate >= 44100 && sample_rate <= 192000,
+        (44100..=192000).contains(&sample_rate),
         "Sample rate {} out of expected range",
         sample_rate
     );
     assert!(
-        buffer_frames >= 64 && buffer_frames <= 8192,
+        (64..=8192).contains(&buffer_frames),
         "Buffer frames {} out of expected range",
         buffer_frames
     );
     assert!(
-        channel_count >= 1 && channel_count <= 16,
+        (1..=16).contains(&channel_count),
         "Channel count {} out of expected range",
         channel_count
     );
@@ -421,9 +421,9 @@ fn test_real_daemon_list_devices() {
 
     let json: serde_json::Value = serde_json::from_str(&response).expect("Invalid JSON response");
 
-    if let Some(data) = json.get("data") {
-        if let Some(devices) = data.get("devices") {
-            if let Some(arr) = devices.as_array() {
+    if let Some(data) = json.get("data")
+        && let Some(devices) = data.get("devices")
+            && let Some(arr) = devices.as_array() {
                 println!("Available audio devices ({}):", arr.len());
                 for device in arr {
                     if let Some(name) = device.get("name") {
@@ -436,8 +436,6 @@ fn test_real_daemon_list_devices() {
                     }
                 }
             }
-        }
-    }
 }
 
 // =============================================================================

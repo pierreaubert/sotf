@@ -29,9 +29,8 @@ mod tests {
 
     #[test]
     fn test_zcr_max_crossings() {
-        let one_chunk = vec![-1.0, 1.0];
-        let chunks: Vec<f32> = std::iter::repeat(one_chunk.iter())
-            .take(512)
+        let one_chunk = [-1.0, 1.0];
+        let chunks: Vec<f32> = std::iter::repeat_n(one_chunk.iter(), 512)
             .flatten()
             .cloned()
             .collect();

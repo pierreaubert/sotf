@@ -810,7 +810,6 @@ impl InPlacePlugin for CrossfeedPlugin {
 mod tests {
     use crate::*;
     use sotf_host::plugin::ProcessContext;
-    use sotf_host::*;
 
     #[test]
     fn test_crossfeed_basic() {

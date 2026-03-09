@@ -678,7 +678,7 @@ mod tests {
         let b = array![1.0_f64, 2.0];
 
         // Deflate one approximate eigenvector
-        let w1 = array![0.7071_f64, 0.7071];
+        let w1 = array![std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2];
         let w1_norm = vector_norm(&w1);
         let w1_normalized = w1.mapv(|v| v / w1_norm);
         let deflation = DeflationSubspace::new(vec![w1_normalized], &a).unwrap();

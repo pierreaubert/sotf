@@ -181,7 +181,6 @@ impl InPlacePlugin for CrossoverPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sotf_host::*;
     #[test]
     fn test_crossover_basic() {
         let mut p = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();

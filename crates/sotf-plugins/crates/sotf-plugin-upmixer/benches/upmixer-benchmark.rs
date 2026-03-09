@@ -240,7 +240,7 @@ fn bench_upmixer_production_config(c: &mut Criterion) {
     let configs = ["5.1", "7.1.4", "9.1.6"];
     for &config in &configs {
         group.bench_with_input(BenchmarkId::from_parameter(config), &config, |b, &cfg| {
-            use sotf_plugins::UpmixerPluginParams;
+            use sotf_plugin_upmixer::UpmixerPluginParams;
             let params = UpmixerPluginParams {
                 speaker_config: cfg.to_string(),
                 ..serde_json::from_str("{}").unwrap()

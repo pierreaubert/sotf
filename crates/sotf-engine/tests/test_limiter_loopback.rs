@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
@@ -48,14 +49,13 @@ fn test_limiter_loopback_verification() {
     let mut input_setup = None;
 
     for name in device_names {
-        if let Some(out) = find_device(name, false) {
-            if let Some(in_) = find_device(name, true) {
+        if let Some(out) = find_device(name, false)
+            && let Some(in_) = find_device(name, true) {
                 output_setup = Some(out);
                 input_setup = Some(in_);
                 println!("Found device: {}", name);
                 break;
             }
-        }
     }
 
     if output_setup.is_none() || input_setup.is_none() {
@@ -95,7 +95,7 @@ fn test_limiter_loopback_verification() {
             "mix": 1.0
         }),
     )];
-    let mut engine = match AudioEngine::new(config) {
+    let engine = match AudioEngine::new(config) {
         Ok(e) => e,
         Err(e) => {
             println!("Engine init failed: {}", e);
@@ -159,8 +159,8 @@ fn test_limiter_loopback_verification() {
 
     let mut max_peak = 0.0f32;
     let mut sum_sq = 0.0;
-    for i in start_idx..end_idx {
-        let val = captured_ch0[i].abs();
+    for &sample in &captured_ch0[start_idx..end_idx] {
+        let val = sample.abs();
         if val > max_peak {
             max_peak = val;
         }

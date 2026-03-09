@@ -160,12 +160,11 @@ async fn test_playback_next_track(_cx: &mut TestAppContext) {
     {
         let idx = *current_queue_index.borrow();
         let queue_len = queue.borrow().len();
-        if let Some(i) = idx {
-            if i < queue_len - 1 {
+        if let Some(i) = idx
+            && i < queue_len - 1 {
                 *current_queue_index.borrow_mut() = Some(i + 1);
                 *position_secs.borrow_mut() = 0.0; // Reset position
             }
-        }
     }
 
     assert_eq!(*current_queue_index.borrow(), Some(1));
@@ -181,12 +180,11 @@ async fn test_playback_prev_track(_cx: &mut TestAppContext) {
     // Navigate to previous track
     {
         let idx = *current_queue_index.borrow();
-        if let Some(i) = idx {
-            if i > 0 {
+        if let Some(i) = idx
+            && i > 0 {
                 *current_queue_index.borrow_mut() = Some(i - 1);
                 *position_secs.borrow_mut() = 0.0;
             }
-        }
     }
 
     assert_eq!(*current_queue_index.borrow(), Some(0));
@@ -258,7 +256,7 @@ async fn test_playback_end_of_queue(_cx: &mut TestAppContext) {
 async fn test_playback_add_to_empty_queue(_cx: &mut TestAppContext) {
     let queue: Rc<RefCell<Vec<TestQueueItem>>> = Rc::new(RefCell::new(Vec::new()));
     let current_queue_index: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(None));
-    let playback_state = Rc::new(RefCell::new(PlaybackState::Stopped));
+    let _playback_state = Rc::new(RefCell::new(PlaybackState::Stopped));
 
     // Add track
     queue.borrow_mut().push(TestQueueItem {
@@ -485,12 +483,11 @@ async fn test_playback_auto_advance_on_track_end(_cx: &mut TestAppContext) {
 
         if pos >= current_duration {
             // Auto-advance to next track
-            if let Some(i) = idx {
-                if i < queue_len - 1 {
+            if let Some(i) = idx
+                && i < queue_len - 1 {
                     *current_queue_index.borrow_mut() = Some(i + 1);
                     *position_secs.borrow_mut() = 0.0;
                 }
-            }
         }
     }
 

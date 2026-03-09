@@ -61,7 +61,6 @@ fn test_spectrum_analyzer_stereo() {
         min_freq: 20.0,
         max_freq: 20000.0,
         smoothing: 0.0, // No smoothing for testing
-        ..Default::default()
     };
 
     let mut analyzer = SpectrumAnalyzerPlugin::with_config(2, config).unwrap();
@@ -193,7 +192,7 @@ fn test_analyzer_with_5ch_audio() {
         let t = i as f32 / 48000.0;
 
         // Different content on each channel
-        input[i * 5 + 0] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2; // FL
+        input[i * 5] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.2; // FL
         input[i * 5 + 1] = (2.0 * std::f32::consts::PI * 554.0 * t).sin() * 0.2; // FR
         input[i * 5 + 2] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.2; // C
         input[i * 5 + 3] = (2.0 * std::f32::consts::PI * 110.0 * t).sin() * 0.1; // RL

@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 //! Phase 5: State Machine Modeling
 //!
 //! This module models the application state as explicit state machines,
@@ -79,6 +80,7 @@
 //! 5. Test that invalid transitions are rejected
 
 #[path = "../common/mod.rs"]
+#[allow(dead_code)]
 mod common;
 
 // =============================================================================
@@ -276,13 +278,9 @@ impl InputStateMachine {
             (InputState::AddDirectory, InputEvent::Confirm) => InputState::Normal,
 
             // Similar patterns for other modes...
-            (state, InputEvent::PressEscape) => {
+            (_state, InputEvent::PressEscape) => {
                 self.buffer.clear();
-                if state == InputState::Normal {
-                    InputState::Normal
-                } else {
-                    InputState::Normal
-                }
+                InputState::Normal
             }
 
             (state, _) => state, // Default: stay in current state

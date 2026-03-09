@@ -1,5 +1,4 @@
 use crate::driver::AppDriver;
-use gpui::*;
 use sotf_audio_player::PluginSettings;
 use sotf_audio_player_gpui::components::plugins::level_meters::LevelMeterManager;
 

@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(features.len(), 6);
         // All values should be in [-1, 1]
         for &f in &features {
-            assert!(f >= -1.0 && f <= 1.0, "feature out of range: {f}");
+            assert!((-1.0..=1.0).contains(&f), "feature out of range: {f}");
         }
     }
 }

@@ -995,8 +995,8 @@ fn test_latency_compensation() {
     let num_frames = 256;
     let mut input = vec![0.0f32; num_frames * channels];
     // Impulse at frame 0
-    for ch in 0..channels {
-        input[ch] = 1.0;
+    for sample in input.iter_mut().take(channels) {
+        *sample = 1.0;
     }
 
     let mut output = vec![0.0f32; num_frames * channels];

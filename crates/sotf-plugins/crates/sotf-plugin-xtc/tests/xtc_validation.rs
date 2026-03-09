@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 //! XTC Plugin Validation Integration Tests
 //!
 //! These tests verify the XTC implementation against acoustic physics formulas.
@@ -294,7 +295,7 @@ fn filter_magnitude_bounds() {
             freq
         );
         assert!(
-            depth >= 0.0 && depth <= 60.0,
+            (0.0..=60.0).contains(&depth),
             "Cancellation depth at {}Hz is out of bounds: {}dB",
             freq,
             depth

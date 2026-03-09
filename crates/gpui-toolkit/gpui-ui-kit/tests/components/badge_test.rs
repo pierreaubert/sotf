@@ -14,14 +14,14 @@ fn test_badge_variants() {
 
     for variant in &variants {
         let badge = Badge::new("test").variant(*variant);
-        drop(badge);
+        let _ = badge;
     }
 }
 
 #[test]
 fn test_badge_creation() {
     let badge = Badge::new("Badge Text");
-    drop(badge);
+    let _ = badge;
 }
 
 #[test]
@@ -30,29 +30,29 @@ fn test_badge_all_sizes() {
 
     for size in &sizes {
         let badge = Badge::new("test").size(*size);
-        drop(badge);
+        let _ = badge;
     }
 }
 
 #[test]
 fn test_badge_rounded() {
     let badge = Badge::new("Rounded").rounded(true);
-    drop(badge);
+    let _ = badge;
 
     let badge = Badge::new("Not Rounded").rounded(false);
-    drop(badge);
+    let _ = badge;
 }
 
 #[test]
 fn test_badge_with_icon() {
     let badge = Badge::new("Status").icon("x");
-    drop(badge);
+    let _ = badge;
 }
 
 #[test]
 fn test_badge_dot_creation() {
     let dot = BadgeDot::new();
-    drop(dot);
+    let _ = dot;
 }
 
 #[test]
@@ -67,12 +67,12 @@ fn test_badge_dot_variants() {
 
     for variant in &variants {
         let dot = BadgeDot::new().variant(*variant);
-        drop(dot);
+        let _ = dot;
     }
 }
 
 #[test]
 fn test_badge_dot_custom_size() {
     let dot = BadgeDot::new().size(gpui::px(12.0));
-    drop(dot);
+    let _ = dot;
 }

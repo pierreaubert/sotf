@@ -141,7 +141,7 @@ async fn test_compact_view_dimensions(_cx: &mut TestAppContext) {
         }
     }
 
-    let (w, h) = get_card_dimensions(ViewMode::Compact);
+    let (w, _h) = get_card_dimensions(ViewMode::Compact);
     assert!((w - 150.0).abs() < 0.1);
 }
 

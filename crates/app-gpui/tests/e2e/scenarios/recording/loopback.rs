@@ -3,7 +3,7 @@ use crate::pages::recording::RecordingPage;
 use crate::runner::{E2ERunner, TestScenario};
 use gpui::{VisualTestContext, WindowHandle};
 use sotf_audio_player_gpui::app::types::{
-    ChannelRecordingState, RecordingSignalType, SpeakerConfiguration,
+    RecordingSignalType, SpeakerConfiguration,
 };
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
