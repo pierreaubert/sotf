@@ -189,33 +189,36 @@ impl PluginType {
     pub fn maturity(&self) -> ReleaseChannel {
         match self {
             Self::EQ
-            | Self::Gain
-            | Self::Compressor
-            | Self::Limiter
-            | Self::Gate
-            | Self::Expander
-            | Self::MultibandCompressor
-            | Self::MultibandExpander
-            | Self::Matrix
-            | Self::FletcherMunson
-            | Self::LoudnessMonitor
-            | Self::SpectrumAnalyzer
-            | Self::ChannelMuteSolo => ReleaseChannel::Prod,
+		| Self::Gain
+		| Self::Compressor
+		| Self::ChannelMuteSolo
+		| Self::Crossfeed
+		| Self::Expander
+		| Self::FletcherMunson
+		| Self::Gate
+		| Self::Limiter
+		| Self::LoudnessMonitor
+		| Self::Matrix
+		| Self::MultibandCompressor
+		| Self::MultibandExpander
+		| Self::SpectrumAnalyzer
+   		| Self::Upmixer
+		| Self::XTC
+		=> ReleaseChannel::Prod,
 
-            Self::Upmixer
-            | Self::Downmix
-            | Self::BandSplit
-            | Self::BandMerge
-            | Self::MonoToStereo
-            | Self::Crossfeed
-            | Self::LoudnessCompensation => ReleaseChannel::Beta,
+            | Self::ABCompare
+		| Self::BandSplit
+		| Self::BandMerge
+		| Self::Downmix
+		| Self::LoudnessCompensation
+		| Self::MonoToStereo
+		=> ReleaseChannel::Beta,
 
             Self::BinauralDecoder
-            | Self::Convolution
-            | Self::XTC
-            | Self::Pnd
-            | Self::ABCompare
-            | Self::Denoiser => ReleaseChannel::Alpha,
+		| Self::Convolution
+		| Self::Pnd
+		| Self::Denoiser
+		=> ReleaseChannel::Alpha,
         }
     }
 }

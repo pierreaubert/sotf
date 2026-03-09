@@ -12,11 +12,11 @@ impl Screen {
             | Screen::Settings
             | Screen::Recording
             | Screen::HeadphoneEq
-            | Screen::Spinorama => ReleaseChannel::Prod,
-
-            Screen::RoomEq => ReleaseChannel::Beta,
-
-            Screen::Studio | Screen::PluginGraph => ReleaseChannel::Alpha,
+	    | Screen::Spinorama
+	    | Screen::Studio
+	    | Screen::RoomEq
+		=> ReleaseChannel::Prod,
+            Screen::PluginGraph => ReleaseChannel::Alpha,
         }
     }
 }
