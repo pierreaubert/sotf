@@ -306,6 +306,12 @@ fn run_playback_thread(
     let mut drain_start: Option<std::time::Instant> = None;
     let drain_timeout = std::time::Duration::from_secs(2);
 
+    // Callback stall detection: if cpal callbacks stop firing for too long
+    // while we have data to play, the device is broken (common with HDMI/monitor audio).
+    let mut last_callback_count: u64 = 0;
+    let mut last_callback_check = std::time::Instant::now();
+    let callback_stall_timeout = std::time::Duration::from_secs(3);
+
     // Main loop: read from queue and write to ring buffer
     loop {
         // Check for commands (non-blocking)
@@ -611,6 +617,32 @@ fn run_playback_thread(
                     log::debug!("[Playback Thread] Shutting down");
                     break;
                 }
+            }
+        }
+
+        // Callback stall detection: check if cpal callbacks have stopped firing
+        // This catches HDMI/monitor audio devices that accept stream.play() but
+        // stop calling the audio callback after a short time.
+        if !end_of_stream {
+            let current_callbacks = state.callback_count.load(Ordering::Relaxed);
+            if current_callbacks != last_callback_count {
+                // Callbacks are still firing, reset the timer
+                last_callback_count = current_callbacks;
+                last_callback_check = std::time::Instant::now();
+            } else if last_callback_check.elapsed() > callback_stall_timeout
+                && frames_received > 0
+            {
+                // Callbacks have stalled for too long while we have data
+                let msg = format!(
+                    "Audio device '{}' stopped responding (callbacks stalled after {} frames played). \
+                     This device may not support sustained playback.",
+                    device_name, frames_written
+                );
+                log::error!("[Playback Thread] {}", msg);
+                event_tx
+                    .send(ThreadEvent::ProcessingError(msg))
+                    .ok();
+                break;
             }
         }
 
