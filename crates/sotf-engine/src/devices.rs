@@ -541,6 +541,18 @@ pub fn verify_working_sample_rate(
     use cpal::StreamConfig;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    // On PipeWire, skip the verify probe entirely. PipeWire handles all sample rates
+    // transparently via its built-in resampler, and the test stream can interfere with
+    // the real playback stream on PipeWire's ALSA compatibility layer.
+    #[cfg(target_os = "linux")]
+    if is_pipewire() {
+        log::info!(
+            "[AUDIO] PipeWire detected, skipping sample rate verification (using {}Hz)",
+            requested_rate
+        );
+        return Some(requested_rate);
+    }
+
     let host = cpal::default_host();
     let device = if let Some(id) = device_identifier {
         let devices = host.output_devices().ok()?;
@@ -612,6 +624,9 @@ pub fn verify_working_sample_rate(
         if count_phase1 == 0 {
             // No callbacks at all — definitely broken
             drop(stream);
+            #[cfg(target_os = "linux")]
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            #[cfg(not(target_os = "linux"))]
             std::thread::sleep(std::time::Duration::from_millis(30));
             log::debug!(
                 "[AUDIO] Device rate verification: {}Hz - no callbacks in 150ms",
@@ -625,8 +640,13 @@ pub fn verify_working_sample_rate(
         let count_phase2 = callback_count.load(Ordering::Relaxed);
         let samples = total_samples.load(Ordering::Relaxed);
 
-        // Explicitly stop and drop the stream before trying the next rate
+        // Explicitly stop and drop the stream before trying the next rate.
+        // On Linux/PipeWire, the ALSA compatibility layer needs more time to fully
+        // release the device before a new stream can reliably use it.
         drop(stream);
+        #[cfg(target_os = "linux")]
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        #[cfg(not(target_os = "linux"))]
         std::thread::sleep(std::time::Duration::from_millis(30));
 
         // Require callbacks in BOTH phases (sustained activity).
@@ -669,6 +689,23 @@ pub fn verify_working_sample_rate(
         candidates
     );
     None
+}
+
+/// Detect if PipeWire is the active audio server on Linux.
+#[cfg(target_os = "linux")]
+fn is_pipewire() -> bool {
+    // PIPEWIRE_RUNTIME_DIR is set by PipeWire when it's the active audio server
+    if std::env::var("PIPEWIRE_RUNTIME_DIR").is_ok() {
+        return true;
+    }
+    // Fallback: check XDG_RUNTIME_DIR for pipewire socket
+    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+        let socket = std::path::Path::new(&xdg).join("pipewire-0");
+        if socket.exists() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Helper to match device by string identifier

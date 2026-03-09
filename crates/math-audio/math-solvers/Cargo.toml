@@ -1,6 +1,6 @@
 [package]
 name = "math-solvers"
-version = "0.4.0"
+version = "0.4.1"
 description = "High-performance linear solvers for BEM and FEM"
 edition = { workspace = true }
 authors = { workspace = true }

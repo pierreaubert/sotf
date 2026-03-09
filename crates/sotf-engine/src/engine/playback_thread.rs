@@ -300,6 +300,12 @@ fn run_playback_thread(
     let mut frames_dropped: u64 = 0;
     let mut frames_blocked: u64 = 0;
     let mut total_samples_written: u64 = 0;
+    let mut last_diagnostic_log = std::time::Instant::now();
+    let diagnostic_interval = std::time::Duration::from_secs(5);
+
+    // Track consecutive channel mismatches to detect stuck state vs transient hot-reload
+    #[allow(unused_assignments)]
+    let mut channel_mismatch_count: u32 = 0;
 
     // End-of-stream drain tracking
     let mut end_of_stream = false;
@@ -620,10 +626,12 @@ fn run_playback_thread(
             }
         }
 
-        // Callback stall detection: check if cpal callbacks have stopped firing
+        // Callback stall detection: check if cpal callbacks have stopped firing.
         // This catches HDMI/monitor audio devices that accept stream.play() but
         // stop calling the audio callback after a short time.
-        if !end_of_stream {
+        // Active during both normal playback AND drain — if callbacks stall during
+        // drain, the ring buffer will never empty and we'd hit a silent timeout.
+        {
             let current_callbacks = state.callback_count.load(Ordering::Relaxed);
             if current_callbacks != last_callback_count {
                 // Callbacks are still firing, reset the timer
@@ -659,6 +667,30 @@ fn run_playback_thread(
             continue;
         }
 
+        // Periodic diagnostics: log callback rate and buffer stats every few seconds
+        if last_diagnostic_log.elapsed() > diagnostic_interval && frames_received > 0 {
+            let elapsed = stream_start_time.elapsed().as_secs_f64();
+            let total_cb = state.callback_count.load(Ordering::Relaxed);
+            let total_cb_samples = state.total_callback_samples.load(Ordering::Relaxed);
+            let effective_hz = if elapsed > 0.0 && channels > 0 {
+                (total_cb_samples as f64 / channels as f64 / elapsed) as u64
+            } else {
+                0
+            };
+            let fill = if buffer_capacity > 0 {
+                let slots = producer.slots();
+                ((buffer_capacity - slots) * 100) / buffer_capacity
+            } else {
+                0
+            };
+            log::debug!(
+                "[Playback Thread] PERIODIC: callbacks={}, effective={}Hz (expected {}Hz), \
+                 buffer_fill={}%, blocked={}, dropped={}, received={}",
+                total_cb, effective_hz, sample_rate, fill, frames_blocked, frames_dropped, frames_received,
+            );
+            last_diagnostic_log = std::time::Instant::now();
+        }
+
         // Read from message queue (prioritize draining the queue if we have space)
         let message = message_rx.try_recv();
 
@@ -666,13 +698,9 @@ fn run_playback_thread(
             Ok(ProcessingMessage::Frame(frame)) => {
                 frames_received += 1;
 
-                // Track consecutive channel mismatches to detect stuck state vs transient hot-reload
-                static CHANNEL_MISMATCH_COUNT: std::sync::atomic::AtomicU32 =
-                    std::sync::atomic::AtomicU32::new(0);
-
                 // Handle channel count mismatch with robust conversion
                 if frame.num_channels != channels {
-                    CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    channel_mismatch_count += 1;
 
                     conversion_buffer.clear();
                     let num_frames = frame.num_frames;
@@ -781,11 +809,11 @@ fn run_playback_thread(
                         }
                     };
                     chunk.fill_from_iter(conversion_buffer.iter().copied());
-                    recycle_tx.send(frame.data).ok();
+                    recycle_tx.try_send(frame.data).ok();
                     continue;
                 }
 
-                CHANNEL_MISMATCH_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+                channel_mismatch_count = 0;
 
                 // Write to ring buffer
                 let frame_samples = frame.data.len();
@@ -800,13 +828,13 @@ fn run_playback_thread(
                                 frames_dropped
                             );
                         }
-                        recycle_tx.send(frame.data).ok();
+                        recycle_tx.try_send(frame.data).ok();
                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
                         continue;
                     }
                 };
                 chunk.fill_from_iter(frame.data.iter().copied());
-                recycle_tx.send(frame.data).ok();
+                recycle_tx.try_send(frame.data).ok();
                 frames_written += 1;
                 total_samples_written += frame_samples as u64;
             }
@@ -827,16 +855,37 @@ fn run_playback_thread(
                         break;
                     }
                     // Safety timeout: if drain takes too long (cpal callback stopped?),
-                    // force completion to avoid hanging forever.
+                    // check whether the buffer actually drained or is still full.
                     if let Some(start) = drain_start
                         && start.elapsed() > drain_timeout
                     {
-                        log::warn!(
-                            "[Playback Thread] Drain timeout, forcing PlaybackDrained (slots={}, capacity={})",
-                            producer.slots(),
-                            buffer_capacity
-                        );
-                        event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                        let current_slots = producer.slots();
+                        let drain_percent = if buffer_capacity > 0 {
+                            (current_slots * 100) / buffer_capacity
+                        } else {
+                            100
+                        };
+                        if drain_percent < 80 {
+                            // Buffer is still mostly full — cpal callbacks are not consuming.
+                            // This is not a normal end-of-stream, it's a playback failure.
+                            let msg = format!(
+                                "Playback stalled: ring buffer {}% full after {}s drain timeout \
+                                 (cpal callbacks not consuming audio). Device: '{}'",
+                                100 - drain_percent,
+                                drain_timeout.as_secs(),
+                                device_name,
+                            );
+                            log::error!("[Playback Thread] {}", msg);
+                            event_tx
+                                .send(ThreadEvent::ProcessingError(msg))
+                                .ok();
+                        } else {
+                            log::warn!(
+                                "[Playback Thread] Drain timeout, buffer mostly empty ({}% drained), signaling completion",
+                                drain_percent
+                            );
+                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                        }
                         break;
                     }
                     // Still draining, sleep briefly
@@ -864,10 +913,29 @@ fn run_playback_thread(
                             break;
                         }
                         if drain_start.elapsed() > drain_timeout {
-                            log::warn!(
-                                "[Playback Thread] Drain timeout after disconnect, forcing PlaybackDrained"
-                            );
-                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            let current_slots = producer.slots();
+                            let drain_percent = if buffer_capacity > 0 {
+                                (current_slots * 100) / buffer_capacity
+                            } else {
+                                100
+                            };
+                            if drain_percent < 80 {
+                                let msg = format!(
+                                    "Playback stalled after disconnect: ring buffer {}% full after drain timeout. Device: '{}'",
+                                    100 - drain_percent,
+                                    device_name,
+                                );
+                                log::error!("[Playback Thread] {}", msg);
+                                event_tx
+                                    .send(ThreadEvent::ProcessingError(msg))
+                                    .ok();
+                            } else {
+                                log::warn!(
+                                    "[Playback Thread] Drain timeout after disconnect, buffer mostly empty ({}% drained)",
+                                    drain_percent
+                                );
+                                event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            }
                             break;
                         }
                         std::thread::sleep(std::time::Duration::from_millis(5));

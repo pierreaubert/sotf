@@ -441,7 +441,7 @@ fn run_processing_thread(
                 match state.process_frame(&frame.data, &mut process_buffer, frame.num_frames) {
                     Ok(actual_output_frames) => {
                         // Recycle the decoder frame's buffer back for reuse
-                        decoder_recycle_tx.send(frame.data).ok();
+                        decoder_recycle_tx.try_send(frame.data).ok();
 
                         // Use actual output frame count from processing (not max)
                         let actual_output_samples = actual_output_frames * output_channels;
