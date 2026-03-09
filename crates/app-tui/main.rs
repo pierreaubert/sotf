@@ -44,7 +44,7 @@ fn try_acquire_lock(config_dir: &Path) -> (File, bool) {
     use std::os::windows::io::AsRawHandle;
 
     #[link(name = "kernel32")]
-    extern "system" {
+    unsafe extern "system" {
         fn LockFileEx(
             hFile: *mut core::ffi::c_void,
             dwFlags: u32,

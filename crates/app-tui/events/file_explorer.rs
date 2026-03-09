@@ -129,22 +129,20 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                         Ok(path_config_json) => {
                             if let Some(plugin) =
                                 app.plugin_chain.get_plugin_mut(app.selected_plugin_index)
-                            {
-                                if let PluginSettings::ABCompare {
+                                && let PluginSettings::ABCompare {
                                     ref mut path_a_config,
                                     ref mut path_b_config,
                                     ref mut path_a_file,
                                     ref mut path_b_file,
                                     ..
                                 } = plugin.settings
-                                {
-                                    if is_path_a {
-                                        *path_a_config = path_config_json;
-                                        *path_a_file = path_str;
-                                    } else {
-                                        *path_b_config = path_config_json;
-                                        *path_b_file = path_str;
-                                    }
+                            {
+                                if is_path_a {
+                                    *path_a_config = path_config_json;
+                                    *path_a_file = path_str;
+                                } else {
+                                    *path_b_config = path_config_json;
+                                    *path_b_file = path_str;
                                 }
                             }
                             let filename =

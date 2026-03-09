@@ -15,7 +15,7 @@ impl TuiMediaControls {
         let config = PlatformConfig {
             dbus_name: "sotf_player",
             display_name: "SOTF Player",
-            hwnd: None,
+            hwnd: get_hwnd(),
         };
 
         let mut controls = MediaControls::new(config)?;
@@ -129,4 +129,19 @@ pub fn pump_macos_event_loop() {
 #[cfg(not(target_os = "macos"))]
 pub fn pump_macos_event_loop() {
     // No-op on non-macOS platforms.
+}
+
+/// On Windows, souvlaki requires a valid HWND. Use the console window handle.
+#[cfg(target_os = "windows")]
+fn get_hwnd() -> Option<*mut core::ffi::c_void> {
+    unsafe extern "system" {
+        fn GetConsoleWindow() -> *mut core::ffi::c_void;
+    }
+    let h = unsafe { GetConsoleWindow() };
+    if h.is_null() { None } else { Some(h) }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_hwnd() -> Option<*mut core::ffi::c_void> {
+    None
 }
