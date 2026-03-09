@@ -94,7 +94,7 @@ qa-edifierw830nb-autoeqde:
 	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
-	--loss headphone-score
+	--loss headphone-score \
 	--min-spacing-oct 0.08 \
 	--algo autoeq:de --population 70 --maxeval 8000 --seed 42 \
 	--qa 14.0
