@@ -567,20 +567,29 @@ pub fn verify_working_sample_rate(
         }
     }
 
+    // Get device's default channel count for test streams
+    let test_channels = device
+        .default_output_config()
+        .map(|c| c.channels())
+        .unwrap_or(2);
+
     for &rate in &candidates {
         let config = StreamConfig {
-            channels: 2,
+            channels: test_channels,
             sample_rate: rate,
             buffer_size: cpal::BufferSize::Default,
         };
 
         let callback_count = Arc::new(AtomicU64::new(0));
+        let total_samples = Arc::new(AtomicU64::new(0));
         let cc = callback_count.clone();
+        let ts = total_samples.clone();
 
         let stream = match device.build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 cc.fetch_add(1, Ordering::Relaxed);
+                ts.fetch_add(data.len() as u64, Ordering::Relaxed);
                 data.fill(0.0); // silence
             },
             |_err| {},
@@ -594,35 +603,64 @@ pub fn verify_working_sample_rate(
             continue;
         }
 
-        // Give the stream 150ms to fire callbacks
+        // Two-phase verification: wait 300ms total, check that callbacks keep firing.
+        // Some ALSA configurations fire 1 initial callback then stall — we need to
+        // detect that pattern and reject the rate.
         std::thread::sleep(std::time::Duration::from_millis(150));
-        let count = callback_count.load(Ordering::Relaxed);
+        let count_phase1 = callback_count.load(Ordering::Relaxed);
+
+        if count_phase1 == 0 {
+            // No callbacks at all — definitely broken
+            drop(stream);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            log::debug!(
+                "[AUDIO] Device rate verification: {}Hz - no callbacks in 150ms",
+                rate
+            );
+            continue;
+        }
+
+        // Wait another 150ms and verify callbacks are still arriving
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let count_phase2 = callback_count.load(Ordering::Relaxed);
+        let samples = total_samples.load(Ordering::Relaxed);
 
         // Explicitly stop and drop the stream before trying the next rate
         drop(stream);
         std::thread::sleep(std::time::Duration::from_millis(30));
 
-        if count > 0 {
+        // Require callbacks in BOTH phases (sustained activity).
+        // Also check that we got a reasonable number of samples (at least 10% of expected).
+        let expected_samples = rate as u64 * test_channels as u64 * 300 / 1000; // 300ms worth
+        let new_callbacks = count_phase2 - count_phase1;
+
+        if new_callbacks > 0 && samples > expected_samples / 10 {
             if rate != requested_rate {
                 log::warn!(
-                    "[AUDIO] Device rate verification: requested {}Hz doesn't work, using {}Hz ({} callbacks in 150ms)",
+                    "[AUDIO] Device rate verification: requested {}Hz doesn't work, using {}Hz ({} callbacks, {} samples in 300ms)",
                     requested_rate,
                     rate,
-                    count
+                    count_phase2,
+                    samples
                 );
             } else {
                 log::info!(
-                    "[AUDIO] Device rate verification: {}Hz works ({} callbacks in 150ms)",
+                    "[AUDIO] Device rate verification: {}Hz works ({} callbacks, {} samples in 300ms)",
                     rate,
-                    count
+                    count_phase2,
+                    samples
                 );
             }
             return Some(rate);
         }
 
         log::debug!(
-            "[AUDIO] Device rate verification: {}Hz - no callbacks in 150ms",
-            rate
+            "[AUDIO] Device rate verification: {}Hz - stalled (phase1={} phase2={} callbacks, {} samples, expected >{})",
+            rate,
+            count_phase1,
+            count_phase2,
+            samples,
+            expected_samples / 10
         );
     }
 

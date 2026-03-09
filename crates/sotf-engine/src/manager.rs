@@ -11,13 +11,55 @@ use crate::devices::{get_device_current_sample_rate, verify_working_sample_rate}
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
 
+/// Cache for verified working sample rates per device.
+/// The verification probe (creating test streams) is expensive (~300ms per rate)
+/// and can cause ALSA device locking issues if called repeatedly. Cache the result
+/// so subsequent calls for the same device return immediately.
+static VERIFIED_RATE_CACHE: Mutex<Option<(Option<String>, u32)>> = Mutex::new(None);
+
+/// Clear the verified rate cache (e.g., when the output device changes)
+pub fn clear_verified_rate_cache() {
+    if let Ok(mut cache) = VERIFIED_RATE_CACHE.lock() {
+        *cache = None;
+    }
+}
+
 /// Select the output sample rate for playback
 ///
 /// Uses the device's actual current sample rate, verified by creating a brief test stream.
 /// On some ALSA systems, the device reports a default rate that doesn't produce working
 /// audio callbacks (e.g., dmix configured for 44100Hz but hardware only works at 48000Hz).
 /// The decoder will resample when the file rate differs from the device rate.
+///
+/// Results are cached per device to avoid repeated expensive probes.
 pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
+    // Check cache first — avoids repeated 300ms+ probes that can block the UI
+    // and cause ALSA device locking issues
+    if let Ok(cache) = VERIFIED_RATE_CACHE.lock() {
+        if let Some((ref cached_device, cached_rate)) = *cache {
+            let device_matches = match (cached_device.as_deref(), output_device) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            };
+            if device_matches {
+                if cached_rate == file_sample_rate {
+                    log::debug!(
+                        "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
+                        cached_rate
+                    );
+                } else {
+                    log::debug!(
+                        "[AudioEngineManager] Using cached device rate: {}Hz, file is {}Hz (will resample)",
+                        cached_rate,
+                        file_sample_rate
+                    );
+                }
+                return cached_rate;
+            }
+        }
+    }
+
     // Query the device's reported rate first
     let device_rate = get_device_current_sample_rate(output_device);
 
@@ -39,6 +81,12 @@ pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&s
                 file_sample_rate
             );
         }
+
+        // Cache the verified rate
+        if let Ok(mut cache) = VERIFIED_RATE_CACHE.lock() {
+            *cache = Some((output_device.map(|s| s.to_string()), verified_rate));
+        }
+
         return verified_rate;
     }
 

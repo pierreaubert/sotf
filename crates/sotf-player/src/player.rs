@@ -183,6 +183,9 @@ impl Player {
         // Stop current playback before switching device
         self.manager.stop()?;
 
+        // Clear the verified sample rate cache since the device changed
+        sotf_audio::clear_verified_rate_cache();
+
         // Store the device name for next playback
         // Note: The device will be applied when playback starts next time
         log::info!("Output device set to: {}", device_name);

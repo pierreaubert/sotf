@@ -13,7 +13,7 @@ pub use decoder::stream::{StreamEvent, StreamPosition, StreamState};
 pub mod manager;
 pub use manager::{
     AudioEngineManager, AudioFileInfo, StreamingCommand, StreamingEvent, StreamingState,
-    select_output_sample_rate,
+    clear_verified_rate_cache, select_output_sample_rate,
 };
 
 pub mod preflight;
