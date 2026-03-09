@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use math_audio_differential_evolution::{
+use math_audio_optimisation::{
     DEConfigBuilder, Strategy, run_recorded_differential_evolution,
 };
 use math_audio_test_functions::*;
@@ -1828,7 +1828,7 @@ fn run_benchmark(
     name: &str,
     function: fn(&Array1<f64>) -> f64,
     bounds: Vec<(f64, f64)>,
-    config: math_audio_differential_evolution::DEConfig,
+    config: math_audio_optimisation::DEConfig,
     fun_tolerance: f64,
     expected_optimum: Vec<f64>,
     position_tolerance: f64,

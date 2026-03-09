@@ -1,4 +1,4 @@
-use math_audio_differential_evolution::{
+use math_audio_optimisation::{
     Crossover, DEConfigBuilder, NonlinearConstraintHelper, Strategy, differential_evolution,
 };
 use ndarray::Array1;

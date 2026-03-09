@@ -40,6 +40,13 @@ pub struct DenoiserRenderState {
     pub transient_enabled: bool,
     pub spectral_smoothing_enabled: bool,
     pub temporal_smoothing_enabled: bool,
+    pub hiss_enabled: bool,
+    pub hiss_threshold_db: f64,
+    pub hiss_frequency_hz: f64,
+    pub hiss_strength: f64,
+    pub spectral_sub_enabled: bool,
+    pub spectral_sub_alpha: f64,
+    pub spectral_sub_beta: f64,
     pub learn_noise: bool,
     pub use_captured_profile: bool,
     pub clear_profile: bool,
@@ -375,7 +382,113 @@ pub fn render_denoiser_plugin(
                                 .child("Temp Smooth"),
                         ),
                 )
-                // Column 6: Profile
+                // Column 6: Hiss Remover
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("HISS", theme))
+                        .child(render_toggle_button(
+                            entity.clone(),
+                            plugin_idx,
+                            state.hiss_enabled,
+                            19,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(div().text_xs().text_color(theme.text_muted).child("Enabled"))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Threshold",
+                            state.hiss_threshold_db,
+                            -60.0,
+                            -10.0,
+                            "dB",
+                            20,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Frequency",
+                            state.hiss_frequency_hz,
+                            1000.0,
+                            16000.0,
+                            "Hz",
+                            21,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Strength",
+                            state.hiss_strength * 100.0,
+                            0.0,
+                            100.0,
+                            "%",
+                            22,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                // Column 7: Spectral Subtraction
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("SPEC SUB", theme))
+                        .child(render_toggle_button(
+                            entity.clone(),
+                            plugin_idx,
+                            state.spectral_sub_enabled,
+                            23,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(div().text_xs().text_color(theme.text_muted).child("Enabled"))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Oversub",
+                            state.spectral_sub_alpha,
+                            0.5,
+                            6.0,
+                            "",
+                            24,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Floor",
+                            state.spectral_sub_beta,
+                            0.001,
+                            0.5,
+                            "",
+                            25,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                // Column 8: Profile
                 .child(
                     div()
                         .flex()
@@ -386,7 +499,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             state.learn_noise,
-                            19,
+                            26,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -396,7 +509,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             state.use_captured_profile,
-                            20,
+                            27,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -411,7 +524,7 @@ pub fn render_denoiser_plugin(
                             entity.clone(),
                             plugin_idx,
                             state.clear_profile,
-                            21,
+                            28,
                             state.selected_param,
                             state.is_editing,
                             theme,

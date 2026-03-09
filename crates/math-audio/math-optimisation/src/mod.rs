@@ -19,7 +19,7 @@
 //! # Example
 //!
 //! ```rust
-//! use math_audio_differential_evolution::{differential_evolution, DEConfigBuilder};
+//! use math_audio_optimisation::{differential_evolution, DEConfigBuilder};
 //!
 //! // Minimize the sphere function: f(x) = sum(x_i^2)
 //! let bounds = vec![(-5.0, 5.0), (-5.0, 5.0)];
@@ -41,7 +41,7 @@
 //! # L-SHADE Example
 //!
 //! ```rust
-//! use math_audio_differential_evolution::{differential_evolution, DEConfigBuilder, Strategy, LShadeConfig};
+//! use math_audio_optimisation::{differential_evolution, DEConfigBuilder, Strategy, LShadeConfig};
 //!
 //! let bounds = vec![(-5.0, 5.0), (-5.0, 5.0)];
 //! let lshade_config = LShadeConfig {
@@ -662,7 +662,7 @@ impl Default for DEConfig {
 /// # Example
 ///
 /// ```rust
-/// use math_audio_differential_evolution::{DEConfigBuilder, Strategy, Mutation};
+/// use math_audio_optimisation::{DEConfigBuilder, Strategy, Mutation};
 ///
 /// let config = DEConfigBuilder::new()
 ///     .maxiter(500)

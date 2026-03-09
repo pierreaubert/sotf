@@ -1,4 +1,4 @@
-# math-differential-evolution (lib: `math_audio_differential_evolution`, version: 0.3.2)
+# math-optimisation (lib: `math_audio_optimisation`, version: 0.3.2)
 
 Differential Evolution optimizer with interfaces to NLOPT and MetaHeuristics.
 
@@ -26,12 +26,12 @@ Provides the primary global optimization algorithm for AutoEQ, forked from SciPy
 ## Testing
 
 ```bash
-cargo test -p math-differential-evolution --lib
-cargo check -p math-differential-evolution && cargo clippy -p math-differential-evolution
+cargo test -p math-optimisation --lib
+cargo check -p math-optimisation && cargo clippy -p math-optimisation
 ```
 
 ## Examples
 
 ```bash
-cargo run --release --example <example_name> -p math-differential-evolution
+cargo run --release --example <example_name> -p math-optimisation
 ```

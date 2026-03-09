@@ -30,7 +30,7 @@ player-midi = { workspace = true }
 # math libraries
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }
-math-differential-evolution = { workspace = true }
+math-optimisation = { workspace = true }
 
 # Synchronous mutex (faster than std::sync::Mutex)
 parking_lot = { workspace = true }

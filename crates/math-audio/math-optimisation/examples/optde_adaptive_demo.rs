@@ -1,4 +1,4 @@
-use math_audio_differential_evolution::{
+use math_audio_optimisation::{
     AdaptiveConfig, DEConfigBuilder, Mutation, Strategy, differential_evolution,
 };
 use math_audio_test_functions::{ackley, quadratic, rosenbrock};
@@ -128,7 +128,7 @@ fn main() {
 fn run_traditional_de(
     func: fn(&Array1<f64>) -> f64,
     bounds: &[(f64, f64)],
-) -> math_audio_differential_evolution::DEReport {
+) -> math_audio_optimisation::DEReport {
     let config = DEConfigBuilder::new()
         .seed(42)
         .maxiter(100)
@@ -146,7 +146,7 @@ fn run_adaptive_de(
     func: fn(&Array1<f64>) -> f64,
     bounds: &[(f64, f64)],
     enable_wls: bool,
-) -> math_audio_differential_evolution::DEReport {
+) -> math_audio_optimisation::DEReport {
     let adaptive_config = AdaptiveConfig {
         adaptive_mutation: true,
         wls_enabled: enable_wls,

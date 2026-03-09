@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use math_audio_differential_evolution::{
+use math_audio_optimisation::{
     CallbackAction, Crossover, DEConfigBuilder, Init, Mutation, ParallelConfig, Strategy,
     differential_evolution,
     function_registry::{FunctionRegistry, TestFunction},
@@ -13,7 +13,7 @@ use std::time::Instant;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "run_math_audio_differential_evolution",
+    name = "run_math_audio_optimisation",
     about = "Optimize AutoEQ differential evolution on a selected benchmark function"
 )]
 struct Cli {

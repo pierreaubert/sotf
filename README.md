@@ -131,9 +131,9 @@ This repository [sotf](https://github.com/pierreaubert/sotf) which is mostly an 
 
 A [set of functions](math-test-functions/README.md) for testing non linear optimisation algorithms used in the next crate.
 
-#### math-differential-evolution
+#### math-optimisation
 
-A implementation of [differential evolution algorithm](math-differential-evolution/README.md) (forked from Scipy) with an interface to NLopt and MetaHeuristics two libraries that also provide various optimisation algorithms. DE support linear and non-linear constraints and implement other features like JADE or adaptative behaviour.
+A implementation of [differential evolution algorithm](math-optimisation/README.md) (forked from Scipy) with an interface to NLopt and MetaHeuristics two libraries that also provide various optimisation algorithms. DE support linear and non-linear constraints and implement other features like JADE or adaptative behaviour.
 
 Status: good for speaker equalisation. Not tested enough for other use cases.
 

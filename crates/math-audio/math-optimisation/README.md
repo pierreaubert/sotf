@@ -34,7 +34,7 @@ L-SHADE combines three key improvements:
 3. **Current-to-pbest/1**: Selects pbest from top p% of population
 
 ```rust
-use math_audio_differential_evolution::{
+use math_audio_optimisation::{
     differential_evolution, DEConfigBuilder, Strategy, LShadeConfig
 };
 
@@ -71,7 +71,7 @@ let result = differential_evolution(
 ## Usage
 
 ```rust
-use math_audio_differential_evolution::{differential_evolution, DEConfigBuilder, Strategy, Mutation};
+use math_audio_optimisation::{differential_evolution, DEConfigBuilder, Strategy, Mutation};
 use ndarray::Array1;
 
 // Example objective function (Rosenbrock)
@@ -105,7 +105,7 @@ println!("Best fitness: {}", result.fun);
 ### Linear Constraints
 
 ```rust
-use math_audio_differential_evolution::{LinearConstraintHelper, DEConfig};
+use math_audio_optimisation::{LinearConstraintHelper, DEConfig};
 use ndarray::{Array1, Array2};
 
 // Linear constraint: x1 + x2 <= 1.0

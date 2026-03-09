@@ -759,9 +759,9 @@ dependencies = [
  "env_logger",
  "hound",
  "log",
- "math-differential-evolution",
  "math-dsp",
  "math-iir-fir",
+ "math-optimisation",
  "metaheuristics-nature",
  "ndarray",
  "nlopt",
@@ -5211,21 +5211,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "math-differential-evolution"
-version = "0.4.0"
-dependencies = [
- "clap",
- "directories",
- "math-test-functions",
- "ndarray",
- "plotly",
- "plotly_static",
- "rand 0.9.2",
- "rayon",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "math-dsp"
 version = "0.4.2"
 dependencies = [
@@ -5274,6 +5259,21 @@ dependencies = [
  "num-complex",
  "rustfft",
  "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "math-optimisation"
+version = "0.4.0"
+dependencies = [
+ "clap",
+ "directories",
+ "math-test-functions",
+ "ndarray",
+ "plotly",
+ "plotly_static",
+ "rand 0.9.2",
+ "rayon",
  "thiserror 2.0.18",
 ]
 
@@ -8840,8 +8840,8 @@ dependencies = [
  "id3",
  "image",
  "log",
- "math-differential-evolution",
  "math-iir-fir",
+ "math-optimisation",
  "metaflac",
  "mimalloc",
  "naga 28.0.0",
@@ -8915,9 +8915,9 @@ dependencies = [
  "env_logger",
  "image",
  "log",
- "math-differential-evolution",
  "math-dsp",
  "math-iir-fir",
+ "math-optimisation",
  "md-5",
  "ndarray",
  "num-complex",
@@ -9055,7 +9055,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-plugin-denoiser"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "math-dsp",
  "realfft",

@@ -24,7 +24,7 @@ use ndarray::Array1;
 /// # Example
 ///
 /// ```rust
-/// use math_audio_differential_evolution::{differential_evolution, DEConfigBuilder};
+/// use math_audio_optimisation::{differential_evolution, DEConfigBuilder};
 ///
 /// let config = DEConfigBuilder::new()
 ///     .maxiter(50)

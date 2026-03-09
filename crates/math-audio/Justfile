@@ -38,7 +38,7 @@ qa-bem:
 [group('publish')]
 publish-math:
 	cd crates/math-test-functions && cargo publish
-	cd crates/math-differential-evolution && cargo publish
+	cd crates/math-optimisation && cargo publish
 	cd crates/math-iir-fir && cargo publish
 	cd crates/math-solvers && cargo publish
 	cd crates/math-wave && cargo publish

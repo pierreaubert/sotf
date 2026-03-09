@@ -43,7 +43,7 @@ fn get_records_dir() -> Result<std::path::PathBuf, String> {
 use math_audio_test_functions::{FunctionMetadata, get_function_metadata};
 
 // Import shared function registry
-use math_audio_differential_evolution::function_registry::TestFunction;
+use math_audio_optimisation::function_registry::TestFunction;
 
 /// CLI arguments for plotting test functions
 #[derive(Parser)]
@@ -281,7 +281,7 @@ fn read_csv_trace(csv_path: &str) -> Result<OptimizationTrace, Box<dyn std::erro
 }
 
 fn find_csv_for_function(csv_dir: &str, function_name: &str) -> Vec<String> {
-    math_audio_differential_evolution::function_registry::find_csv_files_for_function(
+    math_audio_optimisation::function_registry::find_csv_files_for_function(
         csv_dir,
         function_name,
     )
@@ -543,7 +543,7 @@ fn main() {
         .unwrap_or_else(|| match get_data_generated_dir() {
             Ok(data_dir) => {
                 let mut path = data_dir;
-                path.push("plot_math_audio_differential_evolution");
+                path.push("plot_math_audio_optimisation");
                 path.to_string_lossy().to_string()
             }
             Err(e) => {
@@ -1093,7 +1093,7 @@ fn generate_interactive_html(
 
 /// Automatically get all test functions using the shared registry
 fn get_test_functions() -> Vec<(String, TestFunction)> {
-    let registry = math_audio_differential_evolution::function_registry::FunctionRegistry::new();
+    let registry = math_audio_optimisation::function_registry::FunctionRegistry::new();
     let metadata = get_function_metadata();
     let mut functions = Vec::new();
 

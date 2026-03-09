@@ -1,4 +1,4 @@
-use math_audio_differential_evolution::{
+use math_audio_optimisation::{
     DEConfig, Mutation, ParallelConfig, Strategy, differential_evolution,
 };
 use ndarray::Array1;

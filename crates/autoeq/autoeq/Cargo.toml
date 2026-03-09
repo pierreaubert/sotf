@@ -35,7 +35,7 @@ urlencoding = { workspace = true }
 # AutoEQ crates
 math-iir-fir = { workspace = true }
 math-dsp = { workspace = true }
-math-differential-evolution = { workspace = true }
+math-optimisation = { workspace = true }
 autoeq-cea2034 = { path = "../autoeq-cea2034", version="0.4" }
 autoeq-env = { path = "../autoeq-env", version="0.4" }
 

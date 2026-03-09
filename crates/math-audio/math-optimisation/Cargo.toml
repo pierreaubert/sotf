@@ -1,5 +1,5 @@
 [package]
-name = "math-differential-evolution"
+name = "math-optimisation"
 version = "0.4.0"
 description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
 edition = { workspace = true }
@@ -56,5 +56,5 @@ name = "run-de"
 path = "bin/run_de.rs"
 
 [lib]
-name = "math_audio_differential_evolution"
+name = "math_audio_optimisation"
 path = "src/mod.rs"

@@ -569,6 +569,13 @@ sotf_plugins::serde_param_default! {
     fn default_denoiser_transient_enabled() -> bool = "transient_enabled";
     fn default_denoiser_spectral_smoothing_enabled() -> bool = "spectral_smoothing_enabled";
     fn default_denoiser_temporal_smoothing_enabled() -> bool = "temporal_smoothing_enabled";
+    fn default_denoiser_hiss_enabled() -> bool = "hiss_enabled";
+    fn default_denoiser_hiss_threshold_db() -> f64 = "hiss_threshold_db";
+    fn default_denoiser_hiss_frequency_hz() -> f64 = "hiss_frequency_hz";
+    fn default_denoiser_hiss_strength() -> f64 = "hiss_strength";
+    fn default_denoiser_spectral_sub_enabled() -> bool = "spectral_sub_enabled";
+    fn default_denoiser_spectral_sub_alpha() -> f64 = "spectral_sub_alpha";
+    fn default_denoiser_spectral_sub_beta() -> f64 = "spectral_sub_beta";
 }
 
 sotf_plugins::serde_param_default! {
@@ -1111,6 +1118,20 @@ pub enum PluginSettings {
         spectral_smoothing_enabled: bool,
         #[serde(default = "default_denoiser_temporal_smoothing_enabled")]
         temporal_smoothing_enabled: bool,
+        #[serde(default = "default_denoiser_hiss_enabled")]
+        hiss_enabled: bool,
+        #[serde(default = "default_denoiser_hiss_threshold_db")]
+        hiss_threshold_db: f64,
+        #[serde(default = "default_denoiser_hiss_frequency_hz")]
+        hiss_frequency_hz: f64,
+        #[serde(default = "default_denoiser_hiss_strength")]
+        hiss_strength: f64,
+        #[serde(default = "default_denoiser_spectral_sub_enabled")]
+        spectral_sub_enabled: bool,
+        #[serde(default = "default_denoiser_spectral_sub_alpha")]
+        spectral_sub_alpha: f64,
+        #[serde(default = "default_denoiser_spectral_sub_beta")]
+        spectral_sub_beta: f64,
         #[serde(default)]
         learn_noise: bool,
         #[serde(default = "default_denoiser_use_captured_profile")]
@@ -1936,6 +1957,13 @@ impl PluginSettings {
                 transient_enabled,
                 spectral_smoothing_enabled,
                 temporal_smoothing_enabled,
+                hiss_enabled,
+                hiss_threshold_db,
+                hiss_frequency_hz,
+                hiss_strength,
+                spectral_sub_enabled,
+                spectral_sub_alpha,
+                spectral_sub_beta,
                 learn_noise,
                 use_captured_profile,
                 clear_profile,
@@ -1961,6 +1989,13 @@ impl PluginSettings {
                     "transient_enabled": transient_enabled,
                     "spectral_smoothing_enabled": spectral_smoothing_enabled,
                     "temporal_smoothing_enabled": temporal_smoothing_enabled,
+                    "hiss_enabled": hiss_enabled,
+                    "hiss_threshold_db": hiss_threshold_db,
+                    "hiss_frequency_hz": hiss_frequency_hz,
+                    "hiss_strength": hiss_strength,
+                    "spectral_sub_enabled": spectral_sub_enabled,
+                    "spectral_sub_alpha": spectral_sub_alpha,
+                    "spectral_sub_beta": spectral_sub_beta,
                     "learn_noise": learn_noise,
                     "use_captured_profile": use_captured_profile,
                     "clear_profile": clear_profile,
@@ -2386,6 +2421,13 @@ impl PluginSettings {
                     transient_enabled: p(d, "transient_enabled").default_bool(),
                     spectral_smoothing_enabled: p(d, "spectral_smoothing_enabled").default_bool(),
                     temporal_smoothing_enabled: p(d, "temporal_smoothing_enabled").default_bool(),
+                    hiss_enabled: p(d, "hiss_enabled").default_bool(),
+                    hiss_threshold_db: p(d, "hiss_threshold_db").default_f64(),
+                    hiss_frequency_hz: p(d, "hiss_frequency_hz").default_f64(),
+                    hiss_strength: p(d, "hiss_strength").default_f64(),
+                    spectral_sub_enabled: p(d, "spectral_sub_enabled").default_bool(),
+                    spectral_sub_alpha: p(d, "spectral_sub_alpha").default_f64(),
+                    spectral_sub_beta: p(d, "spectral_sub_beta").default_f64(),
                     learn_noise: p(d, "learn_noise").default_bool(),
                     use_captured_profile: p(d, "use_captured_profile").default_bool(),
                     clear_profile: p(d, "clear_profile").default_bool(),
