@@ -16,17 +16,30 @@
 //! // Previous state restored
 //! ```
 
-#[cfg(target_arch = "x86")]
-use std::arch::x86::{_mm_getcsr, _mm_setcsr};
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::{_mm_getcsr, _mm_setcsr};
-
 // MXCSR bit masks - defined here for cross-platform compatibility
 // (not all platforms expose these constants in std::arch)
 #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
 const FTZ_ON: u32 = 0x8000; // Flush-to-Zero bit (bit 15)
 #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
 const DAZ_ON: u32 = 0x0040; // Denormals-Are-Zero bit (bit 6)
+
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+#[inline(always)]
+unsafe fn get_mxcsr() -> u32 {
+    let mut val: u32 = 0;
+    unsafe {
+        std::arch::asm!("stmxcsr [{}]", in(reg) &mut val, options(nostack, preserves_flags));
+    }
+    val
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+#[inline(always)]
+unsafe fn set_mxcsr(val: u32) {
+    unsafe {
+        std::arch::asm!("ldmxcsr [{}]", in(reg) &val, options(nostack, preserves_flags));
+    }
+}
 
 /// A guard that enables Flush-to-Zero (FTZ) and Denormals-Are-Zero (DAZ)
 /// when instantiated, and restores the previous state when dropped.
@@ -47,13 +60,9 @@ impl ScopedFlushToZero {
     pub fn new() -> Self {
         #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
         unsafe {
-            let original_csr = _mm_getcsr();
-            let mut new_csr = original_csr;
-            // set Flush to Zero
-            new_csr |= FTZ_ON;
-            // set Denormals Are Zero
-            new_csr |= DAZ_ON;
-            _mm_setcsr(new_csr);
+            let original_csr = get_mxcsr();
+            let new_csr = original_csr | FTZ_ON | DAZ_ON;
+            set_mxcsr(new_csr);
 
             ScopedFlushToZero { original_csr }
         }
@@ -82,7 +91,7 @@ impl Drop for ScopedFlushToZero {
     fn drop(&mut self) {
         #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
         unsafe {
-            _mm_setcsr(self.original_csr);
+            set_mxcsr(self.original_csr);
         }
 
         #[cfg(target_arch = "aarch64")]

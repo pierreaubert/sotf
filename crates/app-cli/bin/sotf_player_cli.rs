@@ -3230,6 +3230,8 @@ fn build_rack_mode_plugins(
                         mix_transition_ms: 50.0,
                         path_a_config: String::new(),
                         path_b_config: String::new(),
+                        path_a_file: String::new(),
+                        path_b_file: String::new(),
                     };
                 }
                 log::info!("Rack: Added ABCompare plugin");

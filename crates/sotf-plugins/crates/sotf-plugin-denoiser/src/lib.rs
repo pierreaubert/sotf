@@ -1193,8 +1193,10 @@ impl InPlacePlugin for DenoiserPlugin {
         // Set FTZ+DAZ to flush denormals at hardware level (zero per-sample cost)
         #[cfg(target_arch = "x86_64")]
         let _old_mxcsr = unsafe {
-            let old = std::arch::x86_64::_mm_getcsr();
-            std::arch::x86_64::_mm_setcsr(old | 0x8040); // FTZ + DAZ
+            let mut old: u32 = 0;
+            std::arch::asm!("stmxcsr [{}]", in(reg) &mut old, options(nostack, preserves_flags));
+            let new = old | 0x8040; // FTZ + DAZ
+            std::arch::asm!("ldmxcsr [{}]", in(reg) &new, options(nostack, preserves_flags));
             old
         };
 
@@ -1258,7 +1260,7 @@ impl InPlacePlugin for DenoiserPlugin {
         // Restore MXCSR
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            std::arch::x86_64::_mm_setcsr(_old_mxcsr);
+            std::arch::asm!("ldmxcsr [{}]", in(reg) &_old_mxcsr, options(nostack, preserves_flags));
         }
 
         // STFT convention: always return num_frames. Buffer is zero-padded for

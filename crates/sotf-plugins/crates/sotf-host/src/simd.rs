@@ -899,11 +899,11 @@ pub fn enable_ftz_daz() -> bool {
         // MXCSR register bits:
         // Bit 15: FTZ (Flush To Zero) - flush denormal results to zero
         // Bit 6: DAZ (Denormals Are Zero) - treat denormal inputs as zero
-        use std::arch::x86_64::*;
         unsafe {
-            let mut mxcsr = _mm_getcsr();
+            let mut mxcsr: u32 = 0;
+            std::arch::asm!("stmxcsr [{}]", in(reg) &mut mxcsr, options(nostack, preserves_flags));
             mxcsr |= (1 << 15) | (1 << 6); // FTZ | DAZ
-            _mm_setcsr(mxcsr);
+            std::arch::asm!("ldmxcsr [{}]", in(reg) &mxcsr, options(nostack, preserves_flags));
         }
         true
     }
