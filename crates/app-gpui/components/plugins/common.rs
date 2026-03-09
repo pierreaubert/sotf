@@ -90,7 +90,7 @@ pub fn render_param_row_with_midi(
     let is_selected = selected_param == idx && is_editing;
     let is_learn_target = midi_overlay
         .and_then(|o| o.learn_target)
-        .map_or(false, |t| t == idx);
+        .is_some_and(|t| t == idx);
 
     div()
         .flex()
@@ -619,7 +619,22 @@ pub fn render_transfer_curve(
     is_limiter: bool,
     theme: &Theme,
 ) -> impl IntoElement {
-    render_transfer_curve_sized(threshold_db, ratio, knee_db, is_limiter, 100.0, theme)
+    render_transfer_curve_sized(threshold_db, ratio, knee_db, is_limiter, 200.0, theme)
+}
+
+/// Compute the output dB for a given input dB on the transfer curve
+fn compute_transfer(input_db: f64, threshold_db: f64, ratio: f64, knee_db: f64, is_limiter: bool) -> f64 {
+    if is_limiter {
+        input_db.min(threshold_db)
+    } else if input_db < threshold_db - knee_db / 2.0 {
+        input_db
+    } else if input_db > threshold_db + knee_db / 2.0 {
+        threshold_db + (input_db - threshold_db) / ratio
+    } else {
+        let knee_input = input_db - (threshold_db - knee_db / 2.0);
+        let knee_ratio = knee_input / knee_db;
+        input_db + (knee_ratio * knee_ratio / 2.0) * (1.0 / ratio - 1.0) * knee_db
+    }
 }
 
 /// Render a transfer curve visualization with custom width
@@ -631,45 +646,63 @@ pub fn render_transfer_curve_sized(
     width: f32,
     theme: &Theme,
 ) -> impl IntoElement {
-    let curve_width = width;
-    let num_points = 20;
+    render_transfer_curve_with_level(threshold_db, ratio, knee_db, is_limiter, width, None, theme)
+}
+
+/// Render a transfer curve with optional input level indicator
+///
+/// When `input_level_db` is provided, draws a vertical + horizontal crosshair
+/// showing the current operating point on the curve.
+#[allow(clippy::too_many_arguments)]
+pub fn render_transfer_curve_with_level(
+    threshold_db: f64,
+    ratio: f64,
+    knee_db: f64,
+    is_limiter: bool,
+    width: f32,
+    input_level_db: Option<f64>,
+    theme: &Theme,
+) -> impl IntoElement {
+    let curve_width = width.max(200.0);
+    let num_points = 30;
 
     // Generate curve points
-    let mut bars: Vec<(f32, Rgba)> = Vec::new();
+    let mut bars: Vec<(f32, Rgba, bool)> = Vec::new();
+
+    // Compute input level position (normalized 0..1 in the -60..0 range)
+    let input_pos = input_level_db.map(|db| ((db + 60.0) / 60.0).clamp(0.0, 1.0) as f32);
+    let output_pos = input_level_db.map(|db| {
+        let out = compute_transfer(db, threshold_db, ratio, knee_db, is_limiter);
+        ((out + 60.0) / 60.0).clamp(0.0, 1.0) as f32
+    });
 
     for i in 0..num_points {
-        let input_db = -60.0 + (i as f64 / num_points as f64) * 60.0; // -60 to 0 dB
-        let output_db = if is_limiter {
-            // Limiter: hard clip at threshold
-            input_db.min(threshold_db)
-        } else {
-            // Compressor: soft knee compression
-            if input_db < threshold_db - knee_db / 2.0 {
-                input_db
-            } else if input_db > threshold_db + knee_db / 2.0 {
-                threshold_db + (input_db - threshold_db) / ratio
-            } else {
-                // Knee region
-                let knee_input = input_db - (threshold_db - knee_db / 2.0);
-                let knee_ratio = knee_input / knee_db;
-                input_db + (knee_ratio * knee_ratio / 2.0) * (1.0 / ratio - 1.0) * knee_db
-            }
-        };
+        let input_db = -60.0 + (i as f64 / num_points as f64) * 60.0;
+        let output_db = compute_transfer(input_db, threshold_db, ratio, knee_db, is_limiter);
 
         let height = ((output_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
         let is_compressed = output_db < input_db - 0.5;
-        let color = if is_compressed {
+
+        // Highlight the bar at the current input level
+        let at_input = input_pos.is_some_and(|pos| {
+            let bar_pos = i as f32 / num_points as f32;
+            (bar_pos - pos).abs() < (1.0 / num_points as f32)
+        });
+
+        let color = if at_input {
+            theme.warning // Yellow for current operating point
+        } else if is_compressed {
             theme.meter_clip // Red for compressed region
         } else {
             theme.accent // Blue for linear region
         };
-        bars.push((height, color));
+        bars.push((height, color, at_input));
     }
 
     div()
         .flex()
         .flex_col()
-        .flex_1() // Grow to fill available space
+        .flex_1()
         .gap_2()
         // Title
         .child(
@@ -680,22 +713,37 @@ pub fn render_transfer_curve_sized(
                 .text_center()
                 .child("Transfer Curve"),
         )
-        // Curve visualization - grows to fill space
+        // Curve visualization
         .child(
             div()
                 .w(px(curve_width))
-                .flex_1() // Grow to fill available space
-                .min_h(px(60.0)) // Minimum height
+                .flex_1()
+                .min_h(px(120.0))
                 .bg(theme.background)
                 .rounded_lg()
                 .border_1()
                 .border_color(theme.border)
                 .p_1()
+                .relative()
                 .flex()
                 .items_end()
                 .gap_px()
-                .children(bars.into_iter().map(|(height, color)| {
-                    div().flex_1().h(relative(height)).bg(color).rounded_t_sm()
+                .children(bars.into_iter().map(|(height, color, at_input)| {
+                    let mut bar = div().flex_1().h(relative(height)).bg(color).rounded_t_sm();
+                    if at_input {
+                        bar = bar.w(px(3.0));
+                    }
+                    bar
+                }))
+                // Horizontal output level indicator line
+                .children(output_pos.map(|pos| {
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .bottom(relative(pos))
+                        .h(px(1.0))
+                        .bg(Theme::opacity_20pct(theme.warning))
                 })),
         )
         // Axis labels
@@ -705,9 +753,63 @@ pub fn render_transfer_curve_sized(
                 .justify_between()
                 .text_xs()
                 .text_color(theme.text_muted)
-                .child("-60")
-                .child("Input (dB)")
-                .child("0"),
+                .child("-60 dB")
+                .child("Input")
+                .child("0 dB"),
+        )
+        // Y-axis label
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child("Output"),
+        )
+}
+
+/// Standard 3-column layout for dynamics plugins (compressor, gate, limiter, expander).
+///
+/// ```text
+/// ┌──────────────┬──────────────────┬──────────────┐
+/// │              │  [Param sliders] │   GR Meter   │
+/// │  Transfer    │  [Param knobs]   │              │
+/// │  Curve       │  [Toggles]       │  [Extra      │
+/// │              │                  │   controls]  │
+/// └──────────────┴──────────────────┴──────────────┘
+/// ```
+pub fn render_dynamics_layout(
+    transfer_curve: impl IntoElement,
+    controls: impl IntoElement,
+    meter_section: impl IntoElement,
+    meter_width: f32,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap_4()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                // Column 1: Transfer curve
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .w(px(meter_width))
+                        .child(transfer_curve),
+                )
+                // Column 2: Controls
+                .child(div().flex().flex_1().child(controls))
+                // Column 3: Meters
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .w(px(meter_width))
+                        .child(meter_section),
+                ),
         )
 }
 

@@ -77,7 +77,7 @@ pub fn render_simple_plugin_view(
         let midi_assignment = midi_overlay.and_then(|o| o.assignments.get(&i).cloned());
         let is_learn_target = midi_overlay
             .and_then(|o| o.learn_target)
-            .map_or(false, |t| t == i);
+            .is_some_and(|t| t == i);
 
         if let Some(last) = groups.last_mut() {
             last.1.push(ParamRow {

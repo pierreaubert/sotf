@@ -1241,6 +1241,7 @@ impl PlayerView {
                     mix: *mix,
                     is_editing: false,
                     selected_param: 0,
+                    data: None,
                 },
                 theme,
             )
@@ -1362,6 +1363,7 @@ impl PlayerView {
                     is_editing: false,
                     selected_param: 0,
                     config_open: false,
+                    upmixer_tab: 0,
                 },
                 theme,
             )

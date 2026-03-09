@@ -574,10 +574,10 @@ pub fn verify_working_sample_rate(
             candidates.push(rate);
         }
     }
-    if let Some(dr) = device_default {
-        if !candidates.contains(&dr) {
-            candidates.push(dr);
-        }
+    if let Some(dr) = device_default
+        && !candidates.contains(&dr)
+    {
+        candidates.push(dr);
     }
 
     // Get device's default channel count for test streams

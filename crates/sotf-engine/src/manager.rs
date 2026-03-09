@@ -35,28 +35,28 @@ pub fn clear_verified_rate_cache() {
 pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
     // Check cache first — avoids repeated 300ms+ probes that can block the UI
     // and cause ALSA device locking issues
-    if let Ok(cache) = VERIFIED_RATE_CACHE.lock() {
-        if let Some((ref cached_device, cached_rate)) = *cache {
-            let device_matches = match (cached_device.as_deref(), output_device) {
-                (None, None) => true,
-                (Some(a), Some(b)) => a == b,
-                _ => false,
-            };
-            if device_matches {
-                if cached_rate == file_sample_rate {
-                    log::debug!(
-                        "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
-                        cached_rate
-                    );
-                } else {
-                    log::debug!(
-                        "[AudioEngineManager] Using cached device rate: {}Hz, file is {}Hz (will resample)",
-                        cached_rate,
-                        file_sample_rate
-                    );
-                }
-                return cached_rate;
+    if let Ok(cache) = VERIFIED_RATE_CACHE.lock()
+        && let Some((ref cached_device, cached_rate)) = *cache
+    {
+        let device_matches = match (cached_device.as_deref(), output_device) {
+            (None, None) => true,
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        };
+        if device_matches {
+            if cached_rate == file_sample_rate {
+                log::debug!(
+                    "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
+                    cached_rate
+                );
+            } else {
+                log::debug!(
+                    "[AudioEngineManager] Using cached device rate: {}Hz, file is {}Hz (will resample)",
+                    cached_rate,
+                    file_sample_rate
+                );
             }
+            return cached_rate;
         }
     }
 

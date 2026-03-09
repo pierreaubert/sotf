@@ -28,6 +28,7 @@ fn theme_set_name(id: ThemeId) -> &'static str {
         ThemeId::Midnight => "theme/midnight",
         ThemeId::Forest => "theme/forest",
         ThemeId::BlackAndWhite => "theme/black-and-white",
+        ThemeId::Onyx => "theme/onyx",
     }
 }
 

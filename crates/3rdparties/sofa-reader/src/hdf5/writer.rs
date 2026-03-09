@@ -163,7 +163,7 @@ impl Hdf5Writer {
         }
 
         // Build root group OH with inline link messages and attribute messages
-        let root_oh = self.build_root_oh(&children, &mut buf, sb_size)?;
+        let _root_oh = self.build_root_oh(&children, &mut buf, sb_size)?;
 
         // Now we know where everything goes. Write the file.
         let mut out = Vec::with_capacity(buf.len() + 1024);
@@ -210,6 +210,7 @@ impl Hdf5Writer {
 
         // Build child objects
         struct ChildAddr {
+            #[allow(dead_code)]
             oh_addr: u64,
             data_addr: u64,
         }
@@ -238,7 +239,7 @@ impl Hdf5Writer {
             buf.extend_from_slice(&child.data);
 
             // Pad to 8 bytes
-            while buf.len() % 8 != 0 {
+            while !buf.len().is_multiple_of(8) {
                 buf.push(0);
             }
         }
@@ -410,7 +411,7 @@ impl Hdf5Writer {
         buf.extend_from_slice(&cksum.to_le_bytes());
 
         // Pad to 8-byte alignment
-        while buf.len() % 8 != 0 {
+        while !buf.len().is_multiple_of(8) {
             buf.push(0);
         }
 
@@ -581,21 +582,21 @@ impl Hdf5Writer {
                 a = a.wrapping_add(u32::from_le_bytes(remaining[0..4].try_into().unwrap()));
             }
             8..=10 => {
-                for j in 8..remaining.len() {
-                    c = c.wrapping_add((remaining[j] as u32) << ((j - 8) * 8));
+                for (i, &byte) in remaining[8..].iter().enumerate() {
+                    c = c.wrapping_add((byte as u32) << (i * 8));
                 }
                 b = b.wrapping_add(u32::from_le_bytes(remaining[4..8].try_into().unwrap()));
                 a = a.wrapping_add(u32::from_le_bytes(remaining[0..4].try_into().unwrap()));
             }
             4..=7 => {
-                for j in 4..remaining.len() {
-                    b = b.wrapping_add((remaining[j] as u32) << ((j - 4) * 8));
+                for (i, &byte) in remaining[4..].iter().enumerate() {
+                    b = b.wrapping_add((byte as u32) << (i * 8));
                 }
                 a = a.wrapping_add(u32::from_le_bytes(remaining[0..4].try_into().unwrap()));
             }
             1..=3 => {
-                for j in 0..remaining.len() {
-                    a = a.wrapping_add((remaining[j] as u32) << (j * 8));
+                for (i, &byte) in remaining.iter().enumerate() {
+                    a = a.wrapping_add((byte as u32) << (i * 8));
                 }
             }
             0 => return c,

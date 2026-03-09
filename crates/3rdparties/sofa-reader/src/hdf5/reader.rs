@@ -10,11 +10,11 @@ const UNDEF_ADDR: u64 = 0xFFFF_FFFF_FFFF_FFFF;
 const MSG_DATASPACE: u8 = 0x01;
 const MSG_LINK_INFO: u8 = 0x02;
 const MSG_DATATYPE: u8 = 0x03;
-const MSG_FILL_VALUE_OLD: u8 = 0x04;
-const MSG_FILL_VALUE: u8 = 0x05;
+const _MSG_FILL_VALUE_OLD: u8 = 0x04;
+const _MSG_FILL_VALUE: u8 = 0x05;
 const MSG_LINK: u8 = 0x06;
 const MSG_DATA_LAYOUT: u8 = 0x08;
-const MSG_GROUP_INFO: u8 = 0x0A;
+const _MSG_GROUP_INFO: u8 = 0x0A;
 const MSG_FILTER_PIPELINE: u8 = 0x0B;
 const MSG_ATTRIBUTE: u8 = 0x0C;
 const MSG_OH_CONTINUATION: u8 = 0x10;
@@ -214,7 +214,7 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
 
-    fn slice_at(&self, offset: usize) -> Result<&'a [u8]> {
+    fn _slice_at(&self, offset: usize) -> Result<&'a [u8]> {
         if offset >= self.data.len() {
             return Err(SofaError::Truncated {
                 offset: offset as u64,
@@ -350,7 +350,7 @@ impl Hdf5File {
                 }
                 self.datasets.insert(name.clone(), ds);
             }
-            Err(e) => {
+            Err(_e) => {
             }
             }
         }
@@ -889,7 +889,9 @@ struct FractalHeapInfo {
     table_width: u16,
     root_block_address: u64,
     current_rows: u16,
+    #[allow(dead_code)]
     num_managed_objects: u64,
+    #[allow(dead_code)]
     address: u64,
     io_filter_encoded_length: u16,
 }
@@ -1062,7 +1064,7 @@ impl Hdf5File {
 
             // Records then child node pointers
             // First read all records
-            let rec_start_pos = c.pos;
+            let _rec_start_pos = c.pos;
             for _ in 0..num_records {
                 let rec_start = c.pos;
                 let extra = record_size as usize - fh.heap_id_length as usize;
@@ -1080,7 +1082,7 @@ impl Hdf5File {
                 let child_addr = c.offset()?;
                 // num_records_in_child size depends on the max records possible at depth-1
                 // For simplicity, read as 2 bytes (which handles up to 65535 records)
-                let child_num_records = c.u16()? as u16;
+                let child_num_records = c.u16()?;
                 if depth > 1 {
                     let _total_in_subtree = c.length()?;
                 }
@@ -1101,7 +1103,7 @@ impl Hdf5File {
         Ok(())
     }
 
-    fn read_managed_object<'a>(
+    fn read_managed_object(
         &self,
         fh: &FractalHeapInfo,
         record: &HeapRecord,
@@ -1121,7 +1123,7 @@ impl Hdf5File {
             1 => {
                 // Tiny object: data is embedded in the heap ID
                 let len = (id_byte0 & 0x0F) as usize + 1;
-                if len + 1 <= record.heap_id.len() {
+                if len < record.heap_id.len() {
                     Ok(Some(record.heap_id[1..1 + len].to_vec()))
                 } else {
                     Ok(None)
@@ -1137,7 +1139,7 @@ impl Hdf5File {
         heap_id: &[u8],
     ) -> Result<Option<Vec<u8>>> {
         // Decode managed heap ID: byte0 is type/version, rest is offset+length
-        let offset_bytes = (fh.max_heap_size as usize + 7) / 8;
+        let offset_bytes = (fh.max_heap_size as usize).div_ceil(8);
         let length_bytes = fh.heap_id_length as usize - 1 - offset_bytes;
 
         if heap_id.len() < 1 + offset_bytes + length_bytes {
@@ -1215,7 +1217,7 @@ impl Hdf5File {
         let _heap_header_addr = c.offset()?;
 
         // Block offset (ceil(max_heap_size / 8) bytes)
-        let block_offset_size = ((fh.max_heap_size as usize) + 7) / 8;
+        let block_offset_size = (fh.max_heap_size as usize).div_ceil(8);
         c.skip(block_offset_size)?;
 
         // Compute block sizes for each row
@@ -1225,7 +1227,7 @@ impl Hdf5File {
         // Direct block entries (first max_dblock_rows rows × table_width)
         let max_dblock_rows = Self::max_direct_block_rows(fh);
         let num_direct_rows = nrows.min(max_dblock_rows);
-        let num_direct_entries = num_direct_rows * fh.table_width as usize;
+        let _num_direct_entries = num_direct_rows * fh.table_width as usize;
 
         for row in 0..num_direct_rows {
             let block_size = Self::row_block_size(fh, row);
@@ -1249,7 +1251,7 @@ impl Hdf5File {
 
         // Indirect block entries (remaining rows)
         for row in num_direct_rows..nrows {
-            let block_size = Self::row_block_size(fh, row);
+            let _block_size = Self::row_block_size(fh, row);
             let child_nrows = row - max_dblock_rows + 1;
             let subtree_size = Self::indirect_block_size(fh, child_nrows);
 
@@ -1430,11 +1432,8 @@ impl Hdf5File {
         let mut c = Cursor::new(data, 0, self.off_size, self.len_size);
         let version = c.u8()?;
 
-        if version >= 3 {
-            let _flags = c.u8()?;
-        } else {
-            let _reserved = c.u8()?;
-        }
+        // flags (v3+) or reserved byte
+        let _flags = c.u8()?;
 
         let name_size = c.u16()? as usize;
         let dt_size = c.u16()? as usize;
@@ -1520,10 +1519,9 @@ impl Hdf5File {
                     let gh_addr = if let Ok(a) = c.offset() { a } else { return None };
                     let gh_index = if let Ok(i) = c.u32() { i } else { return None };
 
-                    if gh_addr != UNDEF_ADDR && gh_addr != 0 {
-                        if let Ok(s) = self.read_global_heap_string(gh_addr, gh_index, len) {
+                    if gh_addr != UNDEF_ADDR && gh_addr != 0
+                        && let Ok(s) = self.read_global_heap_string(gh_addr, gh_index, len) {
                             return Some(AttrValue::String(s));
-                        }
                     }
                 }
                 None
@@ -1615,7 +1613,7 @@ impl Hdf5File {
 
             // Skip object data + padding to 8-byte boundary
             let padded_size = (obj_size as usize + 7) & !7;
-            c.pos = c.pos + padded_size;
+            c.pos += padded_size;
         }
 
         Err(SofaError::InvalidStructure(format!(
@@ -1639,7 +1637,7 @@ impl Hdf5File {
         let class = class_and_version & 0x0F;
         let _version = (class_and_version >> 4) & 0x0F;
         let bit_field_0 = data[1];
-        let bit_field_1 = data[2];
+        let _bit_field_1 = data[2];
         let _bit_field_2 = data[3];
         let size = u32::from_le_bytes(data[4..8].try_into().unwrap());
 
@@ -1672,7 +1670,7 @@ impl Hdf5File {
             }
             3 => {
                 // String
-                let padding = bit_field_0 & 0x0F;
+                let _padding = bit_field_0 & 0x0F;
                 // padding: 0=null-terminate, 1=null-pad, 2=space-pad
                 Ok(DType::FixedString(size as usize))
             }
@@ -2119,7 +2117,7 @@ impl Hdf5File {
             }
 
             // Pad to 8 bytes for v1
-            if version == 1 && num_client_data % 2 != 0 {
+            if version == 1 && !num_client_data.is_multiple_of(2) {
                 c.skip(4)?;
             }
 

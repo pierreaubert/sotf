@@ -441,7 +441,7 @@ fn build_info_chunk(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     fn info_subchunk(id: &[u8; 4], value: &str) -> Vec<u8> {
         let mut v = value.as_bytes().to_vec();
         v.push(0); // null terminator
-        if v.len() % 2 != 0 {
+        if !v.len().is_multiple_of(2) {
             v.push(0); // RIFF word-alignment pad
         }
         let mut buf = Vec::with_capacity(8 + v.len());

@@ -6,7 +6,8 @@
 //! - Gain reduction meter
 
 use super::common::{
-    render_knob, render_section_title, render_toggle_button, render_vertical_slider_sized,
+    render_dynamics_layout, render_knob, render_section_title, render_toggle_button,
+    render_vertical_slider_sized,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -70,254 +71,156 @@ pub fn render_gate_plugin(
         Theme::opacity_20pct(theme.error)
     };
 
-    div()
+    // Gate status indicator as transfer curve substitute
+    let gate_status = div()
         .flex()
         .flex_col()
-        .gap_4()
-        // Main section - columns side by side
+        .flex_1()
+        .gap_2()
+        .items_center()
+        .justify_center()
+        // Gate status circle
+        .child(
+            div()
+                .w(px(60.0))
+                .h(px(60.0))
+                .rounded_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(gate_glow)
+                .border_3()
+                .border_color(gate_color)
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(gate_color)
+                        .child(if is_open { "OPEN" } else { "CLOSED" }),
+                ),
+        )
+        // Input level meter with threshold marker
         .child(
             div()
                 .flex()
-                .gap_6()
-                // Column 1: Vertical sliders for main dynamics controls
+                .flex_col()
+                .gap_1()
+                .w_full()
+                .child(div().text_xs().text_color(theme.text_muted).child("Input Level"))
                 .child(
                     div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("DYNAMICS", theme))
+                        .h(px(12.0))
+                        .w_full()
+                        .bg(theme.background)
+                        .rounded_md()
+                        .border_1()
+                        .border_color(theme.border)
+                        .relative()
+                        .overflow_hidden()
+                        .child(div().h_full().w(relative(input_normalized)).bg(gate_color))
                         .child(
                             div()
-                                .flex()
-                                .gap_2()
-                                .child(render_vertical_slider_sized(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Threshold",
-                                    state.threshold_db,
-                                    pk(GT, "threshold").min_f64(),
-                                    pk(GT, "threshold").max_f64(),
-                                    "dB",
-                                    0,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('t'),
-                                    Some(SLIDER_HEIGHT),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider_sized(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Ratio",
-                                    state.ratio,
-                                    pk(GT, "ratio").min_f64(),
-                                    pk(GT, "ratio").max_f64(),
-                                    ":1",
-                                    1,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('r'),
-                                    Some(SLIDER_HEIGHT),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider_sized(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Attack",
-                                    state.attack_ms,
-                                    pk(GT, "attack").min_f64(),
-                                    pk(GT, "attack").max_f64(),
-                                    "ms",
-                                    2,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('a'),
-                                    Some(SLIDER_HEIGHT),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider_sized(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Hold",
-                                    state.hold_ms,
-                                    pk(GT, "hold").min_f64(),
-                                    pk(GT, "hold").max_f64(),
-                                    "ms",
-                                    3,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('h'),
-                                    Some(SLIDER_HEIGHT),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider_sized(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Release",
-                                    state.release_ms,
-                                    pk(GT, "release").min_f64(),
-                                    pk(GT, "release").max_f64(),
-                                    "ms",
-                                    4,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('e'),
-                                    Some(SLIDER_HEIGHT),
-                                    theme,
-                                )),
+                                .absolute()
+                                .left(relative(threshold_normalized))
+                                .top_0()
+                                .bottom_0()
+                                .w(px(2.0))
+                                .bg(theme.warning),
                         ),
                 )
-                // Column 2: OUTPUT with Link Channels, then knobs
                 .child(
                     div()
                         .flex()
-                        .flex_col()
                         .justify_between()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                // Header row with OUTPUT and Link Channels
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_between()
-                                        .items_center()
-                                        .w_full()
-                                        .child(render_section_title("OUTPUT", theme))
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(theme.text_muted)
-                                                .child("Link Ch."),
-                                        ),
-                                )
-                                // Toggle button
-                                .child(div().flex().justify_end().child(render_toggle_button(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    state.link_channels,
-                                    6,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                )))
-                                // Mix knob
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Mix",
-                                    state.mix * 100.0,
-                                    pk(GT, "mix").min_f64() * 100.0,
-                                    pk(GT, "mix").max_f64() * 100.0,
-                                    "%",
-                                    5,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('m'),
-                                    theme,
-                                )),
-                        )
-                        // SC HPF knob at bottom
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "SC HPF",
-                            state.sidechain_hpf_hz,
-                            SIDECHAIN_HPF_UI_MIN,
-                            SIDECHAIN_HPF_UI_MAX,
-                            "Hz",
-                            7,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('s'),
-                            theme,
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child("-80")
+                        .child("0 dB"),
+                ),
+        );
+
+    // Controls
+    let controls = div()
+        .flex()
+        .gap_4()
+        // Dynamics sliders
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(render_section_title("DYNAMICS", theme))
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(render_vertical_slider_sized(
+                            entity.clone(), plugin_idx, "Threshold", state.threshold_db,
+                            pk(GT, "threshold").min_f64(), pk(GT, "threshold").max_f64(),
+                            "dB", 0, state.selected_param, state.is_editing, Some('t'), Some(SLIDER_HEIGHT), theme,
+                        ))
+                        .child(render_vertical_slider_sized(
+                            entity.clone(), plugin_idx, "Ratio", state.ratio,
+                            pk(GT, "ratio").min_f64(), pk(GT, "ratio").max_f64(),
+                            ":1", 1, state.selected_param, state.is_editing, Some('r'), Some(SLIDER_HEIGHT), theme,
+                        ))
+                        .child(render_vertical_slider_sized(
+                            entity.clone(), plugin_idx, "Attack", state.attack_ms,
+                            pk(GT, "attack").min_f64(), pk(GT, "attack").max_f64(),
+                            "ms", 2, state.selected_param, state.is_editing, Some('a'), Some(SLIDER_HEIGHT), theme,
+                        ))
+                        .child(render_vertical_slider_sized(
+                            entity.clone(), plugin_idx, "Hold", state.hold_ms,
+                            pk(GT, "hold").min_f64(), pk(GT, "hold").max_f64(),
+                            "ms", 3, state.selected_param, state.is_editing, Some('h'), Some(SLIDER_HEIGHT), theme,
+                        ))
+                        .child(render_vertical_slider_sized(
+                            entity.clone(), plugin_idx, "Release", state.release_ms,
+                            pk(GT, "release").min_f64(), pk(GT, "release").max_f64(),
+                            "ms", 4, state.selected_param, state.is_editing, Some('e'), Some(SLIDER_HEIGHT), theme,
                         )),
-                )
-                // Column 3: Gate status, Input level meter, GR meter
+                ),
+        )
+        // Output
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .justify_between()
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_2()
-                        .child(render_section_title("METER", theme))
-                        // Gate status indicator
                         .child(
-                            div().flex().justify_center().child(
-                                div()
-                                    .w(px(60.0))
-                                    .h(px(60.0))
-                                    .rounded_full()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .bg(gate_glow)
-                                    .border_3()
-                                    .border_color(gate_color)
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(gate_color)
-                                            .child(if is_open { "OPEN" } else { "CLOSED" }),
-                                    ),
-                            ),
+                            div().flex().justify_between().items_center().w_full()
+                                .child(render_section_title("OUTPUT", theme))
+                                .child(div().text_xs().text_color(theme.text_muted).child("Link Ch.")),
                         )
-                        // Input level meter with threshold marker
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .w_full()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("Input Level"),
-                                )
-                                .child(
-                                    div()
-                                        .h(px(12.0))
-                                        .w_full()
-                                        .bg(theme.background)
-                                        .rounded_md()
-                                        .border_1()
-                                        .border_color(theme.border)
-                                        .relative()
-                                        .overflow_hidden()
-                                        // Input level bar
-                                        .child(
-                                            div()
-                                                .h_full()
-                                                .w(relative(input_normalized))
-                                                .bg(gate_color),
-                                        )
-                                        // Threshold marker
-                                        .child(
-                                            div()
-                                                .absolute()
-                                                .left(relative(threshold_normalized))
-                                                .top_0()
-                                                .bottom_0()
-                                                .w(px(2.0))
-                                                .bg(theme.warning),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_between()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("-80")
-                                        .child("0 dB"),
-                                ),
-                        )
-                        // Gain reduction meter
-                        .child(render_gr_meter(-attenuation_db, -40.0, theme)),
-                ),
-        )
-    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+                        .child(div().flex().justify_end().child(render_toggle_button(
+                            entity.clone(), plugin_idx, state.link_channels,
+                            6, state.selected_param, state.is_editing, theme,
+                        )))
+                        .child(render_knob(
+                            entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
+                            pk(GT, "mix").min_f64() * 100.0, pk(GT, "mix").max_f64() * 100.0,
+                            "%", 5, state.selected_param, state.is_editing, Some('m'), theme,
+                        )),
+                )
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "SC HPF", state.sidechain_hpf_hz,
+                    SIDECHAIN_HPF_UI_MIN, SIDECHAIN_HPF_UI_MAX,
+                    "Hz", 7, state.selected_param, state.is_editing, Some('s'), theme,
+                )),
+        );
+
+    // Meter section: GR meter
+    let meter_section = div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(render_section_title("METER", theme))
+        .child(render_gr_meter(-attenuation_db, -40.0, theme));
+
+    render_dynamics_layout(gate_status, controls, meter_section, 160.0)
 }

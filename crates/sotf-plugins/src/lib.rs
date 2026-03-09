@@ -88,7 +88,7 @@ pub use plugin_expander::{ExpanderPlugin, ExpanderPluginParams};
 pub use plugin_fletcher_munson::{FletcherMunsonPlugin, FletcherMunsonPluginParams};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
-pub use plugin_limiter::{LimiterPlugin, LimiterPluginParams};
+pub use plugin_limiter::{LimiterData, LimiterPlugin, LimiterPluginParams};
 pub use plugin_loudness_compensation::{
     LoudnessCompensation, LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };

@@ -124,10 +124,10 @@ impl PlayerView {
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
 
-                            if any_dragging {
-                                if let Err(e) = state.app.save_config(layout) {
-                                    log::warn!("Failed to save panel layout: {}", e);
-                                }
+                            if any_dragging
+                                && let Err(e) = state.app.save_config(layout)
+                            {
+                                log::warn!("Failed to save panel layout: {}", e);
                             }
                         });
                     });
@@ -332,10 +332,10 @@ impl PlayerView {
                             layout.is_dragging_queue_list_divider = false;
                             layout.is_dragging_meters_divider = false;
 
-                            if any_dragging {
-                                if let Err(e) = state.app.save_config(layout) {
-                                    log::warn!("Failed to save panel layout: {}", e);
-                                }
+                            if any_dragging
+                                && let Err(e) = state.app.save_config(layout)
+                            {
+                                log::warn!("Failed to save panel layout: {}", e);
                             }
                         });
                     });

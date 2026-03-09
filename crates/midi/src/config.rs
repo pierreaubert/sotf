@@ -211,7 +211,7 @@ pub struct ConfigPaths {
 
 impl ConfigPaths {
     /// Get default configuration paths
-    pub fn default() -> Result<Self> {
+    pub fn default_paths() -> Result<Self> {
         let config_dir = dirs::config_dir()
             .ok_or_else(|| {
                 crate::error::MidiError::ConfigError("Could not find config directory".to_string())

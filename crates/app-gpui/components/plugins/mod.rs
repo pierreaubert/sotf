@@ -36,6 +36,7 @@ mod ui_mb_compressor;
 mod ui_mb_expander;
 mod ui_mono_to_stereo;
 mod ui_mute_solo;
+pub mod ui_plugin_shell;
 mod ui_pnd;
 mod ui_rack;
 mod ui_simple;
@@ -80,6 +81,7 @@ pub use ui_simple::render_simple_plugin_view;
 pub use ui_spectrum::{
     MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin,
 };
+pub use ui_plugin_shell::render_plugin_shell;
 pub use ui_upmixer::render_upmixer_plugin;
 pub use ui_xtc::render_xtc_plugin;
 
@@ -193,6 +195,7 @@ pub fn render_plugin_content(
                 mix: *mix,
                 is_editing,
                 selected_param,
+                data: plugin_data.as_ref().and_then(|d| d.downcast_ref()),
             },
             theme,
         )
@@ -273,7 +276,9 @@ pub fn render_plugin_content(
             bypass_all_processing,
             enable_ml_detection,
             ..
-        } => render_upmixer_plugin(
+        } => {
+            let upmixer_tab = entity.read(cx).app.upmixer_tab;
+            render_upmixer_plugin(
             entity,
             plugin_idx,
             ui_upmixer::UpmixerRenderState {
@@ -328,10 +333,12 @@ pub fn render_plugin_content(
                 is_editing,
                 selected_param,
                 config_open,
+                upmixer_tab,
             },
             theme,
         )
-        .into_any_element(),
+        .into_any_element()
+        }
         PluginSettings::LoudnessCompensation {
             low_freq,
             low_gain,

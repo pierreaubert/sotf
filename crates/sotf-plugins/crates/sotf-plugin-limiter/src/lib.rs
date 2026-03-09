@@ -4,11 +4,14 @@
 
 use math_audio_dsp::fast_math::{fast_log10, fast_pow10};
 use serde::{Deserialize, Serialize};
+use sotf_host::analyzer::RealTimeCache;
 use sotf_host::param_specs::{find_by_key as pk, limiter::PARAMS as LM};
 use sotf_host::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use sotf_host::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use sotf_host::simd::{enable_ftz_daz, flush_denormals_inplace};
 use sotf_host::smoothing::Smoother;
+use std::any::Any;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimiterPluginParams {
@@ -40,6 +43,19 @@ fn default_mix() -> f32 {
     pk(LM, "mix").default_f64() as f32
 }
 
+/// Data exposed by the limiter for UI monitoring
+#[derive(Debug, Clone, Default)]
+pub struct LimiterData {
+    /// Current gain reduction in dB (positive value, e.g., 6.0 means -6dB gain)
+    pub gain_reduction_db: f32,
+    /// Peak input level in dB
+    pub peak_db: f32,
+    /// Whether the limiter is actively limiting
+    pub is_limiting: bool,
+}
+
+const CACHE_UPDATE_THROTTLE: usize = 10;
+
 pub struct LimiterPlugin {
     channels: usize,
     sample_rate: u32,
@@ -61,6 +77,10 @@ pub struct LimiterPlugin {
     lookahead_pos: usize,
     lookahead_len: usize,
     cached_parameters: Vec<Parameter>,
+    cache: RealTimeCache<LimiterData>,
+    cache_update_counter: usize,
+    monitoring_peak_db: f32,
+    monitoring_gr_db: f32,
 }
 
 impl LimiterPlugin {
@@ -94,6 +114,10 @@ impl LimiterPlugin {
             lookahead_pos: 0,
             lookahead_len,
             cached_parameters: Vec::new(),
+            cache: RealTimeCache::new(LimiterData::default()),
+            cache_update_counter: 0,
+            monitoring_peak_db: -100.0,
+            monitoring_gr_db: 0.0,
         };
         p.rebuild_cached_parameters();
         p
@@ -269,6 +293,7 @@ impl InPlacePlugin for LimiterPlugin {
         let num_frames = context.num_frames;
         let thresh = self.threshold_smoother.advance();
         let mix = self.mix_smoother.advance();
+        let mut max_peak = 0.0f32;
 
         for frame in 0..num_frames {
             let mut frame_peak = 0.0f32;
@@ -276,6 +301,8 @@ impl InPlacePlugin for LimiterPlugin {
                 let idx = frame * self.channels + ch;
                 frame_peak = frame_peak.max(buffer[idx].abs());
             }
+
+            max_peak = max_peak.max(frame_peak);
 
             // Predictive peak from input
             let target_gr = if frame_peak > thresh {
@@ -328,12 +355,30 @@ impl InPlacePlugin for LimiterPlugin {
         self.threshold_smoother.next_n(num_frames);
         self.mix_smoother.next_n(num_frames);
 
+        // Update monitoring cache
+        self.monitoring_peak_db = 20.0 * fast_log10(max_peak.max(1e-10));
+        self.monitoring_gr_db = self.envelope;
+
+        self.cache_update_counter += 1;
+        if self.cache_update_counter >= CACHE_UPDATE_THROTTLE {
+            self.cache_update_counter = 0;
+            self.cache.update(|d| {
+                d.gain_reduction_db = self.monitoring_gr_db;
+                d.peak_db = self.monitoring_peak_db;
+                d.is_limiting = self.monitoring_gr_db > 0.01;
+            });
+        }
+
         flush_denormals_inplace(buffer);
         Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {
         self.lookahead_len
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        Some(self.cache.load() as Arc<dyn Any + Send + Sync>)
     }
 }
 

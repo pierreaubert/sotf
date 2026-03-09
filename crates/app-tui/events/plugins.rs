@@ -233,35 +233,35 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         }
         KeyCode::Char('A') => {
             // Load Path A config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
-                if matches!(plugin.settings, PluginSettings::ABCompare { .. }) {
-                    let start = sotf_audio_player::config::get_plugin_presets_dir()
-                        .map(|d| d.to_string_lossy().to_string());
-                    app.open_file_explorer(
-                        FilePickerOrigin::ABConfigA,
-                        FilePickerMode::File,
-                        "Select Path A Config (JSON)",
-                        start.as_deref(),
-                        Some("json"),
-                    );
-                }
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+                && matches!(plugin.settings, PluginSettings::ABCompare { .. })
+            {
+                let start = sotf_audio_player::config::get_plugin_presets_dir()
+                    .map(|d| d.to_string_lossy().to_string());
+                app.open_file_explorer(
+                    FilePickerOrigin::ABConfigA,
+                    FilePickerMode::File,
+                    "Select Path A Config (JSON)",
+                    start.as_deref(),
+                    Some("json"),
+                );
             }
             None
         }
         KeyCode::Char('B') => {
             // Load Path B config from preset file (for A/B Compare plugins)
-            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
-                if matches!(plugin.settings, PluginSettings::ABCompare { .. }) {
-                    let start = sotf_audio_player::config::get_plugin_presets_dir()
-                        .map(|d| d.to_string_lossy().to_string());
-                    app.open_file_explorer(
-                        FilePickerOrigin::ABConfigB,
-                        FilePickerMode::File,
-                        "Select Path B Config (JSON)",
-                        start.as_deref(),
-                        Some("json"),
-                    );
-                }
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
+                && matches!(plugin.settings, PluginSettings::ABCompare { .. })
+            {
+                let start = sotf_audio_player::config::get_plugin_presets_dir()
+                    .map(|d| d.to_string_lossy().to_string());
+                app.open_file_explorer(
+                    FilePickerOrigin::ABConfigB,
+                    FilePickerMode::File,
+                    "Select Path B Config (JSON)",
+                    start.as_deref(),
+                    Some("json"),
+                );
             }
             None
         }
