@@ -5,8 +5,8 @@
 // This module provides functionality to read SOFA files containing HRTF data.
 // SOFA is a file format for storing spatially oriented acoustic data, based
 // on NetCDF.
-// Since loading a SOFA file implies linking with NetCDF, we also support loading
-// from a sqlite database. There is a binary doing sofa_2_sqlite.
+// We use a pure-Rust HDF5/SOFA reader (sofa-reader crate) to avoid C library
+// dependencies. We also support loading from a sqlite database (sofa_2_sqlite tool).
 //
 // Primary use case: Reading Head-Related Transfer Functions (HRTFs) for
 // binaural audio rendering.
@@ -224,39 +224,30 @@ impl SofaFile {
         let ext = path_ref.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
             "hrtfdb" | "sqlite" | "db" => Self::load_sqlite(path_ref),
-            #[cfg(feature = "sofa_support")]
             _ => Self::load_sofa(path_ref),
-            #[cfg(not(feature = "sofa_support"))]
-            _ => Err(format!(
-                "SOFA file format not supported (sofa_support feature disabled): {}",
-                path_ref.display()
-            )),
         }
     }
 
-    #[cfg(feature = "sofa_support")]
     fn load_sofa(path: &Path) -> Result<Self, String> {
-        let file = netcdf::open(path)
+        let reader = sofa_reader::SofaReader::open(path)
             .map_err(|e| format!("Failed to open SOFA file '{}': {}", path.display(), e))?;
 
         // Read global attributes
-        let convention = Self::read_string_attr(&file, "SOFAConventions")?;
+        let convention = reader
+            .attribute_string("SOFAConventions")
+            .map_err(|e| format!("Missing attribute 'SOFAConventions': {}", e))?;
         log::debug!("[SOFA] Convention: {}", convention);
 
         // Read dimensions
-        let m_dim = file
+        let num_measurements = reader
             .dimension("M")
-            .ok_or("Missing dimension 'M' (measurements)")?;
-        let n_dim = file
+            .map_err(|_| "Missing dimension 'M' (measurements)".to_string())?;
+        let ir_length = reader
             .dimension("N")
-            .ok_or("Missing dimension 'N' (samples)")?;
-        let r_dim = file
+            .map_err(|_| "Missing dimension 'N' (samples)".to_string())?;
+        let num_receivers = reader
             .dimension("R")
-            .ok_or("Missing dimension 'R' (receivers)")?;
-
-        let num_measurements = m_dim.len();
-        let ir_length = n_dim.len();
-        let num_receivers = r_dim.len();
+            .map_err(|_| "Missing dimension 'R' (receivers)".to_string())?;
 
         log::info!(
             "[SOFA] Dimensions: M={}, R={}, N={}",
@@ -273,21 +264,60 @@ impl SofaFile {
         }
 
         // Read sample rate
-        let sample_rate = Self::read_sample_rate(&file)?;
+        let sample_rate = reader
+            .read_scalar_f32("Data.SamplingRate")
+            .or_else(|_| {
+                reader
+                    .attribute_f64("Data.SamplingRate")
+                    .map(|v| v as f32)
+            })
+            .map_err(|e| format!("Failed to read Data.SamplingRate: {}", e))?;
         log::debug!("[SOFA] Sample rate: {} Hz", sample_rate);
 
         // Read source positions
-        let positions = Self::read_source_positions(&file, num_measurements)?;
+        let pos_data = reader
+            .read_f32("SourcePosition")
+            .map_err(|e| format!("Failed to read SourcePosition: {}", e))?;
+
+        if pos_data.len() != num_measurements * 3 {
+            return Err(format!(
+                "SourcePosition data size mismatch: expected {}, got {}",
+                num_measurements * 3,
+                pos_data.len()
+            ));
+        }
+
+        // Determine coordinate system from attribute
+        let coord_system = match reader.attribute("SourcePosition:Type") {
+            Some(sofa_reader::AttrValue::String(s)) if s.contains("cartesian") => {
+                CoordinateSystem::Cartesian
+            }
+            _ => CoordinateSystem::Spherical,
+        };
+        log::debug!("[SOFA] Coordinate system: {:?}", coord_system);
+
+        let mut positions = Vec::with_capacity(num_measurements);
+        for i in 0..num_measurements {
+            let idx = i * 3;
+            let pos = match coord_system {
+                CoordinateSystem::Spherical => {
+                    SourcePosition::new(pos_data[idx], pos_data[idx + 1], pos_data[idx + 2])
+                }
+                CoordinateSystem::Cartesian => {
+                    let (x, y, z) = (pos_data[idx], pos_data[idx + 1], pos_data[idx + 2]);
+                    let distance = (x * x + y * y + z * z).sqrt();
+                    let azimuth = y.atan2(x).to_degrees();
+                    let elevation = (z / distance).asin().to_degrees();
+                    SourcePosition::new(azimuth, elevation, distance)
+                }
+            };
+            positions.push(pos);
+        }
         log::debug!("[SOFA] Loaded {} source positions", positions.len());
 
         // Read impulse responses
-        // Data.IR has shape [M, R, N] = [measurements, receivers, samples]
-        let ir_var = file
-            .variable("Data.IR")
-            .ok_or("Missing variable 'Data.IR'")?;
-
-        let ir_data: Vec<f32> = ir_var
-            .get_values(..)
+        let ir_data = reader
+            .read_f32("Data.IR")
             .map_err(|e| format!("Failed to read IR data: {}", e))?;
 
         log::info!(
@@ -410,133 +440,6 @@ impl SofaFile {
         &self.positions
     }
 
-    // ========================================================================
-    // Private helper methods
-    // ========================================================================
-
-    /// Read a string attribute from NetCDF file
-    #[cfg(feature = "sofa_support")]
-    fn read_string_attr(file: &netcdf::File, name: &str) -> Result<String, String> {
-        match file.attribute(name) {
-            Some(attr) => {
-                let value = attr
-                    .value()
-                    .map_err(|e| format!("Failed to read attribute '{}': {}", name, e))?;
-
-                // Handle different attribute value types
-                match value {
-                    netcdf::AttributeValue::Str(s) => Ok(s),
-                    netcdf::AttributeValue::Uchars(v) => {
-                        // Sometimes strings are stored as byte arrays
-                        String::from_utf8(v)
-                            .map_err(|e| format!("Invalid UTF-8 in attribute '{}': {}", name, e))
-                    }
-                    _ => Err(format!("Attribute '{}' is not a string", name)),
-                }
-            }
-            None => Err(format!("Missing attribute '{}'", name)),
-        }
-    }
-
-    /// Read sample rate from SOFA file
-    #[cfg(feature = "sofa_support")]
-    fn read_sample_rate(file: &netcdf::File) -> Result<f32, String> {
-        // Try Data.SamplingRate variable first
-        if let Some(var) = file.variable("Data.SamplingRate") {
-            let values: Vec<f32> = var
-                .get_values(..)
-                .map_err(|e| format!("Failed to read Data.SamplingRate: {}", e))?;
-            if !values.is_empty() {
-                return Ok(values[0]);
-            }
-        }
-
-        // Fallback to attribute
-        match file.attribute("Data.SamplingRate") {
-            Some(attr) => {
-                let value = attr
-                    .value()
-                    .map_err(|e| format!("Failed to read Data.SamplingRate attribute: {}", e))?;
-
-                match value {
-                    netcdf::AttributeValue::Doubles(v) if !v.is_empty() => Ok(v[0] as f32),
-                    netcdf::AttributeValue::Double(v) => Ok(v as f32),
-                    netcdf::AttributeValue::Floats(v) if !v.is_empty() => Ok(v[0]),
-                    netcdf::AttributeValue::Float(v) => Ok(v),
-                    netcdf::AttributeValue::Ints(v) if !v.is_empty() => Ok(v[0] as f32),
-                    netcdf::AttributeValue::Int(v) => Ok(v as f32),
-                    _ => Err("Data.SamplingRate attribute has unexpected type".to_string()),
-                }
-            }
-            None => Err("Missing Data.SamplingRate".to_string()),
-        }
-    }
-
-    /// Read source positions from SOFA file
-    #[cfg(feature = "sofa_support")]
-    fn read_source_positions(
-        file: &netcdf::File,
-        num_measurements: usize,
-    ) -> Result<Vec<SourcePosition>, String> {
-        // Read SourcePosition variable [M, C] where C=3 (coordinates)
-        let pos_var = file
-            .variable("SourcePosition")
-            .ok_or("Missing variable 'SourcePosition'")?;
-
-        let pos_data: Vec<f32> = pos_var
-            .get_values(..)
-            .map_err(|e| format!("Failed to read SourcePosition: {}", e))?;
-
-        if pos_data.len() != num_measurements * 3 {
-            return Err(format!(
-                "SourcePosition data size mismatch: expected {}, got {}",
-                num_measurements * 3,
-                pos_data.len()
-            ));
-        }
-
-        // Determine coordinate system
-        let coord_system = match file.attribute("SourcePosition:Type") {
-            Some(attr) => {
-                let value = attr.value().ok();
-                match value {
-                    Some(netcdf::AttributeValue::Str(s)) if s.contains("spherical") => {
-                        CoordinateSystem::Spherical
-                    }
-                    Some(netcdf::AttributeValue::Str(s)) if s.contains("cartesian") => {
-                        CoordinateSystem::Cartesian
-                    }
-                    _ => CoordinateSystem::Spherical, // Default assumption
-                }
-            }
-            None => CoordinateSystem::Spherical, // Default assumption
-        };
-
-        log::debug!("[SOFA] Coordinate system: {:?}", coord_system);
-
-        // Parse positions
-        let mut positions = Vec::with_capacity(num_measurements);
-        for i in 0..num_measurements {
-            let idx = i * 3;
-            let pos = match coord_system {
-                CoordinateSystem::Spherical => {
-                    // Coordinates are [azimuth, elevation, distance]
-                    SourcePosition::new(pos_data[idx], pos_data[idx + 1], pos_data[idx + 2])
-                }
-                CoordinateSystem::Cartesian => {
-                    // Convert Cartesian (x, y, z) to spherical
-                    let (x, y, z) = (pos_data[idx], pos_data[idx + 1], pos_data[idx + 2]);
-                    let distance = (x * x + y * y + z * z).sqrt();
-                    let azimuth = y.atan2(x).to_degrees();
-                    let elevation = (z / distance).asin().to_degrees();
-                    SourcePosition::new(azimuth, elevation, distance)
-                }
-            };
-            positions.push(pos);
-        }
-
-        Ok(positions)
-    }
 }
 
 // ============================================================================

@@ -74,3 +74,4 @@ driver-hal = { workspace = true, optional = true }
 [dev-dependencies]
 rand = { workspace = true }
 criterion = { workspace = true }
+sofa-reader = { workspace = true }

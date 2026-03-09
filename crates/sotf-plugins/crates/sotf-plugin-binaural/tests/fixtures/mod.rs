@@ -1,4 +1,4 @@
-// Tes fixtures for binaural decoder tests
+// Test fixtures for binaural decoder tests
 //
 // Provides utilities to create synthetic SOFA files for testing
 
@@ -21,34 +21,31 @@ pub fn create_test_sofa_file(
     ir_length: usize,
     sample_rate: f32,
 ) -> PathBuf {
-    use netcdf;
+    use sofa_reader::SofaWriter;
     use std::env;
 
     let temp_dir = env::temp_dir();
     let path = temp_dir.join(filename);
 
-    // Create NetCDF file
-    let mut file = netcdf::create(&path).expect("Failed to create NetCDF file");
+    let mut w = SofaWriter::new();
 
     // Add global attributes
-    file.add_attribute("Conventions", "SOFA").unwrap();
-    file.add_attribute("SOFAConventions", "SimpleFreeFieldHRIR")
-        .unwrap();
-    file.add_attribute("SOFAConventionsVersion", "1.0").unwrap();
-    file.add_attribute("DataType", "FIR").unwrap();
-    file.add_attribute("RoomType", "free field").unwrap();
-    file.add_attribute("Title", "Test SOFA file").unwrap();
+    w.add_attribute_str("Conventions", "SOFA");
+    w.add_attribute_str("SOFAConventions", "SimpleFreeFieldHRIR");
+    w.add_attribute_str("SOFAConventionsVersion", "1.0");
+    w.add_attribute_str("DataType", "FIR");
+    w.add_attribute_str("RoomType", "free field");
+    w.add_attribute_str("Title", "Test SOFA file");
 
     // Define dimensions
-    file.add_dimension("M", num_positions).unwrap(); // Measurements
-    file.add_dimension("R", 2).unwrap(); // Receivers (L/R ears)
-    file.add_dimension("N", ir_length).unwrap(); // Samples
-    file.add_dimension("C", 3).unwrap(); // Coordinates (az, el, r)
+    w.add_dimension("M", num_positions);
+    w.add_dimension("R", 2);
+    w.add_dimension("N", ir_length);
+    w.add_dimension("C", 3);
 
     // Add Data.SamplingRate variable
-    let mut sr_var = file.add_variable::<f32>("Data.SamplingRate", &[]).unwrap();
-    sr_var
-        .put_value::<_, &[std::ops::RangeFull; 0]>(sample_rate, &[])
+    w.add_variable_f32("Data.SamplingRate", &[]);
+    w.write_scalar_f32("Data.SamplingRate", sample_rate)
         .unwrap();
 
     // Generate source positions (distributed around sphere)
@@ -62,16 +59,8 @@ pub fn create_test_sofa_file(
         positions[i * 3 + 2] = 1.0; // Distance
     }
 
-    let mut pos_var = file
-        .add_variable::<f32>("SourcePosition", &["M", "C"])
-        .unwrap();
-    pos_var.put_values(&positions, &[.., ..]).unwrap();
-
-    // Add variable attributes using file-level attribute with variable:name format
-    file.add_attribute("SourcePosition:Type", "spherical")
-        .unwrap();
-    file.add_attribute("SourcePosition:Units", "degree, degree, metre")
-        .unwrap();
+    w.add_variable_f32("SourcePosition", &["M", "C"]);
+    w.write_f32("SourcePosition", &positions).unwrap();
 
     // Generate synthetic HRTF impulse responses
     // Simple model: delayed impulse with frequency-dependent decay
@@ -126,10 +115,6 @@ pub fn create_test_sofa_file(
         }
     }
 
-    let mut ir_var = file
-        .add_variable::<f32>("Data.IR", &["M", "R", "N"])
-        .unwrap();
-
     // Debug: Check if IR data is non-zero
     let non_zero_count = ir_data.iter().filter(|&&x| x != 0.0).count();
     println!(
@@ -138,29 +123,23 @@ pub fn create_test_sofa_file(
         ir_data.len()
     );
 
-    ir_var.put_values(&ir_data, &[.., .., ..]).unwrap();
+    w.add_variable_f32("Data.IR", &["M", "R", "N"]);
+    w.write_f32("Data.IR", &ir_data).unwrap();
 
     // Add receiver positions (ears)
     let receiver_pos = vec![
         90.0, 0.0, 0.0, // Left ear
         -90.0, 0.0, 0.0, // Right ear
     ];
-    let mut recv_var = file
-        .add_variable::<f32>("ReceiverPosition", &["R", "C"])
-        .unwrap();
-    recv_var.put_values(&receiver_pos, &[.., ..]).unwrap();
-
-    file.add_attribute("ReceiverPosition:Type", "spherical")
-        .unwrap();
+    w.add_variable_f32("ReceiverPosition", &["R", "C"]);
+    w.write_f32("ReceiverPosition", &receiver_pos).unwrap();
 
     // Add listener position
     let listener_pos = vec![0.0, 0.0, 0.0];
-    let mut list_var = file
-        .add_variable::<f32>("ListenerPosition", &["C"])
-        .unwrap();
-    list_var.put_values(&listener_pos, &[..]).unwrap();
+    w.add_variable_f32("ListenerPosition", &["C"]);
+    w.write_f32("ListenerPosition", &listener_pos).unwrap();
 
-    drop(file); // Close file
+    w.finish(&path).unwrap();
 
     println!("Created test SOFA file: {:?}", path);
     println!(
@@ -183,13 +162,13 @@ mod tests {
         // Verify file exists
         assert!(path.exists(), "SOFA file was not created");
 
-        // Verify it's a valid NetCDF file
-        let file = netcdf::open(&path).expect("Failed to open created SOFA file");
+        // Verify it's a valid SOFA file
+        let reader = sofa_reader::SofaReader::open(&path).expect("Failed to open created SOFA file");
 
         // Check dimensions
-        assert_eq!(file.dimension("M").unwrap().len(), 10);
-        assert_eq!(file.dimension("R").unwrap().len(), 2);
-        assert_eq!(file.dimension("N").unwrap().len(), 128);
+        assert_eq!(reader.dimension("M").unwrap(), 10);
+        assert_eq!(reader.dimension("R").unwrap(), 2);
+        assert_eq!(reader.dimension("N").unwrap(), 128);
 
         // Clean up
         fs::remove_file(path).ok();

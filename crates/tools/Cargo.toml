@@ -26,16 +26,10 @@ path = "bin/generate_upmixer_golden.rs"
 [[bin]]
 name = "sofa-to-sqlite"
 path = "bin/sofa_to_sqlite.rs"
-required-features = ["sofa_support"]
-
-[features]
-default = ["sofa_support"]
-sofa_support = ["dep:netcdf"]
 
 [dependencies]
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
-netcdf = { workspace = true, optional = true }
 sotf-gpui = { path = "../app-gpui" }
 gpui = { workspace = true }
 
@@ -91,7 +85,7 @@ clap = { workspace = true }
 [package.metadata.vcpkg]
 git = "https://github.com/microsoft/vcpkg"
 rev = "84bab45"
-dependencies = ["nlopt", "hdf5", "netcdf-c", "openblas"]
+dependencies = ["nlopt", "openblas"]
 
 # [package.metadata.vcpkg.target]
 # x86_64-apple-darwin = { dependencies = ["sdl2", "sdl2-gfx" ] }

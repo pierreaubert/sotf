@@ -1,4 +1,3 @@
-#![cfg(feature = "sofa_support")]
 // Integration tests for binaural decoder with SOFA files
 //
 // These tests verify end-to-end functionality with actual HRTF data

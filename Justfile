@@ -34,7 +34,7 @@ convert-sofa-to-sqlite:
 		hrtfdb="$${sofa%.sofa}.hrtfdb"; \
 		if [ ! -f "$$hrtfdb" ]; then \
 			echo "Converting $$sofa -> $$hrtfdb"; \
-			cargo run --bin sofa-to-sqlite -p tools --features=sofa_support --release -- "$$sofa" "$$hrtfdb"; \
+			cargo run --bin sofa-to-sqlite -p tools --release -- "$$sofa" "$$hrtfdb"; \
 		else \
 			echo "Skipping $$sofa (already converted)"; \
 		fi \

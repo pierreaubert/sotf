@@ -304,7 +304,6 @@ fn test_convolution_zero_alloc() {
 }
 
 #[test]
-#[cfg(feature = "sofa_support")]
 fn test_binaural_zero_alloc() {
     let _lock = serial_guard();
     let mut plugin = BinauralDecoderPlugin::new(

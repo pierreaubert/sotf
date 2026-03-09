@@ -1,0 +1,632 @@
+use crate::error::{Result, SofaError};
+use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+
+const HDF5_SIGNATURE: [u8; 8] = [0x89, b'H', b'D', b'F', 0x0d, 0x0a, 0x1a, 0x0a];
+const UNDEF_ADDR: u64 = 0xFFFF_FFFF_FFFF_FFFF;
+const OFF_SIZE: u8 = 8;
+const LEN_SIZE: u8 = 8;
+
+pub struct Hdf5Writer {
+    attributes: Vec<(String, AttrData)>,
+    dimensions: HashMap<String, usize>,
+    variables: Vec<VarDef>,
+}
+
+enum AttrData {
+    String(String),
+    Float32(f32),
+}
+
+struct VarDef {
+    name: String,
+    dim_names: Vec<String>,
+    data: VarData,
+}
+
+enum VarData {
+    ScalarF32(f32),
+    ArrayF32(Vec<f32>),
+}
+
+impl Hdf5Writer {
+    pub fn new() -> Self {
+        Self {
+            attributes: Vec::new(),
+            dimensions: HashMap::new(),
+            variables: Vec::new(),
+        }
+    }
+
+    pub fn add_attribute_str(&mut self, name: &str, value: &str) {
+        self.attributes
+            .push((name.to_string(), AttrData::String(value.to_string())));
+    }
+
+    pub fn add_attribute_f32(&mut self, name: &str, value: f32) {
+        self.attributes
+            .push((name.to_string(), AttrData::Float32(value)));
+    }
+
+    pub fn add_dimension(&mut self, name: &str, size: usize) {
+        self.dimensions.insert(name.to_string(), size);
+    }
+
+    pub fn add_variable_f32(&mut self, name: &str, dim_names: &[&str]) {
+        self.variables.push(VarDef {
+            name: name.to_string(),
+            dim_names: dim_names.iter().map(|s| s.to_string()).collect(),
+            data: VarData::ArrayF32(Vec::new()),
+        });
+    }
+
+    pub fn write_scalar_f32(&mut self, name: &str, value: f32) -> Result<()> {
+        if let Some(var) = self.variables.iter_mut().find(|v| v.name == name) {
+            var.data = VarData::ScalarF32(value);
+        } else {
+            self.variables.push(VarDef {
+                name: name.to_string(),
+                dim_names: Vec::new(),
+                data: VarData::ScalarF32(value),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn write_f32(&mut self, name: &str, data: &[f32]) -> Result<()> {
+        if let Some(var) = self.variables.iter_mut().find(|v| v.name == name) {
+            var.data = VarData::ArrayF32(data.to_vec());
+        } else {
+            self.variables.push(VarDef {
+                name: name.to_string(),
+                dim_names: Vec::new(),
+                data: VarData::ArrayF32(data.to_vec()),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn finish<P: AsRef<Path>>(self, path: P) -> Result<()> {
+        let bytes = self.build()?;
+        let mut file = fs::File::create(path)?;
+        file.write_all(&bytes)?;
+        Ok(())
+    }
+
+    fn build(&self) -> Result<Vec<u8>> {
+        // Strategy: Build a valid HDF5 file with superblock v2, object header v2,
+        // and contiguous data storage. All links are inline (compact storage).
+        //
+        // File layout:
+        //   [superblock v2]
+        //   [root group object header v2]
+        //   [dimension scale dataset object headers]
+        //   [variable dataset object headers]
+        //   [data for all datasets]
+
+        let mut buf = Vec::with_capacity(65536);
+
+        // Phase 1: Collect all objects and compute addresses
+        // We'll do two passes: first compute sizes, then write
+
+        // For now, use a simpler approach: write to a buffer, fix up addresses later
+        // Actually, let's pre-compute everything
+
+        // Root group object header starts right after superblock
+        // Superblock v2 size: 8(sig) + 1(ver) + 1(off) + 1(len) + 1(flags) + 4*8(addrs) + 4(checksum) = 48
+        let sb_size = 8 + 1 + 1 + 1 + 1 + 4 * OFF_SIZE as usize + 4;
+
+        // Collect all child objects (dimension scales + variables)
+        let mut children: Vec<ChildObject> = Vec::new();
+
+        // Dimension scale datasets
+        for (name, &size) in &self.dimensions {
+            children.push(ChildObject {
+                name: name.clone(),
+                dims: vec![size as u64],
+                data: vec![0u8; size * 4], // dummy f32 data for dim scale
+                dtype_class: 1,            // float
+                dtype_size: 4,
+                is_dim_scale: true,
+            });
+        }
+
+        // Variable datasets
+        for var in &self.variables {
+            let dims: Vec<u64> = var
+                .dim_names
+                .iter()
+                .map(|d| *self.dimensions.get(d).unwrap_or(&1) as u64)
+                .collect();
+
+            let data = match &var.data {
+                VarData::ScalarF32(v) => v.to_le_bytes().to_vec(),
+                VarData::ArrayF32(arr) => {
+                    let mut d = Vec::with_capacity(arr.len() * 4);
+                    for &f in arr {
+                        d.extend_from_slice(&f.to_le_bytes());
+                    }
+                    d
+                }
+            };
+
+            children.push(ChildObject {
+                name: var.name.clone(),
+                dims,
+                data,
+                dtype_class: 1, // float
+                dtype_size: 4,
+                is_dim_scale: false,
+            });
+        }
+
+        // Build root group OH with inline link messages and attribute messages
+        let root_oh = self.build_root_oh(&children, &mut buf, sb_size)?;
+
+        // Now we know where everything goes. Write the file.
+        let mut out = Vec::with_capacity(buf.len() + 1024);
+
+        // Write superblock v2
+        let root_oh_addr = sb_size as u64;
+        let eof = buf.len() + sb_size;
+
+        out.extend_from_slice(&HDF5_SIGNATURE);
+        out.push(2); // version
+        out.push(OFF_SIZE);
+        out.push(LEN_SIZE);
+        out.push(0); // flags
+        out.extend_from_slice(&0u64.to_le_bytes()); // base address
+        out.extend_from_slice(&UNDEF_ADDR.to_le_bytes()); // sb extension
+        out.extend_from_slice(&(eof as u64).to_le_bytes()); // eof
+        out.extend_from_slice(&root_oh_addr.to_le_bytes()); // root OH addr
+        // Checksum (simple sum for now - HDF5 uses lookup3)
+        let cksum = self.checksum(&out[..out.len()]);
+        out.extend_from_slice(&cksum.to_le_bytes());
+
+        assert_eq!(out.len(), sb_size);
+
+        out.extend_from_slice(&buf);
+
+        Ok(out)
+    }
+
+    fn build_root_oh(
+        &self,
+        children: &[ChildObject],
+        buf: &mut Vec<u8>,
+        sb_size: usize,
+    ) -> Result<usize> {
+        // First pass: build all child OHs and data to know their addresses
+        // The root OH comes first, then child OHs, then data
+
+        // Estimate root OH size to know where children start
+        let root_oh_placeholder_size = 4096; // generous placeholder
+        let root_oh_start = 0;
+
+        // Reserve space for root OH
+        buf.resize(root_oh_placeholder_size, 0);
+
+        // Build child objects
+        struct ChildAddr {
+            oh_addr: u64,
+            data_addr: u64,
+        }
+
+        let mut child_addrs = Vec::with_capacity(children.len());
+
+        for child in children {
+            let oh_offset = buf.len();
+            let oh_addr = (sb_size + oh_offset) as u64;
+
+            // Write child OH (v2) with dataspace, datatype, layout messages
+            // We'll write data contiguously after all OHs
+            let data_placeholder_addr = UNDEF_ADDR; // fix up later
+            self.write_child_oh(buf, child, data_placeholder_addr)?;
+
+            child_addrs.push(ChildAddr {
+                oh_addr,
+                data_addr: 0, // will be fixed
+            });
+        }
+
+        // Now write data sections and fix up addresses
+        for (i, child) in children.iter().enumerate() {
+            let data_offset = buf.len();
+            child_addrs[i].data_addr = (sb_size + data_offset) as u64;
+            buf.extend_from_slice(&child.data);
+
+            // Pad to 8 bytes
+            while buf.len() % 8 != 0 {
+                buf.push(0);
+            }
+        }
+
+        // Go back and fix up data addresses in child OHs
+        // This is ugly but necessary for contiguous layout
+        // Each child OH has a contiguous layout message with the data address
+        // We need to find and patch it
+        // Alternative: rebuild child OHs with correct addresses
+        let mut new_buf = Vec::with_capacity(buf.len());
+        new_buf.resize(root_oh_placeholder_size, 0);
+
+        let mut new_child_addrs = Vec::with_capacity(children.len());
+
+        for (i, child) in children.iter().enumerate() {
+            let oh_offset = new_buf.len();
+            let oh_addr = (sb_size + oh_offset) as u64;
+            self.write_child_oh(&mut new_buf, child, child_addrs[i].data_addr)?;
+            new_child_addrs.push((child.name.clone(), oh_addr));
+        }
+
+        // Copy data sections
+        for child in children {
+            new_buf.extend_from_slice(&child.data);
+            while new_buf.len() % 8 != 0 {
+                new_buf.push(0);
+            }
+        }
+
+        // Now build the actual root OH
+        let root_oh_bytes = self.build_root_oh_bytes(&new_child_addrs)?;
+        if root_oh_bytes.len() > root_oh_placeholder_size {
+            return Err(SofaError::InvalidStructure(
+                "Root OH too large for placeholder".into(),
+            ));
+        }
+
+        // Copy root OH into the reserved space (pad with zeros)
+        new_buf[..root_oh_bytes.len()].copy_from_slice(&root_oh_bytes);
+
+        *buf = new_buf;
+        Ok(root_oh_start)
+    }
+
+    fn build_root_oh_bytes(
+        &self,
+        children: &[(String, u64)],
+    ) -> Result<Vec<u8>> {
+        let mut msgs = Vec::new();
+
+        // Build link messages for each child
+        for (name, addr) in children {
+            let mut link_msg = Vec::new();
+            link_msg.push(1); // version
+            let name_bytes = name.as_bytes();
+            // flags: determine name size encoding
+            let name_size_flag = if name_bytes.len() < 256 {
+                0 // 1-byte name length
+            } else {
+                1 // 2-byte
+            };
+            link_msg.push(name_size_flag); // flags: hard link, name size = 1 byte
+            // name length
+            match name_size_flag {
+                0 => link_msg.push(name_bytes.len() as u8),
+                1 => link_msg.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes()),
+                _ => unreachable!(),
+            }
+            link_msg.extend_from_slice(name_bytes);
+            link_msg.extend_from_slice(&addr.to_le_bytes()); // hard link target
+
+            msgs.push((0x06u8, link_msg)); // MSG_LINK
+        }
+
+        // Build attribute messages
+        for (name, value) in &self.attributes {
+            let attr_msg = self.build_attribute_msg(name, value);
+            msgs.push((0x0Cu8, attr_msg));
+        }
+
+        // Compute total message size
+        let total_msg_size: usize = msgs
+            .iter()
+            .map(|(_, data)| 1 + 2 + 1 + data.len()) // type(1) + size(2) + flags(1) + data
+            .sum();
+
+        // Build OHDR v2
+        let mut oh = Vec::new();
+        oh.extend_from_slice(b"OHDR");
+        oh.push(2); // version
+
+        // flags: bits 0-1 = chunk size encoding (2 = 4 bytes)
+        let flags: u8 = 0x02; // 4-byte chunk size, no creation order
+        oh.push(flags);
+
+        // chunk #0 size (4 bytes for flags & 0x03 = 2)
+        let chunk_size = total_msg_size + 4; // +4 for checksum
+        oh.extend_from_slice(&(chunk_size as u32).to_le_bytes());
+
+        // Messages
+        for (msg_type, msg_data) in &msgs {
+            oh.push(*msg_type);
+            oh.extend_from_slice(&(msg_data.len() as u16).to_le_bytes());
+            oh.push(0); // msg flags
+            oh.extend_from_slice(msg_data);
+        }
+
+        // Checksum at end of chunk
+        let cksum = self.checksum(&oh[4..]); // checksum covers version+flags+size+messages
+        oh.extend_from_slice(&cksum.to_le_bytes());
+
+        Ok(oh)
+    }
+
+    fn write_child_oh(
+        &self,
+        buf: &mut Vec<u8>,
+        child: &ChildObject,
+        data_addr: u64,
+    ) -> Result<()> {
+        let mut msgs = Vec::new();
+
+        // Dataspace message
+        let ds_msg = self.build_dataspace_msg(&child.dims);
+        msgs.push((0x01u8, ds_msg));
+
+        // Datatype message
+        let dt_msg = self.build_datatype_msg(child.dtype_class, child.dtype_size);
+        msgs.push((0x03u8, dt_msg));
+
+        // Fill value message (v3, default fill)
+        let fv_msg = vec![3, 2, 0, 0, 0]; // version=3, space_alloc_time=2, fill_write_time=0, fill_defined=0, size=0
+        msgs.push((0x05u8, fv_msg));
+
+        // Layout message (contiguous, v3)
+        let layout_msg = self.build_layout_msg(data_addr, child.data.len() as u64);
+        msgs.push((0x08u8, layout_msg));
+
+        // If dimension scale, add CLASS attribute
+        if child.is_dim_scale {
+            let attr = self.build_attribute_msg("CLASS", &AttrData::String("DIMENSION_SCALE".to_string()));
+            msgs.push((0x0Cu8, attr));
+
+            let name_attr = self.build_attribute_msg("NAME", &AttrData::String(child.name.clone()));
+            msgs.push((0x0Cu8, name_attr));
+        }
+
+        // Total message size
+        let total_msg_size: usize = msgs.iter().map(|(_, d)| 1 + 2 + 1 + d.len()).sum();
+
+        // OHDR v2
+        buf.extend_from_slice(b"OHDR");
+        buf.push(2); // version
+        let flags: u8 = 0x02; // 4-byte chunk size
+        buf.push(flags);
+        let chunk_size = total_msg_size + 4; // +4 for checksum
+        buf.extend_from_slice(&(chunk_size as u32).to_le_bytes());
+
+        let cksum_start = buf.len() - 6; // version+flags+size start
+
+        for (msg_type, msg_data) in &msgs {
+            buf.push(*msg_type);
+            buf.extend_from_slice(&(msg_data.len() as u16).to_le_bytes());
+            buf.push(0);
+            buf.extend_from_slice(msg_data);
+        }
+
+        let cksum = self.checksum(&buf[cksum_start + 4..]); // skip OHDR signature
+        buf.extend_from_slice(&cksum.to_le_bytes());
+
+        // Pad to 8-byte alignment
+        while buf.len() % 8 != 0 {
+            buf.push(0);
+        }
+
+        Ok(())
+    }
+
+    fn build_dataspace_msg(&self, dims: &[u64]) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.push(2); // version
+        msg.push(dims.len() as u8); // rank
+        msg.push(0); // flags (no max dims)
+        if dims.is_empty() {
+            msg.push(0); // scalar type
+        } else {
+            msg.push(1); // simple type
+        }
+        for &d in dims {
+            msg.extend_from_slice(&d.to_le_bytes());
+        }
+        msg
+    }
+
+    fn build_datatype_msg(&self, class: u8, size: u32) -> Vec<u8> {
+        let mut msg = Vec::new();
+        let class_and_version = (1 << 4) | class; // version 1
+        msg.push(class_and_version);
+        // Bit fields for float: byte order (LE=0x20), padding, mantissa
+        match class {
+            1 => {
+                // IEEE float
+                if size == 4 {
+                    msg.extend_from_slice(&[0x20, 0x1F, 0x00]); // LE, sign pos, etc.
+                    msg.extend_from_slice(&size.to_le_bytes());
+                    // Properties for f32
+                    msg.extend_from_slice(&[0x00, 0x00]); // bit offset
+                    msg.extend_from_slice(&[0x20, 0x00]); // bit precision = 32
+                    msg.push(0x17); // exponent location = 23
+                    msg.push(0x08); // exponent size = 8
+                    msg.push(0x00); // mantissa location = 0
+                    msg.push(0x17); // mantissa size = 23
+                    msg.extend_from_slice(&[0x7F, 0x00, 0x00, 0x00]); // exponent bias = 127
+                } else {
+                    // f64
+                    msg.extend_from_slice(&[0x20, 0x3F, 0x00]);
+                    msg.extend_from_slice(&size.to_le_bytes());
+                    msg.extend_from_slice(&[0x00, 0x00]); // bit offset
+                    msg.extend_from_slice(&[0x40, 0x00]); // bit precision = 64
+                    msg.push(0x34); // exponent location = 52
+                    msg.push(0x0B); // exponent size = 11
+                    msg.push(0x00); // mantissa location = 0
+                    msg.push(0x34); // mantissa size = 52
+                    msg.extend_from_slice(&[0xFF, 0x03, 0x00, 0x00]); // exponent bias = 1023
+                }
+            }
+            3 => {
+                // String
+                msg.extend_from_slice(&[0x01, 0x00, 0x00]); // null-padded, no cset
+                msg.extend_from_slice(&size.to_le_bytes());
+            }
+            _ => {
+                msg.extend_from_slice(&[0x00, 0x00, 0x00]);
+                msg.extend_from_slice(&size.to_le_bytes());
+            }
+        }
+        msg
+    }
+
+    fn build_layout_msg(&self, data_addr: u64, data_size: u64) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.push(3); // version
+        msg.push(1); // contiguous
+        msg.extend_from_slice(&data_addr.to_le_bytes());
+        msg.extend_from_slice(&data_size.to_le_bytes());
+        msg
+    }
+
+    fn build_attribute_msg(&self, name: &str, value: &AttrData) -> Vec<u8> {
+        let mut msg = Vec::new();
+        let name_bytes = name.as_bytes();
+        let name_with_null: Vec<u8> = name_bytes.iter().copied().chain(std::iter::once(0)).collect();
+
+        let (dt_msg, ds_msg, data_bytes) = match value {
+            AttrData::String(s) => {
+                let s_bytes: Vec<u8> = s.as_bytes().iter().copied().chain(std::iter::once(0)).collect();
+                let padded_len = s_bytes.len();
+                let dt = self.build_datatype_msg_for_string(padded_len as u32);
+                let ds = self.build_dataspace_msg(&[]); // scalar
+                (dt, ds, s_bytes)
+            }
+            AttrData::Float32(v) => {
+                let dt = self.build_datatype_msg(1, 4);
+                let ds = self.build_dataspace_msg(&[]);
+                (dt, ds, v.to_le_bytes().to_vec())
+            }
+        };
+
+        // Attribute message v3 format
+        msg.push(3); // version
+        msg.push(0); // flags
+        msg.extend_from_slice(&(name_with_null.len() as u16).to_le_bytes());
+        msg.extend_from_slice(&(dt_msg.len() as u16).to_le_bytes());
+        msg.extend_from_slice(&(ds_msg.len() as u16).to_le_bytes());
+        msg.push(0); // encoding (ASCII)
+        msg.extend_from_slice(&name_with_null);
+        msg.extend_from_slice(&dt_msg);
+        msg.extend_from_slice(&ds_msg);
+        msg.extend_from_slice(&data_bytes);
+
+        msg
+    }
+
+    fn build_datatype_msg_for_string(&self, size: u32) -> Vec<u8> {
+        let mut msg = Vec::new();
+        let class_and_version = (1 << 4) | 3; // version 1, class 3 (string)
+        msg.push(class_and_version);
+        msg.extend_from_slice(&[0x01, 0x00, 0x00]); // null-padded, ASCII
+        msg.extend_from_slice(&size.to_le_bytes());
+        msg
+    }
+
+    fn checksum(&self, data: &[u8]) -> u32 {
+        // Jenkins lookup3 hashlittle2 - simplified version
+        // HDF5 uses this for checksums
+        let mut a: u32 = 0xdeadbeef_u32.wrapping_add(data.len() as u32);
+        let mut b = a;
+        let mut c = a;
+
+        let mut i = 0;
+        while i + 12 <= data.len() {
+            a = a.wrapping_add(u32::from_le_bytes(data[i..i + 4].try_into().unwrap()));
+            b = b.wrapping_add(u32::from_le_bytes(data[i + 4..i + 8].try_into().unwrap()));
+            c = c.wrapping_add(u32::from_le_bytes(data[i + 8..i + 12].try_into().unwrap()));
+
+            a = a.wrapping_sub(c);
+            a ^= c.rotate_left(4);
+            c = c.wrapping_add(b);
+            b = b.wrapping_sub(a);
+            b ^= a.rotate_left(6);
+            a = a.wrapping_add(c);
+            c = c.wrapping_sub(b);
+            c ^= b.rotate_left(8);
+            b = b.wrapping_add(a);
+            a = a.wrapping_sub(c);
+            a ^= c.rotate_left(16);
+            c = c.wrapping_add(b);
+            b = b.wrapping_sub(a);
+            b ^= a.rotate_left(19);
+            a = a.wrapping_add(c);
+            c = c.wrapping_sub(b);
+            c ^= b.rotate_left(4);
+            b = b.wrapping_add(a);
+
+            i += 12;
+        }
+
+        let remaining = &data[i..];
+        match remaining.len() {
+            12 => {
+                c = c.wrapping_add(u32::from_le_bytes(remaining[8..12].try_into().unwrap()));
+                b = b.wrapping_add(u32::from_le_bytes(remaining[4..8].try_into().unwrap()));
+                a = a.wrapping_add(u32::from_le_bytes(remaining[0..4].try_into().unwrap()));
+            }
+            11 => {
+                c = c.wrapping_add((remaining[10] as u32) << 16);
+                c = c.wrapping_add((remaining[9] as u32) << 8);
+                c = c.wrapping_add(remaining[8] as u32);
+                b = b.wrapping_add(u32::from_le_bytes(remaining[4..8].try_into().unwrap()));
+                a = a.wrapping_add(u32::from_le_bytes(remaining[0..4].try_into().unwrap()));
+            }
+            8..=10 => {
+                for j in 8..remaining.len() {
+                    c = c.wrapping_add((remaining[j] as u32) << ((j - 8) * 8));
+                }
+                b = b.wrapping_add(u32::from_le_bytes(remaining[4..8].try_into().unwrap()));
+                a = a.wrapping_add(u32::from_le_bytes(remaining[0..4].try_into().unwrap()));
+            }
+            4..=7 => {
+                for j in 4..remaining.len() {
+                    b = b.wrapping_add((remaining[j] as u32) << ((j - 4) * 8));
+                }
+                a = a.wrapping_add(u32::from_le_bytes(remaining[0..4].try_into().unwrap()));
+            }
+            1..=3 => {
+                for j in 0..remaining.len() {
+                    a = a.wrapping_add((remaining[j] as u32) << (j * 8));
+                }
+            }
+            0 => return c,
+            _ => {}
+        }
+
+        // Final mix
+        c ^= b;
+        c = c.wrapping_sub(b.rotate_left(14));
+        a ^= c;
+        a = a.wrapping_sub(c.rotate_left(11));
+        b ^= a;
+        b = b.wrapping_sub(a.rotate_left(25));
+        c ^= b;
+        c = c.wrapping_sub(b.rotate_left(16));
+        a ^= c;
+        a = a.wrapping_sub(c.rotate_left(4));
+        b ^= a;
+        b = b.wrapping_sub(a.rotate_left(14));
+        c ^= b;
+        c = c.wrapping_sub(b.rotate_left(24));
+
+        c
+    }
+}
+
+struct ChildObject {
+    name: String,
+    dims: Vec<u64>,
+    data: Vec<u8>,
+    dtype_class: u8,
+    dtype_size: u32,
+    is_dim_scale: bool,
+}

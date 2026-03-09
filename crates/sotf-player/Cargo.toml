@@ -83,7 +83,7 @@ clap = { workspace = true }
 [package.metadata.vcpkg]
 git = "https://github.com/microsoft/vcpkg"
 rev = "84bab45"
-dependencies = ["nlopt", "hdf5", "netcdf-c", "openblas"]
+dependencies = ["nlopt", "openblas"]
 
 # [package.metadata.vcpkg.target]
 # x86_64-apple-darwin = { dependencies = ["sdl2", "sdl2-gfx" ] }
