@@ -1,3 +1,4 @@
+use cpal::Device;
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -498,7 +499,7 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
             }
         }
     } else {
-        match host.default_output_device() {
+        match find_real_output_device(&host) {
             Some(d) => d,
             None => {
                 log::warn!("[AUDIO] No default output device available for sample rate query");
@@ -558,7 +559,7 @@ pub fn verify_working_sample_rate(
         let devices = host.output_devices().ok()?;
         devices.into_iter().find(|d| device_matches_str(d, id))?
     } else {
-        host.default_output_device()?
+        find_real_output_device(&host)?
     };
 
     let device_default = device
@@ -689,6 +690,49 @@ pub fn verify_working_sample_rate(
         candidates
     );
     None
+}
+
+/// Check if a device name looks like a virtual null/discard sink that won't produce real audio.
+pub fn is_null_device(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.contains("discard all samples")
+        || lower.contains("null")
+        || (lower.contains("generate zero") && lower.contains("capture"))
+}
+
+/// Given a cpal host, find the first non-null output device.
+/// Returns the default device if it's not a null device, otherwise scans for a real one.
+fn find_real_output_device(host: &cpal::Host) -> Option<Device> {
+    let default = host.default_output_device()?;
+    let name = default
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_default();
+
+    if !is_null_device(&name) {
+        return Some(default);
+    }
+
+    log::warn!(
+        "[AUDIO] Default output device is '{}' (null sink), searching for a real device",
+        name
+    );
+
+    // Find the first real hardware device
+    let devices = host.output_devices().ok()?;
+    for dev in devices {
+        let dev_name = dev
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_default();
+        if !is_null_device(&dev_name) && !dev_name.is_empty() {
+            log::info!("[AUDIO] Using fallback output device: '{}'", dev_name);
+            return Some(dev);
+        }
+    }
+
+    log::warn!("[AUDIO] No real output device found, using null sink as last resort");
+    Some(default)
 }
 
 /// Detect if PipeWire is the active audio server on Linux.

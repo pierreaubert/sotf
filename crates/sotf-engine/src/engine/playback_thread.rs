@@ -207,9 +207,12 @@ fn run_playback_thread(
         };
         let name = get_name(&default_dev);
 
-        if name.contains("SotF") || name.contains("BlackHole") {
+        if name.contains("SotF")
+            || name.contains("BlackHole")
+            || crate::devices::is_null_device(&name)
+        {
             log::warn!(
-                "[Playback Thread] Default device is '{}' (virtual) - finding fallback physical device",
+                "[Playback Thread] Default device is '{}' (virtual/null) - finding fallback physical device",
                 name
             );
             let devices = host
@@ -217,7 +220,10 @@ fn run_playback_thread(
                 .map_err(|e| format!("Failed to list devices: {}", e))?;
             let physical = devices.into_iter().find(|d| {
                 let n = get_name(d);
-                !n.contains("SotF") && !n.contains("BlackHole") && !n.contains("Loopback")
+                !n.contains("SotF")
+                    && !n.contains("BlackHole")
+                    && !n.contains("Loopback")
+                    && !crate::devices::is_null_device(&n)
             });
             physical.unwrap_or(default_dev)
         } else {
