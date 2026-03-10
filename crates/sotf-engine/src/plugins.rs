@@ -3153,6 +3153,10 @@ impl PluginChain {
         &self.plugins
     }
 
+    pub fn plugins_mut(&mut self) -> &mut [Plugin] {
+        &mut self.plugins
+    }
+
     pub fn len(&self) -> usize {
         self.plugins.len()
     }

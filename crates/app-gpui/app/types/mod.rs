@@ -230,8 +230,6 @@ pub mod recording;
 pub mod room_eq;
 pub mod spinorama_eq;
 
-mod tests;
-
 // Re-export commonly used types for convenience
 pub use calibration::CalibrationData;
 pub use headphone_eq::{HeadphoneEqBiquad, HeadphoneEqResult, HeadphoneEqState, HeadphoneEqStep};

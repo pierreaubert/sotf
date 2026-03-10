@@ -46,3 +46,33 @@ pub use app::state::playback::PlaybackState;
 pub use components::home::image_cache::{ImageAccessTracker, TrackerStats};
 pub use components::icons::{Icon, IconName, IconSize};
 pub use components::plugins::ticks::{ScaleType, TickConfig, TickMark};
+
+// Re-export debug types for testing
+pub use app::debug::{StateHistory, MAX_HISTORY_SIZE};
+
+// Re-export playback event types for testing
+pub use app::state::playback_events::{
+    EventStoreSummary, PlaybackEvent, PlaybackEventStore, PlaybackSnapshot, TrackChangeTrigger,
+    MAX_EVENTS,
+};
+
+// Re-export config helpers for testing
+pub use app::config::default_volume;
+
+// Re-export migration functions for testing
+pub use components::migration::{check_needs_migration, sanitize_filename};
+
+// Re-export image cache constant for testing
+pub use components::home::image_cache::MAX_CACHE_SIZE;
+
+// Re-export UI functions for testing
+pub use ui::{compute_responsive_scale, estimate_grid_dimensions};
+
+// Re-export EQ chart functions and constants for testing
+pub use components::plugins::ui_eq::{
+    calculate_band_response, calculate_plot_width, calculate_response_at_freq,
+    drag_delta_to_q_change, freq_to_x, gain_to_y, get_filter_type_index, q_to_bar_width,
+    x_to_freq, y_to_gain, CHART_BOTTOM_MARGIN, CHART_HEIGHT, CHART_LEFT_MARGIN,
+    CHART_RIGHT_MARGIN, CHART_TOP_MARGIN, GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ,
+    Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, SAMPLE_RATE,
+};

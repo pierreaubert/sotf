@@ -38,6 +38,16 @@ pub struct PluginState {
     pub controller_picker_open: bool,
     /// MIDI controller → plugin parameter mapping engine
     pub midi_mapping: MidiMappingEngine,
+
+    // Chain-level state
+    /// When true, all plugins are bypassed (audio passes through unchanged)
+    pub chain_bypass: bool,
+    /// Chain-level auto-gain toggle
+    pub chain_autogain: bool,
+    /// Index of the currently soloed plugin (None = no solo active)
+    pub soloed_plugin_index: Option<usize>,
+    /// Saved enabled states before solo was activated (to restore on un-solo)
+    pub pre_solo_enabled_states: Vec<bool>,
 }
 
 impl Deref for PluginState {
@@ -128,6 +138,10 @@ impl Default for PluginState {
             plugin_ui_view: PluginUiView::UI,
             controller_picker_open: false,
             midi_mapping: MidiMappingEngine::new(),
+            chain_bypass: false,
+            chain_autogain: false,
+            soloed_plugin_index: None,
+            pre_solo_enabled_states: Vec::new(),
         }
     }
 }

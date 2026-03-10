@@ -5,8 +5,9 @@
 //! Extracted from inline tests to work around GPUI macro recursion issues.
 
 use sotf_audio_player_gpui::{
-    IconName, IconSize, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig,
-    PlaybackState, RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType, WindowGeometry,
+    Config, IconName, IconSize, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig,
+    PlaybackState, RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType,
+    WindowGeometry, compute_responsive_scale, default_volume, estimate_grid_dimensions,
 };
 
 use std::path::PathBuf;
@@ -98,6 +99,44 @@ fn test_recording_config_state_serialization() {
         deserialized.mic_calibration_path,
         Some("/path/to/cal.txt".to_string())
     );
+}
+
+#[test]
+fn test_config_serialization() {
+    use sotf_audio_player::ReleaseChannel;
+    use sotf_audio_player_gpui::keybindings::KeymapPreset;
+    use sotf_audio_player_gpui::theme::ThemeId;
+    use sotf_audio_player_gpui::i18n::Language;
+
+    let config = Config {
+        directories: Vec::new(),
+        last_loaded_plugin_preset: Some("test_preset".to_string()),
+        theme: ThemeId::default(),
+        language: Language::default(),
+        keymap_preset: KeymapPreset::default(),
+        panel_layout: PanelLayout::default(),
+        window_geometry: WindowGeometry::default(),
+        volume: 0.75,
+        muted: true,
+        recording_config: RecordingConfigState::default(),
+        font_scale: 1.0,
+        release_channel: ReleaseChannel::default(),
+        scanner_threads: Some(2),
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let deserialized: Config = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        deserialized.last_loaded_plugin_preset,
+        Some("test_preset".to_string())
+    );
+    assert!((deserialized.volume - 0.75).abs() < 0.001);
+    assert!(deserialized.muted);
+    assert_eq!(deserialized.scanner_threads, Some(2));
+}
+
+#[test]
+fn test_config_default_volume() {
+    assert!((default_volume() - 0.1).abs() < 0.001);
 }
 
 // ============================================================================
@@ -322,4 +361,77 @@ fn test_icon_sizes() {
     assert_eq!(IconSize::Md.px(), px(20.0));
     assert_eq!(IconSize::Lg.px(), px(24.0));
     assert_eq!(IconSize::Xl.px(), px(32.0));
+}
+
+// ============================================================================
+// UI Responsive Scale Tests (from ui/mod.rs)
+// ============================================================================
+
+fn assert_f32_eq(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < f32::EPSILON,
+        "expected {expected}, got {actual}"
+    );
+}
+
+#[test]
+fn test_compute_responsive_scale_reference_size() {
+    assert_f32_eq(compute_responsive_scale(1200.0, 800.0), 1.0);
+}
+
+#[test]
+fn test_compute_responsive_scale_min_clamp() {
+    assert_f32_eq(compute_responsive_scale(100.0, 100.0), 0.55);
+}
+
+#[test]
+fn test_compute_responsive_scale_max_clamp() {
+    assert_f32_eq(compute_responsive_scale(3840.0, 2160.0), 2.5);
+}
+
+#[test]
+fn test_compute_responsive_scale_uses_constraining_axis() {
+    assert_f32_eq(compute_responsive_scale(2400.0, 400.0), 0.55);
+}
+
+#[test]
+fn test_pagination_reference_window() {
+    let (cols, rows) = estimate_grid_dimensions(1200.0, 800.0, 1.0);
+    assert!(cols >= 5 && cols <= 8, "expected 5-8 columns, got {cols}");
+    assert!(rows >= 1 && rows <= 4, "expected 1-4 rows, got {rows}");
+}
+
+#[test]
+fn test_pagination_phone_window() {
+    let (cols, rows) = estimate_grid_dimensions(375.0, 667.0, 1.0);
+    assert!(cols >= 1 && cols <= 5, "expected 1-5 columns, got {cols}");
+    assert!(rows >= 1, "expected at least 1 row, got {rows}");
+}
+
+#[test]
+fn test_pagination_4k_window() {
+    let (cols, rows) = estimate_grid_dimensions(3840.0, 2160.0, 1.0);
+    assert!(cols >= 8, "expected >=8 columns on 4K, got {cols}");
+    assert!(rows >= 2, "expected >=2 rows on 4K, got {rows}");
+}
+
+#[test]
+fn test_icon_size_to_rems_matches_px_at_base_rem() {
+    let base_rem = 16.0_f32;
+    let variants = [
+        IconSize::Xs,
+        IconSize::Sm,
+        IconSize::Md,
+        IconSize::Lg,
+        IconSize::Xl,
+        IconSize::Xxl,
+    ];
+    for size in variants {
+        let from_rems = size.to_rems().0 * base_rem;
+        let from_px: f32 = size.px().into();
+        assert!(
+            (from_rems - from_px).abs() < 0.01,
+            "{size:?}: to_rems gives {from_rems}px but px() gives {from_px}px"
+        );
+    }
 }

@@ -75,9 +75,7 @@ generate-ml-dataset-ava:
 
 [group('test')]
 test:
-	# Exclude GPUI crates - they cause stack overflow in syn during test/example mode compilation
-	RUST_MIN_STACK=16777216 cargo check --workspace --all-targets --exclude sotf-gpui
-	cargo test --workspace --lib --exclude sotf-gpui --exclude gpui-px
+	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples
 
 # Build gpui-ui-kit examples to verify they compile (doesn't run them)
 [group('test')]
@@ -98,7 +96,23 @@ test-proptest:
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest: test-negative test-proptest
-	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
+	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib --bins --tests --examples
+
+# ----------------------------------------------------------------------
+# LINT
+# ----------------------------------------------------------------------
+
+[group('lint')]
+lint:
+	cargo clippy --all -- -D warnings
+
+# ----------------------------------------------------------------------
+# DOC
+# ----------------------------------------------------------------------
+
+[group('doc')]
+doc:
+	cargo doc --all --no-deps
 
 # ----------------------------------------------------------------------
 # RUN

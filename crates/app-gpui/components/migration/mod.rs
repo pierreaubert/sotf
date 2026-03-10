@@ -376,38 +376,3 @@ pub fn load_extended_metrics(
     None
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_check_needs_migration_small_file() {
-        let json = r#"{"channels": []}"#;
-        assert!(!check_needs_migration(json, 100)); // Small file
-    }
-
-    #[test]
-    fn test_check_needs_migration_large_file_no_data() {
-        let json = r#"{"channels": []}"#;
-        assert!(!check_needs_migration(json, 2_000_000)); // Large but no inline data
-    }
-
-    #[test]
-    fn test_check_needs_migration_large_file_with_data() {
-        // Create JSON with >100 frequency points
-        let frequencies: Vec<f32> = (0..200).map(|i| i as f32 * 100.0).collect();
-        let json = format!(
-            r#"{{"channels": [{{"measurement": {{"frequencies": {:?}}}}}]}}"#,
-            frequencies
-        );
-        assert!(check_needs_migration(&json, 2_000_000)); // Large with inline data
-    }
-
-    #[test]
-    fn test_sanitize_filename() {
-        assert_eq!(sanitize_filename("L"), "L");
-        assert_eq!(sanitize_filename("Front Left"), "Front_Left");
-        assert_eq!(sanitize_filename("Ch/1"), "Ch_1");
-        assert_eq!(sanitize_filename("test-123_abc"), "test-123_abc");
-    }
-}

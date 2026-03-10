@@ -24,7 +24,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// Sample rate for filter calculations
-const SAMPLE_RATE: f64 = 48000.0;
+pub const SAMPLE_RATE: f64 = 48000.0;
 
 /// Wrapper element to capture bounds for coordinate transformation
 struct EqChartWrapper {
@@ -97,13 +97,13 @@ impl Element for EqChartWrapper {
 }
 
 /// Q handle bar constants
-const Q_BAR_MIN_WIDTH: f32 = 40.0;
-const Q_BAR_MAX_WIDTH: f32 = 100.0;
+pub const Q_BAR_MIN_WIDTH: f32 = 40.0;
+pub const Q_BAR_MAX_WIDTH: f32 = 100.0;
 const Q_HANDLE_RADIUS: f32 = 5.0;
 const Q_BAR_HEIGHT: f32 = 3.0;
 
 /// Convert Q value to bar width (inverse: higher Q = narrower bar)
-fn q_to_bar_width(q: f64) -> f32 {
+pub fn q_to_bar_width(q: f64) -> f32 {
     let t = ((q - pk(EQ, "q").min_f64()) / (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()))
         .clamp(0.0, 1.0) as f32;
     // Inverse mapping: pk(EQ, "q").min_f64() -> max width, pk(EQ, "q").max_f64() -> min width
@@ -113,7 +113,7 @@ fn q_to_bar_width(q: f64) -> f32 {
 /// Convert horizontal drag delta to Q change
 /// Positive delta (dragging right handle right) = increase Q
 /// Negative delta (dragging left handle left) = decrease Q
-fn drag_delta_to_q_change(delta_px: f32) -> f64 {
+pub fn drag_delta_to_q_change(delta_px: f32) -> f64 {
     // Scale factor: moving 30px should roughly change Q by the full range
     let scale = (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()) / 60.0;
     delta_px as f64 * scale
@@ -193,7 +193,7 @@ pub struct EqRenderState<'a> {
 }
 
 /// Calculate the combined response in dB at a given frequency
-fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
+pub fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
     if filters.is_empty() {
         return 0.0;
     }
@@ -231,7 +231,7 @@ const BAND_COLORS: [u32; 10] = [
 ];
 
 /// Calculate single band response at a frequency
-fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
+pub fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
     if filter.muted {
         return 0.0;
     }
@@ -247,17 +247,17 @@ fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
 
 /// Chart layout constants for control point positioning
 /// These MUST match gpui-px line chart margins (see gpui-px/src/line.rs)
-const CHART_LEFT_MARGIN: f32 = 50.0; // gpui-px margin_left
-const CHART_RIGHT_MARGIN: f32 = 20.0; // gpui-px margin_right (no secondary axis)
+pub const CHART_LEFT_MARGIN: f32 = 50.0; // gpui-px margin_left
+pub const CHART_RIGHT_MARGIN: f32 = 20.0; // gpui-px margin_right (no secondary axis)
 // gpui-px plot area starts at y=0 (no top padding), so no top margin offset needed.
-const CHART_TOP_MARGIN: f32 = 0.0;
+pub const CHART_TOP_MARGIN: f32 = 0.0;
 // Must match gpui-px margin_bottom (30.0) so plot_height matches the rendered curve.
-const CHART_BOTTOM_MARGIN: f32 = 30.0;
-const CHART_HEIGHT: f32 = 300.0;
+pub const CHART_BOTTOM_MARGIN: f32 = 30.0;
+pub const CHART_HEIGHT: f32 = 300.0;
 // gpui-px uses 10.0 for margin_top in plot_height calculation by default
-const GPUI_PX_MARGIN_TOP: f32 = 10.0;
-const MIN_FREQ: f64 = 20.0;
-const MAX_FREQ: f64 = 20000.0;
+pub const GPUI_PX_MARGIN_TOP: f32 = 10.0;
+pub const MIN_FREQ: f64 = 20.0;
+pub const MAX_FREQ: f64 = 20000.0;
 const CONTROL_POINT_RADIUS: f32 = 8.0;
 
 /// Calculate dynamic y-axis range based on filter gains.
@@ -302,7 +302,7 @@ fn calculate_dynamic_y_range(filters: &[EQFilter]) -> (f64, f64) {
 }
 
 /// Convert frequency (Hz) to x pixel position
-fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
+pub fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
     let log_min = MIN_FREQ.ln();
     let log_max = MAX_FREQ.ln();
     let t = (freq.ln() - log_min) / (log_max - log_min);
@@ -310,7 +310,7 @@ fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
 }
 
 /// Convert x pixel position to frequency (Hz)
-fn x_to_freq(x: f32, plot_width: f32) -> f64 {
+pub fn x_to_freq(x: f32, plot_width: f32) -> f64 {
     let t = ((x - CHART_LEFT_MARGIN) / plot_width).clamp(0.0, 1.0) as f64;
     let log_min = MIN_FREQ.ln();
     let log_max = MAX_FREQ.ln();
@@ -318,7 +318,7 @@ fn x_to_freq(x: f32, plot_width: f32) -> f64 {
 }
 
 /// Convert gain (dB) to y pixel position with dynamic range
-fn gain_to_y(gain_db: f64, min_db: f64, max_db: f64) -> f32 {
+pub fn gain_to_y(gain_db: f64, min_db: f64, max_db: f64) -> f32 {
     // gpui-px calculates plot_height = height - margin_top(10) - margin_bottom(30)
     // but renders the plot starting at y=0 (no actual top margin offset)
     let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
@@ -327,7 +327,7 @@ fn gain_to_y(gain_db: f64, min_db: f64, max_db: f64) -> f32 {
 }
 
 /// Convert y pixel position to gain (dB) with dynamic range
-fn y_to_gain(y: f32, min_db: f64, max_db: f64) -> f64 {
+pub fn y_to_gain(y: f32, min_db: f64, max_db: f64) -> f64 {
     let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
     max_db - t * (max_db - min_db)
@@ -1367,7 +1367,7 @@ pub fn render_eq_plugin(
 /// * `chart_width` - Total width of the chart container
 /// * `labels` - Iterator of label strings to calculate legend width from
 /// * `has_title` - Whether the chart has a title (affects vertical space, not width)
-fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &'a str>) -> f32 {
+pub fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &'a str>) -> f32 {
     // gpui-px constants
     const LEGEND_GAP: f32 = 20.0;
     const COLOR_INDICATOR_WIDTH: f32 = 16.0;
@@ -1388,7 +1388,7 @@ fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &'a s
 }
 
 /// Get the index of a filter type in the standard ordering
-fn get_filter_type_index(filter_type: &BiquadFilterType) -> usize {
+pub fn get_filter_type_index(filter_type: &BiquadFilterType) -> usize {
     match filter_type {
         BiquadFilterType::Peak => 0,
         BiquadFilterType::Lowshelf => 1,
@@ -1495,453 +1495,3 @@ fn get_channel_name(channel_idx: usize, total_channels: usize) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Test constants matching the module constants
-    const TEST_CHART_HEIGHT: f32 = 300.0;
-    // gpui-px uses GPUI_PX_MARGIN_TOP for height calculation, not CHART_TOP_MARGIN
-    const TEST_PLOT_HEIGHT: f32 = TEST_CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
-    // Fixed gain range for testing (used as reference range)
-    const TEST_MIN_GAIN_DB: f64 = -24.0;
-    const TEST_MAX_GAIN_DB: f64 = 24.0;
-
-    /// Test that freq_to_x and x_to_freq are inverse operations
-    #[test]
-    fn test_freq_x_roundtrip() {
-        let plot_width = 500.0;
-        let test_freqs = [20.0, 100.0, 1000.0, 10000.0, 20000.0];
-
-        for &freq in &test_freqs {
-            let x = freq_to_x(freq, plot_width);
-            let recovered_freq = x_to_freq(x, plot_width);
-            let rel_error = (recovered_freq - freq).abs() / freq;
-            assert!(
-                rel_error < 0.001,
-                "freq_to_x/x_to_freq roundtrip failed for freq={}: got {}, error={}",
-                freq,
-                recovered_freq,
-                rel_error
-            );
-        }
-    }
-
-    /// Test that gain_to_y and y_to_gain are inverse operations
-    #[test]
-    fn test_gain_y_roundtrip() {
-        let test_gains = [-24.0, -12.0, 0.0, 12.0, 24.0];
-
-        for &gain in &test_gains {
-            let y = gain_to_y(gain, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
-            let recovered_gain = y_to_gain(y, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
-            let abs_error = (recovered_gain - gain).abs();
-            assert!(
-                abs_error < 0.01,
-                "gain_to_y/y_to_gain roundtrip failed for gain={}: got {}, error={}",
-                gain,
-                recovered_gain,
-                abs_error
-            );
-        }
-    }
-
-    /// Test that freq_to_x maps boundary frequencies correctly
-    #[test]
-    fn test_freq_to_x_boundaries() {
-        let plot_width = 500.0;
-
-        // MIN_FREQ should map to left margin
-        let x_min = freq_to_x(MIN_FREQ, plot_width);
-        assert!(
-            (x_min - CHART_LEFT_MARGIN).abs() < 0.01,
-            "MIN_FREQ should map to left margin: got {} expected {}",
-            x_min,
-            CHART_LEFT_MARGIN
-        );
-
-        // MAX_FREQ should map to left margin + plot_width
-        let x_max = freq_to_x(MAX_FREQ, plot_width);
-        let expected_max = CHART_LEFT_MARGIN + plot_width;
-        assert!(
-            (x_max - expected_max).abs() < 0.01,
-            "MAX_FREQ should map to right edge: got {} expected {}",
-            x_max,
-            expected_max
-        );
-    }
-
-    /// Test that gain_to_y maps boundary gains correctly
-    #[test]
-    fn test_gain_to_y_boundaries() {
-        // MAX_GAIN_DB should map to top margin
-        let y_max = gain_to_y(TEST_MAX_GAIN_DB, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
-        assert!(
-            (y_max - CHART_TOP_MARGIN).abs() < 0.01,
-            "MAX_GAIN_DB should map to top margin: got {} expected {}",
-            y_max,
-            CHART_TOP_MARGIN
-        );
-
-        // MIN_GAIN_DB should map to top margin + plot_height
-        let y_min = gain_to_y(TEST_MIN_GAIN_DB, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
-        let expected_min = CHART_TOP_MARGIN + TEST_PLOT_HEIGHT;
-        assert!(
-            (y_min - expected_min).abs() < 0.01,
-            "MIN_GAIN_DB should map to bottom edge: got {} expected {}",
-            y_min,
-            expected_min
-        );
-
-        // 0 dB should be at vertical center
-        let y_zero = gain_to_y(0.0, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
-        let expected_center = CHART_TOP_MARGIN + TEST_PLOT_HEIGHT / 2.0;
-        assert!(
-            (y_zero - expected_center).abs() < 0.01,
-            "0 dB should map to vertical center: got {} expected {}",
-            y_zero,
-            expected_center
-        );
-    }
-
-    /// Test x_to_freq clamping at boundaries
-    #[test]
-    fn test_x_to_freq_clamping() {
-        let plot_width = 500.0;
-
-        // X before left margin should clamp to MIN_FREQ
-        let freq_before = x_to_freq(0.0, plot_width);
-        assert!(
-            (freq_before - MIN_FREQ).abs() < 0.01,
-            "x before margin should clamp to MIN_FREQ: got {}",
-            freq_before
-        );
-
-        // X after right edge should clamp to MAX_FREQ
-        let freq_after = x_to_freq(CHART_LEFT_MARGIN + plot_width + 100.0, plot_width);
-        assert!(
-            (freq_after - MAX_FREQ).abs() < 0.01,
-            "x after right edge should clamp to MAX_FREQ: got {}",
-            freq_after
-        );
-    }
-
-    /// Test y_to_gain clamping at boundaries
-    #[test]
-    fn test_y_to_gain_clamping() {
-        // Y before top margin should clamp to MAX_GAIN_DB
-        let gain_above = y_to_gain(0.0, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
-        assert!(
-            (gain_above - TEST_MAX_GAIN_DB).abs() < 0.01,
-            "y above margin should clamp to MAX_GAIN_DB: got {}",
-            gain_above
-        );
-
-        // Y after bottom edge should clamp to MIN_GAIN_DB
-        let gain_below = y_to_gain(
-            TEST_CHART_HEIGHT + 100.0,
-            TEST_MIN_GAIN_DB,
-            TEST_MAX_GAIN_DB,
-        );
-        assert!(
-            (gain_below - TEST_MIN_GAIN_DB).abs() < 0.01,
-            "y below bottom should clamp to MIN_GAIN_DB: got {}",
-            gain_below
-        );
-    }
-
-    /// Test Q to bar width conversion
-    #[test]
-    fn test_q_to_bar_width() {
-        // pk(EQ, "q").min_f64() should give maximum width
-        let width_at_min_q = q_to_bar_width(pk(EQ, "q").min_f64());
-        assert!(
-            (width_at_min_q - Q_BAR_MAX_WIDTH).abs() < 0.01,
-            "pk(EQ, "q").min_f64() should give max width: got {} expected {}",
-            width_at_min_q,
-            Q_BAR_MAX_WIDTH
-        );
-
-        // pk(EQ, "q").max_f64() should give minimum width
-        let width_at_max_q = q_to_bar_width(pk(EQ, "q").max_f64());
-        assert!(
-            (width_at_max_q - Q_BAR_MIN_WIDTH).abs() < 0.01,
-            "pk(EQ, "q").max_f64() should give min width: got {} expected {}",
-            width_at_max_q,
-            Q_BAR_MIN_WIDTH
-        );
-
-        // Mid-Q should give mid-width
-        let mid_q = (pk(EQ, "q").min_f64() + pk(EQ, "q").max_f64()) / 2.0;
-        let mid_width = (Q_BAR_MIN_WIDTH + Q_BAR_MAX_WIDTH) / 2.0;
-        let width_at_mid_q = q_to_bar_width(mid_q);
-        assert!(
-            (width_at_mid_q - mid_width).abs() < 1.0,
-            "Mid Q should give mid width: got {} expected ~{}",
-            width_at_mid_q,
-            mid_width
-        );
-    }
-
-    /// Test that control points stay within plot bounds for valid filter values
-    #[test]
-    fn test_control_points_within_bounds() {
-        let chart_width = 800.0;
-        let labels = ["Combined", "#1 - PK @ 1000Hz", "#2 - LS @ 100Hz (muted)"];
-        let plot_width = calculate_plot_width(chart_width, labels.iter().copied());
-
-        // Test various filter configurations
-        let test_cases = [
-            (MIN_FREQ, TEST_MIN_GAIN_DB),
-            (MIN_FREQ, TEST_MAX_GAIN_DB),
-            (MAX_FREQ, TEST_MIN_GAIN_DB),
-            (MAX_FREQ, TEST_MAX_GAIN_DB),
-            (1000.0, 0.0),
-            (100.0, -6.0),
-            (10000.0, 6.0),
-        ];
-
-        for (freq, gain) in test_cases {
-            let x = freq_to_x(freq, plot_width);
-            let y = gain_to_y(gain, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
-
-            // X should be within chart area (left margin to left margin + plot width)
-            assert!(
-                x >= CHART_LEFT_MARGIN && x <= CHART_LEFT_MARGIN + plot_width,
-                "X out of bounds for freq={}: x={}, bounds=[{}, {}]",
-                freq,
-                x,
-                CHART_LEFT_MARGIN,
-                CHART_LEFT_MARGIN + plot_width
-            );
-
-            // Y should be within chart area (top margin to top margin + plot height)
-            assert!(
-                y >= CHART_TOP_MARGIN && y <= CHART_TOP_MARGIN + TEST_PLOT_HEIGHT,
-                "Y out of bounds for gain={}: y={}, bounds=[{}, {}]",
-                gain,
-                y,
-                CHART_TOP_MARGIN,
-                CHART_TOP_MARGIN + TEST_PLOT_HEIGHT
-            );
-        }
-    }
-
-    /// Test calculate_plot_width matches expected gpui-px behavior
-    #[test]
-    fn test_calculate_plot_width() {
-        let chart_width = 800.0;
-
-        // Short labels should give larger plot width
-        let short_labels = ["A", "B"];
-        let plot_width_short = calculate_plot_width(chart_width, short_labels.iter().copied());
-
-        // Long labels should give smaller plot width
-        let long_labels = ["#10 - PK @ 20000Hz (muted+solo)", "Combined response curve"];
-        let plot_width_long = calculate_plot_width(chart_width, long_labels.iter().copied());
-
-        assert!(
-            plot_width_short > plot_width_long,
-            "Short labels should give larger plot width: short={} long={}",
-            plot_width_short,
-            plot_width_long
-        );
-
-        // Plot width should always be positive for reasonable chart widths
-        assert!(
-            plot_width_short > 0.0,
-            "Plot width should be positive: {}",
-            plot_width_short
-        );
-        assert!(
-            plot_width_long > 0.0,
-            "Plot width should be positive: {}",
-            plot_width_long
-        );
-    }
-
-    /// Test logarithmic frequency scaling produces expected ratios
-    #[test]
-    fn test_freq_logarithmic_scaling() {
-        let plot_width = 600.0;
-
-        // Each octave should span equal distance on the plot
-        let x_100 = freq_to_x(100.0, plot_width);
-        let x_200 = freq_to_x(200.0, plot_width);
-        let x_1000 = freq_to_x(1000.0, plot_width);
-        let x_2000 = freq_to_x(2000.0, plot_width);
-
-        let octave_width_low = x_200 - x_100;
-        let octave_width_high = x_2000 - x_1000;
-
-        // Octaves should be approximately equal width in log scale
-        let rel_diff = (octave_width_high - octave_width_low).abs() / octave_width_low;
-        assert!(
-            rel_diff < 0.01,
-            "Octave widths should be equal in log scale: low={} high={} diff={}",
-            octave_width_low,
-            octave_width_high,
-            rel_diff
-        );
-    }
-
-    /// Test drag delta to Q change conversion
-    #[test]
-    fn test_drag_delta_to_q_change() {
-        // Dragging 60px should change Q by the full range
-        let full_range_delta = 60.0;
-        let q_change = drag_delta_to_q_change(full_range_delta);
-        let expected_change = pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64();
-
-        assert!(
-            (q_change - expected_change).abs() < 0.01,
-            "60px drag should change Q by full range: got {} expected {}",
-            q_change,
-            expected_change
-        );
-
-        // Negative delta should decrease Q
-        let negative_change = drag_delta_to_q_change(-30.0);
-        assert!(
-            negative_change < 0.0,
-            "Negative drag should decrease Q: got {}",
-            negative_change
-        );
-    }
-
-    /// Test filter response calculation
-    #[test]
-    fn test_calculate_response_at_freq() {
-        // Empty filters should return 0 dB
-        let empty: Vec<EQFilter> = vec![];
-        assert!(
-            (calculate_response_at_freq(&empty, 1000.0) - 0.0).abs() < 0.001,
-            "Empty filters should give 0 dB response"
-        );
-
-        // Single flat filter (0 dB gain) should return ~0 dB
-        let flat_filter = vec![EQFilter {
-            frequency: 1000.0,
-            q: 1.0,
-            gain_db: 0.0,
-            filter_type: BiquadFilterType::Peak,
-            muted: false,
-            solo: false,
-        }];
-        let response = calculate_response_at_freq(&flat_filter, 1000.0);
-        assert!(
-            response.abs() < 0.1,
-            "0 dB gain filter should give ~0 dB response: got {}",
-            response
-        );
-
-        // Muted filter should not contribute
-        let muted_filter = vec![EQFilter {
-            frequency: 1000.0,
-            q: 1.0,
-            gain_db: 12.0,
-            filter_type: BiquadFilterType::Peak,
-            muted: true,
-            solo: false,
-        }];
-        let muted_response = calculate_response_at_freq(&muted_filter, 1000.0);
-        assert!(
-            muted_response.abs() < 0.1,
-            "Muted filter should give ~0 dB response: got {}",
-            muted_response
-        );
-    }
-
-    /// Test solo behavior in filter response
-    #[test]
-    fn test_calculate_response_solo() {
-        let filters = vec![
-            EQFilter {
-                frequency: 100.0,
-                q: 1.0,
-                gain_db: 6.0,
-                filter_type: BiquadFilterType::Peak,
-                muted: false,
-                solo: false,
-            },
-            EQFilter {
-                frequency: 1000.0,
-                q: 1.0,
-                gain_db: 12.0,
-                filter_type: BiquadFilterType::Peak,
-                muted: false,
-                solo: true, // This one is soloed
-            },
-        ];
-
-        // At 1000 Hz, only the soloed filter should contribute
-        let response_at_solo = calculate_response_at_freq(&filters, 1000.0);
-        let solo_filter_only = vec![filters[1].clone()];
-        let expected_response = calculate_response_at_freq(&solo_filter_only, 1000.0);
-
-        assert!(
-            (response_at_solo - expected_response).abs() < 0.1,
-            "Solo filter should be the only contributor: got {} expected {}",
-            response_at_solo,
-            expected_response
-        );
-    }
-
-    /// Test band response calculation
-    #[test]
-    fn test_calculate_band_response() {
-        let filter = EQFilter {
-            frequency: 1000.0,
-            q: 1.0,
-            gain_db: 6.0,
-            filter_type: BiquadFilterType::Peak,
-            muted: false,
-            solo: false,
-        };
-
-        // At center frequency, peak filter should show approximately the gain
-        let response = calculate_band_response(&filter, 1000.0);
-        assert!(
-            (response - 6.0).abs() < 0.5,
-            "Peak filter at center freq should show ~gain: got {} expected ~6.0",
-            response
-        );
-
-        // Far from center, response should be near 0
-        let far_response = calculate_band_response(&filter, 20.0);
-        assert!(
-            far_response.abs() < 1.0,
-            "Peak filter far from center should be ~0: got {}",
-            far_response
-        );
-
-        // Muted filter should return 0
-        let muted_filter = EQFilter {
-            muted: true,
-            ..filter
-        };
-        let muted_response = calculate_band_response(&muted_filter, 1000.0);
-        assert!(
-            muted_response.abs() < 0.001,
-            "Muted filter should return 0: got {}",
-            muted_response
-        );
-    }
-
-    /// Test filter type index mapping
-    #[test]
-    fn test_filter_type_index() {
-        assert_eq!(get_filter_type_index(&BiquadFilterType::Peak), 0);
-        assert_eq!(get_filter_type_index(&BiquadFilterType::Lowshelf), 1);
-        assert_eq!(get_filter_type_index(&BiquadFilterType::Highshelf), 2);
-        assert_eq!(get_filter_type_index(&BiquadFilterType::Lowpass), 3);
-        assert_eq!(get_filter_type_index(&BiquadFilterType::Highpass), 4);
-        assert_eq!(get_filter_type_index(&BiquadFilterType::Bandpass), 5);
-        assert_eq!(get_filter_type_index(&BiquadFilterType::Notch), 6);
-        // HighpassVariableQ maps to Highpass
-        assert_eq!(
-            get_filter_type_index(&BiquadFilterType::HighpassVariableQ),
-            4
-        );
-    }
-}

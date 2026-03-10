@@ -465,7 +465,7 @@ impl PlayerView {
                                 .id(("plugin-module", idx))
                                 .group("plugin-module")
                                 .w(rems(8.0))
-                                .h(rems(5.5))
+                                .h(rems(6.5))
                                 .flex()
                                 .flex_row()
                                 .rounded_md()
@@ -540,8 +540,15 @@ impl PlayerView {
                                         },
                                     ),
                                 )
-                                // Left button column: power, solo, close
-                                .child(
+                                // Left button column: A (active), S (solo), P (presets), X (remove/lock)
+                                .child({
+                                    let is_soloed = {
+                                        let state = self.state.read(cx);
+                                        state.app.plugin_state.soloed_plugin_index == Some(idx)
+                                    };
+                                    let warning_color = theme_c.warning;
+                                    let accent_color = theme_c.accent;
+
                                     div()
                                         .flex()
                                         .flex_col()
@@ -553,10 +560,10 @@ impl PlayerView {
                                         .h_full()
                                         .border_r_1()
                                         .border_color(theme_c.border)
-                                        // Power button (colored circle)
+                                        // A (Active/Bypass) button
                                         .child(
                                             div()
-                                                .id(("plugin-power", idx))
+                                                .id(("plugin-active", idx))
                                                 .w(rems(1.125))
                                                 .h(rems(1.125))
                                                 .rounded_full()
@@ -583,9 +590,9 @@ impl PlayerView {
                                                 .text_size(rems(0.625))
                                                 .text_color(theme_c.text_on_accent)
                                                 .font_weight(FontWeight::BOLD)
-                                                .child("I"),
+                                                .child(if enabled { "A" } else { "B" }),
                                         )
-                                        // Solo button (S)
+                                        // S (Solo) button — functional
                                         .child(
                                             div()
                                                 .id(("plugin-solo", idx))
@@ -597,14 +604,47 @@ impl PlayerView {
                                                 .justify_center()
                                                 .cursor_pointer()
                                                 .border_1()
-                                                .border_color(theme_c.text_muted)
-                                                .hover(|s| s.border_color(theme_c.warning))
+                                                .border_color(if is_soloed { warning_color } else { theme_c.text_muted })
+                                                .when(is_soloed, |d| d.bg(warning_color).text_color(theme_c.text_on_accent))
+                                                .when(!is_soloed, |d| d.text_color(theme_c.text_muted))
+                                                .hover(|s| s.border_color(warning_color))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state.app.toggle_plugin_solo(idx);
+                                                                state.app.update_level_meter_groups();
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
                                                 .text_size(rems(0.5625))
-                                                .text_color(theme_c.text_muted)
                                                 .font_weight(FontWeight::BOLD)
                                                 .child("S"),
                                         )
-                                        // Close button (X) — only for non-permanent
+                                        // P (Presets) button
+                                        .child(
+                                            div()
+                                                .id(("plugin-presets", idx))
+                                                .w(rems(1.125))
+                                                .h(rems(1.125))
+                                                .rounded_full()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .cursor_pointer()
+                                                .border_1()
+                                                .border_color(theme_c.text_muted)
+                                                .hover(|s| s.border_color(accent_color))
+                                                .text_size(rems(0.5625))
+                                                .text_color(theme_c.text_muted)
+                                                .font_weight(FontWeight::BOLD)
+                                                .child("P"),
+                                        )
+                                        // X (Remove) or lock icon for permanent
                                         .when(!is_permanent, |d| {
                                             d.child(
                                                 div()
@@ -616,8 +656,6 @@ impl PlayerView {
                                                     .items_center()
                                                     .justify_center()
                                                     .cursor_pointer()
-                                                    .opacity(0.0)
-                                                    .group_hover("plugin-module", |s| s.opacity(1.0))
                                                     .hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent))
                                                     .text_size(rems(0.625))
                                                     .text_color(theme_c.text_muted)
@@ -638,7 +676,7 @@ impl PlayerView {
                                                     .child("X"),
                                             )
                                         })
-                                        // Drag handle (dots) for permanent plugins (instead of close)
+                                        // Lock icon for permanent plugins
                                         .when(is_permanent, |d| {
                                             d.child(
                                                 div()
@@ -649,10 +687,10 @@ impl PlayerView {
                                                     .justify_center()
                                                     .text_size(rems(0.5))
                                                     .text_color(theme_c.text_muted)
-                                                    .child("::"),
+                                                    .child("🔒"),
                                             )
-                                        }),
-                                )
+                                        })
+                                })
                                 // Right content area: name on top, icon preview center, drag handle bottom
                                 .child(
                                     div()
@@ -680,7 +718,7 @@ impl PlayerView {
                                                 .flex()
                                                 .items_center()
                                                 .justify_center()
-                                                .text_2xl()
+                                                .text_size(rems(2.5))
                                                 .text_color(color)
                                                 .child(icon),
                                         )
@@ -1427,14 +1465,10 @@ impl PlayerView {
                         border: theme.border,
                     };
 
-                    let input_collapsed = state.app.input_meter_collapsed;
                     let output_collapsed = state.app.output_meter_collapsed;
-                    let input_meter_width = state.app.input_meter_width;
                     let output_meter_width = state.app.output_meter_width;
 
                     // Create state clones for divider callbacks
-                    let state_for_input_toggle = self.state.clone();
-                    let state_for_input_drag = self.state.clone();
                     let state_for_output_toggle = self.state.clone();
                     let state_for_output_drag = self.state.clone();
 
@@ -1442,39 +1476,7 @@ impl PlayerView {
                         .flex_1()
                         .flex()
                         .min_h(rems(18.75)) // Minimum height for meters and content
-                        // Left: Input Meter (legend on right side, facing center)
-                        .when(!input_collapsed, |d| {
-                            d.child(
-                                div()
-                                    .w(px(input_meter_width))
-                                    .h_full()
-                                    .flex_shrink_0()
-                                    .child(self.render_side_meter(cx, 2, "IN", false, true)),
-                            )
-                        })
-                        // Divider 1: Between input meter and main zone
-                        .child(
-                            PaneDivider::vertical("input-meter-divider", CollapseDirection::Left)
-                                .label("IN")
-                                .theme(divider_theme.clone())
-                                .thickness(px(6.0))
-                                .collapsed(input_collapsed)
-                                .on_toggle(move |collapsed, _window, cx| {
-                                    state_for_input_toggle.update(cx, |s, _| {
-                                        s.app.input_meter_collapsed = collapsed;
-                                    });
-                                })
-                                .on_drag_start(move |pos, _window, cx| {
-                                    state_for_input_drag.update(cx, |s, _| {
-                                        s.app.dragging_divider = Some(DividerDragState {
-                                            divider_type: DividerType::InputMeter,
-                                            start_x: pos,
-                                            start_width: s.app.input_meter_width,
-                                        });
-                                    });
-                                }),
-                        )
-                        // Center: Plugin Content
+                        // Plugin Content (now takes full left area)
                         .child(
                             div()
                                 .id("params-scroll")
@@ -1650,20 +1652,17 @@ impl PlayerView {
                                     });
                                 }),
                         )
-                        // Right: Output Meter (always shown when not collapsed)
+                        // Right: Combined IN/OUT Meter + Chain Controls
                         .when(!output_collapsed, |d| {
                             d.child(
                                 div()
                                     .w(px(output_meter_width))
                                     .h_full()
                                     .flex_shrink_0()
-                                    .child(self.render_side_meter(
-                                        cx,
-                                        output_channels,
-                                        "OUT",
-                                        true,
-                                        false,
-                                    )),
+                                    .flex()
+                                    .flex_col()
+                                    .child(self.render_combined_meter(cx, 2, output_channels))
+                                    .child(self.render_chain_controls(cx)),
                             )
                         })
                 })
@@ -1682,6 +1681,271 @@ impl PlayerView {
                         .child(div().text_sm().child("Add a plugin to get started")),
                 )
             })
+    }
+
+    /// Render combined IN + OUT meter panel using the same meter components as the main library view
+    fn render_combined_meter(
+        &self,
+        cx: &mut Context<Self>,
+        input_channels: usize,
+        output_channels: usize,
+    ) -> impl IntoElement {
+        use sotf_audio_player::{ChannelGroup, ChannelInfo};
+
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let input_loudness = state.app.playback.input_loudness_info.clone();
+        let output_loudness = state.app.playback.loudness_info.clone();
+        let peak_hold = state.app.level_meter_peak_hold.clone();
+
+        let channel_names = ["L", "R", "C", "LFE", "Ls", "Rs", "Lb", "Rb", "Lw", "Rw"];
+
+        let make_group = |name: &str, channels: usize| -> ChannelGroup {
+            ChannelGroup {
+                name: name.to_string(),
+                channels: (0..channels)
+                    .map(|i| {
+                        let ch_name = channel_names.get(i).unwrap_or(&".").to_string();
+                        ChannelInfo {
+                            index: i,
+                            name: ch_name.clone(),
+                            display_name: ch_name.chars().map(|c| c.to_string()).collect(),
+                        }
+                    })
+                    .collect(),
+                muted: false,
+                soloed: false,
+                dimmed: false,
+            }
+        };
+
+        let in_group = make_group("IN", input_channels);
+        let out_group = make_group("OUT", output_channels);
+
+        // Use group indices beyond level_meter_groups so M/S/D clicks are no-ops
+        let fake_in_idx = 1000;
+        let fake_out_idx = 1001;
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .bg(theme.background_secondary)
+            .border_l_1()
+            .border_color(theme.border)
+            // Meters: [IN group] [legend] [OUT group]
+            .child(
+                div()
+                    .flex()
+                    .gap_0()
+                    .flex_1()
+                    .min_h(rems(18.75))
+                    .child(
+                        self.render_meter_group(
+                            &in_group,
+                            fake_in_idx,
+                            false,
+                            input_loudness.as_ref(),
+                            &peak_hold,
+                            &theme,
+                            cx,
+                        )
+                        .into_any_element(),
+                    )
+                    .child(self.render_vertical_legend(&theme, true).into_any_element())
+                    .child(
+                        self.render_meter_group(
+                            &out_group,
+                            fake_out_idx,
+                            false,
+                            output_loudness.as_ref(),
+                            &peak_hold,
+                            &theme,
+                            cx,
+                        )
+                        .into_any_element(),
+                    ),
+            )
+    }
+
+    /// Render chain-level control buttons (Bypass, AutoGain, Mono, M/S) in a 2×2 grid
+    fn render_chain_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let chain_bypass = state.app.plugin_state.chain_bypass;
+        let chain_autogain = state.app.plugin_state.chain_autogain;
+
+        // Detect current matrix preset for Mono/M/S button states
+        let (is_mono, is_ms) = {
+            let mut mono = false;
+            let mut ms = false;
+            for plugin in state.app.plugin_state.chain.plugins() {
+                if plugin.is_permanent()
+                    && matches!(plugin.plugin_type(), PluginType::Matrix)
+                {
+                    if let sotf_audio_player::PluginSettings::Matrix {
+                        input_channels,
+                        output_channels,
+                        ref matrix,
+                        ..
+                    } = plugin.settings
+                    {
+                        let preset = sotf_audio_player::detect_matrix_preset(
+                            input_channels,
+                            output_channels,
+                            matrix,
+                        );
+                        mono = preset == "Mono Mix";
+                        ms = preset == "M/S Encode" || preset == "M/S Decode";
+                    }
+                    break;
+                }
+            }
+            (mono, ms)
+        };
+
+        let active_bg = theme.accent;
+        let active_text = theme.text_on_accent;
+        let inactive_bg = theme.surface;
+        let inactive_text = theme.text_muted;
+        let hover_bg = theme.surface_hover;
+        let border = theme.border;
+
+        let make_button = |id: &'static str,
+                           label: &'static str,
+                           is_active: bool,
+                           active_bg: Rgba,
+                           active_text: Rgba,
+                           inactive_bg: Rgba,
+                           inactive_text: Rgba,
+                           hover_bg: Rgba|
+         -> Stateful<Div> {
+            div()
+                .id(id)
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .py(px(4.0))
+                .cursor_pointer()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .rounded_sm()
+                .when(is_active, |d| d.bg(active_bg).text_color(active_text))
+                .when(!is_active, |d| {
+                    d.bg(inactive_bg)
+                        .text_color(inactive_text)
+                        .hover(move |s| s.bg(hover_bg))
+                })
+                .child(label)
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(2.0))
+            .p_2()
+            .bg(theme.background_secondary)
+            .border_l_1()
+            .border_t_1()
+            .border_color(border)
+            // Row 1: Bypass | AutoGain
+            .child(
+                div()
+                    .flex()
+                    .gap(px(2.0))
+                    .child(
+                        make_button(
+                            "chain-bypass",
+                            "Bypass",
+                            chain_bypass,
+                            active_bg,
+                            active_text,
+                            inactive_bg,
+                            inactive_text,
+                            hover_bg,
+                        )
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.toggle_chain_bypass();
+                                    state.app.update_level_meter_groups();
+                                });
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        make_button(
+                            "chain-autogain",
+                            "AutoGain",
+                            chain_autogain,
+                            active_bg,
+                            active_text,
+                            inactive_bg,
+                            inactive_text,
+                            hover_bg,
+                        )
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.toggle_chain_autogain();
+                                });
+                                cx.notify();
+                            }),
+                        ),
+                    ),
+            )
+            // Row 2: Mono | M/S
+            .child(
+                div()
+                    .flex()
+                    .gap(px(2.0))
+                    .child(
+                        make_button(
+                            "chain-mono",
+                            "Mono",
+                            is_mono,
+                            active_bg,
+                            active_text,
+                            inactive_bg,
+                            inactive_text,
+                            hover_bg,
+                        )
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.apply_matrix_mono();
+                                });
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        make_button(
+                            "chain-ms",
+                            "M/S",
+                            is_ms,
+                            active_bg,
+                            active_text,
+                            inactive_bg,
+                            inactive_text,
+                            hover_bg,
+                        )
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.apply_matrix_ms();
+                                });
+                                cx.notify();
+                            }),
+                        ),
+                    ),
+            )
     }
 
     fn toggle_upmixer_config(

@@ -332,37 +332,3 @@ impl TickConfig {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_linear_scale() {
-        let scale = ScaleType::Linear;
-        assert!((scale.value_to_position(0.0, 0.0, 100.0) - 0.0).abs() < 0.001);
-        assert!((scale.value_to_position(50.0, 0.0, 100.0) - 0.5).abs() < 0.001);
-        assert!((scale.value_to_position(100.0, 0.0, 100.0) - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_quadratic_scale() {
-        let scale = ScaleType::Quadratic;
-        // At 50% of the value range, position should be 25% (0.5^2 = 0.25)
-        assert!((scale.value_to_position(50.0, 0.0, 100.0) - 0.25).abs() < 0.001);
-        // At 0 and max, should be same as linear
-        assert!((scale.value_to_position(0.0, 0.0, 100.0) - 0.0).abs() < 0.001);
-        assert!((scale.value_to_position(100.0, 0.0, 100.0) - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_db_scale_emphasis() {
-        let scale = ScaleType::Quadratic;
-        // With quadratic, -10 dB (which is 50/60 = 83% of range) maps to 0.69
-        let pos_10 = scale.value_to_position(-10.0, -60.0, 0.0);
-        let pos_30 = scale.value_to_position(-30.0, -60.0, 0.0);
-        // Values near 0 should be more spread out
-        assert!(pos_10 > pos_30);
-        // The top portion should take more visual space
-        assert!(1.0 - pos_10 < pos_10 - pos_30);
-    }
-}

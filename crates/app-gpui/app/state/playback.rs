@@ -58,24 +58,3 @@ impl PlaybackState {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::app::constants;
-
-    #[test]
-    fn playback_state_defaults() {
-        let state = PlaybackState::default();
-
-        assert!(!state.is_playing);
-        assert_eq!(state.current_queue_index, None);
-        assert_eq!(state.volume, constants::ui::DEFAULT_STARTUP_VOLUME);
-        assert!(!state.muted);
-        assert_eq!(state.position_secs, 0.0);
-        assert_eq!(state.duration_secs, 0.0);
-        assert!(state.input_loudness_info.is_none());
-        assert!(state.loudness_info.is_none());
-        assert!(state.spectrum_info.is_none());
-        assert!(state.compressor_info.is_none());
-    }
-}

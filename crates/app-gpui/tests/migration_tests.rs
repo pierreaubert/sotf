@@ -1,4 +1,4 @@
-use sotf_audio_player_gpui::RoomEqMeasurementsFile;
+use sotf_audio_player_gpui::{RoomEqMeasurementsFile, check_needs_migration, sanitize_filename};
 
 #[test]
 fn test_migration_v1_to_v2() {
@@ -162,4 +162,38 @@ fn test_room_config_roundtrip() {
     assert_eq!(parsed.version, "1.1.0");
     assert_eq!(parsed.speakers.len(), 1);
     assert!(parsed.recording_config.is_some());
+}
+
+// ============================================================================
+// Data Migration Check Tests (from components/migration/mod.rs)
+// ============================================================================
+
+#[test]
+fn test_check_needs_migration_small_file() {
+    let json = r#"{"channels": []}"#;
+    assert!(!check_needs_migration(json, 100));
+}
+
+#[test]
+fn test_check_needs_migration_large_file_no_data() {
+    let json = r#"{"channels": []}"#;
+    assert!(!check_needs_migration(json, 2_000_000));
+}
+
+#[test]
+fn test_check_needs_migration_large_file_with_data() {
+    let frequencies: Vec<f32> = (0..200).map(|i| i as f32 * 100.0).collect();
+    let json = format!(
+        r#"{{"channels": [{{"measurement": {{"frequencies": {:?}}}}}]}}"#,
+        frequencies
+    );
+    assert!(check_needs_migration(&json, 2_000_000));
+}
+
+#[test]
+fn test_sanitize_filename() {
+    assert_eq!(sanitize_filename("L"), "L");
+    assert_eq!(sanitize_filename("Front Left"), "Front_Left");
+    assert_eq!(sanitize_filename("Ch/1"), "Ch_1");
+    assert_eq!(sanitize_filename("test-123_abc"), "test-123_abc");
 }

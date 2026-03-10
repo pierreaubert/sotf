@@ -166,3 +166,15 @@ path = "tests/config_tests.rs"
 [[test]]
 name = "migration_tests"
 path = "tests/migration_tests.rs"
+
+[[test]]
+name = "debug_tests"
+path = "tests/debug_tests.rs"
+
+[[test]]
+name = "playback_events_tests"
+path = "tests/playback_events_tests.rs"
+
+[[test]]
+name = "eq_chart_tests"
+path = "tests/eq_chart_tests.rs"
