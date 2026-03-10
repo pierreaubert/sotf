@@ -1,13 +1,19 @@
 //! Compressor Plugin UI Component
 //!
-//! Professional compressor visualization with:
-//! - Transfer curve display
-//! - Gain reduction meter
-//! - Vertical sliders for main dynamics controls
-//! - Rotary knobs for secondary parameters
+//! Layout (3-column):
+//! +--------------------+------------------------------------------------+--------------------+
+//! | Setup              | Transfer Curve                                 | Meter              |
+//! |                    |                                                | Gain Reduction     |
+//! | Link Ch [on|off]   |                                                |                    |
+//! |                    +------------------------------------------------+--------------------+
+//! | SC HPF             | Dynamic            Timing                      | Output             |
+//! |                    | Threshold Ratio     Attack Release              | AutoGain off/on    |
+//! |                    | Knee                                            | Makeup             |
+//! |                    |                                                | Mix                |
+//! +--------------------+------------------------------------------------+--------------------+
 
 use super::common::{
-    render_dynamics_layout, render_knob, render_section_title, render_toggle,
+    render_knob, render_section_title, render_toggle,
     render_transfer_curve_with_level, render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
@@ -35,13 +41,15 @@ pub struct CompressorRenderState<'a> {
     pub data: Option<&'a CompressorData>,
 }
 
-// Sidechain HPF UI range (40-160Hz as per user request)
+// Sidechain HPF UI range
 const SIDECHAIN_HPF_UI_MIN: f64 = 40.0;
 const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
 
-// Column layout constants
-const METER_WIDTH: f32 = 180.0; // Width for transfer curve and GR meter
-const SLIDER_HEIGHT: f32 = 200.0; // Height for vertical sliders
+// Layout constants
+const TRANSFER_CURVE_SIZE: f32 = 200.0;
+const SLIDER_HEIGHT: f32 = 180.0;
+const SETUP_WIDTH: f32 = 100.0;
+const METER_WIDTH: f32 = 120.0;
 
 /// Render the Compressor plugin
 pub fn render_compressor_plugin(
@@ -50,9 +58,8 @@ pub fn render_compressor_plugin(
     state: CompressorRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Get max gain reduction from all channels
+    // Gain reduction value
     let gr_db = if let Some(data) = state.data {
-        // Find maximum reduction (since GR is positive dB value, we want the max)
         data.gain_reduction_db
             .iter()
             .cloned()
@@ -60,39 +67,52 @@ pub fn render_compressor_plugin(
     } else {
         0.0
     };
-
-    // Since gain_reduction_db is stored as the attenuation amount (e.g. 6.0 for -6dB),
-    // we want to display it as a negative value for the meter
     let meter_value = -gr_db;
 
-    // Transfer curve with input level indicator
+    // Input level estimate for transfer curve indicator
     let input_level = state.data.map(|d| {
-        // Estimate input level from GR: if GR = X dB, input is approximately threshold + X dB
         let max_gr = d.gain_reduction_db.iter().cloned().fold(0.0_f32, f32::max) as f64;
         if max_gr > 0.1 { state.threshold_db + max_gr } else { state.threshold_db - 6.0 }
     });
 
+    // === LEFT COLUMN: Setup ===
+    let setup_col = div()
+        .flex()
+        .flex_col()
+        .w(px(SETUP_WIDTH))
+        .gap_3()
+        .child(render_section_title("SETUP", theme))
+        .child(render_toggle(
+            entity.clone(), plugin_idx, "Link Ch", state.link_channels,
+            8, state.selected_param, state.is_editing, theme,
+        ))
+        .child(render_knob(
+            entity.clone(), plugin_idx, "SC HPF", state.sidechain_hpf_hz,
+            SIDECHAIN_HPF_UI_MIN, SIDECHAIN_HPF_UI_MAX,
+            "Hz", 9, state.selected_param, state.is_editing, Some('s'), theme,
+        ));
+
+    // === CENTER COLUMN: Transfer curve (top) + Sliders (bottom) ===
     let transfer_curve = render_transfer_curve_with_level(
         state.threshold_db,
         state.ratio,
         state.knee_db,
         false,
-        METER_WIDTH,
+        TRANSFER_CURVE_SIZE,
         input_level,
         theme,
     );
 
-    // Controls: dynamics + timing + output + setup
-    let controls = div()
+    let sliders = div()
         .flex()
         .gap_4()
-        // Dynamics (Threshold, Ratio, Knee)
+        // Dynamics: Threshold, Ratio, Knee
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(render_section_title("DYNAMICS", theme))
+                .gap_1()
+                .child(render_section_title("DYNAMIC", theme))
                 .child(
                     div()
                         .flex()
@@ -114,12 +134,12 @@ pub fn render_compressor_plugin(
                         )),
                 ),
         )
-        // Timing (Attack, Release)
+        // Timing: Attack, Release
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap_1()
                 .child(render_section_title("TIMING", theme))
                 .child(
                     div()
@@ -136,66 +156,61 @@ pub fn render_compressor_plugin(
                             "ms", 3, state.selected_param, state.is_editing, Some('e'), SLIDER_HEIGHT, theme,
                         )),
                 ),
-        )
-        // Output (Makeup, Mix, Auto)
+        );
+
+    let center_col = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .gap_3()
+        .child(transfer_curve)
+        .child(sliders);
+
+    // === RIGHT COLUMN: GR Meter (top) + Output (bottom) ===
+    let right_col = div()
+        .flex()
+        .flex_col()
+        .w(px(METER_WIDTH))
+        .gap_3()
+        // GR Meter
         .child(
             div()
                 .flex()
                 .flex_col()
-                .justify_between()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("OUTPUT", theme))
-                        .child(render_knob(
-                            entity.clone(), plugin_idx, "Makeup", state.makeup_gain_db,
-                            pk(CP, "makeup_gain").min_f64(), pk(CP, "makeup_gain").max_f64(),
-                            "dB", 5, state.selected_param, state.is_editing, Some('m'), theme,
-                        ))
-                        .child(render_knob(
-                            entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
-                            pk(CP, "mix").min_f64() * 100.0, pk(CP, "mix").max_f64() * 100.0,
-                            "%", 6, state.selected_param, state.is_editing, Some('x'), theme,
-                        )),
-                )
+                .gap_1()
+                .child(render_section_title("METER", theme))
+                .child(render_gr_meter(meter_value, -30.0, theme)),
+        )
+        // Output section
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(render_section_title("OUTPUT", theme))
                 .child(render_toggle(
-                    entity.clone(), plugin_idx, "Auto Makeup", state.auto_makeup,
+                    entity.clone(), plugin_idx, "AutoGain", state.auto_makeup,
                     7, state.selected_param, state.is_editing, theme,
-                )),
-        )
-        // Setup (Sidechain HPF, Link)
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .justify_between()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("SETUP", theme))
-                        .child(render_knob(
-                            entity.clone(), plugin_idx, "SC HPF", state.sidechain_hpf_hz,
-                            SIDECHAIN_HPF_UI_MIN, SIDECHAIN_HPF_UI_MAX,
-                            "Hz", 9, state.selected_param, state.is_editing, Some('s'), theme,
-                        )),
-                )
-                .child(render_toggle(
-                    entity.clone(), plugin_idx, "Link Ch", state.link_channels,
-                    8, state.selected_param, state.is_editing, theme,
+                ))
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Makeup", state.makeup_gain_db,
+                    pk(CP, "makeup_gain").min_f64(), pk(CP, "makeup_gain").max_f64(),
+                    "dB", 5, state.selected_param, state.is_editing, Some('m'), theme,
+                ))
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
+                    pk(CP, "mix").min_f64() * 100.0, pk(CP, "mix").max_f64() * 100.0,
+                    "%", 6, state.selected_param, state.is_editing, Some('x'), theme,
                 )),
         );
 
-    // Meter section: GR meter
-    let meter_section = div()
+    // === Main layout: 3 columns ===
+    div()
         .flex()
-        .flex_col()
-        .gap_2()
-        .child(render_section_title("METER", theme))
-        .child(render_gr_meter(meter_value, -30.0, theme));
-
-    render_dynamics_layout(transfer_curve, controls, meter_section, METER_WIDTH)
+        .gap_4()
+        .p_3()
+        .w_full()
+        .child(setup_col)
+        .child(center_col)
+        .child(right_col)
 }

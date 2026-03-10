@@ -325,7 +325,7 @@ impl PlayerView {
 
     /// Render the horizontal plugin rack strip
     fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (plugins_data, selected_idx, theme) = {
+        let (plugins_data, selected_idx, theme, preset_open, preset_list) = {
             let state = self.state.read(cx);
             let chain = &state.app.plugin_state.chain;
             let plugins: Vec<_> = chain
@@ -343,10 +343,14 @@ impl PlayerView {
                     )
                 })
                 .collect();
+            let preset_open = state.app.plugin_state.plugin_preset_open;
+            let preset_list = state.app.plugin_state.plugin_preset_list.clone();
             (
                 plugins,
                 state.app.plugin_state.selected_plugin_index,
                 state.app.ui_state.theme.clone(),
+                preset_open,
+                preset_list,
             )
         };
 
@@ -374,6 +378,15 @@ impl PlayerView {
 
         let is_empty = plugins_data.is_empty();
         let plugin_count = plugins_data.len();
+
+        // Split: main plugins, then "+", then trailing permanent plugin (output matrix/monitor)
+        let last_permanent_idx = modules_info.iter().rposition(|m| m.7); // .7 = is_permanent
+        let (main_modules, tail_modules) = if let Some(lp) = last_permanent_idx {
+            let (main, tail) = modules_info.split_at(lp);
+            (main.to_vec(), tail.to_vec())
+        } else {
+            (modules_info, vec![])
+        };
 
         div()
             .flex()
@@ -446,7 +459,7 @@ impl PlayerView {
                     .overflow_x_scroll()
                     .min_h(rems(7.0))
                     // Plugin modules - Ozone-style cards with left button column
-                    .children(modules_info.into_iter().map(
+                    .children(main_modules.into_iter().map(
                         |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
@@ -459,6 +472,7 @@ impl PlayerView {
                             };
                             let drop_highlight = theme_c.drag_over_highlight;
                             let drop_border = theme_c.drag_over_border;
+                            let accent_color = theme_c.accent;
 
                             // Module card with drop target
                             div()
@@ -486,7 +500,6 @@ impl PlayerView {
                                 .shadow_sm()
                                 .when(!is_permanent, |d| d.cursor_grab())
                                 .hover(|s| s.border_color(color))
-                                .overflow_hidden()
                                 // Drag-over feedback
                                 .drag_over::<PluginDragInfo>({
                                     move |style, _, _, _| {
@@ -637,10 +650,38 @@ impl PlayerView {
                                                 .justify_center()
                                                 .cursor_pointer()
                                                 .border_1()
-                                                .border_color(theme_c.text_muted)
+                                                .border_color(if preset_open == Some(idx) { accent_color } else { theme_c.text_muted })
+                                                .when(preset_open == Some(idx), |d| d.bg(accent_color).text_color(theme_c.text_on_accent))
+                                                .when(preset_open != Some(idx), |d| d.text_color(theme_c.text_muted))
                                                 .hover(|s| s.border_color(accent_color))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                let ps = &mut state.app.plugin_state;
+                                                                if ps.plugin_preset_open == Some(idx) {
+                                                                    // Close
+                                                                    ps.plugin_preset_open = None;
+                                                                    ps.plugin_preset_save_mode = false;
+                                                                    ps.plugin_preset_input.clear();
+                                                                } else {
+                                                                    // Open and populate list
+                                                                    if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                        let pt = plugin.plugin_type();
+                                                                        ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                    }
+                                                                    ps.plugin_preset_open = Some(idx);
+                                                                    ps.plugin_preset_save_mode = false;
+                                                                    ps.plugin_preset_input.clear();
+                                                                }
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
                                                 .text_size(rems(0.5625))
-                                                .text_color(theme_c.text_muted)
                                                 .font_weight(FontWeight::BOLD)
                                                 .child("P"),
                                         )
@@ -692,50 +733,177 @@ impl PlayerView {
                                         })
                                 })
                                 // Right content area: name on top, icon preview center, drag handle bottom
-                                .child(
-                                    div()
+                                // OR preset panel when P is active
+                                .child({
+                                    let right_panel = div()
                                         .flex_1()
                                         .flex()
                                         .flex_col()
                                         .h_full()
-                                        .overflow_hidden()
-                                        // Plugin name row (top)
-                                        .child(
-                                            div()
-                                                .px_2()
-                                                .pt_1()
-                                                .text_xs()
-                                                .text_color(if is_selected { color } else { theme_c.text_primary })
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .overflow_hidden()
-                                                .text_ellipsis()
-                                                .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
-                                        )
-                                        // Icon / preview area (center)
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .text_size(rems(2.5))
-                                                .text_color(color)
-                                                .child(icon),
-                                        )
-                                        // Drag handle (bottom-right)
-                                        .when(!is_permanent, |d| {
-                                            d.child(
+                                        .overflow_hidden();
+
+                                    if preset_open == Some(idx) {
+                                        // Preset panel
+                                        let theme_p = theme_c.clone();
+                                        right_panel
+                                            .bg(theme_p.surface)
+                                            .px_1()
+                                            .py(px(2.0))
+                                            .gap(px(1.0))
+                                            .children(preset_list.iter().enumerate().map(
+                                                |(pi, name)| {
+                                                    let theme_i = theme_p.clone();
+                                                    let name_load = name.clone();
+                                                    let name_del = name.clone();
+                                                    div()
+                                                        .id(("preset-item", pi))
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(2.0))
+                                                        .px_1()
+                                                        .py(px(1.0))
+                                                        .rounded_sm()
+                                                        .cursor_pointer()
+                                                        .text_xs()
+                                                        .text_color(theme_i.text_primary)
+                                                        .hover(|s| s.bg(theme_i.background_secondary))
+                                                        .on_mouse_up(
+                                                            MouseButton::Left,
+                                                            cx.listener(
+                                                                move |view, _e: &MouseUpEvent, _, cx| {
+                                                                    cx.stop_propagation();
+                                                                    view.state.update(cx, |state, _cx| {
+                                                                        let ps = &mut state.app.plugin_state;
+                                                                        match ps.load_plugin_preset(idx, &name_load) {
+                                                                            Ok(_) => {
+                                                                                ps.pending_plugin_update = Some(PluginUpdateType::Structural);
+                                                                            }
+                                                                            Err(e) => {
+                                                                                log::error!("Failed to load preset: {e}");
+                                                                            }
+                                                                        }
+                                                                        ps.plugin_preset_open = None;
+                                                                    });
+                                                                    cx.notify();
+                                                                },
+                                                            ),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .flex_1()
+                                                                .overflow_hidden()
+                                                                .text_ellipsis()
+                                                                .child(name.clone()),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .id(("preset-del", pi))
+                                                                .text_size(rems(0.5))
+                                                                .text_color(theme_i.text_muted)
+                                                                .cursor_pointer()
+                                                                .hover(|s| s.text_color(theme_i.error))
+                                                                .on_mouse_up(
+                                                                    MouseButton::Left,
+                                                                    cx.listener(
+                                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                                            cx.stop_propagation();
+                                                                            view.state.update(cx, |state, _cx| {
+                                                                                let ps = &mut state.app.plugin_state;
+                                                                                if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                                    let pt = plugin.plugin_type().clone();
+                                                                                    let _ = sotf_audio_player::PluginController::delete_plugin_preset(&pt, &name_del);
+                                                                                    ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                                }
+                                                                            });
+                                                                            cx.notify();
+                                                                        },
+                                                                    ),
+                                                                )
+                                                                .child("X"),
+                                                        )
+                                                }
+                                            ))
+                                            .child(
                                                 div()
+                                                    .id(("preset-save-btn", idx))
                                                     .flex()
-                                                    .justify_end()
+                                                    .items_center()
+                                                    .justify_center()
                                                     .px_1()
-                                                    .pb(px(2.0))
-                                                    .text_size(rems(0.5))
-                                                    .text_color(theme_c.text_muted)
-                                                    .child(":::"),
+                                                    .py(px(2.0))
+                                                    .mt(px(2.0))
+                                                    .rounded_sm()
+                                                    .cursor_pointer()
+                                                    .text_xs()
+                                                    .text_color(accent_color)
+                                                    .border_1()
+                                                    .border_color(accent_color)
+                                                    .hover(|s| s.bg(accent_color).text_color(theme_p.text_on_accent))
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(
+                                                            move |view, _e: &MouseUpEvent, _, cx| {
+                                                                cx.stop_propagation();
+                                                                view.state.update(cx, |state, _cx| {
+                                                                    let ps = &mut state.app.plugin_state;
+                                                                    let n = ps.plugin_preset_list.len() + 1;
+                                                                    let name = format!("Preset {n}");
+                                                                    match ps.save_plugin_preset(idx, &name) {
+                                                                        Ok(_) => {
+                                                                            if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                                let pt = plugin.plugin_type().clone();
+                                                                                ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                            }
+                                                                        }
+                                                                        Err(e) => {
+                                                                            log::error!("Failed to save preset: {e}");
+                                                                        }
+                                                                    }
+                                                                });
+                                                                cx.notify();
+                                                            },
+                                                        ),
+                                                    )
+                                                    .child("+ Save"),
                                             )
-                                        }),
-                                )
+                                    } else {
+                                        // Normal view
+                                        right_panel
+                                            .child(
+                                                div()
+                                                    .px_2()
+                                                    .pt_1()
+                                                    .text_xs()
+                                                    .text_color(if is_selected { color } else { theme_c.text_primary })
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .overflow_hidden()
+                                                    .text_ellipsis()
+                                                    .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .text_size(rems(2.5))
+                                                    .text_color(color)
+                                                    .child(icon),
+                                            )
+                                            .when(!is_permanent, |d| {
+                                                d.child(
+                                                    div()
+                                                        .flex()
+                                                        .justify_end()
+                                                        .px_1()
+                                                        .pb(px(2.0))
+                                                        .text_size(rems(0.5))
+                                                        .text_color(theme_c.text_muted)
+                                                        .child(":::"),
+                                                )
+                                            })
+                                    }
+                                })
                         },
                     ))
                     // "+" Add plugin slot (dashed border, Ozone-style)
@@ -806,6 +974,146 @@ impl PlayerView {
                             ))
                             .child("+")
                     })
+                    // Trailing permanent plugins (output matrix/monitor) after "+"
+                    .children(tail_modules.into_iter().map(
+                        |(idx, color, icon, _name, enabled, is_selected, plugin_type, _is_permanent, is_input_mon, is_output_mon)| {
+                            let theme_c = theme.clone();
+                            div()
+                                .id(("plugin-module", idx))
+                                .group("plugin-module")
+                                .w(rems(8.0))
+                                .h(rems(6.5))
+                                .flex()
+                                .flex_row()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(if is_selected { color } else { theme_c.border })
+                                .bg(if is_selected {
+                                    Theme::opacity_20pct(color)
+                                } else {
+                                    theme_c.background_secondary
+                                })
+                                .when(!enabled, |d| d.opacity(0.5))
+                                .shadow_sm()
+                                .hover(|s| s.border_color(color))
+                                // Drop target for reordering
+                                .drag_over::<PluginDragInfo>({
+                                    let drop_highlight = theme_c.drag_over_highlight;
+                                    let drop_border = theme_c.drag_over_border;
+                                    move |style, _, _, _| {
+                                        style.bg(drop_highlight).border_color(drop_border)
+                                    }
+                                })
+                                .on_drop(cx.listener(
+                                    move |view, info: &PluginDragInfo, _window, cx| {
+                                        let source = info.source_index;
+                                        let target = idx;
+                                        if source != target {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.plugin_state.chain.move_plugin(source, target);
+                                                state.app.plugin_state.selected_plugin_index = target;
+                                                state.app.plugin_state.chain.update_channel_dependent_plugins();
+                                                state.app.plugin_state.pending_plugin_update =
+                                                    Some(PluginUpdateType::Structural);
+                                                state.app.update_level_meter_groups();
+                                            });
+                                            cx.notify();
+                                        }
+                                    },
+                                ))
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(
+                                        move |view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.plugin_state.selected_plugin_index = idx;
+                                            });
+                                            cx.notify();
+                                        },
+                                    ),
+                                )
+                                // Left button column (just enable toggle + lock)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .gap(px(2.0))
+                                        .p(px(3.0))
+                                        .border_r_1()
+                                        .border_color(theme_c.border)
+                                        .h_full()
+                                        .child({
+                                            let is_on = enabled;
+                                            div()
+                                                .id(("plugin-enable-tail", idx))
+                                                .w(rems(1.125))
+                                                .h(rems(1.125))
+                                                .rounded_full()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .cursor_pointer()
+                                                .bg(if is_on { color } else { theme_c.surface })
+                                                .text_size(rems(0.625))
+                                                .text_color(if is_on { theme_c.text_on_accent } else { theme_c.text_muted })
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state.app.toggle_plugin(idx);
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
+                                                .child(if is_on { "ON" } else { "OFF" })
+                                        })
+                                        .child(
+                                            div()
+                                                .w(rems(1.125))
+                                                .h(rems(1.125))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_size(rems(0.5))
+                                                .text_color(theme_c.text_muted)
+                                                .child("🔒"),
+                                        ),
+                                )
+                                // Right content area
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .flex()
+                                        .flex_col()
+                                        .h_full()
+                                        .child(
+                                            div()
+                                                .px_2()
+                                                .pt_1()
+                                                .text_xs()
+                                                .text_color(if is_selected { color } else { theme_c.text_primary })
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .overflow_hidden()
+                                                .text_ellipsis()
+                                                .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_size(rems(2.5))
+                                                .text_color(color)
+                                                .child(icon),
+                                        ),
+                                )
+                        },
+                    ))
                     // Empty state
                     .when(is_empty, |d| {
                         d.child(
@@ -1236,16 +1544,6 @@ impl PlayerView {
                 let controller_picker_open = self.state.read(cx).app.plugin_state.controller_picker_open;
                 let state_for_toggle = self.state.clone();
 
-                // Pre-extract theme colors for toggle buttons (Rgba is Copy)
-                let toggle_text_primary = theme.text_primary;
-                let toggle_text_muted = theme.text_muted;
-                let toggle_surface = theme.surface;
-                let toggle_surface_hover = theme.surface_hover;
-                let toggle_accent = theme.accent;
-                let toggle_text_on_accent = theme.text_on_accent;
-                let toggle_bg_secondary = theme.background_secondary;
-                let toggle_border = theme.border;
-
                 d.child(
                     // Plugin header bar
                     {
@@ -1258,147 +1556,128 @@ impl PlayerView {
                             .bg(theme.background_secondary)
                             .border_b_1()
                             .border_color(theme.border)
-                            .child(
-                                // View mode toggle: UI / Controller / Simple
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
-                                    // UI tab
-                                    .child({
-                                        let is_active = plugin_ui_view.is_ui();
-                                        let state_c = state_for_toggle.clone();
-                                        div()
-                                            .id("view-ui")
-                                            .cursor_pointer()
-                                            .px_2()
-                                            .py(px(2.0))
-                                            .rounded_md()
-                                            .text_xs()
-                                            .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
-                                            .text_color(if is_active { toggle_text_primary } else { toggle_text_muted })
-                                            .when(is_active, |d| d.bg(toggle_surface))
-                                            .hover(move |s| s.bg(toggle_surface_hover))
-                                            .on_click(move |_, _window, cx| {
-                                                state_c.update(cx, |s, _| {
-                                                    s.app.plugin_state.plugin_ui_view = PluginUiView::UI;
-                                                    s.app.plugin_state.controller_picker_open = false;
-                                                });
-                                            })
-                                            .child("UI")
-                                    })
-                                    // Controller tab with dropdown
-                                    .child({
-                                        let is_active = plugin_ui_view.is_controller();
-                                        let state_c = state_for_toggle.clone();
-                                        div()
-                                            .relative()
-                                            .child(
-                                                div()
-                                                    .id("view-controller")
-                                                    .cursor_pointer()
-                                                    .px_2()
-                                                    .py(px(2.0))
-                                                    .rounded_md()
-                                                    .text_xs()
-                                                    .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
-                                                    .text_color(if is_active { toggle_text_primary } else { toggle_text_muted })
-                                                    .when(is_active, |d| d.bg(toggle_surface))
-                                                    .hover(move |s| s.bg(toggle_surface_hover))
-                                                    .on_click({
-                                                        let state_c = state_c.clone();
-                                                        move |_, _window, cx| {
-                                                            state_c.update(cx, |s, _| {
-                                                                s.app.plugin_state.controller_picker_open =
-                                                                    !s.app.plugin_state.controller_picker_open;
-                                                            });
-                                                        }
-                                                    })
-                                                    .child(if let PluginUiView::Controller(ref name) = plugin_ui_view {
-                                                        // Show selected controller name
-                                                        available_controllers()
-                                                            .iter()
-                                                            .find(|(id, _)| id == name)
-                                                            .map(|(_, label)| *label)
-                                                            .unwrap_or("Controller")
-                                                    } else {
-                                                        "Controller"
-                                                    }),
+                            .child({
+                                // Unified view mode Select dropdown
+                                let state_c = state_for_toggle.clone();
+
+                                // Build options: Native UI, each controller, Simple
+                                let mut view_options: Vec<gpui_ui_kit::SelectOption> = vec![
+                                    gpui_ui_kit::SelectOption::new("ui".to_string(), "Native UI".to_string()),
+                                ];
+                                for (id, label) in available_controllers() {
+                                    view_options.push(gpui_ui_kit::SelectOption::new(
+                                        format!("ctrl:{id}"), label.to_string(),
+                                    ));
+                                }
+                                view_options.push(gpui_ui_kit::SelectOption::new("simple".to_string(), "Simple".to_string()));
+
+                                let selected_value = match &plugin_ui_view {
+                                    PluginUiView::UI => "ui".to_string(),
+                                    PluginUiView::Simple => "simple".to_string(),
+                                    PluginUiView::Controller(name) => format!("ctrl:{name}"),
+                                };
+
+                                div().flex().items_center().gap_2()
+                                    .child(
+                                        div().text_xs().font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(theme.text_secondary).child("View"),
+                                    )
+                                    .child(
+                                        div().w(px(130.0)).child(
+                                            gpui_ui_kit::Select::new("view-mode-select")
+                                                .options(view_options)
+                                                .selected(selected_value)
+                                                .is_open(controller_picker_open)
+                                                .size(gpui_ui_kit::SelectSize::Xs)
+                                                .theme(theme.to_select_theme())
+                                                .on_toggle({
+                                                    let state_c = state_c.clone();
+                                                    move |is_open, _window, cx| {
+                                                        state_c.update(cx, |s, cx| {
+                                                            s.app.plugin_state.controller_picker_open = is_open;
+                                                            cx.notify();
+                                                        });
+                                                    }
+                                                })
+                                                .on_change({
+                                                    let state_c = state_c.clone();
+                                                    move |value, _, cx| {
+                                                        let view = match value.as_ref() {
+                                                            "ui" => PluginUiView::UI,
+                                                            "simple" => PluginUiView::Simple,
+                                                            v if v.starts_with("ctrl:") => {
+                                                                PluginUiView::Controller(v[5..].to_string())
+                                                            }
+                                                            _ => PluginUiView::UI,
+                                                        };
+                                                        state_c.update(cx, |s, _| {
+                                                            s.app.plugin_state.plugin_ui_view = view;
+                                                            s.app.plugin_state.controller_picker_open = false;
+                                                        });
+                                                    }
+                                                }),
+                                        ),
+                                    )
+                            })
+                    }
+                    // Right side: Output config dropdown (only for Upmixer)
+                    .when(matches!(plugin_type, PluginType::Upmixer), |d| {
+                        let state_c = state_for_toggle.clone();
+                        let upmixer_speaker_config = {
+                            let st = state_c.read(cx);
+                            if let Some(p) = st.app.plugin_state.chain.plugins().get(selected_idx) {
+                                if let sotf_audio_player::PluginSettings::Upmixer { ref speaker_config, .. } = p.settings {
+                                    speaker_config.clone()
+                                } else { "5.1".to_string() }
+                            } else { "5.1".to_string() }
+                        };
+                        let upmixer_config_open = state_c.read(cx).app.upmixer_config_open;
+                        let theme2 = theme.clone();
+                        d.child(
+                            div().flex().items_center().gap_2()
+                                .child(
+                                    div().text_xs().font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(theme2.text_secondary).child("Output"),
+                                )
+                                .child(
+                                    div().w(px(80.0)).child(
+                                        gpui_ui_kit::Select::new("rack-config-select")
+                                            .options(
+                                                ["2.0","5.0","5.1","7.1","5.1.2","5.1.4","7.1.2","7.1.4","9.1.4","9.1.6"]
+                                                    .iter()
+                                                    .map(|c| gpui_ui_kit::SelectOption::new(c.to_string(), c.to_string()))
+                                                    .collect(),
                                             )
-                                            // Dropdown menu
-                                            .when(controller_picker_open, |d| {
-                                                d.child(
-                                                    div()
-                                                        .absolute()
-                                                        .top(px(24.0))
-                                                        .left_0()
-                                                        .min_w(px(160.0))
-                                                        .bg(toggle_bg_secondary)
-                                                        .border_1()
-                                                        .border_color(toggle_border)
-                                                        .rounded_md()
-                                                        .shadow_md()
-                                                        .p_1()
-                                                        .flex()
-                                                        .flex_col()
-                                                        .gap(px(2.0))
-                                                        .children(available_controllers().into_iter().map(|(id, label)| {
-                                                            let state_c2 = state_c.clone();
-                                                            let is_selected = matches!(&plugin_ui_view, PluginUiView::Controller(n) if n == id);
-                                                            let id_owned = id.to_string();
-                                                            div()
-                                                                .id(SharedString::from(format!("ctrl-{id}")))
-                                                                .cursor_pointer()
-                                                                .px_2()
-                                                                .py(px(3.0))
-                                                                .rounded_sm()
-                                                                .text_xs()
-                                                                .when(is_selected, |d| {
-                                                                    d.bg(toggle_accent)
-                                                                        .text_color(toggle_text_on_accent)
-                                                                        .font_weight(FontWeight::BOLD)
-                                                                })
-                                                                .when(!is_selected, |d| {
-                                                                    d.text_color(toggle_text_primary)
-                                                                        .hover(move |s| s.bg(toggle_surface_hover))
-                                                                })
-                                                                .on_click(move |_, _window, cx| {
-                                                                    state_c2.update(cx, |s, _| {
-                                                                        s.app.plugin_state.plugin_ui_view =
-                                                                            PluginUiView::Controller(id_owned.clone());
-                                                                        s.app.plugin_state.controller_picker_open = false;
-                                                                    });
-                                                                })
-                                                                .child(label)
-                                                        })),
-                                                )
+                                            .selected(upmixer_speaker_config)
+                                            .is_open(upmixer_config_open)
+                                            .size(gpui_ui_kit::SelectSize::Xs)
+                                            .theme(theme2.to_select_theme())
+                                            .on_toggle({
+                                                let state_c = state_c.clone();
+                                                move |is_open, _window, cx| {
+                                                    state_c.update(cx, |state, cx| {
+                                                        state.app.upmixer_config_open = is_open;
+                                                        cx.notify();
+                                                    });
+                                                }
                                             })
-                                    })
-                                    // Simple tab
-                                    .child({
-                                        let is_active = plugin_ui_view.is_simple();
-                                        let state_c = state_for_toggle.clone();
-                                        div()
-                                            .id("view-simple")
-                                            .cursor_pointer()
-                                            .px_2()
-                                            .py(px(2.0))
-                                            .rounded_md()
-                                            .text_xs()
-                                            .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
-                                            .text_color(if is_active { toggle_text_primary } else { toggle_text_muted })
-                                            .when(is_active, |d| d.bg(toggle_surface))
-                                            .hover(move |s| s.bg(toggle_surface_hover))
-                                            .on_click(move |_, _window, cx| {
-                                                state_c.update(cx, |s, _| {
-                                                    s.app.plugin_state.plugin_ui_view = PluginUiView::Simple;
-                                                    s.app.plugin_state.controller_picker_open = false;
-                                                });
-                                            })
-                                            .child("Simple")
-                                    }),
-                            )
-                    }, /* row with infos but not useful
+                                            .on_change({
+                                                let state_c = state_c.clone();
+                                                move |value, _, cx| {
+                                                    let configs = ["2.0","5.0","5.1","7.1","5.1.2","5.1.4","7.1.2","7.1.4","9.1.4","9.1.6"];
+                                                    let idx = configs.iter().position(|&c| c == value.as_ref()).unwrap_or(0);
+                                                    state_c.update(cx, |state, _| {
+                                                        state.app.set_plugin_param(selected_idx, 0, idx as f64); // param 0 = speaker_config
+                                                        state.app.upmixer_config_open = false;
+                                                        state.app.update_level_meter_groups();
+                                                    });
+                                                }
+                                            }),
+                                    ),
+                                )
+                        )
+                    }),
+                    /* row with infos but not useful
                                                                              .child(
                                                                                  div()
                                                                                      .flex()
@@ -1454,7 +1733,16 @@ impl PlayerView {
                             }
                         }
                     }
-                    let _has_multichannel = output_channels > 2;
+                    // Compute minimum meter width:
+                    // Input: 2ch (L/R) ~30px + legend ~16px + output groups
+                    // Each output channel: ~14px meter + spacing
+                    // Each group: ~20px for M/S/D buttons + gap
+                    let num_output_groups = state.app.level_meter_groups.len();
+                    // Each meter bar is 1rem (16px) + 1px gap; each group has ~4px padding + 4px gap
+                    let min_meter_width = 40.0 // input L/R (2 bars + padding)
+                        + (output_channels as f32 * 10.0) // meter bars + gaps
+                        + (num_output_groups as f32 * 8.0) // group padding + gaps
+                        + 16.0; // outer padding
 
                     let divider_theme = PaneDividerTheme {
                         background: theme.background,
@@ -1466,7 +1754,9 @@ impl PlayerView {
                     };
 
                     let output_collapsed = state.app.output_meter_collapsed;
-                    let output_meter_width = state.app.output_meter_width;
+                    // Auto-fit: use min_meter_width as the target size, allow user to expand but not beyond 2x
+                    let max_meter_width = min_meter_width * 2.0;
+                    let output_meter_width = state.app.output_meter_width.clamp(min_meter_width, max_meter_width);
 
                     // Create state clones for divider callbacks
                     let state_for_output_toggle = self.state.clone();
@@ -1683,12 +1973,14 @@ impl PlayerView {
             })
     }
 
-    /// Render combined IN + OUT meter panel using the same meter components as the main library view
+    /// Render combined IN + OUT meter panel using the same meter components as the main library view.
+    /// Uses proper speaker-config-aware channel groups (L/R, Center, LFE, Surrounds, etc.)
+    /// instead of a single flat group for all channels.
     fn render_combined_meter(
         &self,
         cx: &mut Context<Self>,
-        input_channels: usize,
-        output_channels: usize,
+        _input_channels: usize,
+        _output_channels: usize,
     ) -> impl IntoElement {
         use sotf_audio_player::{ChannelGroup, ChannelInfo};
 
@@ -1698,33 +1990,23 @@ impl PlayerView {
         let output_loudness = state.app.playback.loudness_info.clone();
         let peak_hold = state.app.level_meter_peak_hold.clone();
 
-        let channel_names = ["L", "R", "C", "LFE", "Ls", "Rs", "Lb", "Rb", "Lw", "Rw"];
+        // Build input groups (always stereo L/R)
+        let in_groups = [ChannelGroup {
+            name: "IN".to_string(),
+            channels: vec![
+                ChannelInfo { index: 0, name: "L".to_string(), display_name: vec!["L".to_string()] },
+                ChannelInfo { index: 1, name: "R".to_string(), display_name: vec!["R".to_string()] },
+            ],
+            muted: false,
+            soloed: false,
+            dimmed: false,
+        }];
 
-        let make_group = |name: &str, channels: usize| -> ChannelGroup {
-            ChannelGroup {
-                name: name.to_string(),
-                channels: (0..channels)
-                    .map(|i| {
-                        let ch_name = channel_names.get(i).unwrap_or(&".").to_string();
-                        ChannelInfo {
-                            index: i,
-                            name: ch_name.clone(),
-                            display_name: ch_name.chars().map(|c| c.to_string()).collect(),
-                        }
-                    })
-                    .collect(),
-                muted: false,
-                soloed: false,
-                dimmed: false,
-            }
-        };
+        // Use the app's canonical level_meter_groups for output (M/S/D state is preserved)
+        let out_groups = state.app.level_meter_groups.clone();
 
-        let in_group = make_group("IN", input_channels);
-        let out_group = make_group("OUT", output_channels);
-
-        // Use group indices beyond level_meter_groups so M/S/D clicks are no-ops
+        // Fake index for input (no M/S/D control on input)
         let fake_in_idx = 1000;
-        let fake_out_idx = 1001;
 
         div()
             .flex()
@@ -1733,38 +2015,37 @@ impl PlayerView {
             .bg(theme.background_secondary)
             .border_l_1()
             .border_color(theme.border)
-            // Meters: [IN group] [legend] [OUT group]
             .child(
                 div()
                     .flex()
                     .gap_0()
                     .flex_1()
                     .min_h(rems(18.75))
-                    .child(
+                    // Input group (stereo L/R, no M/S/D)
+                    .children(in_groups.iter().enumerate().map(|(i, group)| {
                         self.render_meter_group(
-                            &in_group,
-                            fake_in_idx,
+                            group,
+                            fake_in_idx + i,
                             false,
                             input_loudness.as_ref(),
                             &peak_hold,
                             &theme,
                             cx,
-                        )
-                        .into_any_element(),
-                    )
+                        ).into_any_element()
+                    }))
                     .child(self.render_vertical_legend(&theme, true).into_any_element())
-                    .child(
+                    // Output groups (real indices → M/S/D connected to matrix plugin)
+                    .children(out_groups.iter().enumerate().map(|(i, group)| {
                         self.render_meter_group(
-                            &out_group,
-                            fake_out_idx,
+                            group,
+                            i, // real index into level_meter_groups
                             false,
                             output_loudness.as_ref(),
                             &peak_hold,
                             &theme,
                             cx,
-                        )
-                        .into_any_element(),
-                    ),
+                        ).into_any_element()
+                    })),
             )
     }
 

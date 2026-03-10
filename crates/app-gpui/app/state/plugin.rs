@@ -38,6 +38,11 @@ pub struct PluginState {
     pub controller_picker_open: bool,
     /// MIDI controller → plugin parameter mapping engine
     pub midi_mapping: MidiMappingEngine,
+    /// Per-plugin preset picker state
+    pub plugin_preset_open: Option<usize>, // Some(plugin_idx) when open
+    pub plugin_preset_list: Vec<String>,   // Available presets for the open plugin
+    pub plugin_preset_save_mode: bool,     // True when in save mode (text input)
+    pub plugin_preset_input: String,       // Save preset name input
 
     // Chain-level state
     /// When true, all plugins are bypassed (audio passes through unchanged)
@@ -138,6 +143,10 @@ impl Default for PluginState {
             plugin_ui_view: PluginUiView::UI,
             controller_picker_open: false,
             midi_mapping: MidiMappingEngine::new(),
+            plugin_preset_open: None,
+            plugin_preset_list: Vec::new(),
+            plugin_preset_save_mode: false,
+            plugin_preset_input: String::new(),
             chain_bypass: false,
             chain_autogain: false,
             soloed_plugin_index: None,

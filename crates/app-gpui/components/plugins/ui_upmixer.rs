@@ -1,32 +1,21 @@
 //! Upmixer Plugin UI Component
 //!
-//! Controls for the Upmixer plugin organized into tabbed sections:
-//! - Main Gains: front/rear/center/height faders + stereo width/spread
-//! - LFE & Bass: LFE cutoff/gain, sub-harmonic synth controls
-//! - Advanced: decorrelation, height, ambient, dialogue, diagnostics
+//! Layout:
+//! - Main area: Channel Gains (4 faders) + Spatial Controls (4 faders) side by side
+//! - Tab bar: LFE & Bass | Dialogue | Ambient | Height | Decorrelation | Config
+//! - Tab content: Expandable panel for the selected tab
 
-use super::common::{render_knob, render_toggle, render_vertical_slider_with_ticks};
+use super::common::{render_knob, render_vertical_slider_with_ticks};
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
-use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, TabItem, TabVariant, Tabs,
-    Toggle, ToggleStyle, VStack,
+    HStack, StackAlign, StackSpacing, Toggle, ToggleStyle,
+    VStack,
 };
 use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
-
-/// Render a section header
-fn render_section_header(label: &str, theme: &Theme) -> impl IntoElement {
-    div()
-        .text_xs()
-        .font_weight(FontWeight::BOLD)
-        .text_color(theme.text_muted)
-        .pb_1()
-        .child(label.to_string())
-}
 
 /// State for rendering the Upmixer plugin
 pub struct UpmixerRenderState<'a> {
@@ -82,12 +71,13 @@ pub struct UpmixerRenderState<'a> {
     pub is_editing: bool,
     pub selected_param: usize,
     pub config_open: bool,
+    /// 0=none, 1=LFE, 2=Dialogue, 3=Ambient, 4=Height, 5=Decorrelation
     pub upmixer_tab: usize,
 }
 
 /// Parameter indices matching PARAMS ordering in param_specs::upmixer::PARAMS
 mod param_idx {
-    pub const SPEAKER_CONFIG: usize = 0;
+    pub const _SPEAKER_CONFIG: usize = 0;
     pub const GAIN_FRONT_DIRECT: usize = 1;
     pub const GAIN_FRONT_AMBIENT: usize = 2;
     pub const GAIN_REAR_AMBIENT: usize = 3;
@@ -128,6 +118,9 @@ mod param_idx {
     pub const ENABLE_ML_DETECTION: usize = 38;
 }
 
+/// Configuration menu items
+const CONFIG_ITEMS: [&str; 6] = ["LFE & Bass", "Dialogue", "Ambient", "Height", "Decorrelation", "Config"];
+
 /// Render the upmixer plugin controls
 pub fn render_upmixer_plugin(
     entity: Entity<AppState>,
@@ -135,131 +128,111 @@ pub fn render_upmixer_plugin(
     state: UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let speaker_config_owned = state.speaker_config.to_string();
-    let config_open = state.config_open;
-    let selected_tab = state.upmixer_tab;
+    let selected_config = state.upmixer_tab; // 0=none, 1-6=config panels
 
-    // Tab bar
-    let tab_bar = Tabs::new("upmixer-tabs")
-        .tabs(vec![
-            TabItem::new("gains", "Main Gains"),
-            TabItem::new("lfe", "LFE & Bass"),
-            TabItem::new("advanced", "Advanced"),
-        ])
-        .selected_index(selected_tab)
-        .variant(TabVariant::Pills)
-        .theme(theme.to_tabs_theme())
-        .on_change({
-            let entity = entity.clone();
-            move |index, _window, cx| {
-                entity.update(cx, |state, cx| {
-                    state.app.upmixer_tab = index;
-                    cx.notify();
-                });
-            }
-        });
+    // Main area: Channel Gains + Spatial Controls side by side
+    let main_area = render_main_area(entity.clone(), plugin_idx, &state, theme);
 
-    // Tab content
-    let tab_content: AnyElement = match selected_tab {
-        0 => render_tab_gains(entity.clone(), plugin_idx, &state, theme).into_any_element(),
-        1 => render_tab_lfe(entity.clone(), plugin_idx, &state, theme).into_any_element(),
-        2 => render_tab_advanced(entity.clone(), plugin_idx, &state, theme).into_any_element(),
-        _ => render_tab_gains(entity.clone(), plugin_idx, &state, theme).into_any_element(),
-    };
+    // Tab bar below main area
+    let tab_bar = render_tab_bar(entity.clone(), selected_config, theme);
 
-    // Main layout
+    // Configuration row: conditional on selected_config
+    let config_row = render_config_row(entity.clone(), plugin_idx, selected_config, &state, theme);
+
     VStack::new()
         .spacing(StackSpacing::Xs)
-        // Top bar: tabs on left, output config on right
-        .child(
-            div()
-                .flex()
-                .justify_between()
-                .items_center()
-                .w_full()
-                .child(tab_bar)
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Xs)
-                        .align(StackAlign::Center)
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_secondary)
-                                .child("Output"),
-                        )
-                        .child(
-                            div().w(px(80.0)).child(
-                                Select::new("config-select")
-                                    .options(
-                                        [
-                                            "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4",
-                                            "7.1.2", "7.1.4", "9.1.4", "9.1.6",
-                                        ]
-                                        .iter()
-                                        .map(|c| {
-                                            SelectOption::new(c.to_string(), c.to_string())
-                                        })
-                                        .collect(),
-                                    )
-                                    .selected(speaker_config_owned.clone())
-                                    .is_open(config_open)
-                                    .size(SelectSize::Xs)
-                                    .theme(theme.to_select_theme())
-                                    .on_toggle({
-                                        let entity = entity.clone();
-                                        move |is_open, _window, cx| {
-                                            entity.update(cx, |state, cx| {
-                                                state.app.upmixer_config_open = is_open;
-                                                cx.notify();
-                                            });
-                                        }
-                                    })
-                                    .on_change({
-                                        let entity = entity.clone();
-                                        move |value, _, cx| {
-                                            let configs = [
-                                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4",
-                                                "7.1.2", "7.1.4", "9.1.4", "9.1.6",
-                                            ];
-                                            let idx = configs
-                                                .iter()
-                                                .position(|&c| c == value.as_ref())
-                                                .unwrap_or(0);
-                                            entity.update(cx, |state, _| {
-                                                state.app.set_plugin_param(
-                                                    plugin_idx,
-                                                    param_idx::SPEAKER_CONFIG,
-                                                    idx as f64,
-                                                );
-                                                state.app.upmixer_config_open = false;
-                                                state.app.update_level_meter_groups();
-                                            });
-                                        }
-                                    }),
-                            ),
-                        )
-                        .build(),
-                ),
-        )
-        // Tab content
-        .child(tab_content)
+        .child(main_area)
+        .child(tab_bar)
+        .when((1..=6).contains(&selected_config), |el| {
+            el.child(config_row)
+        })
         .build()
         .p_3()
         .w_full()
 }
 
-/// Tab 0: Main Gains — channel faders (row 1) + spatial controls (row 2)
-fn render_tab_gains(
+/// Render a menu button that toggles active state
+fn render_menu_button(
+    id: &'static str,
+    label: &str,
+    is_active: bool,
+    theme: &Theme,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .cursor_pointer()
+        .px_2()
+        .py(px(3.0))
+        .rounded_md()
+        .text_xs()
+        .font_weight(if is_active {
+            FontWeight::BOLD
+        } else {
+            FontWeight::NORMAL
+        })
+        .text_color(if is_active {
+            theme.text_primary
+        } else {
+            theme.text_muted
+        })
+        .when(is_active, |d| d.bg(theme.surface))
+        .hover(|s| s.bg(theme.surface_hover))
+        .child(label.to_string())
+}
+
+/// Render the tab bar below the main blocks
+fn render_tab_bar(
+    entity: Entity<AppState>,
+    selected_config: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .w_full()
+        .children(CONFIG_ITEMS.iter().enumerate().map(|(i, label)| {
+            let config_idx = i + 1; // 1-indexed
+            let is_active = selected_config == config_idx;
+            let entity = entity.clone();
+            render_menu_button(
+                match i {
+                    0 => "cfg-lfe",
+                    1 => "cfg-dialogue",
+                    2 => "cfg-ambient",
+                    3 => "cfg-height",
+                    4 => "cfg-decorr",
+                    5 => "cfg-config",
+                    _ => "cfg-unknown",
+                },
+                label,
+                is_active,
+                theme,
+            )
+            .on_click(move |_, _window, cx| {
+                entity.update(cx, |state, cx| {
+                    state.app.upmixer_tab = if state.app.upmixer_tab == config_idx {
+                        0
+                    } else {
+                        config_idx
+                    };
+                    cx.notify();
+                });
+            })
+        }))
+}
+
+/// Render the main area: Channel Gains + Spatial Controls side by side
+fn render_main_area(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    VStack::new()
+    HStack::new()
         .spacing(StackSpacing::Sm)
-        // Row 1: Channel gains (the 4 main faders)
+        .align(StackAlign::Start)
+        // Channel Gains
         .child(
             div()
                 .flex()
@@ -299,7 +272,7 @@ fn render_tab_gains(
                 .bg(theme.surface)
                 .rounded_lg(),
         )
-        // Row 2: Spatial controls (width, spread, bleed, reflect)
+        // Spatial Controls
         .child(
             div()
                 .flex()
@@ -342,197 +315,205 @@ fn render_tab_gains(
         .build()
 }
 
-/// Tab 1: LFE & Bass — row 1: crossover knobs, row 2: subharmonic controls
-fn render_tab_lfe(
+/// Render the configuration row based on selected config menu item
+fn render_config_row(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    selected_config: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    let content: AnyElement = match selected_config {
+        1 => render_config_lfe(entity, plugin_idx, state, theme).into_any_element(),
+        2 => render_config_dialogue(entity, plugin_idx, state, theme).into_any_element(),
+        3 => render_config_ambient(entity, plugin_idx, state, theme).into_any_element(),
+        4 => render_config_height(entity, plugin_idx, state, theme).into_any_element(),
+        5 => render_config_decorrelation(entity, plugin_idx, state, theme).into_any_element(),
+        6 => render_config_diagnostic(entity, plugin_idx, state, theme).into_any_element(),
+        _ => div().into_any_element(),
+    };
+
+    div()
+        .w_full()
+        .p_3()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+        .child(content)
+}
+
+/// Render a section header
+fn render_section_header(label: &str, theme: &Theme) -> impl IntoElement {
+    div()
+        .text_xs()
+        .font_weight(FontWeight::BOLD)
+        .text_color(theme.text_muted)
+        .pb_1()
+        .child(label.to_string())
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Configuration row panels
+// ─────────────────────────────────────────────────────────────────────────
+
+/// LFE & Bass configuration row
+fn render_config_lfe(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
+    let subharm_enabled = state.enable_subharmonic_synth;
+
     VStack::new()
-        .spacing(StackSpacing::Sm)
-        // Row 1: LFE Crossover — knobs side by side
+        .spacing(StackSpacing::Xs)
+        // Header row: "LFE & Bass" label + "SubHarmonic" label + toggle
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_2()
-                .child(render_section_header("LFE Crossover", theme))
+                .items_center()
+                .gap_3()
+                .child(render_section_header("LFE & Bass", theme))
                 .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(render_knob(
-                            entity.clone(), plugin_idx, "LFE Cut", state.lfe_cutoff_hz,
-                            pk(UP, "lfe_cutoff_hz").min_f64(), pk(UP, "lfe_cutoff_hz").max_f64(),
-                            "Hz", param_idx::LFE_CUTOFF_HZ, state.selected_param, state.is_editing,
-                            None, theme,
-                        ))
-                        .child(render_knob(
-                            entity.clone(), plugin_idx, "LFE Gain", state.lfe_gain,
-                            pk(UP, "lfe_gain").min_f64(), pk(UP, "lfe_gain").max_f64(),
-                            "x", param_idx::LFE_GAIN, state.selected_param, state.is_editing,
-                            None, theme,
-                        ))
-                        .build(),
+                    div()
+                        .w(px(1.0))
+                        .h(px(14.0))
+                        .bg(theme.border),
                 )
-                .p_3()
-                .bg(theme.background_secondary)
-                .rounded_lg()
-                .border_1()
-                .border_color(theme.border),
+                .child(render_section_header("SubHarmonic", theme))
+                .child(
+                    Toggle::new(("subharm-toggle", plugin_idx))
+                        .checked(subharm_enabled)
+                        .label(if subharm_enabled { "On" } else { "Off" })
+                        .style(ToggleStyle::Segmented)
+                        .theme(theme.to_toggle_theme())
+                        .on_change({
+                            let entity = entity.clone();
+                            move |new_value, _, cx| {
+                                entity.update(cx, |state, _| {
+                                    state.app.set_plugin_param(
+                                        plugin_idx,
+                                        param_idx::ENABLE_SUBHARMONIC_SYNTH,
+                                        if new_value { 1.0 } else { 0.0 },
+                                    );
+                                });
+                            }
+                        }),
+                ),
         )
-        // Row 2: SubHarmonic Synth — toggle + knobs in a row
+        // Knobs row: all 6 knobs on the same baseline
         .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                // LFE knobs
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "LFE Cut", state.lfe_cutoff_hz,
+                    pk(UP, "lfe_cutoff_hz").min_f64(), pk(UP, "lfe_cutoff_hz").max_f64(),
+                    "Hz", param_idx::LFE_CUTOFF_HZ, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "LFE Gain", state.lfe_gain,
+                    pk(UP, "lfe_gain").min_f64(), pk(UP, "lfe_gain").max_f64(),
+                    "x", param_idx::LFE_GAIN, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                // Separator
+                .child(
+                    div()
+                        .w(px(1.0))
+                        .h(px(80.0))
+                        .bg(theme.border),
+                )
+                // SubHarmonic knobs (dimmed when disabled)
                 .child(
                     div()
                         .flex()
-                        .items_center()
                         .gap_3()
-                        .child(render_section_header("SubHarmonic Synth", theme))
-                        .child(
-                            Toggle::new(("subharm-toggle", plugin_idx))
-                                .checked(state.enable_subharmonic_synth)
-                                .label(if state.enable_subharmonic_synth { "On" } else { "Off" })
-                                .style(ToggleStyle::Segmented)
-                                .theme(theme.to_toggle_theme())
-                                .on_change({
-                                    let entity = entity.clone();
-                                    move |new_value, _, cx| {
-                                        entity.update(cx, |state, _| {
-                                            state.app.set_plugin_param(
-                                                plugin_idx,
-                                                param_idx::ENABLE_SUBHARMONIC_SYNTH,
-                                                if new_value { 1.0 } else { 0.0 },
-                                            );
-                                        });
-                                    }
-                                }),
-                        ),
+                        .when(!subharm_enabled, |d| d.opacity(0.3))
+                        .child(render_knob(
+                            entity.clone(), plugin_idx, "Gain", state.subharmonic_gain,
+                            pk(UP, "subharmonic_gain").min_f64(), pk(UP, "subharmonic_gain").max_f64(),
+                            "", param_idx::SUBHARMONIC_GAIN, state.selected_param, state.is_editing,
+                            None, theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(), plugin_idx, "Freq", state.subharmonic_freq_hz,
+                            pk(UP, "subharmonic_freq_hz").min_f64(), pk(UP, "subharmonic_freq_hz").max_f64(),
+                            "Hz", param_idx::SUBHARMONIC_FREQ_HZ, state.selected_param, state.is_editing,
+                            None, theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(), plugin_idx, "Attack", state.subharmonic_attack_ms,
+                            pk(UP, "subharmonic_attack_ms").min_f64(), pk(UP, "subharmonic_attack_ms").max_f64(),
+                            "ms", param_idx::SUBHARMONIC_ATTACK_MS, state.selected_param, state.is_editing,
+                            None, theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(), plugin_idx, "Release", state.subharmonic_release_ms,
+                            pk(UP, "subharmonic_release_ms").min_f64(), pk(UP, "subharmonic_release_ms").max_f64(),
+                            "ms", param_idx::SUBHARMONIC_RELEASE_MS, state.selected_param, state.is_editing,
+                            None, theme,
+                        )),
                 )
-                .when(state.enable_subharmonic_synth, |el| {
-                    el.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(render_knob(
-                                entity.clone(), plugin_idx, "SH Gain", state.subharmonic_gain,
-                                pk(UP, "subharmonic_gain").min_f64(), pk(UP, "subharmonic_gain").max_f64(),
-                                "", param_idx::SUBHARMONIC_GAIN, state.selected_param, state.is_editing,
-                                None, theme,
-                            ))
-                            .child(render_knob(
-                                entity.clone(), plugin_idx, "SH Freq", state.subharmonic_freq_hz,
-                                pk(UP, "subharmonic_freq_hz").min_f64(), pk(UP, "subharmonic_freq_hz").max_f64(),
-                                "Hz", param_idx::SUBHARMONIC_FREQ_HZ, state.selected_param, state.is_editing,
-                                None, theme,
-                            ))
-                            .child(render_knob(
-                                entity.clone(), plugin_idx, "Attack", state.subharmonic_attack_ms,
-                                pk(UP, "subharmonic_attack_ms").min_f64(), pk(UP, "subharmonic_attack_ms").max_f64(),
-                                "ms", param_idx::SUBHARMONIC_ATTACK_MS, state.selected_param, state.is_editing,
-                                None, theme,
-                            ))
-                            .child(render_knob(
-                                entity.clone(), plugin_idx, "Release", state.subharmonic_release_ms,
-                                pk(UP, "subharmonic_release_ms").min_f64(), pk(UP, "subharmonic_release_ms").max_f64(),
-                                "ms", param_idx::SUBHARMONIC_RELEASE_MS, state.selected_param, state.is_editing,
-                                None, theme,
-                            ))
-                            .build(),
-                    )
-                })
-                .p_3()
-                .bg(theme.background_secondary)
-                .rounded_lg()
-                .border_1()
-                .border_color(theme.border),
-        )
-        .build()
-}
-
-/// Tab 2: Advanced — 2 rows: dialogue/ambient/height on top, decorrelation/diagnostic on bottom
-fn render_tab_advanced(
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    let decorrelation_mode = state.decorrelation_mode;
-
-    VStack::new()
-        .spacing(StackSpacing::Sm)
-        // Row 1: Dialogue, Ambient, Height
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Sm)
-                .align(StackAlign::Start)
-                .child(render_dialogue_box(entity.clone(), plugin_idx, state, theme))
-                .child(render_ambient_box(entity.clone(), plugin_idx, state, theme))
-                .child(render_height_box(entity.clone(), plugin_idx, state, theme))
-                .build(),
-        )
-        // Row 2: Decorrelation, Diagnostic
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Sm)
-                .align(StackAlign::Start)
-                .child(render_decorrelation_box(
-                    entity.clone(), plugin_idx, state, decorrelation_mode, theme,
-                ))
-                .child(render_diagnostic_box(entity.clone(), plugin_idx, state, theme))
                 .build(),
         )
         .build()
 }
 
-/// Dialogue box
-fn render_dialogue_box(
+/// Dialogue configuration row
+fn render_config_dialogue(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
-        .spacing(StackSpacing::Sm)
+        .spacing(StackSpacing::Xs)
         .child(render_section_header("Dialogue", theme))
-        .child(render_knob(
-            entity.clone(), plugin_idx, "Weight", state.dialogue_weight,
-            pk(UP, "dialogue_weight").min_f64(), pk(UP, "dialogue_weight").max_f64(),
-            "", param_idx::DIALOGUE_WEIGHT, state.selected_param, state.is_editing,
-            None, theme,
-        ))
-        .child(render_knob(
-            entity.clone(), plugin_idx, "Voice Lo", state.voice_freq_min_hz,
-            pk(UP, "voice_freq_min_hz").min_f64(), pk(UP, "voice_freq_min_hz").max_f64(),
-            "Hz", param_idx::VOICE_FREQ_MIN_HZ, state.selected_param, state.is_editing,
-            None, theme,
-        ))
-        .child(render_knob(
-            entity.clone(), plugin_idx, "Voice Hi", state.voice_freq_max_hz,
-            pk(UP, "voice_freq_max_hz").min_f64(), pk(UP, "voice_freq_max_hz").max_f64(),
-            "Hz", param_idx::VOICE_FREQ_MAX_HZ, state.selected_param, state.is_editing,
-            None, theme,
-        ))
         .child(
             HStack::new()
-                .spacing(StackSpacing::Sm)
+                .spacing(StackSpacing::Md)
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "W-Cent", state.dialogue_centroid_weight,
+                    entity.clone(), plugin_idx, "Weight", state.dialogue_weight,
+                    pk(UP, "dialogue_weight").min_f64(), pk(UP, "dialogue_weight").max_f64(),
+                    "", param_idx::DIALOGUE_WEIGHT, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Voice Lo", state.voice_freq_min_hz,
+                    pk(UP, "voice_freq_min_hz").min_f64(), pk(UP, "voice_freq_min_hz").max_f64(),
+                    "Hz", param_idx::VOICE_FREQ_MIN_HZ, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Voice Hi", state.voice_freq_max_hz,
+                    pk(UP, "voice_freq_max_hz").min_f64(), pk(UP, "voice_freq_max_hz").max_f64(),
+                    "Hz", param_idx::VOICE_FREQ_MAX_HZ, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                // Separator
+                .child(
+                    div()
+                        .w(px(1.0))
+                        .h(px(40.0))
+                        .bg(theme.border),
+                )
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Centroid", state.dialogue_centroid_weight,
                     pk(UP, "dialogue_centroid_weight").min_f64(), pk(UP, "dialogue_centroid_weight").max_f64(),
                     "", param_idx::DIALOGUE_CENTROID_WEIGHT, state.selected_param, state.is_editing,
                     None, theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "W-Var", state.dialogue_variance_weight,
+                    entity.clone(), plugin_idx, "Variance", state.dialogue_variance_weight,
                     pk(UP, "dialogue_variance_weight").min_f64(), pk(UP, "dialogue_variance_weight").max_f64(),
                     "", param_idx::DIALOGUE_VARIANCE_WEIGHT, state.selected_param, state.is_editing,
                     None, theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "W-Coh", state.dialogue_coherence_weight,
+                    entity.clone(), plugin_idx, "Coherence", state.dialogue_coherence_weight,
                     pk(UP, "dialogue_coherence_weight").min_f64(), pk(UP, "dialogue_coherence_weight").max_f64(),
                     "", param_idx::DIALOGUE_COHERENCE_WEIGHT, state.selected_param, state.is_editing,
                     None, theme,
@@ -540,67 +521,67 @@ fn render_dialogue_box(
                 .build(),
         )
         .build()
-        .p_3()
-        .bg(theme.background_secondary)
-        .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
 }
 
-/// Ambient box
-fn render_ambient_box(
+/// Ambient configuration row
+fn render_config_ambient(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
-        .spacing(StackSpacing::Sm)
+        .spacing(StackSpacing::Xs)
         .child(render_section_header("Ambient", theme))
-        .child(render_knob(
-            entity.clone(), plugin_idx, "Boost", state.ambient_boost,
-            pk(UP, "ambient_boost").min_f64(), pk(UP, "ambient_boost").max_f64(),
-            "x", param_idx::AMBIENT_BOOST, state.selected_param, state.is_editing,
-            None, theme,
-        ))
-        .child(render_knob(
-            entity.clone(), plugin_idx, "Rear Boost", state.rear_ambient_boost,
-            pk(UP, "rear_ambient_boost").min_f64(), pk(UP, "rear_ambient_boost").max_f64(),
-            "x", param_idx::REAR_AMBIENT_BOOST, state.selected_param, state.is_editing,
-            None, theme,
-        ))
-        .child(render_knob(
-            entity.clone(), plugin_idx, "Safety", state.safety_cap_db,
-            pk(UP, "safety_cap_db").min_f64(), pk(UP, "safety_cap_db").max_f64(),
-            "dB", param_idx::SAFETY_CAP_DB, state.selected_param, state.is_editing,
-            None, theme,
-        ))
-        .build()
-        .p_3()
-        .bg(theme.background_secondary)
-        .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
-}
-
-/// Height box
-fn render_height_box(
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Sm)
-        .child(render_section_header("Height", theme))
         .child(
             HStack::new()
-                .spacing(StackSpacing::Sm)
-                .align(StackAlign::Center)
+                .spacing(StackSpacing::Md)
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Boost", state.ambient_boost,
+                    pk(UP, "ambient_boost").min_f64(), pk(UP, "ambient_boost").max_f64(),
+                    "x", param_idx::AMBIENT_BOOST, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Rear Boost", state.rear_ambient_boost,
+                    pk(UP, "rear_ambient_boost").min_f64(), pk(UP, "rear_ambient_boost").max_f64(),
+                    "x", param_idx::REAR_AMBIENT_BOOST, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                .child(render_knob(
+                    entity.clone(), plugin_idx, "Safety", state.safety_cap_db,
+                    pk(UP, "safety_cap_db").min_f64(), pk(UP, "safety_cap_db").max_f64(),
+                    "dB", param_idx::SAFETY_CAP_DB, state.selected_param, state.is_editing,
+                    None, theme,
+                ))
+                .build(),
+        )
+        .build()
+}
+
+/// Height configuration row
+fn render_config_height(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(render_section_header("Height", theme))
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
                         .checked(state.enable_hr_direct)
-                        .label(if state.enable_hr_direct { "HR On" } else { "HR Off" })
+                        .label(if state.enable_hr_direct {
+                            "HR On"
+                        } else {
+                            "HR Off"
+                        })
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
                         .on_change({
@@ -615,21 +596,21 @@ fn render_height_box(
                                 });
                             }
                         }),
-                )
-                .when(state.enable_hr_direct, |el| {
-                    el.child(render_knob(
-                        entity.clone(), plugin_idx, "Sharpen", state.hr_sharpen,
-                        pk(UP, "hr_sharpen").min_f64(), pk(UP, "hr_sharpen").max_f64(),
-                        "", param_idx::HR_SHARPEN, state.selected_param, state.is_editing,
-                        None, theme,
-                    ))
-                })
-                .build(),
+                ),
         )
         .child(
             HStack::new()
-                .spacing(StackSpacing::Sm)
-                .align(StackAlign::Center)
+                .spacing(StackSpacing::Md)
+                .child(
+                    div()
+                        .when(!state.enable_hr_direct, |d| d.opacity(0.3))
+                        .child(render_knob(
+                            entity.clone(), plugin_idx, "Sharpen", state.hr_sharpen,
+                            pk(UP, "hr_sharpen").min_f64(), pk(UP, "hr_sharpen").max_f64(),
+                            "", param_idx::HR_SHARPEN, state.selected_param, state.is_editing,
+                            None, theme,
+                        )),
+                )
                 .child(render_knob(
                     entity.clone(), plugin_idx, "HF Cap", state.height_hf_cap_hz,
                     pk(UP, "height_hf_cap_hz").min_f64(), pk(UP, "height_hf_cap_hz").max_f64(),
@@ -651,103 +632,148 @@ fn render_height_box(
                 .build(),
         )
         .build()
-        .p_3()
-        .bg(theme.background_secondary)
-        .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
 }
 
-/// Decorrelation box
-fn render_decorrelation_box(
+/// Decorrelation configuration row
+fn render_config_decorrelation(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &UpmixerRenderState,
-    decorrelation_mode: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    let decorrelation_mode = state.decorrelation_mode;
+
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(render_section_header("Decorrelation", theme))
+                .child(
+                    Toggle::new(("decorr-toggle", plugin_idx))
+                        .checked(decorrelation_mode == 1)
+                        .label(if decorrelation_mode == 1 {
+                            "LFO"
+                        } else {
+                            "Velvet"
+                        })
+                        .style(ToggleStyle::Segmented)
+                        .theme(theme.to_toggle_theme())
+                        .on_change({
+                            let entity = entity.clone();
+                            move |new_value, _, cx| {
+                                entity.update(cx, |state, _| {
+                                    state.app.set_plugin_param(
+                                        plugin_idx,
+                                        param_idx::DECORRELATION_MODE,
+                                        if new_value { 1.0 } else { 0.0 },
+                                    );
+                                });
+                            }
+                        }),
+                ),
+        )
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .when(decorrelation_mode == 1, |el| {
+                    el.child(render_knob(
+                        entity.clone(), plugin_idx, "LFO Rate", state.decorrelation_lfo_rate_hz,
+                        pk(UP, "decorrelation_lfo_rate_hz").min_f64(), pk(UP, "decorrelation_lfo_rate_hz").max_f64(),
+                        "Hz", param_idx::DECORRELATION_LFO_RATE_HZ, state.selected_param, state.is_editing,
+                        None, theme,
+                    ))
+                })
+                .when(decorrelation_mode == 0, |el| {
+                    el.child(render_knob(
+                        entity.clone(), plugin_idx, "Duration", state.velvet_noise_duration_ms,
+                        pk(UP, "velvet_noise_duration_ms").min_f64(), pk(UP, "velvet_noise_duration_ms").max_f64(),
+                        "ms", param_idx::VELVET_NOISE_DURATION_MS, state.selected_param, state.is_editing,
+                        None, theme,
+                    ))
+                    .child(render_knob(
+                        entity.clone(), plugin_idx, "Density", state.velvet_noise_density,
+                        pk(UP, "velvet_noise_density").min_f64(), pk(UP, "velvet_noise_density").max_f64(),
+                        "/s", param_idx::VELVET_NOISE_DENSITY, state.selected_param, state.is_editing,
+                        None, theme,
+                    ))
+                })
+                .build(),
+        )
+        .build()
+}
+
+/// Config tab: diagnostic toggles in a row
+fn render_config_diagnostic(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
     VStack::new()
-        .spacing(StackSpacing::Sm)
-        .child(render_section_header("Decorrelation", theme))
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Configuration", theme))
         .child(
-            Toggle::new(("decorr-toggle", plugin_idx))
-                .checked(decorrelation_mode == 1)
-                .label(if decorrelation_mode == 1 { "LFO" } else { "Velvet" })
+            HStack::new()
+                .spacing(StackSpacing::Lg)
+                .child(render_diag_toggle(
+                    entity.clone(), plugin_idx, "Bypass Decorrelation",
+                    state.bypass_decorrelation, param_idx::BYPASS_DECORRELATION, theme,
+                ))
+                .child(render_diag_toggle(
+                    entity.clone(), plugin_idx, "Bypass Transients",
+                    state.bypass_transient_detection, param_idx::BYPASS_TRANSIENT_DETECTION, theme,
+                ))
+                .child(render_diag_toggle(
+                    entity.clone(), plugin_idx, "Bypass All Processing",
+                    state.bypass_all_processing, param_idx::BYPASS_ALL_PROCESSING, theme,
+                ))
+                .child(render_diag_toggle(
+                    entity, plugin_idx, "ML Detection",
+                    state.enable_ml_detection, param_idx::ENABLE_ML_DETECTION, theme,
+                ))
+                .build(),
+        )
+        .build()
+}
+
+/// Render a single diagnostic toggle with label
+fn render_diag_toggle(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: bool,
+    param_id: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme.text_secondary)
+                .child(label.to_string()),
+        )
+        .child(
+            Toggle::new((SharedString::from(format!("diag-{param_id}")), plugin_idx))
+                .checked(value)
+                .label(if value { "On" } else { "Off" })
                 .style(ToggleStyle::Segmented)
                 .theme(theme.to_toggle_theme())
                 .on_change({
-                    let entity = entity.clone();
                     move |new_value, _, cx| {
                         entity.update(cx, |state, _| {
                             state.app.set_plugin_param(
                                 plugin_idx,
-                                param_idx::DECORRELATION_MODE,
+                                param_id,
                                 if new_value { 1.0 } else { 0.0 },
                             );
                         });
                     }
                 }),
         )
-        .when(decorrelation_mode == 1, |el| {
-            el.child(render_knob(
-                entity.clone(), plugin_idx, "LFO Rate", state.decorrelation_lfo_rate_hz,
-                pk(UP, "decorrelation_lfo_rate_hz").min_f64(), pk(UP, "decorrelation_lfo_rate_hz").max_f64(),
-                "Hz", param_idx::DECORRELATION_LFO_RATE_HZ, state.selected_param, state.is_editing,
-                None, theme,
-            ))
-        })
-        .when(decorrelation_mode == 0, |el| {
-            el.child(render_knob(
-                entity.clone(), plugin_idx, "Duration", state.velvet_noise_duration_ms,
-                pk(UP, "velvet_noise_duration_ms").min_f64(), pk(UP, "velvet_noise_duration_ms").max_f64(),
-                "ms", param_idx::VELVET_NOISE_DURATION_MS, state.selected_param, state.is_editing,
-                None, theme,
-            ))
-            .child(render_knob(
-                entity.clone(), plugin_idx, "Density", state.velvet_noise_density,
-                pk(UP, "velvet_noise_density").min_f64(), pk(UP, "velvet_noise_density").max_f64(),
-                "/s", param_idx::VELVET_NOISE_DENSITY, state.selected_param, state.is_editing,
-                None, theme,
-            ))
-        })
-        .build()
-        .p_3()
-        .bg(theme.background_secondary)
-        .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
-}
-
-/// Diagnostic box
-fn render_diagnostic_box(
-    entity: Entity<AppState>,
-    plugin_idx: usize,
-    state: &UpmixerRenderState,
-    theme: &Theme,
-) -> impl IntoElement {
-    VStack::new()
-        .spacing(StackSpacing::Sm)
-        .child(render_section_header("Diagnostic", theme))
-        .child(render_toggle(
-            entity.clone(), plugin_idx, "Bypass Decor", state.bypass_decorrelation,
-            param_idx::BYPASS_DECORRELATION, state.selected_param, state.is_editing, theme,
-        ))
-        .child(render_toggle(
-            entity.clone(), plugin_idx, "Bypass Trans", state.bypass_transient_detection,
-            param_idx::BYPASS_TRANSIENT_DETECTION, state.selected_param, state.is_editing, theme,
-        ))
-        .child(render_toggle(
-            entity.clone(), plugin_idx, "Bypass All", state.bypass_all_processing,
-            param_idx::BYPASS_ALL_PROCESSING, state.selected_param, state.is_editing, theme,
-        ))
-        .child(render_toggle(
-            entity.clone(), plugin_idx, "ML Detection", state.enable_ml_detection,
-            param_idx::ENABLE_ML_DETECTION, state.selected_param, state.is_editing, theme,
-        ))
-        .build()
-        .p_3()
-        .bg(theme.background_secondary)
-        .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
 }

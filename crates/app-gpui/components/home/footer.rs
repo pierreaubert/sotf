@@ -735,7 +735,7 @@ impl PlayerView {
             crate::app::Screen::RoomEq => translations.screen_room_eq,
             crate::app::Screen::HeadphoneEq => translations.screen_headphone_eq,
             crate::app::Screen::Spinorama => translations.screen_spinorama,
-            _ => translations.screen_studio_rack,
+            _ => translations.screen_tools,
         };
 
         div()

@@ -264,7 +264,7 @@ impl App {
             expanded_settings_sections: vec!["library".to_string()],
             scan_ctrl: sotf_audio_player::ScanController::new(),
             upmixer_config_open: false,
-            upmixer_tab: 0,
+            upmixer_tab: 1,
             spectrum_tilt_select_open: false,
             spectrum_reference_select_open: false,
             crossfeed_preset_select_open: false,

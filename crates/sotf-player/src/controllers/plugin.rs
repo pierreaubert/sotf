@@ -799,6 +799,153 @@ impl PluginController {
     }
 
     // ========================================================================
+    // Per-Plugin Presets
+    // ========================================================================
+
+    /// Get the per-plugin presets directory for a given plugin type.
+    /// Path: `{config_dir}/plugins/{plugin_type_name}/`
+    fn plugin_preset_dir(plugin_type: &PluginType) -> Option<std::path::PathBuf> {
+        let config_dir = crate::config::get_app_config_dir()?;
+        let dir = config_dir
+            .join("plugins")
+            .join(plugin_type.name().to_lowercase().replace(' ', "_"));
+        Some(dir)
+    }
+
+    /// List available presets for a specific plugin type.
+    /// Returns sorted list of preset names (without .json extension).
+    pub fn list_plugin_presets(plugin_type: &PluginType) -> Vec<String> {
+        let Some(dir) = Self::plugin_preset_dir(plugin_type) else {
+            return Vec::new();
+        };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("json") {
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Save a single plugin's settings as a preset.
+    /// Path: `{config_dir}/plugins/{plugin_type_name}/{preset_name}.json`
+    pub fn save_plugin_preset(
+        &self,
+        plugin_idx: usize,
+        preset_name: &str,
+    ) -> Result<String, String> {
+        let plugin = self
+            .chain
+            .plugins()
+            .get(plugin_idx)
+            .ok_or_else(|| format!("Plugin index {} out of range", plugin_idx))?;
+
+        let dir = Self::plugin_preset_dir(&plugin.plugin_type())
+            .ok_or_else(|| "Could not determine config directory".to_string())?;
+
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Could not create preset directory: {}", e))?;
+
+        let filename = format!("{}.json", preset_name);
+        let full_path = dir.join(&filename);
+
+        let json = serde_json::to_string_pretty(&plugin.settings)
+            .map_err(|e| format!("Serialization error: {}", e))?;
+        std::fs::write(&full_path, json)
+            .map_err(|e| format!("Could not write preset file: {}", e))?;
+
+        log::info!(
+            "Saved plugin preset '{}' to {}",
+            preset_name,
+            full_path.display()
+        );
+        Ok(filename)
+    }
+
+    /// Load a preset into a specific plugin slot.
+    /// Returns `Structural` effect since settings are fully replaced.
+    pub fn load_plugin_preset(
+        &mut self,
+        plugin_idx: usize,
+        preset_name: &str,
+    ) -> Result<PluginUpdateEffect, String> {
+        let plugin = self
+            .chain
+            .plugins()
+            .get(plugin_idx)
+            .ok_or_else(|| format!("Plugin index {} out of range", plugin_idx))?;
+
+        let dir = Self::plugin_preset_dir(&plugin.plugin_type())
+            .ok_or_else(|| "Could not determine config directory".to_string())?;
+
+        let filename = if preset_name.ends_with(".json") {
+            preset_name.to_string()
+        } else {
+            format!("{}.json", preset_name)
+        };
+        let full_path = dir.join(&filename);
+
+        let json = std::fs::read_to_string(&full_path)
+            .map_err(|e| format!("Could not read preset file: {}", e))?;
+
+        let settings: PluginSettings = serde_json::from_str(&json)
+            .map_err(|e| format!("Invalid preset file: {}", e))?;
+
+        // Verify the preset is for the same plugin type by creating a temp plugin
+        // and comparing types
+        let temp = Plugin { id: 0, enabled: true, settings: settings.clone(), permanent: false, suspended: false };
+        let loaded_type = temp.plugin_type();
+        let current_type = plugin.plugin_type();
+        if loaded_type != current_type {
+            return Err(format!(
+                "Preset is for {} but plugin is {}",
+                loaded_type.name(),
+                current_type.name()
+            ));
+        }
+
+        // Apply the settings
+        self.chain.plugins_mut()[plugin_idx].settings = settings;
+        self.chain.update_channel_dependent_plugins();
+
+        log::info!("Loaded plugin preset '{}' into slot {}", preset_name, plugin_idx);
+        Ok(PluginUpdateEffect::Structural)
+    }
+
+    /// Delete a preset for a specific plugin type.
+    pub fn delete_plugin_preset(
+        plugin_type: &PluginType,
+        preset_name: &str,
+    ) -> Result<(), String> {
+        let dir = Self::plugin_preset_dir(plugin_type)
+            .ok_or_else(|| "Could not determine config directory".to_string())?;
+
+        let filename = if preset_name.ends_with(".json") {
+            preset_name.to_string()
+        } else {
+            format!("{}.json", preset_name)
+        };
+        let full_path = dir.join(&filename);
+
+        std::fs::remove_file(&full_path)
+            .map_err(|e| format!("Could not delete preset: {}", e))?;
+
+        log::info!("Deleted plugin preset '{}'", preset_name);
+        Ok(())
+    }
+
+    // ========================================================================
     // Private helpers
     // ========================================================================
 
