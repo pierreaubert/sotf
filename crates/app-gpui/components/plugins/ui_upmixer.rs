@@ -151,8 +151,8 @@ pub fn render_upmixer_plugin(
         .w_full()
 }
 
-/// Render a menu button that toggles active state
-fn render_menu_button(
+/// Render an underline tab button
+fn render_tab_button(
     id: &'static str,
     label: &str,
     is_active: bool,
@@ -161,9 +161,9 @@ fn render_menu_button(
     div()
         .id(id)
         .cursor_pointer()
-        .px_2()
-        .py(px(3.0))
-        .rounded_md()
+        .px_3()
+        .pb(px(6.0))
+        .pt(px(4.0))
         .text_xs()
         .font_weight(if is_active {
             FontWeight::BOLD
@@ -171,12 +171,25 @@ fn render_menu_button(
             FontWeight::NORMAL
         })
         .text_color(if is_active {
-            theme.text_primary
+            theme.accent
         } else {
             theme.text_muted
         })
-        .when(is_active, |d| d.bg(theme.surface))
-        .hover(|s| s.bg(theme.surface_hover))
+        // Active underline
+        .border_b_2()
+        .border_color(if is_active {
+            theme.accent
+        } else {
+            gpui::rgba(0x00000000)
+        })
+        .hover(|s| {
+            s.text_color(theme.text_primary)
+                .border_color(if is_active {
+                    theme.accent
+                } else {
+                    theme.text_muted
+                })
+        })
         .child(label.to_string())
 }
 
@@ -188,14 +201,15 @@ fn render_tab_bar(
 ) -> impl IntoElement {
     div()
         .flex()
-        .items_center()
-        .gap_1()
+        .items_end()
         .w_full()
+        .border_b_1()
+        .border_color(theme.border)
         .children(CONFIG_ITEMS.iter().enumerate().map(|(i, label)| {
             let config_idx = i + 1; // 1-indexed
             let is_active = selected_config == config_idx;
             let entity = entity.clone();
-            render_menu_button(
+            render_tab_button(
                 match i {
                     0 => "cfg-lfe",
                     1 => "cfg-dialogue",

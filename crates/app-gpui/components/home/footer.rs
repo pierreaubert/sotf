@@ -124,7 +124,7 @@ impl Element for WaveformElement {
         // Calculate total width to center the bars
         let total_width = NUM_BARS as f32 * BAR_WIDTH;
         let start_x = bounds.origin.x + (bounds.size.width - px(total_width)) / 2.0;
-        let center_y = bounds.origin.y + bounds.size.height / 2.0;
+        let center_y = bounds.origin.y + bounds.size.height / 2.0 + px(6.0);
 
         for (idx, amplitude) in bar_samples.iter().enumerate() {
             let height_ratio = *amplitude as f32 / 255.0;
@@ -463,28 +463,32 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_2p5()
+            .gap_1()
             .pt_2()
+            .pb_0()
             .flex_1()
             .max_w(rems(37.5))
-            // Row 1: [time] [<< < ▶ > >>] [time]
+            // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .w_full()
+                    .justify_between()
                     .when(!is_hal_mode, |el| {
                         el.child(
                             div()
                                 .text_xs()
                                 .text_color(text_muted)
                                 .min_w(rems(2.5))
-                                .flex()
-                                .items_center()
-                                .justify_center()
                                 .child(position_str.clone()),
                         )
                     })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
                     // Previous track
                     .child(
                         div()
@@ -608,6 +612,7 @@ impl PlayerView {
                                 .theme(theme_clone.to_icon_button_theme()),
                             ),
                     )
+                    ) // close inner transport div
                     .when(!is_hal_mode, |el| {
                         el.child(
                             div()
@@ -615,19 +620,18 @@ impl PlayerView {
                                 .text_color(text_muted)
                                 .min_w(rems(2.5))
                                 .flex()
-                                .items_center()
-                                .justify_center()
+                                .justify_end()
                                 .child(duration_str.clone()),
                         )
                     }),
             )
-            // Row 2: Waveform spanning full width (hidden in HAL mode or narrow screens)
+            // Row 2: Waveform spanning full width
             .when(show_waveform && !is_hal_mode, |el| {
                 el.child(
                     div()
                         .id("waveform-bar")
                         .w_full()
-                        .h(rems(1.5))
+                        .h(rems(2.5))
                         .cursor_pointer()
                         .on_mouse_down(
                             MouseButton::Left,

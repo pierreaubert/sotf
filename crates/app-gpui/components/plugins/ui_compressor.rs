@@ -160,9 +160,9 @@ pub fn render_compressor_plugin(
 
     let center_col = div()
         .flex()
-        .flex_col()
+        .flex_row()
         .flex_1()
-        .gap_3()
+        .gap_4()
         .child(transfer_curve)
         .child(sliders);
 

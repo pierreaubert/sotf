@@ -380,9 +380,17 @@ impl PlayerView {
         let plugin_count = plugins_data.len();
 
         // Split: main plugins, then "+", then trailing permanent plugin (output matrix/monitor)
-        let last_permanent_idx = modules_info.iter().rposition(|m| m.7); // .7 = is_permanent
-        let (main_modules, tail_modules) = if let Some(lp) = last_permanent_idx {
-            let (main, tail) = modules_info.split_at(lp);
+        // Find where the trailing permanent plugins start (insert "+" before them)
+        let trailing_start = {
+            let len = modules_info.len();
+            let mut i = len;
+            while i > 0 && modules_info[i - 1].7 { // .7 = is_permanent
+                i -= 1;
+            }
+            i
+        };
+        let (main_modules, tail_modules) = if trailing_start < modules_info.len() {
+            let (main, tail) = modules_info.split_at(trailing_start);
             (main.to_vec(), tail.to_vec())
         } else {
             (modules_info, vec![])
@@ -1549,13 +1557,14 @@ impl PlayerView {
                     {
                         div()
                             .flex()
-                            .justify_between()
                             .items_center()
+                            .gap_4()
                             .px_4()
                             .py_3()
                             .bg(theme.background_secondary)
                             .border_b_1()
                             .border_color(theme.border)
+                            // Left-aligned menus
                             .child({
                                 // Unified view mode Select dropdown
                                 let state_c = state_for_toggle.clone();
@@ -1620,7 +1629,7 @@ impl PlayerView {
                                     )
                             })
                     }
-                    // Right side: Output config dropdown (only for Upmixer)
+                    // Output config dropdown (only for Upmixer) — next to View, left-aligned
                     .when(matches!(plugin_type, PluginType::Upmixer), |d| {
                         let state_c = state_for_toggle.clone();
                         let upmixer_speaker_config = {
