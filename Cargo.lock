@@ -9236,6 +9236,7 @@ dependencies = [
  "rtrb",
  "rustfft",
  "serde",
+ "serde_json",
  "sotf-host",
  "sotf-plugin-gain",
 ]
