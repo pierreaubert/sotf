@@ -595,21 +595,63 @@ pub fn verify_working_sample_rate(
 
         let callback_count = Arc::new(AtomicU64::new(0));
         let total_samples = Arc::new(AtomicU64::new(0));
-        let cc = callback_count.clone();
-        let ts = total_samples.clone();
 
-        let stream = match device.build_output_stream(
-            &config,
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                cc.fetch_add(1, Ordering::Relaxed);
-                ts.fetch_add(data.len() as u64, Ordering::Relaxed);
-                data.fill(0.0); // silence
-            },
-            |_err| {},
-            None,
-        ) {
-            Ok(s) => s,
-            Err(_) => continue,
+        // Try multiple sample formats — hw: devices often don't support f32.
+        let stream = {
+            let mut result = None;
+            // Try f32 first (most common on PulseAudio/PipeWire), then i32, then i16
+            {
+                let cc = callback_count.clone();
+                let ts = total_samples.clone();
+                if let Ok(s) = device.build_output_stream(
+                    &config,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        cc.fetch_add(1, Ordering::Relaxed);
+                        ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                        data.fill(0.0);
+                    },
+                    |_err| {},
+                    None,
+                ) {
+                    result = Some(s);
+                }
+            }
+            if result.is_none() {
+                let cc = callback_count.clone();
+                let ts = total_samples.clone();
+                if let Ok(s) = device.build_output_stream(
+                    &config,
+                    move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
+                        cc.fetch_add(1, Ordering::Relaxed);
+                        ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                        data.fill(0);
+                    },
+                    |_err| {},
+                    None,
+                ) {
+                    result = Some(s);
+                }
+            }
+            if result.is_none() {
+                let cc = callback_count.clone();
+                let ts = total_samples.clone();
+                if let Ok(s) = device.build_output_stream(
+                    &config,
+                    move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                        cc.fetch_add(1, Ordering::Relaxed);
+                        ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                        data.fill(0);
+                    },
+                    |_err| {},
+                    None,
+                ) {
+                    result = Some(s);
+                }
+            }
+            match result {
+                Some(s) => s,
+                None => continue,
+            }
         };
 
         if stream.play().is_err() {
@@ -650,12 +692,16 @@ pub fn verify_working_sample_rate(
         #[cfg(not(target_os = "linux"))]
         std::thread::sleep(std::time::Duration::from_millis(30));
 
-        // Require callbacks in BOTH phases (sustained activity).
-        // Also check that we got a reasonable number of samples (at least 10% of expected).
+        // Check for sustained activity. Some ALSA hw: devices use very large buffers
+        // (e.g., 16384 samples/callback) which can fill up in phase 1, leaving no new
+        // callbacks in phase 2. Accept the rate if:
+        //   (a) new callbacks arrived in phase 2, OR
+        //   (b) we got 2+ callbacks with substantial data (not a single-callback stall)
         let expected_samples = rate as u64 * test_channels as u64 * 300 / 1000; // 300ms worth
         let new_callbacks = count_phase2 - count_phase1;
+        let enough_data = samples > expected_samples / 10;
 
-        if new_callbacks > 0 && samples > expected_samples / 10 {
+        if enough_data && (new_callbacks > 0 || count_phase1 >= 2) {
             if rate != requested_rate {
                 log::warn!(
                     "[AUDIO] Device rate verification: requested {}Hz doesn't work, using {}Hz ({} callbacks, {} samples in 300ms)",

@@ -491,8 +491,8 @@ pub fn scale_add_simd_inplace(data: &mut [f32], scale: f32) {
             }
         }
 
-        for i in simd_len..len {
-            data[i] *= scale;
+        for sample in data.iter_mut().take(len).skip(simd_len) {
+            *sample *= scale;
         }
     }
 
@@ -757,17 +757,17 @@ pub fn deinterleave_stereo(input: &[f32], left: &mut [f32], right: &mut [f32]) {
 
                 // Permute to get correct order
                 let left_vec =
-                    _mm256_permute4x64_pd(std::mem::transmute::<_, __m256d>(shuf_l), 0b11_01_10_00);
+                    _mm256_permute4x64_pd(std::mem::transmute::<__m256, __m256d>(shuf_l), 0b11_01_10_00);
                 let right_vec =
-                    _mm256_permute4x64_pd(std::mem::transmute::<_, __m256d>(shuf_r), 0b11_01_10_00);
+                    _mm256_permute4x64_pd(std::mem::transmute::<__m256, __m256d>(shuf_r), 0b11_01_10_00);
 
                 _mm256_storeu_ps(
                     left.as_mut_ptr().add(i),
-                    std::mem::transmute::<_, __m256>(left_vec),
+                    std::mem::transmute::<__m256d, __m256>(left_vec),
                 );
                 _mm256_storeu_ps(
                     right.as_mut_ptr().add(i),
-                    std::mem::transmute::<_, __m256>(right_vec),
+                    std::mem::transmute::<__m256d, __m256>(right_vec),
                 );
             }
         }
@@ -835,9 +835,9 @@ pub fn flush_denormals_inplace(samples: &mut [f32]) {
             }
         }
 
-        for i in simd_len..len {
-            if samples[i].abs() < DENORM_THRESHOLD {
-                samples[i] = 0.0;
+        for sample in samples.iter_mut().take(len).skip(simd_len) {
+            if sample.abs() < DENORM_THRESHOLD {
+                *sample = 0.0;
             }
         }
     }
@@ -2184,8 +2184,8 @@ pub fn compute_covariance_simd(
     {
         use std::arch::x86_64::*;
 
-        let mut cov_xx = 0.0_f32;
-        let mut cov_yy = 0.0_f32;
+        let mut cov_xx;
+        let mut cov_yy;
         let mut cov_xy = Complex::new(0.0, 0.0);
 
         // SIMD path: process 4 complex numbers at once
@@ -2196,7 +2196,7 @@ pub fn compute_covariance_simd(
             let mut sum_xx = _mm256_setzero_ps();
             let mut sum_yy = _mm256_setzero_ps();
             let mut sum_xy_re = _mm256_setzero_ps();
-            let mut sum_xy_im = _mm256_setzero_ps();
+            let _sum_xy_im = _mm256_setzero_ps();
 
             for i in (start..simd_end).step_by(4) {
                 let left_ptr = left.as_ptr().add(i) as *const f32;
@@ -2236,9 +2236,9 @@ pub fn compute_covariance_simd(
             }
 
             // Horizontal reduction to scalars
-            let xx_arr = std::mem::transmute::<_, [f32; 8]>(sum_xx);
-            let yy_arr = std::mem::transmute::<_, [f32; 8]>(sum_yy);
-            let xy_arr = std::mem::transmute::<_, [f32; 8]>(sum_xy_re);
+            let xx_arr = std::mem::transmute::<__m256, [f32; 8]>(sum_xx);
+            let yy_arr = std::mem::transmute::<__m256, [f32; 8]>(sum_yy);
+            let xy_arr = std::mem::transmute::<__m256, [f32; 8]>(sum_xy_re);
 
             // Sum hadd results (each norm appears twice in each lane)
             // Lane 0: [norm0, norm1, norm0, norm1], Lane 1: [norm2, norm3, norm2, norm3]
@@ -2298,8 +2298,8 @@ pub fn apply_gain_simd(buffer: &mut [f32], gain: f32) {
                 _mm256_storeu_ps(ptr, res);
             }
         }
-        for i in simd_len..len {
-            buffer[i] *= gain;
+        for sample in buffer.iter_mut().take(len).skip(simd_len) {
+            *sample *= gain;
         }
     }
 
@@ -2435,7 +2435,7 @@ pub fn find_max_abs_simd(samples: &[f32]) -> f32 {
 
         let mut max_val = 0.0_f32;
         unsafe {
-            let arr = std::mem::transmute::<_, [f32; 8]>(max_vec);
+            let arr = std::mem::transmute::<__m256, [f32; 8]>(max_vec);
             for &v in &arr {
                 if v > max_val {
                     max_val = v;
@@ -2443,13 +2443,13 @@ pub fn find_max_abs_simd(samples: &[f32]) -> f32 {
             }
         }
 
-        for i in simd_len..len {
-            let v = samples[i].abs();
+        for sample in samples.iter().take(len).skip(simd_len) {
+            let v = sample.abs();
             if v > max_val {
                 max_val = v;
             }
         }
-        return max_val;
+        max_val
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]

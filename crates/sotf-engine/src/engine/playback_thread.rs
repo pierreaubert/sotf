@@ -7,7 +7,7 @@
 
 use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, Stream, StreamConfig};
+use cpal::{Device, SampleFormat, Stream, StreamConfig};
 use rtrb::{Consumer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -242,6 +242,20 @@ fn run_playback_thread(
         buffer_size: cpal::BufferSize::Default,
     };
 
+    // Detect the best output sample format for this device + config.
+    // hw_channels may be less than channels if the device doesn't support
+    // the requested channel count (e.g. 6ch file on a 2ch HDMI device).
+    let (output_format, hw_channels) = choose_output_format(&device, &config);
+    if hw_channels != channels as u16 {
+        log::warn!(
+            "[Playback Thread] Adjusting output channels from {} to {} (device limitation)",
+            channels,
+            hw_channels
+        );
+        channels = hw_channels as usize;
+        config.channels = hw_channels;
+    }
+
     // Create shared state (ring buffer with ~500ms capacity)
     let mut buffer_capacity = (sample_rate as usize * 500) / 1000 * channels; // 500ms * channels
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
@@ -257,6 +271,7 @@ fn run_playback_thread(
         Arc::clone(&state),
         event_tx.clone(),
         consumer,
+        output_format,
     )?;
 
     // Start stream
@@ -271,9 +286,10 @@ fn run_playback_thread(
         .unwrap_or_else(|_| "Unknown".to_string());
 
     log::info!(
-        "[Playback Thread] Started - {}Hz, {} channels, device: '{}'",
+        "[Playback Thread] Started - {}Hz, {} channels, format: {:?}, device: '{}'",
         sample_rate,
         channels,
+        output_format,
         device_name
     );
 
@@ -308,10 +324,6 @@ fn run_playback_thread(
     let mut total_samples_written: u64 = 0;
     let mut last_diagnostic_log = std::time::Instant::now();
     let diagnostic_interval = std::time::Duration::from_secs(5);
-
-    // Track consecutive channel mismatches to detect stuck state vs transient hot-reload
-    #[allow(unused_assignments)]
-    let mut channel_mismatch_count: u32 = 0;
 
     // End-of-stream drain tracking
     let mut end_of_stream = false;
@@ -361,19 +373,11 @@ fn run_playback_thread(
                         }
 
                         // Build new config with new sample rate
-                        let new_config = StreamConfig {
+                        let mut new_config = StreamConfig {
                             channels: config.channels,
                             sample_rate: new_sample_rate,
                             buffer_size: config.buffer_size,
                         };
-
-                        // Create new ring buffer
-                        let new_buffer_capacity =
-                            (new_sample_rate as usize * 500) / 1000 * channels;
-                        let (new_producer, new_consumer) =
-                            RingBuffer::<f32>::new(new_buffer_capacity);
-
-                        let new_state = Arc::new(PlaybackState::new(new_buffer_capacity));
 
                         // Drain any frames that arrived during setup
                         while message_rx.try_recv().is_ok() {
@@ -391,9 +395,32 @@ fn run_playback_thread(
                             drained_count += 1;
                         }
 
+                        // Negotiate format/channels BEFORE creating ring buffer so
+                        // the buffer is sized for the actual hardware channel count.
+                        let (new_format, new_hw_ch) = choose_output_format(&device, &new_config);
+                        let mut new_channels = channels;
+                        if new_hw_ch != new_config.channels {
+                            log::warn!(
+                                "[Playback Thread] Adjusting rebuild channels from {} to {}",
+                                new_config.channels, new_hw_ch
+                            );
+                            new_config.channels = new_hw_ch;
+                            new_channels = new_hw_ch as usize;
+                        }
+
+                        // Create new ring buffer with correct channel count
+                        let new_buffer_capacity =
+                            (new_sample_rate as usize * 500) / 1000 * new_channels;
+                        let (new_producer, new_consumer) =
+                            RingBuffer::<f32>::new(new_buffer_capacity);
+
+                        let new_state = Arc::new(PlaybackState::new(new_buffer_capacity));
+
                         log::info!(
-                            "[Playback Thread] Building new stream with sample rate: {}Hz (drained {} frames)",
+                            "[Playback Thread] Building new stream with sample rate: {}Hz, {}ch, format: {:?} (drained {} frames)",
                             new_sample_rate,
+                            new_channels,
+                            new_format,
                             drained_count
                         );
 
@@ -403,6 +430,7 @@ fn run_playback_thread(
                             Arc::clone(&new_state),
                             event_tx.clone(),
                             new_consumer,
+                            new_format,
                         ) {
                             Ok(new_stream) => {
                                 if let Err(e) = new_stream.play() {
@@ -420,6 +448,7 @@ fn run_playback_thread(
                                     stream = new_stream;
                                     config = new_config;
                                     state = new_state;
+                                    channels = new_channels;
                                     producer = new_producer;
                                     buffer_capacity = new_buffer_capacity;
 
@@ -427,8 +456,9 @@ fn run_playback_thread(
                                     while message_rx.try_recv().is_ok() {}
 
                                     log::warn!(
-                                        "[Playback Thread] STREAM REBUILT successfully with sample rate {}Hz",
-                                        new_sample_rate
+                                        "[Playback Thread] STREAM REBUILT successfully with {}Hz {}ch",
+                                        new_sample_rate,
+                                        channels
                                     );
                                 }
                             }
@@ -460,7 +490,7 @@ fn run_playback_thread(
                         );
                     }
                 }
-                PlaybackCommand::UpdateChannels(new_channels) => {
+                PlaybackCommand::UpdateChannels(mut new_channels) => {
                     log::warn!(
                         "[Playback Thread] RECEIVED UpdateChannels({}) command, current channels={}",
                         new_channels,
@@ -493,7 +523,7 @@ fn run_playback_thread(
                         }
 
                         // Build new config and state, but only commit them if stream rebuild succeeds
-                        let new_config = StreamConfig {
+                        let mut new_config = StreamConfig {
                             channels: new_channels as u16,
                             sample_rate: config.sample_rate,
                             buffer_size: config.buffer_size,
@@ -532,10 +562,20 @@ fn run_playback_thread(
                         drained_count += drain_frames();
 
                         // Rebuild and start new stream
+                        let (new_format, new_hw_ch) = choose_output_format(&device, &new_config);
+                        if new_hw_ch != new_config.channels {
+                            log::warn!(
+                                "[Playback Thread] Adjusting rebuild channels from {} to {}",
+                                new_config.channels, new_hw_ch
+                            );
+                            new_config.channels = new_hw_ch;
+                            new_channels = new_hw_ch as usize;
+                        }
                         log::info!(
-                            "[Playback Thread] Building new stream with config: {}ch, {}Hz (drained {} frames)",
+                            "[Playback Thread] Building new stream with config: {}ch, {}Hz, format: {:?} (drained {} frames)",
                             new_config.channels,
                             new_config.sample_rate,
+                            new_format,
                             drained_count
                         );
 
@@ -545,6 +585,7 @@ fn run_playback_thread(
                             Arc::clone(&new_state),
                             event_tx.clone(),
                             new_consumer,
+                            new_format,
                         ) {
                             Ok(new_stream) => {
                                 log::info!("[Playback Thread] Stream built, starting playback...");
@@ -706,8 +747,6 @@ fn run_playback_thread(
 
                 // Handle channel count mismatch with robust conversion
                 if frame.num_channels != channels {
-                    channel_mismatch_count += 1;
-
                     conversion_buffer.clear();
                     let num_frames = frame.num_frames;
                     let target_len = num_frames * channels;
@@ -732,11 +771,18 @@ fn run_playback_thread(
                         const BACK_COEFF: f32 = 0.5;
                         const HEIGHT_COEFF: f32 = 0.5;
 
-                        let mut coeff_sum: f32 = 1.0 + C_COEFF + SURROUND_COEFF;
-                        if n > sl_idx + 2 {
+                        // Build normalization sum from channels actually present
+                        let mut coeff_sum: f32 = 1.0; // L or R
+                        if n > 2 {
+                            coeff_sum += C_COEFF;
+                        }
+                        if sl_idx < n {
+                            coeff_sum += SURROUND_COEFF;
+                        }
+                        if bl_idx < n {
                             coeff_sum += BACK_COEFF;
                         }
-                        if n > tfl_idx {
+                        if tfl_idx < n {
                             coeff_sum += HEIGHT_COEFF;
                         }
                         let norm = 1.0 / coeff_sum;
@@ -807,7 +853,9 @@ fn run_playback_thread(
                     let chunk = match producer.write_chunk_uninit(conversion_buffer.len()) {
                         Ok(chunk) => chunk,
                         Err(_) => {
-                            // Not enough space, wait a bit
+                            // Not enough space — recycle frame data and wait
+                            frames_dropped += 1;
+                            recycle_tx.try_send(frame.data).ok();
                             std::thread::sleep(std::time::Duration::from_millis(
                                 SPIN_MS_RINGBUFFER,
                             ));
@@ -816,10 +864,10 @@ fn run_playback_thread(
                     };
                     chunk.fill_from_iter(conversion_buffer.iter().copied());
                     recycle_tx.try_send(frame.data).ok();
+                    frames_written += 1;
+                    total_samples_written += conversion_buffer.len() as u64;
                     continue;
                 }
-
-                channel_mismatch_count = 0;
 
                 // Write to ring buffer
                 let frame_samples = frame.data.len();
@@ -1003,8 +1051,230 @@ fn run_playback_thread(
     Ok(())
 }
 
-/// Build the cpal output stream
+/// Choose the best output sample format and channel count supported by the device.
+/// Returns (format, hw_channels) where hw_channels may differ from config.channels
+/// if the device doesn't support the requested channel count.
+/// Prefers F32 > I32 > I16 (highest fidelity first).
+fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat, u16) {
+    let supported: Vec<_> = match device.supported_output_configs() {
+        Ok(configs) => configs.collect(),
+        Err(e) => {
+            log::warn!(
+                "[Playback Thread] Cannot query supported formats: {}, defaulting to F32",
+                e
+            );
+            return (SampleFormat::F32, config.channels);
+        }
+    };
+
+    let log_configs = || {
+        supported
+            .iter()
+            .map(|c| {
+                format!(
+                    "{:?}/{}ch/{}-{}Hz",
+                    c.sample_format(),
+                    c.channels(),
+                    c.min_sample_rate(),
+                    c.max_sample_rate()
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    // Check if a format is available for a given channel count and sample rate
+    let has_fmt = |fmt: SampleFormat, ch: u16| {
+        supported.iter().any(|c| {
+            c.sample_format() == fmt
+                && c.channels() == ch
+                && c.min_sample_rate() <= config.sample_rate
+                && c.max_sample_rate() >= config.sample_rate
+        })
+    };
+
+    let pick_format = |ch: u16| -> Option<SampleFormat> {
+        if has_fmt(SampleFormat::F32, ch) {
+            Some(SampleFormat::F32)
+        } else if has_fmt(SampleFormat::I32, ch) {
+            Some(SampleFormat::I32)
+        } else if has_fmt(SampleFormat::I16, ch) {
+            Some(SampleFormat::I16)
+        } else {
+            None
+        }
+    };
+
+    // First try: exact channel count match
+    if let Some(fmt) = pick_format(config.channels) {
+        log::info!(
+            "[Playback Thread] Chosen output format: {:?} for {}ch {}Hz (device configs: {:?})",
+            fmt,
+            config.channels,
+            config.sample_rate,
+            log_configs()
+        );
+        return (fmt, config.channels);
+    }
+
+    // Second try: find the best alternative channel count.
+    // Prefer the highest channel count <= requested (downmix), otherwise lowest available.
+    let mut available_channels: Vec<u16> = supported
+        .iter()
+        .filter(|c| {
+            c.min_sample_rate() <= config.sample_rate
+                && c.max_sample_rate() >= config.sample_rate
+        })
+        .map(|c| c.channels())
+        .collect();
+    available_channels.sort();
+    available_channels.dedup();
+
+    // Pick highest ch <= requested, or fallback to the first available
+    let alt_ch = available_channels
+        .iter()
+        .rev()
+        .find(|&&ch| ch <= config.channels)
+        .or(available_channels.first())
+        .copied();
+
+    if let Some(ch) = alt_ch
+        && let Some(fmt) = pick_format(ch)
+    {
+        log::warn!(
+            "[Playback Thread] Device doesn't support {}ch; using {}ch {:?} (will downmix). Device configs: {:?}",
+            config.channels,
+            ch,
+            fmt,
+            log_configs()
+        );
+        return (fmt, ch);
+    }
+
+    log::warn!(
+        "[Playback Thread] No compatible config for {}ch {}Hz among device formats, trying F32 anyway. Device configs: {:?}",
+        config.channels,
+        config.sample_rate,
+        log_configs()
+    );
+    (SampleFormat::F32, config.channels)
+}
+
+/// Read f32 samples from the ring buffer into a scratch buffer.
+/// Returns `true` if an underrun occurred (not enough data). Handles underrun by zero-filling.
+#[inline(always)]
+fn read_ring_buffer(
+    consumer: &mut Consumer<f32>,
+    scratch: &mut [f32],
+    requested: usize,
+    state: &PlaybackState,
+    event_tx: &Sender<ThreadEvent>,
+    capacity: usize,
+) -> bool {
+    // Track sample count (callback_count is tracked by callers, once per cpal callback)
+    state
+        .total_callback_samples
+        .fetch_add(requested as u64, Ordering::Relaxed);
+
+    let mut underrun = false;
+
+    // Try to read requested amount
+    if let Ok(chunk) = consumer.read_chunk(requested) {
+        let (first, second) = chunk.as_slices();
+        let first_len = first.len();
+        let second_len = second.len();
+
+        if first_len > 0 {
+            scratch[..first_len].copy_from_slice(first);
+        }
+        if second_len > 0 {
+            scratch[first_len..first_len + second_len].copy_from_slice(second);
+        }
+
+        chunk.commit_all();
+    } else {
+        // Not enough data (underrun)
+        let available = consumer.slots().min(requested);
+
+        if let Ok(chunk) = consumer.read_chunk(available) {
+            let (first, second) = chunk.as_slices();
+            let first_len = first.len();
+            let second_len = second.len();
+
+            if first_len > 0 {
+                scratch[..first_len].copy_from_slice(first);
+            }
+            if second_len > 0 {
+                scratch[first_len..first_len + second_len].copy_from_slice(second);
+            }
+            chunk.commit_all();
+        }
+
+        // Zero pad the rest
+        if available < requested {
+            scratch[available..requested].fill(0.0);
+        }
+
+        underrun = true;
+        let current_underruns = state.underrun_count.fetch_add(1, Ordering::Relaxed);
+        if current_underruns.is_multiple_of(100) {
+            event_tx.send(ThreadEvent::PlaybackUnderrun).ok();
+        }
+    }
+
+    // Update buffer level metric
+    let slots = consumer.slots();
+    let fill_percent = if capacity > 0 {
+        (slots * 100) / capacity
+    } else {
+        0
+    };
+    state
+        .last_buffer_level
+        .store(fill_percent as u64, Ordering::Relaxed);
+
+    underrun
+}
+
+/// Apply volume and mute to f32 scratch buffer, then clamp to [-1, 1].
+#[inline(always)]
+fn apply_volume_clamp(scratch: &mut [f32], state: &PlaybackState) {
+    let volume = f32::from_bits(state.volume.load(Ordering::Relaxed));
+    let muted = state.muted.load(Ordering::Relaxed);
+
+    if muted {
+        scratch.fill(0.0);
+    } else if (volume - 1.0).abs() > 0.001 {
+        for sample in scratch.iter_mut() {
+            *sample = (*sample * volume).clamp(-1.0, 1.0);
+        }
+    } else {
+        for sample in scratch.iter_mut() {
+            *sample = sample.clamp(-1.0, 1.0);
+        }
+    }
+}
+
+/// Build the cpal output stream with the specified sample format.
+/// Internal pipeline stays f32; conversion to the hardware format happens
+/// only at the final output boundary.
 fn build_output_stream(
+    device: &Device,
+    config: &StreamConfig,
+    state: Arc<PlaybackState>,
+    event_tx: Sender<ThreadEvent>,
+    consumer: Consumer<f32>,
+    sample_format: SampleFormat,
+) -> Result<Stream, String> {
+    match sample_format {
+        SampleFormat::F32 => build_output_stream_f32(device, config, state, event_tx, consumer),
+        SampleFormat::I32 => build_output_stream_int::<i32>(device, config, state, event_tx, consumer),
+        SampleFormat::I16 => build_output_stream_int::<i16>(device, config, state, event_tx, consumer),
+        _ => Err(format!("Unsupported sample format: {:?}", sample_format)),
+    }
+}
+
+/// Build f32 output stream (direct path, no format conversion).
+fn build_output_stream_f32(
     device: &Device,
     config: &StreamConfig,
     state: Arc<PlaybackState>,
@@ -1013,99 +1283,87 @@ fn build_output_stream(
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
     let event_tx_data = event_tx.clone();
-
     let capacity = state.capacity;
 
     let stream = device
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
+                read_ring_buffer(
+                    &mut consumer,
+                    data,
+                    data.len(),
+                    &state_clone,
+                    &event_tx_data,
+                    capacity,
+                );
+                apply_volume_clamp(data, &state_clone);
+            },
+            move |err| {
+                log::warn!("[Playback Thread] Stream error: {}", err);
+                event_tx
+                    .send(ThreadEvent::ProcessingError(format!(
+                        "Stream error: {}",
+                        err
+                    )))
+                    .ok();
+            },
+            None,
+        )
+        .map_err(|e| format!("Failed to build output stream: {}", e))?;
+
+    Ok(stream)
+}
+
+/// Build integer output stream (I16 or I32). Reads f32 from ring buffer
+/// into a pre-allocated scratch buffer, applies volume/clamp, then converts
+/// to the target integer type.
+fn build_output_stream_int<T>(
+    device: &Device,
+    config: &StreamConfig,
+    state: Arc<PlaybackState>,
+    event_tx: Sender<ThreadEvent>,
+    mut consumer: Consumer<f32>,
+) -> Result<Stream, String>
+where
+    T: cpal::SizedSample + cpal::FromSample<f32>,
+{
+    let state_clone = Arc::clone(&state);
+    let event_tx_data = event_tx.clone();
+    let capacity = state.capacity;
+
+    // Pre-allocate scratch buffer (captured by closure, no alloc in callback).
+    // 16384 samples covers typical callbacks (256–4096). Process in chunks if larger.
+    let mut scratch = vec![0.0f32; 16384];
+
+    let stream = device
+        .build_output_stream(
+            config,
+            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+                state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
                 let requested = data.len();
 
-                // Track callback metrics
-                state_clone
-                    .total_callback_samples
-                    .fetch_add(requested as u64, Ordering::Relaxed);
-                state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
+                // Process in chunks if callback is larger than scratch buffer
+                let mut offset = 0;
+                while offset < requested {
+                    let chunk_len = (requested - offset).min(scratch.len());
+                    read_ring_buffer(
+                        &mut consumer,
+                        &mut scratch[..chunk_len],
+                        chunk_len,
+                        &state_clone,
+                        &event_tx_data,
+                        capacity,
+                    );
+                    apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);
 
-                // Try to read requested amount
-                if let Ok(chunk) = consumer.read_chunk(requested) {
-                    // Happy path: enough data available
-                    let (first, second) = chunk.as_slices();
-                    let first_len = first.len();
-                    let second_len = second.len();
-
-                    if first_len > 0 {
-                        data[..first_len].copy_from_slice(first);
+                    // Convert f32 -> target integer type
+                    for (out, &s) in data[offset..offset + chunk_len].iter_mut().zip(&scratch[..chunk_len]) {
+                        *out = T::from_sample(s);
                     }
-                    if second_len > 0 {
-                        data[first_len..first_len + second_len].copy_from_slice(second);
-                    }
-
-                    chunk.commit_all();
-                } else {
-                    // Not enough data (underrun)
-                    // Cap available to requested to avoid buffer overflow
-                    let available = consumer.slots().min(requested);
-
-                    // Read what we have
-                    if let Ok(chunk) = consumer.read_chunk(available) {
-                        let (first, second) = chunk.as_slices();
-                        let first_len = first.len();
-                        let second_len = second.len();
-
-                        if first_len > 0 {
-                            data[..first_len].copy_from_slice(first);
-                        }
-                        if second_len > 0 {
-                            data[first_len..first_len + second_len].copy_from_slice(second);
-                        }
-                        chunk.commit_all();
-                    }
-
-                    // Zero pad the rest
-                    if available < requested {
-                        data[available..].fill(0.0);
-                    }
-
-                    // Log underrun
-                    let current_underruns =
-                        state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
-                    if current_underruns.is_multiple_of(100) {
-                        event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
-                    }
+                    offset += chunk_len;
                 }
-
-                // Update buffer level metric
-                let slots = consumer.slots();
-                let fill_percent = if capacity > 0 {
-                    (slots * 100) / capacity
-                } else {
-                    0
-                };
-                state_clone
-                    .last_buffer_level
-                    .store(fill_percent as u64, Ordering::Relaxed);
-
-                // Apply volume and mute
-                let volume = f32::from_bits(state_clone.volume.load(Ordering::Relaxed));
-                let muted = state_clone.muted.load(Ordering::Relaxed);
-
-                if muted {
-                    data.fill(0.0);
-                } else if (volume - 1.0).abs() > 0.001 {
-                    // Fused volume + clamp in one pass (half the memory bandwidth)
-                    for sample in data.iter_mut() {
-                        *sample = (*sample * volume).clamp(-1.0, 1.0);
-                    }
-                } else {
-                    // Branchless clamp — compiles to vmaxps/vminps (auto-vectorised)
-                    for sample in data.iter_mut() {
-                        *sample = sample.clamp(-1.0, 1.0);
-                    }
-                }
-
-                // Audio flows directly to hardware via cpal - no HAL loopback needed
             },
             move |err| {
                 log::warn!("[Playback Thread] Stream error: {}", err);

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
-use crate::devices::{get_device_current_sample_rate, verify_working_sample_rate};
+use crate::devices::verify_working_sample_rate;
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
 
@@ -60,11 +60,10 @@ pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&s
         }
     }
 
-    // Query the device's reported rate first
-    let device_rate = get_device_current_sample_rate(output_device);
-
-    // Use the device rate as our initial candidate, falling back to file rate
-    let candidate_rate = device_rate.unwrap_or(file_sample_rate);
+    // Prefer the file's sample rate to avoid resampling when the device supports it.
+    // The verification function tries: candidate first, then common rates (48k, 44.1k,
+    // 96k, 192k) as fallback, plus the device's own default rate.
+    let candidate_rate = file_sample_rate;
 
     // Verify the candidate rate actually produces working audio callbacks.
     // This catches ALSA systems where the reported default rate doesn't work.

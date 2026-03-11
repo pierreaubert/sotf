@@ -166,7 +166,7 @@ fn check_linux_audio_cards() -> Result<(), PreflightError> {
         line.trim_start()
             .chars()
             .next()
-            .map_or(false, |c| c.is_ascii_digit())
+            .is_some_and(|c| c.is_ascii_digit())
     });
 
     if !has_cards {
@@ -181,7 +181,7 @@ fn check_linux_audio_cards() -> Result<(), PreflightError> {
             line.trim_start()
                 .chars()
                 .next()
-                .map_or(false, |c| c.is_ascii_digit())
+                .is_some_and(|c| c.is_ascii_digit())
         })
         .count();
 
@@ -247,7 +247,7 @@ mod tests {
             line.trim_start()
                 .chars()
                 .next()
-                .map_or(false, |c| c.is_ascii_digit())
+                .is_some_and(|c| c.is_ascii_digit())
         });
         assert!(has_cards, "Should detect card in sample1");
 
@@ -262,7 +262,7 @@ mod tests {
                 line.trim_start()
                     .chars()
                     .next()
-                    .map_or(false, |c| c.is_ascii_digit())
+                    .is_some_and(|c| c.is_ascii_digit())
             })
             .count();
         assert_eq!(card_count, 2, "Should detect 2 cards in sample2");
@@ -273,7 +273,7 @@ mod tests {
             line.trim_start()
                 .chars()
                 .next()
-                .map_or(false, |c| c.is_ascii_digit())
+                .is_some_and(|c| c.is_ascii_digit())
         });
         assert!(!has_cards_empty, "Should not detect cards in empty file");
 
