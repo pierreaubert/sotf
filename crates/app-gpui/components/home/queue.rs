@@ -31,7 +31,21 @@ impl PlayerView {
         let meters_ratio = layout.meters_panel_ratio;
         let meter_display_mode = state.app.meter_display_mode;
         let window_height = state.app.ui_state.window_height;
+        let window_width = state.app.ui_state.window_width;
         let hide_meters_for_rack = state.app.hide_queue_meters_for_rack;
+
+        // Calculate available width for the queue panel (between library and rack)
+        let library_width = if layout.library_panel_collapsed {
+            0.0
+        } else {
+            layout.library_h_ratio * window_width
+        };
+        let rack_width = if layout.rack_panel_collapsed {
+            0.0
+        } else {
+            layout.rack_h_ratio * window_width
+        };
+        let available_queue_width = (window_width - library_width - rack_width).max(0.0);
 
         // When the meters panel is tall enough, show both LUFS and Meters stacked
         // (no toggle switch needed). The queue panel height depends on the layout ratio.
@@ -344,7 +358,7 @@ impl PlayerView {
                     .sum::<usize>()
                     .max(2);
                 let meters_width = crate::components::plugins::level_meters::calculate_meters_panel_width(num_channels);
-                let panel_width = if meters_panel_tall {
+                let ideal_width = if meters_panel_tall {
                     // Show both: use the wider panel's width
                     meters_width.max(400.0)
                 } else if meter_display_mode == MeterDisplayMode::Lufs {
@@ -352,10 +366,15 @@ impl PlayerView {
                 } else {
                     meters_width
                 };
+                // Cap meters panel to at most 40% of available queue width so it
+                // doesn't squeeze out the queue list and now-playing panels.
+                let max_meters_width = available_queue_width * 0.4;
+                let panel_width = ideal_width.min(max_meters_width).max(120.0);
 
                 d.child(
                     div()
                         .w(px(panel_width))
+                        .flex_shrink_0()
                         .flex()
                         .flex_col()
                         .h_full()

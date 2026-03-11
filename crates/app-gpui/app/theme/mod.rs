@@ -266,6 +266,13 @@ impl Theme {
             badge_error_text: self.error,
             badge_info_bg: Self::opacity_20pct(self.info),
             badge_info_text: self.info,
+            // Alert backgrounds - derive from semantic colors
+            alert_info_bg: Self::opacity_20pct(self.info),
+            alert_success_bg: Self::opacity_20pct(self.success),
+            alert_warning_bg: Self::opacity_20pct(self.warning),
+            alert_error_bg: Self::opacity_20pct(self.error),
+            // Code text
+            code_text: self.accent,
         }
     }
 

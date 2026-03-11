@@ -3645,7 +3645,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.9"
+version = "0.6.10"
 dependencies = [
  "gpui",
  "gpui-ui-kit-macros",
@@ -8856,6 +8856,7 @@ dependencies = [
  "rustfft",
  "serde",
  "serde_json",
+ "signal-hook 0.4.3",
  "smol",
  "sotf-engine",
  "sotf-player",
