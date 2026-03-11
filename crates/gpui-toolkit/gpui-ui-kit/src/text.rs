@@ -284,16 +284,7 @@ impl Code {
 
     /// Build into element with explicit theme
     pub fn build_with_theme(self, theme: &Theme) -> Div {
-        // Code uses a slightly different color from accent
-        let code_text = match theme.variant {
-            crate::theme::ThemeVariant::Light => rgb(0xc7254e),
-            // Dark, Midnight, Forest, BlackAndWhite all use dark-style colors
-            crate::theme::ThemeVariant::Dark
-            | crate::theme::ThemeVariant::Midnight
-            | crate::theme::ThemeVariant::Forest
-            | crate::theme::ThemeVariant::BlackAndWhite
-            | crate::theme::ThemeVariant::Onyx => rgb(0xe06c75),
-        };
+        let code_text = code_text_color(theme);
 
         if self.inline {
             div()
@@ -426,4 +417,9 @@ impl RenderOnce for Link {
         let theme = self.theme.clone().unwrap_or_else(|| cx.theme());
         self.build_with_theme(&theme)
     }
+}
+
+/// Get the code text color for a given theme.
+pub fn code_text_color(theme: &Theme) -> Rgba {
+    theme.code_text
 }

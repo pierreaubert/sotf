@@ -2,7 +2,7 @@
 //!
 //! Contextual feedback messages.
 
-use crate::theme::{Theme, ThemeExt, ThemeVariant};
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::{Component, *};
 
@@ -21,26 +21,13 @@ pub enum AlertVariant {
 }
 
 impl AlertVariant {
-    fn colors(&self, theme: &Theme) -> (Rgba, Rgba, Rgba) {
+    pub fn colors(&self, theme: &Theme) -> (Rgba, Rgba, Rgba) {
         // Returns (background, border, icon_color)
-        match theme.variant {
-            ThemeVariant::Light => match self {
-                AlertVariant::Info => (rgb(0xe0f2fe), theme.info, theme.info),
-                AlertVariant::Success => (rgb(0xdcfce7), theme.success, theme.success),
-                AlertVariant::Warning => (rgb(0xfef3c7), theme.warning, theme.warning),
-                AlertVariant::Error => (rgb(0xfee2e2), theme.error, theme.error),
-            },
-            // Dark, Midnight, Forest, BlackAndWhite all use dark-style backgrounds
-            ThemeVariant::Dark
-            | ThemeVariant::Midnight
-            | ThemeVariant::Forest
-            | ThemeVariant::BlackAndWhite
-            | ThemeVariant::Onyx => match self {
-                AlertVariant::Info => (rgb(0x1a2a3a), theme.info, theme.info),
-                AlertVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
-                AlertVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),
-                AlertVariant::Error => (rgb(0x3a1a1a), theme.error, theme.error),
-            },
+        match self {
+            AlertVariant::Info => (theme.alert_info_bg, theme.info, theme.info),
+            AlertVariant::Success => (theme.alert_success_bg, theme.success, theme.success),
+            AlertVariant::Warning => (theme.alert_warning_bg, theme.warning, theme.warning),
+            AlertVariant::Error => (theme.alert_error_bg, theme.error, theme.error),
         }
     }
 

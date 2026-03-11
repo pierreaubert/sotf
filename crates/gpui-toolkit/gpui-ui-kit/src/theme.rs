@@ -161,6 +161,20 @@ pub struct Theme {
     pub badge_info_bg: Rgba,
     /// Badge info text
     pub badge_info_text: Rgba,
+
+    // Alert/Toast variant background colors
+    /// Alert info background
+    pub alert_info_bg: Rgba,
+    /// Alert success background
+    pub alert_success_bg: Rgba,
+    /// Alert warning background
+    pub alert_warning_bg: Rgba,
+    /// Alert error background
+    pub alert_error_bg: Rgba,
+
+    // Code text color
+    /// Code/monospace text color
+    pub code_text: Rgba,
 }
 
 impl Theme {
@@ -206,6 +220,13 @@ impl Theme {
             badge_error_text: rgb(0xcc7c7c),
             badge_info_bg: rgb(0x1a3a3a),
             badge_info_text: rgb(0x7ccccc),
+            // Alert backgrounds
+            alert_info_bg: rgb(0x1a2a3a),
+            alert_success_bg: rgb(0x1a3a1a),
+            alert_warning_bg: rgb(0x3a3a1a),
+            alert_error_bg: rgb(0x3a1a1a),
+            // Code text
+            code_text: rgb(0xe06c75),
         }
     }
 
@@ -251,6 +272,13 @@ impl Theme {
             badge_error_text: rgb(0xdc2626),
             badge_info_bg: rgb(0xe0f2fe),
             badge_info_text: rgb(0x0284c7),
+            // Alert backgrounds
+            alert_info_bg: rgb(0xe0f2fe),
+            alert_success_bg: rgb(0xdcfce7),
+            alert_warning_bg: rgb(0xfef3c7),
+            alert_error_bg: rgb(0xfee2e2),
+            // Code text
+            code_text: rgb(0xc7254e),
         }
     }
 
@@ -296,6 +324,11 @@ impl Theme {
             badge_error_text: rgb(0xcc7c7c),
             badge_info_bg: rgb(0x1a3a3a),
             badge_info_text: rgb(0x7ccccc),
+            alert_info_bg: rgb(0x1a2a3a),
+            alert_success_bg: rgb(0x1a3a1a),
+            alert_warning_bg: rgb(0x3a3a1a),
+            alert_error_bg: rgb(0x3a1a1a),
+            code_text: rgb(0xe06c75),
         }
     }
 
@@ -341,6 +374,11 @@ impl Theme {
             badge_error_text: rgb(0xcc7c7c),
             badge_info_bg: rgb(0x1a3a3a),
             badge_info_text: rgb(0x7ccccc),
+            alert_info_bg: rgb(0x1a2a3a),
+            alert_success_bg: rgb(0x1a3a1a),
+            alert_warning_bg: rgb(0x3a3a1a),
+            alert_error_bg: rgb(0x3a1a1a),
+            code_text: rgb(0xe06c75),
         }
     }
 
@@ -386,6 +424,11 @@ impl Theme {
             badge_error_text: rgb(0xcc7c7c),
             badge_info_bg: rgb(0x1a3a3a),
             badge_info_text: rgb(0x7ccccc),
+            alert_info_bg: rgb(0x1a2a3a),
+            alert_success_bg: rgb(0x1a3a1a),
+            alert_warning_bg: rgb(0x3a3a1a),
+            alert_error_bg: rgb(0x3a1a1a),
+            code_text: rgb(0xe06c75),
         }
     }
 
@@ -431,6 +474,11 @@ impl Theme {
             badge_error_text: rgb(0xef4444),
             badge_info_bg: rgb(0x0c2d48),
             badge_info_text: rgb(0x38bdf8),
+            alert_info_bg: rgb(0x1a1a2a),
+            alert_success_bg: rgb(0x14532d),
+            alert_warning_bg: rgb(0x451a03),
+            alert_error_bg: rgb(0x450a0a),
+            code_text: rgb(0xe06c75),
         }
     }
 

@@ -1,5 +1,7 @@
 //! Toast component tests
 
+use gpui::rgb;
+use gpui_ui_kit::theme::Theme;
 use gpui_ui_kit::toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 
 #[test]
@@ -92,4 +94,21 @@ fn test_toast_closeable_flag() {
 
     let toast_not_closeable = Toast::new("nc", "msg").closeable(false);
     drop(toast_not_closeable);
+}
+
+#[test]
+fn test_toast_uses_theme_colors_not_hardcoded() {
+    let mut theme = Theme::dark();
+    theme.alert_success_bg = rgb(0xfedcba);
+    theme.alert_warning_bg = rgb(0x123456);
+    theme.alert_error_bg = rgb(0x654321);
+
+    let (bg, _, _) = ToastVariant::Success.colors(&theme);
+    assert_eq!(bg, theme.alert_success_bg, "Success bg should use theme.alert_success_bg");
+
+    let (bg, _, _) = ToastVariant::Warning.colors(&theme);
+    assert_eq!(bg, theme.alert_warning_bg, "Warning bg should use theme.alert_warning_bg");
+
+    let (bg, _, _) = ToastVariant::Error.colors(&theme);
+    assert_eq!(bg, theme.alert_error_bg, "Error bg should use theme.alert_error_bg");
 }

@@ -2,7 +2,7 @@
 //!
 //! Provides non-blocking notifications that appear temporarily.
 
-use crate::theme::{Theme, ThemeExt, ThemeVariant};
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::{Component, *};
 
@@ -30,26 +30,13 @@ impl ToastVariant {
         }
     }
 
-    fn colors(&self, theme: &Theme) -> (Rgba, Rgba, Rgba) {
+    pub fn colors(&self, theme: &Theme) -> (Rgba, Rgba, Rgba) {
         // Returns (background, border, icon_color)
-        match theme.variant {
-            ThemeVariant::Light => match self {
-                ToastVariant::Info => (theme.surface, theme.info, theme.info),
-                ToastVariant::Success => (rgb(0xdcfce7), theme.success, theme.success),
-                ToastVariant::Warning => (rgb(0xfef3c7), theme.warning, theme.warning),
-                ToastVariant::Error => (rgb(0xfee2e2), theme.error, theme.error),
-            },
-            // Dark, Midnight, Forest, BlackAndWhite all use dark-style backgrounds
-            ThemeVariant::Dark
-            | ThemeVariant::Midnight
-            | ThemeVariant::Forest
-            | ThemeVariant::BlackAndWhite
-            | ThemeVariant::Onyx => match self {
-                ToastVariant::Info => (theme.surface, theme.info, theme.info),
-                ToastVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
-                ToastVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),
-                ToastVariant::Error => (rgb(0x3a1a1a), theme.error, theme.error),
-            },
+        match self {
+            ToastVariant::Info => (theme.surface, theme.info, theme.info),
+            ToastVariant::Success => (theme.alert_success_bg, theme.success, theme.success),
+            ToastVariant::Warning => (theme.alert_warning_bg, theme.warning, theme.warning),
+            ToastVariant::Error => (theme.alert_error_bg, theme.error, theme.error),
         }
     }
 }

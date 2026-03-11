@@ -1,5 +1,6 @@
 //! Stack layout component tests
 
+use gpui_ui_kit::theme::Theme;
 use gpui_ui_kit::stack::{
     Divider, HStack, Spacer, StackAlign, StackJustify, StackOverflow, StackSize, StackSpacing,
     VStack,
@@ -198,4 +199,22 @@ fn test_divider_configuration() {
         .interactive();
 
     let _ = divider;
+}
+
+#[test]
+fn test_divider_uses_theme_border_color() {
+    // Forest theme has border = 0x3a4a35, different from hardcoded 0x3a3a3a
+    let theme = Theme::forest();
+    // When no explicit color is set, build_with_theme should use theme.border
+    // Currently it hardcodes rgb(0x3a3a3a), so this test will fail
+    let divider = Divider::new().id("test-div");
+    // We can't inspect the built Div's bg color directly, but we can verify
+    // the theme's border color doesn't match the hardcoded fallback
+    let hardcoded = gpui::rgb(0x3a3a3a);
+    assert_ne!(hardcoded, theme.border, "Precondition: forest border differs from hardcoded");
+    // The build_with_theme currently ignores the theme and uses hardcoded 0x3a3a3a
+    // This will pass once we fix build_with_theme to use theme.border
+    // For now we test via a getter that exposes the resolved color
+    let resolved = divider.resolve_color(&theme);
+    assert_eq!(resolved, theme.border, "Divider default color should come from theme.border");
 }
