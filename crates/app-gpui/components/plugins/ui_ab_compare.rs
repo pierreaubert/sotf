@@ -1,10 +1,15 @@
 //! A/B Compare Plugin UI Component
 //!
-//! Compare two audio processing paths with automatic loudness matching:
-//! - Mix: A/B blend (-1.0 = A, +1.0 = B)
-//! - Mix Mode: Potentiometer (continuous) or Binary (A or B)
-//! - Auto Gain: Match loudness between paths
-//! - Path configs: JSON configuration for each path
+//! Layout (3-column):
+//! +------------------+--------------------------------------------+------------------+
+//! | MIX              | PATH CONFIG                                | AUTO GAIN        |
+//! |                  |                                            |                  |
+//! | [Mix A/B]  knob  | [Path A Config] file                       | [AutoGain] tog   |
+//! | [Mix Mode] choic | [Path B Config] file                       | [Loudness] choic |
+//! | [Selected] choic |                                            | [Max AG]   knob  |
+//! | [Bypass]   toggl |                                            | [AG Smooth] knob |
+//! | [Transition] knob|                                            |                  |
+//! +------------------+--------------------------------------------+------------------+
 
 use super::common::{render_knob, render_section_title};
 use crate::app::AppState;
@@ -88,7 +93,6 @@ fn config_to_preset_value(config: &str) -> &'static str {
             return value;
         }
     }
-    // Check partial matches for custom configs
     if config.is_empty() || config == r#"{"type":"None"}"# {
         "none"
     } else if config.contains(r#""plugin_type":"EQ""#) {
@@ -112,6 +116,10 @@ fn config_to_preset_value(config: &str) -> &'static str {
     }
 }
 
+// Layout constants
+const MIX_WIDTH: f32 = 160.0;
+const OUTPUT_WIDTH: f32 = 140.0;
+
 /// Render the A/B Compare plugin
 pub fn render_ab_compare_plugin(
     entity: Entity<AppState>,
@@ -119,11 +127,8 @@ pub fn render_ab_compare_plugin(
     state: ABCompareRenderState<'_>,
     theme: &Theme,
 ) -> impl IntoElement {
-    // In potentiometer mode (mix_mode == 0), A|N|B is disabled
-    // In binary mode (mix_mode == 1), potentiometer is disabled
     let is_pot_mode = state.mix_mode == 0;
 
-    // Determine current A/N/B selection for binary mode
     let anb_selected: SharedString = if state.bypass {
         "N".into()
     } else if state.selected_path == 0 {
@@ -132,318 +137,149 @@ pub fn render_ab_compare_plugin(
         "B".into()
     };
 
-    // Get current preset values for path configs
     let path_a_preset = config_to_preset_value(state.path_a_config);
     let path_b_preset = config_to_preset_value(state.path_b_config);
 
-    // Selectors state
-    let mode_selected: SharedString = if is_pot_mode {
-        "MIX A+B".into()
-    } else {
-        "Choice".into()
-    };
-    let auto_gain_selected: SharedString = if state.auto_gain_enabled {
-        "ON".into()
-    } else {
-        "OFF".into()
-    };
-    let time_selected: SharedString = if state.loudness_type == 0 {
-        "Fast".into()
-    } else {
-        "Slow".into()
-    };
+    let mode_selected: SharedString = if is_pot_mode { "MIX A+B".into() } else { "Choice".into() };
+    let auto_gain_selected: SharedString = if state.auto_gain_enabled { "ON".into() } else { "OFF".into() };
+    let time_selected: SharedString = if state.loudness_type == 0 { "Fast".into() } else { "Slow".into() };
 
+    // === LEFT COLUMN: Mix ===
+    let mix_col = div()
+        .flex()
+        .flex_col()
+        .w(px(MIX_WIDTH))
+        .gap_3()
+        .child(render_section_title("MIX", theme))
+        // Mode selector
+        .child(
+            ButtonSet::new(("mode", plugin_idx))
+                .options(vec![
+                    ButtonSetOption::new("MIX A+B", "MIX A+B"),
+                    ButtonSetOption::new("Choice", "Choice"),
+                ])
+                .selected(mode_selected)
+                .size(ButtonSetSize::Xs)
+                .theme(theme.to_button_set_theme())
+                .on_change({
+                    let entity = entity.clone();
+                    move |value, _, cx| {
+                        let is_mix = value.as_ref() == "MIX A+B";
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(plugin_idx, 1, if is_mix { 0.0 } else { 1.0 });
+                        });
+                    }
+                }),
+        )
+        // Mix knob (dimmed in binary mode)
+        .child(div().when(!is_pot_mode, |d| d.opacity(0.4)).child(
+            render_knob(
+                entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
+                -100.0, 100.0, "%", 0, state.selected_param,
+                state.is_editing && is_pot_mode, Some('m'), theme,
+            ),
+        ))
+        // A/N/B buttons (dimmed in pot mode)
+        .child(div().when(is_pot_mode, |d| d.opacity(0.4)).child(
+            render_anb_buttons(entity.clone(), plugin_idx, anb_selected, is_pot_mode, theme),
+        ))
+        // Transition knob
+        .child(render_horizontal_slider(
+            entity.clone(), plugin_idx, "Mix Smooth", state.mix_transition_ms,
+            5.0, 500.0, "ms", 8, state.selected_param, state.is_editing, theme,
+        ));
+
+    // === CENTER COLUMN: Path Config ===
+    let center_col = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .gap_3()
+        .child(render_section_title("PATH CONFIG", theme))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(theme.text_muted).child("PATH A"))
+                .child(render_path_selector(
+                    entity.clone(), plugin_idx, "a", path_a_preset, 9, state.path_a_select_open, theme,
+                )),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(theme.text_muted).child("PATH B"))
+                .child(render_path_selector(
+                    entity.clone(), plugin_idx, "b", path_b_preset, 10, state.path_b_select_open, theme,
+                )),
+        );
+
+    // === RIGHT COLUMN: Auto Gain ===
+    let right_col = div()
+        .flex()
+        .flex_col()
+        .w(px(OUTPUT_WIDTH))
+        .gap_3()
+        .child(render_section_title("AUTO GAIN", theme))
+        .child(
+            ButtonSet::new(("autogain", plugin_idx))
+                .options(vec![
+                    ButtonSetOption::new("ON", "ON"),
+                    ButtonSetOption::new("OFF", "OFF"),
+                ])
+                .selected(auto_gain_selected)
+                .size(ButtonSetSize::Xs)
+                .theme(theme.to_button_set_theme())
+                .on_change({
+                    let entity = entity.clone();
+                    move |value, _, cx| {
+                        let is_on = value.as_ref() == "ON";
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(plugin_idx, 4, if is_on { 1.0 } else { 0.0 });
+                        });
+                    }
+                }),
+        )
+        .child(
+            ButtonSet::new(("time", plugin_idx))
+                .options(vec![
+                    ButtonSetOption::new("Fast", "Fast"),
+                    ButtonSetOption::new("Slow", "Slow"),
+                ])
+                .selected(time_selected)
+                .size(ButtonSetSize::Xs)
+                .theme(theme.to_button_set_theme())
+                .on_change({
+                    let entity = entity.clone();
+                    move |value, _, cx| {
+                        let is_slow = value.as_ref() == "Slow";
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(plugin_idx, 5, if is_slow { 1.0 } else { 0.0 });
+                        });
+                    }
+                }),
+        )
+        .child(render_knob(
+            entity.clone(), plugin_idx, "Max Gain", state.max_auto_gain_db,
+            0.0, 24.0, "dB", 6, state.selected_param, state.is_editing, Some('g'), theme,
+        ))
+        .child(render_horizontal_slider(
+            entity.clone(), plugin_idx, "Gain Smooth", state.gain_smoothing_ms,
+            10.0, 500.0, "ms", 7, state.selected_param, state.is_editing, theme,
+        ));
+
+    // === Main layout: 3 columns ===
     div()
         .flex()
-        // Left Column: Mode, Mix/Path, Configs
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .flex_col()
-                .border_r_1()
-                .border_color(theme.border)
-                // Row 1: Mode
-                .child(
-                    div().p_4().border_b_1().border_color(theme.border).child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(render_section_title("MODE", theme))
-                            .child(
-                                ButtonSet::new(("mode", plugin_idx))
-                                    .options(vec![
-                                        ButtonSetOption::new("MIX A+B", "MIX A+B"),
-                                        ButtonSetOption::new("Choice", "Choice"),
-                                    ])
-                                    .selected(mode_selected)
-                                    .size(ButtonSetSize::Xs)
-                                    .theme(theme.to_button_set_theme())
-                                    .on_change({
-                                        let entity = entity.clone();
-                                        move |value, _, cx| {
-                                            let is_mix = value.as_ref() == "MIX A+B";
-                                            entity.update(cx, |state, _| {
-                                                state.app.set_plugin_param(
-                                                    plugin_idx,
-                                                    1,
-                                                    if is_mix { 0.0 } else { 1.0 },
-                                                );
-                                            });
-                                        }
-                                    }),
-                            ),
-                    ),
-                )
-                // Row 2: Mix & Path
-                .child(
-                    div().p_4().border_b_1().border_color(theme.border).child(
-                        div()
-                            .flex()
-                            .gap_4()
-                            .items_end()
-                            // Mix A+B (Knob)
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_1()
-                                    .child(render_section_title("MIX A+B", theme))
-                                    .child(div().when(!is_pot_mode, |d| d.opacity(0.4)).child(
-                                        render_knob(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            "Mix",
-                                            state.mix * 100.0,
-                                            -100.0,
-                                            100.0,
-                                            "%",
-                                            0,
-                                            state.selected_param,
-                                            state.is_editing && is_pot_mode,
-                                            Some('m'),
-                                            theme,
-                                        ),
-                                    )),
-                            )
-                            // Path (A/N/B)
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_1()
-                                    .child(render_section_title("PATH", theme))
-                                    .child(div().when(is_pot_mode, |d| d.opacity(0.4)).child(
-                                        render_anb_buttons(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            anb_selected,
-                                            is_pot_mode,
-                                            theme,
-                                        ),
-                                    )),
-                            ),
-                    ),
-                )
-                // Row 3: Path Configs
-                .child(
-                    div()
-                        .p_4()
-                        .flex_1() // Take remaining height
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_4()
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .text_color(theme.text_muted)
-                                                .child("PATH A: ..."),
-                                        )
-                                        .child(render_path_selector(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            "a",
-                                            path_a_preset,
-                                            9,
-                                            state.path_a_select_open,
-                                            theme,
-                                        )),
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .text_color(theme.text_muted)
-                                                .child("PATH B: ..."),
-                                        )
-                                        .child(render_path_selector(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            "b",
-                                            path_b_preset,
-                                            10,
-                                            state.path_b_select_open,
-                                            theme,
-                                        )),
-                                ),
-                        ),
-                ),
-        )
-        // Right Column: Gain Auto, Gain/Time, Smoothing
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .flex_col()
-                // Row 1: Gain Auto
-                .child(
-                    div().p_4().border_b_1().border_color(theme.border).child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .child(render_section_title("GAIN AUTO", theme))
-                            .child(
-                                ButtonSet::new(("autogain", plugin_idx))
-                                    .options(vec![
-                                        ButtonSetOption::new("ON", "ON"),
-                                        ButtonSetOption::new("OFF", "OFF"),
-                                    ])
-                                    .selected(auto_gain_selected)
-                                    .size(ButtonSetSize::Xs)
-                                    .theme(theme.to_button_set_theme())
-                                    .on_change({
-                                        let entity = entity.clone();
-                                        move |value, _, cx| {
-                                            let is_on = value.as_ref() == "ON";
-                                            entity.update(cx, |state, _| {
-                                                state.app.set_plugin_param(
-                                                    plugin_idx,
-                                                    4,
-                                                    if is_on { 1.0 } else { 0.0 },
-                                                );
-                                            });
-                                        }
-                                    }),
-                            ),
-                    ),
-                )
-                // Row 2: Gain & Time
-                .child(
-                    div().p_4().border_b_1().border_color(theme.border).child(
-                        div()
-                            .flex()
-                            .gap_4()
-                            .items_end()
-                            // Gain (Knob)
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_1()
-                                    .child(render_section_title("GAIN", theme))
-                                    .child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "Gain",
-                                        state.max_auto_gain_db,
-                                        0.0,
-                                        24.0,
-                                        "dB",
-                                        6,
-                                        state.selected_param,
-                                        state.is_editing,
-                                        Some('g'),
-                                        theme,
-                                    )),
-                            )
-                            // Time (Fast/Slow)
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_1()
-                                    .child(render_section_title("Time", theme))
-                                    .child(
-                                        ButtonSet::new(("time", plugin_idx))
-                                            .options(vec![
-                                                ButtonSetOption::new("Fast", "Fast"),
-                                                ButtonSetOption::new("Slow", "Slow"),
-                                            ])
-                                            .selected(time_selected)
-                                            .size(ButtonSetSize::Xs)
-                                            .theme(theme.to_button_set_theme())
-                                            .on_change({
-                                                let entity = entity.clone();
-                                                move |value, _, cx| {
-                                                    let is_slow = value.as_ref() == "Slow";
-                                                    entity.update(cx, |state, _| {
-                                                        state.app.set_plugin_param(
-                                                            plugin_idx,
-                                                            5,
-                                                            if is_slow { 1.0 } else { 0.0 },
-                                                        );
-                                                    });
-                                                }
-                                            }),
-                                    ),
-                            ),
-                    ),
-                )
-                // Row 3: Smoothing Sliders
-                .child(
-                    div()
-                        .p_4()
-                        .flex_1() // Take remaining height
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .child(render_horizontal_slider(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Gain Smooth",
-                                    state.gain_smoothing_ms,
-                                    10.0,
-                                    500.0,
-                                    "ms",
-                                    7,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                ))
-                                .child(render_horizontal_slider(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Mix Smooth",
-                                    state.mix_transition_ms,
-                                    5.0,
-                                    500.0,
-                                    "ms",
-                                    8,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                )),
-                        ),
-                ),
-        )
-    // .when(state.is_editing, |d: Div| d.child(render_edit_hints(theme)))
+        .gap_4()
+        .p_3()
+        .w_full()
+        .child(mix_col)
+        .child(center_col)
+        .child(right_col)
 }
 
 /// Render a horizontal slider using gpui-ui-kit Slider
@@ -456,7 +292,7 @@ fn render_horizontal_slider(
     max: f64,
     unit: &str,
     idx: usize,
-    _selected_param: usize, // Unused since Slider doesn't support selected state yet
+    _selected_param: usize,
     _is_editing: bool,
     theme: &Theme,
 ) -> impl IntoElement {
@@ -470,9 +306,7 @@ fn render_horizontal_slider(
             let entity = entity.clone();
             move |new_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state
-                        .app
-                        .set_plugin_param(plugin_idx, idx, new_value as f64);
+                    state.app.set_plugin_param(plugin_idx, idx, new_value as f64);
                 });
             }
         })
@@ -493,13 +327,7 @@ fn render_path_selector(
         .map(|(value, label, _)| SelectOption::new(*value, *label))
         .collect();
 
-    // Create unique ID by combining plugin index with path identifier
-    let select_id = if path_id == "a" {
-        plugin_idx * 2
-    } else {
-        plugin_idx * 2 + 1
-    };
-
+    let select_id = if path_id == "a" { plugin_idx * 2 } else { plugin_idx * 2 + 1 };
     let selected: SharedString = current_preset.to_string().into();
     let is_path_a = path_id == "a";
 
@@ -526,22 +354,14 @@ fn render_path_selector(
         .on_change({
             let entity = entity.clone();
             move |value, _, cx| {
-                // Find the JSON config for this preset
-                if let Some((_, _, json)) =
-                    PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref())
-                {
+                if let Some((_, _, json)) = PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref()) {
                     entity.update(cx, |state, _| {
-                        // Close dropdown after selection
                         if is_path_a {
                             state.app.plugin_state.ab_compare_dropdowns.path_a_open = false;
                         } else {
                             state.app.plugin_state.ab_compare_dropdowns.path_b_open = false;
                         }
-                        // Set the path config as a string parameter
-                        // The param system will need to handle this specially
-                        state
-                            .app
-                            .set_plugin_param_string(plugin_idx, param_idx, json.to_string());
+                        state.app.set_plugin_param_string(plugin_idx, param_idx, json.to_string());
                     });
                 }
             }
@@ -569,26 +389,24 @@ fn render_anb_buttons(
         .on_change({
             let entity = entity.clone();
             move |value, _, cx| {
-                if disabled {
-                    return;
-                }
+                if disabled { return; }
                 entity.update(cx, |state, _| {
                     match value.as_ref() {
                         "A" => {
-                            state.app.set_plugin_param(plugin_idx, 1, 1.0); // mix_mode=binary
-                            state.app.set_plugin_param(plugin_idx, 3, 0.0); // bypass=false
-                            state.app.set_plugin_param(plugin_idx, 2, 0.0); // selected_path=A
-                            state.app.set_plugin_param(plugin_idx, 0, -100.0); // mix=-1.0
+                            state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                            state.app.set_plugin_param(plugin_idx, 3, 0.0);
+                            state.app.set_plugin_param(plugin_idx, 2, 0.0);
+                            state.app.set_plugin_param(plugin_idx, 0, -100.0);
                         }
                         "N" => {
-                            state.app.set_plugin_param(plugin_idx, 1, 1.0); // mix_mode=binary
-                            state.app.set_plugin_param(plugin_idx, 3, 1.0); // bypass=true
+                            state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                            state.app.set_plugin_param(plugin_idx, 3, 1.0);
                         }
                         "B" => {
-                            state.app.set_plugin_param(plugin_idx, 1, 1.0); // mix_mode=binary
-                            state.app.set_plugin_param(plugin_idx, 3, 0.0); // bypass=false
-                            state.app.set_plugin_param(plugin_idx, 2, 1.0); // selected_path=B
-                            state.app.set_plugin_param(plugin_idx, 0, 100.0); // mix=+1.0
+                            state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                            state.app.set_plugin_param(plugin_idx, 3, 0.0);
+                            state.app.set_plugin_param(plugin_idx, 2, 1.0);
+                            state.app.set_plugin_param(plugin_idx, 0, 100.0);
                         }
                         _ => {}
                     }

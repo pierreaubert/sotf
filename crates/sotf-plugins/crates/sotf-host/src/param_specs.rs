@@ -1429,9 +1429,9 @@ pub mod denoiser {
             1.0,
             0.01,
             "",
-            "Analysis",
+            "General",
         )
-        .scaled(100.0).secondary("Analysis"),
+        .scaled(100.0),
         ParamSpec::bool_param("DD SNR", "dd_enabled", true, "Analysis").secondary("Analysis"),
         ParamSpec::float(
             "DD Alpha", "dd_alpha", 0.98, 0.5, 0.999, 0.001, "", "Analysis",

@@ -1,16 +1,22 @@
 //! Expander Plugin UI Component
 //!
-//! Dynamic range expander with hysteresis:
-//! - Threshold, ratio, attack, release
-//! - Range (max gain reduction)
-//! - Knee softness
-//! - Hysteresis for smooth open/close transitions
-//! - Hold time before closing
-//! - Mix (dry/wet)
+//! Layout (3-column):
+//! +------------------+--------------------------------------------+------------------+
+//! | SETUP            | DYNAMICS              TIMING                | OUTPUT           |
+//! |                  |                                            |                  |
+//! | [Link Ch] toggle | [Threshold] slider    [Attack] slider      | [GR Meter]       |
+//! | [SC HPF]  knob   | [Ratio]     slider    [Release] slider     | [Mix]      knob  |
+//! |                  | [Range]     slider    [Hold]   slider      |                  |
+//! |                  | [Knee]      slider                         |                  |
+//! |                  | [Hysteresis] slider                        |                  |
+//! |                  | ┌─ Transfer Curve ─────────────────┐       |                  |
+//! |                  | │                                  │       |                  |
+//! |                  | └──────────────────────────────────┘       |                  |
+//! +------------------+--------------------------------------------+------------------+
 
 use super::common::{
-    render_dynamics_layout, render_knob, render_section_title, render_toggle_button,
-    render_transfer_curve_sized, render_vertical_slider_sized,
+    render_knob, render_section_title, render_toggle,
+    render_transfer_curve_sized, render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -37,7 +43,14 @@ pub struct ExpanderRenderState {
 }
 
 // Layout constants
-const SLIDER_HEIGHT: f32 = 200.0;
+const SLIDER_HEIGHT: f32 = 180.0;
+const TRANSFER_CURVE_SIZE: f32 = 200.0;
+const SETUP_WIDTH: f32 = 100.0;
+const OUTPUT_WIDTH: f32 = 120.0;
+
+// Sidechain HPF UI range
+const SIDECHAIN_HPF_UI_MIN: f64 = 40.0;
+const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
 
 /// Render the Expander plugin
 pub fn render_expander_plugin(
@@ -46,134 +59,127 @@ pub fn render_expander_plugin(
     state: ExpanderRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Transfer curve (expander uses inverse curve)
+    // === LEFT COLUMN: Setup ===
+    let setup_col = div()
+        .flex()
+        .flex_col()
+        .w(px(SETUP_WIDTH))
+        .gap_3()
+        .child(render_section_title("SETUP", theme))
+        .child(render_toggle(
+            entity.clone(), plugin_idx, "Link Ch", state.link_channels,
+            9, state.selected_param, state.is_editing, theme,
+        ))
+        .child(render_knob(
+            entity.clone(), plugin_idx, "SC HPF", state.sidechain_hpf_hz,
+            SIDECHAIN_HPF_UI_MIN, SIDECHAIN_HPF_UI_MAX,
+            "Hz", 10, state.selected_param, state.is_editing, Some('s'), theme,
+        ));
+
+    // === CENTER COLUMN: Sliders (top) + Transfer curve (bottom) ===
     let transfer_curve = render_transfer_curve_sized(
-        state.threshold_db, state.ratio, state.knee_db, false, 180.0, theme,
+        state.threshold_db, state.ratio, state.knee_db, false, TRANSFER_CURVE_SIZE, theme,
     );
 
-    // Controls
-    let controls = div()
+    let sliders = div()
         .flex()
         .gap_4()
-        // Dynamics
+        // Dynamics: Threshold, Ratio, Range, Knee, Hysteresis
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap_1()
                 .child(render_section_title("DYNAMICS", theme))
                 .child(
                     div()
                         .flex()
                         .gap_2()
-                        .child(render_vertical_slider_sized(
+                        .child(render_vertical_slider_with_ticks(
                             entity.clone(), plugin_idx, "Threshold", state.threshold_db,
                             pk(EX, "threshold").min_f64(), pk(EX, "threshold").max_f64(),
-                            "dB", 0, state.selected_param, state.is_editing, Some('t'), Some(SLIDER_HEIGHT), theme,
+                            "dB", 0, state.selected_param, state.is_editing, Some('t'), SLIDER_HEIGHT, theme,
                         ))
-                        .child(render_vertical_slider_sized(
+                        .child(render_vertical_slider_with_ticks(
                             entity.clone(), plugin_idx, "Ratio", state.ratio,
                             pk(EX, "ratio").min_f64(), pk(EX, "ratio").max_f64(),
-                            ":1", 1, state.selected_param, state.is_editing, Some('r'), Some(SLIDER_HEIGHT), theme,
+                            ":1", 1, state.selected_param, state.is_editing, Some('r'), SLIDER_HEIGHT, theme,
+                        ))
+                        .child(render_vertical_slider_with_ticks(
+                            entity.clone(), plugin_idx, "Range", state.range_db,
+                            pk(EX, "range").min_f64(), pk(EX, "range").max_f64(),
+                            "dB", 4, state.selected_param, state.is_editing, Some('g'), SLIDER_HEIGHT, theme,
+                        ))
+                        .child(render_vertical_slider_with_ticks(
+                            entity.clone(), plugin_idx, "Knee", state.knee_db,
+                            pk(EX, "knee").min_f64(), pk(EX, "knee").max_f64(),
+                            "dB", 5, state.selected_param, state.is_editing, Some('k'), SLIDER_HEIGHT, theme,
+                        ))
+                        .child(render_vertical_slider_with_ticks(
+                            entity.clone(), plugin_idx, "Hyst.", state.hysteresis_db,
+                            pk(EX, "hysteresis").min_f64(), pk(EX, "hysteresis").max_f64(),
+                            "dB", 6, state.selected_param, state.is_editing, Some('y'), SLIDER_HEIGHT, theme,
                         )),
                 ),
         )
-        // Timing
+        // Timing: Attack, Release, Hold
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
+                .gap_1()
                 .child(render_section_title("TIMING", theme))
                 .child(
                     div()
                         .flex()
                         .gap_2()
-                        .child(render_vertical_slider_sized(
+                        .child(render_vertical_slider_with_ticks(
                             entity.clone(), plugin_idx, "Attack", state.attack_ms,
                             pk(EX, "attack").min_f64(), pk(EX, "attack").max_f64(),
-                            "ms", 2, state.selected_param, state.is_editing, Some('a'), Some(SLIDER_HEIGHT), theme,
+                            "ms", 2, state.selected_param, state.is_editing, Some('a'), SLIDER_HEIGHT, theme,
                         ))
-                        .child(render_vertical_slider_sized(
+                        .child(render_vertical_slider_with_ticks(
                             entity.clone(), plugin_idx, "Release", state.release_ms,
                             pk(EX, "release").min_f64(), pk(EX, "release").max_f64(),
-                            "ms", 3, state.selected_param, state.is_editing, Some('e'), Some(SLIDER_HEIGHT), theme,
-                        )),
-                ),
-        )
-        // Shape
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(render_section_title("SHAPE", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(render_vertical_slider_sized(
-                            entity.clone(), plugin_idx, "Range", state.range_db,
-                            pk(EX, "range").min_f64(), pk(EX, "range").max_f64(),
-                            "dB", 4, state.selected_param, state.is_editing, Some('g'), Some(SLIDER_HEIGHT), theme,
+                            "ms", 3, state.selected_param, state.is_editing, Some('e'), SLIDER_HEIGHT, theme,
                         ))
-                        .child(render_vertical_slider_sized(
-                            entity.clone(), plugin_idx, "Knee", state.knee_db,
-                            pk(EX, "knee").min_f64(), pk(EX, "knee").max_f64(),
-                            "dB", 5, state.selected_param, state.is_editing, Some('k'), Some(SLIDER_HEIGHT), theme,
-                        ))
-                        .child(render_vertical_slider_sized(
-                            entity.clone(), plugin_idx, "Hyst.", state.hysteresis_db,
-                            pk(EX, "hysteresis").min_f64(), pk(EX, "hysteresis").max_f64(),
-                            "dB", 6, state.selected_param, state.is_editing, Some('y'), Some(SLIDER_HEIGHT), theme,
-                        ))
-                        .child(render_vertical_slider_sized(
+                        .child(render_vertical_slider_with_ticks(
                             entity.clone(), plugin_idx, "Hold", state.hold_ms,
                             pk(EX, "hold").min_f64(), pk(EX, "hold").max_f64(),
-                            "ms", 7, state.selected_param, state.is_editing, Some('h'), Some(SLIDER_HEIGHT), theme,
+                            "ms", 7, state.selected_param, state.is_editing, Some('h'), SLIDER_HEIGHT, theme,
                         )),
                 ),
-        )
-        // Output
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .justify_between()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(
-                            div().flex().justify_between().items_center().w_full()
-                                .child(render_section_title("OUTPUT", theme))
-                                .child(div().text_xs().text_color(theme.text_muted).child("Link Ch.")),
-                        )
-                        .child(div().flex().justify_end().child(render_toggle_button(
-                            entity.clone(), plugin_idx, state.link_channels,
-                            9, state.selected_param, state.is_editing, theme,
-                        )))
-                        .child(render_knob(
-                            entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
-                            pk(EX, "mix").min_f64() * 100.0, pk(EX, "mix").max_f64() * 100.0,
-                            "%", 8, state.selected_param, state.is_editing, Some('m'), theme,
-                        )),
-                )
-                .child(render_knob(
-                    entity.clone(), plugin_idx, "SC HPF", state.sidechain_hpf_hz,
-                    pk(EX, "sidechain_hpf_hz").min_f64(), pk(EX, "sidechain_hpf_hz").max_f64(),
-                    "Hz", 10, state.selected_param, state.is_editing, Some('s'), theme,
-                )),
         );
 
-    // Meter section (no real-time data for expander yet)
-    let meter_section = div()
+    let center_col = div()
         .flex()
         .flex_col()
-        .gap_2()
-        .child(render_section_title("METER", theme))
-        .child(render_gr_meter(0.0, -40.0, theme));
+        .flex_1()
+        .gap_3()
+        .child(sliders)
+        .child(transfer_curve);
 
-    render_dynamics_layout(transfer_curve, controls, meter_section, 180.0)
+    // === RIGHT COLUMN: Output (GR Meter + Mix) ===
+    let right_col = div()
+        .flex()
+        .flex_col()
+        .w(px(OUTPUT_WIDTH))
+        .gap_3()
+        .child(render_section_title("OUTPUT", theme))
+        .child(render_gr_meter(0.0, -40.0, theme))
+        .child(render_knob(
+            entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
+            pk(EX, "mix").min_f64() * 100.0, pk(EX, "mix").max_f64() * 100.0,
+            "%", 8, state.selected_param, state.is_editing, Some('m'), theme,
+        ));
+
+    // === Main layout: 3 columns ===
+    div()
+        .flex()
+        .gap_4()
+        .p_3()
+        .w_full()
+        .child(setup_col)
+        .child(center_col)
+        .child(right_col)
 }

@@ -1,6 +1,13 @@
 //! Channel Mute/Solo Plugin UI Component
+//!
+//! Layout (3-column):
+//! +------------------+--------------------------------------------+------------------+
+//! | SETUP            | CHANNELS (dynamic per channel count)       | (no output)      |
+//! |                  |                                            |                  |
+//! | [Enabled] toggle | [Ch1: M S] [Ch2: M S] [Ch3: M S] ...      |                  |
+//! +------------------+--------------------------------------------+------------------+
 
-use super::common::{ParamSectionStyle, render_section_header, render_toggle};
+use super::common::{render_section_title, render_toggle};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -15,6 +22,9 @@ pub struct ChannelMuteSoloRenderState<'a> {
     pub selected_param: usize,
 }
 
+// Layout constants
+const SETUP_WIDTH: f32 = 100.0;
+
 /// Render the Channel Mute/Solo plugin
 pub fn render_mute_solo_plugin(
     entity: Entity<AppState>,
@@ -24,7 +34,6 @@ pub fn render_mute_solo_plugin(
 ) -> impl IntoElement {
     let channel_count = state.channel_states.len();
 
-    // Channel layout names
     let channel_names: Vec<&str> = match channel_count {
         1 => vec!["Mono"],
         2 => vec!["Left", "Right"],
@@ -33,238 +42,124 @@ pub fn render_mute_solo_plugin(
         _ => (0..channel_count).map(|_| "Ch").collect(),
     };
 
-    div()
+    // === LEFT COLUMN: Setup ===
+    let setup_col = div()
         .flex()
         .flex_col()
-        .gap_4()
-        // Channel mixer section
+        .w(px(SETUP_WIDTH))
+        .gap_3()
+        .child(render_section_title("SETUP", theme))
+        .child(render_toggle(
+            entity.clone(), plugin_idx, "Enabled", state.enabled,
+            0, state.selected_param, state.is_editing, theme,
+        ))
         .child(
             div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .param_section_style_lg(theme)
-                .child(render_section_header("CHANNEL MIXER", theme))
-                // Channel strips
-                .child(div().flex().gap_3().justify_center().children(
-                    state.channel_states.iter().enumerate().map(|(i, s)| {
-                        let name = channel_names.get(i).copied().unwrap_or("Ch");
-                        let is_muted = s.muted;
-                        let is_soloed = s.soloed;
-                        let is_active = !is_muted
-                            && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child(format!("{} channels", channel_count)),
+        );
 
+    // === CENTER COLUMN: Channel strips ===
+    let center_col = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .gap_3()
+        .child(render_section_title("CHANNELS", theme))
+        .child(div().flex().gap_3().flex_wrap().children(
+            state.channel_states.iter().enumerate().map(|(i, s)| {
+                let name = channel_names.get(i).copied().unwrap_or("Ch");
+                let is_muted = s.muted;
+                let is_soloed = s.soloed;
+                let is_active = !is_muted
+                    && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
+
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_2()
+                    .p_2()
+                    .rounded_lg()
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(if is_soloed {
+                        theme.warning
+                    } else if is_muted {
+                        theme.error
+                    } else {
+                        theme.border
+                    })
+                    // Channel label
+                    .child(
                         div()
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(name.to_string()),
+                    )
+                    // Level meter
+                    .child(
+                        div()
+                            .w(px(16.0))
+                            .h(px(60.0))
+                            .bg(theme.background)
+                            .rounded_sm()
                             .flex()
                             .flex_col()
-                            .items_center()
-                            .gap_2()
-                            .p_2()
-                            .rounded_lg()
-                            .bg(theme.surface)
-                            .border_1()
-                            .border_color(if is_soloed {
-                                theme.warning
-                            } else if is_muted {
-                                theme.error
-                            } else {
-                                theme.border
-                            })
-                            // Channel label
+                            .justify_end()
+                            .overflow_hidden()
                             .child(
                                 div()
-                                    .text_xs()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(theme.text_primary)
-                                    .child(name.to_string()),
-                            )
-                            // Level meter (simulated)
-                            .child(
-                                div()
-                                    .w(px(16.0))
-                                    .h(px(60.0))
-                                    .bg(theme.background)
-                                    .rounded_sm()
-                                    .flex()
-                                    .flex_col()
-                                    .justify_end()
-                                    .overflow_hidden()
-                                    .child(
-                                        div()
-                                            .w_full()
-                                            .h(relative(if is_active { 0.6 } else { 0.0 }))
-                                            .bg(if is_active {
-                                                theme.success
-                                            } else {
-                                                theme.surface
-                                            }),
-                                    ),
-                            )
-                            // Mute button
-                            .child(
-                                div()
-                                    .w(px(24.0))
-                                    .h(px(20.0))
-                                    .rounded_sm()
-                                    .bg(if is_muted {
-                                        theme.error
-                                    } else {
-                                        theme.background
-                                    })
-                                    .border_1()
-                                    .border_color(if is_muted { theme.error } else { theme.border })
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_xs()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(if is_muted {
-                                        theme.text_on_accent
-                                    } else {
-                                        theme.text_muted
-                                    })
-                                    .child("M"),
-                            )
-                            // Solo button
-                            .child(
-                                div()
-                                    .w(px(24.0))
-                                    .h(px(20.0))
-                                    .rounded_sm()
-                                    .bg(if is_soloed {
-                                        theme.warning
-                                    } else {
-                                        theme.background
-                                    })
-                                    .border_1()
-                                    .border_color(if is_soloed {
-                                        theme.warning
-                                    } else {
-                                        theme.border
-                                    })
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_xs()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(if is_soloed {
-                                        theme.background
-                                    } else {
-                                        theme.text_muted
-                                    })
-                                    .child("S"),
-                            )
-                    }),
-                )),
-        )
-        // Status section
-        .child(
-            div().flex().gap_4().children([
-                // Enabled status
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap_2()
-                    .param_section_style(theme)
-                    .child(
-                        div()
-                            .w(px(12.0))
-                            .h(px(12.0))
-                            .rounded_full()
-                            .bg(if state.enabled {
-                                theme.success
-                            } else {
-                                theme.error
-                            }),
+                                    .w_full()
+                                    .h(relative(if is_active { 0.6 } else { 0.0 }))
+                                    .bg(if is_active { theme.success } else { theme.surface }),
+                            ),
                     )
+                    // Mute button
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(theme.text_primary)
-                            .child(if state.enabled { "Active" } else { "Bypassed" }),
-                    ),
-                // Mute count
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .param_section_style(theme)
-                    .child(div().text_xs().text_color(theme.text_muted).child("Muted"))
-                    .child(
-                        div()
-                            .text_lg()
+                            .w(px(24.0))
+                            .h(px(20.0))
+                            .rounded_sm()
+                            .bg(if is_muted { theme.error } else { theme.background })
+                            .border_1()
+                            .border_color(if is_muted { theme.error } else { theme.border })
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_xs()
                             .font_weight(FontWeight::BOLD)
-                            .text_color(theme.error)
-                            .child(format!(
-                                "{}",
-                                state.channel_states.iter().filter(|s| s.muted).count()
-                            )),
-                    ),
-                // Solo count
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .param_section_style(theme)
-                    .child(div().text_xs().text_color(theme.text_muted).child("Soloed"))
+                            .text_color(if is_muted { theme.text_on_accent } else { theme.text_muted })
+                            .child("M"),
+                    )
+                    // Solo button
                     .child(
                         div()
-                            .text_lg()
+                            .w(px(24.0))
+                            .h(px(20.0))
+                            .rounded_sm()
+                            .bg(if is_soloed { theme.warning } else { theme.background })
+                            .border_1()
+                            .border_color(if is_soloed { theme.warning } else { theme.border })
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_xs()
                             .font_weight(FontWeight::BOLD)
-                            .text_color(theme.warning)
-                            .child(format!(
-                                "{}",
-                                state.channel_states.iter().filter(|s| s.soloed).count()
-                            )),
-                    ),
-            ]),
-        )
-        // Parameters section
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .param_section_style(theme)
-                .child(render_section_header("PARAMETERS", theme))
-                .child(render_toggle(
-                    entity.clone(),
-                    plugin_idx,
-                    "Enabled",
-                    state.enabled,
-                    0,
-                    state.selected_param,
-                    state.is_editing,
-                    theme,
-                ))
-                .child(
-                    div()
-                        .px_3()
-                        .py_2()
-                        .text_sm()
-                        .text_color(theme.text_muted)
-                        .child(format!("Channels: {}", channel_count)),
-                ),
-        )
-        // Keyboard hints
-        .child(
-            div()
-                .p_3()
-                .rounded_lg()
-                .bg(theme.accent_muted)
-                .border_1()
-                .border_color(theme.accent)
-                .flex()
-                .gap_4()
-                .text_xs()
-                .text_color(theme.text_secondary)
-                .child("m: Mute")
-                .child("Shift+M: Solo")
-                .child("x: Clear all"),
-        )
-    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+                            .text_color(if is_soloed { theme.background } else { theme.text_muted })
+                            .child("S"),
+                    )
+            }),
+        ));
+
+    // === Main layout: 3 columns ===
+    div()
+        .flex()
+        .gap_4()
+        .p_3()
+        .w_full()
+        .child(setup_col)
+        .child(center_col)
 }

@@ -1,16 +1,17 @@
 //! Compressor Plugin UI Component
 //!
 //! Layout (3-column):
-//! +--------------------+------------------------------------------------+--------------------+
-//! | Setup              | Transfer Curve                                 | Meter              |
-//! |                    |                                                | Gain Reduction     |
-//! | Link Ch [on|off]   |                                                |                    |
-//! |                    +------------------------------------------------+--------------------+
-//! | SC HPF             | Dynamic            Timing                      | Output             |
-//! |                    | Threshold Ratio     Attack Release              | AutoGain off/on    |
-//! |                    | Knee                                            | Makeup             |
-//! |                    |                                                | Mix                |
-//! +--------------------+------------------------------------------------+--------------------+
+//! +------------------+--------------------------------------------+------------------+
+//! | SETUP            | DYNAMICS              TIMING                | OUTPUT           |
+//! |                  |                                            |                  |
+//! | [Link Ch] toggle | [Threshold] slider    [Attack] slider      | [GR Meter]       |
+//! | [SC HPF]  knob   | [Ratio]     slider    [Release] slider     | [AutoMakeup] tog |
+//! |                  | [Knee]      slider                         | [Makeup]   knob  |
+//! |                  |                                            | [Mix]      knob  |
+//! |                  | ┌─ Transfer Curve ─────────────────┐       |                  |
+//! |                  | │                                  │       |                  |
+//! |                  | └──────────────────────────────────┘       |                  |
+//! +------------------+--------------------------------------------+------------------+
 
 use super::common::{
     render_knob, render_section_title, render_toggle,
@@ -160,49 +161,34 @@ pub fn render_compressor_plugin(
 
     let center_col = div()
         .flex()
-        .flex_row()
+        .flex_col()
         .flex_1()
-        .gap_4()
-        .child(transfer_curve)
-        .child(sliders);
+        .gap_3()
+        .child(sliders)
+        .child(transfer_curve);
 
-    // === RIGHT COLUMN: GR Meter (top) + Output (bottom) ===
+    // === RIGHT COLUMN: Output (GR Meter + controls) ===
     let right_col = div()
         .flex()
         .flex_col()
         .w(px(METER_WIDTH))
         .gap_3()
-        // GR Meter
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("METER", theme))
-                .child(render_gr_meter(meter_value, -30.0, theme)),
-        )
-        // Output section
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(render_section_title("OUTPUT", theme))
-                .child(render_toggle(
-                    entity.clone(), plugin_idx, "AutoGain", state.auto_makeup,
-                    7, state.selected_param, state.is_editing, theme,
-                ))
-                .child(render_knob(
-                    entity.clone(), plugin_idx, "Makeup", state.makeup_gain_db,
-                    pk(CP, "makeup_gain").min_f64(), pk(CP, "makeup_gain").max_f64(),
-                    "dB", 5, state.selected_param, state.is_editing, Some('m'), theme,
-                ))
-                .child(render_knob(
-                    entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
-                    pk(CP, "mix").min_f64() * 100.0, pk(CP, "mix").max_f64() * 100.0,
-                    "%", 6, state.selected_param, state.is_editing, Some('x'), theme,
-                )),
-        );
+        .child(render_section_title("OUTPUT", theme))
+        .child(render_gr_meter(meter_value, -30.0, theme))
+        .child(render_toggle(
+            entity.clone(), plugin_idx, "AutoGain", state.auto_makeup,
+            7, state.selected_param, state.is_editing, theme,
+        ))
+        .child(render_knob(
+            entity.clone(), plugin_idx, "Makeup", state.makeup_gain_db,
+            pk(CP, "makeup_gain").min_f64(), pk(CP, "makeup_gain").max_f64(),
+            "dB", 5, state.selected_param, state.is_editing, Some('m'), theme,
+        ))
+        .child(render_knob(
+            entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
+            pk(CP, "mix").min_f64() * 100.0, pk(CP, "mix").max_f64() * 100.0,
+            "%", 6, state.selected_param, state.is_editing, Some('x'), theme,
+        ));
 
     // === Main layout: 3 columns ===
     div()
