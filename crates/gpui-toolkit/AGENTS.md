@@ -10,9 +10,9 @@ The `gpui-toolkit` workspace contains several related crates for building GPUI a
 |-------|---------|---------------|
 | `gpui-d3rs` | Low-level D3.js-inspired visualization primitives | [README](gpui-d3rs/README.md) |
 | `gpui-px` | High-level Plotly Express-style charting API | [README](gpui-px/README.md) |
-| `gpui-themes` | Theme editor and management infrastructure | [CLAUDE.md](gpui-themes/CLAUDE.md) |
+| `gpui-themes` | Theme editor and management infrastructure | [AGENTS.md](gpui-themes/AGENTS.md) |
 | `gpui-ui-kit` | Reusable UI components (buttons, forms, layout) | [lib.rs](gpui-ui-kit/src/lib.rs) |
-| `gpui-ui-kit-macros` | Procedural macros for theme derivation | — |
+| `gpui-ui-kit-macros` | Procedural macros for theme derivation | [README](gpui-ui-kit-macros/README.md) |
 
 **Key Principle**: All crates use GPUI's native `div()`-based rendering, not HTML/SVG. Components return `impl IntoElement`.
 
