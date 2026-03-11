@@ -393,7 +393,7 @@ Potential enhancements:
 
 - `src-iir/src/mod.rs`: Implementation
 - `src-audio/src/replaygain.rs`: Full Replay Gain implementation
-- EBU R128 standard: https://tech.ebu.ch/docs/r/r128.pdf
+- EBU R128 standard: <https://tech.ebu.ch/docs/r/r128.pdf>
 - A-weighting standard: IEC 61672-1
 ## License
 

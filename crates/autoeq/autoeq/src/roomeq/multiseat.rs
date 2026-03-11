@@ -32,7 +32,7 @@ pub struct MultiSeatOptimizationResult {
 /// Contains measurements of all subwoofers at all seat positions.
 #[derive(Debug, Clone)]
 pub struct MultiSeatMeasurements {
-    /// Measurements indexed as [sub_index][seat_index]
+    /// Measurements indexed as \[sub_index\]\[seat_index\]
     /// Each curve is the response of one subwoofer at one seat
     pub measurements: Vec<Vec<Curve>>,
     /// Number of subwoofers

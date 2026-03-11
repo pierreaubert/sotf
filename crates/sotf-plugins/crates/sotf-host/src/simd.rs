@@ -152,7 +152,7 @@ pub fn complex_mul_add_simd_chunk(
 
 /// SIMD-optimized complex multiply-accumulate
 ///
-/// Computes: dst[i] += src[i] * hrtf[i] for all i
+/// Computes: `dst[i] += src[i] * hrtf[i]` for all `i`
 ///
 /// Uses platform-specific SIMD instructions for maximum performance:
 /// - AVX2 on x86-64 (4 complex at once)
@@ -210,7 +210,7 @@ pub fn complex_mul_add_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf
 
 /// SIMD-optimized complex multiplication (without accumulation)
 ///
-/// Computes: dst[i] = src[i] * hrtf[i] for all i
+/// Computes: `dst[i] = src[i] * hrtf[i]` for all `i`
 #[inline]
 pub fn complex_mul_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[Complex<f32>]) {
     let len = dst.len();
@@ -301,7 +301,7 @@ pub fn complex_mul_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[
 
 /// SIMD-optimized in-place complex multiplication
 ///
-/// Computes: dst[i] *= hrtf[i] for all i
+/// Computes: `dst[i] *= hrtf[i]` for all `i`
 #[inline]
 #[allow(dead_code)]
 pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>]) {
@@ -395,7 +395,7 @@ pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>])
 
 /// SIMD-optimized multiply-accumulate for overlap-add synthesis (no window)
 ///
-/// Computes: dst[i] += src[i] * scale for all i
+/// Computes: `dst[i] += src[i] * scale` for all `i`
 #[inline]
 pub fn scale_add_simd(dst: &mut [f32], src: &[f32], scale: f32) {
     debug_assert_eq!(dst.len(), src.len());
@@ -471,7 +471,7 @@ pub fn scale_add_simd(dst: &mut [f32], src: &[f32], scale: f32) {
 
 /// SIMD-optimized in-place scaling.
 ///
-/// Computes: data[i] *= scale for all i
+/// Computes: `data[i] *= scale` for all `i`
 #[inline]
 pub fn scale_add_simd_inplace(data: &mut [f32], scale: f32) {
     let len = data.len();
@@ -529,8 +529,8 @@ pub fn scale_add_simd_inplace(data: &mut [f32], scale: f32) {
 
 /// SIMD-optimized linear interpolation (blend) between two buffers
 ///
-/// Computes: dst[i] = prev[i] + alpha * (dst[i] - prev[i]) for all i
-/// Equivalent to: dst[i] = (1 - alpha) * prev[i] + alpha * dst[i]
+/// Computes: `dst[i] = prev[i] + alpha * (dst[i] - prev[i])` for all `i`
+/// Equivalent to: `dst[i] = (1 - alpha) * prev[i] + alpha * dst[i]`
 ///
 /// Used for crossfading between old and new filter outputs in STFT plugins.
 #[inline]
@@ -607,7 +607,7 @@ pub fn blend_simd(dst: &mut [f32], prev: &[f32], alpha: f32) {
 
 /// SIMD-optimized windowed copy (for FFT input preparation)
 ///
-/// Computes: dst[i] = src[i] * window[i] for all i
+/// Computes: `dst[i] = src[i] * window[i]` for all `i`
 #[inline]
 pub fn window_mul_simd(dst: &mut [f32], src: &[f32], window: &[f32]) {
     debug_assert_eq!(dst.len(), src.len());

@@ -3,6 +3,7 @@
 use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
+use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::icons::{Icon, IconName};
@@ -16,6 +17,8 @@ use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
+use sotf_audio_player_midi::mapping::MidiOverlay;
+use sotf_audio_player_midi::MidiMappingEngine;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -615,10 +618,9 @@ impl PlayerView {
                                                     .cursor_pointer()
                                                     .opacity(0.0)
                                                     .group_hover("plugin-module", |s| s.opacity(1.0))
-                                                    .hover(|s| s.bg(theme_c.error))
+                                                    .hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent))
                                                     .text_size(rems(0.625))
                                                     .text_color(theme_c.text_muted)
-                                                    .hover(|s| s.text_color(theme_c.text_on_accent))
                                                     .font_weight(FontWeight::BOLD)
                                                     .on_mouse_up(
                                                         MouseButton::Left,
@@ -1192,7 +1194,8 @@ impl PlayerView {
                 let is_editing = editing_idx.is_some();
                 let _plugin_enabled = plugin.enabled;
 
-                let simple_view = self.state.read(cx).app.plugin_state.simple_view;
+                let plugin_ui_view = self.state.read(cx).app.plugin_state.plugin_ui_view.clone();
+                let controller_picker_open = self.state.read(cx).app.plugin_state.controller_picker_open;
                 let state_for_toggle = self.state.clone();
 
                 // Pre-extract theme colors for toggle buttons (Rgba is Copy)
@@ -1200,6 +1203,10 @@ impl PlayerView {
                 let toggle_text_muted = theme.text_muted;
                 let toggle_surface = theme.surface;
                 let toggle_surface_hover = theme.surface_hover;
+                let toggle_accent = theme.accent;
+                let toggle_text_on_accent = theme.text_on_accent;
+                let toggle_bg_secondary = theme.background_secondary;
+                let toggle_border = theme.border;
 
                 d.child(
                     // Plugin header bar
@@ -1214,34 +1221,124 @@ impl PlayerView {
                             .border_b_1()
                             .border_color(theme.border)
                             .child(
-                                // View mode toggle: Detail / Simple
+                                // View mode toggle: UI / Controller / Simple
                                 div()
                                     .flex()
                                     .items_center()
                                     .gap_1()
+                                    // UI tab
                                     .child({
-                                        let is_detail = !simple_view;
+                                        let is_active = plugin_ui_view.is_ui();
                                         let state_c = state_for_toggle.clone();
                                         div()
-                                            .id("view-detail")
+                                            .id("view-ui")
                                             .cursor_pointer()
                                             .px_2()
                                             .py(px(2.0))
                                             .rounded_md()
                                             .text_xs()
-                                            .font_weight(if is_detail { FontWeight::BOLD } else { FontWeight::NORMAL })
-                                            .text_color(if is_detail { toggle_text_primary } else { toggle_text_muted })
-                                            .when(is_detail, |d| d.bg(toggle_surface))
+                                            .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
+                                            .text_color(if is_active { toggle_text_primary } else { toggle_text_muted })
+                                            .when(is_active, |d| d.bg(toggle_surface))
                                             .hover(move |s| s.bg(toggle_surface_hover))
                                             .on_click(move |_, _window, cx| {
                                                 state_c.update(cx, |s, _| {
-                                                    s.app.plugin_state.simple_view = false;
+                                                    s.app.plugin_state.plugin_ui_view = PluginUiView::UI;
+                                                    s.app.plugin_state.controller_picker_open = false;
                                                 });
                                             })
-                                            .child("Detail")
+                                            .child("UI")
                                     })
+                                    // Controller tab with dropdown
                                     .child({
-                                        let is_simple = simple_view;
+                                        let is_active = plugin_ui_view.is_controller();
+                                        let state_c = state_for_toggle.clone();
+                                        div()
+                                            .relative()
+                                            .child(
+                                                div()
+                                                    .id("view-controller")
+                                                    .cursor_pointer()
+                                                    .px_2()
+                                                    .py(px(2.0))
+                                                    .rounded_md()
+                                                    .text_xs()
+                                                    .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
+                                                    .text_color(if is_active { toggle_text_primary } else { toggle_text_muted })
+                                                    .when(is_active, |d| d.bg(toggle_surface))
+                                                    .hover(move |s| s.bg(toggle_surface_hover))
+                                                    .on_click({
+                                                        let state_c = state_c.clone();
+                                                        move |_, _window, cx| {
+                                                            state_c.update(cx, |s, _| {
+                                                                s.app.plugin_state.controller_picker_open =
+                                                                    !s.app.plugin_state.controller_picker_open;
+                                                            });
+                                                        }
+                                                    })
+                                                    .child(if let PluginUiView::Controller(ref name) = plugin_ui_view {
+                                                        // Show selected controller name
+                                                        available_controllers()
+                                                            .iter()
+                                                            .find(|(id, _)| id == name)
+                                                            .map(|(_, label)| *label)
+                                                            .unwrap_or("Controller")
+                                                    } else {
+                                                        "Controller"
+                                                    }),
+                                            )
+                                            // Dropdown menu
+                                            .when(controller_picker_open, |d| {
+                                                d.child(
+                                                    div()
+                                                        .absolute()
+                                                        .top(px(24.0))
+                                                        .left_0()
+                                                        .min_w(px(160.0))
+                                                        .bg(toggle_bg_secondary)
+                                                        .border_1()
+                                                        .border_color(toggle_border)
+                                                        .rounded_md()
+                                                        .shadow_md()
+                                                        .p_1()
+                                                        .flex()
+                                                        .flex_col()
+                                                        .gap(px(2.0))
+                                                        .children(available_controllers().into_iter().map(|(id, label)| {
+                                                            let state_c2 = state_c.clone();
+                                                            let is_selected = matches!(&plugin_ui_view, PluginUiView::Controller(n) if n == id);
+                                                            let id_owned = id.to_string();
+                                                            div()
+                                                                .id(SharedString::from(format!("ctrl-{id}")))
+                                                                .cursor_pointer()
+                                                                .px_2()
+                                                                .py(px(3.0))
+                                                                .rounded_sm()
+                                                                .text_xs()
+                                                                .when(is_selected, |d| {
+                                                                    d.bg(toggle_accent)
+                                                                        .text_color(toggle_text_on_accent)
+                                                                        .font_weight(FontWeight::BOLD)
+                                                                })
+                                                                .when(!is_selected, |d| {
+                                                                    d.text_color(toggle_text_primary)
+                                                                        .hover(move |s| s.bg(toggle_surface_hover))
+                                                                })
+                                                                .on_click(move |_, _window, cx| {
+                                                                    state_c2.update(cx, |s, _| {
+                                                                        s.app.plugin_state.plugin_ui_view =
+                                                                            PluginUiView::Controller(id_owned.clone());
+                                                                        s.app.plugin_state.controller_picker_open = false;
+                                                                    });
+                                                                })
+                                                                .child(label)
+                                                        })),
+                                                )
+                                            })
+                                    })
+                                    // Simple tab
+                                    .child({
+                                        let is_active = plugin_ui_view.is_simple();
                                         let state_c = state_for_toggle.clone();
                                         div()
                                             .id("view-simple")
@@ -1250,13 +1347,14 @@ impl PlayerView {
                                             .py(px(2.0))
                                             .rounded_md()
                                             .text_xs()
-                                            .font_weight(if is_simple { FontWeight::BOLD } else { FontWeight::NORMAL })
-                                            .text_color(if is_simple { toggle_text_primary } else { toggle_text_muted })
-                                            .when(is_simple, |d| d.bg(toggle_surface))
+                                            .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
+                                            .text_color(if is_active { toggle_text_primary } else { toggle_text_muted })
+                                            .when(is_active, |d| d.bg(toggle_surface))
                                             .hover(move |s| s.bg(toggle_surface_hover))
                                             .on_click(move |_, _window, cx| {
                                                 state_c.update(cx, |s, _| {
-                                                    s.app.plugin_state.simple_view = true;
+                                                    s.app.plugin_state.plugin_ui_view = PluginUiView::Simple;
+                                                    s.app.plugin_state.controller_picker_open = false;
                                                 });
                                             })
                                             .child("Simple")
@@ -1462,35 +1560,71 @@ impl PlayerView {
                                     let spectrum_tilt_open = app_st.app.spectrum_tilt_select_open;
                                     let spectrum_ref_open = app_st.app.spectrum_reference_select_open;
                                     let plugin_chain = app_st.app.plugin_state.chain.clone();
+                                    let midi_overlay = app_st.app.plugin_state.midi_mapping.build_overlay(&[]);
+                                    let plugin_ui_view = app_st.app.plugin_state.plugin_ui_view.clone();
 
-                                    if simple_view {
-                                        super::ui_simple::render_simple_plugin_view(
-                                            self.state.clone(),
-                                            selected_idx,
-                                            &plugin.settings,
-                                            is_editing,
-                                            param_selection,
-                                            &theme,
-                                            None, // midi_overlay
-                                        )
-                                        .into_any_element()
+                                    let midi_ref = if midi_overlay.has_controller() {
+                                        Some(midi_overlay)
                                     } else {
-                                        render_plugin_content(
-                                            self.state.clone(),
-                                            selected_idx,
-                                            &plugin.settings,
-                                            is_editing,
-                                            param_selection,
-                                            &theme,
-                                            upmixer_config_open,
-                                            selected_eq_band,
-                                            loudness_for_plugin,
-                                            plugin_data,
-                                            spectrum_tilt_open,
-                                            spectrum_ref_open,
-                                            &plugin_chain,
-                                            cx,
-                                        )
+                                        None
+                                    };
+
+                                    match &plugin_ui_view {
+                                        PluginUiView::Simple => {
+                                            super::ui_simple::render_simple_plugin_view(
+                                                self.state.clone(),
+                                                selected_idx,
+                                                &plugin.settings,
+                                                is_editing,
+                                                param_selection,
+                                                &theme,
+                                                midi_ref.as_ref(),
+                                            )
+                                            .into_any_element()
+                                        }
+                                        PluginUiView::Controller(controller_id) => {
+                                            // Build overlay from selected controller layout
+                                            let controller_overlay = build_controller_overlay(
+                                                controller_id,
+                                                &app_st.app.plugin_state.midi_mapping,
+                                            );
+                                            render_plugin_content(
+                                                self.state.clone(),
+                                                selected_idx,
+                                                &plugin.settings,
+                                                is_editing,
+                                                param_selection,
+                                                &theme,
+                                                upmixer_config_open,
+                                                selected_eq_band,
+                                                loudness_for_plugin,
+                                                plugin_data,
+                                                spectrum_tilt_open,
+                                                spectrum_ref_open,
+                                                &plugin_chain,
+                                                Some(&controller_overlay),
+                                                cx,
+                                            )
+                                        }
+                                        PluginUiView::UI => {
+                                            render_plugin_content(
+                                                self.state.clone(),
+                                                selected_idx,
+                                                &plugin.settings,
+                                                is_editing,
+                                                param_selection,
+                                                &theme,
+                                                upmixer_config_open,
+                                                selected_eq_band,
+                                                loudness_for_plugin,
+                                                plugin_data,
+                                                spectrum_tilt_open,
+                                                spectrum_ref_open,
+                                                &plugin_chain,
+                                                midi_ref.as_ref(),
+                                                cx,
+                                            )
+                                        }
                                     }
                                 }),
                         )
@@ -1560,5 +1694,38 @@ impl PlayerView {
             state.app.upmixer_config_open = action.open;
         });
         cx.notify();
+    }
+}
+
+/// Build a MidiOverlay for a specific controller layout.
+///
+/// If the mapping engine already has a real mapping, use it. Otherwise, create
+/// a synthetic overlay showing the controller's layout name so the UI renders
+/// the controller header even without live MIDI input.
+fn build_controller_overlay(controller_id: &str, engine: &MidiMappingEngine) -> MidiOverlay {
+    // If the engine already has a mapping for this controller, use it
+    let engine_overlay = engine.build_overlay(&[]);
+    if engine_overlay.has_controller()
+        && engine_overlay.controller_name.as_ref().is_some_and(|name| {
+            available_controllers()
+                .iter()
+                .any(|(id, _)| name.contains(id) || id == &controller_id)
+        })
+    {
+        return engine_overlay;
+    }
+
+    // Build a minimal overlay showing the controller name
+    let display_name = available_controllers()
+        .iter()
+        .find(|(id, _)| *id == controller_id)
+        .map(|(_, label)| label.to_string())
+        .unwrap_or_else(|| controller_id.to_string());
+
+    MidiOverlay {
+        controller_name: Some(display_name),
+        current_page: 0,
+        total_pages: 1,
+        ..MidiOverlay::empty()
     }
 }

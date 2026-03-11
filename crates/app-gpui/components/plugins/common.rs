@@ -299,7 +299,7 @@ pub fn render_edit_hints(theme: &Theme) -> impl IntoElement {
 }
 
 /// Render a toggle button using gpui-ui-kit Toggle component
-/// Uses Entity<AppState> for direct state updates
+/// Uses `Entity<AppState>` for direct state updates
 pub fn render_toggle(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -331,7 +331,7 @@ pub fn render_toggle(
 }
 
 /// Render a toggle button without label (just the switch)
-/// Uses Entity<AppState> for direct state updates
+/// Uses `Entity<AppState>` for direct state updates
 pub fn render_toggle_button(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -387,7 +387,7 @@ pub fn render_colored_value(
 }
 
 /// Format a label with keyboard shortcut indicator
-/// e.g., "Threshold" with key 't' -> "[T]hreshold"
+/// e.g., "Threshold" with key 't' -> "\[T\]hreshold"
 pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String {
     match shortcut_key {
         Some(key) => {
@@ -427,7 +427,7 @@ fn theme_to_vertical_slider_theme(theme: &Theme) -> VerticalSliderTheme {
 }
 
 /// Render a vertical slider with label, value, drag support and enhanced visual feedback
-/// Uses Entity<AppState> for direct state updates
+/// Uses `Entity<AppState>` for direct state updates
 pub fn render_vertical_slider(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -460,7 +460,7 @@ pub fn render_vertical_slider(
 }
 
 /// Render a vertical slider with custom height
-/// Uses Entity<AppState> for direct state updates
+/// Uses `Entity<AppState>` for direct state updates
 #[allow(clippy::too_many_arguments)]
 pub fn render_vertical_slider_sized(
     entity: Entity<AppState>,
@@ -535,7 +535,7 @@ pub fn render_vertical_slider_sized(
 }
 
 /// Render a vertical slider with tick marks, custom height, and enhanced visual feedback
-/// Uses Entity<AppState> for direct state updates
+/// Uses `Entity<AppState>` for direct state updates
 #[allow(clippy::too_many_arguments)]
 pub fn render_vertical_slider_with_ticks(
     entity: Entity<AppState>,
@@ -814,7 +814,7 @@ pub fn render_dynamics_layout(
 }
 
 /// Render a rotary knob control using gpui-ui-kit Potentiometer
-/// Uses Entity<AppState> for direct state updates
+/// Uses `Entity<AppState>` for direct state updates
 pub fn render_knob(
     entity: Entity<AppState>,
     plugin_idx: usize,

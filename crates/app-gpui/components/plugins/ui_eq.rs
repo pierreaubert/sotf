@@ -5,11 +5,12 @@
 //! - Band controls with color coding
 //! - Interactive editing
 
-use super::common::render_knob_sized;
+use super::common::{render_knob_sized, render_midi_badge, render_midi_page_indicator};
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
+use sotf_audio_player_midi::mapping::MidiOverlay;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
@@ -187,6 +188,8 @@ pub struct EqRenderState<'a> {
     pub is_editing: bool,
     pub selected_param: usize,
     pub selected_band_idx: usize,
+    /// MIDI overlay for displaying controller assignments on EQ bands
+    pub midi_overlay: Option<&'a MidiOverlay>,
 }
 
 /// Calculate the combined response in dB at a given frequency
@@ -775,6 +778,47 @@ fn render_eq_visualization(
     EqChartWrapper::new(container.into_any_element(), bounds_ref).into_any_element()
 }
 
+/// Render a knob with an optional MIDI badge underneath
+#[allow(clippy::too_many_arguments)]
+fn render_eq_knob_with_midi(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    param_idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    midi_overlay: Option<&MidiOverlay>,
+    theme: &Theme,
+) -> impl IntoElement {
+    let midi_assignment = midi_overlay.and_then(|o| o.assignments.get(&param_idx));
+
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_1()
+        .child(render_knob_sized(
+            entity,
+            plugin_idx,
+            label,
+            value,
+            min,
+            max,
+            unit,
+            param_idx,
+            selected_param,
+            is_editing,
+            None,
+            PotentiometerSize::Xs,
+            theme,
+        ))
+        .children(midi_assignment.map(|assignment| render_midi_badge(assignment, theme)))
+}
+
 /// Render the EQ plugin with graphical visualization
 pub fn render_eq_plugin(
     entity: Entity<AppState>,
@@ -1184,10 +1228,37 @@ pub fn render_eq_plugin(
                         .child("+")
                 })
         })
+        // MIDI page indicator (shown when controller connected)
+        .when(
+            state.midi_overlay.is_some_and(|o| o.has_controller()),
+            |d| {
+                let overlay = state.midi_overlay.unwrap();
+                d.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap_2()
+                        .children(overlay.controller_name.as_ref().map(|name| {
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_secondary)
+                                .child(name.clone())
+                        }))
+                        .child(render_midi_page_indicator(
+                            overlay.current_page,
+                            overlay.total_pages,
+                            theme,
+                        )),
+                )
+            },
+        )
         // Selected band controls
         .when(selected_filter.is_some(), |d| {
             let filter = selected_filter.unwrap();
             let base_param_idx = selected_band_idx * 4;
+            let midi_overlay = state.midi_overlay;
 
             d.child(
                 div()
@@ -1214,13 +1285,13 @@ pub fn render_eq_plugin(
                                 theme,
                             )),
                     )
-                    // Knobs row
+                    // Knobs row with MIDI badges
                     .child(
                         div()
                             .flex()
                             .gap_6()
                             .justify_center()
-                            .child(render_knob_sized(
+                            .child(render_eq_knob_with_midi(
                                 entity.clone(),
                                 plugin_idx,
                                 "Freq",
@@ -1231,11 +1302,10 @@ pub fn render_eq_plugin(
                                 base_param_idx,
                                 state.selected_param,
                                 state.is_editing,
-                                None,
-                                PotentiometerSize::Xs,
+                                midi_overlay,
                                 theme,
                             ))
-                            .child(render_knob_sized(
+                            .child(render_eq_knob_with_midi(
                                 entity.clone(),
                                 plugin_idx,
                                 "Q",
@@ -1246,11 +1316,10 @@ pub fn render_eq_plugin(
                                 base_param_idx + 1,
                                 state.selected_param,
                                 state.is_editing,
-                                None,
-                                PotentiometerSize::Xs,
+                                midi_overlay,
                                 theme,
                             ))
-                            .child(render_knob_sized(
+                            .child(render_eq_knob_with_midi(
                                 entity.clone(),
                                 plugin_idx,
                                 "Gain",
@@ -1261,8 +1330,7 @@ pub fn render_eq_plugin(
                                 base_param_idx + 2,
                                 state.selected_param,
                                 state.is_editing,
-                                None,
-                                PotentiometerSize::Xs,
+                                midi_overlay,
                                 theme,
                             )),
                     ),

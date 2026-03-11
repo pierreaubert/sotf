@@ -308,7 +308,7 @@ impl HelmholtzAssembler {
 
     /// Assemble a real-valued matrix with boundary contributions
     ///
-    /// result = k_coeff * K + m_coeff * M + Σ boundary_coeffs[tag] * M_boundary[tag]
+    /// result = k_coeff * K + m_coeff * M + Σ `boundary_coeffs[tag]` * `M_boundary[tag]`
     pub fn assemble_real_with_boundaries(
         &self,
         k_coeff: f64,
@@ -347,8 +347,8 @@ impl HelmholtzAssembler {
     /// Apply Dirichlet boundary conditions to the assembler's K, M, and boundary matrices
     ///
     /// For each Dirichlet node i:
-    /// - Zero out row i in K and M
-    /// - Set K[i,i] = 1, M[i,i] = 0
+    /// - Zero out row `i` in K and M
+    /// - Set `K[i,i]` = 1, `M[i,i]` = 0
     /// - Zero out boundary_values for row i
     ///
     /// This ensures WaveHoltz (which builds matrices from K and M separately)

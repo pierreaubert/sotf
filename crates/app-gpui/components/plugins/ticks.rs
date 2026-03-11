@@ -200,7 +200,7 @@ impl TickConfig {
 /// Render tick marks as a horizontal row aligned with a meter bar
 ///
 /// Uses the same flex layout as meter bars to ensure proper alignment:
-/// [label_spacer] [gap] [tick_area] [gap] [value_spacer]
+/// \[label_spacer\] \[gap\] \[tick_area\] \[gap\] \[value_spacer\]
 ///
 /// # Arguments
 /// * `config` - Tick configuration

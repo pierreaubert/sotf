@@ -2178,7 +2178,7 @@ enum Commands {
         #[arg(long = "lufs", alias = "monitor-lufs", default_value_t = false)]
         lufs: bool,
 
-        /// Loudness compensation: 2 or 3 floats: REF LOW [HIGH] (dB; REF -100..20, boosts 0..20)
+        /// Loudness compensation: 2 or 3 floats: REF LOW \[HIGH\] (dB; REF -100..20, boosts 0..20)
         #[arg(long = "loudness-compensation", value_name = "REF,LOW[,HIGH]", value_parser = clap::value_parser!(f64), value_delimiter = ',')]
         loudness_compensation: Option<Vec<f64>>,
 

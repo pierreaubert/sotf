@@ -1,7 +1,7 @@
 //! Hershey Simplex vector font for rendering rotatable text
 //!
 //! Based on the Hershey font developed by Dr. A. V. Hershey in 1967.
-//! Font data from https://paulbourke.net/dataformats/hershey/
+//! Font data from <https://paulbourke.net/dataformats/hershey/>
 //! Public domain - no usage restrictions.
 
 use gpui::prelude::*;

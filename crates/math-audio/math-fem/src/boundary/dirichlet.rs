@@ -65,11 +65,11 @@ impl DirichletBC {
 
 /// Apply Dirichlet conditions to the Helmholtz system using row elimination
 ///
-/// For each Dirichlet node i with value g_i:
-/// - Set A[i, :] = 0
-/// - Set A[i, i] = 1
-/// - Set b[i] = g_i
-/// - Modify b[j] -= A[j, i] * g_i for all j (to preserve symmetry in RHS)
+/// For each Dirichlet node `i` with value g_i:
+/// - Set `A[i, :] = 0`
+/// - Set `A[i, i] = 1`
+/// - Set `b[i] = g_i`
+/// - Modify `b[j] -= A[j, i] * g_i` for all `j` (to preserve symmetry in RHS)
 pub fn apply_dirichlet(problem: &mut HelmholtzProblem, mesh: &Mesh, dirichlet_bcs: &[DirichletBC]) {
     use std::collections::HashMap;
 

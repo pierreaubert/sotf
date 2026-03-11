@@ -29,8 +29,8 @@ pub struct CsrMatrix {
     pub values: Vec<Complex64>,
     /// Column indices for each value
     pub col_indices: Vec<usize>,
-    /// Row pointers: row_ptrs[i] is the start index in values/col_indices for row i
-    /// row_ptrs[num_rows] = nnz (total number of non-zeros)
+    /// Row pointers: `row_ptrs[i]` is the start index in values/col_indices for row `i`
+    /// `row_ptrs[num_rows]` = nnz (total number of non-zeros)
     pub row_ptrs: Vec<usize>,
 }
 

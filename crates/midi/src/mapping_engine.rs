@@ -268,6 +268,10 @@ impl MidiMappingEngine {
         let mut overlay = MidiOverlay::empty();
 
         if let (Some(mapping), Some(layout)) = (&self.mapping, &self.layout) {
+            overlay.controller_name = Some(mapping.controller_name.clone());
+            overlay.current_page = mapping.current_page;
+            overlay.total_pages = mapping.total_pages;
+
             for binding in mapping.active_bindings() {
                 if let Some(control) = layout.find_by_id(&binding.control_id) {
                     let is_override = mapping.manual_overrides.contains_key(&binding.param_index);

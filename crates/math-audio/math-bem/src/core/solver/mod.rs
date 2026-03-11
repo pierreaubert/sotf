@@ -4,11 +4,11 @@
 //! functionality from `math-solvers`.
 //!
 //! - [`direct`] - Direct LU factorization
-//! - [`cgs`] - Conjugate Gradient Squared
-//! - [`bicgstab`] - BiCGSTAB
-//! - [`gmres`] - GMRES (recommended for large BEM problems)
+//! - `cgs` - Conjugate Gradient Squared
+//! - `bicgstab` - BiCGSTAB
+//! - `gmres` - GMRES (recommended for large BEM problems)
 //! - [`fmm_interface`] - Interface to use FMM operators with iterative solvers
-//! - [`preconditioner`] - Preconditioners (ILU, AMG, etc.)
+//! - `preconditioner` - Preconditioners (ILU, AMG, etc.)
 //! - [`batched_blas`] - Batched BLAS operations (native only)
 
 #[cfg(feature = "native")]

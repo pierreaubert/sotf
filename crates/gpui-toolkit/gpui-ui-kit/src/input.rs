@@ -824,7 +824,7 @@ impl Input {
     }
 
     /// Set edit end handler (called when user confirms or cancels edit)
-    /// The Option<String> is Some(value) if confirmed, None if cancelled
+    /// The `Option<String>` is `Some(value)` if confirmed, `None` if cancelled
     pub fn on_edit_end(
         mut self,
         handler: impl Fn(Option<String>, &mut Window, &mut App) + 'static,

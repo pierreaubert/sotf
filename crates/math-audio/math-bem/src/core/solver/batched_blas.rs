@@ -23,7 +23,7 @@ pub struct SlfmmMatvecWorkspace {
     pub multipoles: Array2<Complex64>,
     /// Workspace for local expansions: [num_clusters, num_sphere_points]
     pub locals: Array2<Complex64>,
-    /// Workspace for DOF scatter/gather: [num_dofs]
+    /// Workspace for DOF scatter/gather: \[num_dofs\]
     pub dof_buffer: Array1<Complex64>,
     /// Number of clusters
     pub num_clusters: usize,
@@ -56,7 +56,7 @@ impl SlfmmMatvecWorkspace {
 
 /// Batched matrix-vector multiply for T-matrix application
 ///
-/// Computes: multipoles[c] = T[c] * x[cluster_dofs[c]] for all clusters
+/// Computes: `multipoles[c] = T[c] * x[cluster_dofs[c]]` for all clusters
 ///
 /// This is more efficient than individual GEMV calls because:
 /// 1. Single allocation for gathering x values
@@ -98,7 +98,7 @@ pub fn batched_t_matrix_apply(
 
 /// Batched matrix-vector multiply for S-matrix application
 ///
-/// Computes: y[cluster_dofs[c]] += S[c] * locals[c] for all clusters
+/// Computes: `y[cluster_dofs[c]] += S[c] * locals[c]` for all clusters
 ///
 /// Similar optimization strategy to T-matrix application
 pub fn batched_s_matrix_apply(
@@ -143,7 +143,7 @@ pub fn batched_s_matrix_apply(
 
 /// Batched D-matrix translation
 ///
-/// Computes: locals[field_cluster] += D[entry] * multipoles[source_cluster]
+/// Computes: `locals[field_cluster] += D[entry] * multipoles[source_cluster]`
 /// for all D-matrix entries
 pub fn batched_d_matrix_apply(
     d_matrices: &[super::super::assembly::slfmm::DMatrixEntry],

@@ -8,7 +8,7 @@
 //!   sotf-bliss-scan              # Scan tracks without bliss analysis
 //!   sotf-bliss-scan --all        # Rescan all tracks (recompute existing)
 //!   sotf-bliss-scan --jobs 4     # Use 4 worker threads
-//!   sotf-bliss-scan <file>       # Analyze a single file
+//!   sotf-bliss-scan \<file\>       # Analyze a single file
 
 use clap::Parser;
 use sotf_audio_player::bliss::{BlissScanManager, BlissScanMessage, analyze_file};

@@ -216,7 +216,7 @@ impl Button {
         }
     }
 
-    /// Build the button into a Stateful<Div> that can have additional handlers added
+    /// Build the button into a `Stateful<Div>` that can have additional handlers added
     /// Use this when you need to add a cx.listener() handler
     pub fn build(self) -> Stateful<Div> {
         let theme = self.theme.unwrap_or_default();

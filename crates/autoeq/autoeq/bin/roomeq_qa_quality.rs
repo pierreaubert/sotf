@@ -620,7 +620,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Find the project root by looking for Cargo.toml with [workspace]
+/// Find the project root by looking for Cargo.toml with \[workspace\]
 fn find_project_root() -> Result<PathBuf> {
     let mut dir = std::env::current_dir()?;
     loop {

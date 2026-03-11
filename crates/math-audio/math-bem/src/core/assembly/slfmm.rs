@@ -7,10 +7,10 @@
 //! [A] = [N] + [S][D][T]
 //! ```
 //! where:
-//! - [N] is the near-field matrix (direct interactions between nearby elements)
-//! - [T] is the T-matrix (element-to-cluster multipole expansion)
-//! - [D] is the D-matrix (cluster-to-cluster translation)
-//! - [S] is the S-matrix (cluster-to-element local expansion)
+//! - \[N\] is the near-field matrix (direct interactions between nearby elements)
+//! - \[T\] is the T-matrix (element-to-cluster multipole expansion)
+//! - \[D\] is the D-matrix (cluster-to-cluster translation)
+//! - \[S\] is the S-matrix (cluster-to-element local expansion)
 //!
 //! **Note**: This module requires either the `native` or `wasm` feature for parallel processing.
 //! Parallelism is provided via rayon (native) or wasm-bindgen-rayon (WASM).
@@ -76,7 +76,7 @@ pub struct DMatrixEntry {
     /// Field cluster index
     pub field_cluster: usize,
     /// Diagonal translation coefficients (length = num_sphere_points)
-    /// The full D-matrix would be: D[p,q] = diagonal[p] if p == q, else 0
+    /// The full D-matrix would be: `D[p,q] = diagonal[p]` if p == q, else 0
     pub diagonal: Array1<Complex64>,
 }
 
@@ -134,7 +134,7 @@ impl SlfmmSystem {
         matrix
     }
 
-    /// Apply the SLFMM operator: y = ([N] + [S][D][T]) * x
+    /// Apply the SLFMM operator: y = (\[N\] + \[S\]\[D\]\[T\]) * x
     ///
     /// This is used in iterative solvers (CGS, BiCGSTAB).
     ///

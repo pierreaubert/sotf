@@ -1173,6 +1173,7 @@ impl PlayerView {
                     is_editing: false,
                     selected_param: 0,
                     selected_band_idx: 0,
+                    midi_overlay: None,
                 },
                 theme,
                 cx,

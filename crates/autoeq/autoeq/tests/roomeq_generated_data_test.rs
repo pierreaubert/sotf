@@ -9,9 +9,11 @@
 use autoeq::roomeq::{RoomConfig, optimize_room};
 use std::path::PathBuf;
 
-/// Get workspace root (two levels up from CARGO_MANIFEST_DIR = crates/autoeq)
+/// Get workspace root (three levels up from CARGO_MANIFEST_DIR = crates/autoeq/autoeq)
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
         .parent()
         .unwrap()
         .parent()

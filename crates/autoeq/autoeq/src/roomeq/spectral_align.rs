@@ -35,9 +35,9 @@ const MIN_CORRECTION_DB: f64 = 0.3;
 /// Result of spectral alignment for a single channel.
 #[derive(Debug, Clone)]
 pub struct SpectralAlignmentResult {
-    /// Low-shelf correction gain in dB (applied at [`LOWSHELF_FREQ`] Hz)
+    /// Low-shelf correction gain in dB (applied at `LOWSHELF_FREQ` Hz)
     pub lowshelf_gain_db: f64,
-    /// High-shelf correction gain in dB (applied at [`HIGHSHELF_FREQ`] Hz)
+    /// High-shelf correction gain in dB (applied at `HIGHSHELF_FREQ` Hz)
     pub highshelf_gain_db: f64,
     /// Broadband flat gain correction in dB
     pub flat_gain_db: f64,
@@ -50,8 +50,8 @@ pub struct SpectralAlignmentResult {
 /// 1. Computes a pointwise-average reference curve.
 /// 2. For each channel, fits `lowshelf + highshelf + flat_gain` to the
 ///    difference `channel - reference` via weighted least squares.
-/// 3. Clamps shelf gains to ±[`MAX_SHELF_GAIN_DB`] and skips corrections
-///    smaller than [`MIN_CORRECTION_DB`].
+/// 3. Clamps shelf gains to ±`MAX_SHELF_GAIN_DB` and skips corrections
+///    smaller than `MIN_CORRECTION_DB`.
 /// 4. Renormalizes flat gains so the mean across channels is zero.
 ///
 /// Returns an empty map when there is only one channel (nothing to align).

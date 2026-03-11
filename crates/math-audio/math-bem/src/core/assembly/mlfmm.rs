@@ -109,7 +109,7 @@ impl MlfmmSystem {
         }
     }
 
-    /// Apply the MLFMM operator: y = ([N] + [S][D][T]) * x
+    /// Apply the MLFMM operator: y = (\[N\] + \[S\]\[D\]\[T\]) * x
     ///
     /// Multi-level version with upward/downward passes.
     ///

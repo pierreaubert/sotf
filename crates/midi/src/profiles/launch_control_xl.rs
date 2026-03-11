@@ -38,7 +38,7 @@ pub struct LCXLTemplate {
     pub channel: u8,
     /// CC numbers for knobs [row][column]
     pub knob_ccs: [[u8; 8]; 3],
-    /// CC numbers for faders [fader_index]
+    /// CC numbers for faders \[fader_index\]
     pub fader_ccs: [u8; 8],
     /// Whether this is a factory template
     pub is_factory: bool,

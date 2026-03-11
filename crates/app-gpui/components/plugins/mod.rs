@@ -92,7 +92,7 @@ use gpui::*;
 use sotf_audio_player::{PluginChain, PluginSettings};
 
 /// Render plugin-specific content based on plugin type
-/// Uses Entity<AppState> for direct state updates
+/// Uses `Entity<AppState>` for direct state updates
 pub fn render_plugin_content(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -107,6 +107,7 @@ pub fn render_plugin_content(
     spectrum_tilt_select_open: bool,
     spectrum_reference_select_open: bool,
     plugin_chain: &PluginChain,
+    midi_overlay: Option<&MidiOverlay>,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     match settings {
@@ -129,6 +130,7 @@ pub fn render_plugin_content(
                     is_editing,
                     selected_param,
                     selected_band_idx,
+                    midi_overlay,
                 },
                 theme,
                 cx,

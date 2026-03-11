@@ -18,7 +18,7 @@ pub struct Locale {
     pub currency_prefix: Option<&'static str>,
     /// Currency symbol suffix
     pub currency_suffix: Option<&'static str>,
-    /// Grouping pattern (e.g., [3] for 1,234,567)
+    /// Grouping pattern (e.g., `[3]` for 1,234,567)
     pub grouping: &'static [usize],
     /// Numerals (for non-ASCII number systems)
     pub numerals: Option<&'static [&'static str]>,

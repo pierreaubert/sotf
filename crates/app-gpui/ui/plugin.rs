@@ -175,8 +175,14 @@ impl PlayerView {
     }
 
     fn toggle_simple_view(&mut self, _: &ToggleSimpleView, _: &mut Window, cx: &mut Context<Self>) {
+        use crate::app::state::plugin::PluginUiView;
         self.state.update(cx, |state, _cx| {
-            state.app.plugin_state.simple_view = !state.app.plugin_state.simple_view;
+            state.app.plugin_state.plugin_ui_view =
+                if state.app.plugin_state.plugin_ui_view.is_simple() {
+                    PluginUiView::UI
+                } else {
+                    PluginUiView::Simple
+                };
         });
         cx.notify();
     }

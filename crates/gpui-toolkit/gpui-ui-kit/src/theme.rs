@@ -4,7 +4,7 @@
 //!
 //! # Color Token Integration
 //!
-//! The theme system integrates with [`ColorToken`](crate::color_tokens::ColorToken)
+//! The theme system integrates with [`ColorToken`]
 //! for automatic generation of hover, active, muted, and subtle color variants:
 //!
 //! ```ignore

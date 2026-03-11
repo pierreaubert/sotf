@@ -499,9 +499,9 @@ pub fn build_tbem_system_parallel(
 /// Apply row sum correction to enforce the theoretical row sum property
 ///
 /// For a closed surface with exterior Burton-Miller formulation:
-/// - Row sum should be approximately 0 (c + K[1] + β*E[1] ≈ 0.5 - 0.5 + 0 = 0)
+/// - Row sum should be approximately 0 (c + K\[1\] + β*E\[1\] ≈ 0.5 - 0.5 + 0 = 0)
 ///
-/// Due to numerical integration errors in E[1], the computed row sum may be nonzero.
+/// Due to numerical integration errors in E\[1\], the computed row sum may be nonzero.
 /// This correction subtracts the row sum from the diagonal to enforce the property.
 ///
 /// # Arguments
@@ -534,7 +534,7 @@ pub fn apply_row_sum_correction(system: &mut TbemSystem) -> f64 {
 /// Build TBEM system with row sum correction
 ///
 /// This is recommended for closed surface scattering problems where
-/// the E[1] = 0 property should hold but numerical errors cause drift.
+/// the E\[1\] = 0 property should hold but numerical errors cause drift.
 pub fn build_tbem_system_corrected(
     elements: &[Element],
     nodes: &Array2<f64>,

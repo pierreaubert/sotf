@@ -105,6 +105,12 @@ pub struct MidiOverlay {
     pub assignments: HashMap<usize, ParamAssignment>,
     /// If in learn mode, which param_index is waiting for MIDI input
     pub learn_target: Option<usize>,
+    /// Name of the connected controller (if any)
+    pub controller_name: Option<String>,
+    /// Currently active MIDI page (0-based)
+    pub current_page: usize,
+    /// Total number of MIDI pages
+    pub total_pages: usize,
 }
 
 /// Info about a MIDI assignment for one parameter
@@ -125,7 +131,15 @@ impl MidiOverlay {
         Self {
             assignments: HashMap::new(),
             learn_target: None,
+            controller_name: None,
+            current_page: 0,
+            total_pages: 1,
         }
+    }
+
+    /// Whether a MIDI controller is connected and has mappings
+    pub fn has_controller(&self) -> bool {
+        self.controller_name.is_some()
     }
 }
 

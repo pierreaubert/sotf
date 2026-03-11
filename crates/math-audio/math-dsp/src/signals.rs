@@ -305,7 +305,7 @@ pub fn gen_m_noise(amp: f32, sample_rate: u32, duration: f32) -> Vec<f32> {
 /// Takes a vector of per-channel signals and interleaves them frame-by-frame.
 ///
 /// # Arguments
-/// * `per_channel` - Vector of per-channel signals (each Vec<f32> is one channel)
+/// * `per_channel` - Vector of per-channel signals (each `Vec<f32>` is one channel)
 ///
 /// # Returns
 /// Interleaved signal where samples are ordered: [ch0_frame0, ch1_frame0, ..., ch0_frame1, ch1_frame1, ...]

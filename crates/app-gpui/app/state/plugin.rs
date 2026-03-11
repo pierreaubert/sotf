@@ -32,8 +32,10 @@ pub struct PluginState {
     pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
     /// Dropdown states for AB Compare plugin
     pub ab_compare_dropdowns: ABCompareDropdowns,
-    /// When true, show a simple text-based parameter list instead of the graphical plugin view
-    pub simple_view: bool,
+    /// Which plugin UI view mode to show
+    pub plugin_ui_view: PluginUiView,
+    /// Whether the controller picker dropdown is open
+    pub controller_picker_open: bool,
     /// MIDI controller → plugin parameter mapping engine
     pub midi_mapping: MidiMappingEngine,
 }
@@ -65,6 +67,40 @@ pub enum PluginViewMode {
     Graph,
 }
 
+/// Which view to show for a plugin's UI
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum PluginUiView {
+    /// Graphical plugin-specific UI (EQ graph, compressor curves, etc.)
+    #[default]
+    UI,
+    /// Hardware controller view with MIDI mappings for a specific controller layout
+    Controller(String),
+    /// Simple text-based parameter table
+    Simple,
+}
+
+impl PluginUiView {
+    pub fn is_simple(&self) -> bool {
+        matches!(self, Self::Simple)
+    }
+
+    pub fn is_controller(&self) -> bool {
+        matches!(self, Self::Controller(_))
+    }
+
+    pub fn is_ui(&self) -> bool {
+        matches!(self, Self::UI)
+    }
+}
+
+/// Returns the list of available controller layout names
+pub fn available_controllers() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("xone_k2", "Xone:K2"),
+        ("lcxl", "Launch Control XL"),
+    ]
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct WorkflowNodeMapping {
     pub node_to_plugin: HashMap<NodeId, usize>,
@@ -89,7 +125,8 @@ impl Default for PluginState {
             workflow_node_mapping: None,
             editing_plugin_node: None,
             ab_compare_dropdowns: ABCompareDropdowns::default(),
-            simple_view: false,
+            plugin_ui_view: PluginUiView::UI,
+            controller_picker_open: false,
             midi_mapping: MidiMappingEngine::new(),
         }
     }
