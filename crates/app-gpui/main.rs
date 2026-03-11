@@ -80,6 +80,30 @@ fn main() {
 
     log::info!("SOTF GPUI Player starting...");
 
+    // Install signal handlers for clean shutdown on Ctrl-C (SIGINT) and SIGTERM
+    #[cfg(unix)]
+    {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = Arc::clone(&shutdown_flag);
+
+        signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown_flag))
+            .expect("Failed to register SIGINT handler");
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, flag_clone)
+            .expect("Failed to register SIGTERM handler");
+
+        std::thread::spawn(move || {
+            while !shutdown_flag.load(Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            log::info!("Signal received (SIGINT/SIGTERM), shutting down...");
+            // Give a brief moment for any in-flight operations
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            std::process::exit(0);
+        });
+    }
+
     #[cfg(target_os = "macos")]
     let platform = std::rc::Rc::new(gpui_macos::MacPlatform::new(false));
     #[cfg(target_os = "linux")]

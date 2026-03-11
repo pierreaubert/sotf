@@ -30,7 +30,12 @@ impl PlayerView {
         let queue_list_ratio = layout.queue_list_ratio;
         let meters_ratio = layout.meters_panel_ratio;
         let meter_display_mode = state.app.meter_display_mode;
+        let window_height = state.app.ui_state.window_height;
         let hide_meters_for_rack = state.app.hide_queue_meters_for_rack;
+
+        // When the meters panel is tall enough, show both LUFS and Meters stacked
+        // (no toggle switch needed). The queue panel height depends on the layout ratio.
+        let meters_panel_tall = window_height > 700.0;
 
         let queue_collapsed = queue_list_ratio < 0.05;
         // Hide meters when: explicitly collapsed, OR rack is visible in 3-panel layout
@@ -329,20 +334,23 @@ impl PlayerView {
                         }
                     })
             })
-            // Right panel: LUFS or Level meters (toggle to switch)
+            // Right panel: LUFS and/or Level meters
             .when(!meters_collapsed, |d| {
                 let state_entity = self.state.clone();
 
-                // Calculate panel width based on mode and channel count
-                let panel_width = if meter_display_mode == MeterDisplayMode::Lufs {
-                    400.0 // Fixed 400px for LUFS
+                // Calculate panel width: use the wider of LUFS (400px) and meters width
+                let num_channels = self.state.read(cx).app.level_meter_groups.iter()
+                    .map(|g| g.channels.len())
+                    .sum::<usize>()
+                    .max(2);
+                let meters_width = crate::components::plugins::level_meters::calculate_meters_panel_width(num_channels);
+                let panel_width = if meters_panel_tall {
+                    // Show both: use the wider panel's width
+                    meters_width.max(400.0)
+                } else if meter_display_mode == MeterDisplayMode::Lufs {
+                    400.0
                 } else {
-                    // For level meters: 200px for stereo, up to 400px for 16 channels
-                    let num_channels = self.state.read(cx).app.level_meter_groups.iter()
-                        .map(|g| g.channels.len())
-                        .sum::<usize>()
-                        .max(2);
-                    crate::components::plugins::level_meters::calculate_meters_panel_width(num_channels)
+                    meters_width
                 };
 
                 d.child(
@@ -351,100 +359,122 @@ impl PlayerView {
                         .flex()
                         .flex_col()
                         .h_full()
-                        // Toggle header
-                        .child(
-                            div()
-                                .flex()
-                                .justify_center()
-                                .p_2()
-                                .border_b_1()
-                                .border_color(theme.border)
-                                .child(
-                                    div()
-                                        .flex()
-                                        .rounded_md()
-                                        .bg(theme.background)
-                                        .border_1()
-                                        .border_color(theme.border)
-                                        .overflow_hidden()
-                                        // LUFS button
-                                        .child(
-                                            div()
-                                                .id("meter-toggle-lufs")
-                                                .px_3()
-                                                .py_1()
-                                                .text_xs()
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .cursor_pointer()
-                                                .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
-                                                    d.bg(theme.accent).text_color(theme.text_on_accent)
-                                                })
-                                                .when(meter_display_mode != MeterDisplayMode::Lufs, |d| {
-                                                    d.text_color(theme.text_secondary)
-                                                        .hover(|s| s.bg(theme.surface_hover))
-                                                })
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener({
-                                                        let state = state_entity.clone();
-                                                        move |_view, _: &MouseUpEvent, _window, cx| {
-                                                            state.update(cx, |state, _| {
-                                                                state.app.meter_display_mode =
-                                                                    MeterDisplayMode::Lufs;
-                                                            });
-                                                            cx.notify();
-                                                        }
-                                                    }),
-                                                )
-                                                .child("LUFS"),
-                                        )
-                                        // Levels button
-                                        .child(
-                                            div()
-                                                .id("meter-toggle-levels")
-                                                .px_3()
-                                                .py_1()
-                                                .text_xs()
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .cursor_pointer()
-                                                .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
-                                                    d.bg(theme.accent).text_color(theme.text_on_accent)
-                                                })
-                                                .when(meter_display_mode != MeterDisplayMode::Levels, |d| {
-                                                    d.text_color(theme.text_secondary)
-                                                        .hover(|s| s.bg(theme.surface_hover))
-                                                })
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener({
-                                                        let state = state_entity.clone();
-                                                        move |_view, _: &MouseUpEvent, _window, cx| {
-                                                            state.update(cx, |state, _| {
-                                                                state.app.meter_display_mode =
-                                                                    MeterDisplayMode::Levels;
-                                                                // Ensure meter groups are initialized
-                                                                state.app.update_level_meter_groups();
-                                                            });
-                                                            cx.notify();
-                                                        }
-                                                    }),
-                                                )
-                                                .child("Meters"),
-                                        ),
-                                ),
-                        )
-                        // Show selected meter panel
-                        .child(
-                            div()
-                                .flex_1()
-                                .overflow_hidden()
-                                .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
-                                    d.child(self.render_lufs_panel(cx))
-                                })
-                                .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
-                                    d.child(self.render_meters_panel(cx))
-                                }),
-                        ),
+                        // Toggle header: only show when not tall enough to display both
+                        .when(!meters_panel_tall, |d| {
+                            d.child(
+                                div()
+                                    .flex()
+                                    .justify_center()
+                                    .p_2()
+                                    .border_b_1()
+                                    .border_color(theme.border)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .rounded_md()
+                                            .bg(theme.background)
+                                            .border_1()
+                                            .border_color(theme.border)
+                                            .overflow_hidden()
+                                            // LUFS button
+                                            .child(
+                                                div()
+                                                    .id("meter-toggle-lufs")
+                                                    .px_3()
+                                                    .py_1()
+                                                    .text_xs()
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .cursor_pointer()
+                                                    .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
+                                                        d.bg(theme.accent).text_color(theme.text_on_accent)
+                                                    })
+                                                    .when(meter_display_mode != MeterDisplayMode::Lufs, |d| {
+                                                        d.text_color(theme.text_secondary)
+                                                            .hover(|s| s.bg(theme.surface_hover))
+                                                    })
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener({
+                                                            let state = state_entity.clone();
+                                                            move |_view, _: &MouseUpEvent, _window, cx| {
+                                                                state.update(cx, |state, _| {
+                                                                    state.app.meter_display_mode =
+                                                                        MeterDisplayMode::Lufs;
+                                                                });
+                                                                cx.notify();
+                                                            }
+                                                        }),
+                                                    )
+                                                    .child("LUFS"),
+                                            )
+                                            // Levels button
+                                            .child(
+                                                div()
+                                                    .id("meter-toggle-levels")
+                                                    .px_3()
+                                                    .py_1()
+                                                    .text_xs()
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .cursor_pointer()
+                                                    .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
+                                                        d.bg(theme.accent).text_color(theme.text_on_accent)
+                                                    })
+                                                    .when(meter_display_mode != MeterDisplayMode::Levels, |d| {
+                                                        d.text_color(theme.text_secondary)
+                                                            .hover(|s| s.bg(theme.surface_hover))
+                                                    })
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener({
+                                                            let state = state_entity.clone();
+                                                            move |_view, _: &MouseUpEvent, _window, cx| {
+                                                                state.update(cx, |state, _| {
+                                                                    state.app.meter_display_mode =
+                                                                        MeterDisplayMode::Levels;
+                                                                    // Ensure meter groups are initialized
+                                                                    state.app.update_level_meter_groups();
+                                                                });
+                                                                cx.notify();
+                                                            }
+                                                        }),
+                                                    )
+                                                    .child("Meters"),
+                                            ),
+                                    ),
+                            )
+                        })
+                        // Content: show both stacked when tall, or toggled when short
+                        .when(meters_panel_tall, |d| {
+                            d.child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .overflow_hidden()
+                                    // LUFS panel on top
+                                    .child(self.render_lufs_panel(cx))
+                                    // Level meters below, centered
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .overflow_hidden()
+                                            .child(self.render_meters_panel(cx)),
+                                    ),
+                            )
+                        })
+                        .when(!meters_panel_tall, |d| {
+                            d.child(
+                                div()
+                                    .flex_1()
+                                    .overflow_hidden()
+                                    .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
+                                        d.child(self.render_lufs_panel(cx))
+                                    })
+                                    .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
+                                        d.child(self.render_meters_panel(cx))
+                                    }),
+                            )
+                        }),
                 )
             }),
             )

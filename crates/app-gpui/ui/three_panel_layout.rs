@@ -157,6 +157,17 @@ impl PlayerView {
                             state_handle.update(cx, |state, cx| {
                                 state.layout.update(cx, |layout, _| {
                                     layout.library_panel_collapsed = collapsed;
+                                    // When opening library, clamp ratio so meters panel still fits
+                                    if !collapsed {
+                                        let window_w = state.app.ui_state.window_width;
+                                        // Meters panel needs ~400px + queue list + center space
+                                        let min_queue_width = 700.0_f32;
+                                        if window_w > 0.0 {
+                                            let max_lib_ratio = 1.0 - (min_queue_width / window_w);
+                                            layout.library_h_ratio =
+                                                layout.library_h_ratio.min(max_lib_ratio.max(0.15));
+                                        }
+                                    }
                                     let _ = state.app.save_config(layout);
                                 });
                             });

@@ -83,6 +83,9 @@ urlencoding = { workspace = true }
 ndarray = { workspace = true }
 num-complex = { workspace = true }
 
+# Signal handling for clean Ctrl-C shutdown
+signal-hook = { workspace = true }
+
 # Asset embedding
 rust-embed = { workspace = true }
 anyhow = { workspace = true }

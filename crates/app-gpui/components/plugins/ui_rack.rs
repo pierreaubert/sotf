@@ -379,16 +379,12 @@ impl PlayerView {
         let is_empty = plugins_data.is_empty();
         let plugin_count = plugins_data.len();
 
-        // Split: main plugins, then "+", then trailing permanent plugin (output matrix/monitor)
-        // Find where the trailing permanent plugins start (insert "+" before them)
-        let trailing_start = {
-            let len = modules_info.len();
-            let mut i = len;
-            while i > 0 && modules_info[i - 1].7 { // .7 = is_permanent
-                i -= 1;
-            }
-            i
-        };
+        // Split: main plugins, then "+", then Matrix + output monitor
+        // The "+" always appears just before the Matrix plugin.
+        let trailing_start = modules_info
+            .iter()
+            .position(|(_, _, _, _, _, _, pt, _, _, _)| *pt == PluginType::Matrix)
+            .unwrap_or(modules_info.len());
         let (main_modules, tail_modules) = if trailing_start < modules_info.len() {
             let (main, tail) = modules_info.split_at(trailing_start);
             (main.to_vec(), tail.to_vec())
@@ -932,10 +928,9 @@ impl PlayerView {
                             .border_2()
                             .border_color(theme_add.text_muted)
                             .cursor_pointer()
-                            .hover(|s| s.border_color(theme_add.accent))
                             .text_2xl()
                             .text_color(theme_add.text_muted)
-                            .hover(|s| s.text_color(theme_add.accent))
+                            .hover(|s| s.border_color(theme_add.accent).text_color(theme_add.accent))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {

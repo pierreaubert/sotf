@@ -1134,7 +1134,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            .p_4()
+            .p_3()
             .bg(theme.background)
             .child(
                 div()
@@ -1179,6 +1179,7 @@ impl PlayerView {
                     .id("meter-groups-scroll")
                     .flex()
                     .flex_1()
+                    .justify_center()
                     .gap_0()
                     .overflow_x_scroll()
                     .min_h(rems(18.75))
@@ -1304,10 +1305,15 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .w(rems(25.0))
+            .items_center()
+            .w_full()
             .p_4()
             .bg(theme.background)
-            .child(self.render_lufs_with_true_peak(loudness.as_ref(), &theme))
+            .child(
+                div()
+                    .w(rems(25.0))
+                    .child(self.render_lufs_with_true_peak(loudness.as_ref(), &theme)),
+            )
     }
 }
 
