@@ -16,7 +16,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gpui-ui-kit = { version = "0.1.17", git="https://github.com/pierreaubert/sotf/gpui-ui-kit" }
+gpui-ui-kit = { version = "0.6.10", git="https://github.com/pierreaubert/sotf/tree/master/crates/gpui-toolkit/gpui-ui-kit" }
 ```
 
 ## Components
@@ -569,13 +569,13 @@ use gpui_ui_kit::FormField;
 pub struct MyCustomInput {
     #[field(required)]
     id: ElementId,
-    
+
     #[field(optional, into)]
     value: Option<SharedString>,
-    
+
     #[field(optional, into)]
     label: Option<SharedString>,
-    
+
     disabled: bool,
 }
 
