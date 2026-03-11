@@ -149,6 +149,8 @@ pub struct App {
     pub spectrum_reference_select_open: bool,
     pub crossfeed_preset_select_open: bool,
     pub show_add_plugin_menu: bool,
+    /// Active secondary tab index for auto-layout plugins (per-plugin, keyed by plugin_idx)
+    pub plugin_auto_tab: std::collections::HashMap<usize, usize>,
 
     // Rack panel collapse states
     pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
@@ -269,6 +271,7 @@ impl App {
             spectrum_reference_select_open: false,
             crossfeed_preset_select_open: false,
             show_add_plugin_menu: false,
+            plugin_auto_tab: std::collections::HashMap::new(),
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,

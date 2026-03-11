@@ -48,6 +48,21 @@ pub enum UpdateMode {
     Structural,
 }
 
+/// UI layout category for automatic 3-column plugin rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamCategory {
+    /// Left column: structural params, mode selectors, channel config.
+    Setup,
+    /// Center-top: main controls users adjust frequently.
+    Primary,
+    /// Center-bottom with tabs: advanced/fine-tuning params. Tab name groups them.
+    Secondary(&'static str),
+    /// Right column: meter, AutoGain, Mix, Makeup.
+    Output,
+    /// Center-bottom tab: bypass toggles, debug params.
+    Diagnostic,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ParamSpec {
     pub name: &'static str,
@@ -60,6 +75,9 @@ pub struct ParamSpec {
     /// E.g., 100.0 for a 0..1 value displayed as 0..100%.
     /// `set_plugin_param()` divides incoming display values by this.
     pub display_scale: f64,
+    /// UI layout category for automatic 3-column rendering.
+    /// Defaults to `Primary` — override with `.setup()`, `.output()`, etc.
+    pub category: ParamCategory,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -87,6 +105,7 @@ impl ParamSpec {
             group,
             update_mode: UpdateMode::Realtime,
             display_scale: 1.0,
+            category: ParamCategory::Primary,
         }
     }
 
@@ -113,6 +132,7 @@ impl ParamSpec {
             group,
             update_mode: UpdateMode::Realtime,
             display_scale: 1.0,
+            category: ParamCategory::Primary,
         }
     }
 
@@ -134,6 +154,7 @@ impl ParamSpec {
             group,
             update_mode: UpdateMode::Realtime,
             display_scale: 1.0,
+            category: ParamCategory::Primary,
         }
     }
 
@@ -157,6 +178,7 @@ impl ParamSpec {
             group,
             update_mode: UpdateMode::Realtime,
             display_scale: 1.0,
+            category: ParamCategory::Primary,
         }
     }
 
@@ -178,6 +200,7 @@ impl ParamSpec {
             group,
             update_mode: UpdateMode::Realtime,
             display_scale: 1.0,
+            category: ParamCategory::Primary,
         }
     }
 
@@ -194,6 +217,7 @@ impl ParamSpec {
             group,
             update_mode: UpdateMode::Structural,
             display_scale: 1.0,
+            category: ParamCategory::Primary,
         }
     }
 
@@ -209,6 +233,38 @@ impl ParamSpec {
     pub const fn scaled(self, display_scale: f64) -> Self {
         Self {
             display_scale,
+            ..self
+        }
+    }
+
+    /// Set category to Setup (left column).
+    pub const fn setup(self) -> Self {
+        Self {
+            category: ParamCategory::Setup,
+            ..self
+        }
+    }
+
+    /// Set category to Output (right column).
+    pub const fn output(self) -> Self {
+        Self {
+            category: ParamCategory::Output,
+            ..self
+        }
+    }
+
+    /// Set category to Secondary with a tab name (center-bottom tabs).
+    pub const fn secondary(self, tab: &'static str) -> Self {
+        Self {
+            category: ParamCategory::Secondary(tab),
+            ..self
+        }
+    }
+
+    /// Set category to Diagnostic (center-bottom diagnostic tab).
+    pub const fn diagnostic(self) -> Self {
+        Self {
+            category: ParamCategory::Diagnostic,
             ..self
         }
     }
@@ -521,9 +577,9 @@ pub mod compressor {
             0.5,
             "dB",
             "Output",
-        ),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0),
-        ParamSpec::bool_param("Auto Makeup", "auto_makeup", false, "Output"),
+        ).output(),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0).output(),
+        ParamSpec::bool_param("Auto Makeup", "auto_makeup", false, "Output").output(),
         ParamSpec::bool_labeled(
             "Link Channels",
             "link_channels",
@@ -531,7 +587,7 @@ pub mod compressor {
             "Linked",
             "Unlinked",
             "Channels",
-        ),
+        ).setup(),
         ParamSpec::float(
             "Sidechain HPF",
             "sidechain_hpf_hz",
@@ -541,7 +597,7 @@ pub mod compressor {
             5.0,
             "Hz",
             "Sidechain",
-        ),
+        ).setup(),
     ];
 }
 
@@ -568,7 +624,7 @@ pub mod gate {
         ParamSpec::float(
             "Release", "release", 100.0, 10.0, 2000.0, 5.0, "ms", "Timing",
         ),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0).output(),
         ParamSpec::bool_labeled(
             "Link Channels",
             "link_channels",
@@ -576,7 +632,7 @@ pub mod gate {
             "Linked",
             "Unlinked",
             "Channels",
-        ),
+        ).setup(),
         ParamSpec::float(
             "Sidechain HPF",
             "sidechain_hpf_hz",
@@ -586,7 +642,7 @@ pub mod gate {
             5.0,
             "Hz",
             "Sidechain",
-        ),
+        ).setup(),
     ];
 }
 
@@ -625,7 +681,7 @@ pub mod expander {
             "Dynamics",
         ),
         ParamSpec::float("Hold", "hold", 10.0, 0.0, 500.0, 1.0, "ms", "Timing"),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output").scaled(100.0).output(),
         ParamSpec::bool_labeled(
             "Link Channels",
             "link_channels",
@@ -633,7 +689,7 @@ pub mod expander {
             "Linked",
             "Unlinked",
             "Channels",
-        ),
+        ).setup(),
         ParamSpec::float(
             "Sidechain HPF",
             "sidechain_hpf_hz",
@@ -643,7 +699,7 @@ pub mod expander {
             5.0,
             "Hz",
             "Sidechain",
-        ),
+        ).setup(),
     ];
 }
 
@@ -677,8 +733,8 @@ pub mod limiter {
             "ms",
             "Timing",
         ),
-        ParamSpec::bool_labeled("Soft Knee", "soft", false, "Soft", "Hard", "Dynamics"),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "Output").scaled(100.0),
+        ParamSpec::bool_labeled("Soft Knee", "soft", false, "Soft", "Hard", "Dynamics").setup(),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "Output").scaled(100.0).output(),
     ];
 }
 
@@ -717,7 +773,7 @@ pub mod loudness_compensation {
             "dB",
             "High",
         ),
-        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain").structural(),
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain").structural().output(),
         ParamSpec::float(
             "Max Auto Gain",
             "auto_gain_max_db",
@@ -728,7 +784,7 @@ pub mod loudness_compensation {
             "dB",
             "Auto Gain",
         )
-        .structural(),
+        .structural().output(),
         ParamSpec::float(
             "Smoothing",
             "auto_gain_smoothing_ms",
@@ -739,7 +795,7 @@ pub mod loudness_compensation {
             "ms",
             "Auto Gain",
         )
-        .structural(),
+        .structural().output(),
     ];
 }
 
@@ -778,7 +834,7 @@ pub mod upmixer {
             ],
             "Output",
         )
-        .structural(),
+        .structural().setup(),
         // Gains
         ParamSpec::float(
             "Front Direct",
@@ -821,7 +877,7 @@ pub mod upmixer {
             "Gains",
         ),
         // LFE
-        ParamSpec::float("LFE Gain", "lfe_gain", 1.0, 0.0, 2.0, 0.05, "x", "LFE"),
+        ParamSpec::float("LFE Gain", "lfe_gain", 1.0, 0.0, 2.0, 0.05, "x", "LFE").secondary("LFE & Bass"),
         ParamSpec::float(
             "LFE Cutoff",
             "lfe_cutoff_hz",
@@ -831,13 +887,13 @@ pub mod upmixer {
             5.0,
             "Hz",
             "LFE",
-        ),
+        ).secondary("LFE & Bass"),
         ParamSpec::bool_param(
             "Subharmonic Synth",
             "enable_subharmonic_synth",
             false,
             "LFE",
-        ),
+        ).secondary("LFE & Bass"),
         ParamSpec::float(
             "Sub Gain",
             "subharmonic_gain",
@@ -847,7 +903,7 @@ pub mod upmixer {
             0.05,
             "x",
             "LFE",
-        ),
+        ).secondary("LFE & Bass"),
         ParamSpec::float(
             "Sub Freq",
             "subharmonic_freq_hz",
@@ -857,7 +913,7 @@ pub mod upmixer {
             1.0,
             "Hz",
             "LFE",
-        ),
+        ).secondary("LFE & Bass"),
         ParamSpec::float(
             "Sub Attack",
             "subharmonic_attack_ms",
@@ -867,7 +923,7 @@ pub mod upmixer {
             1.0,
             "ms",
             "LFE",
-        ),
+        ).secondary("LFE & Bass"),
         ParamSpec::float(
             "Sub Release",
             "subharmonic_release_ms",
@@ -877,7 +933,7 @@ pub mod upmixer {
             5.0,
             "ms",
             "LFE",
-        ),
+        ).secondary("LFE & Bass"),
         // Spatial
         ParamSpec::float(
             "Stereo Width",
@@ -910,208 +966,35 @@ pub mod upmixer {
             "Spatial",
         ),
         // Enhancement
-        ParamSpec::bool_param("HR Direct", "enable_hr_direct", true, "Enhancement"),
-        ParamSpec::float(
-            "HR Sharpen",
-            "hr_sharpen",
-            1.0,
-            0.0,
-            1.0,
-            0.05,
-            "",
-            "Enhancement",
-        ),
-        ParamSpec::float(
-            "Ambient Boost",
-            "ambient_boost",
-            1.2,
-            0.5,
-            2.0,
-            0.05,
-            "x",
-            "Enhancement",
-        ),
-        ParamSpec::choice(
-            "Decor Mode",
-            "decorrelation_mode",
-            0,
-            &["Velvet Noise", "LFO Phase"],
-            "Enhancement",
-        ),
-        ParamSpec::float(
-            "Decor LFO Rate",
-            "decorrelation_lfo_rate_hz",
-            0.15,
-            0.01,
-            1.0,
-            0.01,
-            "Hz",
-            "Enhancement",
-        ),
-        ParamSpec::float(
-            "Velvet Duration",
-            "velvet_noise_duration_ms",
-            30.0,
-            10.0,
-            100.0,
-            1.0,
-            "ms",
-            "Enhancement",
-        ),
-        ParamSpec::float(
-            "Velvet Density",
-            "velvet_noise_density",
-            2000.0,
-            500.0,
-            5000.0,
-            100.0,
-            "",
-            "Enhancement",
-        ),
+        ParamSpec::bool_param("HR Direct", "enable_hr_direct", true, "Enhancement").secondary("Enhancement"),
+        ParamSpec::float("HR Sharpen", "hr_sharpen", 1.0, 0.0, 1.0, 0.05, "", "Enhancement").secondary("Enhancement"),
+        ParamSpec::float("Ambient Boost", "ambient_boost", 1.2, 0.5, 2.0, 0.05, "x", "Enhancement").secondary("Enhancement"),
+        ParamSpec::choice("Decor Mode", "decorrelation_mode", 0, &["Velvet Noise", "LFO Phase"], "Enhancement").secondary("Enhancement"),
+        ParamSpec::float("Decor LFO Rate", "decorrelation_lfo_rate_hz", 0.15, 0.01, 1.0, 0.01, "Hz", "Enhancement").secondary("Enhancement"),
+        ParamSpec::float("Velvet Duration", "velvet_noise_duration_ms", 30.0, 10.0, 100.0, 1.0, "ms", "Enhancement").secondary("Enhancement"),
+        ParamSpec::float("Velvet Density", "velvet_noise_density", 2000.0, 500.0, 5000.0, 100.0, "", "Enhancement").secondary("Enhancement"),
         // Height
-        ParamSpec::float(
-            "Height HF Cap",
-            "height_hf_cap_hz",
-            16000.0,
-            8000.0,
-            20000.0,
-            100.0,
-            "Hz",
-            "Height",
-        ),
-        ParamSpec::float(
-            "Height Trans Red",
-            "height_transient_reduction",
-            0.6,
-            0.0,
-            1.0,
-            0.05,
-            "",
-            "Height",
-        ),
-        ParamSpec::float(
-            "Height Direct Leak",
-            "height_direct_leak",
-            0.15,
-            0.0,
-            0.5,
-            0.01,
-            "",
-            "Height",
-        ),
+        ParamSpec::float("Height HF Cap", "height_hf_cap_hz", 16000.0, 8000.0, 20000.0, 100.0, "Hz", "Height").secondary("Height"),
+        ParamSpec::float("Height Trans Red", "height_transient_reduction", 0.6, 0.0, 1.0, 0.05, "", "Height").secondary("Height"),
+        ParamSpec::float("Height Direct Leak", "height_direct_leak", 0.15, 0.0, 0.5, 0.01, "", "Height").secondary("Height"),
         // Surround
-        ParamSpec::float(
-            "Surround Bleed",
-            "surround_direct_bleed",
-            0.5,
-            0.0,
-            1.0,
-            0.05,
-            "",
-            "Surround",
-        ),
-        ParamSpec::float(
-            "Rear Amb Boost",
-            "rear_ambient_boost",
-            1.5,
-            1.0,
-            3.0,
-            0.05,
-            "x",
-            "Surround",
-        ),
-        ParamSpec::float(
-            "Rear Late Refl",
-            "rear_late_reflection",
-            0.1,
-            0.0,
-            0.5,
-            0.01,
-            "",
-            "Surround",
-        ),
+        ParamSpec::float("Surround Bleed", "surround_direct_bleed", 0.5, 0.0, 1.0, 0.05, "", "Surround").secondary("Surround"),
+        ParamSpec::float("Rear Amb Boost", "rear_ambient_boost", 1.5, 1.0, 3.0, 0.05, "x", "Surround").secondary("Surround"),
+        ParamSpec::float("Rear Late Refl", "rear_late_reflection", 0.1, 0.0, 0.5, 0.01, "", "Surround").secondary("Surround"),
         // Dialogue
-        ParamSpec::float(
-            "Dialogue Weight",
-            "dialogue_weight",
-            0.4,
-            0.0,
-            1.0,
-            0.05,
-            "",
-            "Dialogue",
-        ),
-        ParamSpec::float(
-            "Voice Freq Min",
-            "voice_freq_min_hz",
-            500.0,
-            200.0,
-            800.0,
-            10.0,
-            "Hz",
-            "Dialogue",
-        ),
-        ParamSpec::float(
-            "Voice Freq Max",
-            "voice_freq_max_hz",
-            3000.0,
-            2000.0,
-            5000.0,
-            50.0,
-            "Hz",
-            "Dialogue",
-        ),
-        ParamSpec::float(
-            "Diag Centroid W",
-            "dialogue_centroid_weight",
-            0.3,
-            0.0,
-            1.0,
-            0.05,
-            "",
-            "Dialogue",
-        ),
-        ParamSpec::float(
-            "Diag Variance W",
-            "dialogue_variance_weight",
-            0.2,
-            0.0,
-            1.0,
-            0.05,
-            "",
-            "Dialogue",
-        ),
-        ParamSpec::float(
-            "Diag Coherence W",
-            "dialogue_coherence_weight",
-            0.5,
-            0.0,
-            1.0,
-            0.05,
-            "",
-            "Dialogue",
-        ),
+        ParamSpec::float("Dialogue Weight", "dialogue_weight", 0.4, 0.0, 1.0, 0.05, "", "Dialogue").secondary("Dialogue"),
+        ParamSpec::float("Voice Freq Min", "voice_freq_min_hz", 500.0, 200.0, 800.0, 10.0, "Hz", "Dialogue").secondary("Dialogue"),
+        ParamSpec::float("Voice Freq Max", "voice_freq_max_hz", 3000.0, 2000.0, 5000.0, 50.0, "Hz", "Dialogue").secondary("Dialogue"),
+        ParamSpec::float("Diag Centroid W", "dialogue_centroid_weight", 0.3, 0.0, 1.0, 0.05, "", "Dialogue").secondary("Dialogue"),
+        ParamSpec::float("Diag Variance W", "dialogue_variance_weight", 0.2, 0.0, 1.0, 0.05, "", "Dialogue").secondary("Dialogue"),
+        ParamSpec::float("Diag Coherence W", "dialogue_coherence_weight", 0.5, 0.0, 1.0, 0.05, "", "Dialogue").secondary("Dialogue"),
         // Output
-        ParamSpec::float(
-            "Safety Cap",
-            "safety_cap_db",
-            3.0,
-            0.0,
-            3.0,
-            0.1,
-            "dB",
-            "Output",
-        ),
+        ParamSpec::float("Safety Cap", "safety_cap_db", 3.0, 0.0, 3.0, 0.1, "dB", "Output").output(),
         // Diagnostics
-        ParamSpec::bool_param("Bypass Decor", "bypass_decorrelation", false, "Diagnostics"),
-        ParamSpec::bool_param(
-            "Bypass Transients",
-            "bypass_transient_detection",
-            false,
-            "Diagnostics",
-        ),
-        ParamSpec::bool_param("Bypass All", "bypass_all_processing", false, "Diagnostics"),
-        ParamSpec::bool_param("ML Detection", "enable_ml_detection", false, "Diagnostics"),
+        ParamSpec::bool_param("Bypass Decor", "bypass_decorrelation", false, "Diagnostics").diagnostic(),
+        ParamSpec::bool_param("Bypass Transients", "bypass_transient_detection", false, "Diagnostics").diagnostic(),
+        ParamSpec::bool_param("Bypass All", "bypass_all_processing", false, "Diagnostics").diagnostic(),
+        ParamSpec::bool_param("ML Detection", "enable_ml_detection", false, "Diagnostics").diagnostic(),
     ];
 }
 
@@ -1122,9 +1005,9 @@ pub mod upmixer {
 pub mod convolution {
     use super::ParamSpec;
     pub const PARAMS: &[ParamSpec] = &[
-        ParamSpec::file_path("IR File", "ir_file", "General"),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General"),
-        ParamSpec::float("Gain", "gain_db", 0.0, -20.0, 20.0, 0.5, "dB", "General"),
+        ParamSpec::file_path("IR File", "ir_file", "General").setup(),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General").output(),
+        ParamSpec::float("Gain", "gain_db", 0.0, -20.0, 20.0, 0.5, "dB", "General").output(),
     ];
 }
 
@@ -1177,7 +1060,7 @@ pub mod hal {
 pub mod binaural {
     use super::ParamSpec;
     pub const PARAMS: &[ParamSpec] = &[
-        ParamSpec::file_path("SOFA File", "sofa_file", "General"),
+        ParamSpec::file_path("SOFA File", "sofa_file", "General").setup(),
         ParamSpec::int(
             "Input Channels",
             "input_channels",
@@ -1188,8 +1071,8 @@ pub mod binaural {
             "ch",
             "General",
         )
-        .structural(),
-        ParamSpec::bool_param("Optimization", "enable_optimization", true, "General").structural(),
+        .structural().setup(),
+        ParamSpec::bool_param("Optimization", "enable_optimization", true, "General").structural().setup(),
         ParamSpec::float(
             "Externalization",
             "externalization",
@@ -1221,28 +1104,28 @@ pub mod binaural {
 pub mod spectrum {
     use super::ParamSpec;
     pub const PARAMS: &[ParamSpec] = &[
-        ParamSpec::int("Num Bins", "num_bins", 30, 8, 120, 1, "", "General").structural(),
+        ParamSpec::int("Num Bins", "num_bins", 30, 8, 120, 1, "", "General").structural().setup(),
         ParamSpec::float(
             "Min Freq", "min_freq", 20.0, 10.0, 100.0, 1.0, "Hz", "General",
-        ),
+        ).setup(),
         ParamSpec::float(
             "Max Freq", "max_freq", 20000.0, 5000.0, 22050.0, 100.0, "Hz", "General",
-        ),
-        ParamSpec::float("Smoothing", "smoothing", 0.7, 0.0, 1.0, 0.01, "", "General"),
+        ).setup(),
+        ParamSpec::float("Smoothing", "smoothing", 0.7, 0.0, 1.0, 0.01, "", "General").setup(),
         ParamSpec::choice(
             "Tilt Correction",
             "tilt_correction",
             0,
             &["None", "3dB/oct", "6dB/oct", "Pink"],
             "General",
-        ),
+        ).setup(),
         ParamSpec::choice(
             "Tilt Reference",
             "tilt_reference",
             0,
             &["Standard", "1kHz", "2kHz", "Min Freq"],
             "General",
-        ),
+        ).setup(),
     ];
 }
 
@@ -1301,8 +1184,8 @@ pub mod multiband_compressor {
     use super::ParamSpec;
     /// Global params for multiband compressor.
     pub const GLOBAL_PARAMS: &[ParamSpec] = &[
-        ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global").structural(),
-        ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global").structural(),
+        ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global").structural().setup(),
+        ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global").structural().setup(),
         ParamSpec::float(
             "Crossover 1",
             "crossover_freq_1",
@@ -1313,7 +1196,7 @@ pub mod multiband_compressor {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Crossover 2",
             "crossover_freq_2",
@@ -1324,7 +1207,7 @@ pub mod multiband_compressor {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Crossover 3",
             "crossover_freq_3",
@@ -1335,7 +1218,7 @@ pub mod multiband_compressor {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Crossover 4",
             "crossover_freq_4",
@@ -1346,7 +1229,7 @@ pub mod multiband_compressor {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Threshold",
             "threshold",
@@ -1363,7 +1246,7 @@ pub mod multiband_compressor {
             "Release", "release", 50.0, 10.0, 1000.0, 5.0, "ms", "Global",
         ),
         ParamSpec::float("Knee", "knee", 6.0, 0.0, 20.0, 0.5, "dB", "Global"),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Global").scaled(100.0),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Global").scaled(100.0).output(),
         ParamSpec::bool_labeled(
             "Link Channels",
             "link_channels",
@@ -1371,7 +1254,7 @@ pub mod multiband_compressor {
             "Linked",
             "Unlinked",
             "Global",
-        ),
+        ).setup(),
     ];
     /// Template for each compressor band (repeated per band).
     pub const BAND_TEMPLATE: &[ParamSpec] = &[
@@ -1495,8 +1378,8 @@ pub mod denoiser {
             "ms",
             "Timing",
         ),
-        ParamSpec::bool_param("Low Latency", "low_latency", false, "General").structural(),
-        ParamSpec::bool_param("Polyphonic", "polyphonic_detection", false, "Analysis"),
+        ParamSpec::bool_param("Low Latency", "low_latency", false, "General").structural().setup(),
+        ParamSpec::bool_param("Polyphonic", "polyphonic_detection", false, "Analysis").secondary("Analysis"),
         ParamSpec::float(
             "Crack Sens.",
             "crack_sensitivity",
@@ -1506,7 +1389,7 @@ pub mod denoiser {
             1.0,
             "",
             "Analysis",
-        ),
+        ).secondary("Analysis"),
         ParamSpec::float(
             "MCRA Alpha S",
             "mcra_alpha_s",
@@ -1516,7 +1399,7 @@ pub mod denoiser {
             0.01,
             "",
             "Advanced",
-        ),
+        ).secondary("MCRA"),
         ParamSpec::float(
             "MCRA Alpha P",
             "mcra_alpha_p",
@@ -1526,8 +1409,8 @@ pub mod denoiser {
             0.01,
             "",
             "Advanced",
-        ),
-        ParamSpec::int("MCRA Window", "mcra_l", 50, 10, 200, 1, "fr", "Advanced"),
+        ).secondary("MCRA"),
+        ParamSpec::int("MCRA Window", "mcra_l", 50, 10, 200, 1, "fr", "Advanced").secondary("MCRA"),
         ParamSpec::float(
             "MCRA Delta",
             "mcra_delta",
@@ -1537,7 +1420,7 @@ pub mod denoiser {
             0.5,
             "",
             "Advanced",
-        ),
+        ).secondary("MCRA"),
         ParamSpec::float(
             "Transparency",
             "transparency",
@@ -1548,16 +1431,16 @@ pub mod denoiser {
             "",
             "Analysis",
         )
-        .scaled(100.0),
-        ParamSpec::bool_param("DD SNR", "dd_enabled", true, "Analysis"),
+        .scaled(100.0).secondary("Analysis"),
+        ParamSpec::bool_param("DD SNR", "dd_enabled", true, "Analysis").secondary("Analysis"),
         ParamSpec::float(
             "DD Alpha", "dd_alpha", 0.98, 0.5, 0.999, 0.001, "", "Analysis",
-        ),
-        ParamSpec::bool_param("Psychoacoustic", "psychoacoustic_masking", true, "Analysis"),
-        ParamSpec::bool_param("Transient", "transient_enabled", true, "Analysis"),
-        ParamSpec::bool_param("Spectral Smooth", "spectral_smoothing_enabled", true, "Analysis"),
-        ParamSpec::bool_param("Temporal Smooth", "temporal_smoothing_enabled", true, "Analysis"),
-        ParamSpec::bool_param("Hiss Remover", "hiss_enabled", false, "Hiss"),
+        ).secondary("Analysis"),
+        ParamSpec::bool_param("Psychoacoustic", "psychoacoustic_masking", true, "Analysis").secondary("Analysis"),
+        ParamSpec::bool_param("Transient", "transient_enabled", true, "Analysis").secondary("Analysis"),
+        ParamSpec::bool_param("Spectral Smooth", "spectral_smoothing_enabled", true, "Analysis").secondary("Analysis"),
+        ParamSpec::bool_param("Temporal Smooth", "temporal_smoothing_enabled", true, "Analysis").secondary("Analysis"),
+        ParamSpec::bool_param("Hiss Remover", "hiss_enabled", false, "Hiss").secondary("Hiss"),
         ParamSpec::float(
             "Hiss Threshold",
             "hiss_threshold_db",
@@ -1567,7 +1450,7 @@ pub mod denoiser {
             0.5,
             "dB",
             "Hiss",
-        ),
+        ).secondary("Hiss"),
         ParamSpec::float(
             "Hiss Frequency",
             "hiss_frequency_hz",
@@ -1577,7 +1460,7 @@ pub mod denoiser {
             100.0,
             "Hz",
             "Hiss",
-        ),
+        ).secondary("Hiss"),
         ParamSpec::float(
             "Hiss Strength",
             "hiss_strength",
@@ -1588,8 +1471,8 @@ pub mod denoiser {
             "",
             "Hiss",
         )
-        .scaled(100.0),
-        ParamSpec::bool_param("Spectral Sub", "spectral_sub_enabled", false, "Spectral Sub"),
+        .scaled(100.0).secondary("Hiss"),
+        ParamSpec::bool_param("Spectral Sub", "spectral_sub_enabled", false, "Spectral Sub").secondary("Spectral Sub"),
         ParamSpec::float(
             "Oversub Factor",
             "spectral_sub_alpha",
@@ -1599,7 +1482,7 @@ pub mod denoiser {
             0.1,
             "",
             "Spectral Sub",
-        ),
+        ).secondary("Spectral Sub"),
         ParamSpec::float(
             "Spectral Floor",
             "spectral_sub_beta",
@@ -1609,7 +1492,7 @@ pub mod denoiser {
             0.001,
             "",
             "Spectral Sub",
-        ),
+        ).secondary("Spectral Sub"),
         ParamSpec::bool_labeled(
             "Learn Noise",
             "learn_noise",
@@ -1618,13 +1501,13 @@ pub mod denoiser {
             "Off",
             "Noise Profile",
         )
-        .structural(),
+        .structural().secondary("Noise Profile"),
         ParamSpec::bool_param(
             "Use Profile",
             "use_captured_profile",
             false,
             "Noise Profile",
-        ),
+        ).secondary("Noise Profile"),
         ParamSpec::bool_labeled(
             "Clear Profile",
             "clear_profile",
@@ -1633,7 +1516,7 @@ pub mod denoiser {
             "Off",
             "Noise Profile",
         )
-        .structural(),
+        .structural().secondary("Noise Profile"),
     ];
 }
 
@@ -1671,7 +1554,7 @@ pub mod fletcher_munson {
             0.5,
             "dB",
             "Global",
-        ),
+        ).setup(),
         ParamSpec::float(
             "Reference",
             "reference_level_db",
@@ -1681,8 +1564,8 @@ pub mod fletcher_munson {
             0.5,
             "dB",
             "Global",
-        ),
-        ParamSpec::bool_param("Enabled", "enabled", true, "Global"),
+        ).setup(),
+        ParamSpec::bool_param("Enabled", "enabled", true, "Global").setup(),
         ParamSpec::float(
             "Smoothing",
             "smoothing_ms",
@@ -1692,8 +1575,8 @@ pub mod fletcher_munson {
             1.0,
             "ms",
             "Global",
-        ),
-        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain"),
+        ).setup(),
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", false, "Auto Gain").output(),
         ParamSpec::float(
             "Max Correction",
             "auto_gain_max_db",
@@ -1703,7 +1586,7 @@ pub mod fletcher_munson {
             1.0,
             "dB",
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::float(
             "AG Smoothing",
             "auto_gain_smoothing_ms",
@@ -1713,14 +1596,14 @@ pub mod fletcher_munson {
             5.0,
             "ms",
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::choice(
             "AG Loudness Type",
             "auto_gain_loudness_type",
             0,
             &["Momentary", "ShortTerm"],
             "Auto Gain",
-        ),
+        ).output(),
         // Band 1
         ParamSpec::float(
             "Band 1 Freq",
@@ -1861,8 +1744,8 @@ pub mod multiband_expander {
     use super::ParamSpec;
     /// Global params for multiband expander.
     pub const GLOBAL_PARAMS: &[ParamSpec] = &[
-        ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global").structural(),
-        ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global").structural(),
+        ParamSpec::int("Bands", "num_bands", 3, 2, 5, 1, "", "Global").structural().setup(),
+        ParamSpec::int("Preset", "crossover_preset", 1, 0, 3, 1, "", "Global").structural().setup(),
         ParamSpec::float(
             "Crossover 1",
             "crossover_freq_1",
@@ -1873,7 +1756,7 @@ pub mod multiband_expander {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Crossover 2",
             "crossover_freq_2",
@@ -1884,7 +1767,7 @@ pub mod multiband_expander {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Crossover 3",
             "crossover_freq_3",
@@ -1895,7 +1778,7 @@ pub mod multiband_expander {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Crossover 4",
             "crossover_freq_4",
@@ -1906,7 +1789,7 @@ pub mod multiband_expander {
             "Hz",
             "Global",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::float(
             "Threshold",
             "threshold",
@@ -1935,7 +1818,7 @@ pub mod multiband_expander {
             "Global",
         ),
         ParamSpec::float("Hold", "hold", 10.0, 0.0, 500.0, 1.0, "ms", "Global"),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Global").scaled(100.0),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Global").scaled(100.0).output(),
         ParamSpec::bool_labeled(
             "Link Channels",
             "link_channels",
@@ -1943,7 +1826,7 @@ pub mod multiband_expander {
             "Linked",
             "Unlinked",
             "Global",
-        ),
+        ).setup(),
     ];
     /// Template for each expander band (repeated per band).
     pub const BAND_TEMPLATE: &[ParamSpec] = &[
@@ -2000,7 +1883,7 @@ pub mod mono_to_stereo {
             "ms",
             "General",
         ),
-        ParamSpec::bool_param("Comp EQ", "enable_comp_eq", true, "EQ"),
+        ParamSpec::bool_param("Comp EQ", "enable_comp_eq", true, "EQ").setup(),
         ParamSpec::float(
             "Comp EQ Depth",
             "comp_eq_depth_db",
@@ -2340,21 +2223,21 @@ pub mod xtc {
             "bypass_xtc_filters",
             false,
             "Diagnostic",
-        ),
+        ).diagnostic(),
         ParamSpec::bool_param(
             "Bypass Spectral Norm",
             "bypass_spectral_normalization",
             false,
             "Diagnostic",
-        ),
+        ).diagnostic(),
         ParamSpec::bool_param(
             "Bypass Neumann",
             "bypass_neumann_refinement",
             false,
             "Diagnostic",
-        ),
+        ).diagnostic(),
         // Auto Gain
-        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", true, "Auto Gain"),
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", true, "Auto Gain").output(),
         ParamSpec::float(
             "AG Max",
             "auto_gain_max_db",
@@ -2364,7 +2247,7 @@ pub mod xtc {
             1.0,
             "dB",
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::float(
             "AG Smoothing",
             "auto_gain_smoothing_ms",
@@ -2374,7 +2257,7 @@ pub mod xtc {
             5.0,
             "ms",
             "Auto Gain",
-        ),
+        ).output(),
     ];
 }
 
@@ -2389,14 +2272,14 @@ pub mod ab_compare {
         ParamSpec::choice("Mix Mode", "mix_mode", 0, &["Pot", "Binary"], "Mix"),
         ParamSpec::choice("Selected Path", "selected_path", 0, &["A", "B"], "Mix"),
         ParamSpec::bool_labeled("Bypass", "bypass", false, "Yes", "No", "Mix"),
-        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", true, "Auto Gain"),
+        ParamSpec::bool_param("Auto Gain", "auto_gain_enabled", true, "Auto Gain").output(),
         ParamSpec::choice(
             "Loudness Type",
             "loudness_type",
             0,
             &["Momentary", "ShortTerm"],
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::float(
             "Max Auto Gain",
             "max_auto_gain_db",
@@ -2406,7 +2289,7 @@ pub mod ab_compare {
             1.0,
             "dB",
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::float(
             "Gain Smoothing",
             "gain_smoothing_ms",
@@ -2416,7 +2299,7 @@ pub mod ab_compare {
             5.0,
             "ms",
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::float(
             "Mix Transition",
             "mix_transition_ms",
@@ -2451,7 +2334,7 @@ pub mod crossfeed {
             &["Off", "Bauer", "Meier", "Mb"],
             "General",
         )
-        .structural(),
+        .structural().setup(),
         ParamSpec::choice(
             "Preset",
             "crossfeed_preset",
@@ -2459,9 +2342,9 @@ pub mod crossfeed {
             &["Default", "Cmoy", "Meier", "Mb", "Off"],
             "General",
         )
-        .structural(),
-        ParamSpec::bool_param("Enabled", "enabled", true, "General"),
-        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General"),
+        .structural().setup(),
+        ParamSpec::bool_param("Enabled", "enabled", true, "General").setup(),
+        ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.05, "%", "General").output(),
         // Bauer
         ParamSpec::float(
             "Bauer Cutoff",
@@ -2546,7 +2429,7 @@ pub mod crossfeed {
             "Multiband",
         ),
         // Auto Gain
-        ParamSpec::bool_param("Auto Gain", "autogain_enabled", false, "Auto Gain"),
+        ParamSpec::bool_param("Auto Gain", "autogain_enabled", false, "Auto Gain").output(),
         ParamSpec::float(
             "Target LUFS",
             "autogain_target_lufs",
@@ -2556,7 +2439,7 @@ pub mod crossfeed {
             0.5,
             "LUFS",
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::float(
             "Max Gain",
             "autogain_max_gain_db",
@@ -2566,7 +2449,7 @@ pub mod crossfeed {
             1.0,
             "dB",
             "Auto Gain",
-        ),
+        ).output(),
         ParamSpec::float(
             "Smoothing",
             "autogain_smoothing_ms",
