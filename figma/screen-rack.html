@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SOTF - Plugin Rack Screen</title>
+<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg2: #252525; --bg3: #1a1a1a;
+    --surface: #2a2a2a; --surface-hover: #3a3a3a;
+    --text-primary: #ffffff; --text-secondary: #cccccc; --text-muted: #888888; --text-disabled: #555555;
+    --accent: #007acc; --accent-hover: #0098ff; --accent-muted: rgba(0,122,204,0.2);
+    --text-on-accent: #ffffff;
+    --success: #22c55e; --warning: #f59e0b; --error: #ef4444; --info: #3b82f6;
+    --border: #3a3a3a;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro", system-ui, sans-serif;
+    /* Plugin type colors */
+    --plug-eq: #3b82f6; --plug-gain: #22c55e; --plug-upmixer: #06b6d4;
+    --plug-comp: #f59e0b; --plug-limiter: #ef4444; --plug-gate: #a855f7;
+    --plug-loudness: #10b981; --plug-binaural: #6366f1; --plug-spectrum: #eab308;
+    --plug-monitor: #6b7280; --plug-conv: #ec4899;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text-primary); width: 1200px; height: 800px; overflow: hidden; display: flex; flex-direction: column; }
+
+  .menubar { display:flex; align-items:center; height:28px; background:var(--bg3); border-bottom:1px solid var(--border); padding:0 12px; gap:16px; flex-shrink:0; }
+  .menu-item { font-size:13px; color:var(--text-secondary); cursor:pointer; }
+
+  .content { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* Rack Header */
+  .rack-header { display:flex; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border); gap:8px; flex-shrink:0; }
+  .rack-home { width:28px; height:28px; border-radius:6px; background:var(--surface); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:12px; color:var(--text-muted); cursor:pointer; }
+  .rack-title { font-size:14px; font-weight:600; }
+  .rack-actions { margin-left:auto; display:flex; gap:4px; }
+  .rack-action-btn { padding:3px 8px; font-size:10px; border-radius:4px; border:1px solid var(--border); background:transparent; color:var(--text-muted); cursor:pointer; }
+
+  /* Plugin Strip */
+  .plugin-strip { display:flex; align-items:stretch; padding:12px; gap:8px; overflow-x:auto; border-bottom:1px solid var(--border); flex-shrink:0; min-height:88px; }
+
+  .plugin-card { width:112px; min-width:112px; height:64px; background:var(--surface); border:1px solid var(--border); border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; cursor:pointer; position:relative; overflow:hidden; }
+  .plugin-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; }
+  .plugin-card:hover { background:var(--surface-hover); }
+  .plugin-card.selected { border-color:var(--accent); background:var(--accent-muted); }
+  .plugin-icon { font-size:18px; }
+  .plugin-name { font-size:10px; font-weight:600; }
+  .plugin-card.muted { opacity:0.4; }
+
+  .plugin-card[data-type="input"]::before { background:var(--plug-monitor); }
+  .plugin-card[data-type="input"] .plugin-name { color:var(--plug-monitor); }
+  .plugin-card[data-type="eq"]::before { background:var(--plug-eq); }
+  .plugin-card[data-type="eq"] .plugin-name { color:var(--plug-eq); }
+  .plugin-card[data-type="eq"] .plugin-icon { color:var(--plug-eq); }
+  .plugin-card[data-type="gain"]::before { background:var(--plug-gain); }
+  .plugin-card[data-type="gain"] .plugin-name { color:var(--plug-gain); }
+  .plugin-card[data-type="gain"] .plugin-icon { color:var(--plug-gain); }
+  .plugin-card[data-type="upmixer"]::before { background:var(--plug-upmixer); }
+  .plugin-card[data-type="upmixer"] .plugin-name { color:var(--plug-upmixer); }
+  .plugin-card[data-type="upmixer"] .plugin-icon { color:var(--plug-upmixer); }
+  .plugin-card[data-type="comp"]::before { background:var(--plug-comp); }
+  .plugin-card[data-type="comp"] .plugin-name { color:var(--plug-comp); }
+  .plugin-card[data-type="comp"] .plugin-icon { color:var(--plug-comp); }
+  .plugin-card[data-type="limiter"]::before { background:var(--plug-limiter); }
+  .plugin-card[data-type="limiter"] .plugin-name { color:var(--plug-limiter); }
+  .plugin-card[data-type="limiter"] .plugin-icon { color:var(--plug-limiter); }
+  .plugin-card[data-type="spectrum"]::before { background:var(--plug-spectrum); }
+  .plugin-card[data-type="spectrum"] .plugin-name { color:var(--plug-spectrum); }
+  .plugin-card[data-type="spectrum"] .plugin-icon { color:var(--plug-spectrum); }
+  .plugin-card[data-type="output"]::before { background:var(--plug-monitor); }
+  .plugin-card[data-type="output"] .plugin-name { color:var(--plug-monitor); }
+
+  .add-plugin { width:48px; min-width:48px; height:64px; background:transparent; border:1px dashed var(--border); border-radius:6px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-muted); font-size:20px; }
+  .add-plugin:hover { border-color:var(--accent); color:var(--accent); }
+
+  /* Collapse Divider */
+  .collapse-divider { height:8px; background:var(--bg2); border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:center; cursor:row-resize; flex-shrink:0; }
+  .collapse-handle { width:32px; height:4px; background:var(--surface-hover); border-radius:2px; }
+
+  /* Plugin Detail */
+  .plugin-detail { flex:1; overflow-y:auto; padding:16px; }
+  .detail-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .detail-title { font-size:16px; font-weight:600; }
+  .detail-toggle { display:flex; gap:4px; }
+  .view-btn { padding:3px 8px; font-size:10px; border-radius:4px; border:1px solid var(--border); background:transparent; color:var(--text-muted); cursor:pointer; }
+  .view-btn.active { background:var(--accent); border-color:var(--accent); color:var(--text-on-accent); }
+
+  /* EQ Detail */
+  .eq-curve-area { width:100%; height:180px; background:var(--bg2); border:1px solid var(--border); border-radius:6px; margin-bottom:16px; position:relative; overflow:hidden; }
+  .eq-grid-line { position:absolute; background:rgba(58,58,58,0.5); }
+  .eq-grid-h { width:100%; height:1px; }
+  .eq-grid-v { width:1px; height:100%; }
+  .eq-zero { position:absolute; width:100%; height:1px; background:var(--text-disabled); top:50%; }
+  .eq-curve { position:absolute; width:100%; height:100%; }
+  .eq-freq-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--text-disabled); padding:0 4px; margin-bottom:12px; }
+
+  .eq-filters { display:flex; flex-direction:column; gap:8px; }
+  .eq-filter-row { display:flex; align-items:center; gap:12px; padding:8px 12px; background:var(--surface); border-radius:6px; border-left:3px solid var(--plug-eq); }
+  .eq-filter-num { font-size:11px; font-weight:600; color:var(--plug-eq); width:16px; }
+  .eq-filter-type { font-size:10px; color:var(--text-muted); padding:2px 6px; background:var(--bg2); border-radius:3px; min-width:60px; text-align:center; }
+  .eq-param { display:flex; flex-direction:column; gap:1px; }
+  .eq-param-label { font-size:9px; color:var(--text-muted); }
+  .eq-param-value { font-size:12px; font-weight:500; font-family:"B612",monospace; }
+  .eq-filter-actions { margin-left:auto; display:flex; gap:4px; }
+  .eq-filter-btn { width:20px; height:20px; border-radius:4px; border:1px solid var(--border); background:transparent; color:var(--text-muted); font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+
+  /* Footer */
+  .footer { height:100px; background:var(--bg3); border-top:1px solid var(--border); display:flex; align-items:stretch; flex-shrink:0; }
+  .footer-art { width:100px; height:100px; background:var(--surface-hover); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+  .footer-art-icon { font-size:28px; color:var(--text-muted); opacity:0.4; }
+  .footer-info { padding:16px 12px; display:flex; flex-direction:column; justify-content:center; gap:2px; width:180px; }
+  .footer-track { font-size:13px; font-weight:500; }
+  .footer-artist { font-size:11px; color:var(--text-muted); }
+  .footer-transport { flex:1; display:flex; align-items:center; justify-content:center; gap:16px; }
+  .transport-btn { background:none; border:none; color:var(--text-secondary); font-size:16px; cursor:pointer; }
+  .transport-btn.play { width:36px; height:36px; background:var(--accent); border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--text-on-accent); font-size:14px; }
+</style>
+</head>
+<body>
+
+<div class="menubar">
+  <span class="menu-item">File</span>
+  <span class="menu-item">Show</span>
+  <span class="menu-item">Help</span>
+</div>
+
+<div class="content">
+  <!-- Rack Header -->
+  <div class="rack-header">
+    <div class="rack-home">&#8962;</div>
+    <span class="rack-title">Studio</span>
+    <div class="rack-actions">
+      <button class="rack-action-btn">Presets</button>
+      <button class="rack-action-btn">Save</button>
+    </div>
+  </div>
+
+  <!-- Plugin Strip -->
+  <div class="plugin-strip">
+    <div class="plugin-card" data-type="input">
+      <span class="plugin-icon">&#9655;</span>
+      <span class="plugin-name">Input</span>
+    </div>
+    <div class="plugin-card selected" data-type="eq">
+      <span class="plugin-icon">&asymp;</span>
+      <span class="plugin-name">EQ</span>
+    </div>
+    <div class="plugin-card" data-type="gain">
+      <span class="plugin-icon">&#9650;</span>
+      <span class="plugin-name">Gain</span>
+    </div>
+    <div class="plugin-card" data-type="upmixer">
+      <span class="plugin-icon">&#9672;</span>
+      <span class="plugin-name">Upmixer</span>
+    </div>
+    <div class="plugin-card" data-type="comp">
+      <span class="plugin-icon">&#9673;</span>
+      <span class="plugin-name">Compressor</span>
+    </div>
+    <div class="plugin-card" data-type="limiter">
+      <span class="plugin-icon">&#9608;</span>
+      <span class="plugin-name">Limiter</span>
+    </div>
+    <div class="plugin-card" data-type="spectrum">
+      <span class="plugin-icon">&#8767;</span>
+      <span class="plugin-name">Spectrum</span>
+    </div>
+    <div class="plugin-card" data-type="output">
+      <span class="plugin-icon">&#9665;</span>
+      <span class="plugin-name">Output</span>
+    </div>
+    <div class="add-plugin">+</div>
+  </div>
+
+  <!-- Collapse Divider -->
+  <div class="collapse-divider"><div class="collapse-handle"></div></div>
+
+  <!-- Plugin Detail Panel (EQ selected) -->
+  <div class="plugin-detail">
+    <div class="detail-header">
+      <span class="detail-title" style="color:var(--plug-eq)">Parametric EQ</span>
+      <div class="detail-toggle">
+        <button class="view-btn active">Simple</button>
+        <button class="view-btn">Advanced</button>
+      </div>
+    </div>
+
+    <!-- EQ Curve Display -->
+    <div class="eq-curve-area">
+      <div class="eq-zero"></div>
+      <!-- Grid lines -->
+      <div class="eq-grid-line eq-grid-h" style="top:25%"></div>
+      <div class="eq-grid-line eq-grid-h" style="top:75%"></div>
+      <div class="eq-grid-line eq-grid-v" style="left:10%"></div>
+      <div class="eq-grid-line eq-grid-v" style="left:25%"></div>
+      <div class="eq-grid-line eq-grid-v" style="left:40%"></div>
+      <div class="eq-grid-line eq-grid-v" style="left:55%"></div>
+      <div class="eq-grid-line eq-grid-v" style="left:70%"></div>
+      <div class="eq-grid-line eq-grid-v" style="left:85%"></div>
+      <!-- SVG curve -->
+      <svg class="eq-curve" viewBox="0 0 1000 180" preserveAspectRatio="none">
+        <path d="M0,90 Q100,90 150,70 Q200,50 250,55 Q350,65 400,90 Q500,110 600,85 Q700,60 750,55 Q800,50 850,75 Q950,100 1000,90"
+              fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.8"/>
+        <path d="M0,90 Q100,90 150,70 Q200,50 250,55 Q350,65 400,90 Q500,110 600,85 Q700,60 750,55 Q800,50 850,75 Q950,100 1000,90"
+              fill="url(#eqFill)" opacity="0.15"/>
+        <defs>
+          <linearGradient id="eqFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="transparent"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div class="eq-freq-labels">
+      <span>20 Hz</span><span>50</span><span>100</span><span>200</span><span>500</span><span>1k</span><span>2k</span><span>5k</span><span>10k</span><span>20k</span>
+    </div>
+
+    <!-- Filter List -->
+    <div class="eq-filters">
+      <div class="eq-filter-row">
+        <span class="eq-filter-num">1</span>
+        <span class="eq-filter-type">Low Shelf</span>
+        <div class="eq-param"><span class="eq-param-label">Freq</span><span class="eq-param-value">80 Hz</span></div>
+        <div class="eq-param"><span class="eq-param-label">Gain</span><span class="eq-param-value">+3.0 dB</span></div>
+        <div class="eq-param"><span class="eq-param-label">Q</span><span class="eq-param-value">0.71</span></div>
+        <div class="eq-filter-actions"><button class="eq-filter-btn">M</button><button class="eq-filter-btn">S</button></div>
+      </div>
+      <div class="eq-filter-row">
+        <span class="eq-filter-num">2</span>
+        <span class="eq-filter-type">Peak</span>
+        <div class="eq-param"><span class="eq-param-label">Freq</span><span class="eq-param-value">250 Hz</span></div>
+        <div class="eq-param"><span class="eq-param-label">Gain</span><span class="eq-param-value">-2.5 dB</span></div>
+        <div class="eq-param"><span class="eq-param-label">Q</span><span class="eq-param-value">1.41</span></div>
+        <div class="eq-filter-actions"><button class="eq-filter-btn">M</button><button class="eq-filter-btn">S</button></div>
+      </div>
+      <div class="eq-filter-row">
+        <span class="eq-filter-num">3</span>
+        <span class="eq-filter-type">Peak</span>
+        <div class="eq-param"><span class="eq-param-label">Freq</span><span class="eq-param-value">1.0 kHz</span></div>
+        <div class="eq-param"><span class="eq-param-label">Gain</span><span class="eq-param-value">+1.5 dB</span></div>
+        <div class="eq-param"><span class="eq-param-label">Q</span><span class="eq-param-value">2.00</span></div>
+        <div class="eq-filter-actions"><button class="eq-filter-btn">M</button><button class="eq-filter-btn">S</button></div>
+      </div>
+      <div class="eq-filter-row">
+        <span class="eq-filter-num">4</span>
+        <span class="eq-filter-type">Peak</span>
+        <div class="eq-param"><span class="eq-param-label">Freq</span><span class="eq-param-value">3.2 kHz</span></div>
+        <div class="eq-param"><span class="eq-param-label">Gain</span><span class="eq-param-value">-1.8 dB</span></div>
+        <div class="eq-param"><span class="eq-param-label">Q</span><span class="eq-param-value">1.50</span></div>
+        <div class="eq-filter-actions"><button class="eq-filter-btn">M</button><button class="eq-filter-btn">S</button></div>
+      </div>
+      <div class="eq-filter-row">
+        <span class="eq-filter-num">5</span>
+        <span class="eq-filter-type">High Shelf</span>
+        <div class="eq-param"><span class="eq-param-label">Freq</span><span class="eq-param-value">8.0 kHz</span></div>
+        <div class="eq-param"><span class="eq-param-label">Gain</span><span class="eq-param-value">-2.0 dB</span></div>
+        <div class="eq-param"><span class="eq-param-label">Q</span><span class="eq-param-value">0.71</span></div>
+        <div class="eq-filter-actions"><button class="eq-filter-btn">M</button><button class="eq-filter-btn">S</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="footer-art"><span class="footer-art-icon">&#9835;</span></div>
+  <div class="footer-info"><div class="footer-track">Come Together</div><div class="footer-artist">The Beatles</div></div>
+  <div class="footer-transport">
+    <button class="transport-btn">&#9198;</button>
+    <button class="transport-btn play">&#9654;</button>
+    <button class="transport-btn">&#9197;</button>
+  </div>
+</div>
+
+</body>
+</html>

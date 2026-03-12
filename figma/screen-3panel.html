@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SOTF - 3-Panel Layout</title>
+<script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+<style>
+  :root {
+    --bg: #1e1e1e; --bg2: #252525; --bg3: #1a1a1a;
+    --surface: #2a2a2a; --surface-hover: #3a3a3a;
+    --text-primary: #ffffff; --text-secondary: #cccccc; --text-muted: #888888; --text-disabled: #555555;
+    --accent: #007acc; --accent-hover: #0098ff; --accent-muted: rgba(0,122,204,0.2);
+    --text-on-accent: #ffffff;
+    --success: #22c55e; --warning: #f59e0b; --error: #ef4444;
+    --border: #3a3a3a;
+    --meter-normal: #22c55e; --meter-warning: #f59e0b; --meter-clip: #ef4444;
+    --plug-eq: #3b82f6; --plug-gain: #22c55e; --plug-upmixer: #06b6d4;
+    --plug-comp: #f59e0b; --plug-limiter: #ef4444; --plug-spectrum: #eab308;
+    --plug-monitor: #6b7280;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro", system-ui, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text-primary); width: 1200px; height: 800px; overflow: hidden; display: flex; flex-direction: column; }
+
+  .menubar { display:flex; align-items:center; height:28px; background:var(--bg3); border-bottom:1px solid var(--border); padding:0 12px; gap:16px; flex-shrink:0; }
+  .menu-item { font-size:13px; color:var(--text-secondary); cursor:pointer; }
+  .menubar-right { margin-left:auto; font-size:11px; color:var(--text-muted); }
+
+  .main { flex:1; display:flex; overflow:hidden; }
+
+  /* Vertical Divider */
+  .v-divider { width:1px; background:var(--border); position:relative; cursor:col-resize; flex-shrink:0; }
+  .v-divider::after { content:""; position:absolute; top:50%; left:-3px; transform:translateY(-50%); width:6px; height:32px; background:var(--surface-hover); border-radius:3px; }
+
+  /* Library Panel (left) */
+  .library-panel { width:380px; display:flex; flex-direction:column; overflow:hidden; }
+  .lib-tabs { display:flex; gap:1px; padding:4px 8px; border-bottom:1px solid var(--border); flex-shrink:0; overflow-x:auto; }
+  .lib-tab { display:flex; flex-direction:column; align-items:center; gap:1px; padding:4px 8px; border-radius:4px; cursor:pointer; min-width:48px; }
+  .lib-tab-icon { font-size:12px; color:var(--text-muted); }
+  .lib-tab-label { font-size:8px; color:var(--text-muted); }
+  .lib-tab.active { background:var(--accent); }
+  .lib-tab.active .lib-tab-icon, .lib-tab.active .lib-tab-label { color:var(--text-on-accent); }
+
+  .album-grid { flex:1; display:grid; grid-template-columns:repeat(auto-fill, 110px); gap:8px; padding:8px; overflow-y:auto; align-content:start; }
+  .album-card { width:110px; cursor:pointer; border-radius:4px; }
+  .album-card:hover { background:var(--surface-hover); }
+  .album-card.selected { background:var(--accent-muted); }
+  .album-art { width:110px; height:110px; background:var(--surface); border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:24px; color:var(--text-muted); opacity:0.3; }
+  .album-info { padding:4px 2px; }
+  .album-title { font-size:9px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .album-artist { font-size:8px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Queue Panel (center) */
+  .queue-panel { width:340px; display:flex; flex-direction:column; overflow:hidden; }
+  .queue-header { display:flex; align-items:center; padding:8px; border-bottom:1px solid var(--border); gap:6px; flex-shrink:0; }
+  .queue-title { font-size:12px; font-weight:600; }
+  .queue-count { font-size:10px; color:var(--text-muted); margin-left:auto; }
+
+  .queue-list { flex:1; overflow-y:auto; }
+  .q-item { display:flex; align-items:center; padding:6px 8px; gap:8px; cursor:pointer; border-bottom:1px solid rgba(58,58,58,0.3); }
+  .q-item:hover { background:var(--surface-hover); }
+  .q-item.active { background:var(--accent-muted); border-left:3px solid var(--accent); }
+  .q-art { width:32px; height:32px; background:var(--surface); border-radius:3px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:11px; color:var(--text-muted); opacity:0.3; }
+  .q-info { min-width:0; flex:1; }
+  .q-title { font-size:11px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .q-artist { font-size:9px; color:var(--text-muted); }
+  .q-dur { font-size:9px; color:var(--text-disabled); flex-shrink:0; }
+
+  .meters-section { padding:8px; border-top:1px solid var(--border); flex-shrink:0; }
+  .meter-label { font-size:9px; color:var(--text-muted); margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+  .meter-row { display:flex; align-items:center; gap:4px; margin-bottom:3px; }
+  .meter-ch { font-size:8px; color:var(--text-muted); width:14px; text-align:right; }
+  .meter-bar { flex:1; height:5px; background:var(--surface); border-radius:2px; overflow:hidden; }
+  .meter-fill { height:100%; background:var(--meter-normal); border-radius:2px; }
+  .meter-db { font-size:7px; color:var(--text-muted); width:32px; text-align:right; font-family:"B612",monospace; }
+
+  /* Rack Panel (right) */
+  .rack-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:0; }
+  .rack-header { display:flex; align-items:center; padding:8px; border-bottom:1px solid var(--border); gap:6px; flex-shrink:0; }
+  .rack-title { font-size:12px; font-weight:600; }
+
+  .plug-strip { display:flex; gap:4px; padding:8px; overflow-x:auto; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .plug-card { width:64px; min-width:64px; height:48px; background:var(--surface); border:1px solid var(--border); border-radius:4px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; position:relative; overflow:hidden; }
+  .plug-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:2px; }
+  .plug-card.selected { border-color:var(--accent); }
+  .plug-icon { font-size:14px; }
+  .plug-name { font-size:8px; font-weight:600; }
+  .plug-card[data-t="eq"]::before { background:var(--plug-eq); }
+  .plug-card[data-t="eq"] .plug-name { color:var(--plug-eq); }
+  .plug-card[data-t="gain"]::before { background:var(--plug-gain); }
+  .plug-card[data-t="gain"] .plug-name { color:var(--plug-gain); }
+  .plug-card[data-t="upmix"]::before { background:var(--plug-upmixer); }
+  .plug-card[data-t="upmix"] .plug-name { color:var(--plug-upmixer); }
+  .plug-card[data-t="comp"]::before { background:var(--plug-comp); }
+  .plug-card[data-t="comp"] .plug-name { color:var(--plug-comp); }
+  .plug-card[data-t="lim"]::before { background:var(--plug-limiter); }
+  .plug-card[data-t="lim"] .plug-name { color:var(--plug-limiter); }
+  .plug-card[data-t="spec"]::before { background:var(--plug-spectrum); }
+  .plug-card[data-t="spec"] .plug-name { color:var(--plug-spectrum); }
+  .plug-add { width:32px; min-width:32px; height:48px; border:1px dashed var(--border); border-radius:4px; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:14px; cursor:pointer; }
+
+  .rack-detail { flex:1; padding:8px; overflow-y:auto; }
+  .rack-eq-curve { width:100%; height:120px; background:var(--bg2); border:1px solid var(--border); border-radius:4px; margin-bottom:8px; position:relative; }
+  .eq-zero-line { position:absolute; width:100%; height:1px; background:var(--text-disabled); top:50%; }
+
+  .eq-row { display:flex; align-items:center; gap:8px; padding:4px 8px; background:var(--surface); border-radius:4px; border-left:2px solid var(--plug-eq); margin-bottom:4px; font-size:10px; }
+  .eq-num { font-weight:600; color:var(--plug-eq); width:12px; }
+  .eq-type { color:var(--text-muted); font-size:9px; min-width:50px; }
+  .eq-val { font-family:"B612",monospace; font-size:10px; }
+  .eq-val-label { font-size:8px; color:var(--text-muted); }
+
+  /* Footer */
+  .footer { height:80px; background:var(--bg3); border-top:1px solid var(--border); display:flex; align-items:stretch; flex-shrink:0; }
+  .f-art { width:80px; height:80px; background:var(--surface-hover); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:20px; color:var(--text-muted); opacity:0.4; border-bottom-left-radius:8px; }
+  .f-info { padding:12px 10px; display:flex; flex-direction:column; justify-content:center; gap:1px; width:150px; }
+  .f-track { font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .f-artist { font-size:10px; color:var(--text-muted); }
+  .f-transport { flex:1; display:flex; align-items:center; justify-content:center; gap:12px; }
+  .t-btn { background:none; border:none; color:var(--text-secondary); font-size:14px; cursor:pointer; }
+  .t-btn.play { width:32px; height:32px; background:var(--accent); border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--text-on-accent); font-size:12px; }
+  .f-vol { display:flex; align-items:center; padding:0 12px; }
+  .vol-knob { width:28px; height:28px; border-radius:50%; background:linear-gradient(145deg, var(--surface-hover), var(--surface)); border:2px solid var(--border); }
+</style>
+</head>
+<body>
+
+<div class="menubar">
+  <span class="menu-item">File</span>
+  <span class="menu-item">Show</span>
+  <span class="menu-item">Help</span>
+  <div class="menubar-right">1,247 albums &middot; 48000 Hz</div>
+</div>
+
+<div class="main">
+  <!-- Library Panel -->
+  <div class="library-panel">
+    <div class="lib-tabs">
+      <div class="lib-tab"><span class="lib-tab-icon">&#128191;</span><span class="lib-tab-label">Year</span></div>
+      <div class="lib-tab"><span class="lib-tab-icon">&#128193;</span><span class="lib-tab-label">Genre</span></div>
+      <div class="lib-tab active"><span class="lib-tab-icon">&#128100;</span><span class="lib-tab-label">Artist</span></div>
+      <div class="lib-tab"><span class="lib-tab-icon">&#128191;</span><span class="lib-tab-label">Album</span></div>
+      <div class="lib-tab"><span class="lib-tab-icon">&#9835;</span><span class="lib-tab-label">Tracks</span></div>
+      <div class="lib-tab"><span class="lib-tab-icon">&#128269;</span><span class="lib-tab-label">Search</span></div>
+    </div>
+    <div class="album-grid">
+      <div class="album-card selected"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">Abbey Road</div><div class="album-artist">The Beatles</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">A Love Supreme</div><div class="album-artist">John Coltrane</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">Aja</div><div class="album-artist">Steely Dan</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">AM</div><div class="album-artist">Arctic Monkeys</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">Appetite for...</div><div class="album-artist">Guns N' Roses</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">Automatic...</div><div class="album-artist">R.E.M.</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">Avalon</div><div class="album-artist">Roxy Music</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">Achtung Baby</div><div class="album-artist">U2</div></div></div>
+      <div class="album-card"><div class="album-art">&#9835;</div><div class="album-info"><div class="album-title">Axis: Bold...</div><div class="album-artist">Jimi Hendrix</div></div></div>
+    </div>
+  </div>
+
+  <div class="v-divider"></div>
+
+  <!-- Queue Panel -->
+  <div class="queue-panel">
+    <div class="queue-header">
+      <span class="queue-title">Queue</span>
+      <span class="queue-count">12 tracks</span>
+    </div>
+    <div class="queue-list">
+      <div class="q-item active"><div class="q-art">&#9835;</div><div class="q-info"><div class="q-title">Come Together</div><div class="q-artist">The Beatles</div></div><span class="q-dur">4:19</span></div>
+      <div class="q-item"><div class="q-art">&#9835;</div><div class="q-info"><div class="q-title">Something</div><div class="q-artist">The Beatles</div></div><span class="q-dur">3:02</span></div>
+      <div class="q-item"><div class="q-art">&#9835;</div><div class="q-info"><div class="q-title">Maxwell's Silver Hammer</div><div class="q-artist">The Beatles</div></div><span class="q-dur">3:27</span></div>
+      <div class="q-item"><div class="q-art">&#9835;</div><div class="q-info"><div class="q-title">Oh! Darling</div><div class="q-artist">The Beatles</div></div><span class="q-dur">3:27</span></div>
+      <div class="q-item"><div class="q-art">&#9835;</div><div class="q-info"><div class="q-title">Here Comes the Sun</div><div class="q-artist">The Beatles</div></div><span class="q-dur">3:05</span></div>
+      <div class="q-item"><div class="q-art">&#9835;</div><div class="q-info"><div class="q-title">Because</div><div class="q-artist">The Beatles</div></div><span class="q-dur">2:45</span></div>
+    </div>
+    <div class="meters-section">
+      <div class="meter-label">Output</div>
+      <div class="meter-row"><span class="meter-ch">L</span><div class="meter-bar"><div class="meter-fill" style="width:72%"></div></div><span class="meter-db">-6.2</span></div>
+      <div class="meter-row"><span class="meter-ch">R</span><div class="meter-bar"><div class="meter-fill" style="width:68%"></div></div><span class="meter-db">-7.1</span></div>
+      <div class="meter-row"><span class="meter-ch">C</span><div class="meter-bar"><div class="meter-fill" style="width:55%"></div></div><span class="meter-db">-10.4</span></div>
+      <div class="meter-row"><span class="meter-ch">LS</span><div class="meter-bar"><div class="meter-fill" style="width:45%"></div></div><span class="meter-db">-14.2</span></div>
+      <div class="meter-row"><span class="meter-ch">RS</span><div class="meter-bar"><div class="meter-fill" style="width:44%"></div></div><span class="meter-db">-14.5</span></div>
+    </div>
+  </div>
+
+  <div class="v-divider"></div>
+
+  <!-- Rack Panel -->
+  <div class="rack-panel">
+    <div class="rack-header"><span class="rack-title">Studio</span></div>
+    <div class="plug-strip">
+      <div class="plug-card selected" data-t="eq"><span class="plug-icon" style="color:var(--plug-eq)">&asymp;</span><span class="plug-name">EQ</span></div>
+      <div class="plug-card" data-t="gain"><span class="plug-icon" style="color:var(--plug-gain)">&#9650;</span><span class="plug-name">Gain</span></div>
+      <div class="plug-card" data-t="upmix"><span class="plug-icon" style="color:var(--plug-upmixer)">&#9672;</span><span class="plug-name">Upmix</span></div>
+      <div class="plug-card" data-t="comp"><span class="plug-icon" style="color:var(--plug-comp)">&#9673;</span><span class="plug-name">Comp</span></div>
+      <div class="plug-card" data-t="lim"><span class="plug-icon" style="color:var(--plug-limiter)">&#9608;</span><span class="plug-name">Limit</span></div>
+      <div class="plug-card" data-t="spec"><span class="plug-icon" style="color:var(--plug-spectrum)">&#8767;</span><span class="plug-name">Spec</span></div>
+      <div class="plug-add">+</div>
+    </div>
+    <div class="rack-detail">
+      <div class="rack-eq-curve">
+        <div class="eq-zero-line"></div>
+        <svg style="width:100%;height:100%" viewBox="0 0 400 120" preserveAspectRatio="none">
+          <path d="M0,60 Q40,60 60,45 Q80,30 100,35 Q160,45 200,60 Q240,75 280,55 Q320,35 360,50 Q380,55 400,60" fill="none" stroke="#3b82f6" stroke-width="1.5" opacity="0.8"/>
+        </svg>
+      </div>
+      <div class="eq-row"><span class="eq-num">1</span><span class="eq-type">Low Shelf</span><span class="eq-val-label">F</span><span class="eq-val">80 Hz</span><span class="eq-val-label">G</span><span class="eq-val">+3.0</span><span class="eq-val-label">Q</span><span class="eq-val">0.71</span></div>
+      <div class="eq-row"><span class="eq-num">2</span><span class="eq-type">Peak</span><span class="eq-val-label">F</span><span class="eq-val">250 Hz</span><span class="eq-val-label">G</span><span class="eq-val">-2.5</span><span class="eq-val-label">Q</span><span class="eq-val">1.41</span></div>
+      <div class="eq-row"><span class="eq-num">3</span><span class="eq-type">Peak</span><span class="eq-val-label">F</span><span class="eq-val">1.0 kHz</span><span class="eq-val-label">G</span><span class="eq-val">+1.5</span><span class="eq-val-label">Q</span><span class="eq-val">2.00</span></div>
+      <div class="eq-row"><span class="eq-num">4</span><span class="eq-type">Peak</span><span class="eq-val-label">F</span><span class="eq-val">3.2 kHz</span><span class="eq-val-label">G</span><span class="eq-val">-1.8</span><span class="eq-val-label">Q</span><span class="eq-val">1.50</span></div>
+      <div class="eq-row"><span class="eq-num">5</span><span class="eq-type">High Shelf</span><span class="eq-val-label">F</span><span class="eq-val">8.0 kHz</span><span class="eq-val-label">G</span><span class="eq-val">-2.0</span><span class="eq-val-label">Q</span><span class="eq-val">0.71</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="f-art">&#9835;</div>
+  <div class="f-info"><div class="f-track">Come Together</div><div class="f-artist">The Beatles</div></div>
+  <div class="f-transport">
+    <button class="t-btn">&#9198;</button>
+    <button class="t-btn play">&#9654;</button>
+    <button class="t-btn">&#9197;</button>
+  </div>
+  <div class="f-vol"><div class="vol-knob"></div></div>
+</div>
+
+</body>
+</html>
