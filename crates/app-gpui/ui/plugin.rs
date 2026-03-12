@@ -28,6 +28,11 @@ impl PlayerView {
     /// Apply a pending plugin update to the audio engine.
     /// Called from the timer callback when there's a pending update.
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
+        let plugin_state_snapshot = match update_type {
+            PluginUpdateType::Structural => Some(state.app.plugin_state.clone()),
+            PluginUpdateType::Parameter { .. } => None,
+        };
+
         let result = match update_type {
             PluginUpdateType::Parameter {
                 plugin_index,
@@ -81,6 +86,14 @@ impl PlayerView {
 
         if let Err(e) = result {
             log::warn!("Failed to apply plugin update: {}", e);
+            if let Some(snapshot) = plugin_state_snapshot {
+                state.app.rollback_failed_plugin_update(snapshot, e.to_string());
+            } else {
+                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
+                    "Plugin update failed: {}",
+                    e
+                )));
+            }
         }
     }
 

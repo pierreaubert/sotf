@@ -8,7 +8,7 @@
 use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
-use rtrb::{Consumer, RingBuffer};
+use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -19,6 +19,15 @@ use std::sync::mpsc::{Receiver, Sender, SyncSender};
 const SPIN_MS_RINGBUFFER: u64 = 5;
 /// Max input channels for the stack-allocated downmix coefficient arrays.
 const MAX_DOWNMIX_CH: usize = 16;
+
+fn is_virtual_output_device_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.contains("sotf")
+        || lower.contains("blackhole")
+        || lower.contains("zoomaudio")
+        || lower.contains("loopback")
+        || crate::devices::is_null_device(name)
+}
 
 /// Playback thread handle
 pub struct PlaybackThread {
@@ -32,6 +41,7 @@ impl PlaybackThread {
         message_rx: Receiver<ProcessingMessage>,
         event_tx: Sender<ThreadEvent>,
         sample_rate: u32,
+        buffer_ms: u32,
         channels: usize,
         output_device: Option<String>,
         recycle_tx: SyncSender<Vec<f32>>,
@@ -47,6 +57,7 @@ impl PlaybackThread {
                     command_rx,
                     event_tx,
                     sample_rate,
+                    buffer_ms,
                     channels,
                     output_device,
                     recycle_tx,
@@ -95,6 +106,7 @@ struct PlaybackState {
     capacity: usize,
     volume: Arc<AtomicU32>, // Atomic f32 stored as u32 bits
     muted: Arc<AtomicBool>,
+    flush_requested: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
     total_callback_samples: Arc<AtomicU64>,
@@ -107,6 +119,7 @@ impl PlaybackState {
             capacity,
             volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             muted: Arc::new(AtomicBool::new(false)),
+            flush_requested: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)),
             total_callback_samples: Arc::new(AtomicU64::new(0)),
@@ -115,12 +128,40 @@ impl PlaybackState {
     }
 }
 
+fn playback_buffer_capacity(sample_rate: u32, channels: usize, buffer_ms: u32) -> usize {
+    (((sample_rate as u64 * buffer_ms as u64) / 1000) as usize) * channels
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FlushMode {
+    Normal,
+    DroppingUntilFlush,
+    WaitingForDrain,
+}
+
+fn request_flush(state: &PlaybackState) {
+    state.flush_requested.store(true, Ordering::Relaxed);
+}
+
+fn flush_completed(
+    state: &PlaybackState,
+    producer: &Producer<f32>,
+    buffer_capacity: usize,
+) -> bool {
+    if state.flush_requested.load(Ordering::Relaxed) && producer.slots() >= buffer_capacity {
+        state.flush_requested.store(false, Ordering::Relaxed);
+    }
+
+    !state.flush_requested.load(Ordering::Relaxed)
+}
+
 /// Main playback thread function
 fn run_playback_thread(
     message_rx: Receiver<ProcessingMessage>,
     command_rx: Receiver<PlaybackCommand>,
     event_tx: Sender<ThreadEvent>,
     sample_rate: u32,
+    buffer_ms: u32,
     initial_channels: usize,
     output_device: Option<String>,
     recycle_tx: SyncSender<Vec<f32>>,
@@ -147,10 +188,7 @@ fn run_playback_thread(
             };
             let physical = devices.into_iter().find(|d| {
                 let name = get_device_name(d);
-                !name.contains("SotF")
-                    && !name.contains("BlackHole")
-                    && !name.contains("ZoomAudio")
-                    && !name.contains("Loopback")
+                !is_virtual_output_device_name(&name)
             });
 
             if let Some(dev) = physical {
@@ -167,9 +205,10 @@ fn run_playback_thread(
 
         // If explicitly requested a virtual device (likely by accident due to it being default),
         // force a fallback to avoid feedback loop
-        if device_identifier.contains("SotF") {
+        if is_virtual_output_device_name(&device_identifier) {
             log::warn!(
-                "[Playback Thread] 'SotF' virtual device requested as output - forcing fallback to prevent feedback loop"
+                "[Playback Thread] Virtual output device '{}' requested as output - forcing fallback to prevent feedback loop",
+                device_identifier
             );
             find_fallback().map_err(|e| format!("Failed to find fallback device: {}", e))?
         } else {
@@ -185,12 +224,17 @@ fn run_playback_thread(
                 }
                 Err(e) => {
                     log::info!(
-                        "[Playback Thread] Device '{}' not found (error: {}), using default",
+                        "[Playback Thread] Device '{}' not found (error: {}), using fallback output device",
                         device_identifier,
                         e
                     );
-                    host.default_output_device()
-                        .ok_or("No default output device available")?
+                    find_fallback()
+                        .map_err(|fallback_err| {
+                            format!(
+                                "Failed to find fallback output device after lookup error '{}': {}",
+                                e, fallback_err
+                            )
+                        })?
                 }
             }
         }
@@ -207,10 +251,7 @@ fn run_playback_thread(
         };
         let name = get_name(&default_dev);
 
-        if name.contains("SotF")
-            || name.contains("BlackHole")
-            || crate::devices::is_null_device(&name)
-        {
+        if is_virtual_output_device_name(&name) {
             log::warn!(
                 "[Playback Thread] Default device is '{}' (virtual/null) - finding fallback physical device",
                 name
@@ -220,10 +261,7 @@ fn run_playback_thread(
                 .map_err(|e| format!("Failed to list devices: {}", e))?;
             let physical = devices.into_iter().find(|d| {
                 let n = get_name(d);
-                !n.contains("SotF")
-                    && !n.contains("BlackHole")
-                    && !n.contains("Loopback")
-                    && !crate::devices::is_null_device(&n)
+                !is_virtual_output_device_name(&n)
             });
             physical.unwrap_or(default_dev)
         } else {
@@ -257,7 +295,7 @@ fn run_playback_thread(
     }
 
     // Create shared state (ring buffer with ~500ms capacity)
-    let mut buffer_capacity = (sample_rate as usize * 500) / 1000 * channels; // 500ms * channels
+    let mut buffer_capacity = playback_buffer_capacity(sample_rate, channels, buffer_ms);
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
     let mut state = Arc::new(PlaybackState::new(buffer_capacity));
 
@@ -278,6 +316,9 @@ fn run_playback_thread(
     stream
         .play()
         .map_err(|e| format!("Failed to start stream: {}", e))?;
+    event_tx
+        .send(ThreadEvent::PlaybackChannelsChanged(channels))
+        .ok();
 
     // Get device name for logging
     let device_name = device
@@ -309,7 +350,7 @@ fn run_playback_thread(
     let stream_start_time = std::time::Instant::now();
 
     // Warn if the device name looks like a virtual device
-    if device_name.contains("SotF") || device_name.contains("BlackHole") {
+    if is_virtual_output_device_name(&device_name) {
         log::error!(
             "[Playback Thread] WARNING: Output device '{}' appears to be a virtual device! This will cause a feedback loop.",
             device_name
@@ -329,6 +370,7 @@ fn run_playback_thread(
     let mut end_of_stream = false;
     let mut drain_start: Option<std::time::Instant> = None;
     let drain_timeout = std::time::Duration::from_secs(2);
+    let mut flush_mode = FlushMode::Normal;
 
     // Callback stall detection: if cpal callbacks stop firing for too long
     // while we have data to play, the device is broken (common with HDMI/monitor audio).
@@ -411,7 +453,7 @@ fn run_playback_thread(
 
                         // Create new ring buffer with correct channel count
                         let new_buffer_capacity =
-                            (new_sample_rate as usize * 500) / 1000 * new_channels;
+                            playback_buffer_capacity(new_sample_rate, new_channels, buffer_ms);
                         let (new_producer, new_consumer) =
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
@@ -452,6 +494,9 @@ fn run_playback_thread(
                                     channels = new_channels;
                                     producer = new_producer;
                                     buffer_capacity = new_buffer_capacity;
+                                    event_tx
+                                        .send(ThreadEvent::PlaybackChannelsChanged(channels))
+                                        .ok();
 
                                     // Final drain
                                     while message_rx.try_recv().is_ok() {}
@@ -532,7 +577,7 @@ fn run_playback_thread(
 
                         // Create new ring buffer for the new channel configuration
                         let new_buffer_capacity =
-                            (sample_rate as usize * 500) / 1000 * new_channels;
+                            playback_buffer_capacity(sample_rate, new_channels, buffer_ms);
                         let (new_producer, new_consumer) =
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
@@ -610,6 +655,9 @@ fn run_playback_thread(
                                     channels = new_channels;
                                     producer = new_producer;
                                     buffer_capacity = new_buffer_capacity;
+                                    event_tx
+                                        .send(ThreadEvent::PlaybackChannelsChanged(channels))
+                                        .ok();
 
                                     // Final drain - discard any frames that arrived during rebuild
                                     // These might have wrong channel count
@@ -660,18 +708,24 @@ fn run_playback_thread(
                     }
                 }
                 PlaybackCommand::Stop => {
-                    // To clear, we drop the old buffer and create a new one, but we can't easily do that inside the loop
-                    // without rebuilding the stream because the consumer is moved into the stream callback.
-                    // For now, stopping the stream or just letting it drain is safer.
-                    // Or we could implement a "skipping" logic, but rtrb doesn't have a clear() method on producer easily accessible here.
-                    // Actually, we can just drain the producer if we had access to consumer, but we don't.
-                    // A simple workaround: we can't clear the buffer from the producer side directly.
-                    // We rely on the fact that stopping decoding/processing will stop feeding data.
+                    request_flush(&state);
+                    flush_mode = FlushMode::DroppingUntilFlush;
+                    end_of_stream = false;
+                    drain_start = None;
                 }
                 PlaybackCommand::Shutdown => {
                     log::debug!("[Playback Thread] Shutting down");
                     break;
                 }
+            }
+        }
+
+        if matches!(flush_mode, FlushMode::WaitingForDrain) {
+            if flush_completed(&state, &producer, buffer_capacity) {
+                flush_mode = FlushMode::Normal;
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                continue;
             }
         }
 
@@ -748,6 +802,12 @@ fn run_playback_thread(
 
         match message {
             Ok(ProcessingMessage::Frame(frame)) => {
+                if matches!(flush_mode, FlushMode::DroppingUntilFlush) {
+                    frames_dropped += 1;
+                    recycle_tx.try_send(frame.data).ok();
+                    continue;
+                }
+
                 frames_received += 1;
 
                 // Handle channel count mismatch with robust conversion
@@ -898,12 +958,22 @@ fn run_playback_thread(
                 total_samples_written += frame_samples as u64;
             }
             Ok(ProcessingMessage::EndOfStream) => {
+                if matches!(flush_mode, FlushMode::DroppingUntilFlush) {
+                    continue;
+                }
                 log::debug!("[Playback Thread] End of stream - starting drain");
                 end_of_stream = true;
                 drain_start = Some(std::time::Instant::now());
             }
             Ok(ProcessingMessage::Flush) => {
-                // Cannot easily clear rtrb producer side without consumer access
+                request_flush(&state);
+                end_of_stream = false;
+                drain_start = None;
+                flush_mode = if flush_completed(&state, &producer, buffer_capacity) {
+                    FlushMode::Normal
+                } else {
+                    FlushMode::WaitingForDrain
+                };
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 if end_of_stream {
@@ -948,7 +1018,6 @@ fn run_playback_thread(
                     // Still draining, sleep briefly
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 } else {
-                    // No message available, sleep briefly to avoid 100% CPU
                     std::thread::sleep(std::time::Duration::from_millis(1));
                 }
             }
@@ -1060,13 +1129,33 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     let supported: Vec<_> = match device.supported_output_configs() {
         Ok(configs) => configs.collect(),
         Err(e) => {
-            log::warn!(
-                "[Playback Thread] Cannot query supported formats: {}, defaulting to F32",
-                e
+            let fallback = fallback_output_format(
+                device
+                    .default_output_config()
+                    .ok()
+                    .map(|cfg| (cfg.sample_format(), cfg.channels())),
+                config.channels,
             );
-            return (SampleFormat::F32, config.channels);
+            log::warn!(
+                "[Playback Thread] Cannot query supported formats: {}, falling back to {:?}/{}ch",
+                e,
+                fallback.0,
+                fallback.1
+            );
+            return fallback;
         }
     };
+    let candidates: Vec<_> = supported
+        .iter()
+        .map(|c| {
+            (
+                c.sample_format(),
+                c.channels(),
+                c.min_sample_rate(),
+                c.max_sample_rate(),
+            )
+        })
+        .collect();
 
     let log_configs = || {
         supported
@@ -1083,30 +1172,9 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
             .collect::<Vec<_>>()
     };
 
-    // Check if a format is available for a given channel count and sample rate
-    let has_fmt = |fmt: SampleFormat, ch: u16| {
-        supported.iter().any(|c| {
-            c.sample_format() == fmt
-                && c.channels() == ch
-                && c.min_sample_rate() <= config.sample_rate
-                && c.max_sample_rate() >= config.sample_rate
-        })
-    };
-
-    let pick_format = |ch: u16| -> Option<SampleFormat> {
-        if has_fmt(SampleFormat::F32, ch) {
-            Some(SampleFormat::F32)
-        } else if has_fmt(SampleFormat::I32, ch) {
-            Some(SampleFormat::I32)
-        } else if has_fmt(SampleFormat::I16, ch) {
-            Some(SampleFormat::I16)
-        } else {
-            None
-        }
-    };
-
     // First try: exact channel count match
-    if let Some(fmt) = pick_format(config.channels) {
+    if let Some(fmt) = pick_preferred_output_format(&candidates, config.channels, config.sample_rate)
+    {
         log::info!(
             "[Playback Thread] Chosen output format: {:?} for {}ch {}Hz (device configs: {:?})",
             fmt,
@@ -1138,7 +1206,7 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
         .copied();
 
     if let Some(ch) = alt_ch
-        && let Some(fmt) = pick_format(ch)
+        && let Some(fmt) = pick_preferred_output_format(&candidates, ch, config.sample_rate)
     {
         log::warn!(
             "[Playback Thread] Device doesn't support {}ch; using {}ch {:?} (will downmix). Device configs: {:?}",
@@ -1151,12 +1219,48 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     }
 
     log::warn!(
-        "[Playback Thread] No compatible config for {}ch {}Hz among device formats, trying F32 anyway. Device configs: {:?}",
+        "[Playback Thread] No compatible config for {}ch {}Hz among device formats, falling back to default format. Device configs: {:?}",
         config.channels,
         config.sample_rate,
         log_configs()
     );
-    (SampleFormat::F32, config.channels)
+    fallback_output_format(
+        device
+            .default_output_config()
+            .ok()
+            .map(|cfg| (cfg.sample_format(), cfg.channels())),
+        config.channels,
+    )
+}
+
+fn pick_preferred_output_format(
+    candidates: &[(SampleFormat, u16, cpal::SampleRate, cpal::SampleRate)],
+    channels: u16,
+    sample_rate: cpal::SampleRate,
+) -> Option<SampleFormat> {
+    [
+        SampleFormat::F32,
+        SampleFormat::I32,
+        SampleFormat::I16,
+        SampleFormat::U32,
+        SampleFormat::U16,
+    ]
+    .into_iter()
+    .find(|fmt| {
+        candidates.iter().any(|candidate| {
+            candidate.0 == *fmt
+                && candidate.1 == channels
+                && candidate.2 <= sample_rate
+                && candidate.3 >= sample_rate
+        })
+    })
+}
+
+fn fallback_output_format(
+    default_format_and_channels: Option<(SampleFormat, u16)>,
+    requested_channels: u16,
+) -> (SampleFormat, u16) {
+    default_format_and_channels.unwrap_or((SampleFormat::F32, requested_channels))
 }
 
 /// Read f32 samples from the ring buffer into a scratch buffer.
@@ -1174,6 +1278,32 @@ fn read_ring_buffer(
     state
         .total_callback_samples
         .fetch_add(requested as u64, Ordering::Relaxed);
+
+    if state.flush_requested.load(Ordering::Relaxed) {
+        let available = consumer.slots().min(requested);
+        if available > 0
+            && let Ok(chunk) = consumer.read_chunk(available)
+        {
+            chunk.commit_all();
+        }
+
+        scratch[..requested].fill(0.0);
+
+        if consumer.slots() == 0 {
+            state.flush_requested.store(false, Ordering::Relaxed);
+        }
+
+        let fill_percent = if capacity > 0 {
+            (consumer.slots() * 100) / capacity
+        } else {
+            0
+        };
+        state
+            .last_buffer_level
+            .store(fill_percent as u64, Ordering::Relaxed);
+
+        return false;
+    }
 
     let mut underrun = false;
 
@@ -1215,9 +1345,11 @@ fn read_ring_buffer(
         }
 
         underrun = true;
-        let current_underruns = state.underrun_count.fetch_add(1, Ordering::Relaxed);
-        if current_underruns.is_multiple_of(100) {
-            event_tx.send(ThreadEvent::PlaybackUnderrun).ok();
+        let current_underruns = state.underrun_count.fetch_add(1, Ordering::Relaxed) + 1;
+        if current_underruns == 1 || current_underruns.is_multiple_of(100) {
+            event_tx
+                .send(ThreadEvent::PlaybackUnderrun(current_underruns))
+                .ok();
         }
     }
 
@@ -1272,6 +1404,12 @@ fn build_output_stream(
         }
         SampleFormat::I16 => {
             build_output_stream_int::<i16>(device, config, state, event_tx, consumer)
+        }
+        SampleFormat::U32 => {
+            build_output_stream_int::<u32>(device, config, state, event_tx, consumer)
+        }
+        SampleFormat::U16 => {
+            build_output_stream_int::<u16>(device, config, state, event_tx, consumer)
         }
         _ => Err(format!("Unsupported sample format: {:?}", sample_format)),
     }
@@ -1386,4 +1524,127 @@ where
         .map_err(|e| format!("Failed to build output stream: {}", e))?;
 
     Ok(stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        PlaybackState, fallback_output_format, is_virtual_output_device_name,
+        pick_preferred_output_format,
+        playback_buffer_capacity, read_ring_buffer, request_flush,
+    };
+    use cpal::SampleFormat;
+    use rtrb::RingBuffer;
+    use std::sync::atomic::Ordering;
+    use std::sync::mpsc::channel;
+
+    #[test]
+    fn read_ring_buffer_discards_samples_while_flush_requested() {
+        let (mut producer, mut consumer) = RingBuffer::<f32>::new(8);
+        let chunk = producer.write_chunk_uninit(4).unwrap();
+        chunk.fill_from_iter([0.25, 0.5, 0.75, 1.0]);
+
+        let state = PlaybackState::new(8);
+        request_flush(&state);
+        let (event_tx, _event_rx) = channel();
+        let mut scratch = [1.0; 4];
+
+        let underrun = read_ring_buffer(&mut consumer, &mut scratch, 4, &state, &event_tx, 8);
+
+        assert!(!underrun);
+        assert_eq!(scratch, [0.0; 4]);
+        assert_eq!(consumer.slots(), 0);
+        assert!(!state.flush_requested.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn read_ring_buffer_keeps_flush_requested_until_buffer_is_empty() {
+        let (mut producer, mut consumer) = RingBuffer::<f32>::new(8);
+        let chunk = producer.write_chunk_uninit(8).unwrap();
+        chunk.fill_from_iter([0.0; 8]);
+
+        let state = PlaybackState::new(8);
+        request_flush(&state);
+        let (event_tx, _event_rx) = channel();
+        let mut scratch = [1.0; 4];
+
+        read_ring_buffer(&mut consumer, &mut scratch, 4, &state, &event_tx, 8);
+        assert_eq!(scratch, [0.0; 4]);
+        assert_eq!(consumer.slots(), 4);
+        assert!(state.flush_requested.load(Ordering::Relaxed));
+
+        read_ring_buffer(&mut consumer, &mut scratch, 4, &state, &event_tx, 8);
+        assert_eq!(scratch, [0.0; 4]);
+        assert_eq!(consumer.slots(), 0);
+        assert!(!state.flush_requested.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn playback_buffer_capacity_uses_configured_buffer_ms() {
+        assert_eq!(playback_buffer_capacity(48_000, 2, 200), 19_200);
+    }
+
+    #[test]
+    fn playback_buffer_capacity_scales_with_latency_budget() {
+        assert_eq!(playback_buffer_capacity(48_000, 2, 100), 9_600);
+        assert_eq!(playback_buffer_capacity(48_000, 2, 250), 24_000);
+    }
+
+    #[test]
+    fn pick_preferred_output_format_falls_back_to_unsigned_formats() {
+        let candidates = vec![
+            (SampleFormat::U16, 2, 44_100, 48_000),
+            (SampleFormat::U32, 2, 44_100, 48_000),
+        ];
+
+        assert_eq!(
+            pick_preferred_output_format(&candidates, 2, 48_000),
+            Some(SampleFormat::U32)
+        );
+    }
+
+    #[test]
+    fn pick_preferred_output_format_prefers_signed_formats_before_unsigned() {
+        let candidates = vec![
+            (SampleFormat::U32, 2, 44_100, 48_000),
+            (SampleFormat::I16, 2, 44_100, 48_000),
+        ];
+
+        assert_eq!(
+            pick_preferred_output_format(&candidates, 2, 48_000),
+            Some(SampleFormat::I16)
+        );
+    }
+
+    #[test]
+    fn fallback_output_format_prefers_device_default_when_available() {
+        assert_eq!(
+            fallback_output_format(Some((SampleFormat::U16, 6)), 2),
+            (SampleFormat::U16, 6)
+        );
+    }
+
+    #[test]
+    fn fallback_output_format_defaults_to_f32_requested_channels_when_missing() {
+        assert_eq!(
+            fallback_output_format(None, 2),
+            (SampleFormat::F32, 2)
+        );
+    }
+
+    #[test]
+    fn is_virtual_output_device_name_matches_known_virtual_outputs() {
+        assert!(is_virtual_output_device_name("SotF Virtual Output"));
+        assert!(is_virtual_output_device_name("BlackHole 2ch"));
+        assert!(is_virtual_output_device_name("ZoomAudioDevice"));
+        assert!(is_virtual_output_device_name("Loopback Audio"));
+        assert!(is_virtual_output_device_name("blackhole 2ch"));
+        assert!(is_virtual_output_device_name("zoomaudiodevice"));
+        assert!(is_virtual_output_device_name("loopback audio"));
+    }
+
+    #[test]
+    fn is_virtual_output_device_name_allows_regular_physical_outputs() {
+        assert!(!is_virtual_output_device_name("Built-in Output"));
+    }
 }

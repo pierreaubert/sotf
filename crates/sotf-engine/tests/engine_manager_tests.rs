@@ -119,6 +119,20 @@ fn test_engine_seek() {
 }
 
 #[test]
+fn test_engine_seek_without_file_returns_error() {
+    let config = common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    let result = engine.seek(1.0);
+
+    assert!(result.is_err(), "Seek without a loaded file should fail synchronously");
+
+    let state = engine.get_state();
+    assert!(!state.seeking);
+    assert_eq!(state.position, 0.0);
+}
+
+#[test]
 fn test_engine_volume_control() {
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -176,6 +190,40 @@ fn test_engine_update_plugin_chain() {
 }
 
 #[test]
+fn test_engine_update_plugin_chain_rejects_incompatible_upmixer_and_preserves_playback() {
+    let config = common::test_engine_config_with(|c| {
+        c.output_channels = 2;
+    });
+    let engine = AudioEngine::new(config).unwrap();
+
+    let temp_file = common::create_test_wav(1.0, 48000, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+
+    std::thread::sleep(Duration::from_millis(100));
+
+    let plugins = vec![PluginConfig::new(
+        "upmixer",
+        serde_json::json!({
+            "speaker_config": "5.1"
+        }),
+    )];
+
+    let result = engine.update_plugin_chain(plugins);
+    assert!(result.is_err(), "Incompatible upmixer update should fail");
+
+    let error = result.unwrap_err();
+    assert!(error.contains("requires 6 output channels"));
+    assert!(error.contains("configured for 2 channels"));
+
+    std::thread::sleep(Duration::from_millis(100));
+
+    let state = engine.get_state();
+    assert_eq!(state.playback_state, PlaybackState::Playing);
+    assert_eq!(state.num_channels, 2);
+    assert_eq!(state.last_error.as_deref(), Some(error.as_str()));
+}
+
+#[test]
 fn test_engine_bypass_processing() {
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -196,22 +244,26 @@ fn test_engine_bypass_processing() {
 }
 
 #[test]
+fn test_engine_set_plugin_parameter_propagates_processing_error() {
+    let config = common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    let result = engine.set_plugin_parameter(999, "gain_db".to_string(), "-6.0".to_string());
+
+    assert!(result.is_err(), "Invalid plugin index should return an error");
+}
+
+#[test]
 fn test_engine_invalid_file() {
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
-    let _result = engine.play(PathBuf::from("/nonexistent/file.wav"));
+    let result = engine.play(PathBuf::from("/nonexistent/file.wav"));
 
-    // Should return an error or handle gracefully
-    // The error might be immediate or async, so we check state
-    std::thread::sleep(Duration::from_millis(200));
+    assert!(result.is_err(), "Invalid file should fail synchronously");
 
     let state = engine.get_state();
-    // Should either fail to start or report an error
-    assert!(
-        state.playback_state == PlaybackState::Stopped || state.last_error.is_some(),
-        "Should handle invalid file gracefully"
-    );
+    assert_eq!(state.playback_state, PlaybackState::Stopped);
 }
 
 #[test]

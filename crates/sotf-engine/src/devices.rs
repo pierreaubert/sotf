@@ -1,4 +1,5 @@
 use cpal::Device;
+use cpal::Sample;
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -534,6 +535,7 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
 pub fn verify_working_sample_rate(
     device_identifier: Option<&str>,
     requested_rate: u32,
+    requested_channels: usize,
 ) -> Option<u32> {
     use cpal::StreamConfig;
     use cpal::traits::StreamTrait;
@@ -575,154 +577,179 @@ pub fn verify_working_sample_rate(
     }
 
     // Get device's default channel count for test streams
-    let test_channels = device
+    let default_channels = device
         .default_output_config()
         .map(|c| c.channels())
         .unwrap_or(2);
 
     for &rate in &candidates {
-        let config = StreamConfig {
-            channels: test_channels,
-            sample_rate: rate,
-            buffer_size: cpal::BufferSize::Default,
-        };
+        for test_channels in probe_channel_order(requested_channels, default_channels) {
+            let config = StreamConfig {
+                channels: test_channels,
+                sample_rate: rate,
+                buffer_size: cpal::BufferSize::Default,
+            };
 
-        let callback_count = Arc::new(AtomicU64::new(0));
-        let total_samples = Arc::new(AtomicU64::new(0));
+            let callback_count = Arc::new(AtomicU64::new(0));
+            let total_samples = Arc::new(AtomicU64::new(0));
 
-        // Try multiple sample formats — hw: devices often don't support f32.
-        let stream = {
-            let mut result = None;
-            // Try f32 first (most common on PulseAudio/PipeWire), then i32, then i16
-            {
-                let cc = callback_count.clone();
-                let ts = total_samples.clone();
-                if let Ok(s) = device.build_output_stream(
-                    &config,
-                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        cc.fetch_add(1, Ordering::Relaxed);
-                        ts.fetch_add(data.len() as u64, Ordering::Relaxed);
-                        data.fill(0.0);
-                    },
-                    |_err| {},
-                    None,
-                ) {
-                    result = Some(s);
+            // Try multiple sample formats — hw: devices often don't support f32.
+            let stream = {
+                let mut result = None;
+                // Try f32 first (most common on PulseAudio/PipeWire), then i32, then i16
+                {
+                    let cc = callback_count.clone();
+                    let ts = total_samples.clone();
+                    if let Ok(s) = device.build_output_stream(
+                        &config,
+                        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                            cc.fetch_add(1, Ordering::Relaxed);
+                            ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                            data.fill(0.0);
+                        },
+                        |_err| {},
+                        None,
+                    ) {
+                        result = Some(s);
+                    }
                 }
-            }
-            if result.is_none() {
-                let cc = callback_count.clone();
-                let ts = total_samples.clone();
-                if let Ok(s) = device.build_output_stream(
-                    &config,
-                    move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
-                        cc.fetch_add(1, Ordering::Relaxed);
-                        ts.fetch_add(data.len() as u64, Ordering::Relaxed);
-                        data.fill(0);
-                    },
-                    |_err| {},
-                    None,
-                ) {
-                    result = Some(s);
+                if result.is_none() {
+                    let cc = callback_count.clone();
+                    let ts = total_samples.clone();
+                    if let Ok(s) = device.build_output_stream(
+                        &config,
+                        move |data: &mut [i32], _: &cpal::OutputCallbackInfo| {
+                            cc.fetch_add(1, Ordering::Relaxed);
+                            ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                            data.fill(0);
+                        },
+                        |_err| {},
+                        None,
+                    ) {
+                        result = Some(s);
+                    }
                 }
-            }
-            if result.is_none() {
-                let cc = callback_count.clone();
-                let ts = total_samples.clone();
-                if let Ok(s) = device.build_output_stream(
-                    &config,
-                    move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                        cc.fetch_add(1, Ordering::Relaxed);
-                        ts.fetch_add(data.len() as u64, Ordering::Relaxed);
-                        data.fill(0);
-                    },
-                    |_err| {},
-                    None,
-                ) {
-                    result = Some(s);
+                if result.is_none() {
+                    let cc = callback_count.clone();
+                    let ts = total_samples.clone();
+                    if let Ok(s) = device.build_output_stream(
+                        &config,
+                        move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                            cc.fetch_add(1, Ordering::Relaxed);
+                            ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                            data.fill(0);
+                        },
+                        |_err| {},
+                        None,
+                    ) {
+                        result = Some(s);
+                    }
                 }
+                if result.is_none() {
+                    let cc = callback_count.clone();
+                    let ts = total_samples.clone();
+                    if let Ok(s) = device.build_output_stream(
+                        &config,
+                        move |data: &mut [u32], _: &cpal::OutputCallbackInfo| {
+                            cc.fetch_add(1, Ordering::Relaxed);
+                            ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                            data.fill(u32::from_sample(0.0f32));
+                        },
+                        |_err| {},
+                        None,
+                    ) {
+                        result = Some(s);
+                    }
+                }
+                if result.is_none() {
+                    let cc = callback_count.clone();
+                    let ts = total_samples.clone();
+                    if let Ok(s) = device.build_output_stream(
+                        &config,
+                        move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
+                            cc.fetch_add(1, Ordering::Relaxed);
+                            ts.fetch_add(data.len() as u64, Ordering::Relaxed);
+                            data.fill(u16::from_sample(0.0f32));
+                        },
+                        |_err| {},
+                        None,
+                    ) {
+                        result = Some(s);
+                    }
+                }
+                match result {
+                    Some(s) => s,
+                    None => continue,
+                }
+            };
+
+            if stream.play().is_err() {
+                continue;
             }
-            match result {
-                Some(s) => s,
-                None => continue,
+
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let count_phase1 = callback_count.load(Ordering::Relaxed);
+
+            if count_phase1 == 0 {
+                drop(stream);
+                #[cfg(target_os = "linux")]
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                #[cfg(not(target_os = "linux"))]
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                log::debug!(
+                    "[AUDIO] Device rate verification: {}Hz/{}ch - no callbacks in 150ms",
+                    rate,
+                    test_channels
+                );
+                continue;
             }
-        };
 
-        if stream.play().is_err() {
-            continue;
-        }
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            let count_phase2 = callback_count.load(Ordering::Relaxed);
+            let samples = total_samples.load(Ordering::Relaxed);
 
-        // Two-phase verification: wait 300ms total, check that callbacks keep firing.
-        // Some ALSA configurations fire 1 initial callback then stall — we need to
-        // detect that pattern and reject the rate.
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        let count_phase1 = callback_count.load(Ordering::Relaxed);
-
-        if count_phase1 == 0 {
-            // No callbacks at all — definitely broken
             drop(stream);
             #[cfg(target_os = "linux")]
             std::thread::sleep(std::time::Duration::from_millis(200));
             #[cfg(not(target_os = "linux"))]
             std::thread::sleep(std::time::Duration::from_millis(30));
-            log::debug!(
-                "[AUDIO] Device rate verification: {}Hz - no callbacks in 150ms",
-                rate
-            );
-            continue;
-        }
 
-        // Wait another 150ms and verify callbacks are still arriving
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        let count_phase2 = callback_count.load(Ordering::Relaxed);
-        let samples = total_samples.load(Ordering::Relaxed);
+            let expected_samples = rate as u64 * test_channels as u64 * 300 / 1000;
+            let new_callbacks = count_phase2 - count_phase1;
+            let enough_data = samples > expected_samples / 10;
 
-        // Explicitly stop and drop the stream before trying the next rate.
-        // On Linux/PipeWire, the ALSA compatibility layer needs more time to fully
-        // release the device before a new stream can reliably use it.
-        drop(stream);
-        #[cfg(target_os = "linux")]
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        #[cfg(not(target_os = "linux"))]
-        std::thread::sleep(std::time::Duration::from_millis(30));
-
-        // Check for sustained activity. Some ALSA hw: devices use very large buffers
-        // (e.g., 16384 samples/callback) which can fill up in phase 1, leaving no new
-        // callbacks in phase 2. Accept the rate if:
-        //   (a) new callbacks arrived in phase 2, OR
-        //   (b) we got 2+ callbacks with substantial data (not a single-callback stall)
-        let expected_samples = rate as u64 * test_channels as u64 * 300 / 1000; // 300ms worth
-        let new_callbacks = count_phase2 - count_phase1;
-        let enough_data = samples > expected_samples / 10;
-
-        if enough_data && (new_callbacks > 0 || count_phase1 >= 2) {
-            if rate != requested_rate {
-                log::warn!(
-                    "[AUDIO] Device rate verification: requested {}Hz doesn't work, using {}Hz ({} callbacks, {} samples in 300ms)",
-                    requested_rate,
-                    rate,
-                    count_phase2,
-                    samples
-                );
-            } else {
-                log::info!(
-                    "[AUDIO] Device rate verification: {}Hz works ({} callbacks, {} samples in 300ms)",
-                    rate,
-                    count_phase2,
-                    samples
-                );
+            if enough_data && (new_callbacks > 0 || count_phase1 >= 2) {
+                if rate != requested_rate {
+                    log::warn!(
+                        "[AUDIO] Device rate verification: requested {}Hz doesn't work, using {}Hz with {}ch ({} callbacks, {} samples in 300ms)",
+                        requested_rate,
+                        rate,
+                        test_channels,
+                        count_phase2,
+                        samples
+                    );
+                } else {
+                    log::info!(
+                        "[AUDIO] Device rate verification: {}Hz works with {}ch ({} callbacks, {} samples in 300ms)",
+                        rate,
+                        test_channels,
+                        count_phase2,
+                        samples
+                    );
+                }
+                return Some(rate);
             }
-            return Some(rate);
-        }
 
-        log::debug!(
-            "[AUDIO] Device rate verification: {}Hz - stalled (phase1={} phase2={} callbacks, {} samples, expected >{})",
-            rate,
-            count_phase1,
-            count_phase2,
-            samples,
-            expected_samples / 10
-        );
+            log::debug!(
+                "[AUDIO] Device rate verification: {}Hz/{}ch - stalled (phase1={} phase2={} callbacks, {} samples, expected >{})",
+                rate,
+                test_channels,
+                count_phase1,
+                count_phase2,
+                samples,
+                expected_samples / 10
+            );
+        }
     }
 
     log::warn!(
@@ -730,6 +757,20 @@ pub fn verify_working_sample_rate(
         candidates
     );
     None
+}
+
+fn probe_channel_order(requested_channels: usize, default_channels: u16) -> Vec<u16> {
+    let requested = u16::try_from(requested_channels).ok().filter(|&ch| ch > 0);
+    let mut order = Vec::new();
+
+    if let Some(ch) = requested {
+        order.push(ch);
+    }
+    if order.first().copied() != Some(default_channels) {
+        order.push(default_channels);
+    }
+
+    order
 }
 
 /// Check if a device name looks like a virtual null/discard sink that won't produce real audio.
@@ -1204,5 +1245,15 @@ mod tests {
 
         // Non-matching
         assert_eq!(match_device_priority(&devices, "Not Found"), None);
+    }
+
+    #[test]
+    fn test_probe_channel_order_prefers_requested_then_default() {
+        assert_eq!(probe_channel_order(6, 2), vec![6, 2]);
+    }
+
+    #[test]
+    fn test_probe_channel_order_deduplicates_matching_default() {
+        assert_eq!(probe_channel_order(2, 2), vec![2]);
     }
 }

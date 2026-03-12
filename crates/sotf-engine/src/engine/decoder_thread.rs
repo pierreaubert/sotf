@@ -4,7 +4,7 @@
 //
 // Decodes audio files using Symphonia and resamples if needed.
 
-use super::{AudioFrame, DecoderCommand, DecoderMessage, ThreadEvent};
+use super::{AudioFrame, DecoderCommand, DecoderMessage, DecoderResponse, ThreadEvent};
 use crate::decoder::{AudioDecoder, AudioSpec, DecodedAudio, create_decoder};
 use sotf_plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::path::PathBuf;
@@ -69,6 +69,7 @@ fn send_or_interrupt<T>(
 /// Decoder thread handle
 pub struct DecoderThread {
     command_tx: Sender<DecoderCommand>,
+    response_rx: Receiver<DecoderResponse>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -82,6 +83,7 @@ impl DecoderThread {
         recycle_rx: Receiver<Vec<f32>>,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
+        let (response_tx, response_rx) = std::sync::mpsc::channel();
 
         let thread_handle = std::thread::Builder::new()
             .name("decoder".to_string())
@@ -89,6 +91,7 @@ impl DecoderThread {
                 if let Err(e) = run_decoder_thread(
                     message_tx,
                     command_rx,
+                    response_tx,
                     event_tx,
                     target_sample_rate,
                     frame_size,
@@ -101,6 +104,7 @@ impl DecoderThread {
 
         Ok(Self {
             command_tx,
+            response_rx,
             thread_handle: Some(thread_handle),
         })
     }
@@ -110,6 +114,10 @@ impl DecoderThread {
         self.command_tx
             .send(command)
             .map_err(|e| format!("Failed to send command: {}", e))
+    }
+
+    pub fn try_recv_response(&self) -> Option<DecoderResponse> {
+        self.response_rx.try_recv().ok()
     }
 
     /// Shutdown the decoder thread
@@ -736,6 +744,7 @@ impl DecoderState {
 fn run_decoder_thread(
     message_tx: SyncSender<DecoderMessage>,
     command_rx: Receiver<DecoderCommand>,
+    response_tx: Sender<DecoderResponse>,
     event_tx: Sender<ThreadEvent>,
     target_sample_rate: u32,
     frame_size: usize,
@@ -762,20 +771,35 @@ fn run_decoder_thread(
         if let Some(cmd) = command {
             match cmd {
                 DecoderCommand::Play(path) => {
+                    message_tx.send(DecoderMessage::Flush).ok();
                     state.stop();
                     if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                         log::debug!("[Decoder Thread] Play failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                        response_tx
+                            .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                            .ok();
+                    } else {
+                        response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
                 DecoderCommand::PlayAt(path, position) => {
+                    message_tx.send(DecoderMessage::Flush).ok();
                     state.stop();
                     if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                         log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                        response_tx
+                            .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                            .ok();
                     } else if let Err(e) = state.seek(position) {
                         log::debug!("[Decoder Thread] PlayAt (seek) failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                        response_tx
+                            .send(DecoderResponse::Error("Failed to seek during play_at".to_string()))
+                            .ok();
+                    } else {
+                        response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
                 DecoderCommand::StartSilentSource => {
@@ -784,23 +808,28 @@ fn run_decoder_thread(
                 DecoderCommand::Pause => {
                     state.paused = true;
                     log::debug!("[Decoder Thread] Paused");
+                    response_tx.send(DecoderResponse::Ok).ok();
                 }
                 DecoderCommand::Resume => {
                     state.paused = false;
                     log::debug!("[Decoder Thread] Resumed");
+                    response_tx.send(DecoderResponse::Ok).ok();
                 }
                 DecoderCommand::Seek(position) => {
                     message_tx.send(DecoderMessage::Flush).ok();
                     if let Err(e) = state.seek(position) {
                         log::debug!("[Decoder Thread] Seek failed: {}", e);
+                        response_tx.send(DecoderResponse::Error(e)).ok();
                     } else {
                         event_tx.send(ThreadEvent::SeekComplete).ok();
+                        response_tx.send(DecoderResponse::Ok).ok();
                     }
                 }
                 DecoderCommand::Stop => {
                     state.stop();
                     message_tx.send(DecoderMessage::Flush).ok();
                     log::debug!("[Decoder Thread] Stopped");
+                    response_tx.send(DecoderResponse::Ok).ok();
                 }
                 DecoderCommand::Shutdown => {
                     log::debug!("[Decoder Thread] Shutting down");
@@ -866,20 +895,35 @@ fn run_decoder_thread(
                     // Handle interruption command immediately
                     match cmd {
                         DecoderCommand::Play(path) => {
+                            message_tx.send(DecoderMessage::Flush).ok();
                             state.stop();
                             if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                                 log::debug!("[Decoder Thread] Play failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                                response_tx
+                                    .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                                    .ok();
+                            } else {
+                                response_tx.send(DecoderResponse::Ok).ok();
                             }
                         }
                         DecoderCommand::PlayAt(path, position) => {
+                            message_tx.send(DecoderMessage::Flush).ok();
                             state.stop();
                             if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                                 log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                                response_tx
+                                    .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                                    .ok();
                             } else if let Err(e) = state.seek(position) {
                                 log::debug!("[Decoder Thread] PlayAt (seek) failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                                response_tx
+                                    .send(DecoderResponse::Error("Failed to seek during play_at".to_string()))
+                                    .ok();
+                            } else {
+                                response_tx.send(DecoderResponse::Ok).ok();
                             }
                         }
                         DecoderCommand::StartSilentSource => {
@@ -888,23 +932,28 @@ fn run_decoder_thread(
                         DecoderCommand::Pause => {
                             state.paused = true;
                             log::debug!("[Decoder Thread] Paused");
+                            response_tx.send(DecoderResponse::Ok).ok();
                         }
                         DecoderCommand::Resume => {
                             state.paused = false;
                             log::debug!("[Decoder Thread] Resumed");
+                            response_tx.send(DecoderResponse::Ok).ok();
                         }
                         DecoderCommand::Seek(position) => {
                             message_tx.send(DecoderMessage::Flush).ok();
                             if let Err(e) = state.seek(position) {
                                 log::debug!("[Decoder Thread] Seek failed: {}", e);
+                                response_tx.send(DecoderResponse::Error(e)).ok();
                             } else {
                                 event_tx.send(ThreadEvent::SeekComplete).ok();
+                                response_tx.send(DecoderResponse::Ok).ok();
                             }
                         }
                         DecoderCommand::Stop => {
                             state.stop();
                             message_tx.send(DecoderMessage::Flush).ok();
                             log::debug!("[Decoder Thread] Stopped");
+                            response_tx.send(DecoderResponse::Ok).ok();
                         }
                         DecoderCommand::Shutdown => {
                             log::debug!("[Decoder Thread] Shutting down");

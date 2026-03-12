@@ -419,15 +419,7 @@ mod tests {
 
     #[test]
     fn test_filepath_unmappable() {
-        let affinity = control_affinity(&ParamSpec {
-            name: "IR File",
-            engine_key: "ir_file",
-            param_type: ParamType::FilePath,
-            unit: "",
-            group: "Test",
-            update_mode: sotf_host::param_specs::UpdateMode::Structural,
-            display_scale: 1.0,
-        });
+        let affinity = control_affinity(&ParamSpec::file_path("IR File", "ir_file", "Test"));
         assert!(affinity.is_empty());
     }
 }

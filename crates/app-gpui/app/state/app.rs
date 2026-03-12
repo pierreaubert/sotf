@@ -16,7 +16,7 @@ use crate::theme::{Theme, ThemeId};
 use crate::app::debug::StateHistory;
 use crate::app::types::{
     ChannelGroup, InputMode, LayoutOrientation, LibraryStats, MeterDisplayMode,
-    OptimizationUiState, RackDisplayMode,
+    OptimizationUiState, RackDisplayMode, ToastMessage,
 };
 
 use super::ui::LayoutState;
@@ -301,6 +301,19 @@ impl App {
         app.update_level_meter_groups();
 
         app
+    }
+
+    pub fn rollback_failed_plugin_update(
+        &mut self,
+        plugin_state_snapshot: PluginState,
+        error: impl Into<String>,
+    ) {
+        let error = error.into();
+        self.plugin_state = plugin_state_snapshot;
+        self.sync_spectrum_visible();
+        self.update_level_meter_groups();
+        self.ui_state.toast_message =
+            Some(ToastMessage::error(format!("Plugin update failed: {}", error)));
     }
 
     /// Dispatch a message to the appropriate manager

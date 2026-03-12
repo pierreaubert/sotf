@@ -12,6 +12,14 @@ pub struct AudioEngine {
 }
 
 impl AudioEngine {
+    fn expect_ok_response(&self) -> Result<(), String> {
+        match self.manager.recv_response()? {
+            ManagerResponse::Ok | ManagerResponse::Shutdown => Ok(()),
+            ManagerResponse::Error(e) => Err(e),
+            _ => Err("Unexpected response".to_string()),
+        }
+    }
+
     /// Create and start a new audio engine
     pub fn new(config: EngineConfig) -> Result<Self, String> {
         let manager = ManagerThread::new(config)?;
@@ -27,8 +35,7 @@ impl AudioEngine {
     pub fn play<P: Into<std::path::PathBuf>>(&self, path: P) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::Play(path.into()))?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Play an audio file at a specific position
@@ -39,59 +46,51 @@ impl AudioEngine {
     ) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::PlayAt(path.into(), position))?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Pause playback
     pub fn pause(&self) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::Pause)?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Resume playback
     pub fn resume(&self) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::Resume)?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Stop playback
     pub fn stop(&self) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::Stop)?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Seek to position in seconds
     pub fn seek(&self, position: f64) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::Seek(position))?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Set volume (0.0 = silence, 1.0 = unity gain)
     pub fn set_volume(&self, volume: f32) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::SetVolume(volume))?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Mute/unmute
     pub fn set_mute(&self, muted: bool) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::Mute(muted))?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Update the plugin chain (hot-reload with crossfade)
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::UpdatePluginChain(plugins))?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Set a plugin parameter
@@ -111,16 +110,14 @@ impl AudioEngine {
                 param_id,
                 value,
             })?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Bypass all processing
     pub fn set_bypass(&self, bypass: bool) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::BypassProcessing(bypass))?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Get current engine state
@@ -165,8 +162,7 @@ impl AudioEngine {
     /// Reload configuration from file
     pub fn reload_config(&self) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::ReloadConfig)?;
-        self.manager.recv_response()?;
-        Ok(())
+        self.expect_ok_response()
     }
 
     /// Shutdown the engine

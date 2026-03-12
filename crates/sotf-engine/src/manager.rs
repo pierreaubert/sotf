@@ -15,7 +15,7 @@ use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe
 /// The verification probe (creating test streams) is expensive (~300ms per rate)
 /// and can cause ALSA device locking issues if called repeatedly. Cache the result
 /// so subsequent calls for the same device return immediately.
-static VERIFIED_RATE_CACHE: Mutex<Option<(Option<String>, u32)>> = Mutex::new(None);
+static VERIFIED_RATE_CACHE: Mutex<Option<((Option<String>, usize), u32)>> = Mutex::new(None);
 
 /// Clear the verified rate cache (e.g., when the output device changes)
 pub fn clear_verified_rate_cache() {
@@ -33,17 +33,28 @@ pub fn clear_verified_rate_cache() {
 ///
 /// Results are cached per device to avoid repeated expensive probes.
 pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
+    select_output_sample_rate_for_channels(file_sample_rate, output_device, 2)
+}
+
+fn verified_rate_cache_key(
+    output_device: Option<&str>,
+    output_channels: usize,
+) -> (Option<String>, usize) {
+    (output_device.map(|s| s.to_string()), output_channels)
+}
+
+pub fn select_output_sample_rate_for_channels(
+    file_sample_rate: u32,
+    output_device: Option<&str>,
+    output_channels: usize,
+) -> u32 {
     // Check cache first — avoids repeated 300ms+ probes that can block the UI
     // and cause ALSA device locking issues
+    let cache_key = verified_rate_cache_key(output_device, output_channels);
     if let Ok(cache) = VERIFIED_RATE_CACHE.lock()
-        && let Some((ref cached_device, cached_rate)) = *cache
+        && let Some((ref cached_key, cached_rate)) = *cache
     {
-        let device_matches = match (cached_device.as_deref(), output_device) {
-            (None, None) => true,
-            (Some(a), Some(b)) => a == b,
-            _ => false,
-        };
-        if device_matches {
+        if cached_key == &cache_key {
             if cached_rate == file_sample_rate {
                 log::debug!(
                     "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
@@ -67,7 +78,9 @@ pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&s
 
     // Verify the candidate rate actually produces working audio callbacks.
     // This catches ALSA systems where the reported default rate doesn't work.
-    if let Some(verified_rate) = verify_working_sample_rate(output_device, candidate_rate) {
+    if let Some(verified_rate) =
+        verify_working_sample_rate(output_device, candidate_rate, output_channels)
+    {
         if verified_rate == file_sample_rate {
             log::info!(
                 "[AudioEngineManager] Verified device rate matches file: {}Hz (no resampling)",
@@ -83,7 +96,7 @@ pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&s
 
         // Cache the verified rate
         if let Ok(mut cache) = VERIFIED_RATE_CACHE.lock() {
-            *cache = Some((output_device.map(|s| s.to_string()), verified_rate));
+            *cache = Some((cache_key, verified_rate));
         }
 
         return verified_rate;
@@ -277,8 +290,11 @@ impl AudioEngineManager {
 
         // Select optimal output sample rate based on device capabilities
         let file_sample_rate = audio_info.spec.sample_rate;
-        let output_sample_rate =
-            select_output_sample_rate(file_sample_rate, output_device.as_deref());
+        let output_sample_rate = select_output_sample_rate_for_channels(
+            file_sample_rate,
+            output_device.as_deref(),
+            output_channels,
+        );
 
         // Create engine config with preserved volume
         let volume = f32::from_bits(self.current_volume.load(Ordering::Relaxed));
@@ -745,5 +761,13 @@ mod tests {
         let event = manager.try_recv_event();
         assert!(matches!(event, Some(StreamingEvent::EndOfStream)));
         assert_eq!(manager.get_state(), StreamingState::Idle);
+    }
+
+    #[test]
+    fn verified_rate_cache_key_includes_output_channels() {
+        assert_ne!(
+            verified_rate_cache_key(Some("Built-in Output"), 2),
+            verified_rate_cache_key(Some("Built-in Output"), 6)
+        );
     }
 }

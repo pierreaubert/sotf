@@ -366,9 +366,9 @@ fn test_thread_event_decoder_error() {
 
 #[test]
 fn test_thread_event_playback_underrun() {
-    let event = ThreadEvent::PlaybackUnderrun;
+    let event = ThreadEvent::PlaybackUnderrun(101);
 
-    assert!(matches!(event, ThreadEvent::PlaybackUnderrun));
+    assert!(matches!(event, ThreadEvent::PlaybackUnderrun(101)));
 }
 
 #[test]

@@ -4,12 +4,13 @@
 //! They are extracted from inline tests to work around GPUI macro recursion issues.
 
 use sotf_audio_player::library::{Album, Track};
+use sotf_audio_player::PluginType;
 use sotf_audio_player_gpui::{
     CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, ContextMenuType,
     CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState, MeterDisplayMode,
     PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, QueueItem, RecordingDeviceConfig,
     RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
-    RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
+    RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType, App,
 };
 use std::path::PathBuf;
 
@@ -126,6 +127,36 @@ fn test_toast_message_should_dismiss_not_expired() {
 fn test_toast_message_persistent_never_dismisses() {
     let toast = ToastMessage::persistent("Test", ToastType::Info);
     assert!(!toast.should_dismiss());
+}
+
+#[test]
+fn test_app_rollback_failed_plugin_update_restores_snapshot_and_sets_toast() {
+    let mut app = App::new();
+    let original_plugin_count = app.plugin_state.chain.len();
+    let snapshot = app.plugin_state.clone();
+
+    let effect = app.plugin_state.add_plugin(&PluginType::Upmixer);
+    assert!(matches!(
+        effect,
+        sotf_audio_player::PluginUpdateEffect::Structural
+    ));
+    assert_eq!(app.plugin_state.chain.len(), original_plugin_count + 1);
+
+    app.rollback_failed_plugin_update(snapshot, "device only supports 2 channels");
+
+    assert_eq!(app.plugin_state.chain.len(), original_plugin_count);
+    assert!(app
+        .ui_state
+        .toast_message
+        .as_ref()
+        .is_some_and(|toast| toast.message.contains("device only supports 2 channels")));
+    assert_eq!(
+        app.ui_state
+            .toast_message
+            .as_ref()
+            .map(|toast| toast.toast_type),
+        Some(ToastType::Error)
+    );
 }
 
 // ============================================================================

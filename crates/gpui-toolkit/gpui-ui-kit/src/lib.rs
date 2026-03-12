@@ -22,10 +22,13 @@ pub mod theme;
 pub mod button;
 pub mod button_set;
 pub mod card;
+pub mod confirm_dialog;
+pub mod context_menu;
 pub mod dialog;
 pub mod focus;
 pub mod icon_button;
 pub mod menu;
+pub mod popover;
 pub mod tabs;
 pub mod toast;
 
@@ -49,6 +52,8 @@ pub mod audio;
 // Data display
 pub mod avatar;
 pub mod badge;
+pub mod empty_state;
+pub mod keyboard_shortcut_label;
 pub mod progress;
 pub mod spinner;
 pub mod table;
@@ -56,6 +61,7 @@ pub mod text;
 
 // Feedback
 pub mod alert;
+pub mod search_bar;
 pub mod tooltip;
 
 // Navigation
@@ -65,7 +71,9 @@ pub mod wizard;
 
 // Layout
 pub mod pane_divider;
+pub mod sidebar;
 pub mod stack;
+pub mod status_bar;
 
 // Workflow canvas
 pub mod workflow;
@@ -79,7 +87,10 @@ pub use icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVar
 
 // Containers
 pub use card::{Card, SlotFactory};
+pub use confirm_dialog::{ConfirmDialog, ConfirmDialogTheme, ConfirmDialogVariant};
+pub use context_menu::{ContextMenu, ContextMenuTheme};
 pub use dialog::{Dialog, DialogSize, DialogSlotFactory, DialogTheme};
+pub use popover::{Popover, PopoverPlacement, PopoverSlotFactory, PopoverTheme};
 
 // Navigation
 pub use accordion::{Accordion, AccordionItem, AccordionMode, AccordionTheme};
@@ -122,6 +133,8 @@ pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
 // Data display
 pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};
 pub use badge::{Badge, BadgeDot, BadgeSize, BadgeVariant};
+pub use empty_state::EmptyState;
+pub use keyboard_shortcut_label::{KeyboardShortcutLabel, KeyboardShortcutSize};
 pub use progress::{CircularProgress, Progress, ProgressSize, ProgressVariant};
 pub use spinner::{LoadingDots, Spinner, SpinnerSize};
 pub use table::{
@@ -130,14 +143,19 @@ pub use table::{
 pub use text::{Code, Heading, Link, Text, TextSize, TextWeight};
 
 // Feedback
+pub use search_bar::{SearchBar, SearchBarSize, SearchBarTheme};
 pub use tooltip::{Tooltip, TooltipPlacement, WithTooltip};
 
 // Layout
 pub use pane_divider::{CollapseDirection, PaneDivider, PaneDividerTheme};
+pub use sidebar::{Sidebar, SidebarSide, SidebarSlotFactory, SidebarTheme};
 pub use stack::{
     Divider, HStack, Spacer, StackAlign, StackJustify, StackOverflow, StackSize, StackSpacing,
     VStack,
 };
+
+// Status bar
+pub use status_bar::{StatusBar, StatusBarPosition, StatusBarTheme};
 
 // Application templates
 pub use app::{MiniApp, MiniAppConfig};

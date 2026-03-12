@@ -122,6 +122,12 @@ pub enum DecoderCommand {
     Shutdown,
 }
 
+#[derive(Clone, Debug)]
+pub enum DecoderResponse {
+    Ok,
+    Error(String),
+}
+
 /// Commands for the processing thread
 pub enum ProcessingCommand {
     /// Update the plugin chain (hot reload)
@@ -312,10 +318,11 @@ pub enum ThreadEvent {
     DecoderEndOfStream,
     /// Decoder error
     DecoderError(String),
+    PlaybackChannelsChanged(usize),
     /// Playback thread has fully drained its ring buffer after end-of-stream
     PlaybackDrained,
-    /// Playback buffer underrun
-    PlaybackUnderrun,
+    /// Playback buffer underrun count update
+    PlaybackUnderrun(u64),
     /// Processing error
     ProcessingError(String),
     /// Thread panicked

@@ -21,6 +21,7 @@ fn test_playback_thread_creation() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -42,6 +43,7 @@ fn test_playback_send_commands() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -72,6 +74,7 @@ fn test_playback_volume_commands() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -96,6 +99,7 @@ fn test_playback_shutdown() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -120,6 +124,7 @@ fn test_playback_receives_frames() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -141,7 +146,7 @@ fn test_playback_receives_frames() {
     let events: Vec<_> = event_rx.try_iter().collect();
     let underruns = events
         .iter()
-        .filter(|e| matches!(e, ThreadEvent::PlaybackUnderrun))
+        .filter(|e| matches!(e, ThreadEvent::PlaybackUnderrun(_)))
         .count();
 
     // With 10 frames queued, should not underrun immediately
@@ -161,6 +166,7 @@ fn test_playback_detects_underrun() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -183,7 +189,7 @@ fn test_playback_detects_underrun() {
 
     let underruns = events
         .iter()
-        .filter(|e| matches!(e, ThreadEvent::PlaybackUnderrun))
+        .filter(|e| matches!(e, ThreadEvent::PlaybackUnderrun(_)))
         .count();
 
     // Should detect at least one underrun when no data is provided
@@ -202,6 +208,7 @@ fn test_playback_handles_eos() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -230,6 +237,7 @@ fn test_playback_handles_flush() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -265,6 +273,7 @@ fn test_playback_channel_update() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -289,6 +298,7 @@ fn test_playback_rapid_volume_changes() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -314,6 +324,7 @@ fn test_playback_rapid_mute_toggle() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -340,6 +351,7 @@ fn test_playback_mixed_commands() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
@@ -381,6 +393,7 @@ fn test_playback_different_sample_rates() {
             message_rx,
             event_tx,
             sr,
+            200,
             2,
             common::blackhole_device_option(),
             sync_channel::<Vec<f32>>(64).0,
@@ -421,6 +434,7 @@ fn test_playback_different_channel_counts() {
             message_rx,
             event_tx,
             48000,
+            200,
             channels,
             common::blackhole_device_option(),
             sync_channel::<Vec<f32>>(64).0,
@@ -455,6 +469,7 @@ fn test_playback_drop_cleanup() {
         message_rx,
         event_tx,
         48000,
+	200,
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,

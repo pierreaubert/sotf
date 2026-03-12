@@ -20,6 +20,8 @@ const SPIN_MS_SLEEP_MANAGER: u64 = 10;
 const SPIN_MS_CHECK_MANAGER: u64 = 50;
 const PLUGIN_INIT_TIMEOUT_MS: u64 = 10000; // 10 seconds for plugin initialization (SOFA loading can be slow)
 const MAX_CONFIG_QUEUE_SIZE: usize = 5; // Maximum pending config updates
+const PROCESSING_COMMAND_TIMEOUT_MS: u64 = 100;
+const DECODER_COMMAND_TIMEOUT_MS: u64 = 1000;
 
 /// Priority for config updates
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -455,7 +457,12 @@ fn run_manager_thread(
 
         match host_result {
             Ok(host) => {
-                let _output_channels = host.output_channels();
+                ensure_output_channel_capacity(
+                    host.output_channels(),
+                    config.output_channels,
+                    config.output_device.as_deref(),
+                )
+                .map_err(|e| e.to_string())?;
                 // Send host to processing thread
                 if let Err(e) =
                     processing_thread.send_command(ProcessingCommand::UpdateHost(Box::new(host)))
@@ -543,6 +550,7 @@ fn run_manager_thread(
         processing_rx,
         event_tx.clone(),
         config.output_sample_rate,
+        config.buffer_ms,
         actual_output_channels,
         config.output_device.clone(),
         recycle_tx,
@@ -613,8 +621,13 @@ fn run_manager_thread(
                 plugins,
                 config.output_sample_rate,
                 config.input_channels,
+                config.output_channels,
+                config.output_device.as_deref(),
             ) {
                 log::error!("[Manager Thread] Failed to apply config update: {}", e);
+                let mut new_state = (**state.load()).clone();
+                new_state.last_error = Some(e.to_string());
+                state.store(Arc::new(new_state));
             }
             config_update_queue.complete_processing();
         }
@@ -673,6 +686,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             // Don't set Stopped here - wait for PlaybackDrained so remaining
             // audio in the ring buffer gets played to hardware first.
         }
+        ThreadEvent::PlaybackChannelsChanged(channels) => {
+            let mut new_state = (**state.load()).clone();
+            new_state.num_channels = channels;
+            state.store(Arc::new(new_state));
+        }
         ThreadEvent::PlaybackDrained => {
             log::debug!("[Manager Thread] Playback drained - all audio played");
             let mut new_state = (**state.load()).clone();
@@ -687,14 +705,13 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             new_state.last_error = Some(err);
             state.store(Arc::new(new_state));
         }
-        ThreadEvent::PlaybackUnderrun => {
+        ThreadEvent::PlaybackUnderrun(underruns) => {
             let mut new_state = (**state.load()).clone();
-            new_state.underruns += 1;
-            // Log summary every 50 underruns to track overall pattern
-            if new_state.underruns % 50 == 1 {
+            new_state.underruns = underruns;
+            if underruns == 1 || underruns.is_multiple_of(100) {
                 log::warn!(
                     "[Manager Thread] Playback underrun count: {}",
-                    new_state.underruns
+                    underruns
                 );
             }
             state.store(Arc::new(new_state));
@@ -833,6 +850,75 @@ fn estimate_update_timeout(plugins: &[super::PluginConfig]) -> std::time::Durati
     std::time::Duration::from_millis(timeout_ms.min(10000))
 }
 
+fn wait_for_processing_ack(
+    processing: &ProcessingThread,
+    timeout: std::time::Duration,
+) -> Result<(), String> {
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout {
+        if let Some(response) = processing.try_recv_response() {
+            match response {
+                super::ProcessingResponse::Ok => return Ok(()),
+                super::ProcessingResponse::Error(e) => return Err(e),
+                _ => continue,
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+    }
+
+    Err(format!(
+        "Timed out waiting for processing thread acknowledgment after {}ms",
+        timeout.as_millis()
+    ))
+}
+
+fn wait_for_decoder_ack(
+    decoder: &DecoderThread,
+    timeout: std::time::Duration,
+) -> Result<(), String> {
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout {
+        if let Some(response) = decoder.try_recv_response() {
+            return match response {
+                super::DecoderResponse::Ok => Ok(()),
+                super::DecoderResponse::Error(e) => Err(e),
+            };
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+    }
+
+    Err(format!(
+        "Timed out waiting for decoder thread acknowledgment after {}ms",
+        timeout.as_millis()
+    ))
+}
+
+fn ensure_output_channel_capacity(
+    required_output_channels: usize,
+    configured_output_channels: usize,
+    output_device: Option<&str>,
+) -> Result<(), ConfigError> {
+    if configured_output_channels > 0 && required_output_channels > configured_output_channels {
+        let reason = match output_device {
+            Some(device) => format!(
+                "Plugin chain requires {} output channels, but output device '{}' is configured for {} channels. Disable the upmixer or choose a compatible output device.",
+                required_output_channels, device, configured_output_channels
+            ),
+            None => format!(
+                "Plugin chain requires {} output channels, but the current output is configured for {} channels. Disable the upmixer or choose a compatible output device.",
+                required_output_channels, configured_output_channels
+            ),
+        };
+        return Err(ConfigError::ProcessingError { reason });
+    }
+
+    Ok(())
+}
+
 /// Apply a plugin update with proper synchronization and rollback on failure.
 /// Waits for confirmation from processing thread and updates playback thread if needed.
 fn apply_plugin_update(
@@ -849,6 +935,8 @@ fn apply_plugin_update(
     sample_rate: u32,
 
     input_channels: usize,
+    configured_output_channels: usize,
+    output_device: Option<&str>,
 ) -> Result<(), ConfigError> {
     log::debug!(
         "[Manager Thread] apply_plugin_update: Starting update with {} plugins at {}Hz",
@@ -875,6 +963,12 @@ fn apply_plugin_update(
         start_build.elapsed(),
         host.output_channels()
     );
+
+    ensure_output_channel_capacity(
+        host.output_channels(),
+        configured_output_channels,
+        output_device,
+    )?;
 
     // Send update command to processing thread
 
@@ -945,10 +1039,6 @@ fn apply_plugin_update(
                             old_channels,
                             output_channels
                         );
-                        playback
-                            .send_command(PlaybackCommand::Stop)
-                            .map_err(|_| ConfigError::ChannelDisconnected)?;
-
                         playback
                             .send_command(PlaybackCommand::UpdateChannels(output_channels))
                             .map_err(|_| ConfigError::ChannelDisconnected)?;
@@ -1168,102 +1258,133 @@ fn handle_command(
         ManagerCommand::Play(path) => {
             log::debug!("[Manager Thread] Play: {:?}", path);
 
-            // Update state
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.current_file = Some(path.clone());
-                new_state.playback_state = PlaybackState::Playing;
-                new_state.position = 0.0;
-                state.store(Arc::new(new_state));
-            }
-
             // Send to decoder
-            if let Err(e) = decoder.send_command(DecoderCommand::Play(path)) {
+            if let Err(e) = decoder.send_command(DecoderCommand::Play(path.clone())) {
                 return ManagerResponse::Error(e);
             }
 
-            ManagerResponse::Ok
+            match wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.current_file = Some(path);
+                    new_state.playback_state = PlaybackState::Playing;
+                    new_state.position = 0.0;
+                    state.store(Arc::new(new_state));
+                    ManagerResponse::Ok
+                }
+                Err(e) => ManagerResponse::Error(e),
+            }
         }
         ManagerCommand::PlayAt(path, position) => {
             log::debug!("[Manager Thread] PlayAt: {:?} at {:.2}s", path, position);
 
-            // Update state
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.current_file = Some(path.clone());
-                new_state.playback_state = PlaybackState::Playing;
-                new_state.position = position;
-                state.store(Arc::new(new_state));
-            }
-
             // Send to decoder
-            if let Err(e) = decoder.send_command(DecoderCommand::PlayAt(path, position)) {
+            if let Err(e) = decoder.send_command(DecoderCommand::PlayAt(path.clone(), position)) {
                 return ManagerResponse::Error(e);
             }
 
-            ManagerResponse::Ok
+            match wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.current_file = Some(path);
+                    new_state.playback_state = PlaybackState::Playing;
+                    new_state.position = position;
+                    state.store(Arc::new(new_state));
+                    ManagerResponse::Ok
+                }
+                Err(e) => ManagerResponse::Error(e),
+            }
         }
         ManagerCommand::Pause => {
             log::debug!("[Manager Thread] Pause");
-
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.playback_state = PlaybackState::Paused;
-                state.store(Arc::new(new_state));
-            }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Pause) {
                 return ManagerResponse::Error(e);
             }
 
-            ManagerResponse::Ok
+            match wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.playback_state = PlaybackState::Paused;
+                    state.store(Arc::new(new_state));
+                    ManagerResponse::Ok
+                }
+                Err(e) => ManagerResponse::Error(e),
+            }
         }
         ManagerCommand::Resume => {
             log::debug!("[Manager Thread] Resume");
-
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.playback_state = PlaybackState::Playing;
-                state.store(Arc::new(new_state));
-            }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Resume) {
                 return ManagerResponse::Error(e);
             }
 
-            ManagerResponse::Ok
+            match wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.playback_state = PlaybackState::Playing;
+                    state.store(Arc::new(new_state));
+                    ManagerResponse::Ok
+                }
+                Err(e) => ManagerResponse::Error(e),
+            }
         }
         ManagerCommand::Stop => {
             log::debug!("[Manager Thread] Stop");
-
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.playback_state = PlaybackState::Stopped;
-                new_state.current_file = None;
-                new_state.position = 0.0;
-                state.store(Arc::new(new_state));
+            if let Err(e) = decoder.send_command(DecoderCommand::Stop) {
+                return ManagerResponse::Error(e);
+            }
+            if let Err(e) = wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                return ManagerResponse::Error(e);
+            }
+            if let Err(e) = playback.send_command(PlaybackCommand::Stop) {
+                return ManagerResponse::Error(e);
             }
 
-            decoder.send_command(DecoderCommand::Stop).ok();
-            playback.send_command(PlaybackCommand::Stop).ok();
+            let mut new_state = (**state.load()).clone();
+            new_state.playback_state = PlaybackState::Stopped;
+            new_state.current_file = None;
+            new_state.position = 0.0;
+            new_state.seeking = false;
+            state.store(Arc::new(new_state));
 
             ManagerResponse::Ok
         }
         ManagerCommand::Seek(position) => {
             log::debug!("[Manager Thread] Seek to {:.2}s", position);
 
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.position = position;
-                new_state.seeking = true;
-                state.store(Arc::new(new_state));
-            }
-
             if let Err(e) = decoder.send_command(DecoderCommand::Seek(position)) {
                 return ManagerResponse::Error(e);
             }
 
-            ManagerResponse::Ok
+            match wait_for_decoder_ack(
+                decoder,
+                std::time::Duration::from_millis(DECODER_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.position = position;
+                    new_state.seeking = true;
+                    state.store(Arc::new(new_state));
+                    ManagerResponse::Ok
+                }
+                Err(e) => ManagerResponse::Error(e),
+            }
         }
         ManagerCommand::SetVolume(volume) => {
             log::debug!("[Manager Thread] Set volume: {:.2}", volume);
@@ -1353,14 +1474,23 @@ fn handle_command(
                 plugins,
                 config.output_sample_rate,
                 config.input_channels,
+                config.output_channels,
+                config.output_device.as_deref(),
             ) {
                 Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.last_error = None;
+                    state.store(Arc::new(new_state));
                     log::trace!("[Manager Thread] UpdatePluginChain: Update applied successfully");
                     ManagerResponse::Ok
                 }
                 Err(e) => {
+                    let message = e.to_string();
+                    let mut new_state = (**state.load()).clone();
+                    new_state.last_error = Some(message.clone());
+                    state.store(Arc::new(new_state));
                     log::trace!("[Manager Thread] UpdatePluginChain: Update failed: {}", e);
-                    ManagerResponse::Error(e.to_string())
+                    ManagerResponse::Error(message)
                 }
             }
         }
@@ -1384,22 +1514,33 @@ fn handle_command(
                 return ManagerResponse::Error(e);
             }
 
-            ManagerResponse::Ok
+            match wait_for_processing_ack(
+                processing,
+                std::time::Duration::from_millis(PROCESSING_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => ManagerResponse::Ok,
+                Err(e) => ManagerResponse::Error(e),
+            }
         }
         ManagerCommand::BypassProcessing(bypass) => {
             log::debug!("[Manager Thread] Bypass processing: {}", bypass);
-
-            {
-                let mut new_state = (**state.load()).clone();
-                new_state.processing_bypassed = bypass;
-                state.store(Arc::new(new_state));
-            }
 
             if let Err(e) = processing.send_command(ProcessingCommand::Bypass(bypass)) {
                 return ManagerResponse::Error(e);
             }
 
-            ManagerResponse::Ok
+            match wait_for_processing_ack(
+                processing,
+                std::time::Duration::from_millis(PROCESSING_COMMAND_TIMEOUT_MS),
+            ) {
+                Ok(()) => {
+                    let mut new_state = (**state.load()).clone();
+                    new_state.processing_bypassed = bypass;
+                    state.store(Arc::new(new_state));
+                    ManagerResponse::Ok
+                }
+                Err(e) => ManagerResponse::Error(e),
+            }
         }
         ManagerCommand::GetState => ManagerResponse::State((**state.load()).clone()),
         ManagerCommand::GetPosition => ManagerResponse::Position(state.load().position),
@@ -1609,5 +1750,51 @@ mod tests {
                 result.unwrap_err()
             );
         }
+    }
+
+    #[test]
+    fn test_ensure_output_channel_capacity_rejects_incompatible_chain() {
+        let result = ensure_output_channel_capacity(6, 2, Some("Built-in Output"));
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ConfigError::ProcessingError { reason } => {
+                assert!(reason.contains("requires 6 output channels"));
+                assert!(reason.contains("Built-in Output"));
+                assert!(reason.contains("configured for 2 channels"));
+            }
+            other => panic!("Expected ProcessingError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ensure_output_channel_capacity_accepts_supported_chain() {
+        let result = ensure_output_channel_capacity(2, 2, Some("Built-in Output"));
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_thread_event_uses_actual_underrun_count() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+
+        handle_thread_event(ThreadEvent::PlaybackUnderrun(101), &state);
+
+        assert_eq!(state.load().underruns, 101);
+
+        handle_thread_event(ThreadEvent::PlaybackUnderrun(205), &state);
+
+        assert_eq!(state.load().underruns, 205);
+    }
+
+    #[test]
+    fn test_handle_thread_event_updates_playback_channels() {
+        let state = Arc::new(ArcSwap::from_pointee(AudioEngineState::default()));
+
+        handle_thread_event(ThreadEvent::PlaybackChannelsChanged(6), &state);
+        assert_eq!(state.load().num_channels, 6);
+
+        handle_thread_event(ThreadEvent::PlaybackChannelsChanged(2), &state);
+        assert_eq!(state.load().num_channels, 2);
     }
 }

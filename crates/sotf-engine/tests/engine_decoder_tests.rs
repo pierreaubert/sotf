@@ -389,6 +389,84 @@ fn test_decoder_multiple_files() {
 }
 
 #[test]
+fn test_decoder_play_flushes_previous_source() {
+    let (message_tx, message_rx) = sync_channel(100);
+    let (event_tx, _event_rx) = channel();
+
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
+
+    let temp_file1 = create_test_wav(2.0, 48000);
+    decoder
+        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf()))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    let _ = message_rx.try_iter().count();
+
+    let temp_file2 = create_test_wav(2.0, 48000);
+    decoder
+        .send_command(DecoderCommand::Play(temp_file2.path().to_path_buf()))
+        .unwrap();
+
+    let timeout = Duration::from_secs(2);
+    let start = std::time::Instant::now();
+    let mut has_flush = false;
+
+    while start.elapsed() < timeout && !has_flush {
+        match message_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(DecoderMessage::Flush) => {
+                has_flush = true;
+            }
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
+
+    assert!(has_flush, "Should receive flush message when switching files with Play");
+}
+
+#[test]
+fn test_decoder_play_at_flushes_previous_source() {
+    let (message_tx, message_rx) = sync_channel(100);
+    let (event_tx, _event_rx) = channel();
+
+    let (decoder, _recycle_tx) = create_decoder(message_tx, event_tx, 48000, 512);
+
+    let temp_file1 = create_test_wav(2.0, 48000);
+    decoder
+        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf()))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    let _ = message_rx.try_iter().count();
+
+    let temp_file2 = create_test_wav(2.0, 48000);
+    decoder
+        .send_command(DecoderCommand::PlayAt(
+            temp_file2.path().to_path_buf(),
+            0.5,
+        ))
+        .unwrap();
+
+    let timeout = Duration::from_secs(2);
+    let start = std::time::Instant::now();
+    let mut has_flush = false;
+
+    while start.elapsed() < timeout && !has_flush {
+        match message_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(DecoderMessage::Flush) => {
+                has_flush = true;
+            }
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
+
+    assert!(
+        has_flush,
+        "Should receive flush message when switching files with PlayAt"
+    );
+}
+
+#[test]
 fn test_decoder_frame_size_consistency() {
     let (message_tx, message_rx) = sync_channel(100);
     let (event_tx, _event_rx) = channel();
