@@ -1,18 +1,18 @@
 //! Expander Plugin UI Component
 //!
-//! Layout (3-column):
-//! +------------------+--------------------------------------------+------------------+
-//! | SETUP            | DYNAMICS              TIMING                | OUTPUT           |
-//! |                  |                                            |                  |
-//! | [Link Ch] toggle | [Threshold] slider    [Attack] slider      | [GR Meter]       |
-//! | [SC HPF]  knob   | [Ratio]     slider    [Release] slider     | [Mix]      knob  |
-//! |                  | [Range]     slider    [Hold]   slider      |                  |
-//! |                  | [Knee]      slider                         |                  |
-//! |                  | [Hysteresis] slider                        |                  |
-//! |                  | ┌─ Transfer Curve ─────────────────┐       |                  |
-//! |                  | │                                  │       |                  |
-//! |                  | └──────────────────────────────────┘       |                  |
-//! +------------------+--------------------------------------------+------------------+
+//! Layout (4-column):
+//! +------------------+------------------------+------------------+------------------+
+//! | SETUP            | DYNAMICS               | TIMING           | OUTPUT           |
+//! |                  |                        |                  |                  |
+//! | Link Ch          | [Threshold] slider     | [Attack] slider  | [GR Meter]       |
+//! |        [on|off]  | [Ratio]     slider     | [Release] slider | [Mix]      knob  |
+//! | [SC HPF]  knob   | [Range]     slider     | [Hold]   slider  |                  |
+//! |                  | [Knee]      slider     |                  |                  |
+//! |                  | [Hysteresis] slider    |                  |                  |
+//! |                  | ┌─ Transfer Curve ──┐  |                  |                  |
+//! |                  | │                   │  |                  |                  |
+//! |                  | └───────────────────┘  |                  |                  |
+//! +------------------+------------------------+------------------+------------------+
 
 use super::common::{
     render_knob, render_section_title, render_toggle,
@@ -76,88 +76,82 @@ pub fn render_expander_plugin(
             "Hz", 10, state.selected_param, state.is_editing, Some('s'), theme,
         ));
 
-    // === CENTER COLUMN: Sliders (top) + Transfer curve (bottom) ===
+    // === CENTER COLUMN: Dynamics (sliders + transfer curve) + Timing ===
     let transfer_curve = render_transfer_curve_sized(
         state.threshold_db, state.ratio, state.knee_db, false, TRANSFER_CURVE_SIZE, theme,
     );
 
-    let sliders = div()
+    let dynamics_sliders = div()
         .flex()
-        .gap_4()
-        // Dynamics: Threshold, Ratio, Range, Knee, Hysteresis
+        .gap_2()
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(), plugin_idx, "Threshold", state.threshold_db,
+            pk(EX, "threshold").min_f64(), pk(EX, "threshold").max_f64(),
+            "dB", 0, state.selected_param, state.is_editing, Some('t'), SLIDER_HEIGHT, theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(), plugin_idx, "Ratio", state.ratio,
+            pk(EX, "ratio").min_f64(), pk(EX, "ratio").max_f64(),
+            ":1", 1, state.selected_param, state.is_editing, Some('r'), SLIDER_HEIGHT, theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(), plugin_idx, "Range", state.range_db,
+            pk(EX, "range").min_f64(), pk(EX, "range").max_f64(),
+            "dB", 4, state.selected_param, state.is_editing, Some('g'), SLIDER_HEIGHT, theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(), plugin_idx, "Knee", state.knee_db,
+            pk(EX, "knee").min_f64(), pk(EX, "knee").max_f64(),
+            "dB", 5, state.selected_param, state.is_editing, Some('k'), SLIDER_HEIGHT, theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(), plugin_idx, "Hyst.", state.hysteresis_db,
+            pk(EX, "hysteresis").min_f64(), pk(EX, "hysteresis").max_f64(),
+            "dB", 6, state.selected_param, state.is_editing, Some('y'), SLIDER_HEIGHT, theme,
+        ));
+
+    // Dynamics column: sliders + transfer curve (same width)
+    let dynamics_col = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(render_section_title("DYNAMICS", theme))
+        .child(dynamics_sliders)
+        .child(transfer_curve);
+
+    // Timing column: Attack, Release, Hold
+    let timing_col = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(render_section_title("TIMING", theme))
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("DYNAMICS", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Threshold", state.threshold_db,
-                            pk(EX, "threshold").min_f64(), pk(EX, "threshold").max_f64(),
-                            "dB", 0, state.selected_param, state.is_editing, Some('t'), SLIDER_HEIGHT, theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Ratio", state.ratio,
-                            pk(EX, "ratio").min_f64(), pk(EX, "ratio").max_f64(),
-                            ":1", 1, state.selected_param, state.is_editing, Some('r'), SLIDER_HEIGHT, theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Range", state.range_db,
-                            pk(EX, "range").min_f64(), pk(EX, "range").max_f64(),
-                            "dB", 4, state.selected_param, state.is_editing, Some('g'), SLIDER_HEIGHT, theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Knee", state.knee_db,
-                            pk(EX, "knee").min_f64(), pk(EX, "knee").max_f64(),
-                            "dB", 5, state.selected_param, state.is_editing, Some('k'), SLIDER_HEIGHT, theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Hyst.", state.hysteresis_db,
-                            pk(EX, "hysteresis").min_f64(), pk(EX, "hysteresis").max_f64(),
-                            "dB", 6, state.selected_param, state.is_editing, Some('y'), SLIDER_HEIGHT, theme,
-                        )),
-                ),
-        )
-        // Timing: Attack, Release, Hold
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("TIMING", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Attack", state.attack_ms,
-                            pk(EX, "attack").min_f64(), pk(EX, "attack").max_f64(),
-                            "ms", 2, state.selected_param, state.is_editing, Some('a'), SLIDER_HEIGHT, theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Release", state.release_ms,
-                            pk(EX, "release").min_f64(), pk(EX, "release").max_f64(),
-                            "ms", 3, state.selected_param, state.is_editing, Some('e'), SLIDER_HEIGHT, theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Hold", state.hold_ms,
-                            pk(EX, "hold").min_f64(), pk(EX, "hold").max_f64(),
-                            "ms", 7, state.selected_param, state.is_editing, Some('h'), SLIDER_HEIGHT, theme,
-                        )),
-                ),
+                .gap_2()
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(), plugin_idx, "Attack", state.attack_ms,
+                    pk(EX, "attack").min_f64(), pk(EX, "attack").max_f64(),
+                    "ms", 2, state.selected_param, state.is_editing, Some('a'), SLIDER_HEIGHT, theme,
+                ))
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(), plugin_idx, "Release", state.release_ms,
+                    pk(EX, "release").min_f64(), pk(EX, "release").max_f64(),
+                    "ms", 3, state.selected_param, state.is_editing, Some('e'), SLIDER_HEIGHT, theme,
+                ))
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(), plugin_idx, "Hold", state.hold_ms,
+                    pk(EX, "hold").min_f64(), pk(EX, "hold").max_f64(),
+                    "ms", 7, state.selected_param, state.is_editing, Some('h'), SLIDER_HEIGHT, theme,
+                )),
         );
 
     let center_col = div()
         .flex()
-        .flex_col()
         .flex_1()
-        .gap_3()
-        .child(sliders)
-        .child(transfer_curve);
+        .gap_4()
+        .child(dynamics_col)
+        .child(timing_col);
 
     // === RIGHT COLUMN: Output (GR Meter + Mix) ===
     let right_col = div()
