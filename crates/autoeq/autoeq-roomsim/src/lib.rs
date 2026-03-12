@@ -3560,51 +3560,50 @@ impl RoomSimulatorWasm {
 
         // Modal and modal-ISM hybrid methods
         if (method == "modal" || method == "hybrid")
-            && let RoomGeometry::Rectangular(_) = &self.room_geometry {
-                let amplitude = source.amplitude_towards(point, frequency);
-                let phase_factor = source.phase_factor(frequency);
+            && let RoomGeometry::Rectangular(_) = &self.room_geometry
+        {
+            let amplitude = source.amplitude_towards(point, frequency);
+            let phase_factor = source.phase_factor(frequency);
 
-                let modal_pressure = calculate_modal_pressure(
-                    &source.position,
-                    point,
-                    frequency,
-                    room_width,
-                    room_depth,
-                    room_height,
-                    self.config.solver.speed_of_sound,
-                    self.config.solver.max_mode_order,
-                    self.config.solver.modal_damping,
-                ) * amplitude
-                    * phase_factor;
+            let modal_pressure = calculate_modal_pressure(
+                &source.position,
+                point,
+                frequency,
+                room_width,
+                room_depth,
+                room_height,
+                self.config.solver.speed_of_sound,
+                self.config.solver.max_mode_order,
+                self.config.solver.modal_damping,
+            ) * amplitude
+                * phase_factor;
 
-                if method == "modal" {
-                    return modal_pressure;
-                }
-
-                // Hybrid: blend modal and ISM based on Schroeder frequency
-                let volume = room_width * room_depth * room_height;
-                let avg_absorption = self.wall_materials.average_absorption_at(frequency);
-                let surface_area = 2.0
-                    * (room_width * room_depth
-                        + room_width * room_height
-                        + room_depth * room_height);
-                let total_abs = avg_absorption * surface_area;
-                let rt60 = rt60_sabine(volume, total_abs);
-                let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
-
-                let ism_weight = hybrid_crossover_weight(
-                    frequency,
-                    schroeder_freq,
-                    self.config.solver.hybrid_crossover_width,
-                );
-
-                if ism_weight < 1e-6 {
-                    return modal_pressure;
-                }
-
-                let ism_pressure = self.calculate_single_source_ism(source_idx, point, frequency);
-                return modal_pressure * (1.0 - ism_weight) + ism_pressure * ism_weight;
+            if method == "modal" {
+                return modal_pressure;
             }
+
+            // Hybrid: blend modal and ISM based on Schroeder frequency
+            let volume = room_width * room_depth * room_height;
+            let avg_absorption = self.wall_materials.average_absorption_at(frequency);
+            let surface_area = 2.0
+                * (room_width * room_depth + room_width * room_height + room_depth * room_height);
+            let total_abs = avg_absorption * surface_area;
+            let rt60 = rt60_sabine(volume, total_abs);
+            let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
+
+            let ism_weight = hybrid_crossover_weight(
+                frequency,
+                schroeder_freq,
+                self.config.solver.hybrid_crossover_width,
+            );
+
+            if ism_weight < 1e-6 {
+                return modal_pressure;
+            }
+
+            let ism_pressure = self.calculate_single_source_ism(source_idx, point, frequency);
+            return modal_pressure * (1.0 - ism_weight) + ism_pressure * ism_weight;
+        }
 
         // Standard ISM calculation
         self.calculate_single_source_ism(source_idx, point, frequency)
@@ -3812,53 +3811,54 @@ impl RoomSimulatorWasm {
 
             // Higher-order reflections for rectangular rooms only
             if reflection_order >= 2
-                && let RoomGeometry::Rectangular(_) = &self.room_geometry {
-                    for nx in -2i32..=2 {
-                        for ny in -2i32..=2 {
-                            for nz in -2i32..=2 {
-                                let order = nx.abs() + ny.abs() + nz.abs();
-                                if order < 2 || order > reflection_order {
-                                    continue;
-                                }
+                && let RoomGeometry::Rectangular(_) = &self.room_geometry
+            {
+                for nx in -2i32..=2 {
+                    for ny in -2i32..=2 {
+                        for nz in -2i32..=2 {
+                            let order = nx.abs() + ny.abs() + nz.abs();
+                            if order < 2 || order > reflection_order {
+                                continue;
+                            }
 
-                                let image_x = if nx % 2 == 0 {
-                                    source.position.x + (nx as f64) * room_width
-                                } else {
-                                    -source.position.x + (nx as f64 + 1.0) * room_width
-                                };
-                                let image_y = if ny % 2 == 0 {
-                                    source.position.y + (ny as f64) * room_depth
-                                } else {
-                                    -source.position.y + (ny as f64 + 1.0) * room_depth
-                                };
-                                let image_z = if nz % 2 == 0 {
-                                    source.position.z + (nz as f64) * room_height
-                                } else {
-                                    -source.position.z + (nz as f64 + 1.0) * room_height
-                                };
+                            let image_x = if nx % 2 == 0 {
+                                source.position.x + (nx as f64) * room_width
+                            } else {
+                                -source.position.x + (nx as f64 + 1.0) * room_width
+                            };
+                            let image_y = if ny % 2 == 0 {
+                                source.position.y + (ny as f64) * room_depth
+                            } else {
+                                -source.position.y + (ny as f64 + 1.0) * room_depth
+                            };
+                            let image_z = if nz % 2 == 0 {
+                                source.position.z + (nz as f64) * room_height
+                            } else {
+                                -source.position.z + (nz as f64 + 1.0) * room_height
+                            };
 
-                                let image_pos = Point3D::new(image_x, image_y, image_z);
-                                let r_image = image_pos.distance_to(point);
+                            let image_pos = Point3D::new(image_x, image_y, image_z);
+                            let r_image = image_pos.distance_to(point);
 
-                                if r_image > 1e-6 {
-                                    let refl_coeff = r_left.powi((nx.abs() + 1) / 2)
-                                        * r_right.powi(nx.abs() / 2)
-                                        * r_front.powi((ny.abs() + 1) / 2)
-                                        * r_back.powi(ny.abs() / 2)
-                                        * r_floor.powi((nz.abs() + 1) / 2)
-                                        * r_ceiling.powi(nz.abs() / 2);
+                            if r_image > 1e-6 {
+                                let refl_coeff = r_left.powi((nx.abs() + 1) / 2)
+                                    * r_right.powi(nx.abs() / 2)
+                                    * r_front.powi((ny.abs() + 1) / 2)
+                                    * r_back.powi(ny.abs() / 2)
+                                    * r_floor.powi((nz.abs() + 1) / 2)
+                                    * r_ceiling.powi(nz.abs() / 2);
 
-                                    let air_atten = self.air_absorption_factor(r_image, frequency);
-                                    total_pressure += greens_function_3d(r_image, k)
-                                        * amplitude
-                                        * refl_coeff
-                                        * air_atten
-                                        * phase_factor;
-                                }
+                                let air_atten = self.air_absorption_factor(r_image, frequency);
+                                total_pressure += greens_function_3d(r_image, k)
+                                    * amplitude
+                                    * refl_coeff
+                                    * air_atten
+                                    * phase_factor;
                             }
                         }
                     }
                 }
+            }
         }
 
         total_pressure

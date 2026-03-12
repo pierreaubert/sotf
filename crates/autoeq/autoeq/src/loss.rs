@@ -38,11 +38,17 @@ pub enum LossType {
     /// Flat loss with asymmetric weighting (peaks penalized 2x more than dips)
     /// Use this for room correction where nulls cannot be fixed with EQ
     SpeakerFlatAsymmetric,
-    /// Harmann/Olive Score-based loss function (maximize preference score)
+    /// Harman/Olive preference-score objective.
+    ///
+    /// The helper functions return a preference score, and the optimizer wrapper
+    /// converts that score into a minimization objective.
     SpeakerScore,
     /// Flat loss function (minimize deviation from target curve)
     HeadphoneFlat,
-    /// Harmann/Olive Score-based loss function (maximize preference score)
+    /// Harman headphone preference-score objective.
+    ///
+    /// The helper functions return a preference score, and the optimizer wrapper
+    /// converts that score into a minimization objective.
     HeadphoneScore,
     /// Multi-driver crossover optimization (flatten combined response)
     DriversFlat,
@@ -258,7 +264,7 @@ pub fn flat_loss(freqs: &Array1<f64>, error: &Array1<f64>, min_freq: f64, max_fr
     weighted_mse(freqs, error, min_freq, max_freq)
 }
 
-/// Compute the score-based loss.
+/// Compute the speaker preference score for a candidate PEQ response.
 /// `peq_response` must be computed for the candidate parameters.
 pub fn speaker_score_loss(
     score_data: &SpeakerLossData,
@@ -970,7 +976,6 @@ fn calculate_absolute_slope_in_range(
 ///
 /// # Returns
 /// * Predicted preference rating (higher values indicate better preference)
-/// * For optimization purposes, return -preference_rating so minimizing improves preference
 ///
 /// # Important Note
 /// The input curve should represent deviation from the Harman Around-Ear (AE) or
@@ -999,8 +1004,8 @@ pub fn headphone_loss(curve: &Curve) -> f64 {
     // Apply the Olive et al. equation (Equation 4 from the paper)
     // Predicted Preference Rating = 114.49 - (12.62 × SD) - (15.52 × AS)
 
-    // Return negative preference rating for minimization during optimization
-    // (minimizing the loss function maximizes the preference rating)
+    // Return the preference rating directly.
+    // Optimizer wrappers convert this score into a minimization objective.
     114.49 - (12.62 * sd) - (15.52 * as_value)
 }
 
@@ -1012,7 +1017,7 @@ pub fn headphone_loss(curve: &Curve) -> f64 {
 /// * `target` - Target frequency response in dB
 ///
 /// # Returns
-/// * Score value where lower is better (for minimization)
+/// * Predicted headphone preference score where higher is better
 pub fn headphone_loss_with_target(
     data: &HeadphoneLossData,
     response: &Curve,
@@ -1100,7 +1105,7 @@ mod tests {
         if got.is_nan() && expected.pref_score.is_nan() {
             // ok
         } else {
-            assert!((got + expected.pref_score).abs() < 1e-12);
+            assert!((got - expected.pref_score).abs() < 1e-12);
         }
     }
 
@@ -1215,7 +1220,7 @@ mod tests {
         let score = headphone_loss(&curve);
 
         // With zero deviation (SD=0, AS=0), predicted preference = 114.49
-        // Function returns negative preference for minimization
+        // The helper returns the raw preference score.
         let expected_score = 114.49;
         assert!(
             (score - expected_score).abs() < 1e-12,
@@ -1419,7 +1424,10 @@ mod tests {
 
         // Filter to range that excludes all frequencies
         let v = weighted_mse(&freqs, &err, 1000.0, 5000.0);
-        assert!(v.is_infinite(), "Should return INFINITY when no frequencies in range");
+        assert!(
+            v.is_infinite(),
+            "Should return INFINITY when no frequencies in range"
+        );
     }
 
     #[test]

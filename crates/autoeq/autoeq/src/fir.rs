@@ -17,6 +17,10 @@ pub use math_audio_iir_fir::{
 
 /// Generate an FIR filter to match a target frequency response
 ///
+/// This helper supports generic target matching for `FirPhase::Linear` and
+/// `FirPhase::Minimum`. Use `generate_kirkeby_correction*` for Kirkeby
+/// regularized inversion, which requires both a measurement and a target.
+///
 /// # Arguments
 /// * `target_curve` - The target frequency response (magnitude only needed)
 /// * `sample_rate` - Sample rate in Hz

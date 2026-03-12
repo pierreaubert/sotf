@@ -26,8 +26,8 @@ macro_rules! qa_println {
 
 // Re-export external crate functionality
 pub use autoeq_cea2034 as cea2034;
-pub use math_audio_optimisation as de;
 pub use math_audio_iir_fir as iir;
+pub use math_audio_optimisation as de;
 
 // Re-export types from CEA2034 crate to ensure type compatibility
 pub use autoeq_cea2034::{Curve, DirectivityCurve, DirectivityData};

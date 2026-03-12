@@ -24,10 +24,35 @@ pub struct DESetup {
     pub bounds: Vec<(f64, f64)>,
     /// Objective data with penalty weights configured
     pub penalty_data: ObjectiveData,
-    /// Population size (minimum 15)
-    pub pop_size: usize,
+    /// Population size multiplier for the DE engine
+    pub pop_multiplier: usize,
+    /// Actual population size after applying the multiplier to free parameters
+    pub population_size: usize,
     /// Maximum iterations derived from maxeval and population
     pub max_iter: usize,
+}
+
+fn count_free_dimensions(lower_bounds: &[f64], upper_bounds: &[f64]) -> usize {
+    lower_bounds
+        .iter()
+        .zip(upper_bounds.iter())
+        .filter(|(lo, hi)| **hi > **lo)
+        .count()
+        .max(1)
+}
+
+fn derive_de_budget(
+    lower_bounds: &[f64],
+    upper_bounds: &[f64],
+    population: usize,
+    maxeval: usize,
+) -> (usize, usize, usize) {
+    let n_free = count_free_dimensions(lower_bounds, upper_bounds);
+    let desired_population = population.max(1).min(maxeval.max(1));
+    let pop_multiplier = desired_population.div_ceil(n_free).max(4);
+    let population_size = pop_multiplier * n_free;
+    let max_iter = maxeval.saturating_sub(population_size) / population_size;
+    (pop_multiplier, population_size, max_iter)
 }
 
 /// Set up common DE parameters
@@ -60,8 +85,8 @@ pub fn setup_de_common(
         .collect();
 
     // Estimate parameters
-    let pop_size = population.max(15); // minimum reasonable population
-    let max_iter = maxeval; // Use maxeval directly as max iterations
+    let (pop_multiplier, population_size, max_iter) =
+        derive_de_budget(lower_bounds, upper_bounds, population, maxeval);
 
     // Set up objective data for DE with zero penalties since we use native constraints
     let mut penalty_data = objective_data.clone();
@@ -78,9 +103,10 @@ pub fn setup_de_common(
         };
 
         log::debug!(
-            "DE Setup: {}, pop_size={}, max_iter={}, maxeval={}",
+            "DE Setup: {}, pop_multiplier={}, population_size={}, max_iter={}, maxeval={}",
             params_desc,
-            pop_size,
+            pop_multiplier,
+            population_size,
             max_iter,
             maxeval
         );
@@ -101,7 +127,8 @@ pub fn setup_de_common(
     DESetup {
         bounds,
         penalty_data,
-        pop_size,
+        pop_multiplier,
+        population_size,
         max_iter,
     }
 }
@@ -316,7 +343,7 @@ pub fn optimize_filters_autoeq_with_callback(
     // Generate Sobol quasi-random population for better space coverage
     let sobol_samples = init_sobol(
         x.len(),
-        setup.pop_size.saturating_sub(smart_guesses.len()),
+        setup.population_size.saturating_sub(smart_guesses.len()),
         &setup.bounds,
     );
 
@@ -385,7 +412,7 @@ pub fn optimize_filters_autoeq_with_callback(
     // Use constraint helpers for nonlinear constraints
     let mut config_builder = DEConfigBuilder::new()
         .maxiter(setup.max_iter)
-        .popsize(setup.pop_size)
+        .popsize(setup.pop_multiplier)
         .tol(tolerance)
         .atol(atolerance)
         .strategy(strategy)
@@ -475,4 +502,67 @@ pub fn optimize_filters_autoeq_with_callback(
     let result = differential_evolution(&base_objective_fn, &setup.bounds, config)
         .map_err(|e| (format!("DE optimization failed: {:?}", e), f64::INFINITY))?;
     process_de_results(x, result, "AutoDE")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LossType;
+    use crate::cli::PeqModel;
+    use ndarray::{Array1, array};
+
+    fn test_objective_data() -> ObjectiveData {
+        ObjectiveData {
+            freqs: array![100.0, 1000.0],
+            target: Array1::zeros(2),
+            deviation: Array1::zeros(2),
+            srate: 48_000.0,
+            min_spacing_oct: 0.0,
+            spacing_weight: 0.0,
+            max_db: 6.0,
+            min_db: 0.0,
+            min_freq: 20.0,
+            max_freq: 20_000.0,
+            peq_model: PeqModel::Pk,
+            loss_type: LossType::SpeakerFlat,
+            speaker_score_data: None,
+            headphone_score_data: None,
+            input_curve: None,
+            drivers_data: None,
+            fixed_crossover_freqs: None,
+            penalty_w_ceiling: 0.0,
+            penalty_w_spacing: 0.0,
+            penalty_w_mingain: 0.0,
+            integrality: None,
+        }
+    }
+
+    #[test]
+    fn setup_de_common_keeps_estimated_evaluations_within_budget() {
+        let lower_bounds = vec![-1.0, -1.0];
+        let upper_bounds = vec![1.0, 1.0];
+        let setup = setup_de_common(
+            &lower_bounds,
+            &upper_bounds,
+            test_objective_data(),
+            20,
+            55,
+            true,
+        );
+
+        let n_free = lower_bounds
+            .iter()
+            .zip(upper_bounds.iter())
+            .filter(|(lo, hi)| **hi > **lo)
+            .count();
+        let estimated_nfev = setup.pop_multiplier * n_free * (setup.max_iter + 1);
+
+        assert!(
+            estimated_nfev <= 55,
+            "estimated DE evaluations should stay within maxeval: estimated_nfev={}, maxeval=55",
+            estimated_nfev
+        );
+        assert_eq!(setup.population_size, 20);
+        assert_eq!(setup.max_iter, 1);
+    }
 }

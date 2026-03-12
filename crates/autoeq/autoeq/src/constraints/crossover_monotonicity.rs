@@ -137,7 +137,10 @@ mod tests {
 
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
-        assert_eq!(result, 0.0, "2-driver system should return 0.0 (no violation)");
+        assert_eq!(
+            result, 0.0,
+            "2-driver system should return 0.0 (no violation)"
+        );
     }
 
     #[test]

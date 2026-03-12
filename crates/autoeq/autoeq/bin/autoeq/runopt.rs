@@ -34,7 +34,10 @@ pub(super) fn perform_optimization_with_bounds(
     };
 
     // Calculate pre-optimization objective value
-    let pre_objective = Some(autoeq::optim::compute_fitness_penalties_ref(&x, objective_data));
+    let pre_objective = Some(autoeq::optim::compute_fitness_penalties_ref(
+        &x,
+        objective_data,
+    ));
 
     let result = optim::optimize_filters(
         &mut x,
