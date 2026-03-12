@@ -47,6 +47,9 @@ mod text_test;
 mod toast_test;
 mod tooltip_test;
 
+// Component integration tests - Data Display
+mod qr_test;
+
 #[cfg(test)]
 mod tests {
     #[test]

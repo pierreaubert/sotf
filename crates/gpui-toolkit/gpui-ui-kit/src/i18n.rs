@@ -108,6 +108,7 @@ pub enum TranslationKey {
     SectionTooltips,
     SectionPotentiometers,
     SectionAccordion,
+    SectionQrCode,
 
     // Component labels
     LabelVariants,
@@ -221,6 +222,7 @@ impl Translations {
         t.insert((L, SectionTooltips), "Tooltips");
         t.insert((L, SectionPotentiometers), "Potentiometers");
         t.insert((L, SectionAccordion), "Accordion");
+        t.insert((L, SectionQrCode), "QR Code");
 
         // Labels
         t.insert((L, LabelVariants), "Variants");
@@ -322,6 +324,7 @@ impl Translations {
         t.insert((L, SectionTooltips), "Infobulles");
         t.insert((L, SectionPotentiometers), "Potentiometres");
         t.insert((L, SectionAccordion), "Accordeon");
+        t.insert((L, SectionQrCode), "Code QR");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -423,6 +426,7 @@ impl Translations {
         t.insert((L, SectionTooltips), "Tooltips");
         t.insert((L, SectionPotentiometers), "Potentiometer");
         t.insert((L, SectionAccordion), "Akkordeon");
+        t.insert((L, SectionQrCode), "QR-Code");
 
         // Labels
         t.insert((L, LabelVariants), "Varianten");
@@ -524,6 +528,7 @@ impl Translations {
         t.insert((L, SectionTooltips), "Sugerencias");
         t.insert((L, SectionPotentiometers), "Potenciometros");
         t.insert((L, SectionAccordion), "Acordeon");
+        t.insert((L, SectionQrCode), "Codigo QR");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -625,6 +630,7 @@ impl Translations {
         t.insert((L, SectionTooltips), "ツールチップ");
         t.insert((L, SectionPotentiometers), "ポテンショメーター");
         t.insert((L, SectionAccordion), "アコーディオン");
+        t.insert((L, SectionQrCode), "QRコード");
 
         // Labels
         t.insert((L, LabelVariants), "バリエーション");

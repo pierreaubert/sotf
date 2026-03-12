@@ -56,6 +56,9 @@ mod text_test;
 mod toast_test;
 mod tooltip_test;
 
+// Data Display
+mod qr_test;
+
 // Theme
 mod number_input_test;
 mod theme_test;

@@ -56,6 +56,7 @@ gpui-ui-kit = { version = "0.6.10", git="https://github.com/pierreaubert/sotf/tr
 | `Spinner` / `LoadingDots` | Loading indicators |
 | `Avatar` / `AvatarGroup` | User avatars with status indicators |
 | `Table` | Data table with sorting, selection, and pagination |
+| `QrCode` | QR code display with custom size, foreground, and background colors |
 | `Text` / `Heading` / `Code` / `Link` | Typography components |
 
 ### Feedback
@@ -311,6 +312,25 @@ CircularProgress::new(60.0)
     .size(px(64.0))
     .variant(ProgressVariant::Default)
     .show_label(true)
+```
+
+### QR Code
+
+```rust
+use gpui_ui_kit::QrCode;
+
+// Basic QR code
+QrCode::new("https://example.com")
+
+// Custom size
+QrCode::new("https://example.com")
+    .size(px(300.0))
+
+// Custom colors
+QrCode::new("https://example.com")
+    .size(px(200.0))
+    .fg(rgba(0x1a1a1aFF))
+    .bg(rgba(0xFFFFFFFF))
 ```
 
 ### Checkbox and Toggle
