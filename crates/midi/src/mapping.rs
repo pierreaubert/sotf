@@ -79,7 +79,11 @@ impl MidiMapping {
     }
 
     /// Find the binding for a given parameter index (any page)
-    pub fn binding_for_param(&self, plugin_index: usize, param_index: usize) -> Option<&ControlBinding> {
+    pub fn binding_for_param(
+        &self,
+        plugin_index: usize,
+        param_index: usize,
+    ) -> Option<&ControlBinding> {
         self.bindings
             .iter()
             .find(|b| b.plugin_index == plugin_index && b.param_index == param_index)
@@ -154,12 +158,20 @@ pub fn midi_to_param(midi_value: u8, min: f64, max: f64, scaling: ValueScaling) 
         ValueScaling::Linear => min + norm * (max - min),
         ValueScaling::Logarithmic => {
             // Protect against log(0)
-            let log_min = if min > 0.0 { min.ln() } else { 0.0_f64.ln().max(-10.0) };
+            let log_min = if min > 0.0 {
+                min.ln()
+            } else {
+                0.0_f64.ln().max(-10.0)
+            };
             let log_max = max.ln();
             (log_min + norm * (log_max - log_min)).exp()
         }
         ValueScaling::Toggle => {
-            if midi_value >= 64 { max } else { min }
+            if midi_value >= 64 {
+                max
+            } else {
+                min
+            }
         }
         ValueScaling::Stepped(n) => {
             let step_index = ((norm * n as f64).floor() as u8).min(n - 1);
@@ -188,7 +200,11 @@ pub fn param_to_midi(param_value: f64, min: f64, max: f64, scaling: ValueScaling
             (norm.clamp(0.0, 1.0) * 127.0).round() as u8
         }
         ValueScaling::Logarithmic => {
-            let log_min = if min > 0.0 { min.ln() } else { 0.0_f64.ln().max(-10.0) };
+            let log_min = if min > 0.0 {
+                min.ln()
+            } else {
+                0.0_f64.ln().max(-10.0)
+            };
             let log_max = max.ln();
             let log_val = if param_value > 0.0 {
                 param_value.ln()
@@ -199,7 +215,11 @@ pub fn param_to_midi(param_value: f64, min: f64, max: f64, scaling: ValueScaling
             (norm.clamp(0.0, 1.0) * 127.0).round() as u8
         }
         ValueScaling::Toggle => {
-            if param_value > (min + max) / 2.0 { 127 } else { 0 }
+            if param_value > (min + max) / 2.0 {
+                127
+            } else {
+                0
+            }
         }
         ValueScaling::Stepped(n) => {
             let step_size = (max - min) / (n - 1).max(1) as f64;
@@ -241,7 +261,10 @@ mod tests {
         for midi in [0u8, 32, 64, 96, 127] {
             let param = midi_to_param(midi, min, max, ValueScaling::Logarithmic);
             let back = param_to_midi(param, min, max, ValueScaling::Logarithmic);
-            assert!((back as i16 - midi as i16).abs() <= 1, "log roundtrip failed for midi={midi}: got {back}");
+            assert!(
+                (back as i16 - midi as i16).abs() <= 1,
+                "log roundtrip failed for midi={midi}: got {back}"
+            );
         }
     }
 

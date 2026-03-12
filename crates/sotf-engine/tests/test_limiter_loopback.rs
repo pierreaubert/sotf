@@ -50,12 +50,13 @@ fn test_limiter_loopback_verification() {
 
     for name in device_names {
         if let Some(out) = find_device(name, false)
-            && let Some(in_) = find_device(name, true) {
-                output_setup = Some(out);
-                input_setup = Some(in_);
-                println!("Found device: {}", name);
-                break;
-            }
+            && let Some(in_) = find_device(name, true)
+        {
+            output_setup = Some(out);
+            input_setup = Some(in_);
+            println!("Found device: {}", name);
+            break;
+        }
     }
 
     if output_setup.is_none() || input_setup.is_none() {

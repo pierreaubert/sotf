@@ -246,9 +246,10 @@ impl PlayerView {
             .enumerate()
             .filter_map(|(idx, r)| {
                 if let Some(selected) = selected_channel
-                    && idx != selected {
-                        return None;
-                    }
+                    && idx != selected
+                {
+                    return None;
+                }
                 r.result
                     .as_ref()
                     .map(|res| (r.channel_name.clone(), idx, res.clone()))
@@ -495,11 +496,12 @@ impl PlayerView {
         // We only visualize the first selected channel's spectrogram for now
         if let Some((_, _, result)) = results.first()
             && let Some(spectrogram) = &result.spectrogram_db
-                && !spectrogram.is_empty() {
-                    return self
-                        .render_spectrogram_canvas(spectrogram, theme, sample_rate)
-                        .into_any_element();
-                }
+            && !spectrogram.is_empty()
+        {
+            return self
+                .render_spectrogram_canvas(spectrogram, theme, sample_rate)
+                .into_any_element();
+        }
 
         div()
             .h(px(300.0))

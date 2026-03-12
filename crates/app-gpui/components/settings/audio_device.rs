@@ -442,14 +442,10 @@ impl PlayerView {
                                             if state.app.playback.is_playing
                                                 && let Some(path) =
                                                     state.app.get_current_track_path()
-                                                {
-                                                    let position = state.app.playback.position_secs;
-                                                    Self::play_track_at(
-                                                        state,
-                                                        path,
-                                                        Some(position),
-                                                    );
-                                                }
+                                            {
+                                                let position = state.app.playback.position_secs;
+                                                Self::play_track_at(state, path, Some(position));
+                                            }
                                         }
                                     });
                                     cx.notify();

@@ -3,8 +3,8 @@
 //! Replaces aubio PVoc + SpecDesc with a pure Rust Hann-windowed FFT.
 
 use super::utils::{geometric_mean, mean, normalize, std_deviation};
-use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
 
 const WINDOW_SIZE: usize = 512;

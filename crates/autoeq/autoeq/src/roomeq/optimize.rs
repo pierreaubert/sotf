@@ -529,8 +529,7 @@ pub fn optimize_room(
 
     // Process each speaker sequentially so we can report progress
     let mut results: Vec<SpeakerProcessResult> = Vec::with_capacity(total_speakers);
-    for (speaker_idx, (channel_name, speaker_config)) in
-        channels_to_process.into_iter().enumerate()
+    for (speaker_idx, (channel_name, speaker_config)) in channels_to_process.into_iter().enumerate()
     {
         info!("Processing channel: {}", channel_name);
 
@@ -557,7 +556,17 @@ pub fn optimize_room(
         );
 
         match result {
-            Ok((chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms, fir_coeffs)) => {
+            Ok((
+                chain,
+                pre_score,
+                post_score,
+                initial_curve,
+                final_curve,
+                biquads,
+                mean_spl,
+                arrival_time_ms,
+                fir_coeffs,
+            )) => {
                 send_progress(
                     &mut callback,
                     &RoomOptimizationProgress {
@@ -576,8 +585,16 @@ pub fn optimize_room(
                 );
 
                 results.push(Ok((
-                    channel_name, chain, pre_score, post_score, initial_curve, final_curve,
-                    biquads, mean_spl, arrival_time_ms, fir_coeffs,
+                    channel_name,
+                    chain,
+                    pre_score,
+                    post_score,
+                    initial_curve,
+                    final_curve,
+                    biquads,
+                    mean_spl,
+                    arrival_time_ms,
+                    fir_coeffs,
                 )));
             }
             Err(e) => {

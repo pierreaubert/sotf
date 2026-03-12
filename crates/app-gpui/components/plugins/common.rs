@@ -10,8 +10,8 @@ use gpui_ui_kit::{
     VerticalSliderTheme,
 };
 pub use sotf_audio_player::param_index_to_engine_param;
-use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 use sotf_audio_player_midi::PhysicalControlKind;
+use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 
 /// Render a parameter row with name and value
 pub fn render_param_row(
@@ -623,7 +623,13 @@ pub fn render_transfer_curve(
 }
 
 /// Compute the output dB for a given input dB on the transfer curve
-fn compute_transfer(input_db: f64, threshold_db: f64, ratio: f64, knee_db: f64, is_limiter: bool) -> f64 {
+fn compute_transfer(
+    input_db: f64,
+    threshold_db: f64,
+    ratio: f64,
+    knee_db: f64,
+    is_limiter: bool,
+) -> f64 {
     if is_limiter {
         input_db.min(threshold_db)
     } else if input_db < threshold_db - knee_db / 2.0 {
@@ -784,33 +790,29 @@ pub fn render_dynamics_layout(
     meter_section: impl IntoElement,
     meter_width: f32,
 ) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                // Column 1: Transfer curve
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .w(px(meter_width))
-                        .child(transfer_curve),
-                )
-                // Column 2: Controls
-                .child(div().flex().flex_1().child(controls))
-                // Column 3: Meters
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .w(px(meter_width))
-                        .child(meter_section),
-                ),
-        )
+    div().flex().flex_col().gap_4().child(
+        div()
+            .flex()
+            .gap_4()
+            // Column 1: Transfer curve
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .w(px(meter_width))
+                    .child(transfer_curve),
+            )
+            // Column 2: Controls
+            .child(div().flex().flex_1().child(controls))
+            // Column 3: Meters
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .w(px(meter_width))
+                    .child(meter_section),
+            ),
+    )
 }
 
 /// Render a rotary knob control using gpui-ui-kit Potentiometer

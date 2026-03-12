@@ -18,14 +18,7 @@ pub(super) fn perform_optimization(
     let mut x = autoeq::workflow::initial_guess(args, &lower_bounds, &upper_bounds);
 
     // Calculate pre-optimization objective value
-    let pre_objective = {
-        let mut data_copy = objective_data.clone();
-        Some(autoeq::optim::compute_fitness_penalties(
-            &x,
-            None,
-            &mut data_copy,
-        ))
-    };
+    let pre_objective = Some(autoeq::optim::compute_fitness_penalties_ref(&x, &objective_data));
 
     let result = optim::optimize_filters(
         &mut x,

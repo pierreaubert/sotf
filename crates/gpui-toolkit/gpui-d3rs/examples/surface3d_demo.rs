@@ -259,34 +259,36 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let demo_type = args.get(1).cloned().unwrap_or_else(|| "sinc".to_string());
 
-    gpui::Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(move |cx: &mut gpui::App| {
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds {
-                    origin: Point::new(px(100.0), px(100.0)),
-                    size: Size {
-                        width: px(1000.0),
-                        height: px(800.0),
-                    },
-                })),
-                titlebar: Some(TitlebarOptions {
-                    title: Some(SharedString::from(format!(
-                        "3D Surface Demo - {}",
-                        &demo_type
-                    ))),
+    gpui::Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(
+        move |cx: &mut gpui::App| {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds {
+                        origin: Point::new(px(100.0), px(100.0)),
+                        size: Size {
+                            width: px(1000.0),
+                            height: px(800.0),
+                        },
+                    })),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some(SharedString::from(format!(
+                            "3D Surface Demo - {}",
+                            &demo_type
+                        ))),
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |_, cx| {
-                let demo = match demo_type.as_str() {
-                    "spinorama" => Surface3DDemo::spinorama_demo(),
-                    "saddle" => Surface3DDemo::saddle_demo(),
-                    _ => Surface3DDemo::new(),
-                };
-                cx.new(|_| demo)
-            },
-        )
-        .unwrap();
-    });
+                },
+                |_, cx| {
+                    let demo = match demo_type.as_str() {
+                        "spinorama" => Surface3DDemo::spinorama_demo(),
+                        "saddle" => Surface3DDemo::saddle_demo(),
+                        _ => Surface3DDemo::new(),
+                    };
+                    cx.new(|_| demo)
+                },
+            )
+            .unwrap();
+        },
+    );
 }

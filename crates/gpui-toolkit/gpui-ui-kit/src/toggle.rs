@@ -347,12 +347,7 @@ impl Toggle {
         let checked = self.checked;
         let selected = self.selected;
 
-        let mut container = div()
-            .id(self.id)
-            .flex()
-            .items_center()
-            .justify_between()
-            .cursor_pointer();
+        let mut container = div().id(self.id).flex().flex_col().gap_1().cursor_pointer();
 
         // Apply selection styling
         if selected {
@@ -371,7 +366,7 @@ impl Toggle {
             container = container.opacity(0.5).cursor_not_allowed();
         }
 
-        // Label
+        // Label (top row, left-aligned)
         if let Some(label) = &self.label {
             let label_color = if selected {
                 theme.text_primary
@@ -392,7 +387,7 @@ impl Toggle {
             );
         }
 
-        // Segmented switch: [OFF | ON]
+        // Segmented switch: [OFF | ON] (bottom row, right-aligned)
         let switch = div()
             .flex()
             .rounded_md()
@@ -440,7 +435,7 @@ impl Toggle {
                     .child("ON"),
             );
 
-        container = container.child(switch);
+        container = container.child(div().flex().justify_end().child(switch));
 
         // Click and keyboard handlers
         if !self.disabled

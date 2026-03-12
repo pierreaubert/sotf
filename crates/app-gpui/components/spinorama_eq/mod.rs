@@ -932,18 +932,19 @@ impl PlayerView {
 
                                 // Check for phase result
                                 if !phase_done
-                                    && let Some(has_phase) = lock!(PHASE_CHECK_RESULT).take() {
-                                        state_entity.update(cx, |state, cx| {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .spinorama_eq_state
-                                                .has_phase_data = has_phase;
-                                            log::info!("Phase data availability: {}", has_phase);
-                                            cx.notify();
-                                        });
-                                        phase_done = true;
-                                    }
+                                    && let Some(has_phase) = lock!(PHASE_CHECK_RESULT).take()
+                                {
+                                    state_entity.update(cx, |state, cx| {
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .spinorama_eq_state
+                                            .has_phase_data = has_phase;
+                                        log::info!("Phase data availability: {}", has_phase);
+                                        cx.notify();
+                                    });
+                                    phase_done = true;
+                                }
 
                                 // Check for spinorama curves result
                                 if !spinorama_done {
@@ -1622,8 +1623,7 @@ impl PlayerView {
         // Get file extension for format
         let extension = sotf_audio_player::autoeq::get_export_extension(&export_format);
 
-        let safe_speaker_name = speaker_name
-            .replace([' ', '/', '\\'], "_");
+        let safe_speaker_name = speaker_name.replace([' ', '/', '\\'], "_");
         let default_filename = format!("spinorama_eq_{}.{}", safe_speaker_name, extension);
 
         let state_entity = self.state.clone();

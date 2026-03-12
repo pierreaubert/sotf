@@ -22,6 +22,7 @@ pub struct XtcRenderState {
     pub head_offset_x: f64,
     pub head_offset_z: f64,
     pub head_yaw_deg: f64,
+    pub head_tracking_smooth_s: f64,
     pub beta_base: f64,
     pub beta_low_freq_boost: f64,
     pub beta_high_freq_boost: f64,
@@ -44,6 +45,34 @@ pub struct XtcRenderState {
     pub is_editing: bool,
     pub selected_param: usize,
 }
+
+// PARAMS index constants matching xtc::PARAMS order
+const I_DISTANCE: usize = 0;
+const I_ANGLE: usize = 1;
+const I_HEAD_RADIUS: usize = 2;
+const I_OFFSET_X: usize = 3;
+const I_OFFSET_Z: usize = 4;
+const I_YAW: usize = 5;
+const I_TRACK_SMOOTH: usize = 6;
+const I_BETA_BASE: usize = 7;
+const I_BETA_LF: usize = 8;
+const I_BETA_HF: usize = 9;
+const I_SHADOW_CUTOFF: usize = 10;
+const I_SHADOW_SLOPE: usize = 11;
+const I_MAX_GAIN: usize = 12;
+const I_SPECTRAL_NORM: usize = 13;
+const I_PINNA: usize = 14;
+const I_ROOM_ENABLED: usize = 15;
+const I_ROOM_WIDTH: usize = 16;
+const I_ROOM_DEPTH: usize = 17;
+const I_WALL_ABSORPTION: usize = 18;
+const I_REFL_BETA: usize = 19;
+const I_BYPASS_XTC: usize = 20;
+const I_BYPASS_SPECTRAL: usize = 21;
+const I_BYPASS_NEUMANN: usize = 22;
+const I_AG_ENABLED: usize = 23;
+const I_AG_MAX: usize = 24;
+const I_AG_SMOOTH: usize = 25;
 
 /// Render the XTC plugin
 pub fn render_xtc_plugin(
@@ -69,7 +98,6 @@ pub fn render_xtc_plugin(
                         .flex_col()
                         .gap_2()
                         .child(render_section_title("SETUP", theme))
-                        // Distance knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -78,13 +106,12 @@ pub fn render_xtc_plugin(
                             pk(XT, "distance_m").min_f64(),
                             pk(XT, "distance_m").max_f64(),
                             "m",
-                            0,
+                            I_DISTANCE,
                             state.selected_param,
                             state.is_editing,
                             Some('d'),
                             theme,
                         ))
-                        // Speaker angle knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -92,14 +119,13 @@ pub fn render_xtc_plugin(
                             state.speaker_angle_deg,
                             pk(XT, "speaker_angle_deg").min_f64(),
                             pk(XT, "speaker_angle_deg").max_f64(),
-                            "°",
-                            1,
+                            "\u{00b0}",
+                            I_ANGLE,
                             state.selected_param,
                             state.is_editing,
                             Some('a'),
                             theme,
                         ))
-                        // Head radius knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -108,7 +134,7 @@ pub fn render_xtc_plugin(
                             pk(XT, "head_radius_m").min_f64() * 100.0,
                             pk(XT, "head_radius_m").max_f64() * 100.0,
                             "cm",
-                            2,
+                            I_HEAD_RADIUS,
                             state.selected_param,
                             state.is_editing,
                             Some('r'),
@@ -127,10 +153,10 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Offset X",
                             state.head_offset_x,
-                            -0.5,
-                            0.5,
+                            pk(XT, "head_offset_x").min_f64(),
+                            pk(XT, "head_offset_x").max_f64(),
                             "m",
-                            3,
+                            I_OFFSET_X,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -141,10 +167,10 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Offset Z",
                             state.head_offset_z,
-                            -0.5,
-                            0.5,
+                            pk(XT, "head_offset_z").min_f64(),
+                            pk(XT, "head_offset_z").max_f64(),
                             "m",
-                            4,
+                            I_OFFSET_Z,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -155,10 +181,24 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Yaw",
                             state.head_yaw_deg,
-                            -90.0,
-                            90.0,
-                            "°",
-                            5,
+                            pk(XT, "head_yaw_deg").min_f64(),
+                            pk(XT, "head_yaw_deg").max_f64(),
+                            "\u{00b0}",
+                            I_YAW,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Smoothing",
+                            state.head_tracking_smooth_s,
+                            pk(XT, "head_tracking_smooth_s").min_f64(),
+                            pk(XT, "head_tracking_smooth_s").max_f64(),
+                            "s",
+                            I_TRACK_SMOOTH,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -172,7 +212,6 @@ pub fn render_xtc_plugin(
                         .flex_col()
                         .gap_2()
                         .child(render_section_title("CANCELLATION", theme))
-                        // Beta base knob (scaled for display)
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -180,14 +219,13 @@ pub fn render_xtc_plugin(
                             state.beta_base * 1000.0,
                             pk(XT, "beta_base").min_f64() * 1000.0,
                             pk(XT, "beta_base").max_f64() * 1000.0,
-                            "×10⁻³",
-                            6,
+                            "\u{00d7}10\u{207b}\u{00b3}",
+                            I_BETA_BASE,
                             state.selected_param,
                             state.is_editing,
                             Some('b'),
                             theme,
                         ))
-                        // Low frequency boost knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -195,23 +233,22 @@ pub fn render_xtc_plugin(
                             state.beta_low_freq_boost,
                             pk(XT, "beta_low_freq_boost").min_f64(),
                             pk(XT, "beta_low_freq_boost").max_f64(),
-                            "×",
-                            7,
+                            "\u{00d7}",
+                            I_BETA_LF,
                             state.selected_param,
                             state.is_editing,
                             Some('l'),
                             theme,
                         ))
-                        // High frequency boost knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
                             "HF Boost",
                             state.beta_high_freq_boost,
-                            pk(XT, "beta_low_freq_boost").min_f64(),
-                            pk(XT, "beta_low_freq_boost").max_f64(),
-                            "×",
-                            8,
+                            pk(XT, "beta_high_freq_boost").min_f64(),
+                            pk(XT, "beta_high_freq_boost").max_f64(),
+                            "\u{00d7}",
+                            I_BETA_HF,
                             state.selected_param,
                             state.is_editing,
                             Some('h'),
@@ -225,7 +262,6 @@ pub fn render_xtc_plugin(
                         .flex_col()
                         .gap_2()
                         .child(render_section_title("HEAD SHADOW", theme))
-                        // Cutoff frequency knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -234,13 +270,12 @@ pub fn render_xtc_plugin(
                             pk(XT, "head_shadow_cutoff_hz").min_f64(),
                             pk(XT, "head_shadow_cutoff_hz").max_f64(),
                             "Hz",
-                            9,
+                            I_SHADOW_CUTOFF,
                             state.selected_param,
                             state.is_editing,
                             Some('c'),
                             theme,
                         ))
-                        // Slope knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -249,7 +284,7 @@ pub fn render_xtc_plugin(
                             pk(XT, "head_shadow_slope_db_per_octave").min_f64(),
                             pk(XT, "head_shadow_slope_db_per_octave").max_f64(),
                             "dB/oct",
-                            10,
+                            I_SHADOW_SLOPE,
                             state.selected_param,
                             state.is_editing,
                             Some('s'),
@@ -260,10 +295,10 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Max Gain",
                             state.max_gain_db,
-                            3.0,
-                            30.0,
+                            pk(XT, "max_gain_db").min_f64(),
+                            pk(XT, "max_gain_db").max_f64(),
                             "dB",
-                            11,
+                            I_MAX_GAIN,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -282,7 +317,7 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Spectral Norm",
                             state.spectral_normalization,
-                            12,
+                            I_SPECTRAL_NORM,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -292,7 +327,7 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Pinna Model",
                             state.pinna_model_enabled,
-                            13,
+                            I_PINNA,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -300,9 +335,9 @@ pub fn render_xtc_plugin(
                         .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
-                            "Room Refl",
+                            "Room Reflections",
                             state.room_reflections_enabled,
-                            14,
+                            I_ROOM_ENABLED,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -310,12 +345,54 @@ pub fn render_xtc_plugin(
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
+                            "Room Width",
+                            state.room_width_m,
+                            pk(XT, "room_width_m").min_f64(),
+                            pk(XT, "room_width_m").max_f64(),
+                            "m",
+                            I_ROOM_WIDTH,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Room Depth",
+                            state.room_depth_m,
+                            pk(XT, "room_depth_m").min_f64(),
+                            pk(XT, "room_depth_m").max_f64(),
+                            "m",
+                            I_ROOM_DEPTH,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Absorption",
+                            state.wall_absorption,
+                            pk(XT, "wall_absorption").min_f64(),
+                            pk(XT, "wall_absorption").max_f64(),
+                            "",
+                            I_WALL_ABSORPTION,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
                             "Reflection Beta",
                             state.reflection_beta_boost,
-                            1.0,
-                            10.0,
-                            "×",
-                            18,
+                            pk(XT, "reflection_beta_boost").min_f64(),
+                            pk(XT, "reflection_beta_boost").max_f64(),
+                            "\u{00d7}",
+                            I_REFL_BETA,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -334,7 +411,7 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Auto Gain",
                             state.auto_gain_enabled,
-                            22,
+                            I_AG_ENABLED,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -344,10 +421,10 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "AG Max",
                             state.auto_gain_max_db,
-                            0.0,
-                            24.0,
+                            pk(XT, "auto_gain_max_db").min_f64(),
+                            pk(XT, "auto_gain_max_db").max_f64(),
                             "dB",
-                            23,
+                            I_AG_MAX,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -358,10 +435,10 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "AG Smooth",
                             state.auto_gain_smoothing_ms,
-                            10.0,
-                            500.0,
+                            pk(XT, "auto_gain_smoothing_ms").min_f64(),
+                            pk(XT, "auto_gain_smoothing_ms").max_f64(),
                             "ms",
-                            24,
+                            I_AG_SMOOTH,
                             state.selected_param,
                             state.is_editing,
                             None,
@@ -380,7 +457,7 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Bypass Filters",
                             state.bypass_xtc_filters,
-                            19,
+                            I_BYPASS_XTC,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -390,7 +467,7 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Bypass Spec Norm",
                             state.bypass_spectral_normalization,
-                            20,
+                            I_BYPASS_SPECTRAL,
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -400,12 +477,11 @@ pub fn render_xtc_plugin(
                             plugin_idx,
                             "Bypass Neumann",
                             state.bypass_neumann_refinement,
-                            21,
+                            I_BYPASS_NEUMANN,
                             state.selected_param,
                             state.is_editing,
                             theme,
                         )),
                 ),
         )
-    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

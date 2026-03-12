@@ -56,12 +56,13 @@ fn test_upmixer_real_audio_loopback() {
 
     for name in device_names {
         if let Some(out) = find_device(name, false)
-            && let Some(in_) = find_device(name, true) {
-                output_setup = Some(out);
-                input_setup = Some(in_);
-                println!("Found device: {}", name);
-                break;
-            }
+            && let Some(in_) = find_device(name, true)
+        {
+            output_setup = Some(out);
+            input_setup = Some(in_);
+            println!("Found device: {}", name);
+            break;
+        }
     }
 
     if output_setup.is_none() || input_setup.is_none() {
@@ -200,7 +201,11 @@ fn test_upmixer_real_audio_loopback() {
         }
     }
 
-    for (ch, energy) in channel_energy.iter_mut().enumerate().take(channels as usize) {
+    for (ch, energy) in channel_energy
+        .iter_mut()
+        .enumerate()
+        .take(channels as usize)
+    {
         *energy = (*energy / frame_count as f32).sqrt();
         println!("Channel {} RMS: {:.4}", ch, energy);
     }

@@ -45,7 +45,9 @@ impl DenoiserPlugin {
     pub(super) fn update_hiss_cutoff_bin(&mut self) {
         let bin_freq = self.sample_rate as f32 / self.fft_size as f32;
         self.hiss_cutoff_bin = (self.hiss_frequency_hz / bin_freq).round() as usize;
-        self.hiss_cutoff_bin = self.hiss_cutoff_bin.min(self.spectrum_size.saturating_sub(1));
+        self.hiss_cutoff_bin = self
+            .hiss_cutoff_bin
+            .min(self.spectrum_size.saturating_sub(1));
     }
 
     /// Convert hiss threshold from dB to linear power ratio.

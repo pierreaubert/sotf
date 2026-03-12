@@ -907,9 +907,10 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     // Update the track index in the current queue item
                                     if let Some(queue_idx) = state.app.playback.current_queue_index
-                                        && let Some(item) = state.app.queue.get_mut(queue_idx) {
-                                            item.current_track_index = idx;
-                                        }
+                                        && let Some(item) = state.app.queue.get_mut(queue_idx)
+                                    {
+                                        item.current_track_index = idx;
+                                    }
                                     Self::play_track(state, path);
                                 });
                                 cx.notify();

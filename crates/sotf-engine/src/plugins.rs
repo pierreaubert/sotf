@@ -189,36 +189,32 @@ impl PluginType {
     pub fn maturity(&self) -> ReleaseChannel {
         match self {
             Self::EQ
-		| Self::Gain
-		| Self::Compressor
-		| Self::ChannelMuteSolo
-		| Self::Crossfeed
-		| Self::Expander
-		| Self::FletcherMunson
-		| Self::Gate
-		| Self::Limiter
-		| Self::LoudnessMonitor
-		| Self::Matrix
-		| Self::MultibandCompressor
-		| Self::MultibandExpander
-		| Self::SpectrumAnalyzer
-   		| Self::Upmixer
-		| Self::XTC
-		=> ReleaseChannel::Prod,
+            | Self::Gain
+            | Self::Compressor
+            | Self::ChannelMuteSolo
+            | Self::Crossfeed
+            | Self::Expander
+            | Self::FletcherMunson
+            | Self::Gate
+            | Self::Limiter
+            | Self::LoudnessMonitor
+            | Self::Matrix
+            | Self::MultibandCompressor
+            | Self::MultibandExpander
+            | Self::SpectrumAnalyzer
+            | Self::Upmixer
+            | Self::XTC => ReleaseChannel::Prod,
 
-            | Self::ABCompare
-		| Self::BandSplit
-		| Self::BandMerge
-		| Self::Downmix
-		| Self::LoudnessCompensation
-		| Self::MonoToStereo
-		=> ReleaseChannel::Beta,
+            Self::ABCompare
+            | Self::BandSplit
+            | Self::BandMerge
+            | Self::Downmix
+            | Self::LoudnessCompensation
+            | Self::MonoToStereo => ReleaseChannel::Beta,
 
-            Self::BinauralDecoder
-		| Self::Convolution
-		| Self::Pnd
-		| Self::Denoiser
-		=> ReleaseChannel::Alpha,
+            Self::BinauralDecoder | Self::Convolution | Self::Pnd | Self::Denoiser => {
+                ReleaseChannel::Alpha
+            }
         }
     }
 }
@@ -2879,9 +2875,12 @@ pub fn plugins_to_path_config_json(plugins: &[Plugin], sample_rate: f64) -> Stri
 
 /// Parse a preset JSON file into a PathConfig JSON string for use in AB Compare.
 /// The file is expected to be a `PluginPreset` (with version + plugins array).
-pub fn preset_file_to_path_config_json(json_content: &str, sample_rate: f64) -> Result<String, String> {
-    let preset: PluginPreset = serde_json::from_str(json_content)
-        .map_err(|e| format!("Invalid preset file: {}", e))?;
+pub fn preset_file_to_path_config_json(
+    json_content: &str,
+    sample_rate: f64,
+) -> Result<String, String> {
+    let preset: PluginPreset =
+        serde_json::from_str(json_content).map_err(|e| format!("Invalid preset file: {}", e))?;
     Ok(plugins_to_path_config_json(&preset.plugins, sample_rate))
 }
 
@@ -3603,15 +3602,16 @@ impl PluginChain {
             }
 
             if let Some(required) = plugin.settings.required_input_channels()
-                && required != running_channels {
-                    conflicts.push(ChannelConflict {
-                        index,
-                        plugin_type: plugin.plugin_type(),
-                        required_channels: required,
-                        actual_channels: running_channels,
-                    });
-                    continue;
-                }
+                && required != running_channels
+            {
+                conflicts.push(ChannelConflict {
+                    index,
+                    plugin_type: plugin.plugin_type(),
+                    required_channels: required,
+                    actual_channels: running_channels,
+                });
+                continue;
+            }
 
             // Track channel changes through the chain
             match &plugin.settings {
@@ -4098,18 +4098,20 @@ mod tests {
 
         // Initially, BinauralDecoder should have default 6 channels (from default_for)
         if let Some(plugin) = chain.get_plugin(1)
-            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
-                assert_eq!(input_channels, 6); // Default value
-            }
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings
+        {
+            assert_eq!(input_channels, 6); // Default value
+        }
 
         // Update binaural decoder channels
         chain.update_channel_dependent_plugins();
 
         // Now it should be correctly set to 6 (output of upmixer)
         if let Some(plugin) = chain.get_plugin(1)
-            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
-                assert_eq!(input_channels, 6);
-            }
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings
+        {
+            assert_eq!(input_channels, 6);
+        }
 
         // Change upmixer to 7.1 (8 channels)
         if let Some(plugin) = chain.get_plugin_mut(0) {
@@ -4161,9 +4163,10 @@ mod tests {
 
         // Now BinauralDecoder should have 8 input channels
         if let Some(plugin) = chain.get_plugin(1)
-            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
-                assert_eq!(input_channels, 8);
-            }
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings
+        {
+            assert_eq!(input_channels, 8);
+        }
 
         // Remove the upmixer
         chain.remove_plugin(0);
@@ -4171,9 +4174,10 @@ mod tests {
 
         // Now BinauralDecoder should have 2 input channels (stereo)
         if let Some(plugin) = chain.get_plugin(0)
-            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
-                assert_eq!(input_channels, 2);
-            }
+            && let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings
+        {
+            assert_eq!(input_channels, 2);
+        }
     }
 
     #[test]
@@ -4383,9 +4387,9 @@ mod tests {
             && let PluginSettings::Upmixer {
                 speaker_config: sc, ..
             } = &mut p.settings
-            {
-                *sc = speaker_config.to_string();
-            }
+        {
+            *sc = speaker_config.to_string();
+        }
         chain
     }
 
@@ -4470,12 +4474,12 @@ mod tests {
                 matrix,
                 channel_states,
             } = &mut p.settings
-            {
-                resize_matrix(matrix, *input_channels, *output_channels, 6, 4);
-                *input_channels = 6;
-                *output_channels = 4;
-                channel_states.resize(4, sotf_plugins::ChannelState::default());
-            }
+        {
+            resize_matrix(matrix, *input_channels, *output_channels, 6, 4);
+            *input_channels = 6;
+            *output_channels = 4;
+            channel_states.resize(4, sotf_plugins::ChannelState::default());
+        }
         assert_eq!(chain.output_channels_for_input(6), 4);
     }
 
@@ -4663,9 +4667,10 @@ mod tests {
 
         // Change upmixer to 7.1.4
         if let Some(p) = chain.get_plugin_mut(0)
-            && let PluginSettings::Upmixer { speaker_config, .. } = &mut p.settings {
-                *speaker_config = "7.1.4".to_string();
-            }
+            && let PluginSettings::Upmixer { speaker_config, .. } = &mut p.settings
+        {
+            *speaker_config = "7.1.4".to_string();
+        }
         chain.adapt_matrix_to_input(2);
         assert_eq!(get_matrix_dims(&chain), Some((12, 12)));
     }

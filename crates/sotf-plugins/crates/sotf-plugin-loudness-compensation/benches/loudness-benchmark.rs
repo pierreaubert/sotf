@@ -32,10 +32,7 @@ fn benchmark_loudness_plugin(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    plugin.process_in_place(
-                        black_box(&mut buffer),
-                        black_box(&context),
-                    );
+                    plugin.process_in_place(black_box(&mut buffer), black_box(&context));
                 });
             },
         );

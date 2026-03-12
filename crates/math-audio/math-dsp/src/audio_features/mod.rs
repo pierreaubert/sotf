@@ -36,7 +36,10 @@ pub enum AnalysisError {
 impl std::fmt::Display for AnalysisError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AnalysisError::TooShort => write!(f, "audio too short for analysis (need >= {MIN_SAMPLES} samples)"),
+            AnalysisError::TooShort => write!(
+                f,
+                "audio too short for analysis (need >= {MIN_SAMPLES} samples)"
+            ),
             AnalysisError::ChromaError(s) => write!(f, "chroma analysis error: {s}"),
         }
     }
@@ -62,8 +65,7 @@ pub fn analyze_audio_features(
 
         let child_zcr = s.spawn(|| zcr::compute_zcr(samples));
 
-        let child_spectral =
-            s.spawn(|| spectral::compute_spectral_features(samples, sample_rate));
+        let child_spectral = s.spawn(|| spectral::compute_spectral_features(samples, sample_rate));
 
         let child_loudness = s.spawn(|| loudness::compute_loudness(samples));
 

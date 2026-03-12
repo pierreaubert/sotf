@@ -177,29 +177,26 @@ impl PlayerView {
 
                             if let Some(idx) = chain.input_monitor_engine_index()
                                 && let Some(data) = player.get_cached_plugin_data(idx)
-                                    && let Some(loudness) =
-                                        data.downcast_ref::<sotf_audio_player::LoudnessData>()
-                                    {
-                                        state.app.playback.input_loudness_info =
-                                            Some(loudness.clone());
-                                    }
+                                && let Some(loudness) =
+                                    data.downcast_ref::<sotf_audio_player::LoudnessData>()
+                            {
+                                state.app.playback.input_loudness_info = Some(loudness.clone());
+                            }
 
                             if let Some(idx) = chain.output_monitor_engine_index()
                                 && let Some(data) = player.get_cached_plugin_data(idx)
-                                    && let Some(loudness) =
-                                        data.downcast_ref::<sotf_audio_player::LoudnessData>()
-                                    {
-                                        state.app.playback.loudness_info = Some(loudness.clone());
-                                    }
+                                && let Some(loudness) =
+                                    data.downcast_ref::<sotf_audio_player::LoudnessData>()
+                            {
+                                state.app.playback.loudness_info = Some(loudness.clone());
+                            }
 
-                            if include_spectrum
-                                && let Some(idx) = chain.spectrum_engine_index() {
-                                    state.app.playback.spectrum_info =
-                                        player.get_cached_plugin_data(idx).and_then(|d| {
-                                            d.downcast_ref::<sotf_audio_player::SpectrumData>()
-                                                .cloned()
-                                        });
-                                }
+                            if include_spectrum && let Some(idx) = chain.spectrum_engine_index() {
+                                state.app.playback.spectrum_info =
+                                    player.get_cached_plugin_data(idx).and_then(|d| {
+                                        d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned()
+                                    });
+                            }
 
                             if let Some(idx) = chain.compressor_engine_index() {
                                 state.app.playback.compressor_info =
@@ -780,14 +777,15 @@ impl PlayerView {
         // downmix automatically when the processing chain outputs more
         // channels than the hardware supports.
         if let Some(max_ch) = state.app.get_device_max_channels()
-            && output_channels > max_ch {
-                log::info!(
-                    "[GPUI] Clamping output from {} to {} channels (device limit)",
-                    output_channels,
-                    max_ch
-                );
-                output_channels = max_ch;
-            }
+            && output_channels > max_ch
+        {
+            log::info!(
+                "[GPUI] Clamping output from {} to {} channels (device limit)",
+                output_channels,
+                max_ch
+            );
+            output_channels = max_ch;
+        }
 
         // Apply ReplayGain correction to the permanent Gain plugin
         let rg_gain = state
@@ -937,4 +935,3 @@ include!("split_view.rs");
 include!("switch.rs");
 include!("three_panel_layout.rs");
 include!("volume.rs");
-

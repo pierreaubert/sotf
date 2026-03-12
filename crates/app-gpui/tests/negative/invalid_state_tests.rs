@@ -74,13 +74,18 @@ fn library_with_albums(albums: Vec<Album>) -> LibraryController {
 /// Test: Page index beyond valid range returns empty paginated results
 #[test]
 fn test_page_index_beyond_valid_returns_empty() {
-    let albums: Vec<Album> = (0..50).map(|i| make_album(&format!("Album {}", i), "Artist", 1)).collect();
+    let albums: Vec<Album> = (0..50)
+        .map(|i| make_album(&format!("Album {}", i), "Artist", 1))
+        .collect();
     let mut ctrl = library_with_albums(albums);
     ctrl.items_per_page = 10;
     ctrl.current_page = 100; // Way beyond valid range
 
     let paginated = ctrl.get_paginated_albums();
-    assert!(paginated.is_empty(), "Paginated result should be empty for out-of-range page");
+    assert!(
+        paginated.is_empty(),
+        "Paginated result should be empty for out-of-range page"
+    );
 }
 
 /// Test: Page index valid with empty library
@@ -355,13 +360,16 @@ fn test_artist_letter_special_char() {
     ];
 
     // Need album_artist set for artist() to work
-    let albums: Vec<Album> = albums.into_iter().map(|mut a| {
-        let artist = a.tracks[0].artist.clone();
-        for t in &mut a.tracks {
-            t.album_artist = artist.clone();
-        }
-        a
-    }).collect();
+    let albums: Vec<Album> = albums
+        .into_iter()
+        .map(|mut a| {
+            let artist = a.tracks[0].artist.clone();
+            for t in &mut a.tracks {
+                t.album_artist = artist.clone();
+            }
+            a
+        })
+        .collect();
 
     let mut ctrl = library_with_albums(albums);
     ctrl.selected_artist_letter = Some('#');
@@ -380,13 +388,16 @@ fn test_artist_letter_case_insensitive() {
         make_album("Album 3", "Bob", 1),
     ];
 
-    let albums: Vec<Album> = albums.into_iter().map(|mut a| {
-        let artist = a.tracks[0].artist.clone();
-        for t in &mut a.tracks {
-            t.album_artist = artist.clone();
-        }
-        a
-    }).collect();
+    let albums: Vec<Album> = albums
+        .into_iter()
+        .map(|mut a| {
+            let artist = a.tracks[0].artist.clone();
+            for t in &mut a.tracks {
+                t.album_artist = artist.clone();
+            }
+            a
+        })
+        .collect();
 
     let mut ctrl = library_with_albums(albums);
     ctrl.selected_artist_letter = Some('A');

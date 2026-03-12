@@ -9,6 +9,7 @@ Read `GPUI.md` at the project root before working on GPUI code.
 - Button, Input, Slider, Dropdown, Modal, Tabs, Toggle, Select, NumberInput, ColorPicker
 - Audio controls: Potentiometer, VerticalSlider, VolumeKnob
 - Data display: Table, Badge, Avatar, Progress, Spinner, QrCode
+
 - Layout: VStack, HStack, PaneDivider, Accordion, Breadcrumbs
 - Navigation: Tabs, Menu, Wizard
 - Feedback: Alert, Toast, Tooltip, Dialog

@@ -63,7 +63,10 @@ pub fn lcxl_layout() -> ControllerLayout {
     }
 
     // 8 Track Control buttons (bottom)
-    for (i, &note) in LaunchControlXLProfile::TRACK_CONTROL_NOTES.iter().enumerate() {
+    for (i, &note) in LaunchControlXLProfile::TRACK_CONTROL_NOTES
+        .iter()
+        .enumerate()
+    {
         controls.push(PhysicalControl {
             id: format!("btn_ctrl_{}", i + 1),
             kind: PhysicalControlKind::Button,

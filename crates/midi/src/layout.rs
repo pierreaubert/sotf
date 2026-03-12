@@ -22,7 +22,10 @@ pub enum PhysicalControlKind {
 
 impl PhysicalControlKind {
     pub fn is_continuous(self) -> bool {
-        matches!(self, Self::Pot | Self::Encoder | Self::Fader | Self::EncoderWithButton)
+        matches!(
+            self,
+            Self::Pot | Self::Encoder | Self::Fader | Self::EncoderWithButton
+        )
     }
 }
 
@@ -94,9 +97,9 @@ impl ControllerLayout {
 
     /// Find a control by its MIDI control ID
     pub fn find_by_midi_id(&self, midi_id: &MidiControlId) -> Option<&PhysicalControl> {
-        self.controls.iter().find(|c| {
-            c.midi_id == *midi_id || c.secondary_midi_id.as_ref() == Some(midi_id)
-        })
+        self.controls
+            .iter()
+            .find(|c| c.midi_id == *midi_id || c.secondary_midi_id.as_ref() == Some(midi_id))
     }
 
     /// Find a control by its string ID

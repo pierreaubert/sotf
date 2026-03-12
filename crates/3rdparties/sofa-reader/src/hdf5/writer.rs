@@ -284,10 +284,7 @@ impl Hdf5Writer {
         Ok(root_oh_start)
     }
 
-    fn build_root_oh_bytes(
-        &self,
-        children: &[(String, u64)],
-    ) -> Result<Vec<u8>> {
+    fn build_root_oh_bytes(&self, children: &[(String, u64)]) -> Result<Vec<u8>> {
         let mut msgs = Vec::new();
 
         // Build link messages for each child
@@ -354,12 +351,7 @@ impl Hdf5Writer {
         Ok(oh)
     }
 
-    fn write_child_oh(
-        &self,
-        buf: &mut Vec<u8>,
-        child: &ChildObject,
-        data_addr: u64,
-    ) -> Result<()> {
+    fn write_child_oh(&self, buf: &mut Vec<u8>, child: &ChildObject, data_addr: u64) -> Result<()> {
         let mut msgs = Vec::new();
 
         // Dataspace message
@@ -380,7 +372,8 @@ impl Hdf5Writer {
 
         // If dimension scale, add CLASS attribute
         if child.is_dim_scale {
-            let attr = self.build_attribute_msg("CLASS", &AttrData::String("DIMENSION_SCALE".to_string()));
+            let attr =
+                self.build_attribute_msg("CLASS", &AttrData::String("DIMENSION_SCALE".to_string()));
             msgs.push((0x0Cu8, attr));
 
             let name_attr = self.build_attribute_msg("NAME", &AttrData::String(child.name.clone()));
@@ -491,11 +484,20 @@ impl Hdf5Writer {
     fn build_attribute_msg(&self, name: &str, value: &AttrData) -> Vec<u8> {
         let mut msg = Vec::new();
         let name_bytes = name.as_bytes();
-        let name_with_null: Vec<u8> = name_bytes.iter().copied().chain(std::iter::once(0)).collect();
+        let name_with_null: Vec<u8> = name_bytes
+            .iter()
+            .copied()
+            .chain(std::iter::once(0))
+            .collect();
 
         let (dt_msg, ds_msg, data_bytes) = match value {
             AttrData::String(s) => {
-                let s_bytes: Vec<u8> = s.as_bytes().iter().copied().chain(std::iter::once(0)).collect();
+                let s_bytes: Vec<u8> = s
+                    .as_bytes()
+                    .iter()
+                    .copied()
+                    .chain(std::iter::once(0))
+                    .collect();
                 let padded_len = s_bytes.len();
                 let dt = self.build_datatype_msg_for_string(padded_len as u32);
                 let ds = self.build_dataspace_msg(&[]); // scalar

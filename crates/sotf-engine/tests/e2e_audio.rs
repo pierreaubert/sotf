@@ -176,9 +176,10 @@ fn test_loopback_tone() {
         let parts: Vec<&str> = line.split(',').collect();
         if parts.len() == 3
             && let (Ok(freq), Ok(spl)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-                && (freq - 1000.0).abs() < 100.0 {
-                    peak_spl = peak_spl.max(spl);
-                }
+            && (freq - 1000.0).abs() < 100.0
+        {
+            peak_spl = peak_spl.max(spl);
+        }
     }
 
     if peak_spl > f32::NEG_INFINITY {
@@ -266,9 +267,10 @@ fn test_loopback_sweep_accuracy() {
         let parts: Vec<&str> = line.split(',').collect();
         if parts.len() == 3
             && let (Ok(freq), Ok(spl)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
-                && (100.0..=10000.0).contains(&freq) {
-                    spl_100_10k.push(spl);
-                }
+            && (100.0..=10000.0).contains(&freq)
+        {
+            spl_100_10k.push(spl);
+        }
     }
 
     let mean_spl = spl_100_10k.iter().sum::<f32>() / spl_100_10k.len() as f32;
@@ -309,14 +311,15 @@ fn test_loopback_sweep_accuracy() {
     for line in csv_lines.iter().skip(1) {
         let parts: Vec<&str> = line.split(',').collect();
         if parts.len() == 3
-            && let (Ok(freq), Ok(phase)) = (parts[0].parse::<f32>(), parts[2].parse::<f32>()) {
-                assert!(
-                    (-180.0..=180.0).contains(&phase),
-                    "Phase at {:.1} Hz ({:.1}°) is outside [-180, 180] range",
-                    freq,
-                    phase
-                );
-            }
+            && let (Ok(freq), Ok(phase)) = (parts[0].parse::<f32>(), parts[2].parse::<f32>())
+        {
+            assert!(
+                (-180.0..=180.0).contains(&phase),
+                "Phase at {:.1} Hz ({:.1}°) is outside [-180, 180] range",
+                freq,
+                phase
+            );
+        }
     }
     println!("  ✓ Phase values properly wrapped to [-180, 180]°");
 

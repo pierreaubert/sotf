@@ -123,7 +123,11 @@ fn test_peq_parameters_reasonable() {
         // Check Gain
         let gain_str = parts[gain_idx.unwrap() + 1];
         let gain: f64 = gain_str.parse().expect("Failed to parse gain");
-        assert!((-20.0..=20.0).contains(&gain), "Gain out of range: {}", gain);
+        assert!(
+            (-20.0..=20.0).contains(&gain),
+            "Gain out of range: {}",
+            gain
+        );
 
         // Check Q
         let q_str = parts[q_idx.unwrap() + 1];

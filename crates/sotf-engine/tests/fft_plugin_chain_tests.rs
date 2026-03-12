@@ -25,9 +25,10 @@ fn test_fft_chain_arbitrary_frame_sizes() {
 
     // Configure Upmixer for 5.1
     if let Some(plugin) = chain.get_plugin_mut(upmixer_idx)
-        && let PluginSettings::Upmixer { speaker_config, .. } = &mut plugin.settings {
-            *speaker_config = "5.1".to_string();
-        }
+        && let PluginSettings::Upmixer { speaker_config, .. } = &mut plugin.settings
+    {
+        *speaker_config = "5.1".to_string();
+    }
 
     chain.update_channel_dependent_plugins();
 

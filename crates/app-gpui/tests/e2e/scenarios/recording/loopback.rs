@@ -2,9 +2,7 @@ use crate::driver::AppDriver;
 use crate::pages::recording::RecordingPage;
 use crate::runner::{E2ERunner, TestScenario};
 use gpui::{VisualTestContext, WindowHandle};
-use sotf_audio_player_gpui::app::types::{
-    RecordingSignalType, SpeakerConfiguration,
-};
+use sotf_audio_player_gpui::app::types::{RecordingSignalType, SpeakerConfiguration};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 use std::time::Duration;

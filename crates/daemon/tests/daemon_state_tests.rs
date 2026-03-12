@@ -31,7 +31,7 @@ fn test_audio_engine_manager_state_reporting() {
 #[test]
 fn test_device_matching_priority_logic() {
     // This tests the logic we refactored the daemon to use
-    
+
     let host = cpal::default_host();
 
     // We can't easily mock cpal::Host, so we'll test the logic in sotf_audio::devices

@@ -1,0 +1,38 @@
+diff --git a/crates/gpui_macos/src/window.rs b/crates/gpui_macos/src/window.rs
+index 0d4edc28e8..feec16eaf6 100644
+--- a/crates/gpui_macos/src/window.rs
++++ b/crates/gpui_macos/src/window.rs
+@@ -2551,19 +2551,23 @@ fn send_file_drop_event(
+     window_state: Arc<Mutex<MacWindowState>>,
+     file_drop_event: FileDropEvent,
+ ) -> bool {
+-    let mut window_state = window_state.lock();
+-    let window_event_callback = window_state.event_callback.as_mut();
+-    if let Some(callback) = window_event_callback {
+-        let external_files_dragged = match file_drop_event {
+-            FileDropEvent::Entered { .. } => Some(true),
+-            FileDropEvent::Exited => Some(false),
+-            _ => None,
+-        };
++    let external_files_dragged = match &file_drop_event {
++        FileDropEvent::Entered { .. } => Some(true),
++        FileDropEvent::Exited => Some(false),
++        _ => None,
++    };
+ 
+-        callback(PlatformInput::FileDrop(file_drop_event));
++    // Take the callback out and drop the lock before invoking it,
++    // to avoid deadlock when the callback re-enters window methods
++    // (e.g. bounds()) that also acquire this lock.
++    let mut callback = window_state.lock().event_callback.take();
++    if let Some(ref mut cb) = callback {
++        cb(PlatformInput::FileDrop(file_drop_event));
+ 
++        let mut lock = window_state.lock();
++        lock.event_callback = callback;
+         if let Some(external_files_dragged) = external_files_dragged {
+-            window_state.external_files_dragged = external_files_dragged;
++            lock.external_files_dragged = external_files_dragged;
+         }
+         true
+     } else {

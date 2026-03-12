@@ -161,10 +161,11 @@ async fn test_playback_next_track(_cx: &mut TestAppContext) {
         let idx = *current_queue_index.borrow();
         let queue_len = queue.borrow().len();
         if let Some(i) = idx
-            && i < queue_len - 1 {
-                *current_queue_index.borrow_mut() = Some(i + 1);
-                *position_secs.borrow_mut() = 0.0; // Reset position
-            }
+            && i < queue_len - 1
+        {
+            *current_queue_index.borrow_mut() = Some(i + 1);
+            *position_secs.borrow_mut() = 0.0; // Reset position
+        }
     }
 
     assert_eq!(*current_queue_index.borrow(), Some(1));
@@ -181,10 +182,11 @@ async fn test_playback_prev_track(_cx: &mut TestAppContext) {
     {
         let idx = *current_queue_index.borrow();
         if let Some(i) = idx
-            && i > 0 {
-                *current_queue_index.borrow_mut() = Some(i - 1);
-                *position_secs.borrow_mut() = 0.0;
-            }
+            && i > 0
+        {
+            *current_queue_index.borrow_mut() = Some(i - 1);
+            *position_secs.borrow_mut() = 0.0;
+        }
     }
 
     assert_eq!(*current_queue_index.borrow(), Some(0));
@@ -484,10 +486,11 @@ async fn test_playback_auto_advance_on_track_end(_cx: &mut TestAppContext) {
         if pos >= current_duration {
             // Auto-advance to next track
             if let Some(i) = idx
-                && i < queue_len - 1 {
-                    *current_queue_index.borrow_mut() = Some(i + 1);
-                    *position_secs.borrow_mut() = 0.0;
-                }
+                && i < queue_len - 1
+            {
+                *current_queue_index.borrow_mut() = Some(i + 1);
+                *position_secs.borrow_mut() = 0.0;
+            }
         }
     }
 

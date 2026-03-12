@@ -78,8 +78,7 @@ impl RoomEqStep {
 }
 
 /// Source of measurement data for Room EQ
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum RoomEqDataSource {
     /// Use recordings from current session
     #[default]
@@ -87,7 +86,6 @@ pub enum RoomEqDataSource {
     /// Loaded from a JSON file
     FromFile(std::path::PathBuf),
 }
-
 
 /// Recording configuration stored with measurements
 #[derive(Debug, Clone, Serialize, Deserialize)]

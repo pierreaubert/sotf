@@ -417,7 +417,11 @@ mod upmixer_tests {
 
         // Measure per-channel energy in the HR output block
         let mut energies = vec![0.0f32; plugin.num_output_channels];
-        for (ch, energy) in energies.iter_mut().enumerate().take(plugin.num_output_channels) {
+        for (ch, energy) in energies
+            .iter_mut()
+            .enumerate()
+            .take(plugin.num_output_channels)
+        {
             for &sample in plugin.hr_time_out_channels[ch][..plugin.hr_fft_size].iter() {
                 *energy += sample.powi(2);
             }
@@ -432,7 +436,12 @@ mod upmixer_tests {
         );
 
         // LFE and surrounds should stay effectively silent in HR path
-        for (ch, &energy) in energies.iter().enumerate().skip(3).take(plugin.num_output_channels - 3) {
+        for (ch, &energy) in energies
+            .iter()
+            .enumerate()
+            .skip(3)
+            .take(plugin.num_output_channels - 3)
+        {
             assert!(
                 energy < 1e-6,
                 "Non-front channel {} should be near zero in HR path (got {})",
@@ -511,7 +520,7 @@ mod upmixer_tests {
 
             if block_energy < 1e-9 {
                 zero_blocks += 1;
-            } 
+            }
         }
 
         // If the bug exists, exactly half the blocks will be zero.
@@ -1084,10 +1093,9 @@ mod upmixer_tests {
             let l = plugin.freq_domain_left[i];
             let r = plugin.freq_domain_right[i];
             let energy = l.norm_sqr() + r.norm_sqr();
-            if energy > 1e-6_f32
-                && plugin.height_band_gains[i] > max_mask {
-                    max_mask = plugin.height_band_gains[i];
-                }
+            if energy > 1e-6_f32 && plugin.height_band_gains[i] > max_mask {
+                max_mask = plugin.height_band_gains[i];
+            }
         }
         assert!(
             max_mask < 0.2,

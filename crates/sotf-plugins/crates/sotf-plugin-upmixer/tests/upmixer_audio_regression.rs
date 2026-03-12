@@ -31,7 +31,8 @@ struct AudioMetrics {
 fn load_wav(path: &Path) -> Vec<f32> {
     let file = File::open(path).unwrap_or_else(|_| panic!("Failed to open: {}", path.display()));
     let reader = BufReader::new(file);
-    let wav = WavReader::new(reader).unwrap_or_else(|_| panic!("Failed to read WAV: {}", path.display()));
+    let wav =
+        WavReader::new(reader).unwrap_or_else(|_| panic!("Failed to read WAV: {}", path.display()));
 
     let samples: Vec<f32> = if wav.spec().sample_format == SampleFormat::Float {
         wav.into_samples::<f32>().filter_map(|s| s.ok()).collect()
@@ -382,9 +383,7 @@ fn test_upmixer_no_clipping() {
         num_frames: FFT_SIZE,
     };
 
-    plugin
-        .process(&loud_input, &mut output, &context)
-        .unwrap();
+    plugin.process(&loud_input, &mut output, &context).unwrap();
 
     let max_sample = output.iter().fold(0.0_f32, |m, &x| m.max(x.abs()));
     assert!(
@@ -440,9 +439,7 @@ fn test_upmixer_stereo_imaging_preserved() {
         num_frames: FFT_SIZE,
     };
 
-    plugin
-        .process(&mono_input, &mut output, &context)
-        .unwrap();
+    plugin.process(&mono_input, &mut output, &context).unwrap();
 
     // Front left and front right should have similar energy for mono input
     let num_ch = plugin.output_channels();

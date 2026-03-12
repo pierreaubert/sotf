@@ -1,4 +1,13 @@
 //! Loudness Plugin UI Components
+//!
+//! Loudness Compensation Layout (3-column):
+//! +------------------+--------------------------------------------+------------------+
+//! | (empty - no      | LOW                   HIGH                  | AUTO GAIN        |
+//! |  setup params)   |                                            |                  |
+//! |                  | [Low Freq]  knob      [High Freq]  knob    | [AutoGain] tog   |
+//! |                  | [Low Gain]  knob      [High Gain]  knob    | [Max AG]   knob  |
+//! |                  |                                            | [Smoothing] knob |
+//! +------------------+--------------------------------------------+------------------+
 
 use super::common::{ParamSectionStyle, render_knob, render_section_title, render_toggle};
 use super::level_meters::render_lufs_with_true_peak;
@@ -22,6 +31,10 @@ pub struct LoudnessCompensationRenderState {
     pub selected_param: usize,
 }
 
+// Layout constants
+const SETUP_WIDTH: f32 = 100.0;
+const OUTPUT_WIDTH: f32 = 120.0;
+
 /// Render the Loudness Compensation plugin
 /// Uses two shelving filters (low-shelf and high-shelf) for Fletcher-Munson compensation
 pub fn render_loudness_compensation_plugin(
@@ -30,186 +43,169 @@ pub fn render_loudness_compensation_plugin(
     state: LoudnessCompensationRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    div()
+    // === LEFT COLUMN: empty (no setup params) ===
+    let setup_col = div().flex().flex_col().w(px(SETUP_WIDTH));
+
+    // === CENTER COLUMN: Low + High shelf sections ===
+    let center_col = div()
         .flex()
-        .flex_col()
-        .gap_4()
-        // Description
-        .child(
-            div()
-                .text_sm()
-                .text_color(theme.text_muted)
-                .child("Boosts bass and treble at low listening volumes to compensate for the ear's reduced sensitivity at those frequencies."),
-        )
-        // Low Shelf and High Shelf sections side by side
-        .child(
-            div()
-                .flex()
-                .gap_6()
-                // Low Shelf section
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("LOW SHELF", theme))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_4()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Frequency",
-                                    state.low_freq,
-                                    pk(LC, "low_freq").min_f64(),
-                                    pk(LC, "low_freq").max_f64(),
-                                    "Hz",
-                                    0,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    None,
-                                    theme,
-                                ))
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Gain",
-                                    state.low_gain,
-                                    pk(LC, "low_gain").min_f64(),
-                                    pk(LC, "low_gain").max_f64(),
-                                    "dB",
-                                    1,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    None,
-                                    theme,
-                                )),
-                        ),
-                )
-                // High Shelf section
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("HIGH SHELF", theme))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_4()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Frequency",
-                                    state.high_freq,
-                                    pk(LC, "high_freq").min_f64(),
-                                    pk(LC, "high_freq").max_f64(),
-                                    "Hz",
-                                    2,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    None,
-                                    theme,
-                                ))
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Gain",
-                                    state.high_gain,
-                                    pk(LC, "high_gain").min_f64(),
-                                    pk(LC, "high_gain").max_f64(),
-                                    "dB",
-                                    3,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    None,
-                                    theme,
-                                )),
-                        ),
-                ),
-        )
-        // Auto Gain section
+        .flex_1()
+        .gap_6()
+        // Low Shelf
         .child(
             div()
                 .flex()
                 .flex_col()
                 .gap_2()
-                .child(render_section_title("AUTO GAIN", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_4()
-                        .items_center()
-                        .child(render_toggle(
-                            entity.clone(),
-                            plugin_idx,
-                            "Enabled",
-                            state.auto_gain_enabled,
-                            4,
-                            state.selected_param,
-                            state.is_editing,
-                            theme,
-                        ))
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Max",
-                            state.auto_gain_max_db,
-                            0.0,
-                            24.0,
-                            "dB",
-                            5,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Smooth",
-                            state.auto_gain_smoothing_ms,
-                            1.0,
-                            1000.0,
-                            "ms",
-                            6,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        // Show current auto-gain value when enabled
-                        .when(state.auto_gain_enabled, |d| {
-                            d.child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(theme.text_muted)
-                                            .child("Current"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_color(if state.auto_gain_current_db > 0.0 {
-                                                theme.success
-                                            } else if state.auto_gain_current_db < 0.0 {
-                                                theme.warning
-                                            } else {
-                                                theme.text_primary
-                                            })
-                                            .child(format!("{:+.1} dB", state.auto_gain_current_db)),
-                                    ),
-                            )
-                        }),
-                ),
+                .child(render_section_title("LOW", theme))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Frequency",
+                    state.low_freq,
+                    pk(LC, "low_freq").min_f64(),
+                    pk(LC, "low_freq").max_f64(),
+                    "Hz",
+                    0,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Gain",
+                    state.low_gain,
+                    pk(LC, "low_gain").min_f64(),
+                    pk(LC, "low_gain").max_f64(),
+                    "dB",
+                    1,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                )),
         )
-    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+        // High Shelf
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(render_section_title("HIGH", theme))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Frequency",
+                    state.high_freq,
+                    pk(LC, "high_freq").min_f64(),
+                    pk(LC, "high_freq").max_f64(),
+                    "Hz",
+                    2,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Gain",
+                    state.high_gain,
+                    pk(LC, "high_gain").min_f64(),
+                    pk(LC, "high_gain").max_f64(),
+                    "dB",
+                    3,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                )),
+        );
+
+    // === RIGHT COLUMN: Auto Gain ===
+    let right_col = div()
+        .flex()
+        .flex_col()
+        .w(px(OUTPUT_WIDTH))
+        .gap_3()
+        .child(render_section_title("AUTO GAIN", theme))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "Enabled",
+            state.auto_gain_enabled,
+            4,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Max",
+            state.auto_gain_max_db,
+            0.0,
+            24.0,
+            "dB",
+            5,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Smooth",
+            state.auto_gain_smoothing_ms,
+            1.0,
+            1000.0,
+            "ms",
+            6,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .when(state.auto_gain_enabled, |d| {
+            d.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .child("Current"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(if state.auto_gain_current_db > 0.0 {
+                                theme.success
+                            } else if state.auto_gain_current_db < 0.0 {
+                                theme.warning
+                            } else {
+                                theme.text_primary
+                            })
+                            .child(format!("{:+.1} dB", state.auto_gain_current_db)),
+                    ),
+            )
+        });
+
+    // === Main layout: 3 columns ===
+    div()
+        .flex()
+        .gap_4()
+        .p_3()
+        .w_full()
+        .child(setup_col)
+        .child(center_col)
+        .child(right_col)
 }
 
 /// Render the Loudness Monitor plugin (analyzer)
@@ -223,8 +219,6 @@ pub fn render_loudness_monitor_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Dynamic LUFS/Peak/Width display from queue view
         .child(render_lufs_with_true_peak(loudness.as_ref(), theme))
-        // Info section
         .child(div().flex().flex_col().gap_2().param_section_base(theme))
 }

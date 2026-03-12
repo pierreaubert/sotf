@@ -266,11 +266,7 @@ impl SofaFile {
         // Read sample rate
         let sample_rate = reader
             .read_scalar_f32("Data.SamplingRate")
-            .or_else(|_| {
-                reader
-                    .attribute_f64("Data.SamplingRate")
-                    .map(|v| v as f32)
-            })
+            .or_else(|_| reader.attribute_f64("Data.SamplingRate").map(|v| v as f32))
             .map_err(|e| format!("Failed to read Data.SamplingRate: {}", e))?;
         log::debug!("[SOFA] Sample rate: {} Hz", sample_rate);
 
@@ -439,7 +435,6 @@ impl SofaFile {
     pub fn get_positions(&self) -> &[SourcePosition] {
         &self.positions
     }
-
 }
 
 // ============================================================================

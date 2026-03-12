@@ -77,7 +77,10 @@ impl KWeightFilter {
         } else {
             Self::compute_coeffs(sample_rate as f64)
         };
-        Self { stage1: s1, stage2: s2 }
+        Self {
+            stage1: s1,
+            stage2: s2,
+        }
     }
 
     /// Hardcoded coefficients for 48 kHz (most common case).
@@ -191,20 +194,7 @@ const TRUE_PEAK_FIR_PHASES: [[f64; 12]; 4] = [
         0.0015869140625,
         -0.0245361328125,
     ],
-    [
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-    ],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     [
         -0.0245361328125,
         0.0015869140625,
@@ -327,16 +317,16 @@ fn channel_weight(ch: usize, num_channels: usize) -> f64 {
     } else if num_channels == 5 {
         // 5.0: L, R, C, Ls, Rs
         match ch {
-            0..=2 => 1.0,             // L, R, C
-            3 | 4 => 1.41,           // Ls, Rs (surround +1.5 dB)
+            0..=2 => 1.0,  // L, R, C
+            3 | 4 => 1.41, // Ls, Rs (surround +1.5 dB)
             _ => 0.0,
         }
     } else if num_channels == 6 {
         // 5.1: L, R, C, LFE, Ls, Rs
         match ch {
-            0..=2 => 1.0,             // L, R, C
-            3 => 0.0,                // LFE excluded
-            4 | 5 => 1.41,           // Ls, Rs
+            0..=2 => 1.0,  // L, R, C
+            3 => 0.0,      // LFE excluded
+            4 | 5 => 1.41, // Ls, Rs
             _ => 0.0,
         }
     } else {
@@ -358,9 +348,9 @@ pub struct EbuR128 {
     channel_weights: Vec<f64>,
 
     // Sub-block accumulation (100ms sub-blocks)
-    sub_block_frames: usize,        // frames per 100ms sub-block
-    sub_block_accum: Vec<f64>,      // per-channel energy accumulator
-    sub_block_pos: usize,           // frames accumulated in current sub-block
+    sub_block_frames: usize,   // frames per 100ms sub-block
+    sub_block_accum: Vec<f64>, // per-channel energy accumulator
+    sub_block_pos: usize,      // frames accumulated in current sub-block
 
     // Momentary (400ms = 4 sub-blocks) and short-term (3s = 30 sub-blocks)
     momentary_ring: SubBlockRing,
@@ -387,7 +377,8 @@ impl EbuR128 {
         let nc = channels as usize;
         let sub_block_frames = (sample_rate as usize) / 10; // 100ms
 
-        let filters: Vec<KWeightFilter> = (0..nc).map(|_| KWeightFilter::new(sample_rate)).collect();
+        let filters: Vec<KWeightFilter> =
+            (0..nc).map(|_| KWeightFilter::new(sample_rate)).collect();
         let channel_weights: Vec<f64> = (0..nc).map(|ch| channel_weight(ch, nc)).collect();
 
         let true_peak_detector = if mode.has(Mode::TRUE_PEAK) {
@@ -405,8 +396,8 @@ impl EbuR128 {
             sub_block_frames,
             sub_block_accum: vec![0.0; nc],
             sub_block_pos: 0,
-            momentary_ring: SubBlockRing::new(4),   // 4 × 100ms = 400ms
-            shortterm_ring: SubBlockRing::new(30),   // 30 × 100ms = 3s
+            momentary_ring: SubBlockRing::new(4), // 4 × 100ms = 400ms
+            shortterm_ring: SubBlockRing::new(30), // 30 × 100ms = 3s
             gating_blocks: Vec::new(),
             sample_peak: vec![0.0; nc],
             prev_sample_peak: vec![0.0; nc],
@@ -472,7 +463,8 @@ impl EbuR128 {
         self.shortterm_ring.push(block_energy);
 
         // For integrated loudness: store block energy when we have a full momentary window
-        if self.mode.has(Mode::I) && self.momentary_ring.is_full()
+        if self.mode.has(Mode::I)
+            && self.momentary_ring.is_full()
             && let Some(mean_energy) = self.momentary_ring.mean()
         {
             // Cap at ~1 hour of blocks (36000 at 10 blocks/sec) to prevent
@@ -526,7 +518,11 @@ impl EbuR128 {
 
         // Pass 1: Absolute gate at -70 LUFS
         let abs_gate_energy = loudness_to_energy(-70.0);
-        let above_abs: Vec<f64> = blocks.iter().copied().filter(|&e| e > abs_gate_energy).collect();
+        let above_abs: Vec<f64> = blocks
+            .iter()
+            .copied()
+            .filter(|&e| e > abs_gate_energy)
+            .collect();
         if above_abs.is_empty() {
             return f64::NEG_INFINITY;
         }
@@ -535,7 +531,11 @@ impl EbuR128 {
 
         // Pass 2: Relative gate at mean - 10 LUFS
         let rel_gate_energy = mean_above_abs * loudness_to_energy(-10.0); // -10 dB below mean
-        let above_rel: Vec<f64> = blocks.iter().copied().filter(|&e| e > rel_gate_energy).collect();
+        let above_rel: Vec<f64> = blocks
+            .iter()
+            .copied()
+            .filter(|&e| e > rel_gate_energy)
+            .collect();
         if above_rel.is_empty() {
             return f64::NEG_INFINITY;
         }
@@ -591,7 +591,12 @@ impl EbuR128 {
 
         // Use blocks above absolute gate for consistency with loudness_global
         let abs_gate_energy = loudness_to_energy(-70.0);
-        let above_abs: Vec<f64> = self.gating_blocks.iter().copied().filter(|&e| e > abs_gate_energy).collect();
+        let above_abs: Vec<f64> = self
+            .gating_blocks
+            .iter()
+            .copied()
+            .filter(|&e| e > abs_gate_energy)
+            .collect();
         if above_abs.is_empty() {
             return None;
         }

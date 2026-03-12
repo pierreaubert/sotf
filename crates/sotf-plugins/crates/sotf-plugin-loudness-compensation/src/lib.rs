@@ -339,9 +339,10 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
         }
 
         if let Some(ag) = &mut self.auto_gain
-            && do_measure {
-                let _ = ag.measure_input(buffer);
-            }
+            && do_measure
+        {
+            let _ = ag.measure_input(buffer);
+        }
 
         for frame in 0..nf {
             for ch in 0..self.num_channels {
@@ -381,7 +382,7 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    
+
     #[test]
     fn test_loudness_basic() {
         let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);

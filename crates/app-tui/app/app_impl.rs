@@ -378,9 +378,10 @@ impl App {
     pub fn next_track(&mut self) -> Option<PathBuf> {
         if let Some(idx) = self.current_queue_index {
             if let Some(entry) = self.queue.get_mut(idx)
-                && let Some(track) = entry.item.next_track() {
-                    return Some(track.path.clone());
-                }
+                && let Some(track) = entry.item.next_track()
+            {
+                return Some(track.path.clone());
+            }
 
             // Album finished (or entry missing), remove it and move to next
             self.remove_from_queue(idx);
@@ -494,9 +495,10 @@ impl App {
         (0..self.plugin_chain.len()).rev().find_map(|i| {
             if let Some(p) = self.plugin_chain.get_plugin(i)
                 && !p.is_permanent()
-                    && let PluginSettings::EQ { filters, .. } = &p.settings {
-                        return Some((i, filters.len()));
-                    }
+                && let PluginSettings::EQ { filters, .. } = &p.settings
+            {
+                return Some((i, filters.len()));
+            }
             None
         })
     }
@@ -659,26 +661,27 @@ impl App {
         let idx = self.selected_album_index;
         let album_id = self.cached_filtered_albums.get(idx).and_then(|a| a.id);
         if let Some(album_id) = album_id
-            && let Some(db) = self.library.get_database() {
-                match db.toggle_album_favorite(album_id) {
-                    Ok(new_state) => {
-                        // Update in-memory state
-                        for a in &mut self.library.albums {
-                            if a.id == Some(album_id) {
-                                a.is_favorite = new_state;
-                            }
+            && let Some(db) = self.library.get_database()
+        {
+            match db.toggle_album_favorite(album_id) {
+                Ok(new_state) => {
+                    // Update in-memory state
+                    for a in &mut self.library.albums {
+                        if a.id == Some(album_id) {
+                            a.is_favorite = new_state;
                         }
-                        // Invalidate filter cache since library data changed
-                        self.request_filter_update();
-                        log::info!(
-                            "Toggled album favorite: id={} is_favorite={}",
-                            album_id,
-                            new_state
-                        );
                     }
-                    Err(e) => log::error!("Failed to toggle album favorite: {}", e),
+                    // Invalidate filter cache since library data changed
+                    self.request_filter_update();
+                    log::info!(
+                        "Toggled album favorite: id={} is_favorite={}",
+                        album_id,
+                        new_state
+                    );
                 }
+                Err(e) => log::error!("Failed to toggle album favorite: {}", e),
             }
+        }
     }
 
     /// Toggle favorite on the current queue album
@@ -688,30 +691,31 @@ impl App {
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.album.id);
         if let Some(album_id) = album_id
-            && let Some(db) = self.library.get_database() {
-                match db.toggle_album_favorite(album_id) {
-                    Ok(new_state) => {
-                        // Update in queue
-                        for qi in &mut self.queue {
-                            if qi.item.album.id == Some(album_id) {
-                                qi.item.album.is_favorite = new_state;
-                            }
+            && let Some(db) = self.library.get_database()
+        {
+            match db.toggle_album_favorite(album_id) {
+                Ok(new_state) => {
+                    // Update in queue
+                    for qi in &mut self.queue {
+                        if qi.item.album.id == Some(album_id) {
+                            qi.item.album.is_favorite = new_state;
                         }
-                        // Update in library
-                        for a in &mut self.library.albums {
-                            if a.id == Some(album_id) {
-                                a.is_favorite = new_state;
-                            }
-                        }
-                        log::info!(
-                            "Toggled queue album favorite: id={} is_favorite={}",
-                            album_id,
-                            new_state
-                        );
                     }
-                    Err(e) => log::error!("Failed to toggle album favorite: {}", e),
+                    // Update in library
+                    for a in &mut self.library.albums {
+                        if a.id == Some(album_id) {
+                            a.is_favorite = new_state;
+                        }
+                    }
+                    log::info!(
+                        "Toggled queue album favorite: id={} is_favorite={}",
+                        album_id,
+                        new_state
+                    );
                 }
+                Err(e) => log::error!("Failed to toggle album favorite: {}", e),
             }
+        }
     }
 
     // ========================================================================

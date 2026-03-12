@@ -451,7 +451,10 @@ fn build_info_chunk(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
         buf
     }
 
-    let sub_chunks: Vec<u8> = tags.iter().flat_map(|(id, val)| info_subchunk(id, val)).collect();
+    let sub_chunks: Vec<u8> = tags
+        .iter()
+        .flat_map(|(id, val)| info_subchunk(id, val))
+        .collect();
     let list_data_len = 4 + sub_chunks.len(); // "INFO" + sub-chunks
     let mut chunk = Vec::with_capacity(8 + list_data_len);
     chunk.extend_from_slice(b"LIST");

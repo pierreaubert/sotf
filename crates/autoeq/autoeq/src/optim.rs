@@ -30,7 +30,6 @@ use crate::Curve;
 use ndarray::Array1;
 #[cfg(feature = "nlopt")]
 use nlopt::Algorithm;
-use std::process;
 
 pub mod pareto;
 
@@ -438,8 +437,8 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     data.max_freq,
                 )
             } else {
-                log::debug!("Error: drivers-flat loss requested but driver data is missing");
-                process::exit(1);
+                log::error!("drivers-flat loss requested but driver data is missing");
+                f64::INFINITY
             }
         }
         LossType::MultiSubFlat => {
@@ -457,8 +456,8 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     data.max_freq,
                 )
             } else {
-                log::debug!("Error: multi-sub-flat loss requested but driver data is missing");
-                process::exit(1);
+                log::error!("multi-sub-flat loss requested but driver data is missing");
+                f64::INFINITY
             }
         }
         LossType::HeadphoneFlat | LossType::SpeakerFlat => {
@@ -481,8 +480,8 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq) / 3.0;
                 100.0 - s + p
             } else {
-                log::debug!("Error: speaker score loss requested but score data is missing");
-                process::exit(1);
+                log::error!("speaker score loss requested but score data is missing");
+                f64::INFINITY
             }
         }
         LossType::HeadphoneScore => {
@@ -505,8 +504,8 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 // println!("DEBUG Headphone score: s={:.3} p={:.3} fitness={:.3}", s, p, 1000.0 - s + p * 20.0);
                 1000.0 - s + p * 20.0
             } else {
-                log::debug!("Error: headphone score loss requested but headphone data is missing");
-                process::exit(1);
+                log::error!("headphone score loss requested but headphone data is missing");
+                f64::INFINITY
             }
         }
     }
@@ -514,8 +513,46 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
 
 /// Compute objective function value including penalty terms for constraints
 ///
-/// This function adds penalty terms to the base fitness when using algorithms
-/// that don't support native constraint handling.
+/// Non-mutating version used by optimizers that don't require `&mut` data
+/// (e.g., metaheuristics). Avoids cloning ObjectiveData on every evaluation.
+pub fn compute_fitness_penalties_ref(x: &[f64], data: &ObjectiveData) -> f64 {
+    let fit = compute_base_fitness(x, data);
+
+    // PEQ-specific penalties only apply when the parameter vector has PEQ layout
+    // (freq/Q/gain triplets). DriversFlat and MultiSubFlat use a different layout
+    // (gains/delays/crossovers) and these penalty functions would misinterpret the values.
+    let is_peq_loss = !matches!(
+        data.loss_type,
+        LossType::DriversFlat | LossType::MultiSubFlat
+    );
+
+    // When penalties are enabled (weights > 0), add them to the base fit so that
+    // optimizers without nonlinear constraints can still respect our limits.
+    let mut penalized = fit;
+
+    if data.penalty_w_ceiling > 0.0 && is_peq_loss {
+        let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+        let viol = viol_ceiling_from_spl(&peq_spl, data.max_db, data.peq_model);
+        penalized += data.penalty_w_ceiling * viol * viol;
+    }
+
+    if data.penalty_w_spacing > 0.0 && is_peq_loss {
+        let viol = viol_spacing_from_xs(x, data.peq_model, data.min_spacing_oct);
+        penalized += data.penalty_w_spacing * viol * viol;
+    }
+
+    if data.penalty_w_mingain > 0.0 && data.min_db > 0.0 && is_peq_loss {
+        let viol = viol_min_gain_from_xs(x, data.peq_model, data.min_db);
+        penalized += data.penalty_w_mingain * viol * viol;
+    }
+
+    penalized
+}
+
+/// Compute objective function value including penalty terms for constraints
+///
+/// NLOPT-compatible wrapper that takes `&mut ObjectiveData` (required by NLOPT's callback
+/// signature). Delegates to `compute_fitness_penalties_ref`.
 ///
 /// # Arguments
 /// * `x` - Parameter vector
@@ -529,67 +566,7 @@ pub fn compute_fitness_penalties(
     _gradient: Option<&mut [f64]>,
     data: &mut ObjectiveData,
 ) -> f64 {
-    let fit = compute_base_fitness(x, data);
-
-    // When penalties are enabled (weights > 0), add them to the base fit so that
-    // optimizers without nonlinear constraints can still respect our limits.
-    let mut penalized = fit;
-    let mut penalty_terms = Vec::new();
-
-    if data.penalty_w_ceiling > 0.0 {
-        let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
-        let viol = viol_ceiling_from_spl(&peq_spl, data.max_db, data.peq_model);
-        let penalty = data.penalty_w_ceiling * viol * viol;
-        penalized += penalty;
-        if viol > 0.0 {
-            penalty_terms.push(format!(
-                "ceiling_viol={:.3e}*{:.1e}={:.3e}",
-                viol, data.penalty_w_ceiling, penalty
-            ));
-        }
-    }
-
-    if data.penalty_w_spacing > 0.0 {
-        let viol = viol_spacing_from_xs(x, data.peq_model, data.min_spacing_oct);
-        let penalty = data.penalty_w_spacing * viol * viol;
-        penalized += penalty;
-        if viol > 0.0 {
-            penalty_terms.push(format!(
-                "spacing_viol={:.3e}*{:.1e}={:.3e}",
-                viol, data.penalty_w_spacing, penalty
-            ));
-        }
-    }
-
-    if data.penalty_w_mingain > 0.0 && data.min_db > 0.0 {
-        let viol = viol_min_gain_from_xs(x, data.peq_model, data.min_db);
-        let penalty = data.penalty_w_mingain * viol * viol;
-        penalized += penalty;
-        if viol > 0.0 {
-            penalty_terms.push(format!(
-                "mingain_viol={:.3e}*{:.1e}={:.3e}",
-                viol, data.penalty_w_mingain, penalty
-            ));
-        }
-    }
-
-    // // Log fitness details every 1000 evaluations (approximate)
-    // use std::sync::atomic::{AtomicUsize, Ordering};
-    // static EVAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
-    // let count = EVAL_COUNTER.fetch_add(1, Ordering::Relaxed);
-    // if count % 1000 == 0 || (count % 100 == 0 && !penalty_terms.is_empty()) {
-    //     let param_summary: Vec<String> = (0..x.len()/3).map(|i| {
-    //         let freq = 10f64.powf(x[i*3]);
-    //         let q = x[i*3+1];
-    //         let gain = x[i*3+2];
-    //         format!("f{:.0}Hz/Q{:.2}/G{:.2}dB", freq, q, gain)
-    //     }).collect();
-
-    //     log::debug!("TRACE[{}]: fit={:.3e}, penalties=[{}], params=[{}]",
-    //               count, fit, penalty_terms.join(", "), param_summary.join(", "));
-    // }
-
-    penalized
+    compute_fitness_penalties_ref(x, data)
 }
 
 /// Optimize filter parameters using global optimization algorithms

@@ -122,10 +122,7 @@ struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup logging to file (stderr is invisible in a TUI)
     if let Some(log_path) = sotf_audio_player::config::get_tui_log_path() {
-        let log_result = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path);
+        let log_result = OpenOptions::new().create(true).append(true).open(&log_path);
 
         if let Ok(log_file) = log_result {
             env_logger::Builder::from_default_env()
@@ -298,9 +295,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Save configuration before exit (skip in read-only mode)
     if !app.read_only
-        && let Err(e) = app.save_config() {
-            log::error!("Failed to save configuration: {}", e);
-        }
+        && let Err(e) = app.save_config()
+    {
+        log::error!("Failed to save configuration: {}", e);
+    }
 
     // Restore terminal
     disable_raw_mode()?;
@@ -660,14 +658,15 @@ fn start_playback(
     // downmix automatically when the processing chain outputs more
     // channels than the hardware supports.
     if let Some(max_channels) = device_max
-        && output_channels > max_channels {
-            log::info!(
-                "[TUI] Clamping output from {} to {} channels (device limit)",
-                output_channels,
-                max_channels
-            );
-            output_channels = max_channels;
-        }
+        && output_channels > max_channels
+    {
+        log::info!(
+            "[TUI] Clamping output from {} to {} channels (device limit)",
+            output_channels,
+            max_channels
+        );
+        output_channels = max_channels;
+    }
 
     // Sync volume to the engine before playback starts
     player.set_volume(app.volume)?;

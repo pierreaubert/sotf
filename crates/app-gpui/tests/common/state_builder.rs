@@ -89,31 +89,33 @@ impl TestLibraryState {
         }
 
         if let Some((decade_start, decade_end)) = self.selected_decade
-            && self.selected_year.is_none() {
-                result.retain(|album| {
-                    album
-                        .year
-                        .is_some_and(|y| y >= decade_start && y <= decade_end)
-                });
-            }
+            && self.selected_year.is_none()
+        {
+            result.retain(|album| {
+                album
+                    .year
+                    .is_some_and(|y| y >= decade_start && y <= decade_end)
+            });
+        }
 
         if let Some(year) = self.selected_year {
             result.retain(|album| album.year == Some(year));
         }
 
         if let Some(letter) = self.selected_artist_letter
-            && self.selected_artist.is_none() {
-                result.retain(|album| {
-                    album.artist.chars().next().is_some_and(|c| {
-                        let first = c.to_ascii_uppercase();
-                        if letter == '#' {
-                            !first.is_ascii_alphabetic()
-                        } else {
-                            first == letter
-                        }
-                    })
-                });
-            }
+            && self.selected_artist.is_none()
+        {
+            result.retain(|album| {
+                album.artist.chars().next().is_some_and(|c| {
+                    let first = c.to_ascii_uppercase();
+                    if letter == '#' {
+                        !first.is_ascii_alphabetic()
+                    } else {
+                        first == letter
+                    }
+                })
+            });
+        }
 
         if let Some(ref artist) = self.selected_artist {
             result.retain(|album| album.artist.eq_ignore_ascii_case(artist));

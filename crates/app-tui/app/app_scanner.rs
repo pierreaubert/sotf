@@ -230,9 +230,10 @@ impl App {
 
         // Start background waveform scan for new tracks
         if result.is_ok()
-            && let Err(e) = self.start_waveform_scan() {
-                log::warn!("Failed to start waveform scan: {}", e);
-            }
+            && let Err(e) = self.start_waveform_scan()
+        {
+            log::warn!("Failed to start waveform scan: {}", e);
+        }
 
         result
     }

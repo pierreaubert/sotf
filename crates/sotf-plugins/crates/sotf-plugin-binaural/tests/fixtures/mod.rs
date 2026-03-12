@@ -163,7 +163,8 @@ mod tests {
         assert!(path.exists(), "SOFA file was not created");
 
         // Verify it's a valid SOFA file
-        let reader = sofa_reader::SofaReader::open(&path).expect("Failed to open created SOFA file");
+        let reader =
+            sofa_reader::SofaReader::open(&path).expect("Failed to open created SOFA file");
 
         // Check dimensions
         assert_eq!(reader.dimension("M").unwrap(), 10);

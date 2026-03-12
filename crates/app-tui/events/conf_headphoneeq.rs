@@ -363,8 +363,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 KeyCode::Enter => {
                     let f = app.headphone_eq.config_selected_field;
                     if is_headphone_eq_field_numerical(f) {
-                        app.headphone_eq.edit_buffer =
-                            headphone_eq_field_value_string(app, f);
+                        app.headphone_eq.edit_buffer = headphone_eq_field_value_string(app, f);
                         app.headphone_eq.editing_value = true;
                     }
                     // Booleans: toggle
@@ -656,9 +655,8 @@ static HEADPHONE_OPT_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<sotf_audio_player::autoeq::HeadphoneOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
 #[allow(clippy::type_complexity)]
-static HEADPHONE_OPT_PROGRESS: std::sync::OnceLock<
-    Arc<Mutex<Option<(usize, usize, f64, f32)>>>,
-> = std::sync::OnceLock::new();
+static HEADPHONE_OPT_PROGRESS: std::sync::OnceLock<Arc<Mutex<Option<(usize, usize, f64, f32)>>>> =
+    std::sync::OnceLock::new();
 
 pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
     use sotf_audio_player::headphone_eq_types::HeadphoneEqBiquad;
@@ -676,52 +674,54 @@ pub fn poll_headphone_eq_optimization(app: &mut App) -> bool {
         .clone();
 
     if let Ok(mut guard) = result_slot.lock()
-        && let Some(result) = guard.take() {
-            match result {
-                Ok(r) => {
-                    app.headphone_eq.pre_loss = r.initial_loss;
-                    app.headphone_eq.post_loss = r.final_loss;
-                    app.headphone_eq.filters = r
-                        .biquads
-                        .iter()
-                        .map(|b| HeadphoneEqBiquad {
-                            filter_type: format!("{:?}", b.filter_type),
-                            freq: b.freq,
-                            q: b.q,
-                            db_gain: b.db_gain,
-                        })
-                        .collect();
-                    app.headphone_eq.curve_frequencies = r.frequencies.clone();
-                    app.headphone_eq.curve_input = r.input_curve.clone();
-                    app.headphone_eq.curve_target = r.target_curve.clone();
-                    app.headphone_eq.curve_corrected = r.corrected_curve.clone();
-                    app.headphone_eq.curve_filter_response = r.filter_response.clone();
-                    // Keep the progress-based loss_history; only override if empty
-                    if app.headphone_eq.loss_history.is_empty() {
-                        app.headphone_eq.loss_history = r.optimization_history.clone();
-                    }
-                    app.headphone_eq.opt_status = OptimizationStatus::Completed;
-                    app.headphone_eq.opt_progress = 1.0;
-                    // Auto-advance to Results
-                    app.headphone_eq.step = crate::app::HeadphoneEqStep::Results;
+        && let Some(result) = guard.take()
+    {
+        match result {
+            Ok(r) => {
+                app.headphone_eq.pre_loss = r.initial_loss;
+                app.headphone_eq.post_loss = r.final_loss;
+                app.headphone_eq.filters = r
+                    .biquads
+                    .iter()
+                    .map(|b| HeadphoneEqBiquad {
+                        filter_type: format!("{:?}", b.filter_type),
+                        freq: b.freq,
+                        q: b.q,
+                        db_gain: b.db_gain,
+                    })
+                    .collect();
+                app.headphone_eq.curve_frequencies = r.frequencies.clone();
+                app.headphone_eq.curve_input = r.input_curve.clone();
+                app.headphone_eq.curve_target = r.target_curve.clone();
+                app.headphone_eq.curve_corrected = r.corrected_curve.clone();
+                app.headphone_eq.curve_filter_response = r.filter_response.clone();
+                // Keep the progress-based loss_history; only override if empty
+                if app.headphone_eq.loss_history.is_empty() {
+                    app.headphone_eq.loss_history = r.optimization_history.clone();
                 }
-                Err(e) => {
-                    app.headphone_eq.opt_status = OptimizationStatus::Failed;
-                    app.headphone_eq.opt_error = Some(e);
-                }
+                app.headphone_eq.opt_status = OptimizationStatus::Completed;
+                app.headphone_eq.opt_progress = 1.0;
+                // Auto-advance to Results
+                app.headphone_eq.step = crate::app::HeadphoneEqStep::Results;
             }
-            return true;
+            Err(e) => {
+                app.headphone_eq.opt_status = OptimizationStatus::Failed;
+                app.headphone_eq.opt_error = Some(e);
+            }
         }
+        return true;
+    }
 
     if let Ok(mut guard) = progress_slot.lock()
-        && let Some((iter, max_iter, loss, pct)) = guard.take() {
-            app.headphone_eq.opt_iteration = iter;
-            app.headphone_eq.opt_max_iter = max_iter;
-            app.headphone_eq.opt_loss = loss;
-            app.headphone_eq.opt_progress = pct;
-            app.headphone_eq.loss_history.push((iter, loss));
-            return true;
-        }
+        && let Some((iter, max_iter, loss, pct)) = guard.take()
+    {
+        app.headphone_eq.opt_iteration = iter;
+        app.headphone_eq.opt_max_iter = max_iter;
+        app.headphone_eq.opt_loss = loss;
+        app.headphone_eq.opt_progress = pct;
+        app.headphone_eq.loss_history.push((iter, loss));
+        return true;
+    }
 
     false
 }
@@ -800,14 +800,13 @@ fn spawn_headphone_eq_optimization(app: &mut App) {
             CallbackAction::Continue
         };
 
-        let result =
-            sotf_audio_player::autoeq::headphone::run_headphone_optimization_with_callback(
-                &curve_path,
-                &target,
-                &custom_target,
-                &args,
-                Some(callback),
-            );
+        let result = sotf_audio_player::autoeq::headphone::run_headphone_optimization_with_callback(
+            &curve_path,
+            &target,
+            &custom_target,
+            &args,
+            Some(callback),
+        );
         if let Ok(mut guard) = result_slot.lock() {
             *guard = Some(result);
         }
@@ -878,8 +877,14 @@ mod tests {
         app.headphone_eq.selected_field = 0;
 
         handle_headphone_eq_keys(&mut app, key(KeyCode::Up));
-        assert!(app.headphone_eq.step_tab_focused, "Up at field 0 should focus step tab bar");
-        assert!(app.input_mode.is_configure_sub_screen(), "should NOT jump to configure tab");
+        assert!(
+            app.headphone_eq.step_tab_focused,
+            "Up at field 0 should focus step tab bar"
+        );
+        assert!(
+            app.input_mode.is_configure_sub_screen(),
+            "should NOT jump to configure tab"
+        );
     }
 
     #[test]
@@ -926,8 +931,14 @@ mod tests {
         app.input_mode = InputMode::ConfigureHeadphoneEq;
         app.headphone_eq.step = HeadphoneEqStep::Configure;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Esc));
-        assert!(app.headphone_eq.step_tab_focused, "Esc from content should focus step tab bar");
-        assert!(app.input_mode.is_configure_sub_screen(), "should NOT jump to configure tab");
+        assert!(
+            app.headphone_eq.step_tab_focused,
+            "Esc from content should focus step tab bar"
+        );
+        assert!(
+            app.input_mode.is_configure_sub_screen(),
+            "should NOT jump to configure tab"
+        );
     }
 
     #[test]
@@ -966,7 +977,10 @@ mod tests {
         app.headphone_eq.step_tab_focused = true;
         handle_headphone_eq_keys(&mut app, key(KeyCode::Right));
         assert_eq!(app.headphone_eq.step, HeadphoneEqStep::Configure);
-        assert!(app.headphone_eq.step_tab_focused, "should stay on step tab bar");
+        assert!(
+            app.headphone_eq.step_tab_focused,
+            "should stay on step tab bar"
+        );
     }
 
     #[test]

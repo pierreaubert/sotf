@@ -1007,10 +1007,7 @@ fn test_latency_compensation() {
 
     // Use pure-A mode (mix = -1) with auto-gain disabled
     plugin
-        .set_parameter(
-            ParameterId("mix".to_string()),
-            ParameterValue::Float(-1.0),
-        )
+        .set_parameter(ParameterId("mix".to_string()), ParameterValue::Float(-1.0))
         .unwrap();
     plugin
         .set_parameter(

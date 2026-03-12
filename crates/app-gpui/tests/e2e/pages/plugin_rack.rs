@@ -30,8 +30,6 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
             app.add_plugin(&plugin_type);
         });
 
-        
-
         self.driver.read_app(move |app| {
             app.plugin_state
                 .chain

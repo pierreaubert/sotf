@@ -125,9 +125,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         );
                     }
                     KeyCode::Up => {
-                        app.autocomplete_up(
-                            crate::app::app_autocomplete::set_recording_output_dir,
-                        );
+                        app.autocomplete_up(crate::app::app_autocomplete::set_recording_output_dir);
                     }
                     KeyCode::Backspace => {
                         app.recording.output_directory.pop();
@@ -260,8 +258,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         }
                         _ => {
                             if is_recording_field_numerical(f) {
-                                app.recording.edit_buffer =
-                                    recording_field_value_string(app, f);
+                                app.recording.edit_buffer = recording_field_value_string(app, f);
                                 app.recording.editing_value = true;
                             }
                         }
@@ -786,30 +783,31 @@ pub fn poll_recording(app: &mut App) -> bool {
         .clone();
 
     if let Ok(mut guard) = result_slot.lock()
-        && let Some(result) = guard.take() {
-            match result {
-                Ok((ch_idx, rec_result)) => {
-                    if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
-                        ch.state = ChannelRecordingState::Done;
-                        let channel_name = ch.channel_name.clone();
-                        ch.result = Some(rec_result);
-                        app.recording.status_message =
-                            format!("Channel {} recording complete", channel_name);
-                    }
-                }
-                Err(e) => {
-                    // Mark the recording channel as error
-                    for ch in &mut app.recording.channel_recordings {
-                        if ch.state == ChannelRecordingState::Recording {
-                            ch.state = ChannelRecordingState::Error;
-                            break;
-                        }
-                    }
-                    app.recording.status_message = format!("Recording failed: {}", e);
+        && let Some(result) = guard.take()
+    {
+        match result {
+            Ok((ch_idx, rec_result)) => {
+                if let Some(ch) = app.recording.channel_recordings.get_mut(ch_idx) {
+                    ch.state = ChannelRecordingState::Done;
+                    let channel_name = ch.channel_name.clone();
+                    ch.result = Some(rec_result);
+                    app.recording.status_message =
+                        format!("Channel {} recording complete", channel_name);
                 }
             }
-            return true;
+            Err(e) => {
+                // Mark the recording channel as error
+                for ch in &mut app.recording.channel_recordings {
+                    if ch.state == ChannelRecordingState::Recording {
+                        ch.state = ChannelRecordingState::Error;
+                        break;
+                    }
+                }
+                app.recording.status_message = format!("Recording failed: {}", e);
+            }
         }
+        return true;
+    }
 
     false
 }

@@ -149,6 +149,8 @@ pub struct App {
     pub spectrum_reference_select_open: bool,
     pub crossfeed_preset_select_open: bool,
     pub show_add_plugin_menu: bool,
+    /// Active secondary tab index for auto-layout plugins (per-plugin, keyed by plugin_idx)
+    pub plugin_auto_tab: std::collections::HashMap<usize, usize>,
 
     // Rack panel collapse states
     pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
@@ -269,6 +271,7 @@ impl App {
             spectrum_reference_select_open: false,
             crossfeed_preset_select_open: false,
             show_add_plugin_menu: false,
+            plugin_auto_tab: std::collections::HashMap::new(),
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,
@@ -526,32 +529,33 @@ impl App {
         {
             let elapsed = start_time.elapsed().as_secs();
             if elapsed >= 30
-                && let Some(db) = self.library_state.library.get_database() {
-                    let duration = self.playback.position_secs as u64;
-                    if let Err(e) = db.record_play(path, duration) {
-                        log::error!("Failed to record play: {}", e);
-                    } else {
-                        log::info!("Recorded play for {:?} ({}s)", path, duration);
-                        self.current_track_already_recorded = true;
+                && let Some(db) = self.library_state.library.get_database()
+            {
+                let duration = self.playback.position_secs as u64;
+                if let Err(e) = db.record_play(path, duration) {
+                    log::error!("Failed to record play: {}", e);
+                } else {
+                    log::info!("Recorded play for {:?} ({}s)", path, duration);
+                    self.current_track_already_recorded = true;
 
-                        // Update in-memory play_count so UI reflects immediately
-                        let path = path.clone();
-                        for item in &mut self.queue {
-                            for track in &mut item.album.tracks {
-                                if track.path == path {
-                                    track.play_count += 1;
-                                }
+                    // Update in-memory play_count so UI reflects immediately
+                    let path = path.clone();
+                    for item in &mut self.queue {
+                        for track in &mut item.album.tracks {
+                            if track.path == path {
+                                track.play_count += 1;
                             }
                         }
-                        for album in &mut self.library_state.library.albums {
-                            for track in &mut album.tracks {
-                                if track.path == path {
-                                    track.play_count += 1;
-                                }
+                    }
+                    for album in &mut self.library_state.library.albums {
+                        for track in &mut album.tracks {
+                            if track.path == path {
+                                track.play_count += 1;
                             }
                         }
                     }
                 }
+            }
         }
     }
 
@@ -859,10 +863,11 @@ impl App {
 
         // Reload calibration data if path exists
         if let Some(ref path) = self.measurement_state.recording_state.mic_calibration_path
-            && let Ok(content) = std::fs::read_to_string(path) {
-                self.measurement_state.recording_state.mic_calibration_data =
-                    crate::app::types::CalibrationData::parse(&content);
-            }
+            && let Ok(content) = std::fs::read_to_string(path)
+        {
+            self.measurement_state.recording_state.mic_calibration_data =
+                crate::app::types::CalibrationData::parse(&content);
+        }
 
         // Restore plugin presets path if we had a last loaded preset
         if let Some(preset_name) = config.last_loaded_plugin_preset {
@@ -931,7 +936,8 @@ impl App {
             window_geometry: window_geometry.unwrap_or_else(|| {
                 // If no geometry provided, use current saved value or default
                 Config::load()
-                    .ok().map(|c| c.window_geometry)
+                    .ok()
+                    .map(|c| c.window_geometry)
                     .unwrap_or_default()
             }),
             volume: self.playback.volume,
@@ -985,9 +991,10 @@ impl App {
     /// Check and dismiss expired toast messages
     pub fn update_toast(&mut self) {
         if let Some(ref toast) = self.ui_state.toast_message
-            && toast.should_dismiss() {
-                self.ui_state.toast_message = None;
-            }
+            && toast.should_dismiss()
+        {
+            self.ui_state.toast_message = None;
+        }
     }
 
     /// Dismiss the current toast message manually

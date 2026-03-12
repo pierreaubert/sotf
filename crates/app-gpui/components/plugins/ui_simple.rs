@@ -157,18 +157,14 @@ pub fn render_simple_plugin_view(
                 .resizable(false)
                 .cell_render(move |row: &ParamRow, row_idx, _, _| {
                     let is_sel = selected_in_group_for_name.contains(&row_idx);
-                    let mut name_row = div()
-                        .w_full()
-                        .flex()
-                        .justify_end()
-                        .items_center()
-                        .gap_1();
+                    let mut name_row = div().w_full().flex().justify_end().items_center().gap_1();
 
                     // MIDI badge (before param name)
                     if let Some(ref assignment) = row.midi_assignment {
-                        name_row = name_row.child(
-                            super::common::render_midi_badge(assignment, &theme_for_name),
-                        );
+                        name_row = name_row.child(super::common::render_midi_badge(
+                            assignment,
+                            &theme_for_name,
+                        ));
                     }
 
                     let name_color = if row.is_learn_target {

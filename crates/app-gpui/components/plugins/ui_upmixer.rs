@@ -11,10 +11,7 @@ use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    HStack, StackAlign, StackSpacing, Toggle, ToggleStyle,
-    VStack,
-};
+use gpui_ui_kit::{HStack, StackAlign, StackSpacing, Toggle, ToggleStyle, VStack};
 use sotf_plugins::param_specs::{find_by_key as pk, upmixer::PARAMS as UP};
 
 /// State for rendering the Upmixer plugin
@@ -119,7 +116,14 @@ mod param_idx {
 }
 
 /// Configuration menu items
-const CONFIG_ITEMS: [&str; 6] = ["LFE & Bass", "Dialogue", "Ambient", "Height", "Decorrelation", "Config"];
+const CONFIG_ITEMS: [&str; 6] = [
+    "LFE & Bass",
+    "Dialogue",
+    "Ambient",
+    "Height",
+    "Decorrelation",
+    "Config",
+];
 
 /// Render the upmixer plugin controls
 pub fn render_upmixer_plugin(
@@ -183,12 +187,11 @@ fn render_tab_button(
             gpui::rgba(0x00000000)
         })
         .hover(|s| {
-            s.text_color(theme.text_primary)
-                .border_color(if is_active {
-                    theme.accent
-                } else {
-                    theme.text_muted
-                })
+            s.text_color(theme.text_primary).border_color(if is_active {
+                theme.accent
+            } else {
+                theme.text_muted
+            })
         })
         .child(label.to_string())
 }
@@ -257,28 +260,64 @@ fn render_main_area(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Mains", state.gain_front_direct,
-                            pk(UP, "gain_front_direct").min_f64(), pk(UP, "gain_front_direct").max_f64(),
-                            "x", param_idx::GAIN_FRONT_DIRECT, state.selected_param, state.is_editing,
-                            Some('m'), 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Mains",
+                            state.gain_front_direct,
+                            pk(UP, "gain_front_direct").min_f64(),
+                            pk(UP, "gain_front_direct").max_f64(),
+                            "x",
+                            param_idx::GAIN_FRONT_DIRECT,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('m'),
+                            180.0,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Center", state.gain_front_ambient,
-                            pk(UP, "gain_front_ambient").min_f64(), pk(UP, "gain_front_ambient").max_f64(),
-                            "x", param_idx::GAIN_FRONT_AMBIENT, state.selected_param, state.is_editing,
-                            Some('c'), 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Center",
+                            state.gain_front_ambient,
+                            pk(UP, "gain_front_ambient").min_f64(),
+                            pk(UP, "gain_front_ambient").max_f64(),
+                            "x",
+                            param_idx::GAIN_FRONT_AMBIENT,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('c'),
+                            180.0,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Surr", state.gain_rear_ambient,
-                            pk(UP, "gain_rear_ambient").min_f64(), pk(UP, "gain_rear_ambient").max_f64(),
-                            "x", param_idx::GAIN_REAR_AMBIENT, state.selected_param, state.is_editing,
-                            Some('s'), 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Surr",
+                            state.gain_rear_ambient,
+                            pk(UP, "gain_rear_ambient").min_f64(),
+                            pk(UP, "gain_rear_ambient").max_f64(),
+                            "x",
+                            param_idx::GAIN_REAR_AMBIENT,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('s'),
+                            180.0,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Top", state.height_gain,
-                            pk(UP, "height_gain").min_f64(), pk(UP, "height_gain").max_f64(),
-                            "x", param_idx::HEIGHT_GAIN, state.selected_param, state.is_editing,
-                            Some('t'), 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Top",
+                            state.height_gain,
+                            pk(UP, "height_gain").min_f64(),
+                            pk(UP, "height_gain").max_f64(),
+                            "x",
+                            param_idx::HEIGHT_GAIN,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('t'),
+                            180.0,
+                            theme,
                         ))
                         .build(),
                 )
@@ -297,28 +336,64 @@ fn render_main_area(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Width", state.stereo_width,
-                            pk(UP, "stereo_width").min_f64(), pk(UP, "stereo_width").max_f64(),
-                            "", param_idx::STEREO_WIDTH, state.selected_param, state.is_editing,
-                            Some('w'), 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Width",
+                            state.stereo_width,
+                            pk(UP, "stereo_width").min_f64(),
+                            pk(UP, "stereo_width").max_f64(),
+                            "",
+                            param_idx::STEREO_WIDTH,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('w'),
+                            180.0,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Spread", state.center_spread,
-                            pk(UP, "center_spread").min_f64(), pk(UP, "center_spread").max_f64(),
-                            "", param_idx::CENTER_SPREAD, state.selected_param, state.is_editing,
-                            None, 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Spread",
+                            state.center_spread,
+                            pk(UP, "center_spread").min_f64(),
+                            pk(UP, "center_spread").max_f64(),
+                            "",
+                            param_idx::CENTER_SPREAD,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            180.0,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Bleed", state.surround_direct_bleed,
-                            pk(UP, "surround_direct_bleed").min_f64(), pk(UP, "surround_direct_bleed").max_f64(),
-                            "", param_idx::SURROUND_DIRECT_BLEED, state.selected_param, state.is_editing,
-                            None, 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Bleed",
+                            state.surround_direct_bleed,
+                            pk(UP, "surround_direct_bleed").min_f64(),
+                            pk(UP, "surround_direct_bleed").max_f64(),
+                            "",
+                            param_idx::SURROUND_DIRECT_BLEED,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            180.0,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Reflect", state.rear_late_reflection,
-                            pk(UP, "rear_late_reflection").min_f64(), pk(UP, "rear_late_reflection").max_f64(),
-                            "", param_idx::REAR_LATE_REFLECTION, state.selected_param, state.is_editing,
-                            None, 180.0, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Reflect",
+                            state.rear_late_reflection,
+                            pk(UP, "rear_late_reflection").min_f64(),
+                            pk(UP, "rear_late_reflection").max_f64(),
+                            "",
+                            param_idx::REAR_LATE_REFLECTION,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            180.0,
+                            theme,
                         ))
                         .build(),
                 )
@@ -389,12 +464,7 @@ fn render_config_lfe(
                 .items_center()
                 .gap_3()
                 .child(render_section_header("LFE & Bass", theme))
-                .child(
-                    div()
-                        .w(px(1.0))
-                        .h(px(14.0))
-                        .bg(theme.border),
-                )
+                .child(div().w(px(1.0)).h(px(14.0)).bg(theme.border))
                 .child(render_section_header("SubHarmonic", theme))
                 .child(
                     Toggle::new(("subharm-toggle", plugin_idx))
@@ -422,24 +492,35 @@ fn render_config_lfe(
                 .spacing(StackSpacing::Md)
                 // LFE knobs
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "LFE Cut", state.lfe_cutoff_hz,
-                    pk(UP, "lfe_cutoff_hz").min_f64(), pk(UP, "lfe_cutoff_hz").max_f64(),
-                    "Hz", param_idx::LFE_CUTOFF_HZ, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "LFE Cut",
+                    state.lfe_cutoff_hz,
+                    pk(UP, "lfe_cutoff_hz").min_f64(),
+                    pk(UP, "lfe_cutoff_hz").max_f64(),
+                    "Hz",
+                    param_idx::LFE_CUTOFF_HZ,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "LFE Gain", state.lfe_gain,
-                    pk(UP, "lfe_gain").min_f64(), pk(UP, "lfe_gain").max_f64(),
-                    "x", param_idx::LFE_GAIN, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "LFE Gain",
+                    state.lfe_gain,
+                    pk(UP, "lfe_gain").min_f64(),
+                    pk(UP, "lfe_gain").max_f64(),
+                    "x",
+                    param_idx::LFE_GAIN,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 // Separator
-                .child(
-                    div()
-                        .w(px(1.0))
-                        .h(px(80.0))
-                        .bg(theme.border),
-                )
+                .child(div().w(px(1.0)).h(px(80.0)).bg(theme.border))
                 // SubHarmonic knobs (dimmed when disabled)
                 .child(
                     div()
@@ -447,28 +528,60 @@ fn render_config_lfe(
                         .gap_3()
                         .when(!subharm_enabled, |d| d.opacity(0.3))
                         .child(render_knob(
-                            entity.clone(), plugin_idx, "Gain", state.subharmonic_gain,
-                            pk(UP, "subharmonic_gain").min_f64(), pk(UP, "subharmonic_gain").max_f64(),
-                            "", param_idx::SUBHARMONIC_GAIN, state.selected_param, state.is_editing,
-                            None, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Gain",
+                            state.subharmonic_gain,
+                            pk(UP, "subharmonic_gain").min_f64(),
+                            pk(UP, "subharmonic_gain").max_f64(),
+                            "",
+                            param_idx::SUBHARMONIC_GAIN,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
                         ))
                         .child(render_knob(
-                            entity.clone(), plugin_idx, "Freq", state.subharmonic_freq_hz,
-                            pk(UP, "subharmonic_freq_hz").min_f64(), pk(UP, "subharmonic_freq_hz").max_f64(),
-                            "Hz", param_idx::SUBHARMONIC_FREQ_HZ, state.selected_param, state.is_editing,
-                            None, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Freq",
+                            state.subharmonic_freq_hz,
+                            pk(UP, "subharmonic_freq_hz").min_f64(),
+                            pk(UP, "subharmonic_freq_hz").max_f64(),
+                            "Hz",
+                            param_idx::SUBHARMONIC_FREQ_HZ,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
                         ))
                         .child(render_knob(
-                            entity.clone(), plugin_idx, "Attack", state.subharmonic_attack_ms,
-                            pk(UP, "subharmonic_attack_ms").min_f64(), pk(UP, "subharmonic_attack_ms").max_f64(),
-                            "ms", param_idx::SUBHARMONIC_ATTACK_MS, state.selected_param, state.is_editing,
-                            None, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Attack",
+                            state.subharmonic_attack_ms,
+                            pk(UP, "subharmonic_attack_ms").min_f64(),
+                            pk(UP, "subharmonic_attack_ms").max_f64(),
+                            "ms",
+                            param_idx::SUBHARMONIC_ATTACK_MS,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
                         ))
                         .child(render_knob(
-                            entity.clone(), plugin_idx, "Release", state.subharmonic_release_ms,
-                            pk(UP, "subharmonic_release_ms").min_f64(), pk(UP, "subharmonic_release_ms").max_f64(),
-                            "ms", param_idx::SUBHARMONIC_RELEASE_MS, state.selected_param, state.is_editing,
-                            None, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Release",
+                            state.subharmonic_release_ms,
+                            pk(UP, "subharmonic_release_ms").min_f64(),
+                            pk(UP, "subharmonic_release_ms").max_f64(),
+                            "ms",
+                            param_idx::SUBHARMONIC_RELEASE_MS,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
                         )),
                 )
                 .build(),
@@ -490,47 +603,90 @@ fn render_config_dialogue(
             HStack::new()
                 .spacing(StackSpacing::Md)
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Weight", state.dialogue_weight,
-                    pk(UP, "dialogue_weight").min_f64(), pk(UP, "dialogue_weight").max_f64(),
-                    "", param_idx::DIALOGUE_WEIGHT, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Weight",
+                    state.dialogue_weight,
+                    pk(UP, "dialogue_weight").min_f64(),
+                    pk(UP, "dialogue_weight").max_f64(),
+                    "",
+                    param_idx::DIALOGUE_WEIGHT,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Voice Lo", state.voice_freq_min_hz,
-                    pk(UP, "voice_freq_min_hz").min_f64(), pk(UP, "voice_freq_min_hz").max_f64(),
-                    "Hz", param_idx::VOICE_FREQ_MIN_HZ, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Voice Lo",
+                    state.voice_freq_min_hz,
+                    pk(UP, "voice_freq_min_hz").min_f64(),
+                    pk(UP, "voice_freq_min_hz").max_f64(),
+                    "Hz",
+                    param_idx::VOICE_FREQ_MIN_HZ,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Voice Hi", state.voice_freq_max_hz,
-                    pk(UP, "voice_freq_max_hz").min_f64(), pk(UP, "voice_freq_max_hz").max_f64(),
-                    "Hz", param_idx::VOICE_FREQ_MAX_HZ, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Voice Hi",
+                    state.voice_freq_max_hz,
+                    pk(UP, "voice_freq_max_hz").min_f64(),
+                    pk(UP, "voice_freq_max_hz").max_f64(),
+                    "Hz",
+                    param_idx::VOICE_FREQ_MAX_HZ,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 // Separator
-                .child(
-                    div()
-                        .w(px(1.0))
-                        .h(px(40.0))
-                        .bg(theme.border),
-                )
+                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Centroid", state.dialogue_centroid_weight,
-                    pk(UP, "dialogue_centroid_weight").min_f64(), pk(UP, "dialogue_centroid_weight").max_f64(),
-                    "", param_idx::DIALOGUE_CENTROID_WEIGHT, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Centroid",
+                    state.dialogue_centroid_weight,
+                    pk(UP, "dialogue_centroid_weight").min_f64(),
+                    pk(UP, "dialogue_centroid_weight").max_f64(),
+                    "",
+                    param_idx::DIALOGUE_CENTROID_WEIGHT,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Variance", state.dialogue_variance_weight,
-                    pk(UP, "dialogue_variance_weight").min_f64(), pk(UP, "dialogue_variance_weight").max_f64(),
-                    "", param_idx::DIALOGUE_VARIANCE_WEIGHT, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Variance",
+                    state.dialogue_variance_weight,
+                    pk(UP, "dialogue_variance_weight").min_f64(),
+                    pk(UP, "dialogue_variance_weight").max_f64(),
+                    "",
+                    param_idx::DIALOGUE_VARIANCE_WEIGHT,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Coherence", state.dialogue_coherence_weight,
-                    pk(UP, "dialogue_coherence_weight").min_f64(), pk(UP, "dialogue_coherence_weight").max_f64(),
-                    "", param_idx::DIALOGUE_COHERENCE_WEIGHT, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Coherence",
+                    state.dialogue_coherence_weight,
+                    pk(UP, "dialogue_coherence_weight").min_f64(),
+                    pk(UP, "dialogue_coherence_weight").max_f64(),
+                    "",
+                    param_idx::DIALOGUE_COHERENCE_WEIGHT,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .build(),
         )
@@ -551,22 +707,46 @@ fn render_config_ambient(
             HStack::new()
                 .spacing(StackSpacing::Md)
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Boost", state.ambient_boost,
-                    pk(UP, "ambient_boost").min_f64(), pk(UP, "ambient_boost").max_f64(),
-                    "x", param_idx::AMBIENT_BOOST, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Boost",
+                    state.ambient_boost,
+                    pk(UP, "ambient_boost").min_f64(),
+                    pk(UP, "ambient_boost").max_f64(),
+                    "x",
+                    param_idx::AMBIENT_BOOST,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Rear Boost", state.rear_ambient_boost,
-                    pk(UP, "rear_ambient_boost").min_f64(), pk(UP, "rear_ambient_boost").max_f64(),
-                    "x", param_idx::REAR_AMBIENT_BOOST, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Rear Boost",
+                    state.rear_ambient_boost,
+                    pk(UP, "rear_ambient_boost").min_f64(),
+                    pk(UP, "rear_ambient_boost").max_f64(),
+                    "x",
+                    param_idx::REAR_AMBIENT_BOOST,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Safety", state.safety_cap_db,
-                    pk(UP, "safety_cap_db").min_f64(), pk(UP, "safety_cap_db").max_f64(),
-                    "dB", param_idx::SAFETY_CAP_DB, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Safety",
+                    state.safety_cap_db,
+                    pk(UP, "safety_cap_db").min_f64(),
+                    pk(UP, "safety_cap_db").max_f64(),
+                    "dB",
+                    param_idx::SAFETY_CAP_DB,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .build(),
         )
@@ -619,29 +799,61 @@ fn render_config_height(
                     div()
                         .when(!state.enable_hr_direct, |d| d.opacity(0.3))
                         .child(render_knob(
-                            entity.clone(), plugin_idx, "Sharpen", state.hr_sharpen,
-                            pk(UP, "hr_sharpen").min_f64(), pk(UP, "hr_sharpen").max_f64(),
-                            "", param_idx::HR_SHARPEN, state.selected_param, state.is_editing,
-                            None, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Sharpen",
+                            state.hr_sharpen,
+                            pk(UP, "hr_sharpen").min_f64(),
+                            pk(UP, "hr_sharpen").max_f64(),
+                            "",
+                            param_idx::HR_SHARPEN,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
                         )),
                 )
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "HF Cap", state.height_hf_cap_hz,
-                    pk(UP, "height_hf_cap_hz").min_f64(), pk(UP, "height_hf_cap_hz").max_f64(),
-                    "Hz", param_idx::HEIGHT_HF_CAP_HZ, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "HF Cap",
+                    state.height_hf_cap_hz,
+                    pk(UP, "height_hf_cap_hz").min_f64(),
+                    pk(UP, "height_hf_cap_hz").max_f64(),
+                    "Hz",
+                    param_idx::HEIGHT_HF_CAP_HZ,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Trans Red", state.height_transient_reduction,
-                    pk(UP, "height_transient_reduction").min_f64(), pk(UP, "height_transient_reduction").max_f64(),
-                    "", param_idx::HEIGHT_TRANSIENT_REDUCTION, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Trans Red",
+                    state.height_transient_reduction,
+                    pk(UP, "height_transient_reduction").min_f64(),
+                    pk(UP, "height_transient_reduction").max_f64(),
+                    "",
+                    param_idx::HEIGHT_TRANSIENT_REDUCTION,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Dir Leak", state.height_direct_leak,
-                    pk(UP, "height_direct_leak").min_f64(), pk(UP, "height_direct_leak").max_f64(),
-                    "", param_idx::HEIGHT_DIRECT_LEAK, state.selected_param, state.is_editing,
-                    None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Dir Leak",
+                    state.height_direct_leak,
+                    pk(UP, "height_direct_leak").min_f64(),
+                    pk(UP, "height_direct_leak").max_f64(),
+                    "",
+                    param_idx::HEIGHT_DIRECT_LEAK,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .build(),
         )
@@ -694,24 +906,48 @@ fn render_config_decorrelation(
                 .spacing(StackSpacing::Md)
                 .when(decorrelation_mode == 1, |el| {
                     el.child(render_knob(
-                        entity.clone(), plugin_idx, "LFO Rate", state.decorrelation_lfo_rate_hz,
-                        pk(UP, "decorrelation_lfo_rate_hz").min_f64(), pk(UP, "decorrelation_lfo_rate_hz").max_f64(),
-                        "Hz", param_idx::DECORRELATION_LFO_RATE_HZ, state.selected_param, state.is_editing,
-                        None, theme,
+                        entity.clone(),
+                        plugin_idx,
+                        "LFO Rate",
+                        state.decorrelation_lfo_rate_hz,
+                        pk(UP, "decorrelation_lfo_rate_hz").min_f64(),
+                        pk(UP, "decorrelation_lfo_rate_hz").max_f64(),
+                        "Hz",
+                        param_idx::DECORRELATION_LFO_RATE_HZ,
+                        state.selected_param,
+                        state.is_editing,
+                        None,
+                        theme,
                     ))
                 })
                 .when(decorrelation_mode == 0, |el| {
                     el.child(render_knob(
-                        entity.clone(), plugin_idx, "Duration", state.velvet_noise_duration_ms,
-                        pk(UP, "velvet_noise_duration_ms").min_f64(), pk(UP, "velvet_noise_duration_ms").max_f64(),
-                        "ms", param_idx::VELVET_NOISE_DURATION_MS, state.selected_param, state.is_editing,
-                        None, theme,
+                        entity.clone(),
+                        plugin_idx,
+                        "Duration",
+                        state.velvet_noise_duration_ms,
+                        pk(UP, "velvet_noise_duration_ms").min_f64(),
+                        pk(UP, "velvet_noise_duration_ms").max_f64(),
+                        "ms",
+                        param_idx::VELVET_NOISE_DURATION_MS,
+                        state.selected_param,
+                        state.is_editing,
+                        None,
+                        theme,
                     ))
                     .child(render_knob(
-                        entity.clone(), plugin_idx, "Density", state.velvet_noise_density,
-                        pk(UP, "velvet_noise_density").min_f64(), pk(UP, "velvet_noise_density").max_f64(),
-                        "/s", param_idx::VELVET_NOISE_DENSITY, state.selected_param, state.is_editing,
-                        None, theme,
+                        entity.clone(),
+                        plugin_idx,
+                        "Density",
+                        state.velvet_noise_density,
+                        pk(UP, "velvet_noise_density").min_f64(),
+                        pk(UP, "velvet_noise_density").max_f64(),
+                        "/s",
+                        param_idx::VELVET_NOISE_DENSITY,
+                        state.selected_param,
+                        state.is_editing,
+                        None,
+                        theme,
                     ))
                 })
                 .build(),
@@ -733,20 +969,36 @@ fn render_config_diagnostic(
             HStack::new()
                 .spacing(StackSpacing::Lg)
                 .child(render_diag_toggle(
-                    entity.clone(), plugin_idx, "Bypass Decorrelation",
-                    state.bypass_decorrelation, param_idx::BYPASS_DECORRELATION, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Bypass Decorrelation",
+                    state.bypass_decorrelation,
+                    param_idx::BYPASS_DECORRELATION,
+                    theme,
                 ))
                 .child(render_diag_toggle(
-                    entity.clone(), plugin_idx, "Bypass Transients",
-                    state.bypass_transient_detection, param_idx::BYPASS_TRANSIENT_DETECTION, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Bypass Transients",
+                    state.bypass_transient_detection,
+                    param_idx::BYPASS_TRANSIENT_DETECTION,
+                    theme,
                 ))
                 .child(render_diag_toggle(
-                    entity.clone(), plugin_idx, "Bypass All Processing",
-                    state.bypass_all_processing, param_idx::BYPASS_ALL_PROCESSING, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Bypass All Processing",
+                    state.bypass_all_processing,
+                    param_idx::BYPASS_ALL_PROCESSING,
+                    theme,
                 ))
                 .child(render_diag_toggle(
-                    entity, plugin_idx, "ML Detection",
-                    state.enable_ml_detection, param_idx::ENABLE_ML_DETECTION, theme,
+                    entity,
+                    plugin_idx,
+                    "ML Detection",
+                    state.enable_ml_detection,
+                    param_idx::ENABLE_ML_DETECTION,
+                    theme,
                 ))
                 .build(),
         )

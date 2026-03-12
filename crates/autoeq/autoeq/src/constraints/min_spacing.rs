@@ -71,7 +71,7 @@ pub fn viol_spacing_from_xs(xs: &[f64], peq_model: PeqModel, min_spacing_oct: f6
     if min_spacing_oct <= 0.0 {
         return 0.0;
     }
-    let min_dist = compute_min_octave_spacing(xs, peq_model, 1e-9);
+    let min_dist = compute_min_octave_spacing(xs, peq_model, 1e-6);
     if min_dist.is_finite() {
         (min_spacing_oct - min_dist).max(0.0)
     } else {

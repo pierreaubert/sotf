@@ -1137,14 +1137,12 @@ impl PlayerView {
             .p_3()
             .bg(theme.background)
             .child(
-                div()
-                    .mb_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("Level Meters"),
-                    ),
+                div().mb_2().child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child("Level Meters"),
+                ),
             )
             .child({
                 // Use a for loop to avoid FnMut closure escape issues with cx
@@ -1677,22 +1675,23 @@ impl LevelMeterManager for AppState {
         // Find and update the LAST Matrix plugin (closest to output)
         for i in (0..self.plugin_state.chain.len()).rev() {
             if let Some(plugin) = self.plugin_state.chain.get_plugin_mut(i)
-                && matches!(&plugin.settings, PluginSettings::Matrix { .. }) {
-                    // Update settings in memory
-                    match &mut plugin.settings {
-                        PluginSettings::Matrix {
-                            channel_states: settings_states,
-                            ..
-                        } => {
-                            *settings_states = channel_states.clone();
-                        }
-                        _ => unreachable!(),
+                && matches!(&plugin.settings, PluginSettings::Matrix { .. })
+            {
+                // Update settings in memory
+                match &mut plugin.settings {
+                    PluginSettings::Matrix {
+                        channel_states: settings_states,
+                        ..
+                    } => {
+                        *settings_states = channel_states.clone();
                     }
-
-                    // Dispatch update to audio engine
-                    self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-                    return; // Only update the last matrix plugin found
+                    _ => unreachable!(),
                 }
+
+                // Dispatch update to audio engine
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+                return; // Only update the last matrix plugin found
+            }
         }
     }
 

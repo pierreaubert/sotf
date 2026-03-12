@@ -3,10 +3,10 @@
 use math_audio_iir_fir::BiquadFilterType;
 use sotf_audio_player::EQFilter;
 use sotf_audio_player_gpui::{
-    calculate_band_response, calculate_plot_width, calculate_response_at_freq,
-    drag_delta_to_q_change, freq_to_x, gain_to_y, get_filter_type_index, q_to_bar_width,
-    x_to_freq, y_to_gain, CHART_BOTTOM_MARGIN, CHART_LEFT_MARGIN, CHART_TOP_MARGIN,
-    GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH,
+    CHART_BOTTOM_MARGIN, CHART_LEFT_MARGIN, CHART_TOP_MARGIN, GPUI_PX_MARGIN_TOP, MAX_FREQ,
+    MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, calculate_band_response, calculate_plot_width,
+    calculate_response_at_freq, drag_delta_to_q_change, freq_to_x, gain_to_y,
+    get_filter_type_index, q_to_bar_width, x_to_freq, y_to_gain,
 };
 use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
 
@@ -27,7 +27,9 @@ fn test_freq_x_roundtrip() {
         assert!(
             rel_error < 0.001,
             "freq_to_x/x_to_freq roundtrip failed for freq={}: got {}, error={}",
-            freq, recovered_freq, rel_error
+            freq,
+            recovered_freq,
+            rel_error
         );
     }
 }
@@ -43,7 +45,9 @@ fn test_gain_y_roundtrip() {
         assert!(
             abs_error < 0.01,
             "gain_to_y/y_to_gain roundtrip failed for gain={}: got {}, error={}",
-            gain, recovered_gain, abs_error
+            gain,
+            recovered_gain,
+            abs_error
         );
     }
 }
@@ -56,7 +60,8 @@ fn test_freq_to_x_boundaries() {
     assert!(
         (x_min - CHART_LEFT_MARGIN).abs() < 0.01,
         "MIN_FREQ should map to left margin: got {} expected {}",
-        x_min, CHART_LEFT_MARGIN
+        x_min,
+        CHART_LEFT_MARGIN
     );
 
     let x_max = freq_to_x(MAX_FREQ, plot_width);
@@ -64,7 +69,8 @@ fn test_freq_to_x_boundaries() {
     assert!(
         (x_max - expected_max).abs() < 0.01,
         "MAX_FREQ should map to right edge: got {} expected {}",
-        x_max, expected_max
+        x_max,
+        expected_max
     );
 }
 
@@ -74,7 +80,8 @@ fn test_gain_to_y_boundaries() {
     assert!(
         (y_max - CHART_TOP_MARGIN).abs() < 0.01,
         "MAX_GAIN_DB should map to top margin: got {} expected {}",
-        y_max, CHART_TOP_MARGIN
+        y_max,
+        CHART_TOP_MARGIN
     );
 
     let y_min = gain_to_y(TEST_MIN_GAIN_DB, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
@@ -82,7 +89,8 @@ fn test_gain_to_y_boundaries() {
     assert!(
         (y_min - expected_min).abs() < 0.01,
         "MIN_GAIN_DB should map to bottom edge: got {} expected {}",
-        y_min, expected_min
+        y_min,
+        expected_min
     );
 
     let y_zero = gain_to_y(0.0, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
@@ -90,7 +98,8 @@ fn test_gain_to_y_boundaries() {
     assert!(
         (y_zero - expected_center).abs() < 0.01,
         "0 dB should map to vertical center: got {} expected {}",
-        y_zero, expected_center
+        y_zero,
+        expected_center
     );
 }
 
@@ -140,14 +149,16 @@ fn test_q_to_bar_width() {
     assert!(
         (width_at_min_q - Q_BAR_MAX_WIDTH).abs() < 0.01,
         "min Q should give max width: got {} expected {}",
-        width_at_min_q, Q_BAR_MAX_WIDTH
+        width_at_min_q,
+        Q_BAR_MAX_WIDTH
     );
 
     let width_at_max_q = q_to_bar_width(pk(EQ, "q").max_f64());
     assert!(
         (width_at_max_q - Q_BAR_MIN_WIDTH).abs() < 0.01,
         "max Q should give min width: got {} expected {}",
-        width_at_max_q, Q_BAR_MIN_WIDTH
+        width_at_max_q,
+        Q_BAR_MIN_WIDTH
     );
 
     let mid_q = (pk(EQ, "q").min_f64() + pk(EQ, "q").max_f64()) / 2.0;
@@ -156,7 +167,8 @@ fn test_q_to_bar_width() {
     assert!(
         (width_at_mid_q - mid_width).abs() < 1.0,
         "Mid Q should give mid width: got {} expected ~{}",
-        width_at_mid_q, mid_width
+        width_at_mid_q,
+        mid_width
     );
 }
 
@@ -183,13 +195,19 @@ fn test_control_points_within_bounds() {
         assert!(
             x >= CHART_LEFT_MARGIN && x <= CHART_LEFT_MARGIN + plot_width,
             "X out of bounds for freq={}: x={}, bounds=[{}, {}]",
-            freq, x, CHART_LEFT_MARGIN, CHART_LEFT_MARGIN + plot_width
+            freq,
+            x,
+            CHART_LEFT_MARGIN,
+            CHART_LEFT_MARGIN + plot_width
         );
 
         assert!(
             y >= CHART_TOP_MARGIN && y <= CHART_TOP_MARGIN + TEST_PLOT_HEIGHT,
             "Y out of bounds for gain={}: y={}, bounds=[{}, {}]",
-            gain, y, CHART_TOP_MARGIN, CHART_TOP_MARGIN + TEST_PLOT_HEIGHT
+            gain,
+            y,
+            CHART_TOP_MARGIN,
+            CHART_TOP_MARGIN + TEST_PLOT_HEIGHT
         );
     }
 }
@@ -207,11 +225,20 @@ fn test_calculate_plot_width() {
     assert!(
         plot_width_short > plot_width_long,
         "Short labels should give larger plot width: short={} long={}",
-        plot_width_short, plot_width_long
+        plot_width_short,
+        plot_width_long
     );
 
-    assert!(plot_width_short > 0.0, "Plot width should be positive: {}", plot_width_short);
-    assert!(plot_width_long > 0.0, "Plot width should be positive: {}", plot_width_long);
+    assert!(
+        plot_width_short > 0.0,
+        "Plot width should be positive: {}",
+        plot_width_short
+    );
+    assert!(
+        plot_width_long > 0.0,
+        "Plot width should be positive: {}",
+        plot_width_long
+    );
 }
 
 #[test]
@@ -230,7 +257,9 @@ fn test_freq_logarithmic_scaling() {
     assert!(
         rel_diff < 0.01,
         "Octave widths should be equal in log scale: low={} high={} diff={}",
-        octave_width_low, octave_width_high, rel_diff
+        octave_width_low,
+        octave_width_high,
+        rel_diff
     );
 }
 
@@ -243,11 +272,16 @@ fn test_drag_delta_to_q_change() {
     assert!(
         (q_change - expected_change).abs() < 0.01,
         "60px drag should change Q by full range: got {} expected {}",
-        q_change, expected_change
+        q_change,
+        expected_change
     );
 
     let negative_change = drag_delta_to_q_change(-30.0);
-    assert!(negative_change < 0.0, "Negative drag should decrease Q: got {}", negative_change);
+    assert!(
+        negative_change < 0.0,
+        "Negative drag should decrease Q: got {}",
+        negative_change
+    );
 }
 
 #[test]
@@ -267,7 +301,11 @@ fn test_calculate_response_at_freq() {
         solo: false,
     }];
     let response = calculate_response_at_freq(&flat_filter, 1000.0);
-    assert!(response.abs() < 0.1, "0 dB gain filter should give ~0 dB response: got {}", response);
+    assert!(
+        response.abs() < 0.1,
+        "0 dB gain filter should give ~0 dB response: got {}",
+        response
+    );
 
     let muted_filter = vec![EQFilter {
         frequency: 1000.0,
@@ -278,7 +316,11 @@ fn test_calculate_response_at_freq() {
         solo: false,
     }];
     let muted_response = calculate_response_at_freq(&muted_filter, 1000.0);
-    assert!(muted_response.abs() < 0.1, "Muted filter should give ~0 dB response: got {}", muted_response);
+    assert!(
+        muted_response.abs() < 0.1,
+        "Muted filter should give ~0 dB response: got {}",
+        muted_response
+    );
 }
 
 #[test]
@@ -309,7 +351,8 @@ fn test_calculate_response_solo() {
     assert!(
         (response_at_solo - expected_response).abs() < 0.1,
         "Solo filter should be the only contributor: got {} expected {}",
-        response_at_solo, expected_response
+        response_at_solo,
+        expected_response
     );
 }
 
@@ -332,11 +375,22 @@ fn test_calculate_band_response() {
     );
 
     let far_response = calculate_band_response(&filter, 20.0);
-    assert!(far_response.abs() < 1.0, "Peak filter far from center should be ~0: got {}", far_response);
+    assert!(
+        far_response.abs() < 1.0,
+        "Peak filter far from center should be ~0: got {}",
+        far_response
+    );
 
-    let muted_filter = EQFilter { muted: true, ..filter };
+    let muted_filter = EQFilter {
+        muted: true,
+        ..filter
+    };
     let muted_response = calculate_band_response(&muted_filter, 1000.0);
-    assert!(muted_response.abs() < 0.001, "Muted filter should return 0: got {}", muted_response);
+    assert!(
+        muted_response.abs() < 0.001,
+        "Muted filter should return 0: got {}",
+        muted_response
+    );
 }
 
 #[test]
@@ -348,5 +402,8 @@ fn test_filter_type_index() {
     assert_eq!(get_filter_type_index(&BiquadFilterType::Highpass), 4);
     assert_eq!(get_filter_type_index(&BiquadFilterType::Bandpass), 5);
     assert_eq!(get_filter_type_index(&BiquadFilterType::Notch), 6);
-    assert_eq!(get_filter_type_index(&BiquadFilterType::HighpassVariableQ), 4);
+    assert_eq!(
+        get_filter_type_index(&BiquadFilterType::HighpassVariableQ),
+        4
+    );
 }

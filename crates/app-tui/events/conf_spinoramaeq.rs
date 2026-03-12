@@ -195,8 +195,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 KeyCode::Enter => {
                     let f = app.spinorama_eq.selected_field;
                     if is_spinorama_field_numerical(f) {
-                        app.spinorama_eq.edit_buffer =
-                            spinorama_field_value_string(app, f);
+                        app.spinorama_eq.edit_buffer = spinorama_field_value_string(app, f);
                         app.spinorama_eq.editing_value = true;
                     }
                     // Booleans: toggle
@@ -598,19 +597,20 @@ pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
         .get_or_init(|| Arc::new(Mutex::new(None)))
         .clone();
     if let Ok(mut guard) = result_slot.lock()
-        && let Some(result) = guard.take() {
-            app.spinorama_eq.loading_speakers = false;
-            match result {
-                Ok(speakers) => {
-                    app.spinorama_eq.available_speakers = speakers;
-                    app.spinorama_eq.update_filter();
-                }
-                Err(e) => {
-                    app.spinorama_eq.speakers_error = Some(e);
-                }
+        && let Some(result) = guard.take()
+    {
+        app.spinorama_eq.loading_speakers = false;
+        match result {
+            Ok(speakers) => {
+                app.spinorama_eq.available_speakers = speakers;
+                app.spinorama_eq.update_filter();
             }
-            return true;
+            Err(e) => {
+                app.spinorama_eq.speakers_error = Some(e);
+            }
         }
+        return true;
+    }
     false
 }
 
@@ -655,55 +655,57 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
         .clone();
 
     if let Ok(mut guard) = result_slot.lock()
-        && let Some(result) = guard.take() {
-            match result {
-                Ok(r) => {
-                    app.spinorama_eq.pre_loss = r.initial_loss;
-                    app.spinorama_eq.post_loss = r.final_loss;
-                    app.spinorama_eq.filters = r
-                        .biquads
+        && let Some(result) = guard.take()
+    {
+        match result {
+            Ok(r) => {
+                app.spinorama_eq.pre_loss = r.initial_loss;
+                app.spinorama_eq.post_loss = r.final_loss;
+                app.spinorama_eq.filters = r
+                    .biquads
+                    .iter()
+                    .map(|b| SpinoramaBiquad {
+                        filter_type: format!("{:?}", b.filter_type),
+                        freq: b.freq,
+                        q: b.q,
+                        db_gain: b.db_gain,
+                    })
+                    .collect();
+                app.spinorama_eq.curve_frequencies = r.frequencies.clone();
+                app.spinorama_eq.curve_input = r.input_curve.clone();
+                app.spinorama_eq.curve_target = r.target_curve.clone();
+                app.spinorama_eq.curve_corrected = r.corrected_curve.clone();
+                app.spinorama_eq.curve_filter_response = r.filter_response.clone();
+                // Keep the progress-based loss_history (which includes scores)
+                // Only override if empty (e.g. if the callback wasn't called)
+                if app.spinorama_eq.loss_history.is_empty() {
+                    app.spinorama_eq.loss_history = r
+                        .optimization_history
                         .iter()
-                        .map(|b| SpinoramaBiquad {
-                            filter_type: format!("{:?}", b.filter_type),
-                            freq: b.freq,
-                            q: b.q,
-                            db_gain: b.db_gain,
-                        })
+                        .map(|(iter, loss)| (*iter, *loss, None))
                         .collect();
-                    app.spinorama_eq.curve_frequencies = r.frequencies.clone();
-                    app.spinorama_eq.curve_input = r.input_curve.clone();
-                    app.spinorama_eq.curve_target = r.target_curve.clone();
-                    app.spinorama_eq.curve_corrected = r.corrected_curve.clone();
-                    app.spinorama_eq.curve_filter_response = r.filter_response.clone();
-                    // Keep the progress-based loss_history (which includes scores)
-                    // Only override if empty (e.g. if the callback wasn't called)
-                    if app.spinorama_eq.loss_history.is_empty() {
-                        app.spinorama_eq.loss_history = r
-                            .optimization_history
-                            .iter()
-                            .map(|(iter, loss)| (*iter, *loss, None))
-                            .collect();
-                    }
-                    app.spinorama_eq.opt_status = OptimizationStatus::Completed;
-                    app.spinorama_eq.opt_progress = 1.0;
                 }
-                Err(e) => {
-                    app.spinorama_eq.opt_status = OptimizationStatus::Failed;
-                    app.spinorama_eq.opt_error = Some(e);
-                }
+                app.spinorama_eq.opt_status = OptimizationStatus::Completed;
+                app.spinorama_eq.opt_progress = 1.0;
             }
-            return true;
+            Err(e) => {
+                app.spinorama_eq.opt_status = OptimizationStatus::Failed;
+                app.spinorama_eq.opt_error = Some(e);
+            }
         }
+        return true;
+    }
 
     if let Ok(mut guard) = progress_slot.lock()
-        && let Some((iter, max_iter, loss, pct, score)) = guard.take() {
-            app.spinorama_eq.opt_iteration = iter;
-            app.spinorama_eq.opt_max_iter = max_iter;
-            app.spinorama_eq.opt_loss = loss;
-            app.spinorama_eq.opt_progress = pct;
-            app.spinorama_eq.loss_history.push((iter, loss, score));
-            return true;
-        }
+        && let Some((iter, max_iter, loss, pct, score)) = guard.take()
+    {
+        app.spinorama_eq.opt_iteration = iter;
+        app.spinorama_eq.opt_max_iter = max_iter;
+        app.spinorama_eq.opt_loss = loss;
+        app.spinorama_eq.opt_progress = pct;
+        app.spinorama_eq.loss_history.push((iter, loss, score));
+        return true;
+    }
 
     false
 }

@@ -135,10 +135,7 @@ pub(super) fn print_optimization_scores(
         log::info!("📉  Pre-Optimization Loss: {:.6}", pre);
         log::info!("📉 Post-Optimization Loss: {:.6}", post_obj);
         if pre > 0.0 {
-            log::info!(
-                "📉 Improvement: {:.2}%",
-                (pre - post_obj) / pre * 100.0
-            );
+            log::info!("📉 Improvement: {:.2}%", (pre - post_obj) / pre * 100.0);
         }
     }
 

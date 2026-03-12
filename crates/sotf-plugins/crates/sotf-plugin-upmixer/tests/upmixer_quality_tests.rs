@@ -99,7 +99,7 @@ fn test_upmixer_phase_alignment_extraction() {
     let mut energy_total = 0.0_f32;
 
     for i in skip..num_frames {
-        energy_residual += output[i * out_ch ].powi(2) + output[i * out_ch + 1].powi(2);
+        energy_residual += output[i * out_ch].powi(2) + output[i * out_ch + 1].powi(2);
         for ch in 0..out_ch {
             energy_total += output[i * out_ch + ch].powi(2);
         }

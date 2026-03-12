@@ -104,9 +104,9 @@ fn test_recording_config_state_serialization() {
 #[test]
 fn test_config_serialization() {
     use sotf_audio_player::ReleaseChannel;
+    use sotf_audio_player_gpui::i18n::Language;
     use sotf_audio_player_gpui::keybindings::KeymapPreset;
     use sotf_audio_player_gpui::theme::ThemeId;
-    use sotf_audio_player_gpui::i18n::Language;
 
     let config = Config {
         directories: Vec::new(),

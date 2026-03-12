@@ -89,6 +89,10 @@ impl Default for FirDesignConfig {
 /// This function takes a target magnitude response (in dB) at specified frequencies
 /// and generates FIR coefficients that approximate that response.
 ///
+/// `FirPhase::Kirkeby` is intentionally unsupported here because Kirkeby
+/// regularized inversion requires both a measurement and a target response.
+/// Use `generate_kirkeby_correction` for that workflow.
+///
 /// # Arguments
 /// * `freqs` - Frequency points in Hz (must be positive, sorted ascending)
 /// * `magnitude_db` - Target magnitude in dB at each frequency point
@@ -108,6 +112,10 @@ pub fn generate_fir_from_response(
         freqs.len(),
         magnitude_db.len(),
         "freqs and magnitude_db must have same length"
+    );
+    assert!(
+        config.phase != FirPhase::Kirkeby,
+        "Kirkeby correction requires measurement and target responses; use generate_kirkeby_correction"
     );
 
     let n_taps = config.n_taps;
@@ -135,9 +143,7 @@ pub fn generate_fir_from_response(
         FirPhase::Linear => generate_linear_phase_spectrum(&magnitude),
         FirPhase::Minimum => generate_minimum_phase_spectrum(&magnitude, fft_size),
         FirPhase::Kirkeby => {
-            // For Kirkeby, we need measurement and target, not just target
-            // This path assumes the input IS the correction (target - measurement)
-            generate_linear_phase_spectrum(&magnitude)
+            unreachable!("Kirkeby correction must be generated with measurement data")
         }
     };
 
@@ -169,6 +175,24 @@ pub fn generate_kirkeby_correction(
     target_magnitude_db: &[f64],
     config: &FirDesignConfig,
 ) -> Vec<f64> {
+    assert_eq!(
+        meas_freqs.len(),
+        meas_magnitude_db.len(),
+        "meas_freqs and meas_magnitude_db must have same length"
+    );
+    assert_eq!(
+        meas_freqs.len(),
+        target_magnitude_db.len(),
+        "meas_freqs and target_magnitude_db must have same length"
+    );
+    if let Some(phase) = meas_phase_deg {
+        assert_eq!(
+            meas_freqs.len(),
+            phase.len(),
+            "meas_phase_deg must match measurement length"
+        );
+    }
+
     let n_taps = config.n_taps;
     let sample_rate = config.sample_rate;
     let min_freq = config.min_freq;
@@ -231,28 +255,27 @@ pub fn generate_kirkeby_correction(
         None // Magnitude-only correction (linear-phase FIR)
     };
 
-    // Maximum boost/cut limits for room correction
-    // Boost is limited more aggressively because boosting deep nulls:
-    // 1. Amplifies noise and distortion
-    // 2. Can cause speaker/amp damage
-    // 3. Deep nulls often can't be properly corrected anyway (they're spatial)
-    // Cuts are less dangerous but still limited to prevent over-attenuation
-    let max_boost_db = 15.0; // Conservative boost limit (safe for most systems)
-    let max_cut_db = 20.0; // More permissive cut limit
+    // Maximum boost/cut limits for room correction.
+    // The Kirkeby regularization shapes the inverse before these limits are applied,
+    // and the final clamp keeps pathological measurement bins from creating unsafe EQ.
+    let max_boost_db = 15.0;
+    let max_cut_db = 20.0;
+    let max_boost_linear = 10.0_f64.powf(max_boost_db / 20.0);
+    let max_cut_linear = 10.0_f64.powf(max_cut_db / 20.0);
+
+    // Choose a regularization floor so that the peak inverse gain asymptotically
+    // stays around the configured boost ceiling. For H/(|H|² + β²), the peak is
+    // approximately 1/(2β), so β ~= 1/(2 * max_boost).
+    let beta = 1.0 / (2.0 * max_boost_linear);
 
     let mut h_inv = Vec::with_capacity(num_bins);
 
     for i in 0..num_bins {
         let f = linear_freqs[i];
 
-        // Measurement level
-        let m_spl = meas_spl_interp[i];
-
-        // Target level
-        let t_spl = target_spl_interp[i];
-
-        // Compute desired correction in dB: correction = target - measurement
-        let correction_db = t_spl - m_spl;
+        // Relative measurement error against the target. Using the relative response keeps
+        // the inversion invariant to arbitrary SPL offsets in the source curves.
+        let rel_mag = 10.0_f64.powf((meas_spl_interp[i] - target_spl_interp[i]) / 20.0);
 
         // Determine if we're in-band or out-of-band
         let width = 10.0; // Hz transition width
@@ -264,14 +287,10 @@ pub fn generate_kirkeby_correction(
             1.0
         };
 
-        // Apply limits based on band position
-        // In-band: apply full (limited) correction
-        // Out-of-band: taper to unity gain (0 dB correction)
-        let in_band_correction = correction_db.clamp(-max_cut_db, max_boost_db);
-        let limited_correction_db = in_band_correction * transition;
-
-        // Convert limited correction to complex gain
-        let c_mag = 10.0_f64.powf(limited_correction_db / 20.0);
+        // Kirkeby-style regularized inverse of the relative measurement response.
+        let regularized_mag = rel_mag / (rel_mag * rel_mag + beta * beta);
+        let limited_mag = regularized_mag.clamp(1.0 / max_cut_linear, max_boost_linear);
+        let c_mag = 1.0 + transition * (limited_mag - 1.0);
 
         // Apply excess phase correction if available, otherwise use zero phase (linear phase FIR)
         let c_phase = excess_phase_correction
@@ -612,6 +631,8 @@ fn finalize_impulse_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fir::Fir;
+    use ndarray::array;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
@@ -687,6 +708,21 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Kirkeby correction requires measurement and target")]
+    fn test_generate_fir_from_response_rejects_kirkeby_phase() {
+        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+        let magnitude_db = vec![0.0, 0.0, 0.0, 0.0, 0.0];
+        let config = FirDesignConfig {
+            n_taps: 256,
+            sample_rate: 48_000.0,
+            phase: FirPhase::Kirkeby,
+            ..Default::default()
+        };
+
+        let _ = generate_fir_from_response(&freqs, &magnitude_db, &config);
+    }
+
+    #[test]
     fn test_generate_kirkeby_correction() {
         let freqs = vec![20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0];
         let meas_db = vec![75.0, 82.0, 80.0, 78.0, 72.0, 65.0];
@@ -705,6 +741,39 @@ mod tests {
 
         assert_eq!(coeffs.len(), 4096);
         assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
+    }
+
+    #[test]
+    fn test_generate_kirkeby_correction_regularizes_deep_null() {
+        let freqs = vec![
+            20.0, 40.0, 80.0, 100.0, 120.0, 200.0, 1000.0, 5000.0, 20000.0,
+        ];
+        let meas_db = vec![0.0, 0.0, -6.0, -30.0, -6.0, 0.0, 0.0, 0.0, 0.0];
+        let target_db = vec![0.0; freqs.len()];
+
+        let config = FirDesignConfig {
+            n_taps: 2048,
+            sample_rate: 48_000.0,
+            phase: FirPhase::Kirkeby,
+            min_freq: 20.0,
+            max_freq: 500.0,
+            ..Default::default()
+        };
+
+        let coeffs = generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
+        let fir = Fir::new_custom(coeffs, config.sample_rate);
+        let response = fir.np_log_result(&array![80.0, 100.0, 120.0]);
+
+        assert!(response[1].is_finite());
+        assert!(
+            response[1] < 15.5,
+            "deep-null correction should stay below the regularized boost ceiling, got {:.2} dB",
+            response[1]
+        );
+        assert!(
+            response[1] > response[0] && response[1] > response[2],
+            "the correction should still target the null center more strongly than nearby bins"
+        );
     }
 
     #[test]

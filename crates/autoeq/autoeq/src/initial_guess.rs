@@ -12,7 +12,8 @@ use rand::{Rng, SeedableRng};
 pub struct SmartInitConfig {
     /// Number of different initial guesses to generate
     pub num_guesses: usize,
-    /// Sigma for Gaussian smoothing of frequency response
+    /// Smoothing strength expressed as bands per octave for constant-octave smoothing.
+    /// Values are rounded to the nearest integer and clamped to at least 1.
     pub smoothing_sigma: f64,
     /// Minimum peak/dip height to consider
     pub min_peak_height: f64,
@@ -51,20 +52,15 @@ struct FrequencyProblem {
     q_factor: f64,
 }
 
-/// Smooth array with Gaussian kernel
-fn smooth_gaussian(data: &Array1<f64>, sigma: f64) -> Array1<f64> {
-    // Simple moving average as approximation
-    let window = (sigma * 3.0) as usize;
-    let mut smoothed = data.clone();
-
-    for i in 0..data.len() {
-        let start = i.saturating_sub(window);
-        let end = (i + window + 1).min(data.len());
-        let sum: f64 = data.slice(ndarray::s![start..end]).sum();
-        smoothed[i] = sum / (end - start) as f64;
-    }
-
-    smoothed
+/// Smooth response on a log-frequency grid using constant-octave windows.
+fn smooth_problem_response(freq_grid: &Array1<f64>, data: &Array1<f64>, sigma: f64) -> Array1<f64> {
+    let curve = crate::Curve {
+        freq: freq_grid.clone(),
+        spl: data.clone(),
+        phase: None,
+    };
+    let bands_per_octave = sigma.max(1.0).round() as usize;
+    crate::read::smooth_one_over_n_octave(&curve, bands_per_octave).spl
 }
 
 /// Find peaks in a signal
@@ -120,7 +116,7 @@ pub fn create_smart_initial_guesses(
         Box::new(rand::rng())
     };
     // Smooth the response to reduce noise
-    let smoothed = smooth_gaussian(target_response, config.smoothing_sigma);
+    let smoothed = smooth_problem_response(freq_grid, target_response, config.smoothing_sigma);
 
     // Find peaks (need cuts) and dips (need boosts)
     let peaks = find_peaks(&smoothed, config.min_peak_height, config.min_peak_distance);
@@ -199,8 +195,12 @@ pub fn create_smart_initial_guesses(
             let problem = &used_problems[i % used_problems.len()];
 
             // Add some randomization to diversify guesses
-            let freq_var = problem.frequency
-                * (1.0 + main_rng.random_range(-config.variation_factor..config.variation_factor));
+            let freq_scale = if config.variation_factor > 0.0 {
+                1.0 + main_rng.random_range(-config.variation_factor..config.variation_factor)
+            } else {
+                1.0
+            };
+            let freq_var = problem.frequency * freq_scale;
             let gain_var = problem.magnitude * (1.0 + main_rng.random_range(-0.2..0.2));
             let q_var = problem.q_factor * (1.0 + main_rng.random_range(-0.3..0.3));
 
@@ -343,5 +343,55 @@ mod tests {
             assert!(guess[1] >= bounds[1].0 && guess[1] <= bounds[1].1);
             assert!(guess[2] >= bounds[2].0 && guess[2] <= bounds[2].1);
         }
+    }
+
+    #[test]
+    fn test_create_smart_initial_guesses_stable_across_grid_density() {
+        use crate::cli::PeqModel;
+
+        let coarse_freq_grid = Array1::from(vec![100.0, 300.0, 1000.0, 3000.0, 10000.0]);
+        let coarse_response = Array1::from(vec![0.0, 0.0, 6.0, 0.0, 0.0]);
+
+        let dense_freq_grid = Array1::logspace(10.0, 100.0_f64.log10(), 10_000.0_f64.log10(), 81);
+        let dense_response = dense_freq_grid.mapv(|f| {
+            let distance_oct = (f / 1000.0).log2();
+            6.0 * (-0.5 * (distance_oct / 0.15).powi(2)).exp()
+        });
+
+        let bounds = vec![
+            (100.0_f64.log10(), 10_000.0_f64.log10()),
+            (0.5, 3.0),
+            (-6.0, 6.0),
+        ];
+        let config = SmartInitConfig {
+            num_guesses: 1,
+            variation_factor: 0.0,
+            seed: Some(42),
+            ..SmartInitConfig::default()
+        };
+
+        let coarse_guess = create_smart_initial_guesses(
+            &coarse_response,
+            &coarse_freq_grid,
+            1,
+            &bounds,
+            &config,
+            PeqModel::Pk,
+        )[0][0];
+        let dense_guess = create_smart_initial_guesses(
+            &dense_response,
+            &dense_freq_grid,
+            1,
+            &bounds,
+            &config,
+            PeqModel::Pk,
+        )[0][0];
+
+        let coarse_freq = 10.0_f64.powf(coarse_guess);
+        let dense_freq = 10.0_f64.powf(dense_guess);
+
+        assert!(coarse_freq > 700.0 && coarse_freq < 1400.0);
+        assert!(dense_freq > 700.0 && dense_freq < 1400.0);
+        assert!((dense_freq / coarse_freq).log2().abs() < 0.2);
     }
 }

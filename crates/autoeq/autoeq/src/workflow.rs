@@ -676,19 +676,29 @@ pub fn initial_guess(
             | PeqModel::LsPk
             | PeqModel::LsPkHs => {
                 // Fixed filter types: [freq, Q, gain]
-                let freq = lower_bounds[offset].min(args.max_freq.log10());
-                let q = (upper_bounds[offset + 1] * lower_bounds[offset + 1]).sqrt();
+                let freq = lower_bounds[offset]
+                    .min(args.max_freq.log10())
+                    .clamp(lower_bounds[offset], upper_bounds[offset]);
+                let q = (upper_bounds[offset + 1] * lower_bounds[offset + 1])
+                    .sqrt()
+                    .clamp(lower_bounds[offset + 1], upper_bounds[offset + 1]);
                 let sign = if i % 2 == 0 { 0.5 } else { -0.5 };
-                let gain = sign * upper_bounds[offset + 2].max(args.min_db);
+                let gain = (sign * upper_bounds[offset + 2].max(args.min_db))
+                    .clamp(lower_bounds[offset + 2], upper_bounds[offset + 2]);
                 x.extend_from_slice(&[freq, q, gain]);
             }
             PeqModel::FreePkFree | PeqModel::Free => {
                 // Free filter types: [type, freq, Q, gain]
-                let filter_type = 0.0;
-                let freq = lower_bounds[offset + 1].min(args.max_freq.log10());
-                let q = (upper_bounds[offset + 2] * lower_bounds[offset + 2]).sqrt();
+                let filter_type = 0.0_f64.clamp(lower_bounds[offset], upper_bounds[offset]);
+                let freq = lower_bounds[offset + 1]
+                    .min(args.max_freq.log10())
+                    .clamp(lower_bounds[offset + 1], upper_bounds[offset + 1]);
+                let q = (upper_bounds[offset + 2] * lower_bounds[offset + 2])
+                    .sqrt()
+                    .clamp(lower_bounds[offset + 2], upper_bounds[offset + 2]);
                 let sign = if i % 2 == 0 { 0.5 } else { -0.5 };
-                let gain = sign * upper_bounds[offset + 3].max(args.min_db);
+                let gain = (sign * upper_bounds[offset + 3].max(args.min_db))
+                    .clamp(lower_bounds[offset + 3], upper_bounds[offset + 3]);
                 x.extend_from_slice(&[filter_type, freq, q, gain]);
             }
         }
@@ -1875,5 +1885,34 @@ mod tests {
         for i in 0..3 {
             assert!((curves.error_curve[i] - curves.deviation_curve[i]).abs() < 1e-10);
         }
+    }
+
+    #[test]
+    fn initial_guess_respects_fixed_bounds_for_special_filters() {
+        let mut args = Args::parse_from(["autoeq-test", "--peq-model", "hp-pk-lp", "-n", "3"]);
+        args.min_freq = 20.0;
+        args.max_freq = 20_000.0;
+
+        let (lower_bounds, upper_bounds) = setup_bounds(&args);
+        let x = initial_guess(&args, &lower_bounds, &upper_bounds);
+
+        for ((value, lower), upper) in x.iter().zip(lower_bounds.iter()).zip(upper_bounds.iter()) {
+            assert!(
+                *value >= *lower && *value <= *upper,
+                "initial guess must lie within bounds: value={}, lower={}, upper={}",
+                value,
+                lower,
+                upper
+            );
+        }
+
+        assert_eq!(
+            x[2], 0.0,
+            "fixed high-pass gain should stay at its fixed bound"
+        );
+        assert_eq!(
+            x[8], 0.0,
+            "fixed low-pass gain should stay at its fixed bound"
+        );
     }
 }

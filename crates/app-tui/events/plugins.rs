@@ -129,8 +129,14 @@ pub(super) fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<Pl
         KeyCode::Enter | KeyCode::Char('e') => {
             // Open file explorer for FilePath parameters
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index)
-                && let Some(spec) = plugin.settings.param_specs().get(app.plugin_param_selection)
-                && matches!(spec.param_type, sotf_audio_player::param_specs::ParamType::FilePath)
+                && let Some(spec) = plugin
+                    .settings
+                    .param_specs()
+                    .get(app.plugin_param_selection)
+                && matches!(
+                    spec.param_type,
+                    sotf_audio_player::param_specs::ParamType::FilePath
+                )
             {
                 open_file_path_param(app, spec.engine_key);
             }
@@ -473,20 +479,24 @@ pub(super) fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<P
         KeyCode::Up => {
             if !app.autocomplete_up(crate::app::app_autocomplete::set_plugin_file_input) {
                 // Navigate preset list when input is empty
-                if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
-                    && app.selected_preset_index > 0 {
-                        app.selected_preset_index -= 1;
-                    }
+                if app.plugin_file_input.is_empty()
+                    && !app.available_plugin_presets.is_empty()
+                    && app.selected_preset_index > 0
+                {
+                    app.selected_preset_index -= 1;
+                }
             }
             None
         }
         KeyCode::Down => {
             if !app.autocomplete_down(crate::app::app_autocomplete::set_plugin_file_input) {
                 // Navigate preset list when input is empty
-                if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty()
-                    && app.selected_preset_index < app.available_plugin_presets.len() - 1 {
-                        app.selected_preset_index += 1;
-                    }
+                if app.plugin_file_input.is_empty()
+                    && !app.available_plugin_presets.is_empty()
+                    && app.selected_preset_index < app.available_plugin_presets.len() - 1
+                {
+                    app.selected_preset_index += 1;
+                }
             }
             None
         }

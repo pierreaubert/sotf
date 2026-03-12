@@ -6,8 +6,8 @@
 //! 3. Median of per-segment BPM estimates
 
 use super::utils::normalize;
-use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
 
 const WINDOW_SIZE: usize = 512;
@@ -26,10 +26,7 @@ pub fn compute_tempo(samples: &[f32], sample_rate: u32) -> f32 {
     }
 
     // Check if there's any significant onset activity
-    let max_onset = onset_envelope
-        .iter()
-        .copied()
-        .fold(0.0f32, f32::max);
+    let max_onset = onset_envelope.iter().copied().fold(0.0f32, f32::max);
     if max_onset < 1e-6 {
         return -1.0; // No onsets detected (silence or near-silence)
     }

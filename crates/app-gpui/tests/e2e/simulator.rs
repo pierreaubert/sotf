@@ -2,9 +2,7 @@
 //!
 //! High-level user interaction simulation for E2E tests.
 
-use gpui::{
-    Modifiers, MouseButton, VisualTestContext,
-};
+use gpui::{Modifiers, MouseButton, VisualTestContext};
 use std::error::Error;
 
 /// Simulator for user interactions with the application.

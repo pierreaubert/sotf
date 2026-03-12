@@ -48,12 +48,12 @@ pub use components::icons::{Icon, IconName, IconSize};
 pub use components::plugins::ticks::{ScaleType, TickConfig, TickMark};
 
 // Re-export debug types for testing
-pub use app::debug::{StateHistory, MAX_HISTORY_SIZE};
+pub use app::debug::{MAX_HISTORY_SIZE, StateHistory};
 
 // Re-export playback event types for testing
 pub use app::state::playback_events::{
-    EventStoreSummary, PlaybackEvent, PlaybackEventStore, PlaybackSnapshot, TrackChangeTrigger,
-    MAX_EVENTS,
+    EventStoreSummary, MAX_EVENTS, PlaybackEvent, PlaybackEventStore, PlaybackSnapshot,
+    TrackChangeTrigger,
 };
 
 // Re-export config helpers for testing
@@ -70,9 +70,9 @@ pub use ui::{compute_responsive_scale, estimate_grid_dimensions};
 
 // Re-export EQ chart functions and constants for testing
 pub use components::plugins::ui_eq::{
+    CHART_BOTTOM_MARGIN, CHART_HEIGHT, CHART_LEFT_MARGIN, CHART_RIGHT_MARGIN, CHART_TOP_MARGIN,
+    GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ, Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, SAMPLE_RATE,
     calculate_band_response, calculate_plot_width, calculate_response_at_freq,
-    drag_delta_to_q_change, freq_to_x, gain_to_y, get_filter_type_index, q_to_bar_width,
-    x_to_freq, y_to_gain, CHART_BOTTOM_MARGIN, CHART_HEIGHT, CHART_LEFT_MARGIN,
-    CHART_RIGHT_MARGIN, CHART_TOP_MARGIN, GPUI_PX_MARGIN_TOP, MAX_FREQ, MIN_FREQ,
-    Q_BAR_MAX_WIDTH, Q_BAR_MIN_WIDTH, SAMPLE_RATE,
+    drag_delta_to_q_change, freq_to_x, gain_to_y, get_filter_type_index, q_to_bar_width, x_to_freq,
+    y_to_gain,
 };

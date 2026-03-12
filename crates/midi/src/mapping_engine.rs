@@ -3,14 +3,14 @@
 //! Handles the full flow: MIDI message → resolve control → find binding → update parameter.
 //! Supports MIDI learn, paging, and LED feedback.
 
+use crate::auto_map;
 use crate::layout::{ControllerLayout, MidiControlId};
 use crate::mapping::{
-    midi_to_param, param_to_midi, ControlBinding, MidiMapping, MidiOverlay,
-    ParamAssignment, ValueScaling,
+    ControlBinding, MidiMapping, MidiOverlay, ParamAssignment, ValueScaling, midi_to_param,
+    param_to_midi,
 };
 use crate::message::MidiMessage;
 use crate::templates::TemplateRegistry;
-use crate::auto_map;
 use sotf_host::param_specs::{ParamSpec, ParamType};
 
 /// Result of processing a MIDI message through the mapping engine
@@ -117,7 +117,9 @@ impl MidiMappingEngine {
         // Apply any manual overrides from previous mapping
         if let Some(prev) = &self.mapping {
             for (&param_idx, control_id) in &prev.manual_overrides {
-                mapping.manual_overrides.insert(param_idx, control_id.clone());
+                mapping
+                    .manual_overrides
+                    .insert(param_idx, control_id.clone());
                 // Replace the auto-mapped binding for this param with the override
                 mapping.bindings.retain(|b| b.param_index != param_idx);
                 if let Some(spec) = params.get(param_idx) {
@@ -145,14 +147,12 @@ impl MidiMappingEngine {
         // Extract MIDI control ID from message
         let midi_id = match msg {
             MidiMessage::ControlChange {
-                channel, controller, ..
+                channel,
+                controller,
+                ..
             } => MidiControlId::CC(*channel, *controller),
-            MidiMessage::NoteOn {
-                channel, note, ..
-            } => MidiControlId::Note(*channel, *note),
-            MidiMessage::NoteOff {
-                channel, note, ..
-            } => MidiControlId::Note(*channel, *note),
+            MidiMessage::NoteOn { channel, note, .. } => MidiControlId::Note(*channel, *note),
+            MidiMessage::NoteOff { channel, note, .. } => MidiControlId::Note(*channel, *note),
             _ => return MappingAction::Unmapped,
         };
 
@@ -164,47 +164,52 @@ impl MidiMappingEngine {
 
         // Check for page navigation
         if let Some(ref prev_id) = layout.page_prev_id
-            && control.id == *prev_id {
-                if let Some(ref mut mapping) = self.mapping {
-                    mapping.prev_page();
-                }
-                return MappingAction::PagePrev;
+            && control.id == *prev_id
+        {
+            if let Some(ref mut mapping) = self.mapping {
+                mapping.prev_page();
             }
+            return MappingAction::PagePrev;
+        }
         if let Some(ref next_id) = layout.page_next_id
-            && control.id == *next_id {
-                if let Some(ref mut mapping) = self.mapping {
-                    mapping.next_page();
-                }
-                return MappingAction::PageNext;
+            && control.id == *next_id
+        {
+            if let Some(ref mut mapping) = self.mapping {
+                mapping.next_page();
             }
+            return MappingAction::PageNext;
+        }
 
         // Handle MIDI learn mode
         if let Some(learn) = self.learn_state.take()
-            && let Some(ref mut mapping) = self.mapping {
-                // Remove any existing binding for this param
-                mapping.bindings.retain(|b| b.param_index != learn.param_index);
+            && let Some(ref mut mapping) = self.mapping
+        {
+            // Remove any existing binding for this param
+            mapping
+                .bindings
+                .retain(|b| b.param_index != learn.param_index);
 
-                let scaling = params
-                    .get(learn.param_index)
-                    .map(auto_map::scaling_for_param)
-                    .unwrap_or(ValueScaling::Linear);
+            let scaling = params
+                .get(learn.param_index)
+                .map(auto_map::scaling_for_param)
+                .unwrap_or(ValueScaling::Linear);
 
-                mapping.bindings.push(ControlBinding {
-                    control_id: control.id.clone(),
-                    plugin_index: learn.plugin_index,
-                    param_index: learn.param_index,
-                    page: mapping.current_page,
-                    scaling,
-                });
-                mapping
-                    .manual_overrides
-                    .insert(learn.param_index, control.id.clone());
+            mapping.bindings.push(ControlBinding {
+                control_id: control.id.clone(),
+                plugin_index: learn.plugin_index,
+                param_index: learn.param_index,
+                page: mapping.current_page,
+                scaling,
+            });
+            mapping
+                .manual_overrides
+                .insert(learn.param_index, control.id.clone());
 
-                return MappingAction::LearnComplete {
-                    control_id: control.id.clone(),
-                    param_index: learn.param_index,
-                };
-            }
+            return MappingAction::LearnComplete {
+                control_id: control.id.clone(),
+                param_index: learn.param_index,
+            };
+        }
 
         // Normal operation: find binding and convert value
         let mapping = match &self.mapping {
@@ -399,7 +404,11 @@ mod tests {
         let action = engine.handle_midi(&msg, params);
 
         match action {
-            MappingAction::SetParam { plugin_index, param_index, value } => {
+            MappingAction::SetParam {
+                plugin_index,
+                param_index,
+                value,
+            } => {
                 assert_eq!(plugin_index, 0);
                 assert_eq!(param_index, 0); // first continuous param = Threshold
                 // 64/127 of -60..0 range ≈ -29.76
@@ -430,7 +439,10 @@ mod tests {
         let action = engine.handle_midi(&msg, params);
 
         match action {
-            MappingAction::LearnComplete { control_id, param_index } => {
+            MappingAction::LearnComplete {
+                control_id,
+                param_index,
+            } => {
                 assert_eq!(control_id, "pot_1");
                 assert_eq!(param_index, 5);
             }

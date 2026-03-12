@@ -64,9 +64,10 @@ impl<'a> AppDriver<'a> {
             .update(self.cx, |view, _window, cx| {
                 let state = view.state.read(cx);
                 if let Some(toast) = &state.app.ui_state.toast_message
-                    && toast.message.contains(message_part) {
-                        return Ok(());
-                    }
+                    && toast.message.contains(message_part)
+                {
+                    return Ok(());
+                }
                 Err(format!(
                     "Expected toast containing '{}', found '{}'",
                     message_part,

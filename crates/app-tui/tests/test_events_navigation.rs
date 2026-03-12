@@ -744,12 +744,12 @@ mod tests {
             &[
                 KeyCode::Char('C'),
                 KeyCode::Char('5'),
-                KeyCode::Enter,     // Select → Configure
-                KeyCode::Esc,       // → step tab bar
-                KeyCode::Right,     // Configure → Optimize
-                KeyCode::Right,     // Optimize → Results
-                KeyCode::Right,     // Results → UpdatePlugin
-                KeyCode::Down,      // → enter UpdatePlugin content
+                KeyCode::Enter, // Select → Configure
+                KeyCode::Esc,   // → step tab bar
+                KeyCode::Right, // Configure → Optimize
+                KeyCode::Right, // Optimize → Results
+                KeyCode::Right, // Results → UpdatePlugin
+                KeyCode::Down,  // → enter UpdatePlugin content
             ],
         );
         assert_eq!(app.spinorama_eq.step, SpinoramaStep::UpdatePlugin);

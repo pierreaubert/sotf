@@ -39,9 +39,7 @@ impl gpui::Action for UpdatePluginParam {
         Box::new(self.clone())
     }
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>() == Some(self)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "UpdatePluginParam"
@@ -59,9 +57,7 @@ impl gpui::Action for SelectPluginParam {
         Box::new(self.clone())
     }
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>() == Some(self)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "SelectPluginParam"
@@ -79,9 +75,7 @@ impl gpui::Action for ResetPluginParam {
         Box::new(self.clone())
     }
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>() == Some(self)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "ResetPluginParam"
@@ -99,9 +93,7 @@ impl gpui::Action for StartKnobDrag {
         Box::new(self.clone())
     }
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>() == Some(self)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "StartKnobDrag"
@@ -119,9 +111,7 @@ impl gpui::Action for ToggleUpmixerConfig {
         Box::new(self.clone())
     }
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>() == Some(self)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "ToggleUpmixerConfig"
@@ -143,9 +133,7 @@ impl gpui::Action for OpenSofaFile {
         Box::new(self.clone())
     }
     fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<Self>() == Some(self)
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn name(&self) -> &'static str {
         "OpenSofaFile"

@@ -402,7 +402,8 @@ fn run_playback_thread(
                         if new_hw_ch != new_config.channels {
                             log::warn!(
                                 "[Playback Thread] Adjusting rebuild channels from {} to {}",
-                                new_config.channels, new_hw_ch
+                                new_config.channels,
+                                new_hw_ch
                             );
                             new_config.channels = new_hw_ch;
                             new_channels = new_hw_ch as usize;
@@ -566,7 +567,8 @@ fn run_playback_thread(
                         if new_hw_ch != new_config.channels {
                             log::warn!(
                                 "[Playback Thread] Adjusting rebuild channels from {} to {}",
-                                new_config.channels, new_hw_ch
+                                new_config.channels,
+                                new_hw_ch
                             );
                             new_config.channels = new_hw_ch;
                             new_channels = new_hw_ch as usize;
@@ -684,8 +686,7 @@ fn run_playback_thread(
                 // Callbacks are still firing, reset the timer
                 last_callback_count = current_callbacks;
                 last_callback_check = std::time::Instant::now();
-            } else if last_callback_check.elapsed() > callback_stall_timeout
-                && frames_received > 0
+            } else if last_callback_check.elapsed() > callback_stall_timeout && frames_received > 0
             {
                 // Callbacks have stalled for too long while we have data
                 let msg = format!(
@@ -694,9 +695,7 @@ fn run_playback_thread(
                     device_name, frames_written
                 );
                 log::error!("[Playback Thread] {}", msg);
-                event_tx
-                    .send(ThreadEvent::ProcessingError(msg))
-                    .ok();
+                event_tx.send(ThreadEvent::ProcessingError(msg)).ok();
                 break;
             }
         }
@@ -733,7 +732,13 @@ fn run_playback_thread(
             log::debug!(
                 "[Playback Thread] PERIODIC: callbacks={}, effective={}Hz (expected {}Hz), \
                  buffer_fill={}%, blocked={}, dropped={}, received={}",
-                total_cb, effective_hz, sample_rate, fill, frames_blocked, frames_dropped, frames_received,
+                total_cb,
+                effective_hz,
+                sample_rate,
+                fill,
+                frames_blocked,
+                frames_dropped,
+                frames_received,
             );
             last_diagnostic_log = std::time::Instant::now();
         }
@@ -930,9 +935,7 @@ fn run_playback_thread(
                                 device_name,
                             );
                             log::error!("[Playback Thread] {}", msg);
-                            event_tx
-                                .send(ThreadEvent::ProcessingError(msg))
-                                .ok();
+                            event_tx.send(ThreadEvent::ProcessingError(msg)).ok();
                         } else {
                             log::warn!(
                                 "[Playback Thread] Drain timeout, buffer mostly empty ({}% drained), signaling completion",
@@ -980,9 +983,7 @@ fn run_playback_thread(
                                     device_name,
                                 );
                                 log::error!("[Playback Thread] {}", msg);
-                                event_tx
-                                    .send(ThreadEvent::ProcessingError(msg))
-                                    .ok();
+                                event_tx.send(ThreadEvent::ProcessingError(msg)).ok();
                             } else {
                                 log::warn!(
                                     "[Playback Thread] Drain timeout after disconnect, buffer mostly empty ({}% drained)",
@@ -1121,8 +1122,7 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     let mut available_channels: Vec<u16> = supported
         .iter()
         .filter(|c| {
-            c.min_sample_rate() <= config.sample_rate
-                && c.max_sample_rate() >= config.sample_rate
+            c.min_sample_rate() <= config.sample_rate && c.max_sample_rate() >= config.sample_rate
         })
         .map(|c| c.channels())
         .collect();
@@ -1267,8 +1267,12 @@ fn build_output_stream(
 ) -> Result<Stream, String> {
     match sample_format {
         SampleFormat::F32 => build_output_stream_f32(device, config, state, event_tx, consumer),
-        SampleFormat::I32 => build_output_stream_int::<i32>(device, config, state, event_tx, consumer),
-        SampleFormat::I16 => build_output_stream_int::<i16>(device, config, state, event_tx, consumer),
+        SampleFormat::I32 => {
+            build_output_stream_int::<i32>(device, config, state, event_tx, consumer)
+        }
+        SampleFormat::I16 => {
+            build_output_stream_int::<i16>(device, config, state, event_tx, consumer)
+        }
         _ => Err(format!("Unsupported sample format: {:?}", sample_format)),
     }
 }
@@ -1359,7 +1363,10 @@ where
                     apply_volume_clamp(&mut scratch[..chunk_len], &state_clone);
 
                     // Convert f32 -> target integer type
-                    for (out, &s) in data[offset..offset + chunk_len].iter_mut().zip(&scratch[..chunk_len]) {
+                    for (out, &s) in data[offset..offset + chunk_len]
+                        .iter_mut()
+                        .zip(&scratch[..chunk_len])
+                    {
                         *out = T::from_sample(s);
                     }
                     offset += chunk_len;

@@ -1,20 +1,21 @@
 //! Compressor Plugin UI Component
 //!
 //! Layout (3-column):
-//! +--------------------+------------------------------------------------+--------------------+
-//! | Setup              | Transfer Curve                                 | Meter              |
-//! |                    |                                                | Gain Reduction     |
-//! | Link Ch [on|off]   |                                                |                    |
-//! |                    +------------------------------------------------+--------------------+
-//! | SC HPF             | Dynamic            Timing                      | Output             |
-//! |                    | Threshold Ratio     Attack Release              | AutoGain off/on    |
-//! |                    | Knee                                            | Makeup             |
-//! |                    |                                                | Mix                |
-//! +--------------------+------------------------------------------------+--------------------+
+//! +------------------+--------------------------------------------+------------------+
+//! | SETUP            | DYNAMICS              TIMING                | OUTPUT           |
+//! |                  |                                            |                  |
+//! | [Link Ch] toggle | [Threshold] slider    [Attack] slider      | [GR Meter]       |
+//! | [SC HPF]  knob   | [Ratio]     slider    [Release] slider     | [AutoMakeup] tog |
+//! |                  | [Knee]      slider                         | [Makeup]   knob  |
+//! |                  |                                            | [Mix]      knob  |
+//! |                  | ┌─ Transfer Curve ─────────────────┐       |                  |
+//! |                  | │                                  │       |                  |
+//! |                  | └──────────────────────────────────┘       |                  |
+//! +------------------+--------------------------------------------+------------------+
 
 use super::common::{
-    render_knob, render_section_title, render_toggle,
-    render_transfer_curve_with_level, render_vertical_slider_with_ticks,
+    render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
+    render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -72,7 +73,11 @@ pub fn render_compressor_plugin(
     // Input level estimate for transfer curve indicator
     let input_level = state.data.map(|d| {
         let max_gr = d.gain_reduction_db.iter().cloned().fold(0.0_f32, f32::max) as f64;
-        if max_gr > 0.1 { state.threshold_db + max_gr } else { state.threshold_db - 6.0 }
+        if max_gr > 0.1 {
+            state.threshold_db + max_gr
+        } else {
+            state.threshold_db - 6.0
+        }
     });
 
     // === LEFT COLUMN: Setup ===
@@ -83,13 +88,28 @@ pub fn render_compressor_plugin(
         .gap_3()
         .child(render_section_title("SETUP", theme))
         .child(render_toggle(
-            entity.clone(), plugin_idx, "Link Ch", state.link_channels,
-            8, state.selected_param, state.is_editing, theme,
+            entity.clone(),
+            plugin_idx,
+            "Link Ch",
+            state.link_channels,
+            8,
+            state.selected_param,
+            state.is_editing,
+            theme,
         ))
         .child(render_knob(
-            entity.clone(), plugin_idx, "SC HPF", state.sidechain_hpf_hz,
-            SIDECHAIN_HPF_UI_MIN, SIDECHAIN_HPF_UI_MAX,
-            "Hz", 9, state.selected_param, state.is_editing, Some('s'), theme,
+            entity.clone(),
+            plugin_idx,
+            "SC HPF",
+            state.sidechain_hpf_hz,
+            SIDECHAIN_HPF_UI_MIN,
+            SIDECHAIN_HPF_UI_MAX,
+            "Hz",
+            9,
+            state.selected_param,
+            state.is_editing,
+            Some('s'),
+            theme,
         ));
 
     // === CENTER COLUMN: Transfer curve (top) + Sliders (bottom) ===
@@ -118,19 +138,49 @@ pub fn render_compressor_plugin(
                         .flex()
                         .gap_2()
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Threshold", state.threshold_db,
-                            pk(CP, "threshold").min_f64(), pk(CP, "threshold").max_f64(),
-                            "dB", 0, state.selected_param, state.is_editing, Some('t'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Threshold",
+                            state.threshold_db,
+                            pk(CP, "threshold").min_f64(),
+                            pk(CP, "threshold").max_f64(),
+                            "dB",
+                            0,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('t'),
+                            SLIDER_HEIGHT,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Ratio", state.ratio,
-                            pk(CP, "ratio").min_f64(), pk(CP, "ratio").max_f64(),
-                            ":1", 1, state.selected_param, state.is_editing, Some('r'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Ratio",
+                            state.ratio,
+                            pk(CP, "ratio").min_f64(),
+                            pk(CP, "ratio").max_f64(),
+                            ":1",
+                            1,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('r'),
+                            SLIDER_HEIGHT,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Knee", state.knee_db,
-                            pk(CP, "knee").min_f64(), pk(CP, "knee").max_f64(),
-                            "dB", 4, state.selected_param, state.is_editing, Some('k'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Knee",
+                            state.knee_db,
+                            pk(CP, "knee").min_f64(),
+                            pk(CP, "knee").max_f64(),
+                            "dB",
+                            4,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('k'),
+                            SLIDER_HEIGHT,
+                            theme,
                         )),
                 ),
         )
@@ -146,63 +196,92 @@ pub fn render_compressor_plugin(
                         .flex()
                         .gap_2()
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Attack", state.attack_ms,
-                            pk(CP, "attack").min_f64(), pk(CP, "attack").max_f64(),
-                            "ms", 2, state.selected_param, state.is_editing, Some('a'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Attack",
+                            state.attack_ms,
+                            pk(CP, "attack").min_f64(),
+                            pk(CP, "attack").max_f64(),
+                            "ms",
+                            2,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('a'),
+                            SLIDER_HEIGHT,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Release", state.release_ms,
-                            pk(CP, "release").min_f64(), pk(CP, "release").max_f64(),
-                            "ms", 3, state.selected_param, state.is_editing, Some('e'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Release",
+                            state.release_ms,
+                            pk(CP, "release").min_f64(),
+                            pk(CP, "release").max_f64(),
+                            "ms",
+                            3,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('e'),
+                            SLIDER_HEIGHT,
+                            theme,
                         )),
                 ),
         );
 
     let center_col = div()
         .flex()
-        .flex_row()
+        .flex_col()
         .flex_1()
-        .gap_4()
-        .child(transfer_curve)
-        .child(sliders);
+        .gap_3()
+        .child(sliders)
+        .child(transfer_curve);
 
-    // === RIGHT COLUMN: GR Meter (top) + Output (bottom) ===
+    // === RIGHT COLUMN: Output (GR Meter + controls) ===
     let right_col = div()
         .flex()
         .flex_col()
         .w(px(METER_WIDTH))
         .gap_3()
-        // GR Meter
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("METER", theme))
-                .child(render_gr_meter(meter_value, -30.0, theme)),
-        )
-        // Output section
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child(render_section_title("OUTPUT", theme))
-                .child(render_toggle(
-                    entity.clone(), plugin_idx, "AutoGain", state.auto_makeup,
-                    7, state.selected_param, state.is_editing, theme,
-                ))
-                .child(render_knob(
-                    entity.clone(), plugin_idx, "Makeup", state.makeup_gain_db,
-                    pk(CP, "makeup_gain").min_f64(), pk(CP, "makeup_gain").max_f64(),
-                    "dB", 5, state.selected_param, state.is_editing, Some('m'), theme,
-                ))
-                .child(render_knob(
-                    entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
-                    pk(CP, "mix").min_f64() * 100.0, pk(CP, "mix").max_f64() * 100.0,
-                    "%", 6, state.selected_param, state.is_editing, Some('x'), theme,
-                )),
-        );
+        .child(render_section_title("OUTPUT", theme))
+        .child(render_gr_meter(meter_value, -30.0, theme))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "AutoGain",
+            state.auto_makeup,
+            7,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Makeup",
+            state.makeup_gain_db,
+            pk(CP, "makeup_gain").min_f64(),
+            pk(CP, "makeup_gain").max_f64(),
+            "dB",
+            5,
+            state.selected_param,
+            state.is_editing,
+            Some('m'),
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Mix",
+            state.mix * 100.0,
+            pk(CP, "mix").min_f64() * 100.0,
+            pk(CP, "mix").max_f64() * 100.0,
+            "%",
+            6,
+            state.selected_param,
+            state.is_editing,
+            Some('x'),
+            theme,
+        ));
 
     // === Main layout: 3 columns ===
     div()

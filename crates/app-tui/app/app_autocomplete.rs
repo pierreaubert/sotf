@@ -49,7 +49,9 @@ impl App {
             // Menu is showing — check if the user has already selected a suggestion
             // (inline refresh shows the menu but doesn't set the input to a suggestion)
             let current_input = get_input(self).to_string();
-            let already_selected = self.autocomplete_suggestions.get(self.autocomplete_index)
+            let already_selected = self
+                .autocomplete_suggestions
+                .get(self.autocomplete_index)
                 .is_some_and(|s| *s == current_input);
             if already_selected {
                 // Cycle forward to next suggestion
@@ -103,10 +105,7 @@ impl App {
     }
 
     /// Handle Shift+Tab (BackTab) — cycle backward through menu.
-    pub fn zsh_backtab_complete(
-        &mut self,
-        set_input: fn(&mut Self, String),
-    ) {
+    pub fn zsh_backtab_complete(&mut self, set_input: fn(&mut Self, String)) {
         if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
             return;
         }
@@ -121,10 +120,7 @@ impl App {
 
     /// Move autocomplete selection down (next suggestion).
     /// Returns true if the event was consumed.
-    pub fn autocomplete_down(
-        &mut self,
-        set_input: fn(&mut Self, String),
-    ) -> bool {
+    pub fn autocomplete_down(&mut self, set_input: fn(&mut Self, String)) -> bool {
         if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
             return false;
         }
@@ -137,10 +133,7 @@ impl App {
 
     /// Move autocomplete selection up (previous suggestion).
     /// Returns true if the event was consumed.
-    pub fn autocomplete_up(
-        &mut self,
-        set_input: fn(&mut Self, String),
-    ) -> bool {
+    pub fn autocomplete_up(&mut self, set_input: fn(&mut Self, String)) -> bool {
         if !self.autocomplete_menu_active || self.autocomplete_suggestions.is_empty() {
             return false;
         }
@@ -274,7 +267,6 @@ impl App {
         self.autocomplete_menu_active = !self.autocomplete_suggestions.is_empty();
         self.autocomplete_index = 0;
     }
-
 }
 
 // ============================================================================

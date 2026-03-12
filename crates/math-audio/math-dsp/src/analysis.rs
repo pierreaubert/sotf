@@ -2394,7 +2394,7 @@ pub fn find_db_point(
     None
 }
 
-/// Compute the average response level in dB
+/// Compute a log-frequency weighted reference response level in dB.
 ///
 /// # Arguments
 /// * `frequencies` - Frequency points in Hz
@@ -2403,7 +2403,10 @@ pub fn find_db_point(
 ///   If None, averages over the full bandwidth.
 ///
 /// # Returns
-/// The log-frequency weighted average SPL in dB.
+/// The log-frequency weighted average in the dB domain.
+///
+/// This is intended as a stable acoustic reference level for comparison and
+/// normalization. It is not a pressure- or energy-domain average.
 pub fn compute_average_response(
     frequencies: &[f32],
     magnitude_db: &[f32],

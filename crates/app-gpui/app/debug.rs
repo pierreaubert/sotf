@@ -143,4 +143,3 @@ pub fn log_action_blocked(action_name: &str, input_mode: InputMode, reason: &str
         reason
     );
 }
-

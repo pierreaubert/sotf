@@ -109,9 +109,9 @@ impl TemplateRegistry {
 
     /// Find a template for a specific controller + plugin combination
     pub fn find(&self, controller_name: &str, plugin_type: &str) -> Option<&MappingTemplate> {
-        self.templates.iter().find(|t| {
-            t.controller_name == controller_name && t.plugin_type == plugin_type
-        })
+        self.templates
+            .iter()
+            .find(|t| t.controller_name == controller_name && t.plugin_type == plugin_type)
     }
 
     /// Get the default templates directory path
@@ -129,8 +129,7 @@ impl TemplateRegistry {
                 template.plugin_type.replace(' ', "_").to_lowercase()
             );
             let path = dir.join(filename);
-            let json = serde_json::to_string_pretty(template)
-                .map_err(std::io::Error::other)?;
+            let json = serde_json::to_string_pretty(template).map_err(std::io::Error::other)?;
             fs::write(path, json)?;
         }
         Ok(())

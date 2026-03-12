@@ -124,12 +124,7 @@ pub fn render_plugin_shell(
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(
-                            div()
-                                .text_base()
-                                .text_color(accent)
-                                .child(icon.to_string()),
-                        )
+                        .child(div().text_base().text_color(accent).child(icon.to_string()))
                         .child(
                             div()
                                 .text_sm()
@@ -155,13 +150,7 @@ pub fn render_plugin_shell(
                         .py(px(2.0))
                         .rounded_md()
                         .hover(move |s| s.bg(Theme::opacity_20pct(bypass_color)))
-                        .child(
-                            div()
-                                .w(px(8.0))
-                                .h(px(8.0))
-                                .rounded_full()
-                                .bg(bypass_color),
-                        )
+                        .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(bypass_color))
                         .child(
                             div()
                                 .text_xs()

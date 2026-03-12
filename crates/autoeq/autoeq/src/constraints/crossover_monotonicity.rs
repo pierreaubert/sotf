@@ -1,7 +1,8 @@
 //! Crossover monotonicity constraint
 //!
 //! Ensures that crossover frequencies are strictly monotonically increasing.
-//! For multi-driver systems, we have parameters: [gains, log10(xover_freqs)]
+//! For multi-driver systems, the parameter layout is:
+//!   [gains(N), delays(N), log10(xover_freqs)(N-1)]
 //! This constraint ensures: log10(xover_i) < log10(xover_i+1) for all i
 
 /// Data required for crossover monotonicity constraint
@@ -15,13 +16,13 @@ pub struct CrossoverMonotonicityConstraintData {
 
 /// Inequality constraint: crossover frequencies must be monotonically increasing
 ///
-/// For parameters x = [gain_0, ..., gain_{N-1}, log10(xover_0), ..., log10(xover_{N-2})],
+/// For parameters x = [gains(N), delays(N), log10(xover_0), ..., log10(xover_{N-2})],
 /// this constraint checks that each crossover frequency is strictly greater than the previous one.
 ///
 /// Returns the maximum violation across all pairs. Feasible when <= 0.
 ///
 /// # Arguments
-/// * `x` - Parameter vector [gains, log10_crossover_freqs]
+/// * `x` - Parameter vector [gains(N), delays(N), log10_crossover_freqs(N-1)]
 /// * `_grad` - Gradient (not computed)
 /// * `data` - Constraint configuration
 ///
@@ -35,10 +36,14 @@ pub fn constraint_crossover_monotonicity(
     let n_drivers = data.n_drivers;
     let n_xovers = n_drivers - 1;
 
-    // Crossover frequencies start after the gains
-    let xover_start = n_drivers;
+    // Single crossover has no monotonicity requirement
+    if n_xovers <= 1 {
+        return 0.0;
+    }
 
-    // Check all adjacent pairs of crossover frequencies
+    // Crossover frequencies start after gains(N) and delays(N)
+    let xover_start = 2 * n_drivers;
+
     let mut max_violation = f64::NEG_INFINITY;
 
     for i in 0..(n_xovers - 1) {
@@ -66,10 +71,9 @@ mod tests {
             min_log_separation: 0.1,
         };
 
-        // Test case: 3 drivers, 2 crossovers
-        // gains: [0.0, 0.0, 0.0]
+        // 3 drivers: gains(3) + delays(3) + crossovers(2)
         // crossovers: [2.5, 3.0] (log10 space) => [316 Hz, 1000 Hz]
-        let x = vec![0.0, 0.0, 0.0, 2.5, 3.0];
+        let x = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.5, 3.0];
 
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
@@ -87,9 +91,9 @@ mod tests {
             min_log_separation: 0.1,
         };
 
-        // Test case: 3 drivers, 2 crossovers
+        // 3 drivers: gains(3) + delays(3) + crossovers(2) in wrong order
         // crossovers: [3.0, 2.5] (log10 space) => [1000 Hz, 316 Hz] - WRONG ORDER!
-        let x = vec![0.0, 0.0, 0.0, 3.0, 2.5];
+        let x = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 2.5];
 
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
@@ -107,9 +111,9 @@ mod tests {
             min_log_separation: 0.2, // Require at least 0.2 log10 separation
         };
 
-        // Test case: crossovers too close together
+        // 3 drivers: gains(3) + delays(3) + crossovers(2) too close together
         // crossovers: [2.5, 2.6] (log10 space) => [316 Hz, 398 Hz] - only 0.1 separation
-        let x = vec![0.0, 0.0, 0.0, 2.5, 2.6];
+        let x = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.5, 2.6];
 
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
@@ -121,15 +125,34 @@ mod tests {
     }
 
     #[test]
+    fn test_two_driver_system() {
+        let mut data = CrossoverMonotonicityConstraintData {
+            n_drivers: 2,
+            min_log_separation: 0.1,
+        };
+
+        // 2 drivers: gains(2) + delays(2) + crossovers(1)
+        // Single crossover has no monotonicity requirement
+        let x = vec![0.0, 0.0, 0.0, 0.0, 2.5];
+
+        let result = constraint_crossover_monotonicity(&x, None, &mut data);
+
+        assert_eq!(
+            result, 0.0,
+            "2-driver system should return 0.0 (no violation)"
+        );
+    }
+
+    #[test]
     fn test_four_driver_system() {
         let mut data = CrossoverMonotonicityConstraintData {
             n_drivers: 4,
             min_log_separation: 0.15,
         };
 
-        // Test case: 4 drivers, 3 crossovers
+        // 4 drivers: gains(4) + delays(4) + crossovers(3)
         // crossovers: [2.5, 3.0, 3.5] (log10 space) => [316 Hz, 1000 Hz, 3162 Hz]
-        let x = vec![0.0, 0.0, 0.0, 0.0, 2.5, 3.0, 3.5];
+        let x = vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.5, 3.0, 3.5];
 
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 

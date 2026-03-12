@@ -899,12 +899,18 @@ impl PluginController {
         let json = std::fs::read_to_string(&full_path)
             .map_err(|e| format!("Could not read preset file: {}", e))?;
 
-        let settings: PluginSettings = serde_json::from_str(&json)
-            .map_err(|e| format!("Invalid preset file: {}", e))?;
+        let settings: PluginSettings =
+            serde_json::from_str(&json).map_err(|e| format!("Invalid preset file: {}", e))?;
 
         // Verify the preset is for the same plugin type by creating a temp plugin
         // and comparing types
-        let temp = Plugin { id: 0, enabled: true, settings: settings.clone(), permanent: false, suspended: false };
+        let temp = Plugin {
+            id: 0,
+            enabled: true,
+            settings: settings.clone(),
+            permanent: false,
+            suspended: false,
+        };
         let loaded_type = temp.plugin_type();
         let current_type = plugin.plugin_type();
         if loaded_type != current_type {
@@ -919,15 +925,16 @@ impl PluginController {
         self.chain.plugins_mut()[plugin_idx].settings = settings;
         self.chain.update_channel_dependent_plugins();
 
-        log::info!("Loaded plugin preset '{}' into slot {}", preset_name, plugin_idx);
+        log::info!(
+            "Loaded plugin preset '{}' into slot {}",
+            preset_name,
+            plugin_idx
+        );
         Ok(PluginUpdateEffect::Structural)
     }
 
     /// Delete a preset for a specific plugin type.
-    pub fn delete_plugin_preset(
-        plugin_type: &PluginType,
-        preset_name: &str,
-    ) -> Result<(), String> {
+    pub fn delete_plugin_preset(plugin_type: &PluginType, preset_name: &str) -> Result<(), String> {
         let dir = Self::plugin_preset_dir(plugin_type)
             .ok_or_else(|| "Could not determine config directory".to_string())?;
 
@@ -938,8 +945,7 @@ impl PluginController {
         };
         let full_path = dir.join(&filename);
 
-        std::fs::remove_file(&full_path)
-            .map_err(|e| format!("Could not delete preset: {}", e))?;
+        std::fs::remove_file(&full_path).map_err(|e| format!("Could not delete preset: {}", e))?;
 
         log::info!("Deleted plugin preset '{}'", preset_name);
         Ok(())
@@ -1172,8 +1178,7 @@ fn adjust_plugin_param(
             if let Some(filter) = filters.get_mut(filter_idx) {
                 match field_idx {
                     0 => {
-                        filter.frequency =
-                            (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
+                        filter.frequency = (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
                         true
                     }
                     1 => {

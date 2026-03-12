@@ -48,9 +48,10 @@ async fn test_footer_prev_track(_cx: &mut TestAppContext) {
     {
         let idx = *queue_index.borrow();
         if let Some(i) = idx
-            && i > 0 {
-                *queue_index.borrow_mut() = Some(i - 1);
-            }
+            && i > 0
+        {
+            *queue_index.borrow_mut() = Some(i - 1);
+        }
     }
     assert_eq!(
         *queue_index.borrow(),
@@ -63,9 +64,10 @@ async fn test_footer_prev_track(_cx: &mut TestAppContext) {
     {
         let idx = *queue_index.borrow();
         if let Some(i) = idx
-            && i > 0 {
-                *queue_index.borrow_mut() = Some(i - 1);
-            }
+            && i > 0
+        {
+            *queue_index.borrow_mut() = Some(i - 1);
+        }
     }
     assert_eq!(*queue_index.borrow(), Some(0), "Should stay at first track");
 }
@@ -80,9 +82,10 @@ async fn test_footer_next_track(_cx: &mut TestAppContext) {
     {
         let idx = *queue_index.borrow();
         if let Some(i) = idx
-            && i < queue_len - 1 {
-                *queue_index.borrow_mut() = Some(i + 1);
-            }
+            && i < queue_len - 1
+        {
+            *queue_index.borrow_mut() = Some(i + 1);
+        }
     }
     assert_eq!(
         *queue_index.borrow(),
@@ -95,9 +98,10 @@ async fn test_footer_next_track(_cx: &mut TestAppContext) {
     {
         let idx = *queue_index.borrow();
         if let Some(i) = idx
-            && i < queue_len - 1 {
-                *queue_index.borrow_mut() = Some(i + 1);
-            }
+            && i < queue_len - 1
+        {
+            *queue_index.borrow_mut() = Some(i + 1);
+        }
     }
     assert_eq!(*queue_index.borrow(), Some(4), "Should stay at last track");
 }

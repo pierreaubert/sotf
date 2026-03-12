@@ -374,7 +374,12 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 ),
                 Span::raw("  |  "),
                 Span::styled(
-                    format!("Loss: {:.4} → {:.4} (Δ {:.4})", s.pre_loss, s.post_loss, s.pre_loss - s.post_loss),
+                    format!(
+                        "Loss: {:.4} → {:.4} (Δ {:.4})",
+                        s.pre_loss,
+                        s.post_loss,
+                        s.pre_loss - s.post_loss
+                    ),
                     Style::default().fg(app.theme.accent_success),
                 ),
             ])])

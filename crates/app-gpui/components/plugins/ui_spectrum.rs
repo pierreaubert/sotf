@@ -8,7 +8,7 @@ use gpui::*;
 use gpui_ui_kit::{Select, SelectOption, SelectSize};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
-use super::common::{ParamSectionStyle, render_knob, render_section_header};
+use super::common::{render_knob, render_section_title};
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
@@ -533,272 +533,262 @@ pub struct SpectrumRenderState<'a> {
 }
 
 /// Render the Spectrum Analyzer plugin
+///
+/// Layout (3-column):
+/// +------------------+--------------------------------------------+------------------+
+/// | CONFIG           | SPECTRUM DISPLAY                           | (no output)      |
+/// |                  |                                            |                  |
+/// | [Num Bins]  knob | ┌─ Spectrum Graph ─────────────────┐       |                  |
+/// | [Min Freq]  knob | │                                  │       |                  |
+/// | [Max Freq]  knob | │                                  │       |                  |
+/// | [Smoothing] knob | └──────────────────────────────────┘       |                  |
+/// | [Tilt Corr] sel  |                                            |                  |
+/// | [Tilt Ref]  sel  |                                            |                  |
+/// +------------------+--------------------------------------------+------------------+
 pub fn render_spectrum_analyzer_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: SpectrumRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    div()
+    // === LEFT COLUMN: Config ===
+    let config_col = div()
         .flex()
         .flex_col()
-        .gap_4()
-        // Spectrum display section with axes
+        .w(px(130.0))
+        .gap_3()
+        .child(render_section_title("CONFIG", theme))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Bins",
+            state.num_bins as f64,
+            10.0,
+            100.0,
+            "",
+            0,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Min Hz",
+            state.min_freq as f64,
+            10.0,
+            1000.0,
+            "Hz",
+            1,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Max Hz",
+            state.max_freq as f64,
+            1000.0,
+            24000.0,
+            "Hz",
+            2,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Smooth",
+            state.smoothing as f64,
+            0.0,
+            1.0,
+            "",
+            3,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        // Tilt correction selector
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .param_section_style_lg(theme)
-                .child(render_section_header("SPECTRUM ANALYZER", theme))
-                // Main spectrum area with dB axis
+                .gap_1()
                 .child(
                     div()
-                        .flex()
-                        .gap_1()
-                        // dB axis (vertical, left side)
-                        .child(render_db_axis(theme))
-                        // Spectrum bars
-                        .child(
-                            div()
-                                .flex_1()
-                                .h(px(200.0))
-                                .bg(theme.surface)
-                                .rounded_lg()
-                                .border_1()
-                                .border_color(theme.border)
-                                .flex()
-                                .items_end()
-                                .gap_px()
-                                .p_2()
-                                .child(if let Some(data) = state.data {
-                                    // Use real spectrum data
-                                    let magnitudes: Arc<[f32]> =
-                                        Arc::from(data.magnitudes.as_ref().as_slice());
-                                    SpectrumElement::new(magnitudes)
-                                        .height(px(200.0))
-                                        .frequency_range(state.min_freq, state.max_freq)
-                                        .smoothing(state.smoothing)
-                                        .colors(SpectrumColors::from(&theme.spectrum_colors))
-                                        .into_any_element()
-                                } else {
-                                    // Fallback if no data available
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .size_full()
-                                        .text_color(theme.text_muted)
-                                        .child("No signal")
-                                        .into_any_element()
-                                }),
-                        ),
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child("Tilt"),
                 )
-                // Frequency axis (horizontal, below spectrum)
                 .child(
-                    div()
-                        .flex()
-                        .child(div().w(px(32.0))) // Spacer to align with dB axis
-                        .child(render_frequency_axis(state.min_freq, state.max_freq, theme)),
+                    div().w(px(100.0)).child(
+                        Select::new("tilt-correction-select")
+                            .options(vec![
+                                SelectOption::new("none".to_string(), "None"),
+                                SelectOption::new("3db".to_string(), "+3dB/oct"),
+                                SelectOption::new("6db".to_string(), "+6dB/oct"),
+                                SelectOption::new("pink".to_string(), "Pink (+3dB/oct)"),
+                            ])
+                            .selected(match state.tilt_correction {
+                                SpectralTiltCorrection::None => "none".to_string(),
+                                SpectralTiltCorrection::ThreeDbPerOctave => "3db".to_string(),
+                                SpectralTiltCorrection::SixDbPerOctave => "6db".to_string(),
+                                SpectralTiltCorrection::Pink => "pink".to_string(),
+                                SpectralTiltCorrection::Custom(_) => "none".to_string(),
+                            })
+                            .is_open(state.tilt_select_open)
+                            .size(SelectSize::Xs)
+                            .theme(theme.to_select_theme())
+                            .on_toggle({
+                                let entity = entity.clone();
+                                move |is_open, _window, cx| {
+                                    entity.update(cx, |state, cx| {
+                                        state.app.spectrum_tilt_select_open = is_open;
+                                        cx.notify();
+                                    });
+                                }
+                            })
+                            .on_change({
+                                let entity = entity.clone();
+                                move |value, _, cx| {
+                                    entity.update(cx, |state, _cx| {
+                                        let tilt = match value.as_ref() {
+                                            "3db" => SpectralTiltCorrection::ThreeDbPerOctave,
+                                            "6db" => SpectralTiltCorrection::SixDbPerOctave,
+                                            "pink" => SpectralTiltCorrection::Pink,
+                                            _ => SpectralTiltCorrection::None,
+                                        };
+                                        state.app.set_spectrum_tilt_correction(plugin_idx, tilt);
+                                    });
+                                }
+                            }),
+                    ),
                 ),
         )
-        // Controls
+        // Reference frequency selector
         .child(
             div()
                 .flex()
-                .gap_4()
-                .justify_center()
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    "Bins",
-                    state.num_bins as f64,
-                    10.0,
-                    100.0,
-                    "",
-                    0,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    "Min Hz",
-                    state.min_freq as f64,
-                    10.0,
-                    1000.0,
-                    "Hz",
-                    1,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    "Max Hz",
-                    state.max_freq as f64,
-                    1000.0,
-                    24000.0,
-                    "Hz",
-                    2,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                ))
-                .child(render_knob(
-                    entity.clone(),
-                    plugin_idx,
-                    "Smooth",
-                    state.smoothing as f64,
-                    0.0,
-                    1.0,
-                    "",
-                    3,
-                    state.selected_param,
-                    state.is_editing,
-                    None,
-                    theme,
-                )),
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child("Reference"),
+                )
+                .child(
+                    div().w(px(100.0)).child(
+                        Select::new("tilt-reference-select")
+                            .options(vec![
+                                SelectOption::new("standard".to_string(), "Standard"),
+                                SelectOption::new("1khz".to_string(), "1 kHz"),
+                                SelectOption::new("2khz".to_string(), "2 kHz"),
+                                SelectOption::new("minfreq".to_string(), "Min Freq"),
+                            ])
+                            .selected(match state.tilt_reference {
+                                TiltReferenceFreq::Standard => "standard".to_string(),
+                                TiltReferenceFreq::OneKilohertz => "1khz".to_string(),
+                                TiltReferenceFreq::TwoKilohertz => "2khz".to_string(),
+                                TiltReferenceFreq::MinFreq => "minfreq".to_string(),
+                            })
+                            .is_open(state.reference_select_open)
+                            .size(SelectSize::Xs)
+                            .theme(theme.to_select_theme())
+                            .on_toggle({
+                                let entity = entity.clone();
+                                move |is_open, _window, cx| {
+                                    entity.update(cx, |state, cx| {
+                                        state.app.spectrum_reference_select_open = is_open;
+                                        cx.notify();
+                                    });
+                                }
+                            })
+                            .on_change({
+                                let entity = entity.clone();
+                                move |value, _, cx| {
+                                    entity.update(cx, |state, _cx| {
+                                        let reference = match value.as_ref() {
+                                            "1khz" => TiltReferenceFreq::OneKilohertz,
+                                            "2khz" => TiltReferenceFreq::TwoKilohertz,
+                                            "minfreq" => TiltReferenceFreq::MinFreq,
+                                            _ => TiltReferenceFreq::Standard,
+                                        };
+                                        state
+                                            .app
+                                            .set_spectrum_tilt_reference(plugin_idx, reference);
+                                    });
+                                }
+                            }),
+                    ),
+                ),
+        );
+
+    // === CENTER COLUMN: Spectrum display ===
+    let center_col = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .gap_2()
+        .child(render_section_title("SPECTRUM DISPLAY", theme))
+        // Main spectrum area with dB axis
+        .child(
+            div().flex().gap_1().child(render_db_axis(theme)).child(
+                div()
+                    .flex_1()
+                    .h(px(200.0))
+                    .bg(theme.surface)
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(theme.border)
+                    .flex()
+                    .items_end()
+                    .gap_px()
+                    .p_2()
+                    .child(if let Some(data) = state.data {
+                        let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
+                        SpectrumElement::new(magnitudes)
+                            .height(px(200.0))
+                            .frequency_range(state.min_freq, state.max_freq)
+                            .smoothing(state.smoothing)
+                            .colors(SpectrumColors::from(&theme.spectrum_colors))
+                            .into_any_element()
+                    } else {
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_full()
+                            .text_color(theme.text_muted)
+                            .child("No signal")
+                            .into_any_element()
+                    }),
+            ),
         )
-        // Tilt correction controls
+        // Frequency axis
         .child(
             div()
                 .flex()
-                .gap_4()
-                .justify_center()
-                .items_center()
-                // Tilt correction selector
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_secondary)
-                                .child("Tilt"),
-                        )
-                        .child(
-                            div().w(px(80.0)).child(
-                                Select::new("tilt-correction-select")
-                                    .options(vec![
-                                        SelectOption::new("none".to_string(), "None"),
-                                        SelectOption::new("3db".to_string(), "+3dB/oct"),
-                                        SelectOption::new("6db".to_string(), "+6dB/oct"),
-                                        SelectOption::new("pink".to_string(), "Pink (+3dB/oct)"),
-                                    ])
-                                    .selected(match state.tilt_correction {
-                                        SpectralTiltCorrection::None => "none".to_string(),
-                                        SpectralTiltCorrection::ThreeDbPerOctave => {
-                                            "3db".to_string()
-                                        }
-                                        SpectralTiltCorrection::SixDbPerOctave => "6db".to_string(),
-                                        SpectralTiltCorrection::Pink => "pink".to_string(),
-                                        SpectralTiltCorrection::Custom(_) => "none".to_string(),
-                                    })
-                                    .is_open(state.tilt_select_open)
-                                    .size(SelectSize::Xs)
-                                    .theme(theme.to_select_theme())
-                                    .on_toggle({
-                                        let entity = entity.clone();
-                                        move |is_open, _window, cx| {
-                                            entity.update(cx, |state, cx| {
-                                                state.app.spectrum_tilt_select_open = is_open;
-                                                cx.notify();
-                                            });
-                                        }
-                                    })
-                                    .on_change({
-                                        let entity = entity.clone();
-                                        move |value, _, cx| {
-                                            entity.update(cx, |state, _cx| {
-                                                let tilt = match value.as_ref() {
-                                                    "3db" => {
-                                                        SpectralTiltCorrection::ThreeDbPerOctave
-                                                    }
-                                                    "6db" => SpectralTiltCorrection::SixDbPerOctave,
-                                                    "pink" => SpectralTiltCorrection::Pink,
-                                                    _ => SpectralTiltCorrection::None,
-                                                };
-                                                state
-                                                    .app
-                                                    .set_spectrum_tilt_correction(plugin_idx, tilt);
-                                            });
-                                        }
-                                    }),
-                            ),
-                        ),
-                )
-                // Reference frequency selector
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_secondary)
-                                .child("Reference"),
-                        )
-                        .child(
-                            div().w(px(90.0)).child(
-                                Select::new("tilt-reference-select")
-                                    .options(vec![
-                                        SelectOption::new("standard".to_string(), "Standard"),
-                                        SelectOption::new("1khz".to_string(), "1 kHz"),
-                                        SelectOption::new("2khz".to_string(), "2 kHz"),
-                                        SelectOption::new("minfreq".to_string(), "Min Freq"),
-                                    ])
-                                    .selected(match state.tilt_reference {
-                                        TiltReferenceFreq::Standard => "standard".to_string(),
-                                        TiltReferenceFreq::OneKilohertz => "1khz".to_string(),
-                                        TiltReferenceFreq::TwoKilohertz => "2khz".to_string(),
-                                        TiltReferenceFreq::MinFreq => "minfreq".to_string(),
-                                    })
-                                    .is_open(state.reference_select_open)
-                                    .size(SelectSize::Xs)
-                                    .theme(theme.to_select_theme())
-                                    .on_toggle({
-                                        let entity = entity.clone();
-                                        move |is_open, _window, cx| {
-                                            entity.update(cx, |state, cx| {
-                                                state.app.spectrum_reference_select_open = is_open;
-                                                cx.notify();
-                                            });
-                                        }
-                                    })
-                                    .on_change({
-                                        let entity = entity.clone();
-                                        move |value, _, cx| {
-                                            entity.update(cx, |state, _cx| {
-                                                let reference = match value.as_ref() {
-                                                    "1khz" => TiltReferenceFreq::OneKilohertz,
-                                                    "2khz" => TiltReferenceFreq::TwoKilohertz,
-                                                    "minfreq" => TiltReferenceFreq::MinFreq,
-                                                    _ => TiltReferenceFreq::Standard,
-                                                };
-                                                state.app.set_spectrum_tilt_reference(
-                                                    plugin_idx, reference,
-                                                );
-                                            });
-                                        }
-                                    }),
-                            ),
-                        ),
-                ),
-        )
-    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+                .child(div().w(px(32.0)))
+                .child(render_frequency_axis(state.min_freq, state.max_freq, theme)),
+        );
+
+    // === Main layout: 3 columns ===
+    div()
+        .flex()
+        .gap_4()
+        .p_3()
+        .w_full()
+        .child(config_col)
+        .child(center_col)
 }
 
 impl PlayerView {

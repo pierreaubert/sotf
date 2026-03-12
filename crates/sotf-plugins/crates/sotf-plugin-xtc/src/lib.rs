@@ -1114,10 +1114,9 @@ impl Plugin for XtcPlugin {
         }
 
         // Measure input loudness for auto-gain (before any processing)
-        if do_measure
-            && let Some(ag) = &mut self.auto_gain {
-                let _ = ag.measure_input(input);
-            }
+        if do_measure && let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_input(input);
+        }
 
         // Bypass if disabled
         if !self.params.enabled {

@@ -837,7 +837,6 @@ impl PlayerView {
                     };
 
                     // Build the speaker row content
-                    
 
                     if is_multi {
                         // Multi mode: show header row + channel list below
@@ -918,9 +917,9 @@ impl PlayerView {
                                                     .get_mut(speaker_idx)
                                                     && let Some(ch) =
                                                         m.interface_channels.get_mut(0)
-                                                    {
-                                                        *ch = (value as usize).saturating_sub(1);
-                                                    }
+                                                {
+                                                    *ch = (value as usize).saturating_sub(1);
+                                                }
                                                 // Sync total channel count
                                                 state
                                                     .app
@@ -1097,9 +1096,9 @@ impl PlayerView {
                                                     .get_mut(speaker_idx)
                                                     && let Some(ch) =
                                                         mapping.interface_channels.get_mut(ch_idx)
-                                                    {
-                                                        *ch = (value as usize).saturating_sub(1);
-                                                    }
+                                                {
+                                                    *ch = (value as usize).saturating_sub(1);
+                                                }
                                             });
                                             cx.notify();
                                         });
