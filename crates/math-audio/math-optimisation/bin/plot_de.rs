@@ -281,10 +281,7 @@ fn read_csv_trace(csv_path: &str) -> Result<OptimizationTrace, Box<dyn std::erro
 }
 
 fn find_csv_for_function(csv_dir: &str, function_name: &str) -> Vec<String> {
-    math_audio_optimisation::function_registry::find_csv_files_for_function(
-        csv_dir,
-        function_name,
-    )
+    math_audio_optimisation::function_registry::find_csv_files_for_function(csv_dir, function_name)
 }
 
 fn add_optimization_trace(

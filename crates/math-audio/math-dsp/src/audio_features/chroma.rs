@@ -4,7 +4,7 @@
 //! Computes 13 interval/triad features from the chromagram.
 
 use super::utils::{hz_to_octs_inplace, normalize, stft};
-use ndarray::{arr1, arr2, s, Array, Array1, Array2, Axis, Zip};
+use ndarray::{Array, Array1, Array2, Axis, Zip, arr1, arr2, s};
 
 const WINDOW_SIZE: usize = 8192;
 const MAX_VALUE: f32 = 1.0;
@@ -28,10 +28,7 @@ impl std::error::Error for ChromaError {}
 /// Compute 13 chroma interval features from the full song samples.
 ///
 /// Returns a Vec of 13 normalized features (6 interval classes + 4 triads + 2 L2 norms + 1 ratio).
-pub fn compute_chroma_features(
-    samples: &[f32],
-    sample_rate: u32,
-) -> Result<Vec<f32>, ChromaError> {
+pub fn compute_chroma_features(samples: &[f32], sample_rate: u32) -> Result<Vec<f32>, ChromaError> {
     let n_chroma = 12u32;
 
     let mut spectrum = stft(samples, WINDOW_SIZE, 2205);
@@ -90,9 +87,7 @@ fn chroma_interval_features(chroma: &Array2<f64>) -> Result<Array1<f64>, ChromaE
     ]);
     let interval_feature_matrix = extract_interval_features(&chroma, &templates);
     interval_feature_matrix.mean_axis(Axis(1)).ok_or_else(|| {
-        ChromaError(
-            "Tried to run chroma on empty array. Need at least one sample.".to_string(),
-        )
+        ChromaError("Tried to run chroma on empty array. Need at least one sample.".to_string())
     })
 }
 
@@ -149,13 +144,8 @@ fn chroma_filter(
 
     let mut binwidth_bins = Array::ones(freq_bins.raw_dim());
     binwidth_bins.slice_mut(s![0..freq_bins.len() - 1]).assign(
-        &(&freq_bins.slice(s![1..]) - &freq_bins.slice(s![..-1])).mapv(|x| {
-            if x <= 1. {
-                1.
-            } else {
-                x
-            }
-        }),
+        &(&freq_bins.slice(s![1..]) - &freq_bins.slice(s![..-1]))
+            .mapv(|x| if x <= 1. { 1. } else { x }),
     );
 
     let mut d: Array2<f64> = Array::zeros((n_chroma as usize, freq_bins.len()));
@@ -206,7 +196,10 @@ fn pip_track(
 
     let length = spectrum.len_of(Axis(0));
 
-    let freq_mask: Vec<bool> = fft_freqs.iter().map(|&f| (fmin <= f) && (f < fmax)).collect();
+    let freq_mask: Vec<bool> = fft_freqs
+        .iter()
+        .map(|&f| (fmin <= f) && (f < fmax))
+        .collect();
 
     let ref_value = spectrum.map_axis(Axis(0), |x| {
         let first: f64 = *x.first().expect("empty spectrum axis");
@@ -238,9 +231,7 @@ fn pip_track(
                 shift += 1.;
             }
             shift = avg / shift;
-            pitches.push(
-                ((i + beginning + 1) as f64 + shift) * sample_rate_float / n_fft as f64,
-            );
+            pitches.push(((i + beginning + 1) as f64 + shift) * sample_rate_float / n_fft as f64);
             mags.push(elem + 0.5 * avg * shift);
         }
     });
@@ -348,9 +339,7 @@ mod tests {
         let duration = 5.0;
         let n = (sr as f32 * duration) as usize;
         let signal: Vec<f32> = (0..n)
-            .map(|i| {
-                (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin()
-            })
+            .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sr as f32).sin())
             .collect();
 
         let features = compute_chroma_features(&signal, sr).unwrap();

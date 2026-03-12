@@ -1,7 +1,5 @@
 use clap::{Arg, Command};
-use math_audio_optimisation::{
-    DEConfigBuilder, Strategy, run_recorded_differential_evolution,
-};
+use math_audio_optimisation::{DEConfigBuilder, Strategy, run_recorded_differential_evolution};
 use math_audio_test_functions::*;
 use ndarray::Array1;
 use std::collections::HashMap;

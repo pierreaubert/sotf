@@ -3,9 +3,9 @@
 //! Ported from bliss-audio utils.rs — pure Rust implementations of
 //! mean, geometric mean, normalization, zero-crossing, STFT, etc.
 
-use ndarray::{arr1, s, Array, Array1, Array2};
-use rustfft::num_complex::Complex;
+use ndarray::{Array, Array1, Array2, arr1, s};
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use std::f32::consts::PI;
 
 /// Normalize a value from [min, max] to [-1, 1].
@@ -131,13 +131,23 @@ pub fn convolve(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
     if !common_length.is_multiple_of(2) {
         common_length -= 1;
     }
-    let mut padded_input =
-        Array::from_elem(common_length, Complex { re: 0.0_f64, im: 0.0 });
+    let mut padded_input = Array::from_elem(
+        common_length,
+        Complex {
+            re: 0.0_f64,
+            im: 0.0,
+        },
+    );
     padded_input
         .slice_mut(s![..input.len()])
         .assign(&input.mapv(|x| Complex::new(x, 0.)));
-    let mut padded_kernel =
-        Array::from_elem(common_length, Complex { re: 0.0_f64, im: 0.0 });
+    let mut padded_kernel = Array::from_elem(
+        common_length,
+        Complex {
+            re: 0.0_f64,
+            im: 0.0,
+        },
+    );
     padded_kernel
         .slice_mut(s![..kernel.len()])
         .assign(&kernel.mapv(|x| Complex::new(x, 0.)));

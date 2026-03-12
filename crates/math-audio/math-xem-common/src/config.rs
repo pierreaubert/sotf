@@ -233,7 +233,6 @@ pub enum DirectivityConfig {
     },
 }
 
-
 impl DirectivityConfig {
     /// Convert to Directivity
     pub fn to_directivity(&self) -> Result<Directivity, String> {
