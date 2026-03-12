@@ -1,6 +1,8 @@
 {
         let mut form = VStack::new().spacing(StackSpacing::Lg);
         let base_id = id.clone();
+        let is_narrow_layout = is_narrow_default_layout(available_width);
+        let is_single_column_grid = is_single_column_default_grid(available_width);
 
         // ========================================
         // Goals & Configuration Section
@@ -244,12 +246,18 @@
                         fir_phase_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
                 }
 
-                eq_design_content = eq_design_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
+                eq_design_content = if is_narrow_layout {
+                    eq_design_content
                         .child(fir_taps_input)
-                        .child(fir_phase_select),
-                );
+                        .child(fir_phase_select)
+                } else {
+                    eq_design_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(fir_taps_input)
+                            .child(fir_phase_select),
+                    )
+                };
             }
 
             // Mixed mode config (only when mode is "mixed")
@@ -371,12 +379,18 @@
                             .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                     }
 
-                    eq_design_content = eq_design_content.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
+                    eq_design_content = if is_narrow_layout {
+                        eq_design_content
                             .child(num_filters_input)
-                            .child(sample_rate_input),
-                    );
+                            .child(sample_rate_input)
+                    } else {
+                        eq_design_content.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(num_filters_input)
+                                .child(sample_rate_input),
+                        )
+                    };
                 }
             } else if !hide_sample_rate {
                 // FIR only - just show sample rate
@@ -440,12 +454,16 @@
                 max_db_input = max_db_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            eq_design_content = eq_design_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(min_db_input)
-                    .child(max_db_input),
-            );
+            eq_design_content = if is_narrow_layout {
+                eq_design_content.child(min_db_input).child(max_db_input)
+            } else {
+                eq_design_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(min_db_input)
+                        .child(max_db_input),
+                )
+            };
 
             // Q Range row (IIR only)
             if is_iir {
@@ -483,12 +501,16 @@
                     max_q_input = max_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                eq_design_content = eq_design_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(min_q_input)
-                        .child(max_q_input),
-                );
+                eq_design_content = if is_narrow_layout {
+                    eq_design_content.child(min_q_input).child(max_q_input)
+                } else {
+                    eq_design_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(min_q_input)
+                            .child(max_q_input),
+                    )
+                };
             }
 
             // Frequency Range row
@@ -526,12 +548,16 @@
                 max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            eq_design_content = eq_design_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(min_freq_input)
-                    .child(max_freq_input),
-            );
+            eq_design_content = if is_narrow_layout {
+                eq_design_content.child(min_freq_input).child(max_freq_input)
+            } else {
+                eq_design_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(min_freq_input)
+                        .child(max_freq_input),
+                )
+            };
 
             // PEQ Model dropdown (IIR only)
             if is_iir {
@@ -602,12 +628,18 @@
                             min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    eq_design_content = eq_design_content.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
+                    eq_design_content = if is_narrow_layout {
+                        eq_design_content
                             .child(spacing_weight_input)
-                            .child(min_spacing_oct_input),
-                    );
+                            .child(min_spacing_oct_input)
+                    } else {
+                        eq_design_content.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(spacing_weight_input)
+                                .child(min_spacing_oct_input),
+                        )
+                    };
                 }
             }
 
@@ -700,12 +732,18 @@
                     maxeval_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
             }
 
-            opt_tuning_content = opt_tuning_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
+            opt_tuning_content = if is_narrow_layout {
+                opt_tuning_content
                     .child(population_input)
-                    .child(maxeval_input),
-            );
+                    .child(maxeval_input)
+            } else {
+                opt_tuning_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(population_input)
+                        .child(maxeval_input),
+                )
+            };
 
             // Tolerance row (hidden in some contexts)
             if !hide_tolerance {
@@ -743,12 +781,18 @@
                     atolerance_input = atolerance_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                opt_tuning_content = opt_tuning_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
+                opt_tuning_content = if is_narrow_layout {
+                    opt_tuning_content
                         .child(tolerance_input)
-                        .child(atolerance_input),
-                );
+                        .child(atolerance_input)
+                } else {
+                    opt_tuning_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(tolerance_input)
+                            .child(atolerance_input),
+                    )
+                };
             }
 
             // DE-specific settings (only show when DE algorithm selected and not hidden)
@@ -821,12 +865,16 @@
                         de_cr_input = de_cr_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    opt_tuning_content = opt_tuning_content.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(de_f_input)
-                            .child(de_cr_input),
-                    );
+                    opt_tuning_content = if is_narrow_layout {
+                        opt_tuning_content.child(de_f_input).child(de_cr_input)
+                    } else {
+                        opt_tuning_content.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(de_f_input)
+                                .child(de_cr_input),
+                        )
+                    };
                 }
             }
 
@@ -1936,19 +1984,23 @@
             grid_cards.push(Card::new().content(v2_content).into_any_element());
         }
 
-        // Lay out grid cards 2-per-row
-        let mut grid_iter = grid_cards.into_iter();
-        while let Some(first) = grid_iter.next() {
-            if let Some(second) = grid_iter.next() {
-                form = form.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Lg)
-                        .child(div().flex_1().child(first))
-                        .child(div().flex_1().child(second)),
-                );
-            } else {
-                // Odd card: span full width
-                form = form.child(first);
+        // Lay out grid cards responsively
+        if is_single_column_grid {
+            for card in grid_cards {
+                form = form.child(div().w_full().child(card));
+            }
+        } else {
+            let mut grid_iter = grid_cards.into_iter();
+            while let Some(first_card) = grid_iter.next() {
+                let second_card = grid_iter.next();
+                let mut row = HStack::new().spacing(StackSpacing::Lg);
+                row = row.child(div().flex_1().child(first_card));
+                if let Some(second_card) = second_card {
+                    row = row.child(div().flex_1().child(second_card));
+                } else {
+                    row = row.child(div().flex_1());
+                }
+                form = form.child(row);
             }
         }
 

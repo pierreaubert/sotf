@@ -20,7 +20,10 @@ use gpui_ui_kit::toggle::{Toggle, ToggleSize, ToggleTheme};
 
 use crate::config::ParamLimits;
 use crate::constants::*;
-use crate::form::{AutoEqForm, AutoEqLayoutMode};
+use crate::form::{
+    AutoEqForm, AutoEqLayoutMode, is_narrow_default_layout, is_narrow_room_eq_layout,
+    is_single_column_default_grid,
+};
 use crate::theme::AutoEqFormTheme;
 
 impl RenderOnce for AutoEqForm {

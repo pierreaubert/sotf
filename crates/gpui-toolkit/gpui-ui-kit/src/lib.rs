@@ -53,10 +53,12 @@ pub mod audio;
 pub mod avatar;
 pub mod badge;
 pub mod empty_state;
+pub mod image_view;
 pub mod keyboard_shortcut_label;
 pub mod progress;
 pub mod qr;
 pub mod spinner;
+pub mod step_indicator;
 pub mod table;
 pub mod text;
 
@@ -71,10 +73,21 @@ pub mod breadcrumbs;
 pub mod wizard;
 
 // Layout
+pub mod loading_overlay;
 pub mod pane_divider;
+pub mod settings_form;
 pub mod sidebar;
+pub mod split_pane;
 pub mod stack;
 pub mod status_bar;
+
+// Tier 3 components
+pub mod command_palette;
+pub mod drag_list;
+pub mod notification;
+pub mod tag;
+pub mod toolbar;
+pub mod tree_view;
 
 // Workflow canvas
 pub mod workflow;
@@ -135,10 +148,14 @@ pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
 pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};
 pub use badge::{Badge, BadgeDot, BadgeSize, BadgeVariant};
 pub use empty_state::EmptyState;
+pub use image_view::{ImageFit, ImageView, ImageViewTheme};
 pub use keyboard_shortcut_label::{KeyboardShortcutLabel, KeyboardShortcutSize};
 pub use progress::{CircularProgress, Progress, ProgressSize, ProgressVariant};
 pub use qr::QrCode;
 pub use spinner::{LoadingDots, Spinner, SpinnerSize};
+pub use step_indicator::{
+    StepIndicator, StepIndicatorSize, StepIndicatorTheme, StepItem, StepItemStatus, StepOrientation,
+};
 pub use table::{
     Column, PaginationState, SelectionMode, SortDirection, SortState, Table, TableTheme,
 };
@@ -149,8 +166,11 @@ pub use search_bar::{SearchBar, SearchBarSize, SearchBarTheme};
 pub use tooltip::{Tooltip, TooltipPlacement, WithTooltip};
 
 // Layout
+pub use loading_overlay::{LoadingOverlay, LoadingOverlayTheme};
 pub use pane_divider::{CollapseDirection, PaneDivider, PaneDividerTheme};
+pub use settings_form::{SettingsForm, SettingsFormTheme, SettingsRow};
 pub use sidebar::{Sidebar, SidebarSide, SidebarSlotFactory, SidebarTheme};
+pub use split_pane::{SplitDirection, SplitPane, SplitPaneTheme};
 pub use stack::{
     Divider, HStack, Spacer, StackAlign, StackJustify, StackOverflow, StackSize, StackSpacing,
     VStack,
@@ -182,6 +202,14 @@ pub use workflow::{
     NodeContent, NodeId, Port, PortDirection, Position, SelectionState, ViewportState,
     WorkflowCanvas, WorkflowGraph, WorkflowNode, WorkflowNodeData, WorkflowTheme,
 };
+
+// Tier 3 components
+pub use command_palette::{CommandItem, CommandPalette, CommandPaletteTheme};
+pub use drag_list::{DragItem, DragList, DragListOrientation, DragListTheme};
+pub use notification::{Notification, NotificationTheme, NotificationVariant};
+pub use tag::{Tag, TagSize, TagTheme, TagVariant};
+pub use toolbar::{Toolbar, ToolbarItem, ToolbarTheme};
+pub use tree_view::{TreeNode, TreeView, TreeViewTheme};
 
 // Shared size definitions
 pub use size::ComponentSize;

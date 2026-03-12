@@ -57,6 +57,17 @@ pub enum ShowcaseSection {
     KeyboardShortcut,
     EmptyState,
     ConfirmDialog,
+    SplitPane,
+    ImageView,
+    SettingsForm,
+    StepIndicator,
+    LoadingOverlay,
+    Tag,
+    Toolbar,
+    Notification,
+    TreeView,
+    DragList,
+    CommandPalette,
 }
 
 impl ShowcaseSection {
@@ -93,6 +104,17 @@ impl ShowcaseSection {
             ShowcaseSection::KeyboardShortcut,
             ShowcaseSection::EmptyState,
             ShowcaseSection::ConfirmDialog,
+            ShowcaseSection::SplitPane,
+            ShowcaseSection::ImageView,
+            ShowcaseSection::SettingsForm,
+            ShowcaseSection::StepIndicator,
+            ShowcaseSection::LoadingOverlay,
+            ShowcaseSection::Tag,
+            ShowcaseSection::Toolbar,
+            ShowcaseSection::Notification,
+            ShowcaseSection::TreeView,
+            ShowcaseSection::DragList,
+            ShowcaseSection::CommandPalette,
         ]
     }
 
@@ -129,6 +151,17 @@ impl ShowcaseSection {
             ShowcaseSection::KeyboardShortcut => "Keyboard Shortcuts",
             ShowcaseSection::EmptyState => "Empty State",
             ShowcaseSection::ConfirmDialog => "Confirm Dialog",
+            ShowcaseSection::SplitPane => "Split Pane",
+            ShowcaseSection::ImageView => "Image View",
+            ShowcaseSection::SettingsForm => "Settings Form",
+            ShowcaseSection::StepIndicator => "Step Indicator",
+            ShowcaseSection::LoadingOverlay => "Loading Overlay",
+            ShowcaseSection::Tag => "Tag",
+            ShowcaseSection::Toolbar => "Toolbar",
+            ShowcaseSection::Notification => "Notification",
+            ShowcaseSection::TreeView => "Tree View",
+            ShowcaseSection::DragList => "Drag List",
+            ShowcaseSection::CommandPalette => "Command Palette",
         }
     }
 
@@ -165,6 +198,17 @@ impl ShowcaseSection {
             ShowcaseSection::KeyboardShortcut => "#",
             ShowcaseSection::EmptyState => "0",
             ShowcaseSection::ConfirmDialog => "!",
+            ShowcaseSection::SplitPane => "||",
+            ShowcaseSection::ImageView => "[]",
+            ShowcaseSection::SettingsForm => "=",
+            ShowcaseSection::StepIndicator => "1.",
+            ShowcaseSection::LoadingOverlay => "...",
+            ShowcaseSection::Tag => "@",
+            ShowcaseSection::Toolbar => "=|",
+            ShowcaseSection::Notification => "~",
+            ShowcaseSection::TreeView => "/",
+            ShowcaseSection::DragList => "::",
+            ShowcaseSection::CommandPalette => ">",
         }
     }
 }
@@ -475,6 +519,27 @@ impl Render for Showcase {
             ShowcaseSection::ConfirmDialog => {
                 self.render_confirm_dialog_section(cx).into_any_element()
             }
+            ShowcaseSection::SplitPane => self.render_split_pane_section(cx).into_any_element(),
+            ShowcaseSection::ImageView => self.render_image_view_section(cx).into_any_element(),
+            ShowcaseSection::SettingsForm => {
+                self.render_settings_form_section(cx).into_any_element()
+            }
+            ShowcaseSection::StepIndicator => {
+                self.render_step_indicator_section(cx).into_any_element()
+            }
+            ShowcaseSection::LoadingOverlay => {
+                self.render_loading_overlay_section(cx).into_any_element()
+            }
+            ShowcaseSection::Tag => self.render_tag_section(cx).into_any_element(),
+            ShowcaseSection::Toolbar => self.render_toolbar_section(cx).into_any_element(),
+            ShowcaseSection::Notification => {
+                self.render_notification_section(cx).into_any_element()
+            }
+            ShowcaseSection::TreeView => self.render_tree_view_section(cx).into_any_element(),
+            ShowcaseSection::DragList => self.render_drag_list_section(cx).into_any_element(),
+            ShowcaseSection::CommandPalette => {
+                self.render_command_palette_section(cx).into_any_element()
+            }
         };
 
         div()
@@ -660,6 +725,17 @@ include!("includes/render_search_bar.inc.rs");
 include!("includes/render_keyboard_shortcut.inc.rs");
 include!("includes/render_empty_state.inc.rs");
 include!("includes/render_confirm_dialog.inc.rs");
+include!("includes/render_split_pane.inc.rs");
+include!("includes/render_image_view.inc.rs");
+include!("includes/render_settings_form.inc.rs");
+include!("includes/render_step_indicator.inc.rs");
+include!("includes/render_loading_overlay.inc.rs");
+include!("includes/render_tag.inc.rs");
+include!("includes/render_toolbar.inc.rs");
+include!("includes/render_notification.inc.rs");
+include!("includes/render_tree_view.inc.rs");
+include!("includes/render_drag_list.inc.rs");
+include!("includes/render_command_palette.inc.rs");
 
 fn main() {
     MiniApp::run(

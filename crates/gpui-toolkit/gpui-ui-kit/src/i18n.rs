@@ -117,6 +117,17 @@ pub enum TranslationKey {
     SectionKeyboardShortcut,
     SectionEmptyState,
     SectionConfirmDialog,
+    SectionSplitPane,
+    SectionImageView,
+    SectionSettingsForm,
+    SectionStepIndicator,
+    SectionLoadingOverlay,
+    SectionTag,
+    SectionToolbar,
+    SectionNotification,
+    SectionTreeView,
+    SectionDragList,
+    SectionCommandPalette,
 
     // Component labels
     LabelVariants,
@@ -239,6 +250,17 @@ impl Translations {
         t.insert((L, SectionKeyboardShortcut), "Keyboard Shortcuts");
         t.insert((L, SectionEmptyState), "Empty State");
         t.insert((L, SectionConfirmDialog), "Confirm Dialog");
+        t.insert((L, SectionSplitPane), "Split Pane");
+        t.insert((L, SectionImageView), "Image View");
+        t.insert((L, SectionSettingsForm), "Settings Form");
+        t.insert((L, SectionStepIndicator), "Step Indicator");
+        t.insert((L, SectionLoadingOverlay), "Loading Overlay");
+        t.insert((L, SectionTag), "Tag");
+        t.insert((L, SectionToolbar), "Toolbar");
+        t.insert((L, SectionNotification), "Notification");
+        t.insert((L, SectionTreeView), "Tree View");
+        t.insert((L, SectionDragList), "Drag List");
+        t.insert((L, SectionCommandPalette), "Command Palette");
 
         // Labels
         t.insert((L, LabelVariants), "Variants");
@@ -349,6 +371,17 @@ impl Translations {
         t.insert((L, SectionKeyboardShortcut), "Raccourcis clavier");
         t.insert((L, SectionEmptyState), "Etat vide");
         t.insert((L, SectionConfirmDialog), "Dialogue de confirmation");
+        t.insert((L, SectionSplitPane), "Panneau divise");
+        t.insert((L, SectionImageView), "Vue image");
+        t.insert((L, SectionSettingsForm), "Formulaire de parametres");
+        t.insert((L, SectionStepIndicator), "Indicateur d'etapes");
+        t.insert((L, SectionLoadingOverlay), "Ecran de chargement");
+        t.insert((L, SectionTag), "Etiquette");
+        t.insert((L, SectionToolbar), "Barre d'outils");
+        t.insert((L, SectionNotification), "Notification");
+        t.insert((L, SectionTreeView), "Vue arborescente");
+        t.insert((L, SectionDragList), "Liste glissable");
+        t.insert((L, SectionCommandPalette), "Palette de commandes");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -459,6 +492,17 @@ impl Translations {
         t.insert((L, SectionKeyboardShortcut), "Tastenkurzel");
         t.insert((L, SectionEmptyState), "Leerer Zustand");
         t.insert((L, SectionConfirmDialog), "Bestatigungsdialog");
+        t.insert((L, SectionSplitPane), "Geteiltes Fenster");
+        t.insert((L, SectionImageView), "Bildansicht");
+        t.insert((L, SectionSettingsForm), "Einstellungsformular");
+        t.insert((L, SectionStepIndicator), "Schrittanzeige");
+        t.insert((L, SectionLoadingOverlay), "Ladebildschirm");
+        t.insert((L, SectionTag), "Schlagwort");
+        t.insert((L, SectionToolbar), "Symbolleiste");
+        t.insert((L, SectionNotification), "Benachrichtigung");
+        t.insert((L, SectionTreeView), "Baumansicht");
+        t.insert((L, SectionDragList), "Zieh-Liste");
+        t.insert((L, SectionCommandPalette), "Befehlspalette");
 
         // Labels
         t.insert((L, LabelVariants), "Varianten");
@@ -569,6 +613,17 @@ impl Translations {
         t.insert((L, SectionKeyboardShortcut), "Atajos de teclado");
         t.insert((L, SectionEmptyState), "Estado vacio");
         t.insert((L, SectionConfirmDialog), "Dialogo de confirmacion");
+        t.insert((L, SectionSplitPane), "Panel dividido");
+        t.insert((L, SectionImageView), "Vista de imagen");
+        t.insert((L, SectionSettingsForm), "Formulario de ajustes");
+        t.insert((L, SectionStepIndicator), "Indicador de pasos");
+        t.insert((L, SectionLoadingOverlay), "Pantalla de carga");
+        t.insert((L, SectionTag), "Etiqueta");
+        t.insert((L, SectionToolbar), "Barra de herramientas");
+        t.insert((L, SectionNotification), "Notificacion");
+        t.insert((L, SectionTreeView), "Vista de arbol");
+        t.insert((L, SectionDragList), "Lista arrastrable");
+        t.insert((L, SectionCommandPalette), "Paleta de comandos");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -679,6 +734,17 @@ impl Translations {
         t.insert((L, SectionKeyboardShortcut), "キーボードショートカット");
         t.insert((L, SectionEmptyState), "空の状態");
         t.insert((L, SectionConfirmDialog), "確認ダイアログ");
+        t.insert((L, SectionSplitPane), "分割パネル");
+        t.insert((L, SectionImageView), "画像ビュー");
+        t.insert((L, SectionSettingsForm), "設定フォーム");
+        t.insert((L, SectionStepIndicator), "ステップインジケーター");
+        t.insert((L, SectionLoadingOverlay), "ローディングオーバーレイ");
+        t.insert((L, SectionTag), "タグ");
+        t.insert((L, SectionToolbar), "ツールバー");
+        t.insert((L, SectionNotification), "通知");
+        t.insert((L, SectionTreeView), "ツリービュー");
+        t.insert((L, SectionDragList), "ドラッグリスト");
+        t.insert((L, SectionCommandPalette), "コマンドパレット");
 
         // Labels
         t.insert((L, LabelVariants), "バリエーション");

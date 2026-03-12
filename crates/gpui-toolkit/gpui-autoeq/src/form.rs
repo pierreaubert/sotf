@@ -28,6 +28,18 @@ pub enum AutoEqLayoutMode {
     RoomEq,
 }
 
+pub(crate) fn is_narrow_default_layout(available_width: f32) -> bool {
+    available_width > 0.0 && available_width < 720.0
+}
+
+pub(crate) fn is_single_column_default_grid(available_width: f32) -> bool {
+    available_width > 0.0 && available_width < 980.0
+}
+
+pub(crate) fn is_narrow_room_eq_layout(available_width: f32) -> bool {
+    available_width > 0.0 && available_width <= 700.0
+}
+
 /// A reusable form for AutoEQ optimization parameters.
 ///
 /// Renders three sections:
@@ -414,7 +426,6 @@ impl AutoEqForm {
         self.layout_mode = mode;
         self
     }
-
     // EQ Design callbacks
 
     /// Set optim mode change handler
@@ -1137,5 +1148,33 @@ impl AutoEqForm {
     ) -> Self {
         self.on_mixed_fir_band_toggle = Some(Box::new(handler));
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        is_narrow_default_layout, is_narrow_room_eq_layout, is_single_column_default_grid,
+    };
+
+    #[test]
+    fn test_is_narrow_default_layout() {
+        assert!(!is_narrow_default_layout(0.0));
+        assert!(is_narrow_default_layout(719.0));
+        assert!(!is_narrow_default_layout(720.0));
+    }
+
+    #[test]
+    fn test_is_single_column_default_grid() {
+        assert!(!is_single_column_default_grid(0.0));
+        assert!(is_single_column_default_grid(979.0));
+        assert!(!is_single_column_default_grid(980.0));
+    }
+
+    #[test]
+    fn test_is_narrow_room_eq_layout() {
+        assert!(!is_narrow_room_eq_layout(0.0));
+        assert!(is_narrow_room_eq_layout(700.0));
+        assert!(!is_narrow_room_eq_layout(701.0));
     }
 }

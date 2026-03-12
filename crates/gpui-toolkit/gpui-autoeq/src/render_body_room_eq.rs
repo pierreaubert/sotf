@@ -1,6 +1,7 @@
 {
         let mut form = VStack::new().spacing(StackSpacing::Lg);
         let base_id = id.clone();
+        let is_narrow_layout = is_narrow_room_eq_layout(available_width);
 
         let toggle_theme = ToggleTheme {
             checked_bg: theme.toggle_checked_bg,
@@ -115,12 +116,16 @@
                         ref_freq_input = ref_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    target_col = target_col.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(slope_input)
-                            .child(ref_freq_input),
-                    );
+                    target_col = if is_narrow_layout {
+                        target_col.child(slope_input).child(ref_freq_input)
+                    } else {
+                        target_col.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(slope_input)
+                                .child(ref_freq_input),
+                        )
+                    };
 
                     let mut shelf_db_input = NumberInput::new((base_id.clone(), "tilt-shelf-db"))
                         .value(config.tilt_bass_shelf_db)
@@ -153,12 +158,16 @@
                         shelf_freq_input = shelf_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    target_col = target_col.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(shelf_db_input)
-                            .child(shelf_freq_input),
-                    );
+                    target_col = if is_narrow_layout {
+                        target_col.child(shelf_db_input).child(shelf_freq_input)
+                    } else {
+                        target_col.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(shelf_db_input)
+                                .child(shelf_freq_input),
+                        )
+                    };
                 }
             }
 
@@ -181,26 +190,48 @@
                 psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = options_col.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new("Psychoacoustic Smoothing")
-                                    .size(TextSize::Xs)
-                                    .color(theme.label_color),
-                            )
-                            .child(
-                                Text::new("1/48 oct bass, 1/6 oct treble")
-                                    .size(TextSize::Xs)
-                                    .color(theme.description_color),
-                            ),
-                    )
-                    .child(psycho_toggle),
-            );
+            options_col = if is_narrow_layout {
+                options_col.child(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Psychoacoustic Smoothing")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("1/48 oct bass, 1/6 oct treble")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(psycho_toggle),
+                )
+            } else {
+                options_col.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Psychoacoustic Smoothing")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("1/48 oct bass, 1/6 oct treble")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(psycho_toggle),
+                )
+            };
 
             // Asymmetric Loss
             let mut asymmetric_toggle = Toggle::new((base_id.clone(), "asymmetric-loss"))
@@ -213,26 +244,48 @@
                 asymmetric_toggle = asymmetric_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = options_col.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new("Asymmetric Loss")
-                                    .size(TextSize::Xs)
-                                    .color(theme.label_color),
-                            )
-                            .child(
-                                Text::new("Penalize peaks more than dips")
-                                    .size(TextSize::Xs)
-                                    .color(theme.description_color),
-                            ),
-                    )
-                    .child(asymmetric_toggle),
-            );
+            options_col = if is_narrow_layout {
+                options_col.child(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Asymmetric Loss")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Penalize peaks more than dips")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(asymmetric_toggle),
+                )
+            } else {
+                options_col.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Asymmetric Loss")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Penalize peaks more than dips")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(asymmetric_toggle),
+                )
+            };
 
             // Excursion Protection
             let mut excursion_toggle = Toggle::new((base_id.clone(), "excursion-enabled"))
@@ -333,12 +386,16 @@
                         order_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                 }
 
-                options_col = options_col.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(hp_select)
-                        .child(order_input),
-                );
+                options_col = if is_narrow_layout {
+                    options_col.child(hp_select).child(order_input)
+                } else {
+                    options_col.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(hp_select)
+                            .child(order_input),
+                    )
+                };
 
                 let mut margin_input = NumberInput::new((base_id.clone(), "excursion-margin"))
                     .value(config.excursion_margin_octaves)
@@ -428,12 +485,16 @@
                     high_q_input = high_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                options_col = options_col.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(low_q_input)
-                        .child(high_q_input),
-                );
+                options_col = if is_narrow_layout {
+                    options_col.child(low_q_input).child(high_q_input)
+                } else {
+                    options_col.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(low_q_input)
+                            .child(high_q_input),
+                    )
+                };
 
                 let mut boost_toggle = Toggle::new((base_id.clone(), "schroeder-boost"))
                     .size(ToggleSize::Sm)
@@ -489,25 +550,47 @@
                 delay_toggle = delay_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = options_col.child(
-                HStack::new()
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new("Allow Delay")
-                                    .size(TextSize::Xs)
-                                    .color(theme.label_color),
-                            )
-                            .child(
-                                Text::new("Enable inter-speaker time alignment")
-                                    .size(TextSize::Xs)
-                                    .color(theme.description_color),
-                            ),
-                    )
-                    .child(delay_toggle),
-            );
+            options_col = if is_narrow_layout {
+                options_col.child(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Allow Delay")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Enable inter-speaker time alignment")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(delay_toggle),
+                )
+            } else {
+                options_col.child(
+                    HStack::new()
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Allow Delay")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Enable inter-speaker time alignment")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(delay_toggle),
+                )
+            };
 
             // Broadband Target Matching
             let mut broadband_toggle =
@@ -521,25 +604,47 @@
                 broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = options_col.child(
-                HStack::new()
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new("Broadband Target Matching")
-                                    .size(TextSize::Xs)
-                                    .color(theme.label_color),
-                            )
-                            .child(
-                                Text::new("Shelf filters for broad tonal balance")
-                                    .size(TextSize::Xs)
-                                    .color(theme.description_color),
-                            ),
-                    )
-                    .child(broadband_toggle),
-            );
+            options_col = if is_narrow_layout {
+                options_col.child(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Broadband Target Matching")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Shelf filters for broad tonal balance")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(broadband_toggle),
+                )
+            } else {
+                options_col.child(
+                    HStack::new()
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Broadband Target Matching")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Shelf filters for broad tonal balance")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(broadband_toggle),
+                )
+            };
 
             // Group Delay Optimization
             let mut gd_toggle = Toggle::new((base_id.clone(), "gd-opt-enabled"))
@@ -552,25 +657,47 @@
                 gd_toggle = gd_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = options_col.child(
-                HStack::new()
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new("Group Delay Optimization")
-                                    .size(TextSize::Xs)
-                                    .color(theme.label_color),
-                            )
-                            .child(
-                                Text::new("Align group delay at crossover")
-                                    .size(TextSize::Xs)
-                                    .color(theme.description_color),
-                            ),
-                    )
-                    .child(gd_toggle),
-            );
+            options_col = if is_narrow_layout {
+                options_col.child(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Group Delay Optimization")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Align group delay at crossover")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(gd_toggle),
+                )
+            } else {
+                options_col.child(
+                    HStack::new()
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Group Delay Optimization")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Align group delay at crossover")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(gd_toggle),
+                )
+            };
 
             if config.gd_opt_enabled {
                 let mut gd_target_input = NumberInput::new((base_id.clone(), "gd-target-ms"))
@@ -604,25 +731,47 @@
                 vog_toggle = vog_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            options_col = options_col.child(
-                HStack::new()
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new("Voice of God")
-                                    .size(TextSize::Xs)
-                                    .color(theme.label_color),
-                            )
-                            .child(
-                                Text::new("Timbre matching across channels")
-                                    .size(TextSize::Xs)
-                                    .color(theme.description_color),
-                            ),
-                    )
-                    .child(vog_toggle),
-            );
+            options_col = if is_narrow_layout {
+                options_col.child(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Voice of God")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Timbre matching across channels")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(vog_toggle),
+                )
+            } else {
+                options_col.child(
+                    HStack::new()
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Voice of God")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Timbre matching across channels")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(vog_toggle),
+                )
+            };
 
             if config.vog_enabled {
                 let ref_channel_options: Vec<SelectOption> = ["C", "L", "R"]
@@ -705,12 +854,16 @@
                         max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    options_col = options_col.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(min_freq_input)
-                            .child(max_freq_input),
-                    );
+                    options_col = if is_narrow_layout {
+                        options_col.child(min_freq_input).child(max_freq_input)
+                    } else {
+                        options_col.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(min_freq_input)
+                                .child(max_freq_input),
+                        )
+                    };
 
                     let mut polarity_toggle = Toggle::new((base_id.clone(), "phase-polarity"))
                         .size(ToggleSize::Sm)
@@ -857,7 +1010,7 @@
                     ),
             );
 
-            if available_width > 700.0 {
+            if !is_narrow_layout {
                 section = section.child(
                     HStack::new()
                         .spacing(StackSpacing::Lg)
@@ -946,12 +1099,16 @@
                             .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                     }
 
-                    left_col = left_col.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(num_filters_input)
-                            .child(sample_rate_input),
-                    );
+                    left_col = if is_narrow_layout {
+                        left_col.child(num_filters_input).child(sample_rate_input)
+                    } else {
+                        left_col.child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(num_filters_input)
+                                .child(sample_rate_input),
+                        )
+                    };
                 } else {
                     left_col = left_col.child(num_filters_input);
                 }
@@ -1022,12 +1179,16 @@
                         fir_phase_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
                 }
 
-                left_col = left_col.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(fir_taps_input)
-                        .child(fir_phase_select),
-                );
+                left_col = if is_narrow_layout {
+                    left_col.child(fir_taps_input).child(fir_phase_select)
+                } else {
+                    left_col.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(fir_taps_input)
+                            .child(fir_phase_select),
+                    )
+                };
             }
 
             // Mixed mode config
@@ -1142,12 +1303,16 @@
                 max_db_input = max_db_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            left_col = left_col.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(min_db_input)
-                    .child(max_db_input),
-            );
+            left_col = if is_narrow_layout {
+                left_col.child(min_db_input).child(max_db_input)
+            } else {
+                left_col.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(min_db_input)
+                        .child(max_db_input),
+                )
+            };
 
             // Q Range (IIR only)
             if is_iir {
@@ -1185,12 +1350,16 @@
                     max_q_input = max_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                left_col = left_col.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(min_q_input)
-                        .child(max_q_input),
-                );
+                left_col = if is_narrow_layout {
+                    left_col.child(min_q_input).child(max_q_input)
+                } else {
+                    left_col.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(min_q_input)
+                            .child(max_q_input),
+                    )
+                };
             }
 
             // Frequency Range
@@ -1228,12 +1397,16 @@
                 max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            left_col = left_col.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(min_freq_input)
-                    .child(max_freq_input),
-            );
+            left_col = if is_narrow_layout {
+                left_col.child(min_freq_input).child(max_freq_input)
+            } else {
+                left_col.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(min_freq_input)
+                        .child(max_freq_input),
+                )
+            };
 
             // PEQ Model (IIR only)
             if is_iir {
@@ -1336,12 +1509,16 @@
                     maxeval_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
             }
 
-            right_col = right_col.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(population_input)
-                    .child(maxeval_input),
-            );
+            right_col = if is_narrow_layout {
+                right_col.child(population_input).child(maxeval_input)
+            } else {
+                right_col.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(population_input)
+                        .child(maxeval_input),
+                )
+            };
 
             // Local Refinement
             let mut refine_toggle = Toggle::new((base_id.clone(), "refine"))
@@ -1395,12 +1572,16 @@
                 right_col = right_col.child(local_algo_select);
             }
 
-            section = section.child(
-                HStack::new()
-                    .spacing(StackSpacing::Lg)
-                    .child(div().flex_1().child(left_col))
-                    .child(div().flex_1().child(right_col)),
-            );
+            section = if is_narrow_layout {
+                section.child(left_col).child(right_col)
+            } else {
+                section.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Lg)
+                        .child(div().flex_1().child(left_col))
+                        .child(div().flex_1().child(right_col)),
+                )
+            };
 
             form = form.child(Card::new().content(section));
         }

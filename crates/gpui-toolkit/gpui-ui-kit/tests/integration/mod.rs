@@ -60,6 +60,21 @@ mod search_bar_test;
 // Component integration tests - Data Display
 mod qr_test;
 
+// Tier 2 integration tests
+mod image_view_test;
+mod loading_overlay_test;
+mod settings_form_test;
+mod split_pane_test;
+mod step_indicator_test;
+
+// Tier 3 integration tests
+mod command_palette_test;
+mod drag_list_test;
+mod notification_test;
+mod tag_test;
+mod toolbar_test;
+mod tree_view_test;
+
 #[cfg(test)]
 mod tests {
     #[test]
