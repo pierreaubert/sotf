@@ -198,11 +198,11 @@ fn render_preset_buttons(
                                 ref mut matrix,
                                 ..
                             } = plugin.settings
-                            {
-                                apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);
-                                state.app.plugin_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
-                            }
+                        {
+                            apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);
+                            state.app.plugin_state.pending_plugin_update =
+                                Some(PluginUpdateType::Structural);
+                        }
                     });
                 })
         }))
@@ -483,26 +483,26 @@ fn render_msd_button(
                         output_channels: out_ch,
                         ..
                     } = plugin.settings
-                    {
-                        // Resize channel_states if needed
-                        let target_len = out_ch.max(output_channels);
-                        while channel_states.len() < target_len {
-                            channel_states.push(sotf_plugins::ChannelState::default());
-                        }
-                        // Toggle: if any channel in group has the flag set, clear all; else set all
-                        let new_value = !is_active;
-                        for &ch in &channels {
-                            if ch < channel_states.len() {
-                                match action {
-                                    MsdAction::Mute => channel_states[ch].muted = new_value,
-                                    MsdAction::Solo => channel_states[ch].soloed = new_value,
-                                    MsdAction::Dim => channel_states[ch].dimmed = new_value,
-                                }
+                {
+                    // Resize channel_states if needed
+                    let target_len = out_ch.max(output_channels);
+                    while channel_states.len() < target_len {
+                        channel_states.push(sotf_plugins::ChannelState::default());
+                    }
+                    // Toggle: if any channel in group has the flag set, clear all; else set all
+                    let new_value = !is_active;
+                    for &ch in &channels {
+                        if ch < channel_states.len() {
+                            match action {
+                                MsdAction::Mute => channel_states[ch].muted = new_value,
+                                MsdAction::Solo => channel_states[ch].soloed = new_value,
+                                MsdAction::Dim => channel_states[ch].dimmed = new_value,
                             }
                         }
-                        state.app.plugin_state.pending_plugin_update =
-                            Some(PluginUpdateType::Structural);
                     }
+                    state.app.plugin_state.pending_plugin_update =
+                        Some(PluginUpdateType::Structural);
+                }
             });
         })
 }
@@ -646,17 +646,17 @@ fn render_matrix_cell(
                             ref mut channel_states,
                             ..
                         } = plugin.settings
-                        {
-                            let idx = cell_index(input_idx, output_idx, input_channels);
-                            if idx < matrix.len() {
-                                matrix[idx] = 0.0;
-                            }
-                            if output_idx < channel_states.len() {
-                                channel_states[output_idx] = sotf_plugins::ChannelState::default();
-                            }
-                            state.app.plugin_state.pending_plugin_update =
-                                Some(PluginUpdateType::Structural);
+                    {
+                        let idx = cell_index(input_idx, output_idx, input_channels);
+                        if idx < matrix.len() {
+                            matrix[idx] = 0.0;
                         }
+                        if output_idx < channel_states.len() {
+                            channel_states[output_idx] = sotf_plugins::ChannelState::default();
+                        }
+                        state.app.plugin_state.pending_plugin_update =
+                            Some(PluginUpdateType::Structural);
+                    }
                 } else {
                     // Single click: select and toggle between 0 and 1
                     state.app.plugin_state.matrix_selected_cell = Some((input_idx, output_idx));
@@ -670,15 +670,15 @@ fn render_matrix_cell(
                             ref mut matrix,
                             ..
                         } = plugin.settings
-                        {
-                            let idx = cell_index(input_idx, output_idx, input_channels);
-                            if idx < matrix.len() {
-                                // Toggle: if > 0.5, set to 0; otherwise set to 1
-                                matrix[idx] = if matrix[idx] > 0.5 { 0.0 } else { 1.0 };
-                                state.app.plugin_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
-                            }
+                    {
+                        let idx = cell_index(input_idx, output_idx, input_channels);
+                        if idx < matrix.len() {
+                            // Toggle: if > 0.5, set to 0; otherwise set to 1
+                            matrix[idx] = if matrix[idx] > 0.5 { 0.0 } else { 1.0 };
+                            state.app.plugin_state.pending_plugin_update =
+                                Some(PluginUpdateType::Structural);
                         }
+                    }
                 }
             });
         })
@@ -691,36 +691,36 @@ fn render_matrix_cell(
                         ref mut matrix,
                         ..
                     } = plugin.settings
-                    {
-                        let idx = cell_index(input_idx, output_idx, input_channels);
-                        if idx < matrix.len() {
-                            // Get scroll direction (up = increase, down = decrease)
-                            let delta: f32 = match event.delta {
-                                gpui::ScrollDelta::Lines(lines) => lines.y * DB_STEP,
-                                gpui::ScrollDelta::Pixels(pixels) => {
-                                    let y_px: f32 = pixels.y.into();
-                                    y_px / 20.0 * DB_STEP // 20 pixels per dB step
-                                }
-                            };
-
-                            if delta.abs() > 0.01 {
-                                let current_val = matrix[idx];
-                                let sign = if current_val < 0.0 { -1.0 } else { 1.0 };
-                                let abs_val = current_val.abs();
-
-                                let current_db = if abs_val < 0.001 {
-                                    MIN_DB
-                                } else {
-                                    20.0 * abs_val.log10()
-                                };
-                                let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
-                                // Preserve sign, apply new magnitude
-                                matrix[idx] = sign * db_to_linear(new_db);
-                                state.app.plugin_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
+                {
+                    let idx = cell_index(input_idx, output_idx, input_channels);
+                    if idx < matrix.len() {
+                        // Get scroll direction (up = increase, down = decrease)
+                        let delta: f32 = match event.delta {
+                            gpui::ScrollDelta::Lines(lines) => lines.y * DB_STEP,
+                            gpui::ScrollDelta::Pixels(pixels) => {
+                                let y_px: f32 = pixels.y.into();
+                                y_px / 20.0 * DB_STEP // 20 pixels per dB step
                             }
+                        };
+
+                        if delta.abs() > 0.01 {
+                            let current_val = matrix[idx];
+                            let sign = if current_val < 0.0 { -1.0 } else { 1.0 };
+                            let abs_val = current_val.abs();
+
+                            let current_db = if abs_val < 0.001 {
+                                MIN_DB
+                            } else {
+                                20.0 * abs_val.log10()
+                            };
+                            let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
+                            // Preserve sign, apply new magnitude
+                            matrix[idx] = sign * db_to_linear(new_db);
+                            state.app.plugin_state.pending_plugin_update =
+                                Some(PluginUpdateType::Structural);
                         }
                     }
+                }
             });
         })
 }

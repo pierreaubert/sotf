@@ -559,20 +559,60 @@ pub fn render_spectrum_analyzer_plugin(
         .gap_3()
         .child(render_section_title("CONFIG", theme))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Bins", state.num_bins as f64,
-            10.0, 100.0, "", 0, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Bins",
+            state.num_bins as f64,
+            10.0,
+            100.0,
+            "",
+            0,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Min Hz", state.min_freq as f64,
-            10.0, 1000.0, "Hz", 1, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Min Hz",
+            state.min_freq as f64,
+            10.0,
+            1000.0,
+            "Hz",
+            1,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Max Hz", state.max_freq as f64,
-            1000.0, 24000.0, "Hz", 2, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Max Hz",
+            state.max_freq as f64,
+            1000.0,
+            24000.0,
+            "Hz",
+            2,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Smooth", state.smoothing as f64,
-            0.0, 1.0, "", 3, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Smooth",
+            state.smoothing as f64,
+            0.0,
+            1.0,
+            "",
+            3,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ))
         // Tilt correction selector
         .child(
@@ -580,7 +620,13 @@ pub fn render_spectrum_analyzer_plugin(
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(theme.text_secondary).child("Tilt"))
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child("Tilt"),
+                )
                 .child(
                     div().w(px(100.0)).child(
                         Select::new("tilt-correction-select")
@@ -632,7 +678,13 @@ pub fn render_spectrum_analyzer_plugin(
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(theme.text_secondary).child("Reference"))
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child("Reference"),
+                )
                 .child(
                     div().w(px(100.0)).child(
                         Select::new("tilt-reference-select")
@@ -670,7 +722,9 @@ pub fn render_spectrum_analyzer_plugin(
                                             "minfreq" => TiltReferenceFreq::MinFreq,
                                             _ => TiltReferenceFreq::Standard,
                                         };
-                                        state.app.set_spectrum_tilt_reference(plugin_idx, reference);
+                                        state
+                                            .app
+                                            .set_spectrum_tilt_reference(plugin_idx, reference);
                                     });
                                 }
                             }),
@@ -687,42 +741,37 @@ pub fn render_spectrum_analyzer_plugin(
         .child(render_section_title("SPECTRUM DISPLAY", theme))
         // Main spectrum area with dB axis
         .child(
-            div()
-                .flex()
-                .gap_1()
-                .child(render_db_axis(theme))
-                .child(
-                    div()
-                        .flex_1()
-                        .h(px(200.0))
-                        .bg(theme.surface)
-                        .rounded_lg()
-                        .border_1()
-                        .border_color(theme.border)
-                        .flex()
-                        .items_end()
-                        .gap_px()
-                        .p_2()
-                        .child(if let Some(data) = state.data {
-                            let magnitudes: Arc<[f32]> =
-                                Arc::from(data.magnitudes.as_ref().as_slice());
-                            SpectrumElement::new(magnitudes)
-                                .height(px(200.0))
-                                .frequency_range(state.min_freq, state.max_freq)
-                                .smoothing(state.smoothing)
-                                .colors(SpectrumColors::from(&theme.spectrum_colors))
-                                .into_any_element()
-                        } else {
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .size_full()
-                                .text_color(theme.text_muted)
-                                .child("No signal")
-                                .into_any_element()
-                        }),
-                ),
+            div().flex().gap_1().child(render_db_axis(theme)).child(
+                div()
+                    .flex_1()
+                    .h(px(200.0))
+                    .bg(theme.surface)
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(theme.border)
+                    .flex()
+                    .items_end()
+                    .gap_px()
+                    .p_2()
+                    .child(if let Some(data) = state.data {
+                        let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
+                        SpectrumElement::new(magnitudes)
+                            .height(px(200.0))
+                            .frequency_range(state.min_freq, state.max_freq)
+                            .smoothing(state.smoothing)
+                            .colors(SpectrumColors::from(&theme.spectrum_colors))
+                            .into_any_element()
+                    } else {
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_full()
+                            .text_color(theme.text_muted)
+                            .child("No signal")
+                            .into_any_element()
+                    }),
+            ),
         )
         // Frequency axis
         .child(

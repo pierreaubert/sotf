@@ -225,15 +225,16 @@ pub fn render_speaker_preview_graph(
 
     // Add target curve if available
     if let Some(target) = target_curve
-        && !target.is_empty() {
-            chart_builder = chart_builder.add_series(
-                target,
-                Some("Target"),
-                rgba_to_u32(colors::target(theme)),
-                1.5,
-                0.8,
-            );
-        }
+        && !target.is_empty()
+    {
+        chart_builder = chart_builder.add_series(
+            target,
+            Some("Target"),
+            rgba_to_u32(colors::target(theme)),
+            1.5,
+            0.8,
+        );
+    }
 
     let chart = chart_builder.build();
 
@@ -611,15 +612,17 @@ fn render_tonal_balance_plot(
         let mut count = 0.0;
 
         for (i, &f) in freqs.iter().enumerate() {
-            if f >= min_freq && f <= max_freq
-                && let Some(&y) = values.get(i) {
-                    let x = f.log10();
-                    sum_x += x;
-                    sum_y += y;
-                    sum_xy += x * y;
-                    sum_xx += x * x;
-                    count += 1.0;
-                }
+            if f >= min_freq
+                && f <= max_freq
+                && let Some(&y) = values.get(i)
+            {
+                let x = f.log10();
+                sum_x += x;
+                sum_y += y;
+                sum_xy += x * y;
+                sum_xx += x * x;
+                count += 1.0;
+            }
         }
 
         if count < 2.0 {
@@ -678,18 +681,20 @@ fn render_tonal_balance_plot(
                 let mut bins = vec![0.0; 9];
 
                 for (i, &f) in freqs.iter().enumerate() {
-                    if f >= min_freq && f <= max_freq
-                        && let Some(&y) = values.get(i) {
-                            let trend_y = slope * f.log10() + intercept;
-                            let deviation = (y - trend_y).abs();
+                    if f >= min_freq
+                        && f <= max_freq
+                        && let Some(&y) = values.get(i)
+                    {
+                        let trend_y = slope * f.log10() + intercept;
+                        let deviation = (y - trend_y).abs();
 
-                            let bin_idx = (deviation / 0.5).floor() as usize;
-                            if bin_idx < 8 {
-                                bins[bin_idx] += 1.0;
-                            } else {
-                                bins[8] += 1.0; // Overflow bin
-                            }
+                        let bin_idx = (deviation / 0.5).floor() as usize;
+                        if bin_idx < 8 {
+                            bins[bin_idx] += 1.0;
+                        } else {
+                            bins[8] += 1.0; // Overflow bin
                         }
+                    }
                 }
                 bins
             };

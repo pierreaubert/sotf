@@ -253,7 +253,8 @@ impl<'a, 'b> RecordingPage<'a, 'b> {
     }
 
     pub fn start_recording_all(&mut self) {
-        let _ = self.driver
+        let _ = self
+            .driver
             .view
             .update(self.driver.cx, |view, _window, cx| {
                 view.start_recording_all_channels(cx);

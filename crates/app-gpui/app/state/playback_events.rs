@@ -136,9 +136,10 @@ impl PlaybackEventStore {
         // Throttle position updates to avoid flooding
         if matches!(event, PlaybackEvent::PositionUpdated { .. }) {
             if let Some(last) = self.last_position_update
-                && last.elapsed() < self.position_update_interval {
-                    return;
-                }
+                && last.elapsed() < self.position_update_interval
+            {
+                return;
+            }
             self.last_position_update = Some(Instant::now());
         }
 
@@ -407,4 +408,3 @@ pub struct PlaybackSnapshot {
     pub position: f64,
     pub duration: f64,
 }
-

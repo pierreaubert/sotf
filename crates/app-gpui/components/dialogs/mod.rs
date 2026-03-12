@@ -668,12 +668,12 @@ impl PlayerView {
                                                     state.app.queue.get(item_idx)
                                                     && let Some(first_track) =
                                                         queue_item.album.tracks.first()
-                                                    {
-                                                        Self::play_track(
-                                                            state,
-                                                            first_track.path.clone(),
-                                                        );
-                                                    }
+                                                {
+                                                    Self::play_track(
+                                                        state,
+                                                        first_track.path.clone(),
+                                                    );
+                                                }
                                             }
                                             (
                                                 crate::app::ContextMenuType::Plugin,

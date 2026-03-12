@@ -398,7 +398,12 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(div().text_xs().text_color(theme.text_muted).child("Enabled"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Enabled"),
+                        )
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -458,7 +463,12 @@ pub fn render_denoiser_plugin(
                             state.is_editing,
                             theme,
                         ))
-                        .child(div().text_xs().text_color(theme.text_muted).child("Enabled"))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Enabled"),
+                        )
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,

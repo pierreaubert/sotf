@@ -44,10 +44,7 @@ pub fn render_loudness_compensation_plugin(
     theme: &Theme,
 ) -> impl IntoElement {
     // === LEFT COLUMN: empty (no setup params) ===
-    let setup_col = div()
-        .flex()
-        .flex_col()
-        .w(px(SETUP_WIDTH));
+    let setup_col = div().flex().flex_col().w(px(SETUP_WIDTH));
 
     // === CENTER COLUMN: Low + High shelf sections ===
     let center_col = div()
@@ -62,14 +59,32 @@ pub fn render_loudness_compensation_plugin(
                 .gap_2()
                 .child(render_section_title("LOW", theme))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Frequency", state.low_freq,
-                    pk(LC, "low_freq").min_f64(), pk(LC, "low_freq").max_f64(),
-                    "Hz", 0, state.selected_param, state.is_editing, None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Frequency",
+                    state.low_freq,
+                    pk(LC, "low_freq").min_f64(),
+                    pk(LC, "low_freq").max_f64(),
+                    "Hz",
+                    0,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Gain", state.low_gain,
-                    pk(LC, "low_gain").min_f64(), pk(LC, "low_gain").max_f64(),
-                    "dB", 1, state.selected_param, state.is_editing, None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Gain",
+                    state.low_gain,
+                    pk(LC, "low_gain").min_f64(),
+                    pk(LC, "low_gain").max_f64(),
+                    "dB",
+                    1,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 )),
         )
         // High Shelf
@@ -80,14 +95,32 @@ pub fn render_loudness_compensation_plugin(
                 .gap_2()
                 .child(render_section_title("HIGH", theme))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Frequency", state.high_freq,
-                    pk(LC, "high_freq").min_f64(), pk(LC, "high_freq").max_f64(),
-                    "Hz", 2, state.selected_param, state.is_editing, None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Frequency",
+                    state.high_freq,
+                    pk(LC, "high_freq").min_f64(),
+                    pk(LC, "high_freq").max_f64(),
+                    "Hz",
+                    2,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Gain", state.high_gain,
-                    pk(LC, "high_gain").min_f64(), pk(LC, "high_gain").max_f64(),
-                    "dB", 3, state.selected_param, state.is_editing, None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Gain",
+                    state.high_gain,
+                    pk(LC, "high_gain").min_f64(),
+                    pk(LC, "high_gain").max_f64(),
+                    "dB",
+                    3,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 )),
         );
 
@@ -99,18 +132,42 @@ pub fn render_loudness_compensation_plugin(
         .gap_3()
         .child(render_section_title("AUTO GAIN", theme))
         .child(render_toggle(
-            entity.clone(), plugin_idx, "Enabled", state.auto_gain_enabled,
-            4, state.selected_param, state.is_editing, theme,
+            entity.clone(),
+            plugin_idx,
+            "Enabled",
+            state.auto_gain_enabled,
+            4,
+            state.selected_param,
+            state.is_editing,
+            theme,
         ))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Max", state.auto_gain_max_db,
-            0.0, 24.0,
-            "dB", 5, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Max",
+            state.auto_gain_max_db,
+            0.0,
+            24.0,
+            "dB",
+            5,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Smooth", state.auto_gain_smoothing_ms,
-            1.0, 1000.0,
-            "ms", 6, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Smooth",
+            state.auto_gain_smoothing_ms,
+            1.0,
+            1000.0,
+            "ms",
+            6,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ))
         .when(state.auto_gain_enabled, |d| {
             d.child(
@@ -119,7 +176,10 @@ pub fn render_loudness_compensation_plugin(
                     .flex_col()
                     .items_center()
                     .child(
-                        div().text_xs().text_color(theme.text_muted).child("Current"),
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .child("Current"),
                     )
                     .child(
                         div()

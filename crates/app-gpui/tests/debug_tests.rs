@@ -1,6 +1,6 @@
 //! Debug state history tests (from app/debug.rs)
 
-use sotf_audio_player_gpui::{InputMode, Screen, StateHistory, MAX_HISTORY_SIZE};
+use sotf_audio_player_gpui::{InputMode, MAX_HISTORY_SIZE, Screen, StateHistory};
 
 #[test]
 fn test_state_history_capture() {

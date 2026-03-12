@@ -11,10 +11,10 @@
 
 use std::path::PathBuf;
 
+use sotf_audio_player::controllers::library::LibraryController;
 use sotf_audio_player::controllers::playback::PlaybackController;
 use sotf_audio_player::controllers::queue::{QueueController, QueuePlaybackEffect};
 use sotf_audio_player::{Album, ChannelFilter, MusicLibrary, Track};
-use sotf_audio_player::controllers::library::LibraryController;
 
 /// Helper: create an album with N tracks.
 fn make_album(title: &str, track_count: usize) -> Album {
@@ -89,9 +89,14 @@ fn test_volume_preserved_across_multiple_tracks() {
     // Advance through all tracks
     for i in 0..9 {
         let effect = queue.next_track();
-        assert!(matches!(effect, QueuePlaybackEffect::Play(_)), "Track {} should exist", i + 2);
+        assert!(
+            matches!(effect, QueuePlaybackEffect::Play(_)),
+            "Track {} should exist",
+            i + 2
+        );
         assert_eq!(
-            playback.volume, 0.55,
+            playback.volume,
+            0.55,
             "Volume changed at track {}: expected 0.55, got {}",
             i + 2,
             playback.volume
@@ -140,7 +145,10 @@ fn test_muted_state_preserved() {
     queue.start();
     queue.next_track();
 
-    assert!(playback.muted, "Muted state not preserved across track change");
+    assert!(
+        playback.muted,
+        "Muted state not preserved across track change"
+    );
 }
 
 /// Test: Queue end returns Stop effect
@@ -155,7 +163,11 @@ fn test_queue_end_returns_stop() {
 
     // Try to advance past end
     let effect = queue.next_track();
-    assert_eq!(effect, QueuePlaybackEffect::Stop, "Should return Stop at queue end");
+    assert_eq!(
+        effect,
+        QueuePlaybackEffect::Stop,
+        "Should return Stop at queue end"
+    );
 
     // Volume MUST still be preserved
     assert_eq!(playback.volume, 0.8, "Volume changed at queue end");
@@ -212,7 +224,10 @@ fn test_filter_preserved_when_clearing_search() {
 
     // Channel filter MUST still be active
     let count_after = ctrl.filtered_albums().len();
-    assert_eq!(count_after, count_before, "Channel filter was lost when clearing search");
+    assert_eq!(
+        count_after, count_before,
+        "Channel filter was lost when clearing search"
+    );
     assert!(matches!(ctrl.filter, ChannelFilter::Stereo));
 }
 
@@ -221,18 +236,42 @@ fn test_filter_preserved_when_clearing_search() {
 fn test_genre_selection_preserved_when_clearing_search() {
     let albums = vec![
         {
-            let mut a = Album { title: "Rock Album".to_string(), ..Default::default() };
-            a.tracks.push(Track { path: PathBuf::from("/r.flac"), genre: Some("Rock".to_string()), album_artist: Some("A1".to_string()), ..Default::default() });
+            let mut a = Album {
+                title: "Rock Album".to_string(),
+                ..Default::default()
+            };
+            a.tracks.push(Track {
+                path: PathBuf::from("/r.flac"),
+                genre: Some("Rock".to_string()),
+                album_artist: Some("A1".to_string()),
+                ..Default::default()
+            });
             a
         },
         {
-            let mut a = Album { title: "Jazz Album".to_string(), ..Default::default() };
-            a.tracks.push(Track { path: PathBuf::from("/j.flac"), genre: Some("Jazz".to_string()), album_artist: Some("A2".to_string()), ..Default::default() });
+            let mut a = Album {
+                title: "Jazz Album".to_string(),
+                ..Default::default()
+            };
+            a.tracks.push(Track {
+                path: PathBuf::from("/j.flac"),
+                genre: Some("Jazz".to_string()),
+                album_artist: Some("A2".to_string()),
+                ..Default::default()
+            });
             a
         },
         {
-            let mut a = Album { title: "Pop Album".to_string(), ..Default::default() };
-            a.tracks.push(Track { path: PathBuf::from("/p.flac"), genre: Some("Pop".to_string()), album_artist: Some("A3".to_string()), ..Default::default() });
+            let mut a = Album {
+                title: "Pop Album".to_string(),
+                ..Default::default()
+            };
+            a.tracks.push(Track {
+                path: PathBuf::from("/p.flac"),
+                genre: Some("Pop".to_string()),
+                album_artist: Some("A3".to_string()),
+                ..Default::default()
+            });
             a
         },
     ];
@@ -272,7 +311,10 @@ fn test_replay_gain_none_without_data() {
     };
 
     let adjustment = ctrl.get_replay_gain_adjustment(&track);
-    assert!(adjustment.is_none(), "Should return None when track has no RG data");
+    assert!(
+        adjustment.is_none(),
+        "Should return None when track has no RG data"
+    );
 }
 
 /// Test: Replay gain adjustment includes preamp

@@ -32,13 +32,14 @@ impl CalibrationData {
                 .collect();
 
             if parts.len() >= 2
-                && let (Ok(freq), Ok(spl)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
-                    // Validate reasonable frequency range (1 Hz to 100 kHz)
-                    if freq > 0.0 && freq <= 100000.0 && spl.is_finite() {
-                        frequencies.push(freq);
-                        spl_db.push(spl);
-                    }
+                && let (Ok(freq), Ok(spl)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>())
+            {
+                // Validate reasonable frequency range (1 Hz to 100 kHz)
+                if freq > 0.0 && freq <= 100000.0 && spl.is_finite() {
+                    frequencies.push(freq);
+                    spl_db.push(spl);
                 }
+            }
         }
 
         if frequencies.is_empty() {

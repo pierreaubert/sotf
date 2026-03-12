@@ -3,9 +3,7 @@
 //! Orchestrates the execution of test scenarios, managing the test context,
 //! window creation, and result collection.
 
-use gpui::{
-    TestAppContext, VisualTestContext, WindowHandle, prelude::*,
-};
+use gpui::{TestAppContext, VisualTestContext, WindowHandle, prelude::*};
 use std::error::Error;
 
 /// Result of running an E2E test scenario.

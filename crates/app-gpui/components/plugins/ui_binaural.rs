@@ -71,7 +71,11 @@ pub fn render_binaural_plugin(
                             div()
                                 .text_sm()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(if has_sofa { theme.text_primary } else { theme.text_muted })
+                                .text_color(if has_sofa {
+                                    theme.text_primary
+                                } else {
+                                    theme.text_muted
+                                })
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .max_w(px(120.0))
@@ -114,8 +118,14 @@ pub fn render_binaural_plugin(
             theme,
         ))
         .child(render_toggle(
-            entity.clone(), plugin_idx, "Optimization", state.enable_optimization,
-            2, state.selected_param, state.is_editing, theme,
+            entity.clone(),
+            plugin_idx,
+            "Optimization",
+            state.enable_optimization,
+            2,
+            state.selected_param,
+            state.is_editing,
+            theme,
         ));
 
     // === CENTER COLUMN: Controls ===
@@ -130,14 +140,32 @@ pub fn render_binaural_plugin(
                 .flex()
                 .gap_4()
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Externalization", state.externalization,
-                    pk(BN, "externalization").min_f64(), pk(BN, "externalization").max_f64(),
-                    "%", 3, state.selected_param, state.is_editing, None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Externalization",
+                    state.externalization,
+                    pk(BN, "externalization").min_f64(),
+                    pk(BN, "externalization").max_f64(),
+                    "%",
+                    3,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 ))
                 .child(render_knob(
-                    entity.clone(), plugin_idx, "Near Field", state.near_field_strength,
-                    pk(BN, "near_field_strength").min_f64(), pk(BN, "near_field_strength").max_f64(),
-                    "%", 4, state.selected_param, state.is_editing, None, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "Near Field",
+                    state.near_field_strength,
+                    pk(BN, "near_field_strength").min_f64(),
+                    pk(BN, "near_field_strength").max_f64(),
+                    "%",
+                    4,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
                 )),
         );
 

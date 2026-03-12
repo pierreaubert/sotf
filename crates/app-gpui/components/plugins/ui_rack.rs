@@ -17,8 +17,8 @@ use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
-use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_audio_player_midi::MidiMappingEngine;
+use sotf_audio_player_midi::mapping::MidiOverlay;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -1998,8 +1998,16 @@ impl PlayerView {
         let in_groups = [ChannelGroup {
             name: "IN".to_string(),
             channels: vec![
-                ChannelInfo { index: 0, name: "L".to_string(), display_name: vec!["L".to_string()] },
-                ChannelInfo { index: 1, name: "R".to_string(), display_name: vec!["R".to_string()] },
+                ChannelInfo {
+                    index: 0,
+                    name: "L".to_string(),
+                    display_name: vec!["L".to_string()],
+                },
+                ChannelInfo {
+                    index: 1,
+                    name: "R".to_string(),
+                    display_name: vec!["R".to_string()],
+                },
             ],
             muted: false,
             soloed: false,
@@ -2035,7 +2043,8 @@ impl PlayerView {
                             &peak_hold,
                             &theme,
                             cx,
-                        ).into_any_element()
+                        )
+                        .into_any_element()
                     }))
                     .child(self.render_vertical_legend(&theme, true).into_any_element())
                     // Output groups (real indices → M/S/D connected to matrix plugin)
@@ -2048,7 +2057,8 @@ impl PlayerView {
                             &peak_hold,
                             &theme,
                             cx,
-                        ).into_any_element()
+                        )
+                        .into_any_element()
                     })),
             )
     }
@@ -2065,9 +2075,7 @@ impl PlayerView {
             let mut mono = false;
             let mut ms = false;
             for plugin in state.app.plugin_state.chain.plugins() {
-                if plugin.is_permanent()
-                    && matches!(plugin.plugin_type(), PluginType::Matrix)
-                {
+                if plugin.is_permanent() && matches!(plugin.plugin_type(), PluginType::Matrix) {
                     if let sotf_audio_player::PluginSettings::Matrix {
                         input_channels,
                         output_channels,

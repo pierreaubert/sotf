@@ -10,12 +10,12 @@ use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
-use sotf_audio_player_midi::mapping::MidiOverlay;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
 use gpui_ui_kit::PotentiometerSize;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use sotf_audio_player_midi::mapping::MidiOverlay;
 // Tabs are now custom-rendered to avoid context issues
 use sotf_audio_player::EQFilter;
 use sotf_plugins::param_specs::{eq::BAND_TEMPLATE as EQ, find_by_key as pk};
@@ -78,7 +78,6 @@ impl Element for EqChartWrapper {
         cx: &mut App,
     ) -> Self::PrepaintState {
         self.child.prepaint(window, cx);
-        
     }
 
     fn paint(
@@ -1338,7 +1337,6 @@ pub fn render_eq_plugin(
         });
 
     // Combine sections based on layout mode
-    
 
     if use_horizontal_layout {
         // Horizontal: graph on left, controls on right
@@ -1494,4 +1492,3 @@ fn get_channel_name(channel_idx: usize, total_channels: usize) -> String {
         _ => format!("Ch {}", channel_idx + 1),
     }
 }
-

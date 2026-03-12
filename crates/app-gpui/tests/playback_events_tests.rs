@@ -1,9 +1,7 @@
 //! Playback event store tests (from app/state/playback_events.rs)
 
+use sotf_audio_player_gpui::{MAX_EVENTS, PlaybackEvent, PlaybackEventStore, TrackChangeTrigger};
 use std::path::PathBuf;
-use sotf_audio_player_gpui::{
-    PlaybackEvent, PlaybackEventStore, TrackChangeTrigger, MAX_EVENTS,
-};
 
 #[test]
 fn test_event_recording() {

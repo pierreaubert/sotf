@@ -40,9 +40,9 @@ pub struct PluginState {
     pub midi_mapping: MidiMappingEngine,
     /// Per-plugin preset picker state
     pub plugin_preset_open: Option<usize>, // Some(plugin_idx) when open
-    pub plugin_preset_list: Vec<String>,   // Available presets for the open plugin
-    pub plugin_preset_save_mode: bool,     // True when in save mode (text input)
-    pub plugin_preset_input: String,       // Save preset name input
+    pub plugin_preset_list: Vec<String>, // Available presets for the open plugin
+    pub plugin_preset_save_mode: bool,   // True when in save mode (text input)
+    pub plugin_preset_input: String,     // Save preset name input
 
     // Chain-level state
     /// When true, all plugins are bypassed (audio passes through unchanged)
@@ -110,10 +110,7 @@ impl PluginUiView {
 
 /// Returns the list of available controller layout names
 pub fn available_controllers() -> Vec<(&'static str, &'static str)> {
-    vec![
-        ("xone_k2", "Xone:K2"),
-        ("lcxl", "Launch Control XL"),
-    ]
+    vec![("xone_k2", "Xone:K2"), ("lcxl", "Launch Control XL")]
 }
 
 #[derive(Clone, Default, Debug)]

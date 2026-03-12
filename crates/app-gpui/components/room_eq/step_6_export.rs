@@ -292,9 +292,9 @@ impl PlayerView {
                     if plugin.plugin_type == "EQ"
                         && let Some(filters) =
                             plugin.parameters.get("filters").and_then(|f| f.as_array())
-                        {
-                            channel_eq_filters.extend(parse_filters(filters));
-                        }
+                    {
+                        channel_eq_filters.extend(parse_filters(filters));
+                    }
                 }
                 per_channel_filters.push(channel_eq_filters);
             }

@@ -169,16 +169,17 @@ impl App {
                     .directories
                     .iter()
                     .position(|d| d.path == *path)
-                    && self.library_state.remove_directory(dir_index).is_some() {
-                        let tree_items = self.get_directory_tree_items();
-                        if self.selected_directory_index >= tree_items.len()
-                            && self.selected_directory_index > 0
-                        {
-                            self.selected_directory_index = tree_items.len() - 1;
-                        }
-                        self.ui_state.toast_message =
-                            Some(ToastMessage::success("Directory removed and cleaned up."));
+                    && self.library_state.remove_directory(dir_index).is_some()
+                {
+                    let tree_items = self.get_directory_tree_items();
+                    if self.selected_directory_index >= tree_items.len()
+                        && self.selected_directory_index > 0
+                    {
+                        self.selected_directory_index = tree_items.len() - 1;
                     }
+                    self.ui_state.toast_message =
+                        Some(ToastMessage::success("Directory removed and cleaned up."));
+                }
             } else {
                 self.ui_state.toast_message =
                     Some(ToastMessage::error("Cannot remove subdirectory."));
@@ -259,13 +260,12 @@ impl App {
             }
         }
 
-        if reload_needed
-            && let Err(e) = self.load_library_from_database() {
-                log::error!("Failed to reload library after scan: {}", e);
-                self.ui_state.toast_message = Some(ToastMessage::error(
-                    "Scan complete but failed to reload library.",
-                ));
-            }
+        if reload_needed && let Err(e) = self.load_library_from_database() {
+            log::error!("Failed to reload library after scan: {}", e);
+            self.ui_state.toast_message = Some(ToastMessage::error(
+                "Scan complete but failed to reload library.",
+            ));
+        }
     }
 
     /// Get flattened directory tree for display
@@ -278,14 +278,14 @@ impl App {
         let tree_items = self.get_directory_tree_items();
         if let Some((path, level, _)) = tree_items.get(self.selected_directory_index)
             && *level == 0
-                && let Some(dir_info) = self
-                    .library_state
-                    .library
-                    .directories
-                    .iter_mut()
-                    .find(|d| d.path == *path)
-                {
-                    dir_info.expanded = !dir_info.expanded;
-                }
+            && let Some(dir_info) = self
+                .library_state
+                .library
+                .directories
+                .iter_mut()
+                .find(|d| d.path == *path)
+        {
+            dir_info.expanded = !dir_info.expanded;
+        }
     }
 }

@@ -12,8 +12,8 @@
 //! +------------------+--------------------------------------------+------------------+
 
 use super::common::{
-    render_knob, render_section_title, render_toggle,
-    render_transfer_curve_with_level, render_vertical_slider_with_ticks,
+    render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
+    render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -70,13 +70,25 @@ pub fn render_limiter_plugin(
         .gap_3()
         .child(render_section_title("SETUP", theme))
         .child(render_toggle(
-            entity.clone(), plugin_idx, "Soft Knee", state.soft,
-            3, state.selected_param, state.is_editing, theme,
+            entity.clone(),
+            plugin_idx,
+            "Soft Knee",
+            state.soft,
+            3,
+            state.selected_param,
+            state.is_editing,
+            theme,
         ));
 
     // === CENTER COLUMN: Sliders (top) + Transfer curve (bottom) ===
     let transfer_curve = render_transfer_curve_with_level(
-        state.threshold_db, f64::INFINITY, 0.0, true, TRANSFER_CURVE_SIZE, input_level, theme,
+        state.threshold_db,
+        f64::INFINITY,
+        0.0,
+        true,
+        TRANSFER_CURVE_SIZE,
+        input_level,
+        theme,
     );
 
     let sliders = div()
@@ -94,9 +106,19 @@ pub fn render_limiter_plugin(
                         .flex()
                         .gap_2()
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Ceiling", state.threshold_db,
-                            pk(LM, "threshold").min_f64(), pk(LM, "threshold").max_f64(),
-                            "dB", 0, state.selected_param, state.is_editing, Some('c'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Ceiling",
+                            state.threshold_db,
+                            pk(LM, "threshold").min_f64(),
+                            pk(LM, "threshold").max_f64(),
+                            "dB",
+                            0,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('c'),
+                            SLIDER_HEIGHT,
+                            theme,
                         )),
                 ),
         )
@@ -112,14 +134,34 @@ pub fn render_limiter_plugin(
                         .flex()
                         .gap_2()
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Release", state.release_ms,
-                            pk(LM, "release").min_f64(), pk(LM, "release").max_f64(),
-                            "ms", 1, state.selected_param, state.is_editing, Some('r'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Release",
+                            state.release_ms,
+                            pk(LM, "release").min_f64(),
+                            pk(LM, "release").max_f64(),
+                            "ms",
+                            1,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('r'),
+                            SLIDER_HEIGHT,
+                            theme,
                         ))
                         .child(render_vertical_slider_with_ticks(
-                            entity.clone(), plugin_idx, "Lookahead", state.lookahead_ms,
-                            pk(LM, "lookahead").min_f64(), pk(LM, "lookahead").max_f64(),
-                            "ms", 2, state.selected_param, state.is_editing, Some('l'), SLIDER_HEIGHT, theme,
+                            entity.clone(),
+                            plugin_idx,
+                            "Lookahead",
+                            state.lookahead_ms,
+                            pk(LM, "lookahead").min_f64(),
+                            pk(LM, "lookahead").max_f64(),
+                            "ms",
+                            2,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('l'),
+                            SLIDER_HEIGHT,
+                            theme,
                         )),
                 ),
         );
@@ -141,9 +183,18 @@ pub fn render_limiter_plugin(
         .child(render_section_title("OUTPUT", theme))
         .child(render_gr_meter(meter_value, -20.0, theme))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
-            pk(LM, "mix").min_f64() * 100.0, pk(LM, "mix").max_f64() * 100.0,
-            "%", 4, state.selected_param, state.is_editing, Some('m'), theme,
+            entity.clone(),
+            plugin_idx,
+            "Mix",
+            state.mix * 100.0,
+            pk(LM, "mix").min_f64() * 100.0,
+            pk(LM, "mix").max_f64() * 100.0,
+            "%",
+            4,
+            state.selected_param,
+            state.is_editing,
+            Some('m'),
+            theme,
         ));
 
     // === Main layout: 3 columns ===

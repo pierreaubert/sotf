@@ -109,10 +109,7 @@ fn render_param(
         )
         .into_any_element(),
         ParamType::Choice { labels, .. } => {
-            let label = labels
-                .get(value as usize)
-                .copied()
-                .unwrap_or("?");
+            let label = labels.get(value as usize).copied().unwrap_or("?");
             render_toggle(
                 entity,
                 plugin_idx,
@@ -262,7 +259,8 @@ pub fn render_auto_layout(input: AutoLayoutInput) -> impl IntoElement {
                     .rounded_sm()
                     .cursor_pointer()
                     .when(is_active, |d| {
-                        d.bg(theme.background_secondary).text_color(theme.text_primary)
+                        d.bg(theme.background_secondary)
+                            .text_color(theme.text_primary)
                     })
                     .when(!is_active, |d| d.text_color(theme.text_secondary))
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {

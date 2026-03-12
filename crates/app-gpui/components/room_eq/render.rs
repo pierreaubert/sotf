@@ -464,15 +464,17 @@ fn render_response_comparison_graph(
         let mut count = 0.0;
 
         for (i, &f) in freqs.iter().enumerate() {
-            if f >= min_freq && f <= max_freq
-                && let Some(&y) = values.get(i) {
-                    let x = f.log10();
-                    sum_x += x;
-                    sum_y += y;
-                    sum_xy += x * y;
-                    sum_xx += x * x;
-                    count += 1.0;
-                }
+            if f >= min_freq
+                && f <= max_freq
+                && let Some(&y) = values.get(i)
+            {
+                let x = f.log10();
+                sum_x += x;
+                sum_y += y;
+                sum_xy += x * y;
+                sum_xx += x * x;
+                count += 1.0;
+            }
         }
 
         if count < 2.0 {
@@ -552,13 +554,15 @@ fn render_response_comparison_graph(
 
                 // Assume target is sorted by freq
                 if let Some(first) = target.first()
-                    && f < first.0 {
-                        return first.1;
-                    }
+                    && f < first.0
+                {
+                    return first.1;
+                }
                 if let Some(last) = target.last()
-                    && f > last.0 {
-                        return last.1;
-                    }
+                    && f > last.0
+                {
+                    return last.1;
+                }
 
                 for win in target.windows(2) {
                     if f >= win[0].0 && f <= win[1].0 {
@@ -620,18 +624,20 @@ fn render_response_comparison_graph(
                 let mut bins = vec![0.0; 9];
 
                 for (i, &f) in freqs.iter().enumerate() {
-                    if f >= min_freq && f <= max_freq
-                        && let Some(&y) = values.get(i) {
-                            let trend_y = slope * f.log10() + intercept;
-                            let deviation = (y - trend_y).abs();
+                    if f >= min_freq
+                        && f <= max_freq
+                        && let Some(&y) = values.get(i)
+                    {
+                        let trend_y = slope * f.log10() + intercept;
+                        let deviation = (y - trend_y).abs();
 
-                            let bin_idx = (deviation / 0.5).floor() as usize;
-                            if bin_idx < 8 {
-                                bins[bin_idx] += 1.0;
-                            } else {
-                                bins[8] += 1.0; // Overflow bin
-                            }
+                        let bin_idx = (deviation / 0.5).floor() as usize;
+                        if bin_idx < 8 {
+                            bins[bin_idx] += 1.0;
+                        } else {
+                            bins[8] += 1.0; // Overflow bin
                         }
+                    }
                 }
                 bins
             };

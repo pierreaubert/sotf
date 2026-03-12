@@ -81,7 +81,6 @@ impl Element for WaveformElement {
         _window: &mut Window,
         _cx: &mut App,
     ) -> Self::PrepaintState {
-        
     }
 
     fn paint(
@@ -489,129 +488,157 @@ impl PlayerView {
                             .flex()
                             .items_center()
                             .gap_1()
-                    // Previous track
-                    .child(
-                        div()
-                            .id("transport-prev-wrapper")
-                            .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
-                                view.prev_track(&crate::app::actions::PrevTrack, window, cx);
-                            }))
+                            // Previous track
                             .child(
-                                IconButton::with_child(
-                                    "transport-prev",
-                                    Icon::new(IconName::SkipBack)
-                                        .size(IconSize::Sm)
-                                        .color(theme_clone.text_primary),
-                                )
-                                .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Sm)
-                                .rounded_full()
-                                .theme(theme_clone.to_icon_button_theme()),
-                            ),
-                    )
-                    // Seek backward
-                    .child(
-                        div()
-                            .id("transport-seek-back-wrapper")
-                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    let new_position =
-                                        (state.app.playback.position_secs - 30.0).max(0.0);
-                                    state.app.playback.position_secs = new_position;
-                                    if let Err(e) = state.player.lock().seek(new_position) {
-                                        log::error!("Failed to seek backward: {}", e);
-                                    }
-                                });
-                                cx.notify();
-                            }))
-                            .child(
-                                IconButton::with_child(
-                                    "transport-seek-back",
-                                    Icon::new(IconName::Rewind)
-                                        .size(IconSize::Sm)
-                                        .color(theme_clone.text_primary),
-                                )
-                                .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Sm)
-                                .rounded_full()
-                                .theme(theme_clone.to_icon_button_theme()),
-                            ),
-                    )
-                    // Play/Pause
-                    .child({
-                        let play_icon = if is_playing {
-                            IconName::Pause
-                        } else {
-                            IconName::Play
-                        };
-                        div()
-                            .id("transport-play-wrapper")
-                            .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
-                                view.toggle_playback(&crate::app::actions::PlayPause, window, cx);
-                            }))
-                            .child(
-                                IconButton::with_child(
-                                    "transport-play",
-                                    Icon::new(play_icon)
-                                        .size(IconSize::Sm)
-                                        .color(theme_clone.text_on_accent),
-                                )
-                                .variant(IconButtonVariant::Filled)
-                                .size(IconButtonSize::Md)
-                                .rounded_full()
-                                .selected(true)
-                                .theme(theme_clone.to_icon_button_theme()),
+                                div()
+                                    .id("transport-prev-wrapper")
+                                    .on_click(cx.listener(
+                                        |view, _event: &ClickEvent, window, cx| {
+                                            view.prev_track(
+                                                &crate::app::actions::PrevTrack,
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    ))
+                                    .child(
+                                        IconButton::with_child(
+                                            "transport-prev",
+                                            Icon::new(IconName::SkipBack)
+                                                .size(IconSize::Sm)
+                                                .color(theme_clone.text_primary),
+                                        )
+                                        .variant(IconButtonVariant::Ghost)
+                                        .size(IconButtonSize::Sm)
+                                        .rounded_full()
+                                        .theme(theme_clone.to_icon_button_theme()),
+                                    ),
                             )
-                    })
-                    // Seek forward
-                    .child(
-                        div()
-                            .id("transport-seek-fwd-wrapper")
-                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    let max = state.app.playback.duration_secs;
-                                    let new_position =
-                                        (state.app.playback.position_secs + 30.0).min(max);
-                                    state.app.playback.position_secs = new_position;
-                                    if let Err(e) = state.player.lock().seek(new_position) {
-                                        log::error!("Failed to seek forward: {}", e);
-                                    }
-                                });
-                                cx.notify();
-                            }))
+                            // Seek backward
                             .child(
-                                IconButton::with_child(
-                                    "transport-seek-fwd",
-                                    Icon::new(IconName::FastForward)
-                                        .size(IconSize::Sm)
-                                        .color(theme_clone.text_primary),
-                                )
-                                .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Sm)
-                                .rounded_full()
-                                .theme(theme_clone.to_icon_button_theme()),
-                            ),
-                    )
-                    // Next track
-                    .child(
-                        div()
-                            .id("transport-next-wrapper")
-                            .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
-                                view.next_track(&crate::app::actions::NextTrack, window, cx);
-                            }))
+                                div()
+                                    .id("transport-seek-back-wrapper")
+                                    .on_click(cx.listener(
+                                        |view, _event: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                let new_position =
+                                                    (state.app.playback.position_secs - 30.0)
+                                                        .max(0.0);
+                                                state.app.playback.position_secs = new_position;
+                                                if let Err(e) =
+                                                    state.player.lock().seek(new_position)
+                                                {
+                                                    log::error!("Failed to seek backward: {}", e);
+                                                }
+                                            });
+                                            cx.notify();
+                                        },
+                                    ))
+                                    .child(
+                                        IconButton::with_child(
+                                            "transport-seek-back",
+                                            Icon::new(IconName::Rewind)
+                                                .size(IconSize::Sm)
+                                                .color(theme_clone.text_primary),
+                                        )
+                                        .variant(IconButtonVariant::Ghost)
+                                        .size(IconButtonSize::Sm)
+                                        .rounded_full()
+                                        .theme(theme_clone.to_icon_button_theme()),
+                                    ),
+                            )
+                            // Play/Pause
+                            .child({
+                                let play_icon = if is_playing {
+                                    IconName::Pause
+                                } else {
+                                    IconName::Play
+                                };
+                                div()
+                                    .id("transport-play-wrapper")
+                                    .on_click(cx.listener(
+                                        |view, _event: &ClickEvent, window, cx| {
+                                            view.toggle_playback(
+                                                &crate::app::actions::PlayPause,
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    ))
+                                    .child(
+                                        IconButton::with_child(
+                                            "transport-play",
+                                            Icon::new(play_icon)
+                                                .size(IconSize::Sm)
+                                                .color(theme_clone.text_on_accent),
+                                        )
+                                        .variant(IconButtonVariant::Filled)
+                                        .size(IconButtonSize::Md)
+                                        .rounded_full()
+                                        .selected(true)
+                                        .theme(theme_clone.to_icon_button_theme()),
+                                    )
+                            })
+                            // Seek forward
                             .child(
-                                IconButton::with_child(
-                                    "transport-next",
-                                    Icon::new(IconName::SkipForward)
-                                        .size(IconSize::Sm)
-                                        .color(theme_clone.text_primary),
-                                )
-                                .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Sm)
-                                .rounded_full()
-                                .theme(theme_clone.to_icon_button_theme()),
+                                div()
+                                    .id("transport-seek-fwd-wrapper")
+                                    .on_click(cx.listener(
+                                        |view, _event: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                let max = state.app.playback.duration_secs;
+                                                let new_position =
+                                                    (state.app.playback.position_secs + 30.0)
+                                                        .min(max);
+                                                state.app.playback.position_secs = new_position;
+                                                if let Err(e) =
+                                                    state.player.lock().seek(new_position)
+                                                {
+                                                    log::error!("Failed to seek forward: {}", e);
+                                                }
+                                            });
+                                            cx.notify();
+                                        },
+                                    ))
+                                    .child(
+                                        IconButton::with_child(
+                                            "transport-seek-fwd",
+                                            Icon::new(IconName::FastForward)
+                                                .size(IconSize::Sm)
+                                                .color(theme_clone.text_primary),
+                                        )
+                                        .variant(IconButtonVariant::Ghost)
+                                        .size(IconButtonSize::Sm)
+                                        .rounded_full()
+                                        .theme(theme_clone.to_icon_button_theme()),
+                                    ),
+                            )
+                            // Next track
+                            .child(
+                                div()
+                                    .id("transport-next-wrapper")
+                                    .on_click(cx.listener(
+                                        |view, _event: &ClickEvent, window, cx| {
+                                            view.next_track(
+                                                &crate::app::actions::NextTrack,
+                                                window,
+                                                cx,
+                                            );
+                                        },
+                                    ))
+                                    .child(
+                                        IconButton::with_child(
+                                            "transport-next",
+                                            Icon::new(IconName::SkipForward)
+                                                .size(IconSize::Sm)
+                                                .color(theme_clone.text_primary),
+                                        )
+                                        .variant(IconButtonVariant::Ghost)
+                                        .size(IconButtonSize::Sm)
+                                        .rounded_full()
+                                        .theme(theme_clone.to_icon_button_theme()),
+                                    ),
                             ),
-                    )
                     ) // close inner transport div
                     .when(!is_hal_mode, |el| {
                         el.child(
@@ -635,30 +662,23 @@ impl PlayerView {
                         .cursor_pointer()
                         .on_mouse_down(
                             MouseButton::Left,
-                            cx.listener(
-                                move |view, event: &MouseDownEvent, _window, cx| {
-                                    if let Some(bounds) = *bounds_ref_clone.borrow() {
-                                        let x = event.position.x - bounds.origin.x;
-                                        let width = bounds.size.width;
-                                        let ratio = (x / width).clamp(0.0, 1.0);
+                            cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                    let x = event.position.x - bounds.origin.x;
+                                    let width = bounds.size.width;
+                                    let ratio = (x / width).clamp(0.0, 1.0);
 
-                                        view.state.update(cx, |state, _cx| {
-                                            let new_pos = state.app.playback.duration_secs
-                                                * ratio as f64;
-                                            state.app.playback.position_secs = new_pos;
-                                            if let Err(e) =
-                                                state.player.lock().seek(new_pos)
-                                            {
-                                                log::error!(
-                                                    "Failed to seek from waveform: {}",
-                                                    e
-                                                );
-                                            }
-                                        });
-                                        cx.notify();
-                                    }
-                                },
-                            ),
+                                    view.state.update(cx, |state, _cx| {
+                                        let new_pos =
+                                            state.app.playback.duration_secs * ratio as f64;
+                                        state.app.playback.position_secs = new_pos;
+                                        if let Err(e) = state.player.lock().seek(new_pos) {
+                                            log::error!("Failed to seek from waveform: {}", e);
+                                        }
+                                    });
+                                    cx.notify();
+                                }
+                            }),
                         )
                         .child(WaveformElement::new(
                             waveform.clone(),
@@ -963,12 +983,11 @@ impl PlayerView {
                                 let mut player = state.player.lock();
                                 if let Err(e) = player.set_output_device(device_name.clone()) {
                                     log::error!("Failed to set output device: {}", e);
-                                } else if was_playing
-                                    && let Some(path) = current_path {
-                                        // Drop the player lock before calling play_track which also locks it
-                                        drop(player);
-                                        Self::play_track_at(state, path, Some(current_pos));
-                                    }
+                                } else if was_playing && let Some(path) = current_path {
+                                    // Drop the player lock before calling play_track which also locks it
+                                    drop(player);
+                                    Self::play_track_at(state, path, Some(current_pos));
+                                }
                             });
                             cx.notify();
                         }),

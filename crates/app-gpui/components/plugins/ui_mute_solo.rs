@@ -50,8 +50,14 @@ pub fn render_mute_solo_plugin(
         .gap_3()
         .child(render_section_title("SETUP", theme))
         .child(render_toggle(
-            entity.clone(), plugin_idx, "Enabled", state.enabled,
-            0, state.selected_param, state.is_editing, theme,
+            entity.clone(),
+            plugin_idx,
+            "Enabled",
+            state.enabled,
+            0,
+            state.selected_param,
+            state.is_editing,
+            theme,
         ))
         .child(
             div()
@@ -72,8 +78,8 @@ pub fn render_mute_solo_plugin(
                 let name = channel_names.get(i).copied().unwrap_or("Ch");
                 let is_muted = s.muted;
                 let is_soloed = s.soloed;
-                let is_active = !is_muted
-                    && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
+                let is_active =
+                    !is_muted && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
 
                 div()
                     .flex()
@@ -114,7 +120,11 @@ pub fn render_mute_solo_plugin(
                                 div()
                                     .w_full()
                                     .h(relative(if is_active { 0.6 } else { 0.0 }))
-                                    .bg(if is_active { theme.success } else { theme.surface }),
+                                    .bg(if is_active {
+                                        theme.success
+                                    } else {
+                                        theme.surface
+                                    }),
                             ),
                     )
                     // Mute button
@@ -123,7 +133,11 @@ pub fn render_mute_solo_plugin(
                             .w(px(24.0))
                             .h(px(20.0))
                             .rounded_sm()
-                            .bg(if is_muted { theme.error } else { theme.background })
+                            .bg(if is_muted {
+                                theme.error
+                            } else {
+                                theme.background
+                            })
                             .border_1()
                             .border_color(if is_muted { theme.error } else { theme.border })
                             .flex()
@@ -131,7 +145,11 @@ pub fn render_mute_solo_plugin(
                             .justify_center()
                             .text_xs()
                             .font_weight(FontWeight::BOLD)
-                            .text_color(if is_muted { theme.text_on_accent } else { theme.text_muted })
+                            .text_color(if is_muted {
+                                theme.text_on_accent
+                            } else {
+                                theme.text_muted
+                            })
                             .child("M"),
                     )
                     // Solo button
@@ -140,15 +158,27 @@ pub fn render_mute_solo_plugin(
                             .w(px(24.0))
                             .h(px(20.0))
                             .rounded_sm()
-                            .bg(if is_soloed { theme.warning } else { theme.background })
+                            .bg(if is_soloed {
+                                theme.warning
+                            } else {
+                                theme.background
+                            })
                             .border_1()
-                            .border_color(if is_soloed { theme.warning } else { theme.border })
+                            .border_color(if is_soloed {
+                                theme.warning
+                            } else {
+                                theme.border
+                            })
                             .flex()
                             .items_center()
                             .justify_center()
                             .text_xs()
                             .font_weight(FontWeight::BOLD)
-                            .text_color(if is_soloed { theme.background } else { theme.text_muted })
+                            .text_color(if is_soloed {
+                                theme.background
+                            } else {
+                                theme.text_muted
+                            })
                             .child("S"),
                     )
             }),

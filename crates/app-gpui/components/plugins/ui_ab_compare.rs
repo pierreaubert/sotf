@@ -140,9 +140,21 @@ pub fn render_ab_compare_plugin(
     let path_a_preset = config_to_preset_value(state.path_a_config);
     let path_b_preset = config_to_preset_value(state.path_b_config);
 
-    let mode_selected: SharedString = if is_pot_mode { "MIX A+B".into() } else { "Choice".into() };
-    let auto_gain_selected: SharedString = if state.auto_gain_enabled { "ON".into() } else { "OFF".into() };
-    let time_selected: SharedString = if state.loudness_type == 0 { "Fast".into() } else { "Slow".into() };
+    let mode_selected: SharedString = if is_pot_mode {
+        "MIX A+B".into()
+    } else {
+        "Choice".into()
+    };
+    let auto_gain_selected: SharedString = if state.auto_gain_enabled {
+        "ON".into()
+    } else {
+        "OFF".into()
+    };
+    let time_selected: SharedString = if state.loudness_type == 0 {
+        "Fast".into()
+    } else {
+        "Slow".into()
+    };
 
     // === LEFT COLUMN: Mix ===
     let mix_col = div()
@@ -166,27 +178,59 @@ pub fn render_ab_compare_plugin(
                     move |value, _, cx| {
                         let is_mix = value.as_ref() == "MIX A+B";
                         entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(plugin_idx, 1, if is_mix { 0.0 } else { 1.0 });
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                1,
+                                if is_mix { 0.0 } else { 1.0 },
+                            );
                         });
                     }
                 }),
         )
         // Mix knob (dimmed in binary mode)
-        .child(div().when(!is_pot_mode, |d| d.opacity(0.4)).child(
-            render_knob(
-                entity.clone(), plugin_idx, "Mix", state.mix * 100.0,
-                -100.0, 100.0, "%", 0, state.selected_param,
-                state.is_editing && is_pot_mode, Some('m'), theme,
-            ),
-        ))
+        .child(
+            div()
+                .when(!is_pot_mode, |d| d.opacity(0.4))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Mix",
+                    state.mix * 100.0,
+                    -100.0,
+                    100.0,
+                    "%",
+                    0,
+                    state.selected_param,
+                    state.is_editing && is_pot_mode,
+                    Some('m'),
+                    theme,
+                )),
+        )
         // A/N/B buttons (dimmed in pot mode)
-        .child(div().when(is_pot_mode, |d| d.opacity(0.4)).child(
-            render_anb_buttons(entity.clone(), plugin_idx, anb_selected, is_pot_mode, theme),
-        ))
+        .child(
+            div()
+                .when(is_pot_mode, |d| d.opacity(0.4))
+                .child(render_anb_buttons(
+                    entity.clone(),
+                    plugin_idx,
+                    anb_selected,
+                    is_pot_mode,
+                    theme,
+                )),
+        )
         // Transition knob
         .child(render_horizontal_slider(
-            entity.clone(), plugin_idx, "Mix Smooth", state.mix_transition_ms,
-            5.0, 500.0, "ms", 8, state.selected_param, state.is_editing, theme,
+            entity.clone(),
+            plugin_idx,
+            "Mix Smooth",
+            state.mix_transition_ms,
+            5.0,
+            500.0,
+            "ms",
+            8,
+            state.selected_param,
+            state.is_editing,
+            theme,
         ));
 
     // === CENTER COLUMN: Path Config ===
@@ -201,9 +245,21 @@ pub fn render_ab_compare_plugin(
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(theme.text_muted).child("PATH A"))
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_muted)
+                        .child("PATH A"),
+                )
                 .child(render_path_selector(
-                    entity.clone(), plugin_idx, "a", path_a_preset, 9, state.path_a_select_open, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "a",
+                    path_a_preset,
+                    9,
+                    state.path_a_select_open,
+                    theme,
                 )),
         )
         .child(
@@ -211,9 +267,21 @@ pub fn render_ab_compare_plugin(
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().text_xs().font_weight(FontWeight::SEMIBOLD).text_color(theme.text_muted).child("PATH B"))
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_muted)
+                        .child("PATH B"),
+                )
                 .child(render_path_selector(
-                    entity.clone(), plugin_idx, "b", path_b_preset, 10, state.path_b_select_open, theme,
+                    entity.clone(),
+                    plugin_idx,
+                    "b",
+                    path_b_preset,
+                    10,
+                    state.path_b_select_open,
+                    theme,
                 )),
         );
 
@@ -238,7 +306,11 @@ pub fn render_ab_compare_plugin(
                     move |value, _, cx| {
                         let is_on = value.as_ref() == "ON";
                         entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(plugin_idx, 4, if is_on { 1.0 } else { 0.0 });
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                4,
+                                if is_on { 1.0 } else { 0.0 },
+                            );
                         });
                     }
                 }),
@@ -257,18 +329,41 @@ pub fn render_ab_compare_plugin(
                     move |value, _, cx| {
                         let is_slow = value.as_ref() == "Slow";
                         entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(plugin_idx, 5, if is_slow { 1.0 } else { 0.0 });
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                5,
+                                if is_slow { 1.0 } else { 0.0 },
+                            );
                         });
                     }
                 }),
         )
         .child(render_knob(
-            entity.clone(), plugin_idx, "Max Gain", state.max_auto_gain_db,
-            0.0, 24.0, "dB", 6, state.selected_param, state.is_editing, Some('g'), theme,
+            entity.clone(),
+            plugin_idx,
+            "Max Gain",
+            state.max_auto_gain_db,
+            0.0,
+            24.0,
+            "dB",
+            6,
+            state.selected_param,
+            state.is_editing,
+            Some('g'),
+            theme,
         ))
         .child(render_horizontal_slider(
-            entity.clone(), plugin_idx, "Gain Smooth", state.gain_smoothing_ms,
-            10.0, 500.0, "ms", 7, state.selected_param, state.is_editing, theme,
+            entity.clone(),
+            plugin_idx,
+            "Gain Smooth",
+            state.gain_smoothing_ms,
+            10.0,
+            500.0,
+            "ms",
+            7,
+            state.selected_param,
+            state.is_editing,
+            theme,
         ));
 
     // === Main layout: 3 columns ===
@@ -306,7 +401,9 @@ fn render_horizontal_slider(
             let entity = entity.clone();
             move |new_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value as f64);
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, idx, new_value as f64);
                 });
             }
         })
@@ -327,7 +424,11 @@ fn render_path_selector(
         .map(|(value, label, _)| SelectOption::new(*value, *label))
         .collect();
 
-    let select_id = if path_id == "a" { plugin_idx * 2 } else { plugin_idx * 2 + 1 };
+    let select_id = if path_id == "a" {
+        plugin_idx * 2
+    } else {
+        plugin_idx * 2 + 1
+    };
     let selected: SharedString = current_preset.to_string().into();
     let is_path_a = path_id == "a";
 
@@ -354,14 +455,18 @@ fn render_path_selector(
         .on_change({
             let entity = entity.clone();
             move |value, _, cx| {
-                if let Some((_, _, json)) = PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref()) {
+                if let Some((_, _, json)) =
+                    PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref())
+                {
                     entity.update(cx, |state, _| {
                         if is_path_a {
                             state.app.plugin_state.ab_compare_dropdowns.path_a_open = false;
                         } else {
                             state.app.plugin_state.ab_compare_dropdowns.path_b_open = false;
                         }
-                        state.app.set_plugin_param_string(plugin_idx, param_idx, json.to_string());
+                        state
+                            .app
+                            .set_plugin_param_string(plugin_idx, param_idx, json.to_string());
                     });
                 }
             }
@@ -389,27 +494,27 @@ fn render_anb_buttons(
         .on_change({
             let entity = entity.clone();
             move |value, _, cx| {
-                if disabled { return; }
-                entity.update(cx, |state, _| {
-                    match value.as_ref() {
-                        "A" => {
-                            state.app.set_plugin_param(plugin_idx, 1, 1.0);
-                            state.app.set_plugin_param(plugin_idx, 3, 0.0);
-                            state.app.set_plugin_param(plugin_idx, 2, 0.0);
-                            state.app.set_plugin_param(plugin_idx, 0, -100.0);
-                        }
-                        "N" => {
-                            state.app.set_plugin_param(plugin_idx, 1, 1.0);
-                            state.app.set_plugin_param(plugin_idx, 3, 1.0);
-                        }
-                        "B" => {
-                            state.app.set_plugin_param(plugin_idx, 1, 1.0);
-                            state.app.set_plugin_param(plugin_idx, 3, 0.0);
-                            state.app.set_plugin_param(plugin_idx, 2, 1.0);
-                            state.app.set_plugin_param(plugin_idx, 0, 100.0);
-                        }
-                        _ => {}
+                if disabled {
+                    return;
+                }
+                entity.update(cx, |state, _| match value.as_ref() {
+                    "A" => {
+                        state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                        state.app.set_plugin_param(plugin_idx, 3, 0.0);
+                        state.app.set_plugin_param(plugin_idx, 2, 0.0);
+                        state.app.set_plugin_param(plugin_idx, 0, -100.0);
                     }
+                    "N" => {
+                        state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                        state.app.set_plugin_param(plugin_idx, 3, 1.0);
+                    }
+                    "B" => {
+                        state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                        state.app.set_plugin_param(plugin_idx, 3, 0.0);
+                        state.app.set_plugin_param(plugin_idx, 2, 1.0);
+                        state.app.set_plugin_param(plugin_idx, 0, 100.0);
+                    }
+                    _ => {}
                 });
             }
         })

@@ -126,8 +126,7 @@ impl RoomEqStep {
 }
 
 /// Source of measurement data for Room EQ
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum RoomEqDataSource {
     /// Use recordings from current session (RecordingState)
     #[default]
@@ -135,7 +134,6 @@ pub enum RoomEqDataSource {
     /// Loaded from a JSON file
     FromFile(std::path::PathBuf),
 }
-
 
 /// Recording configuration stored with measurements
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,7 +251,6 @@ impl RoomEqMeasurementsFile {
         value
     }
 }
-
 
 /// Measurement data for a single channel (may have multiple drivers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1694,11 +1691,13 @@ impl RoomEqState {
         let mut count = 0;
 
         for (i, &f) in frequencies.iter().enumerate() {
-            if f >= min_freq && f <= max_freq
-                && let Some(&db) = spl.get(i) {
-                    sum += db;
-                    count += 1;
-                }
+            if f >= min_freq
+                && f <= max_freq
+                && let Some(&db) = spl.get(i)
+            {
+                sum += db;
+                count += 1;
+            }
         }
 
         if count > 0 {

@@ -92,26 +92,25 @@ pub fn render_convolution_plugin(
         );
 
     // === CENTER COLUMN: IR waveform placeholder ===
-    let center_col = div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .gap_3()
-        .child(
-            div()
-                .h(px(60.0))
-                .w_full()
-                .bg(theme.surface)
-                .rounded_lg()
-                .border_1()
-                .border_color(theme.border)
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_sm()
-                .text_color(theme.text_muted)
-                .child(if has_ir { "IR Waveform" } else { "No IR loaded" }),
-        );
+    let center_col = div().flex().flex_col().flex_1().gap_3().child(
+        div()
+            .h(px(60.0))
+            .w_full()
+            .bg(theme.surface)
+            .rounded_lg()
+            .border_1()
+            .border_color(theme.border)
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_sm()
+            .text_color(theme.text_muted)
+            .child(if has_ir {
+                "IR Waveform"
+            } else {
+                "No IR loaded"
+            }),
+    );
 
     // === RIGHT COLUMN: Output ===
     let right_col = div()
@@ -121,14 +120,32 @@ pub fn render_convolution_plugin(
         .gap_3()
         .child(render_section_title("OUTPUT", theme))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Mix", state.mix,
-            pk(CV, "mix").min_f64(), pk(CV, "mix").max_f64(),
-            "%", 1, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Mix",
+            state.mix,
+            pk(CV, "mix").min_f64(),
+            pk(CV, "mix").max_f64(),
+            "%",
+            1,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ))
         .child(render_knob(
-            entity.clone(), plugin_idx, "Gain", state.gain_db,
-            pk(CV, "gain_db").min_f64(), pk(CV, "gain_db").max_f64(),
-            "dB", 2, state.selected_param, state.is_editing, None, theme,
+            entity.clone(),
+            plugin_idx,
+            "Gain",
+            state.gain_db,
+            pk(CV, "gain_db").min_f64(),
+            pk(CV, "gain_db").max_f64(),
+            "dB",
+            2,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
         ));
 
     // === Main layout: 3 columns ===
