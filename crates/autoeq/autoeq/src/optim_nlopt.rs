@@ -20,10 +20,12 @@ pub fn optimize_filters_nlopt(
 ) -> Result<(String, f64), (String, f64)> {
     let num_params = x.len();
 
-    // Decide whether to use penalties (for algorithms lacking inequality constraints)
+    // Decide whether to use penalties (for algorithms lacking inequality constraints).
+    // Bobyqa only supports bound constraints, so it also needs penalty-based enforcement.
     let use_penalties = matches!(
         algo,
-        Algorithm::Crs2Lm
+        Algorithm::Bobyqa
+            | Algorithm::Crs2Lm
             | Algorithm::Direct
             | Algorithm::DirectL
             | Algorithm::GMlsl

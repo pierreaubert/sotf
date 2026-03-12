@@ -1,6 +1,6 @@
 // Metaheuristics-specific optimization code
 
-use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties};
+use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
 use super::optim_callback::{ProgressTracker, format_param_summary};
 use ndarray::Array1;
 
@@ -61,9 +61,7 @@ impl MhBounded for MHObjective {
 impl MhObjFunc for MHObjective {
     type Ys = f64;
     fn fitness(&self, xs: &[f64]) -> Self::Ys {
-        // Create mutable copy of data for compute_fitness_penalties
-        let mut data_copy = self.data.clone();
-        let fitness_val = compute_fitness_penalties(xs, None, &mut data_copy);
+        let fitness_val = compute_fitness_penalties_ref(xs, &self.data);
 
         // Update callback state if present
         if let Some(ref state_arc) = self.callback_state

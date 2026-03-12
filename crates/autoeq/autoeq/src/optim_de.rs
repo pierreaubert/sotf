@@ -9,7 +9,7 @@ use super::constraints::{
 };
 use super::init_sobol::init_sobol;
 use super::initial_guess::{SmartInitConfig, create_smart_initial_guesses};
-use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties};
+use super::optim::{ObjectiveData, PenaltyMode, compute_fitness_penalties_ref};
 use super::optim_callback::{ProgressTracker, format_param_summary};
 use crate::de::{
     CallbackAction, DEConfig, DEConfigBuilder, DEIntermediate, DEReport, Init, Mutation,
@@ -160,8 +160,7 @@ pub fn create_de_callback(
 pub fn create_de_objective(penalty_data: ObjectiveData) -> impl Fn(&Array1<f64>) -> f64 {
     move |x_arr: &Array1<f64>| -> f64 {
         let x_slice = x_arr.as_slice().unwrap();
-        let mut data_copy = penalty_data.clone();
-        compute_fitness_penalties(x_slice, None, &mut data_copy)
+        compute_fitness_penalties_ref(x_slice, &penalty_data)
     }
 }
 

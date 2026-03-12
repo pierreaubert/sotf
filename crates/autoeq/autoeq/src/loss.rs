@@ -338,7 +338,7 @@ fn weighted_mse(freqs: &Array1<f64>, error: &Array1<f64>, min_freq: f64, max_fre
     let n2: usize = treble_band.iter().filter(|&&b| b).count();
 
     if n1 == 0 && n2 == 0 {
-        return 0.0;
+        return f64::INFINITY;
     }
 
     // Compute squared errors only for valid points
@@ -428,7 +428,7 @@ pub fn weighted_mse_asymmetric(
     let n2: usize = treble_band.iter().filter(|&&b| b).count();
 
     if n1 == 0 && n2 == 0 {
-        return 0.0;
+        return f64::INFINITY;
     }
 
     // Compute asymmetrically weighted squared errors
@@ -1419,7 +1419,7 @@ mod tests {
 
         // Filter to range that excludes all frequencies
         let v = weighted_mse(&freqs, &err, 1000.0, 5000.0);
-        assert_eq!(v, 0.0, "Should return 0.0 when no frequencies in range");
+        assert!(v.is_infinite(), "Should return INFINITY when no frequencies in range");
     }
 
     #[test]
