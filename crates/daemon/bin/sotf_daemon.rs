@@ -368,6 +368,17 @@ impl AudioDaemon {
 
                 *self.selected_device.lock() = Some(name.clone());
                 log::info!("Output device set to: {} (matched from '{}')", name, device);
+
+                // Check if playback is active - if so, warn user it will apply on restart
+                let manager = self.manager.lock();
+                let state = manager.get_state();
+                if state != sotf_audio::manager::StreamingState::Idle {
+                    log::warn!(
+                        "Device change will take effect on next playback start (current state: {:?})",
+                        state
+                    );
+                }
+
                 Response::ok_empty()
             }
             Err(e) => {
@@ -987,7 +998,16 @@ impl AudioDaemon {
             let running = Arc::clone(&self.running);
             let current_plugins = Arc::clone(&self.current_plugins);
             let current_output_channels = Arc::clone(&self.current_output_channels);
-            spawn_hal_config_watcher(manager, running, current_plugins, current_output_channels)
+            let input_loudness_index = Arc::clone(&self.input_loudness_index);
+            let output_loudness_index = Arc::clone(&self.output_loudness_index);
+            spawn_hal_config_watcher(
+                manager,
+                running,
+                current_plugins,
+                current_output_channels,
+                input_loudness_index,
+                output_loudness_index,
+            )
         };
 
         // Try to bind the socket, handling TOCTOU race properly
@@ -1105,6 +1125,8 @@ fn spawn_hal_config_watcher(
     running: Arc<Mutex<bool>>,
     current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
     current_output_channels: Arc<Mutex<usize>>,
+    input_loudness_index: Arc<Mutex<Option<usize>>>,
+    output_loudness_index: Arc<Mutex<Option<usize>>>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         use std::time::Duration;
@@ -1133,6 +1155,8 @@ fn spawn_hal_config_watcher(
                             &audio_manager,
                             &current_plugins,
                             &current_output_channels,
+                            &input_loudness_index,
+                            &output_loudness_index,
                         );
                     }
                 }
@@ -1159,6 +1183,8 @@ fn handle_hal_config_change(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
     current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
     current_output_channels: &Arc<Mutex<usize>>,
+    input_loudness_index: &Arc<Mutex<Option<usize>>>,
+    output_loudness_index: &Arc<Mutex<Option<usize>>>,
 ) {
     let requested_rate = buffer.requested_sample_rate();
     let requested_frames = buffer.requested_buffer_frames();
@@ -1193,6 +1219,8 @@ fn handle_hal_config_change(
             requested_frames,
             current_plugins,
             current_output_channels,
+            input_loudness_index,
+            output_loudness_index,
         ) {
             Ok(()) => {
                 // Set engine_ready so HAL driver continues sending audio
@@ -1229,6 +1257,8 @@ fn handle_hal_config_change(
             requested_frames,
             current_plugins,
             current_output_channels,
+            input_loudness_index,
+            output_loudness_index,
         ) {
             Ok(()) => {
                 // Set engine_ready so HAL driver continues sending audio
@@ -1259,6 +1289,8 @@ fn handle_hal_config_change(
 /// * `buffer_frames` - New buffer size in frames (currently unused, reserved for future use)
 /// * `current_plugins` - The stored user plugin configuration
 /// * `current_output_channels` - The stored output channel count
+/// * `input_loudness_index` - Arc to store the input monitor index
+/// * `output_loudness_index` - Arc to store the output monitor index
 ///
 /// This function restarts the HAL playback pipeline, adding a resampler plugin
 /// if the HAL sample rate differs from the engine's target rate (48kHz).
@@ -1270,6 +1302,8 @@ fn reconfigure_audio_pipeline(
     #[allow(unused_variables)] buffer_frames: u32,
     current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
     current_output_channels: &Arc<Mutex<usize>>,
+    input_loudness_index: &Arc<Mutex<Option<usize>>>,
+    output_loudness_index: &Arc<Mutex<Option<usize>>>,
 ) -> Result<(), String> {
     let mut manager = audio_manager.lock();
 
@@ -1296,9 +1330,32 @@ fn reconfigure_audio_pipeline(
     let user_plugins = current_plugins.lock().clone();
     let output_channels = *current_output_channels.lock();
 
-    // Build plugin chain: resampler (if needed) + user plugins
+    // Build full plugin chain: input_monitor + user_plugins + output_monitor
+    // This matches what handle_load_plugins_with_channels does
+    let mut final_plugins = Vec::with_capacity(user_plugins.len() + 2);
+
+    // Index 0: input loudness monitor (measures signal before processing)
+    let input_monitor_index = 0;
+    final_plugins.push(PluginConfig {
+        plugin_type: "loudness_monitor".to_string(),
+        parameters: serde_json::json!({}),
+    });
+
+    // User's processing plugins
+    final_plugins.extend(user_plugins);
+
+    // Last: output loudness monitor (measures signal after processing)
+    let output_monitor_index = final_plugins.len();
+    final_plugins.push(PluginConfig {
+        plugin_type: "loudness_monitor".to_string(),
+        parameters: serde_json::json!({}),
+    });
+
+    // Update the loudness indices for get_metering
+    *input_loudness_index.lock() = Some(input_monitor_index);
+    *output_loudness_index.lock() = Some(output_monitor_index);
+
     let target_rate = 48000u32;
-    let plugins = user_plugins;
 
     if hal_sample_rate != 0 && hal_sample_rate != target_rate {
         log::info!(
@@ -1311,14 +1368,17 @@ fn reconfigure_audio_pipeline(
     // Find output device
     let output_device = find_fallback_output_device();
     log::info!(
-        "Restarting HAL playback with {} plugins, {} output channels, device: {:?}",
-        plugins.len(),
+        "Restarting HAL playback with {} plugins (incl. 2 monitors), {} output channels, device: {:?}",
+        final_plugins.len(),
         output_channels,
         output_device
     );
 
+    // Set the output loudness index for backward compat (get_loudness command)
+    manager.set_loudness_plugin_index(output_monitor_index);
+
     // Restart HAL playback with preserved output channel count
-    match manager.start_hal_playback(output_device, plugins, output_channels) {
+    match manager.start_hal_playback(output_device, final_plugins, output_channels) {
         Ok(_) => {
             log::info!("HAL playback restarted successfully");
             Ok(())

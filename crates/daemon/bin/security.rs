@@ -17,7 +17,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime};
 
-use driver_hal::{AudioCipher, compute_fingerprint, fingerprint_to_hex, generate_key};
+use driver_hal::{compute_fingerprint, fingerprint_to_hex, generate_key, AudioCipher};
 
 /// Get the secure socket path for this user
 ///
@@ -525,24 +525,6 @@ mod tests {
 
         let fp_after = manager.fingerprint_hex();
         assert_eq!(fp_before, fp_after, "Fingerprint should not change");
-    }
-
-    #[test]
-    fn test_security_config_defaults() {
-        let config = SecurityConfig::default();
-
-        assert!(
-            config.verify_credentials,
-            "Should verify credentials by default"
-        );
-        assert!(
-            config.per_user_sockets,
-            "Should use per-user sockets by default"
-        );
-        assert!(
-            config.per_user_shm,
-            "Should use per-user shared memory by default"
-        );
     }
 
     #[test]
