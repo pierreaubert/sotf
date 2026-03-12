@@ -511,10 +511,7 @@ pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option
     match device.default_output_config() {
         Ok(config) => {
             let rate = config.sample_rate();
-            log::debug!(
-                "[AUDIO] Device sample rate query successful: {}Hz",
-                rate
-            );
+            log::debug!("[AUDIO] Device sample rate query successful: {}Hz", rate);
             Some(rate)
         }
         Err(e) => {
@@ -538,8 +535,8 @@ pub fn verify_working_sample_rate(
     device_identifier: Option<&str>,
     requested_rate: u32,
 ) -> Option<u32> {
-    use cpal::traits::StreamTrait;
     use cpal::StreamConfig;
+    use cpal::traits::StreamTrait;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     // On PipeWire, skip the verify probe entirely. PipeWire handles all sample rates
@@ -562,10 +559,7 @@ pub fn verify_working_sample_rate(
         find_real_output_device(&host)?
     };
 
-    let device_default = device
-        .default_output_config()
-        .map(|c| c.sample_rate())
-        .ok();
+    let device_default = device.default_output_config().map(|c| c.sample_rate()).ok();
 
     // Build candidate list: requested rate first, then common alternatives
     let mut candidates = vec![requested_rate];

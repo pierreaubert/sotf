@@ -129,19 +129,13 @@ fn handle_load_data_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 );
             }
             KeyCode::BackTab => {
-                app.zsh_backtab_complete(
-                    crate::app::app_autocomplete::set_room_eq_file_path,
-                );
+                app.zsh_backtab_complete(crate::app::app_autocomplete::set_room_eq_file_path);
             }
             KeyCode::Down => {
-                app.autocomplete_down(
-                    crate::app::app_autocomplete::set_room_eq_file_path,
-                );
+                app.autocomplete_down(crate::app::app_autocomplete::set_room_eq_file_path);
             }
             KeyCode::Up => {
-                app.autocomplete_up(
-                    crate::app::app_autocomplete::set_room_eq_file_path,
-                );
+                app.autocomplete_up(crate::app::app_autocomplete::set_room_eq_file_path);
             }
             KeyCode::Backspace => {
                 app.room_eq.file_path.pop();
@@ -275,8 +269,7 @@ fn handle_optimize_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
         }
         KeyCode::Home => {
-            app.room_eq.opt_log_scroll =
-                app.room_eq.opt_log_lines.len().saturating_sub(1);
+            app.room_eq.opt_log_scroll = app.room_eq.opt_log_lines.len().saturating_sub(1);
         }
         KeyCode::End => {
             app.room_eq.opt_log_scroll = 0;
@@ -338,19 +331,13 @@ fn handle_export_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 );
             }
             KeyCode::BackTab => {
-                app.zsh_backtab_complete(
-                    crate::app::app_autocomplete::set_room_eq_export_path,
-                );
+                app.zsh_backtab_complete(crate::app::app_autocomplete::set_room_eq_export_path);
             }
             KeyCode::Down => {
-                app.autocomplete_down(
-                    crate::app::app_autocomplete::set_room_eq_export_path,
-                );
+                app.autocomplete_down(crate::app::app_autocomplete::set_room_eq_export_path);
             }
             KeyCode::Up => {
-                app.autocomplete_up(
-                    crate::app::app_autocomplete::set_room_eq_export_path,
-                );
+                app.autocomplete_up(crate::app::app_autocomplete::set_room_eq_export_path);
             }
             KeyCode::Backspace => {
                 app.room_eq.export_path.pop();
@@ -628,78 +615,80 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         .clone();
 
     if let Ok(mut guard) = result_slot.lock()
-        && let Some(result) = guard.take() {
-            match result {
-                Ok(r) => {
-                    // Convert autoeq results to TUI ChannelOptResult
-                    app.room_eq.channel_results = r
-                        .channel_results
-                        .iter()
-                        .map(|(name, ch)| ChannelOptResult {
-                            channel_name: name.clone(),
-                            pre_score: ch.pre_score,
-                            post_score: ch.post_score,
-                            eq_filters: ch
-                                .biquads
+        && let Some(result) = guard.take()
+    {
+        match result {
+            Ok(r) => {
+                // Convert autoeq results to TUI ChannelOptResult
+                app.room_eq.channel_results = r
+                    .channel_results
+                    .iter()
+                    .map(|(name, ch)| ChannelOptResult {
+                        channel_name: name.clone(),
+                        pre_score: ch.pre_score,
+                        post_score: ch.post_score,
+                        eq_filters: ch
+                            .biquads
+                            .iter()
+                            .map(|b| EqFilterConfig {
+                                filter_type: format!("{:?}", b.filter_type),
+                                frequency: b.freq,
+                                q: b.q,
+                                gain_db: b.db_gain,
+                            })
+                            .collect(),
+                        crossover_freqs: None,
+                        driver_gains: None,
+                        original_response: Some(
+                            ch.initial_curve
+                                .freq
                                 .iter()
-                                .map(|b| EqFilterConfig {
-                                    filter_type: format!("{:?}", b.filter_type),
-                                    frequency: b.freq,
-                                    q: b.q,
-                                    gain_db: b.db_gain,
-                                })
+                                .zip(ch.initial_curve.spl.iter())
+                                .map(|(&f, &s)| (f, s))
                                 .collect(),
-                            crossover_freqs: None,
-                            driver_gains: None,
-                            original_response: Some(
-                                ch.initial_curve
-                                    .freq
-                                    .iter()
-                                    .zip(ch.initial_curve.spl.iter())
-                                    .map(|(&f, &s)| (f, s))
-                                    .collect(),
-                            ),
-                            corrected_response: Some(
-                                ch.final_curve
-                                    .freq
-                                    .iter()
-                                    .zip(ch.final_curve.spl.iter())
-                                    .map(|(&f, &s)| (f, s))
-                                    .collect(),
-                            ),
-                            normalized_response: None,
-                        })
-                        .collect();
-                    app.room_eq.opt_status = OptimizationStatus::Completed;
-                    app.room_eq.opt_progress = 1.0;
-                }
-                Err(e) => {
-                    app.room_eq.opt_status = OptimizationStatus::Failed;
-                    app.room_eq.opt_error = Some(e);
-                }
+                        ),
+                        corrected_response: Some(
+                            ch.final_curve
+                                .freq
+                                .iter()
+                                .zip(ch.final_curve.spl.iter())
+                                .map(|(&f, &s)| (f, s))
+                                .collect(),
+                        ),
+                        normalized_response: None,
+                    })
+                    .collect();
+                app.room_eq.opt_status = OptimizationStatus::Completed;
+                app.room_eq.opt_progress = 1.0;
             }
-            return true;
+            Err(e) => {
+                app.room_eq.opt_status = OptimizationStatus::Failed;
+                app.room_eq.opt_error = Some(e);
+            }
         }
+        return true;
+    }
 
     if let Ok(mut guard) = progress_slot.lock()
-        && let Some(p) = guard.take() {
-            app.room_eq.opt_progress = p.overall_progress as f32;
-            app.room_eq.opt_iteration = p.iteration;
-            app.room_eq.opt_max_iter = p.max_iterations;
-            app.room_eq.opt_loss = p.loss;
-            if p.loss > 0.0 {
-                app.room_eq.loss_history.push((p.speaker_index, p.loss));
-            }
-            if let Some(msg) = p.message {
-                for line in msg.lines() {
-                    app.room_eq.opt_log_lines.push_back(line.to_string());
-                }
-                while app.room_eq.opt_log_lines.len() > 300 {
-                    app.room_eq.opt_log_lines.pop_front();
-                }
-            }
-            return true;
+        && let Some(p) = guard.take()
+    {
+        app.room_eq.opt_progress = p.overall_progress as f32;
+        app.room_eq.opt_iteration = p.iteration;
+        app.room_eq.opt_max_iter = p.max_iterations;
+        app.room_eq.opt_loss = p.loss;
+        if p.loss > 0.0 {
+            app.room_eq.loss_history.push((p.speaker_index, p.loss));
         }
+        if let Some(msg) = p.message {
+            for line in msg.lines() {
+                app.room_eq.opt_log_lines.push_back(line.to_string());
+            }
+            while app.room_eq.opt_log_lines.len() > 300 {
+                app.room_eq.opt_log_lines.pop_front();
+            }
+        }
+        return true;
+    }
 
     false
 }

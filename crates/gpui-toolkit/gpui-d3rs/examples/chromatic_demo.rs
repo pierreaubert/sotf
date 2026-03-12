@@ -76,20 +76,22 @@ impl Render for ChromaticDemo {
 }
 
 fn main() {
-    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(|cx: &mut App| {
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                    None,
-                    size(px(600.0), px(400.0)),
-                    cx,
-                ))),
-                ..Default::default()
-            },
-            |_, cx| cx.new(|cx| ChromaticDemo::new(cx)),
-        )
-        .unwrap();
+    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(
+        |cx: &mut App| {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                        None,
+                        size(px(600.0), px(400.0)),
+                        cx,
+                    ))),
+                    ..Default::default()
+                },
+                |_, cx| cx.new(|cx| ChromaticDemo::new(cx)),
+            )
+            .unwrap();
 
-        cx.activate(true);
-    });
+            cx.activate(true);
+        },
+    );
 }

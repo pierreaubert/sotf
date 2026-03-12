@@ -336,11 +336,11 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             let inner = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),     // status
-                    Constraint::Length(3),     // progress bar
+                    Constraint::Length(3),      // status
+                    Constraint::Length(3),      // progress bar
                     Constraint::Percentage(40), // loss chart or hint
                     Constraint::Percentage(40), // logs box
-                    Constraint::Length(1),     // hint line
+                    Constraint::Length(1),      // hint line
                 ])
                 .split(content);
 
@@ -408,7 +408,9 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             if log_count > 0 {
                 // inner[3] height minus 2 for borders
                 let visible_height = inner[3].height.saturating_sub(2) as usize;
-                let scroll_offset = s.opt_log_scroll.min(log_count.saturating_sub(visible_height));
+                let scroll_offset = s
+                    .opt_log_scroll
+                    .min(log_count.saturating_sub(visible_height));
                 // Calculate the start index from the bottom
                 let end = log_count.saturating_sub(scroll_offset);
                 let start = end.saturating_sub(visible_height);
@@ -417,22 +419,20 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     .iter()
                     .skip(start)
                     .take(end - start)
-                    .map(|line| Line::from(Span::styled(line.as_str(), Style::default().fg(app.theme.fg_secondary))))
+                    .map(|line| {
+                        Line::from(Span::styled(
+                            line.as_str(),
+                            Style::default().fg(app.theme.fg_secondary),
+                        ))
+                    })
                     .collect();
-                let log_para = Paragraph::new(visible_lines).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(log_title),
-                );
+                let log_para = Paragraph::new(visible_lines)
+                    .block(Block::default().borders(Borders::ALL).title(log_title));
                 f.render_widget(log_para, inner[3]);
             } else {
                 let log_para = Paragraph::new("No log messages yet")
                     .style(Style::default().fg(app.theme.fg_secondary))
-                    .block(
-                        Block::default()
-                            .borders(Borders::ALL)
-                            .title(log_title),
-                    );
+                    .block(Block::default().borders(Borders::ALL).title(log_title));
                 f.render_widget(log_para, inner[3]);
             }
 
@@ -451,8 +451,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             } else {
                 " j/k=scroll logs  Enter=start/re-run  BackTab=configure"
             };
-            let hint_para = Paragraph::new(hint)
-                .style(Style::default().fg(app.theme.fg_secondary));
+            let hint_para = Paragraph::new(hint).style(Style::default().fg(app.theme.fg_secondary));
             f.render_widget(hint_para, inner[4]);
         }
 

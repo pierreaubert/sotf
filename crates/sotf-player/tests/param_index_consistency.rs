@@ -69,10 +69,7 @@ fn test_upmixer_param_roundtrip() {
 
 #[test]
 fn test_fletcher_munson_param_roundtrip() {
-    roundtrip_test(
-        "FletcherMunson",
-        &mut default(PluginType::FletcherMunson),
-    );
+    roundtrip_test("FletcherMunson", &mut default(PluginType::FletcherMunson));
 }
 
 #[test]

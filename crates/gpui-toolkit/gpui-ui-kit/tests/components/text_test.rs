@@ -1,6 +1,6 @@
 //! Text/Typography component tests
 
-use gpui_ui_kit::text::{code_text_color, Code, Heading, Link, Text, TextSize, TextWeight};
+use gpui_ui_kit::text::{Code, Heading, Link, Text, TextSize, TextWeight, code_text_color};
 use gpui_ui_kit::theme::Theme;
 
 #[test]

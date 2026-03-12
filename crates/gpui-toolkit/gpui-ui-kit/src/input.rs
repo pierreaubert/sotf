@@ -1054,10 +1054,9 @@ impl RenderOnce for Input {
                     state.start_selection(char_pos);
                     drop(state);
 
-                    if !was_editing
-                        && let Some(ref handler) = on_edit_start_click {
-                            handler(window, cx);
-                        }
+                    if !was_editing && let Some(ref handler) = on_edit_start_click {
+                        handler(window, cx);
+                    }
                     window.refresh();
                 });
 

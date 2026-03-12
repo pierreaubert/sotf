@@ -221,21 +221,23 @@ impl Render for DemoView {
 }
 
 fn main() {
-    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(900.0), px(550.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("GPU 2D Contour Demo".into()),
+    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(
+        |cx: &mut App| {
+            let bounds = Bounds::centered(None, size(px(900.0), px(550.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("GPU 2D Contour Demo".into()),
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |_, cx| cx.new(|_| DemoView),
-        )
-        .unwrap();
+                },
+                |_, cx| cx.new(|_| DemoView),
+            )
+            .unwrap();
 
-        cx.activate(true);
-    });
+            cx.activate(true);
+        },
+    );
 }

@@ -53,11 +53,7 @@ pub(crate) fn render_autocomplete_dropdown(f: &mut Frame, area: Rect, app: &App)
     let title = if total == 1 {
         "1 match".to_string()
     } else {
-        format!(
-            "{}/{} matches",
-            app.autocomplete_index + 1,
-            total,
-        )
+        format!("{}/{} matches", app.autocomplete_index + 1, total,)
     };
 
     let list = List::new(items).block(

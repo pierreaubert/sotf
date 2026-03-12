@@ -210,16 +210,15 @@ pub(crate) fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
             .image_protocol_path
             .as_ref()
             .is_none_or(|p| *p != image_path);
-        if needs_create
-            && let Some(picker) = &mut app.image_picker {
-                if let Ok(img) = image::open(&image_path) {
-                    app.image_protocol = Some(picker.new_resize_protocol(img));
-                    app.image_protocol_path = Some(image_path.clone());
-                } else {
-                    app.image_protocol = None;
-                    app.image_protocol_path = None;
-                }
+        if needs_create && let Some(picker) = &mut app.image_picker {
+            if let Ok(img) = image::open(&image_path) {
+                app.image_protocol = Some(picker.new_resize_protocol(img));
+                app.image_protocol_path = Some(image_path.clone());
+            } else {
+                app.image_protocol = None;
+                app.image_protocol_path = None;
             }
+        }
 
         if let Some(protocol) = &mut app.image_protocol {
             let image = StatefulImage::new();
@@ -243,7 +242,12 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
     // Get currently playing track
     let track_info = if let Some(queue_index) = app.current_queue_index {
         if let Some(entry) = app.queue.get(queue_index) {
-            entry.item.album.tracks.get(entry.item.current_track_index).map(|track| (track, &entry.item.album))
+            entry
+                .item
+                .album
+                .tracks
+                .get(entry.item.current_track_index)
+                .map(|track| (track, &entry.item.album))
         } else {
             None
         }

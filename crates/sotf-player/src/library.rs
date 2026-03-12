@@ -132,8 +132,7 @@ pub fn clean_album_title(title: &str) -> String {
                 && !is_album_suffix
                 && inner.len() <= 15
                 && inner.len() >= 3
-                && (inner.contains('-')
-                    || (letter_count >= 1 && digit_count >= 1));
+                && (inner.contains('-') || (letter_count >= 1 && digit_count >= 1));
             if looks_like_catalog {
                 return title[..bracket_start].trim().to_string();
             }
@@ -2491,10 +2490,7 @@ mod tests {
         assert_eq!(clean_album_title("Album Title (MFSL 1234)"), "Album Title");
 
         // Catalog numbers in square brackets
-        assert_eq!(
-            clean_album_title("Passion [RWCD 1]"),
-            "Passion"
-        );
+        assert_eq!(clean_album_title("Passion [RWCD 1]"), "Passion");
         assert_eq!(
             clean_album_title("Shaking The Tree [PGCD 7]"),
             "Shaking The Tree"
@@ -2503,10 +2499,7 @@ mod tests {
             clean_album_title("Us [PGCD 7] - Digipack"),
             "Us [PGCD 7] - Digipack" // not at end, so not stripped
         );
-        assert_eq!(
-            clean_album_title("Album Title [ABC-123]"),
-            "Album Title"
-        );
+        assert_eq!(clean_album_title("Album Title [ABC-123]"), "Album Title");
 
         // Should NOT clean
         assert_eq!(clean_album_title("AC/DC"), "AC/DC");
@@ -2566,9 +2559,11 @@ mod tests {
     #[test]
     fn test_album_grouping_regression() {
         // Test multi-disc album scenario: different disc numbers should merge
-        let albums = [create_test_album("A Night On The Town", "Rod Stewart", 1),
+        let albums = [
+            create_test_album("A Night On The Town", "Rod Stewart", 1),
             create_test_album("A Night On The Town (CD 1)", "Rod Stewart", 1),
-            create_test_album("A Night On The Town (CD 2)", "Rod Stewart", 2)];
+            create_test_album("A Night On The Town (CD 2)", "Rod Stewart", 2),
+        ];
 
         let album_refs: Vec<&Album> = albums.iter().collect();
         let merged = group_and_merge_albums(album_refs);

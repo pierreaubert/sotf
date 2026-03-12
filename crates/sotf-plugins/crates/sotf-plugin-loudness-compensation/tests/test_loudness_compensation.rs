@@ -2,9 +2,7 @@
 // Loudness Compensation Plugin Integration Tests
 // ============================================================================
 
-use sotf_host::{
-    InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext,
-};
+use sotf_host::{InPlacePluginAdapter, ParameterId, ParameterValue, Plugin, ProcessContext};
 use sotf_plugin_loudness_compensation::LoudnessCompensationPlugin;
 
 #[test]

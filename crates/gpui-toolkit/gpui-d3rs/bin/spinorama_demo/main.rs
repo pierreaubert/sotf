@@ -11,8 +11,8 @@ use app::SpinoramaApp;
 actions!(spinorama_demo, [Quit]);
 
 fn main() {
-    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false)))
-        .run(|cx: &mut App| {
+    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(
+        |cx: &mut App| {
             // Activate app and register quit action
             cx.activate(true);
             cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
@@ -43,5 +43,6 @@ fn main() {
                 |_window, cx| cx.new(SpinoramaApp::new),
             )
             .expect("Failed to open window");
-        });
+        },
+    );
 }

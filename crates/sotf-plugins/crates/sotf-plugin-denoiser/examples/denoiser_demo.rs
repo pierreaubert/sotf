@@ -27,8 +27,14 @@ fn main() {
     println!("  Release: {} ms", params.release_ms);
     println!("  Low latency: {}", params.low_latency);
     println!("  Transient suppression: {}", params.transient_enabled);
-    println!("  Spectral smoothing: {}", params.spectral_smoothing_enabled);
-    println!("  Temporal smoothing: {}", params.temporal_smoothing_enabled);
+    println!(
+        "  Spectral smoothing: {}",
+        params.spectral_smoothing_enabled
+    );
+    println!(
+        "  Temporal smoothing: {}",
+        params.temporal_smoothing_enabled
+    );
     println!("  Hiss remover: {}", params.hiss_enabled);
     println!("  Spectral subtraction: {}", params.spectral_sub_enabled);
     println!();

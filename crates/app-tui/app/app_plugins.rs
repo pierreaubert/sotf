@@ -155,9 +155,9 @@ impl App {
                 output_channels,
                 ..
             } = &plugin.settings
-            {
-                return Some((*input_channels, *output_channels));
-            }
+        {
+            return Some((*input_channels, *output_channels));
+        }
         None
     }
 
@@ -236,13 +236,15 @@ impl App {
 
         // Clamp grid selection after borrow is released
         if let Some(max_col) = clamp_col_to
-            && self.matrix_grid_col >= max_col {
-                self.matrix_grid_col = max_col.saturating_sub(1);
-            }
+            && self.matrix_grid_col >= max_col
+        {
+            self.matrix_grid_col = max_col.saturating_sub(1);
+        }
         if let Some(max_row) = clamp_row_to
-            && self.matrix_grid_row >= max_row {
-                self.matrix_grid_row = max_row.saturating_sub(1);
-            }
+            && self.matrix_grid_row >= max_row
+        {
+            self.matrix_grid_row = max_row.saturating_sub(1);
+        }
 
         result
     }

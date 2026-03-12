@@ -13,23 +13,36 @@ pub fn control_affinity(spec: &ParamSpec) -> &'static [PhysicalControlKind] {
             let range = max - min;
             if range > 100.0 {
                 // Wide range (e.g., frequency, long release) → fader or pot
-                &[PhysicalControlKind::Fader, PhysicalControlKind::Pot, PhysicalControlKind::EncoderWithButton]
+                &[
+                    PhysicalControlKind::Fader,
+                    PhysicalControlKind::Pot,
+                    PhysicalControlKind::EncoderWithButton,
+                ]
             } else {
                 // Narrow range → pot or encoder
-                &[PhysicalControlKind::Pot, PhysicalControlKind::Encoder, PhysicalControlKind::Fader, PhysicalControlKind::EncoderWithButton]
+                &[
+                    PhysicalControlKind::Pot,
+                    PhysicalControlKind::Encoder,
+                    PhysicalControlKind::Fader,
+                    PhysicalControlKind::EncoderWithButton,
+                ]
             }
         }
-        ParamType::Int { .. } => {
-            &[PhysicalControlKind::Encoder, PhysicalControlKind::Pot, PhysicalControlKind::EncoderWithButton]
-        }
-        ParamType::Bool { .. } => {
-            &[PhysicalControlKind::Button]
-        }
+        ParamType::Int { .. } => &[
+            PhysicalControlKind::Encoder,
+            PhysicalControlKind::Pot,
+            PhysicalControlKind::EncoderWithButton,
+        ],
+        ParamType::Bool { .. } => &[PhysicalControlKind::Button],
         ParamType::Choice { labels, .. } => {
             if labels.len() <= 2 {
                 &[PhysicalControlKind::Button]
             } else {
-                &[PhysicalControlKind::Encoder, PhysicalControlKind::Pot, PhysicalControlKind::EncoderWithButton]
+                &[
+                    PhysicalControlKind::Encoder,
+                    PhysicalControlKind::Pot,
+                    PhysicalControlKind::EncoderWithButton,
+                ]
             }
         }
         ParamType::FilePath => {
@@ -61,9 +74,7 @@ pub fn scaling_for_param(spec: &ParamSpec) -> ValueScaling {
             }
         }
         ParamType::Bool { .. } => ValueScaling::Toggle,
-        ParamType::Choice { labels, .. } => {
-            ValueScaling::Stepped(labels.len() as u8)
-        }
+        ParamType::Choice { labels, .. } => ValueScaling::Stepped(labels.len() as u8),
         ParamType::FilePath => ValueScaling::Linear, // unused, FilePath is unmappable
     }
 }
@@ -86,8 +97,8 @@ pub fn auto_map(
         .into_iter()
         .filter(|c| c.kind.is_continuous())
         .collect();
-    let button_controls: Vec<&PhysicalControl> = layout
-        .controls_of_kind(PhysicalControlKind::Button);
+    let button_controls: Vec<&PhysicalControl> =
+        layout.controls_of_kind(PhysicalControlKind::Button);
 
     // Separate params into continuous (Float/Int/Choice-large) and discrete (Bool/Choice-small)
     let mut continuous_params: Vec<(usize, &ParamSpec)> = Vec::new();
@@ -157,7 +168,11 @@ pub fn auto_map(
             btn_slot += 1;
         }
     }
-    let button_pages = if buttons_per_page > 0 { btn_page + 1 } else { 1 };
+    let button_pages = if buttons_per_page > 0 {
+        btn_page + 1
+    } else {
+        1
+    };
 
     mapping.total_pages = continuous_pages.max(button_pages);
     mapping
@@ -292,13 +307,17 @@ mod tests {
         assert_eq!(mapping.total_pages, 1); // 16 continuous controls, 8 continuous params → 1 page
 
         // Check all continuous params got assigned
-        let continuous_bindings: Vec<_> = mapping.bindings.iter()
+        let continuous_bindings: Vec<_> = mapping
+            .bindings
+            .iter()
             .filter(|b| !b.control_id.starts_with("btn_"))
             .collect();
         assert_eq!(continuous_bindings.len(), 8);
 
         // Check bool params got buttons
-        let button_bindings: Vec<_> = mapping.bindings.iter()
+        let button_bindings: Vec<_> = mapping
+            .bindings
+            .iter()
             .filter(|b| b.control_id.starts_with("btn_"))
             .collect();
         assert_eq!(button_bindings.len(), 2);
@@ -325,7 +344,8 @@ mod tests {
                 PhysicalControl {
                     id: "pot_1".to_string(),
                     kind: PhysicalControlKind::Pot,
-                    column: 0, row: 0,
+                    column: 0,
+                    row: 0,
                     group: "pots".to_string(),
                     label: "P1".to_string(),
                     midi_id: MidiControlId::CC(0, 1),
@@ -334,7 +354,8 @@ mod tests {
                 PhysicalControl {
                     id: "pot_2".to_string(),
                     kind: PhysicalControlKind::Pot,
-                    column: 1, row: 0,
+                    column: 1,
+                    row: 0,
                     group: "pots".to_string(),
                     label: "P2".to_string(),
                     midi_id: MidiControlId::CC(0, 2),
@@ -343,7 +364,8 @@ mod tests {
                 PhysicalControl {
                     id: "btn_1".to_string(),
                     kind: PhysicalControlKind::Button,
-                    column: 0, row: 1,
+                    column: 0,
+                    row: 1,
                     group: "buttons".to_string(),
                     label: "B1".to_string(),
                     midi_id: MidiControlId::Note(0, 24),
@@ -376,7 +398,16 @@ mod tests {
 
     #[test]
     fn test_scaling_for_db_param() {
-        let spec = ParamSpec::float("Threshold", "threshold", -20.0, -60.0, 0.0, 1.0, "dB", "Test");
+        let spec = ParamSpec::float(
+            "Threshold",
+            "threshold",
+            -20.0,
+            -60.0,
+            0.0,
+            1.0,
+            "dB",
+            "Test",
+        );
         assert_eq!(scaling_for_param(&spec), ValueScaling::Linear);
     }
 

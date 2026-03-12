@@ -209,8 +209,6 @@ fn test_no_allocations_in_processing_loop() {
         let mut output = input.clone();
         gain.process_in_place(&mut output, &context).unwrap();
     }
-
-
 }
 
 #[test]
@@ -229,8 +227,6 @@ fn test_memory_usage_stability() {
         let mut output = input.clone();
         gain.process_in_place(&mut output, &context).unwrap();
     }
-
-
 }
 
 #[test]

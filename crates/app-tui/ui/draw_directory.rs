@@ -11,16 +11,15 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),          // Help box
-            Constraint::Length(3),          // Input box
-            Constraint::Length(ac_height),  // Autocomplete suggestions
+            Constraint::Length(3),         // Help box
+            Constraint::Length(3),         // Input box
+            Constraint::Length(ac_height), // Autocomplete suggestions
             Constraint::Min(0),            // Directory list + status
         ])
         .split(area);
 
     // Help box with scan keybindings
-    let help_text =
-        "a=add | s/S=scan | r/R=replay gain | b/B=bliss | w/W=waveform | d=delete | m=maintenance (uppercase=force)";
+    let help_text = "a=add | s/S=scan | r/R=replay gain | b/B=bliss | w/W=waveform | d=delete | m=maintenance (uppercase=force)";
     draw_help_box_with_text(f, chunks[0], app, help_text);
 
     // Input box for adding directories

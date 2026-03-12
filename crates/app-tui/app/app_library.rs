@@ -465,10 +465,9 @@ impl App {
                         dir.expanded = !dir.expanded;
                         return true;
                     }
-                    if dir.expanded
-                        && toggle_recursive(&mut dir.subdirectories, target_path) {
-                            return true;
-                        }
+                    if dir.expanded && toggle_recursive(&mut dir.subdirectories, target_path) {
+                        return true;
+                    }
                 }
                 false
             }

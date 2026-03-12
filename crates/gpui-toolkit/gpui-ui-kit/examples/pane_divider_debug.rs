@@ -96,20 +96,24 @@ impl PaneDividerDebug {
         match target {
             DragTarget::Left => {
                 let delta: f32 = position.x.into();
-                self.left_width = (start_size + (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
+                self.left_width =
+                    (start_size + (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
             }
             DragTarget::Right => {
                 let delta: f32 = position.x.into();
                 // Dragging right = shrinking the right panel
-                self.right_width = (start_size - (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
+                self.right_width =
+                    (start_size - (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
             }
             DragTarget::Top => {
                 let delta: f32 = position.y.into();
-                self.top_height = (start_size + (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
+                self.top_height =
+                    (start_size + (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
             }
             DragTarget::Bottom => {
                 let delta: f32 = position.y.into();
-                self.bottom_height = (start_size - (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
+                self.bottom_height =
+                    (start_size - (delta - start_pos)).clamp(MIN_PANEL_SIZE, MAX_PANEL_SIZE);
             }
         }
     }

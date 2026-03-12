@@ -169,19 +169,21 @@ mod tests {
                 |app| {
                     // loss_function is field 0 and is a selectable field;
                     // the exact value depends on the default cycle order
-                    assert_ne!(app.spinorama_eq.config.loss_function, "flat-asymmetric",
-                        "loss_function should have changed from default");
+                    assert_ne!(
+                        app.spinorama_eq.config.loss_function, "flat-asymmetric",
+                        "loss_function should have changed from default"
+                    );
                 },
             ),
             // 7. Esc → step tab bar, Right x3 → UpdatePlugin, Down → enter content
             step(
                 "Navigate via step tab bar to UpdatePlugin",
                 vec![
-                    Input::Key(KeyCode::Esc),       // → step tab bar
-                    Input::Key(KeyCode::Right),      // Configure → Optimize
-                    Input::Key(KeyCode::Right),      // Optimize → Results
-                    Input::Key(KeyCode::Right),      // Results → UpdatePlugin
-                    Input::Key(KeyCode::Down),       // → enter content
+                    Input::Key(KeyCode::Esc),   // → step tab bar
+                    Input::Key(KeyCode::Right), // Configure → Optimize
+                    Input::Key(KeyCode::Right), // Optimize → Results
+                    Input::Key(KeyCode::Right), // Results → UpdatePlugin
+                    Input::Key(KeyCode::Down),  // → enter content
                 ],
                 |app| {
                     assert_eq!(app.spinorama_eq.step, SpinoramaStep::UpdatePlugin);
@@ -288,12 +290,12 @@ mod tests {
             step(
                 "Navigate via step tab bar to Export",
                 vec![
-                    Input::Key(KeyCode::Esc),       // → step tab bar (from LoadData content)
-                    Input::Key(KeyCode::Right),      // LoadData → Configure
-                    Input::Key(KeyCode::Right),      // Configure → Optimize
-                    Input::Key(KeyCode::Right),      // Optimize → Review
-                    Input::Key(KeyCode::Right),      // Review → Export
-                    Input::Key(KeyCode::Down),       // → enter Export content
+                    Input::Key(KeyCode::Esc),   // → step tab bar (from LoadData content)
+                    Input::Key(KeyCode::Right), // LoadData → Configure
+                    Input::Key(KeyCode::Right), // Configure → Optimize
+                    Input::Key(KeyCode::Right), // Optimize → Review
+                    Input::Key(KeyCode::Right), // Review → Export
+                    Input::Key(KeyCode::Down),  // → enter Export content
                 ],
                 |app| {
                     assert_eq!(app.room_eq.step, RoomEqStep::Export);

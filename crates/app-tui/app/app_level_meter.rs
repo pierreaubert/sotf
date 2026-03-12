@@ -249,28 +249,29 @@ impl App {
         for i in 0..self.plugin_chain.len() {
             if let Some(plugin) = self.plugin_chain.get_plugin_mut(i)
                 && plugin.is_permanent()
-                    && matches!(&plugin.settings, PluginSettings::Matrix { .. })
+                && matches!(&plugin.settings, PluginSettings::Matrix { .. })
+            {
+                if let PluginSettings::Matrix {
+                    channel_states: ref mut cs,
+                    ..
+                } = plugin.settings
                 {
-                    if let PluginSettings::Matrix {
-                        channel_states: ref mut cs,
-                        ..
-                    } = plugin.settings
-                    {
-                        *cs = channel_states.clone();
-                    }
-                    break;
+                    *cs = channel_states.clone();
                 }
+                break;
+            }
         }
 
         // Queue zero-dropout parameter update via matrix_engine_index
         if let Some(engine_index) = self.plugin_chain.matrix_engine_index()
-            && let Ok(json) = serde_json::to_string(&channel_states) {
-                self.pending_param_update = Some(PendingParameterUpdate {
-                    plugin_index: engine_index,
-                    param_id: "channel_states".to_string(),
-                    value: json,
-                });
-            }
+            && let Ok(json) = serde_json::to_string(&channel_states)
+        {
+            self.pending_param_update = Some(PendingParameterUpdate {
+                plugin_index: engine_index,
+                param_id: "channel_states".to_string(),
+                value: json,
+            });
+        }
     }
 
     /// Navigate to next level meter group

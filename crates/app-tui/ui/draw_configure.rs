@@ -681,30 +681,30 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Selected channel details
             if let Some(ch) = completed.get(s.selected_channel_view)
-                && let Some(ref result) = ch.result {
-                    let mut details = vec![
-                        Line::from(Span::styled(
-                            format!(" Channel: {}", ch.channel_name),
-                            Style::default().fg(app.theme.accent_primary),
-                        )),
-                        Line::from(format!(" Frequency points: {}", result.frequencies.len())),
-                    ];
-                    if let Some(ref thd) = result.thd_percent {
-                        let avg_thd = thd.iter().copied().sum::<f32>() / thd.len().max(1) as f32;
-                        details.push(Line::from(format!(" Avg THD: {:.2}%", avg_thd)));
-                    }
-                    if let Some(ref rt60) = result.rt60_ms {
-                        let positive: Vec<f32> =
-                            rt60.iter().copied().filter(|v| *v > 0.0).collect();
-                        if !positive.is_empty() {
-                            let avg_rt60 = positive.iter().sum::<f32>() / positive.len() as f32;
-                            details.push(Line::from(format!(" Avg RT60: {:.0} ms", avg_rt60)));
-                        }
-                    }
-                    let detail_para = Paragraph::new(details)
-                        .block(Block::default().borders(Borders::ALL).title("Details"));
-                    f.render_widget(detail_para, inner[1]);
+                && let Some(ref result) = ch.result
+            {
+                let mut details = vec![
+                    Line::from(Span::styled(
+                        format!(" Channel: {}", ch.channel_name),
+                        Style::default().fg(app.theme.accent_primary),
+                    )),
+                    Line::from(format!(" Frequency points: {}", result.frequencies.len())),
+                ];
+                if let Some(ref thd) = result.thd_percent {
+                    let avg_thd = thd.iter().copied().sum::<f32>() / thd.len().max(1) as f32;
+                    details.push(Line::from(format!(" Avg THD: {:.2}%", avg_thd)));
                 }
+                if let Some(ref rt60) = result.rt60_ms {
+                    let positive: Vec<f32> = rt60.iter().copied().filter(|v| *v > 0.0).collect();
+                    if !positive.is_empty() {
+                        let avg_rt60 = positive.iter().sum::<f32>() / positive.len() as f32;
+                        details.push(Line::from(format!(" Avg RT60: {:.0} ms", avg_rt60)));
+                    }
+                }
+                let detail_para = Paragraph::new(details)
+                    .block(Block::default().borders(Borders::ALL).title("Details"));
+                f.render_widget(detail_para, inner[1]);
+            }
 
             let help = Paragraph::new(" Up/Down=select channel  Tab=save  BackTab=capture")
                 .style(Style::default().fg(app.theme.fg_secondary));

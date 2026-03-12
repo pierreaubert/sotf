@@ -423,19 +423,20 @@ fn test_real_daemon_list_devices() {
 
     if let Some(data) = json.get("data")
         && let Some(devices) = data.get("devices")
-            && let Some(arr) = devices.as_array() {
-                println!("Available audio devices ({}):", arr.len());
-                for device in arr {
-                    if let Some(name) = device.get("name") {
-                        let is_default = device
-                            .get("is_default")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let marker = if is_default { " (default)" } else { "" };
-                        println!("  - {}{}", name, marker);
-                    }
-                }
+        && let Some(arr) = devices.as_array()
+    {
+        println!("Available audio devices ({}):", arr.len());
+        for device in arr {
+            if let Some(name) = device.get("name") {
+                let is_default = device
+                    .get("is_default")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let marker = if is_default { " (default)" } else { "" };
+                println!("  - {}{}", name, marker);
             }
+        }
+    }
 }
 
 // =============================================================================

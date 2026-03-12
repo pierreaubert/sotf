@@ -743,7 +743,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -3642,7 +3642,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.10"
+version = "0.6.11"
 dependencies = [
  "gpui",
  "gpui-ui-kit-macros",
@@ -5207,7 +5207,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "approx",
  "clap",
@@ -5244,7 +5244,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64 0.22.1",
  "byteorder",

@@ -42,32 +42,35 @@ mod inner {
             // Get the currently playing album
             if let Some(queue_index) = self.current_queue_index
                 && let Some(entry) = self.queue.get(queue_index)
-                    && let Some(first_track) = entry.item.album.tracks.first()
-                        && let Some(parent_dir) = first_track.path.parent() {
-                            // Find all image files in the directory
-                            if let Ok(entries) = std::fs::read_dir(parent_dir) {
-                                for entry in entries.flatten() {
-                                    if let Ok(path) = entry.path().canonicalize()
-                                        && let Some(ext) = path.extension() {
-                                            let ext_lower = ext.to_string_lossy().to_lowercase();
-                                            if matches!(
-                                                ext_lower.as_str(),
-                                                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
-                                            ) {
-                                                self.album_images.push(path);
-                                            }
-                                        }
-                                }
+                && let Some(first_track) = entry.item.album.tracks.first()
+                && let Some(parent_dir) = first_track.path.parent()
+            {
+                // Find all image files in the directory
+                if let Ok(entries) = std::fs::read_dir(parent_dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(path) = entry.path().canonicalize()
+                            && let Some(ext) = path.extension()
+                        {
+                            let ext_lower = ext.to_string_lossy().to_lowercase();
+                            if matches!(
+                                ext_lower.as_str(),
+                                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                            ) {
+                                self.album_images.push(path);
                             }
-                            // Sort images for consistent order
-                            self.album_images.sort();
                         }
+                    }
+                }
+                // Sort images for consistent order
+                self.album_images.sort();
+            }
         }
 
         /// Cycle to the next image in the album directory
         pub fn next_album_image(&mut self) {
             if !self.album_images.is_empty() {
-                self.selected_image_index = (self.selected_image_index + 1) % self.album_images.len();
+                self.selected_image_index =
+                    (self.selected_image_index + 1) % self.album_images.len();
                 self.image_protocol = None;
                 self.image_protocol_path = None;
             }

@@ -745,8 +745,7 @@ impl SharedAudioBuffer {
         // ciphertext_size returns bytes for samples + tag, add 8 for nonce
         let ciphertext_bytes = crate::encryption::AudioCipher::ciphertext_size(sample_count);
         let total_bytes = 8 + ciphertext_bytes; // 8 bytes for nonce prefix
-        let encrypted_size =
-            total_bytes.div_ceil(std::mem::size_of::<f32>());
+        let encrypted_size = total_bytes.div_ceil(std::mem::size_of::<f32>());
 
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
@@ -1205,7 +1204,6 @@ impl HalInputReader {
     }
 }
 
-
 /// Writer adapter for HAL output (compatible with old HalOutputWriter API)
 ///
 /// Also provides configuration methods for setting sample rate, channel count,
@@ -1404,7 +1402,6 @@ impl HalOutputWriter {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

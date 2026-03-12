@@ -205,11 +205,12 @@ impl InPlacePlugin for GainPlugin {
         if id == self.param_gain_db {
             Parameter::new_float("gain_db", "Gain", 0.0, -100.0, 24.0).validate(&val)?;
             if let Some(v) = val.as_float()
-                && v.is_finite() {
-                    self.set_gain_db(v);
-                    self.rebuild_cached_parameters();
-                    return Ok(());
-                }
+                && v.is_finite()
+            {
+                self.set_gain_db(v);
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
         }
 
         if let Some(s) = id.as_str().strip_prefix("gain_db_")
@@ -217,11 +218,12 @@ impl InPlacePlugin for GainPlugin {
         {
             Parameter::new_float("gain_db_ch", "Gain Ch", 0.0, -100.0, 24.0).validate(&val)?;
             if let Some(v) = val.as_float()
-                && v.is_finite() {
-                    self.set_channel_gain_db(ch, v)?;
-                    self.rebuild_cached_parameters();
-                    return Ok(());
-                }
+                && v.is_finite()
+            {
+                self.set_channel_gain_db(ch, v)?;
+                self.rebuild_cached_parameters();
+                return Ok(());
+            }
         }
         Err(format!("Invalid or unknown parameter: {}", id))
     }

@@ -128,17 +128,19 @@ impl Render for HierarchyDemo {
 }
 
 fn main() {
-    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(800.0), px(600.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..Default::default()
-            },
-            |_, cx| cx.new(|cx| HierarchyDemo::new(cx)),
-        )
-        .unwrap();
+    Application::with_platform(std::rc::Rc::new(gpui_macos::MacPlatform::new(false))).run(
+        |cx: &mut App| {
+            let bounds = Bounds::centered(None, size(px(800.0), px(600.0)), cx);
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..Default::default()
+                },
+                |_, cx| cx.new(|cx| HierarchyDemo::new(cx)),
+            )
+            .unwrap();
 
-        cx.activate(true);
-    });
+            cx.activate(true);
+        },
+    );
 }

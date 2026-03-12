@@ -756,10 +756,14 @@ pub fn deinterleave_stereo(input: &[f32], left: &mut [f32], right: &mut [f32]) {
                 let shuf_r = _mm256_shuffle_ps(v0, v1, 0b11_01_11_01); // R0 R1 R4 R5 | R2 R3 R6 R7
 
                 // Permute to get correct order
-                let left_vec =
-                    _mm256_permute4x64_pd(std::mem::transmute::<__m256, __m256d>(shuf_l), 0b11_01_10_00);
-                let right_vec =
-                    _mm256_permute4x64_pd(std::mem::transmute::<__m256, __m256d>(shuf_r), 0b11_01_10_00);
+                let left_vec = _mm256_permute4x64_pd(
+                    std::mem::transmute::<__m256, __m256d>(shuf_l),
+                    0b11_01_10_00,
+                );
+                let right_vec = _mm256_permute4x64_pd(
+                    std::mem::transmute::<__m256, __m256d>(shuf_r),
+                    0b11_01_10_00,
+                );
 
                 _mm256_storeu_ps(
                     left.as_mut_ptr().add(i),

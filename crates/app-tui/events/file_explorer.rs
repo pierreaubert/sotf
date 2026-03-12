@@ -1,7 +1,7 @@
 use super::PlayerCommand;
 use crate::app::{App, FilePickerMode, FilePickerOrigin};
 use crossterm::event::{KeyCode, KeyEvent};
-use sotf_audio_player::{preset_file_to_path_config_json, PluginSettings};
+use sotf_audio_player::{PluginSettings, preset_file_to_path_config_json};
 
 pub(super) fn handle_file_explorer_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
@@ -145,10 +145,8 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                                     *path_b_file = path_str;
                                 }
                             }
-                            let filename =
-                                path.file_name().unwrap_or_default().to_string_lossy();
-                            app.status_message =
-                                Some(format!("Config loaded from {}", filename));
+                            let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                            app.status_message = Some(format!("Config loaded from {}", filename));
                             app.request_plugin_update();
                         }
                         Err(e) => {
