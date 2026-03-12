@@ -11,8 +11,8 @@ use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 // Alias the `qrcode` crate types to avoid shadowing by our component struct.
-use qrcode::types::Color as QrColor;
 use qrcode::QrCode as QrMatrix;
+use qrcode::types::Color as QrColor;
 
 /// A QR code display component.
 ///

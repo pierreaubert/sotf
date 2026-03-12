@@ -325,6 +325,101 @@ impl ComponentShowcase {
             )
             .build()
     }
+
+    /// Render new Tier 1 components section
+    fn render_new_components(&self, _cx: &mut Context<Self>) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Md)
+            .child(self.section_header("New Components"))
+            // Keyboard shortcut labels
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Keyboard Shortcuts").weight(TextWeight::Semibold))
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(KeyboardShortcutLabel::new("⌘+K"))
+                            .child(KeyboardShortcutLabel::new("Ctrl+Shift+P"))
+                            .child(
+                                KeyboardShortcutLabel::new("Alt+F4")
+                                    .size(KeyboardShortcutSize::Lg),
+                            )
+                            .child(
+                                KeyboardShortcutLabel::new("⌘+S")
+                                    .size(KeyboardShortcutSize::Sm),
+                            )
+                            .build(),
+                    )
+                    .build(),
+            )
+            // Empty state
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Empty State").weight(TextWeight::Semibold))
+                    .child(
+                        div()
+                            .border_1()
+                            .border_color(self.theme.border.to_rgba())
+                            .rounded_lg()
+                            .p_4()
+                            .child(
+                                EmptyState::new("No albums found")
+                                    .description("Try adjusting your search filters")
+                                    .icon("♪"),
+                            ),
+                    )
+                    .build(),
+            )
+            // Search bar
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Search Bar").weight(TextWeight::Semibold))
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                div().w(px(250.0)).child(
+                                    SearchBar::new("search-demo")
+                                        .placeholder("Search albums..."),
+                                ),
+                            )
+                            .child(
+                                div().w(px(200.0)).child(
+                                    SearchBar::new("search-filled")
+                                        .value("Beethoven")
+                                        .size(SearchBarSize::Sm),
+                                ),
+                            )
+                            .build(),
+                    )
+                    .build(),
+            )
+            // Status bar
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Status Bar").weight(TextWeight::Semibold))
+                    .child(
+                        div()
+                            .border_1()
+                            .border_color(self.theme.border.to_rgba())
+                            .rounded_lg()
+                            .overflow_hidden()
+                            .child(
+                                StatusBar::new("status-demo")
+                                    .position(StatusBarPosition::Bottom)
+                                    .left(Text::new("Playing: Track 1").size(TextSize::Xs))
+                                    .center(Text::new("00:00 / 03:45").size(TextSize::Xs))
+                                    .right(Text::new("Vol: 80%").size(TextSize::Xs)),
+                            ),
+                    )
+                    .build(),
+            )
+            .build()
+    }
 }
 
 impl Render for ComponentShowcase {
@@ -416,6 +511,15 @@ impl Render for ComponentShowcase {
                                                 .border_1()
                                                 .border_color(self.theme.border.to_rgba())
                                                 .child(self.render_cards(cx)),
+                                        )
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .bg(surface)
+                                                .rounded_lg()
+                                                .border_1()
+                                                .border_color(self.theme.border.to_rgba())
+                                                .child(self.render_new_components(cx)),
                                         )
                                         .build(),
                                 ),

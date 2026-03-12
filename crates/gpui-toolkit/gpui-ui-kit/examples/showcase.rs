@@ -49,6 +49,14 @@ pub enum ShowcaseSection {
     Wizard,
     Workflow,
     QrCode,
+    ContextMenu,
+    Popover,
+    Sidebar,
+    StatusBar,
+    SearchBar,
+    KeyboardShortcut,
+    EmptyState,
+    ConfirmDialog,
 }
 
 impl ShowcaseSection {
@@ -77,6 +85,14 @@ impl ShowcaseSection {
             ShowcaseSection::Wizard,
             ShowcaseSection::Workflow,
             ShowcaseSection::QrCode,
+            ShowcaseSection::ContextMenu,
+            ShowcaseSection::Popover,
+            ShowcaseSection::Sidebar,
+            ShowcaseSection::StatusBar,
+            ShowcaseSection::SearchBar,
+            ShowcaseSection::KeyboardShortcut,
+            ShowcaseSection::EmptyState,
+            ShowcaseSection::ConfirmDialog,
         ]
     }
 
@@ -105,6 +121,14 @@ impl ShowcaseSection {
             ShowcaseSection::Wizard => "Wizard",
             ShowcaseSection::Workflow => "Workflow",
             ShowcaseSection::QrCode => "QR Code",
+            ShowcaseSection::ContextMenu => "Context Menu",
+            ShowcaseSection::Popover => "Popover",
+            ShowcaseSection::Sidebar => "Sidebar",
+            ShowcaseSection::StatusBar => "Status Bar",
+            ShowcaseSection::SearchBar => "Search Bar",
+            ShowcaseSection::KeyboardShortcut => "Keyboard Shortcuts",
+            ShowcaseSection::EmptyState => "Empty State",
+            ShowcaseSection::ConfirmDialog => "Confirm Dialog",
         }
     }
 
@@ -133,6 +157,14 @@ impl ShowcaseSection {
             ShowcaseSection::Wizard => "🧙",
             ShowcaseSection::Workflow => "🕸️",
             ShowcaseSection::QrCode => "📱",
+            ShowcaseSection::ContextMenu => ">",
+            ShowcaseSection::Popover => "^",
+            ShowcaseSection::Sidebar => "|",
+            ShowcaseSection::StatusBar => "_",
+            ShowcaseSection::SearchBar => "?",
+            ShowcaseSection::KeyboardShortcut => "#",
+            ShowcaseSection::EmptyState => "0",
+            ShowcaseSection::ConfirmDialog => "!",
         }
     }
 }
@@ -328,26 +360,14 @@ impl Render for Showcase {
         let theme = cx.theme();
         let bg_color = theme.background;
         let text_color = theme.text_secondary;
-        let surface_color = theme.surface;
-        let border_color = theme.border;
         let accent_color = theme.accent;
 
         // Get translations
         let title = cx.t(TranslationKey::AppTitle);
         let subtitle = cx.t(TranslationKey::AppSubtitle);
 
-        // Build navigation sidebar
-        let mut nav = div()
-            .flex()
-            .flex_col()
-            .w(px(200.0))
-            .min_w(px(200.0))
-            .h_full()
-            .bg(surface_color)
-            .border_r_1()
-            .border_color(border_color)
-            .py_4()
-            .overflow_hidden();
+        // Build navigation sidebar items
+        let mut nav_items = div().flex().flex_col().py_4();
 
         for section in ShowcaseSection::all() {
             let section = *section;
@@ -386,8 +406,13 @@ impl Render for Showcase {
                     });
                 });
 
-            nav = nav.child(item);
+            nav_items = nav_items.child(item);
         }
+
+        let nav = Sidebar::new("showcase-nav")
+            .side(SidebarSide::Left)
+            .width(px(200.0))
+            .content(nav_items);
 
         // Main content area
         let content = match current_section {
@@ -438,6 +463,18 @@ impl Render for Showcase {
             ShowcaseSection::Wizard => self.render_wizard_section(cx).into_any_element(),
             ShowcaseSection::Workflow => self.render_workflow_section(cx).into_any_element(),
             ShowcaseSection::QrCode => self.render_qr_section(cx).into_any_element(),
+            ShowcaseSection::ContextMenu => self.render_context_menu_section(cx).into_any_element(),
+            ShowcaseSection::Popover => self.render_popover_section(cx).into_any_element(),
+            ShowcaseSection::Sidebar => self.render_sidebar_section(cx).into_any_element(),
+            ShowcaseSection::StatusBar => self.render_status_bar_section(cx).into_any_element(),
+            ShowcaseSection::SearchBar => self.render_search_bar_section(cx).into_any_element(),
+            ShowcaseSection::KeyboardShortcut => {
+                self.render_keyboard_shortcut_section(cx).into_any_element()
+            }
+            ShowcaseSection::EmptyState => self.render_empty_state_section(cx).into_any_element(),
+            ShowcaseSection::ConfirmDialog => {
+                self.render_confirm_dialog_section(cx).into_any_element()
+            }
         };
 
         div()
@@ -615,6 +652,14 @@ include!("includes/render_toast.inc.rs");
 include!("includes/render_tooltip.inc.rs");
 include!("includes/render_wizard.inc.rs");
 include!("includes/render_workflow.inc.rs");
+include!("includes/render_context_menu.inc.rs");
+include!("includes/render_popover.inc.rs");
+include!("includes/render_sidebar.inc.rs");
+include!("includes/render_status_bar.inc.rs");
+include!("includes/render_search_bar.inc.rs");
+include!("includes/render_keyboard_shortcut.inc.rs");
+include!("includes/render_empty_state.inc.rs");
+include!("includes/render_confirm_dialog.inc.rs");
 
 fn main() {
     MiniApp::run(

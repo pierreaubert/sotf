@@ -30,6 +30,9 @@ gpui-ui-kit = { version = "0.6.10", git="https://github.com/pierreaubert/sotf/tr
 | `Card` | Container with optional header, content, and footer sections |
 | `Dialog` | Modal dialog with backdrop, title, and customizable size |
 | `Menu` / `MenuBar` | Navigation menus and menu bars |
+| `ContextMenu` | Right-click context menu with positioned backdrop and click-outside dismiss |
+| `Popover` | Floating panel with 8 placement options, backdrop dismiss, and theme factory |
+| `ConfirmDialog` | Confirmation prompt with Default/Destructive/Warning variants |
 | `Tabs` | Tabbed navigation with Underline, Enclosed, and Pills variants |
 | `Toast` / `ToastContainer` | Notification toasts with positioning |
 
@@ -57,6 +60,8 @@ gpui-ui-kit = { version = "0.6.10", git="https://github.com/pierreaubert/sotf/tr
 | `Avatar` / `AvatarGroup` | User avatars with status indicators |
 | `Table` | Data table with sorting, selection, and pagination |
 | `QrCode` | QR code display with custom size, foreground, and background colors |
+| `KeyboardShortcutLabel` | Renders keyboard shortcuts as styled key caps (e.g., `⌘+K`) |
+| `EmptyState` | Placeholder for empty lists/containers with icon, title, description, and action |
 | `Text` / `Heading` / `Code` / `Link` | Typography components |
 
 ### Feedback
@@ -64,6 +69,7 @@ gpui-ui-kit = { version = "0.6.10", git="https://github.com/pierreaubert/sotf/tr
 | Component | Description |
 |-----------|-------------|
 | `Alert` / `InlineAlert` | Contextual feedback messages (Info, Success, Warning, Error) |
+| `SearchBar` | Search input with icon, clear button, and size variants |
 | `Tooltip` | Hover tooltips with placement options |
 
 ### Layout
@@ -74,6 +80,8 @@ gpui-ui-kit = { version = "0.6.10", git="https://github.com/pierreaubert/sotf/tr
 | `Spacer` | Flexible spacer element |
 | `Divider` | Horizontal/vertical dividers with optional interactivity |
 | `PaneDivider` | Resizable pane divider for split views |
+| `Sidebar` | Collapsible side panel with left/right positioning, header, footer, and scrollable content |
+| `StatusBar` | Horizontal bar with left/center/right sections for top or bottom of window |
 | `Accordion` | Collapsible content panels |
 | `Breadcrumbs` | Navigation breadcrumbs |
 
@@ -253,6 +261,115 @@ Dialog::new("confirm-dialog")
     .on_close(|window, cx| {
         // Handle dialog close
     })
+```
+
+### ContextMenu
+
+```rust
+use gpui_ui_kit::{ContextMenu, MenuItem};
+
+ContextMenu::new("file-context-menu", vec![
+    MenuItem::new("cut", "Cut").with_shortcut("⌘X"),
+    MenuItem::new("copy", "Copy").with_shortcut("⌘C"),
+    MenuItem::separator(),
+    MenuItem::new("paste", "Paste").with_shortcut("⌘V"),
+    MenuItem::new("delete", "Delete").danger(),
+])
+    .position(mouse_position)
+    .on_select(|id, window, cx| {
+        println!("Selected: {}", id);
+    })
+    .on_close(|window, cx| {
+        // Dismiss context menu
+    })
+```
+
+### Popover
+
+```rust
+use gpui_ui_kit::{Popover, PopoverPlacement};
+
+Popover::new("device-picker")
+    .placement(PopoverPlacement::BottomStart)
+    .width(px(240.0))
+    .content(div().child("Popover content"))
+    .on_close(|window, cx| {
+        // Dismiss popover
+    })
+```
+
+### ConfirmDialog
+
+```rust
+use gpui_ui_kit::{ConfirmDialog, ConfirmDialogVariant};
+
+ConfirmDialog::new("delete-confirm")
+    .title("Delete Album")
+    .message("Are you sure? This cannot be undone.")
+    .variant(ConfirmDialogVariant::Destructive)
+    .confirm_label("Delete")
+    .on_confirm(|window, cx| { /* delete */ })
+    .on_cancel(|window, cx| { /* dismiss */ })
+```
+
+### Sidebar
+
+```rust
+use gpui_ui_kit::{Sidebar, SidebarSide};
+
+Sidebar::new("nav-sidebar")
+    .side(SidebarSide::Left)
+    .width(px(260.0))
+    .collapsed(false)
+    .header(div().child("Navigation"))
+    .content(div().child("Sidebar content"))
+    .footer(div().child("Footer"))
+```
+
+### StatusBar
+
+```rust
+use gpui_ui_kit::{StatusBar, StatusBarPosition};
+
+StatusBar::new("footer")
+    .position(StatusBarPosition::Bottom)
+    .left(div().child("Playing: Track 1"))
+    .center(div().child("00:00 / 03:45"))
+    .right(div().child("Vol: 80%"))
+```
+
+### SearchBar
+
+```rust
+use gpui_ui_kit::{SearchBar, SearchBarSize};
+
+SearchBar::new("library-search")
+    .placeholder("Search albums...")
+    .value(current_query)
+    .size(SearchBarSize::Md)
+    .on_change(|query, window, cx| {
+        // Filter results
+    })
+```
+
+### KeyboardShortcutLabel
+
+```rust
+use gpui_ui_kit::{KeyboardShortcutLabel, KeyboardShortcutSize};
+
+KeyboardShortcutLabel::new("⌘+K")
+KeyboardShortcutLabel::new("Ctrl+Shift+P").size(KeyboardShortcutSize::Lg)
+```
+
+### EmptyState
+
+```rust
+use gpui_ui_kit::EmptyState;
+
+EmptyState::new("No albums found")
+    .description("Try adjusting your search filters")
+    .icon("♪")
+    .action(Button::new("clear", "Clear Filters"))
 ```
 
 ### Alert

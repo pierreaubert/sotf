@@ -31,12 +31,15 @@ mod table_test;
 // Navigation Components
 mod breadcrumbs_test;
 mod button_set_test;
+mod context_menu_test;
 mod menu_test;
 mod tabs_test;
 
 // Layout Components
 mod pane_divider_test;
+mod sidebar_test;
 mod stack_test;
+mod status_bar_test;
 
 // Audio Components
 mod potentiometer_test;
@@ -56,7 +59,16 @@ mod text_test;
 mod toast_test;
 mod tooltip_test;
 
+// Overlay Components
+mod confirm_dialog_test;
+mod popover_test;
+
+// Search & Input
+mod search_bar_test;
+
 // Data Display
+mod empty_state_test;
+mod keyboard_shortcut_label_test;
 mod qr_test;
 
 // Theme

@@ -109,6 +109,14 @@ pub enum TranslationKey {
     SectionPotentiometers,
     SectionAccordion,
     SectionQrCode,
+    SectionContextMenu,
+    SectionPopover,
+    SectionSidebar,
+    SectionStatusBar,
+    SectionSearchBar,
+    SectionKeyboardShortcut,
+    SectionEmptyState,
+    SectionConfirmDialog,
 
     // Component labels
     LabelVariants,
@@ -223,6 +231,14 @@ impl Translations {
         t.insert((L, SectionPotentiometers), "Potentiometers");
         t.insert((L, SectionAccordion), "Accordion");
         t.insert((L, SectionQrCode), "QR Code");
+        t.insert((L, SectionContextMenu), "Context Menu");
+        t.insert((L, SectionPopover), "Popover");
+        t.insert((L, SectionSidebar), "Sidebar");
+        t.insert((L, SectionStatusBar), "Status Bar");
+        t.insert((L, SectionSearchBar), "Search Bar");
+        t.insert((L, SectionKeyboardShortcut), "Keyboard Shortcuts");
+        t.insert((L, SectionEmptyState), "Empty State");
+        t.insert((L, SectionConfirmDialog), "Confirm Dialog");
 
         // Labels
         t.insert((L, LabelVariants), "Variants");
@@ -325,6 +341,14 @@ impl Translations {
         t.insert((L, SectionPotentiometers), "Potentiometres");
         t.insert((L, SectionAccordion), "Accordeon");
         t.insert((L, SectionQrCode), "Code QR");
+        t.insert((L, SectionContextMenu), "Menu contextuel");
+        t.insert((L, SectionPopover), "Popover");
+        t.insert((L, SectionSidebar), "Barre laterale");
+        t.insert((L, SectionStatusBar), "Barre d'etat");
+        t.insert((L, SectionSearchBar), "Barre de recherche");
+        t.insert((L, SectionKeyboardShortcut), "Raccourcis clavier");
+        t.insert((L, SectionEmptyState), "Etat vide");
+        t.insert((L, SectionConfirmDialog), "Dialogue de confirmation");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -427,6 +451,14 @@ impl Translations {
         t.insert((L, SectionPotentiometers), "Potentiometer");
         t.insert((L, SectionAccordion), "Akkordeon");
         t.insert((L, SectionQrCode), "QR-Code");
+        t.insert((L, SectionContextMenu), "Kontextmenu");
+        t.insert((L, SectionPopover), "Popover");
+        t.insert((L, SectionSidebar), "Seitenleiste");
+        t.insert((L, SectionStatusBar), "Statusleiste");
+        t.insert((L, SectionSearchBar), "Suchleiste");
+        t.insert((L, SectionKeyboardShortcut), "Tastenkurzel");
+        t.insert((L, SectionEmptyState), "Leerer Zustand");
+        t.insert((L, SectionConfirmDialog), "Bestatigungsdialog");
 
         // Labels
         t.insert((L, LabelVariants), "Varianten");
@@ -529,6 +561,14 @@ impl Translations {
         t.insert((L, SectionPotentiometers), "Potenciometros");
         t.insert((L, SectionAccordion), "Acordeon");
         t.insert((L, SectionQrCode), "Codigo QR");
+        t.insert((L, SectionContextMenu), "Menu contextual");
+        t.insert((L, SectionPopover), "Popover");
+        t.insert((L, SectionSidebar), "Barra lateral");
+        t.insert((L, SectionStatusBar), "Barra de estado");
+        t.insert((L, SectionSearchBar), "Barra de busqueda");
+        t.insert((L, SectionKeyboardShortcut), "Atajos de teclado");
+        t.insert((L, SectionEmptyState), "Estado vacio");
+        t.insert((L, SectionConfirmDialog), "Dialogo de confirmacion");
 
         // Labels
         t.insert((L, LabelVariants), "Variantes");
@@ -631,6 +671,14 @@ impl Translations {
         t.insert((L, SectionPotentiometers), "ポテンショメーター");
         t.insert((L, SectionAccordion), "アコーディオン");
         t.insert((L, SectionQrCode), "QRコード");
+        t.insert((L, SectionContextMenu), "コンテキストメニュー");
+        t.insert((L, SectionPopover), "ポップオーバー");
+        t.insert((L, SectionSidebar), "サイドバー");
+        t.insert((L, SectionStatusBar), "ステータスバー");
+        t.insert((L, SectionSearchBar), "検索バー");
+        t.insert((L, SectionKeyboardShortcut), "キーボードショートカット");
+        t.insert((L, SectionEmptyState), "空の状態");
+        t.insert((L, SectionConfirmDialog), "確認ダイアログ");
 
         // Labels
         t.insert((L, LabelVariants), "バリエーション");

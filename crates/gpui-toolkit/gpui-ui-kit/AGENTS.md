@@ -8,11 +8,11 @@ Read `GPUI.md` at the project root before working on GPUI code.
 
 - Button, Input, Slider, Dropdown, Modal, Tabs, Toggle, Select, NumberInput, ColorPicker
 - Audio controls: Potentiometer, VerticalSlider, VolumeKnob
-- Data display: Table, Badge, Avatar, Progress, Spinner, QrCode
+- Data display: Table, Badge, Avatar, Progress, Spinner, QrCode, KeyboardShortcutLabel, EmptyState
 
-- Layout: VStack, HStack, PaneDivider, Accordion, Breadcrumbs
-- Navigation: Tabs, Menu, Wizard
-- Feedback: Alert, Toast, Tooltip, Dialog
+- Layout: VStack, HStack, PaneDivider, Sidebar, StatusBar, Accordion, Breadcrumbs
+- Navigation: Tabs, Menu, ContextMenu, Wizard
+- Feedback: Alert, Toast, Tooltip, Dialog, ConfirmDialog, Popover, SearchBar
 - Workflow: Node graph editor
 - Theme system with 6 variants, i18n with 5 languages
 
