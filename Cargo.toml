@@ -112,6 +112,7 @@ thiserror = "2.0.17"
 criterion = "0.8.1"
 which = "8"
 walkdir = "2"
+qrcode = "0.14"
 
 # Optimization and math
 ndarray = { version = "0.17", default-features = false, features = ["rayon", "blas", "serde"] }

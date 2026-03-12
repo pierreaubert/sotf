@@ -55,6 +55,7 @@ pub mod badge;
 pub mod empty_state;
 pub mod keyboard_shortcut_label;
 pub mod progress;
+pub mod qr;
 pub mod spinner;
 pub mod table;
 pub mod text;
@@ -136,6 +137,7 @@ pub use badge::{Badge, BadgeDot, BadgeSize, BadgeVariant};
 pub use empty_state::EmptyState;
 pub use keyboard_shortcut_label::{KeyboardShortcutLabel, KeyboardShortcutSize};
 pub use progress::{CircularProgress, Progress, ProgressSize, ProgressVariant};
+pub use qr::QrCode;
 pub use spinner::{LoadingDots, Spinner, SpinnerSize};
 pub use table::{
     Column, PaginationState, SelectionMode, SortDirection, SortState, Table, TableTheme,

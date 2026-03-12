@@ -48,6 +48,7 @@ pub enum ShowcaseSection {
     Accordion,
     Wizard,
     Workflow,
+    QrCode,
 }
 
 impl ShowcaseSection {
@@ -75,6 +76,7 @@ impl ShowcaseSection {
             ShowcaseSection::Accordion,
             ShowcaseSection::Wizard,
             ShowcaseSection::Workflow,
+            ShowcaseSection::QrCode,
         ]
     }
 
@@ -102,6 +104,7 @@ impl ShowcaseSection {
             ShowcaseSection::Accordion => "Accordion",
             ShowcaseSection::Wizard => "Wizard",
             ShowcaseSection::Workflow => "Workflow",
+            ShowcaseSection::QrCode => "QR Code",
         }
     }
 
@@ -129,6 +132,7 @@ impl ShowcaseSection {
             ShowcaseSection::Accordion => "🪗",
             ShowcaseSection::Wizard => "🧙",
             ShowcaseSection::Workflow => "🕸️",
+            ShowcaseSection::QrCode => "📱",
         }
     }
 }
@@ -433,6 +437,7 @@ impl Render for Showcase {
             ShowcaseSection::Accordion => self.render_accordion_section(cx).into_any_element(),
             ShowcaseSection::Wizard => self.render_wizard_section(cx).into_any_element(),
             ShowcaseSection::Workflow => self.render_workflow_section(cx).into_any_element(),
+            ShowcaseSection::QrCode => self.render_qr_section(cx).into_any_element(),
         };
 
         div()
@@ -601,6 +606,7 @@ include!("includes/render_layout.inc.rs");
 include!("includes/render_menu.inc.rs");
 include!("includes/render_potentiometer.inc.rs");
 include!("includes/render_progress.inc.rs");
+include!("includes/render_qr.inc.rs");
 include!("includes/render_spinners.inc.rs");
 include!("includes/render_table.inc.rs");
 include!("includes/render_tabs.inc.rs");
