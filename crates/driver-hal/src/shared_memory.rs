@@ -6,7 +6,7 @@
 use std::fs::OpenOptions;
 use std::io;
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
+use std::sync::atomic::{fence, AtomicU32, AtomicU64, Ordering};
 
 use memmap2::MmapMut;
 
@@ -87,6 +87,10 @@ pub struct SharedAudioHeader {
     pub config_source: AtomicU32,
     /// Error code if config_status=3
     pub config_error_code: u32,
+
+    // Statistics
+    /// Number of times encrypted write failed due to insufficient buffer space
+    pub encryption_overflow_count: AtomicU64,
 }
 
 /// Shared audio buffer for communication with Swift HAL driver
@@ -94,6 +98,8 @@ pub struct SharedAudioBuffer {
     mmap: MmapMut,
     audio_offset: usize,
     audio_capacity: usize,
+    /// Maximum audio capacity based on original mmap size (for validation)
+    max_audio_capacity: usize,
 }
 
 impl SharedAudioBuffer {
@@ -172,6 +178,7 @@ impl SharedAudioBuffer {
             mmap,
             audio_offset,
             audio_capacity,
+            max_audio_capacity: audio_capacity,
         })
     }
 
@@ -255,10 +262,21 @@ impl SharedAudioBuffer {
     /// Changing buffer frames affects latency. Smaller = lower latency but higher CPU.
     /// Common values: 256, 512, 1024, 2048
     pub fn set_buffer_frames(&mut self, buffer_frames: u32) {
-        self.header_mut().buffer_frames = buffer_frames;
-        // Recalculate audio capacity
         let channel_count = self.header().channel_count as usize;
-        self.audio_capacity = (buffer_frames as usize) * channel_count * 8;
+        let new_capacity = (buffer_frames as usize) * channel_count * 8;
+
+        // Validate doesn't exceed original mmap allocation
+        if new_capacity > self.max_audio_capacity {
+            log::warn!(
+                "Requested buffer_frames {} would exceed original allocation (max {}), ignoring",
+                buffer_frames,
+                self.max_audio_capacity / channel_count / 8
+            );
+            return;
+        }
+
+        self.header_mut().buffer_frames = buffer_frames;
+        self.audio_capacity = new_capacity;
         self.set_config_changed();
     }
 
@@ -272,10 +290,21 @@ impl SharedAudioBuffer {
     /// # Arguments
     /// * `channel_count` - Number of audio channels (e.g., 2 for stereo, 6 for 5.1)
     pub fn set_channel_count(&mut self, channel_count: u32) {
-        self.header_mut().channel_count = channel_count;
-        // Recalculate audio capacity
         let buffer_frames = self.header().buffer_frames as usize;
-        self.audio_capacity = buffer_frames * (channel_count as usize) * 8;
+        let new_capacity = buffer_frames * (channel_count as usize) * 8;
+
+        // Validate doesn't exceed original mmap allocation
+        if new_capacity > self.max_audio_capacity {
+            log::warn!(
+                "Requested channel_count {} would exceed original allocation (max {}), ignoring",
+                channel_count,
+                self.max_audio_capacity / buffer_frames / 8
+            );
+            return;
+        }
+
+        self.header_mut().channel_count = channel_count;
+        self.audio_capacity = new_capacity;
         self.set_config_changed();
     }
 
@@ -322,6 +351,13 @@ impl SharedAudioBuffer {
     /// even under concurrent access from multiple threads.
     pub fn increment_frame_counter(&self) -> u64 {
         self.header().frame_counter.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    /// Get the encryption overflow counter (number of drops due to insufficient buffer space)
+    pub fn encryption_overflow_count(&self) -> u64 {
+        self.header()
+            .encryption_overflow_count
+            .load(Ordering::Acquire)
     }
 
     // =========================================================================
@@ -679,7 +715,16 @@ impl SharedAudioBuffer {
         let to_write = encrypted_samples.len();
 
         if to_write > available {
-            // Not enough space for the full encrypted block
+            // Not enough space for the full encrypted block - count and warn
+            header
+                .encryption_overflow_count
+                .fetch_add(1, Ordering::AcqRel);
+            log::warn!(
+                "Encrypted audio overflow: {} bytes needed, {} available, frame_counter={}",
+                to_write,
+                available,
+                frame_counter
+            );
             return 0;
         }
 
@@ -992,6 +1037,16 @@ impl SharedAudioBuffer {
         let available = self.audio_capacity - used;
 
         if encrypted_slots > available {
+            // Not enough space for the full encrypted block - count and warn
+            header
+                .encryption_overflow_count
+                .fetch_add(1, Ordering::AcqRel);
+            log::warn!(
+                "Encrypted audio overflow: {} slots needed, {} available, frame_counter={}",
+                encrypted_slots,
+                available,
+                frame_counter
+            );
             return 0;
         }
 
@@ -1454,6 +1509,8 @@ mod tests {
             config_status: AtomicU32::new(0),
             config_source: AtomicU32::new(0),
             config_error_code: 0,
+            // Statistics
+            encryption_overflow_count: AtomicU64::new(0),
         };
 
         // Create buffer with header bytes

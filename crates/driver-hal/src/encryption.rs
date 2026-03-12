@@ -19,8 +19,8 @@
 //! - Resistance to timing attacks
 
 use chacha20poly1305::{
-    ChaCha20Poly1305, Nonce, Tag,
     aead::{Aead, AeadInPlace, KeyInit},
+    ChaCha20Poly1305, Nonce, Tag,
 };
 use sha2::{Digest, Sha256};
 
@@ -230,7 +230,7 @@ fn samples_to_bytes(samples: &[f32]) -> Vec<u8> {
 fn samples_to_bytes_into(samples: &[f32], output: &mut [u8]) {
     debug_assert!(output.len() >= samples.len() * 4);
     for (i, sample) in samples.iter().enumerate() {
-        output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_ne_bytes());
+        output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_le_bytes());
     }
 }
 
@@ -266,7 +266,7 @@ fn bytes_to_samples(bytes: &[u8]) -> Vec<f32> {
         let sample_bytes: [u8; 4] = bytes[i * 4..(i + 1) * 4]
             .try_into()
             .expect("slice should be exactly 4 bytes");
-        samples.push(f32::from_ne_bytes(sample_bytes));
+        samples.push(f32::from_le_bytes(sample_bytes));
     }
 
     samples
@@ -285,7 +285,7 @@ fn bytes_to_samples_into(bytes: &[u8], output: &mut [f32]) -> usize {
         let sample_bytes: [u8; 4] = bytes[i * 4..(i + 1) * 4]
             .try_into()
             .expect("slice should be exactly 4 bytes");
-        output[i] = f32::from_ne_bytes(sample_bytes);
+        output[i] = f32::from_le_bytes(sample_bytes);
     }
 
     to_write
@@ -337,7 +337,7 @@ pub fn encrypted_to_samples_into(ciphertext: &[u8], output: &mut [f32]) -> usize
     for (i, chunk) in ciphertext.chunks(4).take(to_write).enumerate() {
         let mut bytes = [0u8; 4];
         bytes[..chunk.len()].copy_from_slice(chunk);
-        output[i] = f32::from_ne_bytes(bytes);
+        output[i] = f32::from_le_bytes(bytes);
     }
 
     to_write
@@ -349,7 +349,7 @@ pub fn encrypted_to_samples_into(ciphertext: &[u8], output: &mut [f32]) -> usize
 pub fn samples_to_encrypted(samples: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(samples.len() * 4);
     for sample in samples {
-        bytes.extend_from_slice(&sample.to_ne_bytes());
+        bytes.extend_from_slice(&sample.to_le_bytes());
     }
     bytes
 }
@@ -363,7 +363,7 @@ pub fn samples_to_encrypted_into(samples: &[f32], output: &mut [u8]) -> usize {
     debug_assert!(output.len() >= byte_count);
 
     for (i, sample) in samples.iter().enumerate() {
-        output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_ne_bytes());
+        output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_le_bytes());
     }
 
     byte_count
@@ -567,11 +567,9 @@ mod tests {
         let ciphertext = cipher.encrypt(&samples, 1);
 
         let mut too_small = vec![0.0f32; 10];
-        assert!(
-            cipher
-                .decrypt_into(&ciphertext, 1, &mut too_small)
-                .is_none()
-        );
+        assert!(cipher
+            .decrypt_into(&ciphertext, 1, &mut too_small)
+            .is_none());
     }
 
     #[test]
