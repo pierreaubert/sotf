@@ -21,6 +21,9 @@ uuid = { workspace = true }
 # QR code generation
 qrcode = { workspace = true }
 
+# Async timer for animated components
+smol = { workspace = true }
+
 # Proc macros for theme generation
 gpui-ui-kit-macros = { workspace = true }
 
@@ -35,15 +38,14 @@ gpui_windows = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+nokhwa = { workspace = true, features = ["input-native"] }
+rqrr = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+block = { workspace = true }
+objc = { workspace = true }
 
 [lib]
 name = "gpui_ui_kit"
 path = "src/lib.rs"
 
-[[example]]
-name = "showcase"
-path = "examples/showcase.rs"
-
-[[example]]
-name = "workflow_debug"
-path = "examples/workflow_debug.rs"

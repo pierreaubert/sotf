@@ -11,6 +11,7 @@ use gpui_ui_kit::menu::{Menu, MenuItem};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::wizard::StepStatus;
 use gpui_ui_kit::workflow::{WorkflowCanvas, WorkflowGraph};
+use gpui_ui_kit::qr::AnimatedQrCode;
 use gpui_ui_kit::*;
 use std::collections::HashSet;
 
@@ -20,6 +21,191 @@ struct User {
     name: String,
     email: String,
     role: String,
+}
+
+/// Component groups for organizing related sections
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ShowcaseGroup {
+    Actions,
+    TextAndLabels,
+    FormControls,
+    Navigation,
+    Feedback,
+    DataDisplay,
+    Overlays,
+    LayoutAndStructure,
+    Controls,
+    MultiStep,
+    Media,
+}
+
+impl ShowcaseGroup {
+    fn all() -> &'static [ShowcaseGroup] {
+        &[
+            ShowcaseGroup::Actions,
+            ShowcaseGroup::TextAndLabels,
+            ShowcaseGroup::FormControls,
+            ShowcaseGroup::Navigation,
+            ShowcaseGroup::Feedback,
+            ShowcaseGroup::DataDisplay,
+            ShowcaseGroup::Overlays,
+            ShowcaseGroup::LayoutAndStructure,
+            ShowcaseGroup::Controls,
+            ShowcaseGroup::MultiStep,
+            ShowcaseGroup::Media,
+        ]
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            ShowcaseGroup::Actions => "Actions",
+            ShowcaseGroup::TextAndLabels => "Text & Labels",
+            ShowcaseGroup::FormControls => "Form Controls",
+            ShowcaseGroup::Navigation => "Navigation",
+            ShowcaseGroup::Feedback => "Feedback",
+            ShowcaseGroup::DataDisplay => "Data Display",
+            ShowcaseGroup::Overlays => "Overlays & Popups",
+            ShowcaseGroup::LayoutAndStructure => "Layout & Structure",
+            ShowcaseGroup::Controls => "Controls",
+            ShowcaseGroup::MultiStep => "Multi-Step",
+            ShowcaseGroup::Media => "Media & Visuals",
+        }
+    }
+
+    fn sections(&self) -> &'static [ShowcaseSection] {
+        match self {
+            ShowcaseGroup::Actions => &[ShowcaseSection::Buttons, ShowcaseSection::IconButtons],
+            ShowcaseGroup::TextAndLabels => &[
+                ShowcaseSection::Text,
+                ShowcaseSection::Badges,
+                ShowcaseSection::Tag,
+                ShowcaseSection::KeyboardShortcut,
+            ],
+            ShowcaseGroup::FormControls => &[
+                ShowcaseSection::FormControls,
+                ShowcaseSection::SettingsForm,
+            ],
+            ShowcaseGroup::Navigation => &[
+                ShowcaseSection::Menu,
+                ShowcaseSection::ContextMenu,
+                ShowcaseSection::CommandPalette,
+                ShowcaseSection::Tabs,
+                ShowcaseSection::Breadcrumbs,
+                ShowcaseSection::SearchBar,
+            ],
+            ShowcaseGroup::Feedback => &[
+                ShowcaseSection::Alerts,
+                ShowcaseSection::Toasts,
+                ShowcaseSection::Notification,
+                ShowcaseSection::Progress,
+                ShowcaseSection::Spinners,
+                ShowcaseSection::LoadingOverlay,
+                ShowcaseSection::EmptyState,
+            ],
+            ShowcaseGroup::DataDisplay => &[
+                ShowcaseSection::Table,
+                ShowcaseSection::Cards,
+                ShowcaseSection::Avatars,
+                ShowcaseSection::TreeView,
+                ShowcaseSection::DragList,
+            ],
+            ShowcaseGroup::Overlays => &[
+                ShowcaseSection::Dialog,
+                ShowcaseSection::ConfirmDialog,
+                ShowcaseSection::Popover,
+                ShowcaseSection::Tooltips,
+            ],
+            ShowcaseGroup::LayoutAndStructure => &[
+                ShowcaseSection::Layout,
+                ShowcaseSection::SplitPane,
+                ShowcaseSection::Sidebar,
+                ShowcaseSection::StatusBar,
+                ShowcaseSection::Toolbar,
+            ],
+            ShowcaseGroup::Controls => &[
+                ShowcaseSection::Potentiometer,
+                ShowcaseSection::Accordion,
+            ],
+            ShowcaseGroup::MultiStep => &[
+                ShowcaseSection::Wizard,
+                ShowcaseSection::StepIndicator,
+                ShowcaseSection::Workflow,
+            ],
+            ShowcaseGroup::Media => &[
+                ShowcaseSection::QrCode,
+                ShowcaseSection::ImageView,
+            ],
+        }
+    }
+
+    /// Description explaining the differences between components in this group
+    fn description(&self) -> &'static str {
+        match self {
+            ShowcaseGroup::Actions => "\
+Buttons trigger actions on click. \
+Icon Buttons are compact, icon-only variants for toolbars and tight spaces where a text label would be too wide.",
+
+            ShowcaseGroup::TextAndLabels => "\
+Text renders styled inline or block text. \
+Badges are small status indicators (counts, labels) typically attached to other elements. \
+Tags are removable, categorical labels for filtering and tagging content. \
+Keyboard Shortcuts display key combinations like Cmd+S.",
+
+            ShowcaseGroup::FormControls => "\
+Form Controls are individual input primitives (toggles, checkboxes, sliders, selects, number inputs). \
+Settings Form composes multiple form controls into a labeled, grouped settings page with sections and descriptions.",
+
+            ShowcaseGroup::Navigation => "\
+Menu is a bare dropdown panel of items you position yourself (used inside MenuBar or custom dropdowns). \
+Context Menu wraps Menu with absolute positioning at the cursor and a click-outside-to-dismiss backdrop (right-click menus). \
+Command Palette is a searchable, filterable command list triggered by a keyboard shortcut. \
+Tabs switch between views in a fixed set. \
+Breadcrumbs show hierarchical location for drill-down navigation. \
+Search Bar provides a text input with search-specific affordances (icon, clear button).",
+
+            ShowcaseGroup::Feedback => "\
+Alerts are persistent, inline banners for important messages (info, warning, error). \
+Toasts are temporary, auto-dismissing notifications that stack at a screen edge. \
+Notifications are richer, persistent messages with actions (mark read, dismiss). \
+Progress shows determinate completion (0-100%). \
+Spinners show indeterminate loading with no known duration. \
+Loading Overlay covers a region with a spinner and optional message, blocking interaction. \
+Empty State is a placeholder shown when a list or view has no data.",
+
+            ShowcaseGroup::DataDisplay => "\
+Table displays structured rows and columns with sorting and selection. \
+Cards are flexible content containers for preview or summary information. \
+Avatars represent users or entities with images or initials. \
+Tree View shows hierarchical, expandable data (file trees, nested lists). \
+Drag List is an orderable list where items can be reordered by dragging.",
+
+            ShowcaseGroup::Overlays => "\
+Dialog is a general-purpose modal overlay for complex content (forms, detail views). \
+Confirm Dialog is a focused, pre-built dialog for yes/no confirmation prompts with variant styling (info, warning, danger). \
+Popover is a non-modal floating panel anchored to a trigger element (menus, pickers). \
+Tooltips are small, hover-triggered text hints that describe an element.",
+
+            ShowcaseGroup::LayoutAndStructure => "\
+Layout provides flex/grid containers and spacing primitives (VStack, HStack, Divider). \
+Split Pane divides a region into resizable panels with a draggable divider. \
+Sidebar is a fixed or collapsible side panel for navigation or tools. \
+Status Bar is a narrow bar at the window bottom for status information. \
+Toolbar is a horizontal bar of actions and controls, typically at the top of a view.",
+
+            ShowcaseGroup::Controls => "\
+Potentiometer is a rotary knob control for continuous values (volume, frequency). \
+Accordion expands and collapses content sections, either one-at-a-time or multiple simultaneously.",
+
+            ShowcaseGroup::MultiStep => "\
+Wizard guides users through a multi-step process with prev/next navigation and step validation. \
+Step Indicator is a read-only progress display showing which step the user is on, without navigation logic. \
+Workflow is a node-and-edge graph editor for visual pipeline or flowchart building.",
+
+            ShowcaseGroup::Media => "\
+QR Code generates and renders a QR code from data. \
+Image View displays images with optional zoom, pan, and loading states.",
+        }
+    }
 }
 
 /// Section identifiers for navigation
@@ -71,53 +257,6 @@ pub enum ShowcaseSection {
 }
 
 impl ShowcaseSection {
-    fn all() -> &'static [ShowcaseSection] {
-        &[
-            ShowcaseSection::Buttons,
-            ShowcaseSection::Text,
-            ShowcaseSection::Badges,
-            ShowcaseSection::Avatars,
-            ShowcaseSection::FormControls,
-            ShowcaseSection::Progress,
-            ShowcaseSection::Alerts,
-            ShowcaseSection::Tabs,
-            ShowcaseSection::Cards,
-            ShowcaseSection::Breadcrumbs,
-            ShowcaseSection::Spinners,
-            ShowcaseSection::Layout,
-            ShowcaseSection::IconButtons,
-            ShowcaseSection::Toasts,
-            ShowcaseSection::Dialog,
-            ShowcaseSection::Menu,
-            ShowcaseSection::Table,
-            ShowcaseSection::Tooltips,
-            ShowcaseSection::Potentiometer,
-            ShowcaseSection::Accordion,
-            ShowcaseSection::Wizard,
-            ShowcaseSection::Workflow,
-            ShowcaseSection::QrCode,
-            ShowcaseSection::ContextMenu,
-            ShowcaseSection::Popover,
-            ShowcaseSection::Sidebar,
-            ShowcaseSection::StatusBar,
-            ShowcaseSection::SearchBar,
-            ShowcaseSection::KeyboardShortcut,
-            ShowcaseSection::EmptyState,
-            ShowcaseSection::ConfirmDialog,
-            ShowcaseSection::SplitPane,
-            ShowcaseSection::ImageView,
-            ShowcaseSection::SettingsForm,
-            ShowcaseSection::StepIndicator,
-            ShowcaseSection::LoadingOverlay,
-            ShowcaseSection::Tag,
-            ShowcaseSection::Toolbar,
-            ShowcaseSection::Notification,
-            ShowcaseSection::TreeView,
-            ShowcaseSection::DragList,
-            ShowcaseSection::CommandPalette,
-        ]
-    }
-
     fn label(&self) -> &'static str {
         match self {
             ShowcaseSection::Buttons => "Buttons",
@@ -165,51 +304,13 @@ impl ShowcaseSection {
         }
     }
 
-    fn icon(&self) -> &'static str {
-        match self {
-            ShowcaseSection::Buttons => "🔘",
-            ShowcaseSection::Text => "📝",
-            ShowcaseSection::Badges => "🏷️",
-            ShowcaseSection::Avatars => "👤",
-            ShowcaseSection::FormControls => "📋",
-            ShowcaseSection::Progress => "📊",
-            ShowcaseSection::Alerts => "⚠️",
-            ShowcaseSection::Tabs => "📑",
-            ShowcaseSection::Cards => "🃏",
-            ShowcaseSection::Breadcrumbs => "🔗",
-            ShowcaseSection::Spinners => "⏳",
-            ShowcaseSection::Layout => "📐",
-            ShowcaseSection::IconButtons => "🔲",
-            ShowcaseSection::Toasts => "🍞",
-            ShowcaseSection::Dialog => "💬",
-            ShowcaseSection::Menu => "📜",
-            ShowcaseSection::Table => "📊",
-            ShowcaseSection::Tooltips => "💡",
-            ShowcaseSection::Potentiometer => "🎛️",
-            ShowcaseSection::Accordion => "🪗",
-            ShowcaseSection::Wizard => "🧙",
-            ShowcaseSection::Workflow => "🕸️",
-            ShowcaseSection::QrCode => "📱",
-            ShowcaseSection::ContextMenu => ">",
-            ShowcaseSection::Popover => "^",
-            ShowcaseSection::Sidebar => "|",
-            ShowcaseSection::StatusBar => "_",
-            ShowcaseSection::SearchBar => "?",
-            ShowcaseSection::KeyboardShortcut => "#",
-            ShowcaseSection::EmptyState => "0",
-            ShowcaseSection::ConfirmDialog => "!",
-            ShowcaseSection::SplitPane => "||",
-            ShowcaseSection::ImageView => "[]",
-            ShowcaseSection::SettingsForm => "=",
-            ShowcaseSection::StepIndicator => "1.",
-            ShowcaseSection::LoadingOverlay => "...",
-            ShowcaseSection::Tag => "@",
-            ShowcaseSection::Toolbar => "=|",
-            ShowcaseSection::Notification => "~",
-            ShowcaseSection::TreeView => "/",
-            ShowcaseSection::DragList => "::",
-            ShowcaseSection::CommandPalette => ">",
+    fn group(&self) -> ShowcaseGroup {
+        for group in ShowcaseGroup::all() {
+            if group.sections().contains(self) {
+                return *group;
+            }
         }
+        ShowcaseGroup::Actions
     }
 }
 
@@ -278,6 +379,13 @@ pub struct Showcase {
     pane_dragging_left: bool,
     pane_drag_start_x: f32,
     pane_drag_start_width: f32,
+    // Animated QR codes
+    animated_qr_tiny: Entity<AnimatedQrCode>,
+    animated_qr_small: Entity<AnimatedQrCode>,
+    // Tooltip hover state
+    tooltip_hovered: Option<&'static str>,
+    // Popover open state
+    popover_open: Option<&'static str>,
     // Current section for navigation
     current_section: ShowcaseSection,
     // Entity for updating self
@@ -291,6 +399,12 @@ impl Showcase {
         // Initialize Workflow canvas
         let graph = WorkflowGraph::new();
         let workflow_canvas = cx.new(|cx| WorkflowCanvas::with_graph(graph, cx));
+
+        // Animated QR codes at small sizes to demonstrate panning
+        let animated_qr_tiny =
+            cx.new(|cx| AnimatedQrCode::new("https://example.com/animated-qr-demo", px(50.0), cx));
+        let animated_qr_small =
+            cx.new(|cx| AnimatedQrCode::new("https://example.com/animated-qr-demo", px(80.0), cx));
 
         Self {
             toggle_on: true,
@@ -385,6 +499,10 @@ impl Showcase {
             pane_dragging_left: false,
             pane_drag_start_x: 0.0,
             pane_drag_start_width: 0.0,
+            animated_qr_tiny,
+            animated_qr_small,
+            tooltip_hovered: None,
+            popover_open: None,
             current_section: ShowcaseSection::default(),
             entity: cx.entity().clone(),
             focus_handle: cx.focus_handle(),
@@ -410,53 +528,105 @@ impl Render for Showcase {
         let title = cx.t(TranslationKey::AppTitle);
         let subtitle = cx.t(TranslationKey::AppSubtitle);
 
-        // Build navigation sidebar items
-        let mut nav_items = div().flex().flex_col().py_4();
+        // Build navigation sidebar items grouped by category
+        let mut nav_items = div().flex().flex_col().py_4().gap_1();
+        let border_color = theme.border;
 
-        for section in ShowcaseSection::all() {
-            let section = *section;
-            let is_active = section == current_section;
-            let entity_clone = entity.clone();
+        for group in ShowcaseGroup::all() {
+            // Group header
+            nav_items = nav_items.child(
+                div()
+                    .px_4()
+                    .pt_3()
+                    .pb_1()
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_muted)
+                    .child(group.label().to_uppercase()),
+            );
 
-            let mut item = div()
-                .id(SharedString::from(format!("nav-{:?}", section)))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_4()
-                .py_2()
-                .mx_2()
-                .rounded_md()
-                .cursor_pointer()
-                .text_sm();
+            // Section items within this group
+            for section in group.sections() {
+                let section = *section;
+                let is_active = section == current_section;
+                let entity_clone = entity.clone();
 
-            if is_active {
+                let mut item = div()
+                    .id(SharedString::from(format!("nav-{:?}", section)))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_4()
+                    .py(px(5.0))
+                    .mx_2()
+                    .rounded_md()
+                    .cursor_pointer()
+                    .text_sm();
+
+                if is_active {
+                    item = item
+                        .bg(accent_color)
+                        .text_color(rgba(0xffffffff))
+                        .font_weight(FontWeight::SEMIBOLD);
+                } else {
+                    let hover_bg = theme.surface_hover;
+                    item = item.text_color(text_color).hover(move |s| s.bg(hover_bg));
+                }
+
                 item = item
-                    .bg(accent_color)
-                    .text_color(rgba(0xffffffff))
-                    .font_weight(FontWeight::SEMIBOLD);
-            } else {
-                let hover_bg = theme.surface_hover;
-                item = item.text_color(text_color).hover(move |s| s.bg(hover_bg));
+                    .child(div().child(section.label()))
+                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        entity_clone.update(cx, |this, cx| {
+                            this.current_section = section;
+                            cx.notify();
+                        });
+                    });
+
+                nav_items = nav_items.child(item);
             }
 
-            item = item
-                .child(div().child(section.icon()))
-                .child(div().child(section.label()))
-                .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                    entity_clone.update(cx, |this, cx| {
-                        this.current_section = section;
-                        cx.notify();
-                    });
-                });
-
-            nav_items = nav_items.child(item);
+            // Separator between groups
+            nav_items = nav_items.child(
+                div().mx_4().my_1().h(px(1.0)).bg(border_color),
+            );
         }
 
         let nav = Sidebar::new("showcase-nav")
             .side(SidebarSide::Left)
-            .width(px(200.0))
+            .width(px(220.0))
             .content(nav_items);
+
+        // Group description box
+        let current_group = current_section.group();
+        let group_description = current_group.description();
+        let group_label = current_group.label();
+        let info_bg = theme.surface;
+        let info_border = theme.border;
+        let info_text = theme.text_muted;
+
+        let group_info = div()
+            .mb_4()
+            .p_4()
+            .bg(info_bg)
+            .border_1()
+            .border_color(info_border)
+            .rounded(px(6.0))
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(info_text)
+                    .child(group_label),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(info_text)
+                    .child(group_description),
+            );
 
         // Main content area
         let content = match current_section {
@@ -579,6 +749,7 @@ impl Render for Showcase {
                             .overflow_y_scroll()
                             .p_8()
                             .pt_4()
+                            .child(group_info)
                             .child(content),
                     ),
             )

@@ -1,0 +1,46 @@
+# Build gpui-ui-kit examples to verify they compile (doesn't run them)
+[group('test')]
+test-examples:
+	@echo "Building gpui-ui-kit examples..."
+	RUST_MIN_STACK=16777216 cargo build --examples -p gpui-ui-kit
+	@echo "✓ All gpui-ui-kit examples compiled successfully"
+
+[group('demo')]
+demo-ui-kit:
+	cargo build --release --example showcase -p gpui-ui-kit
+
+[group('demo')]
+demo-d3rs:
+	cargo build --release --bin d3rs-spinorama --features="spinorama, gpu-3d"
+
+[group('demo')]
+demo-px:
+	cargo build --release --bin px-spinorama -p gpui-px --features="autoeq, tokio, reqwest, urlencoding, gpu-3d"
+
+# Build all gpui-ui-kit examples
+[group('examples')]
+examples-ui-kit:
+	@echo "Building all gpui-ui-kit examples..."
+	RUST_MIN_STACK=16777216 cargo build --examples -p gpui-ui-kit
+	@echo "All gpui-ui-kit examples compiled successfully"
+
+# Run QR debug example (on macOS: builds a signed .app bundle for camera permission)
+[group('examples')]
+[macos]
+run-qr-debug:
+	cargo build -p gpui-ui-kit --example qr_debug
+	rm -rf target/debug/examples/QrDebug.app
+	mkdir -p target/debug/examples/QrDebug.app/Contents/MacOS
+	cp target/debug/examples/qr_debug target/debug/examples/QrDebug.app/Contents/MacOS/qr_debug
+	cp crates/gpui-toolkit/gpui-ui-kit/examples/qr_debug.plist target/debug/examples/QrDebug.app/Contents/Info.plist
+	echo -n "APPL????" > target/debug/examples/QrDebug.app/Contents/PkgInfo
+	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/examples/QrDebug.app
+	open target/debug/examples/QrDebug.app
+
+# Run QR debug example (Linux/Windows: no signing or bundle needed)
+[group('examples')]
+[linux]
+[windows]
+run-qr-debug:
+	cargo run -p gpui-ui-kit --example qr_debug
+

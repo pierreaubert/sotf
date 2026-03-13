@@ -16,7 +16,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gpui-ui-kit = { version = "0.6.10", git="https://github.com/pierreaubert/sotf/tree/master/crates/gpui-toolkit/gpui-ui-kit" }
+gpui-ui-kit = { version = "0.6.12", git="https://github.com/pierreaubert/sotf/tree/master/crates/gpui-toolkit/gpui-ui-kit" }
 ```
 
 ## Components
