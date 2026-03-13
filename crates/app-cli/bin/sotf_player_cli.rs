@@ -3033,6 +3033,7 @@ fn build_rack_mode_plugins(
                         mix: plugins.expander.mix as f64,
                         link_channels: !plugins.expander.unlink_channels,
                         sidechain_hpf_hz: plugins.expander.sidechain_hpf_hz as f64,
+                        auto_makeup: false,
                     };
                 }
                 log::info!("Rack: Added Expander plugin");

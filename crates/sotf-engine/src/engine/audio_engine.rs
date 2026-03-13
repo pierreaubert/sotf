@@ -5,6 +5,9 @@
 // Coordinates all threads and provides the main API.
 
 use super::*;
+use std::time::Duration;
+
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Main audio engine
 pub struct AudioEngine {
@@ -13,7 +16,7 @@ pub struct AudioEngine {
 
 impl AudioEngine {
     fn expect_ok_response(&self) -> Result<(), String> {
-        match self.manager.recv_response()? {
+        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT)? {
             ManagerResponse::Ok | ManagerResponse::Shutdown => Ok(()),
             ManagerResponse::Error(e) => Err(e),
             _ => Err("Unexpected response".to_string()),
@@ -128,7 +131,7 @@ impl AudioEngine {
     /// Get current position in seconds
     pub fn get_position(&self) -> Result<f64, String> {
         self.manager.send_command(ManagerCommand::GetPosition)?;
-        match self.manager.recv_response()? {
+        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT)? {
             ManagerResponse::Position(pos) => Ok(pos),
             ManagerResponse::Error(e) => Err(e),
             _ => Err("Unexpected response".to_string()),
@@ -143,7 +146,7 @@ impl AudioEngine {
     ) -> Result<std::sync::Arc<dyn std::any::Any + Send + Sync>, String> {
         self.manager
             .send_command(ManagerCommand::GetPluginData(index))?;
-        match self.manager.recv_response()? {
+        match self.manager.recv_response_timeout(RESPONSE_TIMEOUT)? {
             ManagerResponse::PluginData(data) => Ok(data),
             ManagerResponse::Error(e) => Err(e),
             _ => Err("Unexpected response".to_string()),

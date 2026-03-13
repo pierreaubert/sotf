@@ -455,14 +455,20 @@ impl AudioEngineManager {
         log::debug!("[AudioEngineManager] Stopping");
 
         if let Some(mut engine_arc) = self.engine.swap(None) {
-            // shutdown() is internally thread-safe now as it just sends a command
+            // shutdown() is internally thread-safe now as it just sends a command.
+            // stop() is best-effort: if it fails (e.g., decoder ACK timeout after
+            // end-of-stream), we still proceed to shutdown which joins all threads.
             if let Some(engine) = Arc::get_mut(&mut engine_arc) {
-                engine.stop().map_err(AudioDecoderError::IoError)?;
+                if let Err(e) = engine.stop() {
+                    log::warn!("[AudioEngineManager] stop() failed (proceeding to shutdown): {}", e);
+                }
                 engine.shutdown().map_err(AudioDecoderError::IoError)?;
             } else {
                 // Another thread is holding a reference (e.g. status polling).
                 // Send commands via the shared Arc.
-                engine_arc.stop().map_err(AudioDecoderError::IoError)?;
+                if let Err(e) = engine_arc.stop() {
+                    log::warn!("[AudioEngineManager] stop() failed (proceeding to shutdown): {}", e);
+                }
                 engine_arc.shutdown().map_err(AudioDecoderError::IoError)?;
             }
         }

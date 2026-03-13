@@ -148,8 +148,8 @@ impl SharedAudioBuffer {
             ));
         }
 
-        // Check for reasonable limits (max 16 channels, max 64k frames)
-        if channel_count > 16 || buffer_frames > 65536 {
+        // Check for reasonable limits (max 128 channels for multi-channel interfaces, max 64k frames)
+        if channel_count > 128 || buffer_frames > 65536 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(

@@ -5,8 +5,9 @@
 mod common;
 
 use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
+use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[test]
 fn test_engine_creation() {
@@ -190,37 +191,43 @@ fn test_engine_update_plugin_chain() {
 }
 
 #[test]
-fn test_engine_update_plugin_chain_rejects_incompatible_upmixer_and_preserves_playback() {
+fn test_engine_update_plugin_chain_allows_upmixer_channel_increase() {
+    let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config_with(|c| {
         c.output_channels = 2;
     });
     let engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = common::create_test_wav(1.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(200));
 
+    // Adding an upmixer at runtime should succeed — the playback thread
+    // handles channel count changes via UpdateChannels and downmixes if needed.
     let plugins = vec![PluginConfig::new(
         "upmixer",
         serde_json::json!({
-            "speaker_config": "5.1"
+            "speaker_config": "5.0"
         }),
     )];
 
     let result = engine.update_plugin_chain(plugins);
-    assert!(result.is_err(), "Incompatible upmixer update should fail");
+    assert!(
+        result.is_ok(),
+        "Upmixer update should succeed, got: {:?}",
+        result.err()
+    );
 
-    let error = result.unwrap_err();
-    assert!(error.contains("requires 6 output channels"));
-    assert!(error.contains("configured for 2 channels"));
-
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(200));
 
     let state = engine.get_state();
-    assert_eq!(state.playback_state, PlaybackState::Playing);
-    assert_eq!(state.num_channels, 2);
-    assert_eq!(state.last_error.as_deref(), Some(error.as_str()));
+    assert_eq!(state.num_channels, 5);
+    assert!(
+        state.last_error.is_none(),
+        "Expected no error, got: {:?}",
+        state.last_error
+    );
 }
 
 #[test]
@@ -454,4 +461,211 @@ fn test_engine_drop_cleanup() {
 
     std::thread::sleep(Duration::from_millis(100));
     // Should complete without panic
+}
+
+#[test]
+fn test_engine_remove_plugin_during_playback() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Add a gain plugin
+    let plugins = vec![PluginConfig::new(
+        "gain",
+        serde_json::json!({"gain_db": -3.0}),
+    )];
+    engine.update_plugin_chain(plugins).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Remove it (empty chain)
+    engine.update_plugin_chain(vec![]).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    let state = engine.get_state();
+    assert_eq!(
+        state.playback_state,
+        PlaybackState::Playing,
+        "Playback should continue after removing plugin"
+    );
+    assert!(
+        state.last_error.is_none(),
+        "No error expected, got: {:?}",
+        state.last_error
+    );
+
+    // Verify audio is still flowing (position should have advanced)
+    let pos1 = engine.get_position().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let pos2 = engine.get_position().unwrap();
+    assert!(
+        pos2 > pos1,
+        "Position should advance after plugin removal: {} -> {}",
+        pos1,
+        pos2
+    );
+}
+
+#[test]
+fn test_engine_remove_all_plugins_during_playback() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Start with two plugins
+    let plugins = vec![
+        PluginConfig::new("gain", serde_json::json!({"gain_db": -3.0})),
+        PluginConfig::new("gain", serde_json::json!({"gain_db": -6.0})),
+    ];
+    engine.update_plugin_chain(plugins).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Remove all plugins at once
+    engine.update_plugin_chain(vec![]).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    let state = engine.get_state();
+    assert_eq!(state.playback_state, PlaybackState::Playing);
+    assert!(state.last_error.is_none());
+}
+
+#[test]
+fn test_engine_rapid_plugin_updates_during_playback() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = common::test_engine_config();
+    let engine = AudioEngine::new(config).unwrap();
+
+    let temp_file = common::create_test_wav(3.0, 48000, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Rapidly update plugin chain 10 times
+    for i in 0..10 {
+        let gain = -(i as f64) * 0.5;
+        let plugins = vec![PluginConfig::new(
+            "gain",
+            serde_json::json!({"gain_db": gain}),
+        )];
+        let result = engine.update_plugin_chain(plugins);
+        assert!(
+            result.is_ok(),
+            "Update {} should succeed, got: {:?}",
+            i,
+            result.err()
+        );
+    }
+
+    std::thread::sleep(Duration::from_millis(300));
+
+    let state = engine.get_state();
+    assert_eq!(
+        state.playback_state,
+        PlaybackState::Playing,
+        "Playback should survive rapid plugin updates"
+    );
+    assert!(
+        state.last_error.is_none(),
+        "No error expected, got: {:?}",
+        state.last_error
+    );
+}
+
+#[test]
+fn test_engine_update_preserves_playback_after_channel_change() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let config = common::test_engine_config_with(|c| {
+        c.output_channels = 2;
+    });
+    let engine = AudioEngine::new(config).unwrap();
+
+    let temp_file = common::create_test_wav(3.0, 48000, 2);
+    engine.play(temp_file.path().to_path_buf()).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Add upmixer (2ch -> 5ch)
+    let plugins = vec![PluginConfig::new(
+        "upmixer",
+        serde_json::json!({"speaker_config": "5.0"}),
+    )];
+    engine.update_plugin_chain(plugins).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+
+    let state = engine.get_state();
+    assert_eq!(state.num_channels, 5, "Should be 5 channels after upmixer");
+    assert_eq!(state.playback_state, PlaybackState::Playing);
+
+    // Remove upmixer (back to 2ch)
+    engine.update_plugin_chain(vec![]).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+
+    let state = engine.get_state();
+    assert_eq!(
+        state.num_channels, 2,
+        "Should be 2 channels after removing upmixer"
+    );
+    assert_eq!(
+        state.playback_state,
+        PlaybackState::Playing,
+        "Playback should continue after channel count change"
+    );
+    assert!(
+        state.last_error.is_none(),
+        "No error expected, got: {:?}",
+        state.last_error
+    );
+}
+
+#[test]
+fn test_engine_auto_advance_after_end_of_stream() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let device = common::require_virtual_device();
+    let mut manager = AudioEngineManager::new();
+
+    // Load and play a short file
+    let temp_file1 = common::create_test_wav(0.3, 48000, 2);
+    manager.load_file(temp_file1.path()).unwrap();
+    manager
+        .start_playback(Some(device.clone()), vec![], 2)
+        .unwrap();
+
+    // Wait for end-of-stream
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut got_eos = false;
+    while Instant::now() < deadline {
+        if let Some(StreamingEvent::EndOfStream) = manager.try_recv_event() {
+            got_eos = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(got_eos, "Should receive EndOfStream within 5s");
+
+    // Simulate auto-advance: stop (which was previously failing with IO error)
+    // then load and play a new file
+    let stop_result = manager.stop();
+    assert!(
+        stop_result.is_ok(),
+        "stop() after end-of-stream should succeed, got: {:?}",
+        stop_result.err()
+    );
+
+    // Load and play second file
+    let temp_file2 = common::create_test_wav(0.5, 48000, 2);
+    manager.load_file(temp_file2.path()).unwrap();
+    manager
+        .start_playback(Some(device), vec![], 2)
+        .unwrap();
+
+    std::thread::sleep(Duration::from_millis(100));
+
+    assert_eq!(manager.get_state(), StreamingState::Playing);
 }

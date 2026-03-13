@@ -837,6 +837,8 @@ pub enum PluginSettings {
         link_channels: bool,
         #[serde(default = "default_expander_sidechain_hpf_hz")]
         sidechain_hpf_hz: f64,
+        #[serde(default)]
+        auto_makeup: bool,
     },
     MultibandCompressor {
         #[serde(default = "default_mb_compressor_num_bands")]
@@ -1594,6 +1596,7 @@ impl PluginSettings {
                 mix,
                 link_channels,
                 sidechain_hpf_hz,
+                auto_makeup,
             } => PluginConfig::new(
                 "expander",
                 json!({
@@ -1608,6 +1611,7 @@ impl PluginSettings {
                     "mix": mix,
                     "link_channels": link_channels,
                     "sidechain_hpf_hz": sidechain_hpf_hz,
+                    "auto_makeup": auto_makeup,
                 }),
             ),
             Self::MultibandCompressor {
@@ -2233,6 +2237,7 @@ impl PluginSettings {
                     mix: p(e, "mix").default_f64(),
                     link_channels: p(e, "link_channels").default_bool(),
                     sidechain_hpf_hz: p(e, "sidechain_hpf_hz").default_f64(),
+                    auto_makeup: p(e, "auto_makeup").default_bool(),
                 }
             }
             PluginType::MultibandCompressor => {

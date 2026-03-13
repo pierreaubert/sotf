@@ -458,6 +458,39 @@ impl LibraryController {
         self.invalidate_cache();
     }
 
+    /// Clear all selection filters (genre, year, artist, composer, album letter, track range)
+    /// and reset channel filter to All.
+    pub fn clear_all_filters(&mut self) {
+        self.selected_genre = None;
+        self.selected_decade = None;
+        self.selected_year = None;
+        self.selected_artist_letter = None;
+        self.selected_artist = None;
+        self.selected_composer_letter = None;
+        self.selected_composer = None;
+        self.selected_album_letter = None;
+        self.selected_track_range = None;
+        self.filter = ChannelFilter::All;
+        self.search_query.clear();
+        self.selected_index = 0;
+        self.invalidate_cache();
+    }
+
+    /// Check if any filters are active (genre, year, artist, etc., channel filter, or search).
+    pub fn has_active_filters(&self) -> bool {
+        self.selected_genre.is_some()
+            || self.selected_decade.is_some()
+            || self.selected_year.is_some()
+            || self.selected_artist_letter.is_some()
+            || self.selected_artist.is_some()
+            || self.selected_composer_letter.is_some()
+            || self.selected_composer.is_some()
+            || self.selected_album_letter.is_some()
+            || self.selected_track_range.is_some()
+            || self.filter != ChannelFilter::All
+            || !self.search_query.is_empty()
+    }
+
     // =========================================================================
     // Pagination
     // =========================================================================

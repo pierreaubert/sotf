@@ -286,6 +286,12 @@ impl PluginController {
                         update_needed = true;
                     }
                 }
+                PluginSettings::BinauralDecoder { sofa_file, .. } => {
+                    if param_idx == 0 {
+                        *sofa_file = value;
+                        update_needed = true;
+                    }
+                }
                 _ => {}
             }
         }
@@ -361,12 +367,27 @@ impl PluginController {
                     num_bands, bands, ..
                 } if param_idx == 0 => {
                     bands.resize_with(*num_bands, Default::default);
+                    // Default active states: 4 bands => band 4 passive, 5 bands => bands 4,5 passive
+                    for (i, band) in bands.iter_mut().enumerate() {
+                        band.active = match *num_bands {
+                            4 => i < 3,
+                            5 => i < 3,
+                            _ => true,
+                        };
+                    }
                     channel_count_changed = true;
                 }
                 PluginSettings::MultibandExpander {
                     num_bands, bands, ..
                 } if param_idx == 0 => {
                     bands.resize_with(*num_bands, Default::default);
+                    for (i, band) in bands.iter_mut().enumerate() {
+                        band.active = match *num_bands {
+                            4 => i < 3,
+                            5 => i < 3,
+                            _ => true,
+                        };
+                    }
                     channel_count_changed = true;
                 }
                 _ => {}
@@ -1299,6 +1320,14 @@ fn adjust_plugin_param(
                         band.solo = !band.solo;
                         true
                     }
+                    16 => {
+                        band.auto_makeup = !band.auto_makeup;
+                        true
+                    }
+                    17 => {
+                        band.active = !band.active;
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -1360,6 +1389,14 @@ fn adjust_plugin_param(
                     }
                     15 => {
                         band.solo = !band.solo;
+                        true
+                    }
+                    16 => {
+                        band.auto_makeup = !band.auto_makeup;
+                        true
+                    }
+                    17 => {
+                        band.active = !band.active;
                         true
                     }
                     _ => false,
@@ -1608,12 +1645,26 @@ fn adjust_plugin_param(
                             num_bands, bands, ..
                         } if param_idx == 0 => {
                             bands.resize_with(*num_bands, Default::default);
+                            for (i, band) in bands.iter_mut().enumerate() {
+                                band.active = match *num_bands {
+                                    4 => i < 3,
+                                    5 => i < 3,
+                                    _ => true,
+                                };
+                            }
                             *channel_count_changed = true;
                         }
                         PluginSettings::MultibandExpander {
                             num_bands, bands, ..
                         } if param_idx == 0 => {
                             bands.resize_with(*num_bands, Default::default);
+                            for (i, band) in bands.iter_mut().enumerate() {
+                                band.active = match *num_bands {
+                                    4 => i < 3,
+                                    5 => i < 3,
+                                    _ => true,
+                                };
+                            }
                             *channel_count_changed = true;
                         }
                         _ => {}
@@ -1880,6 +1931,14 @@ fn set_plugin_param_value(
                         band.solo = value > 0.5;
                         true
                     }
+                    16 => {
+                        band.auto_makeup = value > 0.5;
+                        true
+                    }
+                    17 => {
+                        band.active = value > 0.5;
+                        true
+                    }
                     _ => false,
                 }
             } else {
@@ -1929,6 +1988,14 @@ fn set_plugin_param_value(
                     }
                     15 => {
                         band.solo = value > 0.5;
+                        true
+                    }
+                    16 => {
+                        band.auto_makeup = value > 0.5;
+                        true
+                    }
+                    17 => {
+                        band.active = value > 0.5;
                         true
                     }
                     _ => false,
@@ -2093,12 +2160,26 @@ fn set_plugin_param_value(
                         num_bands, bands, ..
                     } if param_idx == 0 => {
                         bands.resize_with(*num_bands, Default::default);
+                        for (i, band) in bands.iter_mut().enumerate() {
+                            band.active = match *num_bands {
+                                4 => i < 3,
+                                5 => i < 3,
+                                _ => true,
+                            };
+                        }
                         *channel_count_changed = true;
                     }
                     PluginSettings::MultibandExpander {
                         num_bands, bands, ..
                     } if param_idx == 0 => {
                         bands.resize_with(*num_bands, Default::default);
+                        for (i, band) in bands.iter_mut().enumerate() {
+                            band.active = match *num_bands {
+                                4 => i < 3,
+                                5 => i < 3,
+                                _ => true,
+                            };
+                        }
                         *channel_count_changed = true;
                     }
                     _ => {}

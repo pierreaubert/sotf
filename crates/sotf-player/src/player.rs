@@ -96,8 +96,14 @@ impl Player {
         &mut self,
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        match self.manager.update_plugin_chain(plugins) {
-            Ok(()) => Ok(()),
+        match self.manager.update_plugin_chain(plugins.clone()) {
+            Ok(()) => {
+                // Update saved config so crash recovery uses latest plugins
+                if let Some(ref mut config) = self.saved_config {
+                    config.plugins = plugins;
+                }
+                Ok(())
+            }
             Err(e) if e == "No engine running" => {
                 // Engine not running yet - plugins will be applied on next playback
                 Ok(())

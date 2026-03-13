@@ -539,11 +539,15 @@ fn run_processing_thread(
                         while let Some(msg) = pending_msg.take() {
                             match send_or_interrupt(&message_tx, &command_rx, msg) {
                                 Ok(Some((cmd, unsent))) => {
+                                    let old_channels = state.channels;
                                     pending_msg = unsent;
                                     if handle_processing_command(cmd, &mut state, &response_tx) {
                                         break;
                                     }
-                                    // Loop to retry sending the unsent message
+                                    // If channels changed, discard the stale frame
+                                    if state.channels != old_channels {
+                                        pending_msg = None;
+                                    }
                                 }
                                 Ok(None) => {
                                     // Sent successfully
@@ -566,9 +570,13 @@ fn run_processing_thread(
                 while let Some(msg) = pending_msg.take() {
                     match send_or_interrupt(&message_tx, &command_rx, msg) {
                         Ok(Some((cmd, unsent))) => {
+                            let old_channels = state.channels;
                             pending_msg = unsent;
                             if handle_processing_command(cmd, &mut state, &response_tx) {
                                 break;
+                            }
+                            if state.channels != old_channels {
+                                pending_msg = None;
                             }
                         }
                         Ok(None) => {}
@@ -581,9 +589,13 @@ fn run_processing_thread(
                 while let Some(msg) = pending_msg.take() {
                     match send_or_interrupt(&message_tx, &command_rx, msg) {
                         Ok(Some((cmd, unsent))) => {
+                            let old_channels = state.channels;
                             pending_msg = unsent;
                             if handle_processing_command(cmd, &mut state, &response_tx) {
                                 break;
+                            }
+                            if state.channels != old_channels {
+                                pending_msg = None;
                             }
                         }
                         Ok(None) => {}

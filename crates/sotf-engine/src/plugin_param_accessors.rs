@@ -230,6 +230,7 @@ impl PluginSettings {
                 hysteresis_db,
                 hold_ms,
                 mix,
+                auto_makeup,
                 link_channels,
                 sidechain_hpf_hz,
             } => match index {
@@ -242,8 +243,9 @@ impl PluginSettings {
                 6 => Some(*hysteresis_db),
                 7 => Some(*hold_ms),
                 8 => Some(*mix),
-                9 => Some(b2f(*link_channels)),
-                10 => Some(*sidechain_hpf_hz),
+                9 => Some(b2f(*auto_makeup)),
+                10 => Some(b2f(*link_channels)),
+                11 => Some(*sidechain_hpf_hz),
                 _ => None,
             },
             // ----------------------------------------------------------------
@@ -846,6 +848,7 @@ impl PluginSettings {
                 hysteresis_db,
                 hold_ms,
                 mix,
+                auto_makeup,
                 link_channels,
                 sidechain_hpf_hz,
             } => match index {
@@ -858,8 +861,9 @@ impl PluginSettings {
                 6 => *hysteresis_db = value,
                 7 => *hold_ms = value,
                 8 => *mix = value,
-                9 => *link_channels = f2b(value),
-                10 => *sidechain_hpf_hz = value,
+                9 => *auto_makeup = f2b(value),
+                10 => *link_channels = f2b(value),
+                11 => *sidechain_hpf_hz = value,
                 _ => {}
             },
             // ----------------------------------------------------------------

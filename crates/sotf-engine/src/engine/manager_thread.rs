@@ -347,6 +347,16 @@ impl ManagerThread {
             .map_err(|e| format!("Failed to receive response: {}", e))
     }
 
+    /// Receive a response with timeout
+    pub fn recv_response_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<ManagerResponse, String> {
+        self.response_rx
+            .recv_timeout(timeout)
+            .map_err(|e| format!("Failed to receive response: {}", e))
+    }
+
     /// Try to receive a response (non-blocking)
     pub fn try_recv_response(&self) -> Option<ManagerResponse> {
         self.response_rx.try_recv().ok()
@@ -621,8 +631,6 @@ fn run_manager_thread(
                 plugins,
                 config.output_sample_rate,
                 config.input_channels,
-                config.output_channels,
-                config.output_device.as_deref(),
             ) {
                 log::error!("[Manager Thread] Failed to apply config update: {}", e);
                 let mut new_state = (**state.load()).clone();
@@ -935,8 +943,6 @@ fn apply_plugin_update(
     sample_rate: u32,
 
     input_channels: usize,
-    configured_output_channels: usize,
-    output_device: Option<&str>,
 ) -> Result<(), ConfigError> {
     log::debug!(
         "[Manager Thread] apply_plugin_update: Starting update with {} plugins at {}Hz",
@@ -963,12 +969,6 @@ fn apply_plugin_update(
         start_build.elapsed(),
         host.output_channels()
     );
-
-    ensure_output_channel_capacity(
-        host.output_channels(),
-        configured_output_channels,
-        output_device,
-    )?;
 
     // Send update command to processing thread
 
@@ -1474,8 +1474,6 @@ fn handle_command(
                 plugins,
                 config.output_sample_rate,
                 config.input_channels,
-                config.output_channels,
-                config.output_device.as_deref(),
             ) {
                 Ok(()) => {
                     let mut new_state = (**state.load()).clone();
