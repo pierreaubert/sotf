@@ -733,6 +733,7 @@ impl PluginFuzzer for ExpanderFuzzer {
             mix,
             link_channels,
             sidechain_hpf_hz,
+            auto_makeup: rng.random_bool(0.5),
         };
         let plugin = ExpanderPlugin::from_params(channels, params);
 

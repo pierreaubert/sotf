@@ -23,7 +23,11 @@ pub const CROSSOVER_PRESETS: &[(f32, f32, f32, f32)] = &[
     (250.0, 4000.0, 10000.0, 14000.0),
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BandExpanderParams {
     pub threshold_db: Option<f32>,
     pub ratio: Option<f32>,
@@ -33,8 +37,31 @@ pub struct BandExpanderParams {
     pub range_db: Option<f32>,
     pub hysteresis_db: Option<f32>,
     pub hold_ms: Option<f32>,
+    #[serde(default)]
+    pub auto_makeup: bool,
+    #[serde(default = "default_true")]
+    pub active: bool,
     pub solo: bool,
     pub bypass: bool,
+}
+
+impl Default for BandExpanderParams {
+    fn default() -> Self {
+        Self {
+            threshold_db: None,
+            ratio: None,
+            attack_ms: None,
+            release_ms: None,
+            knee_db: None,
+            range_db: None,
+            hysteresis_db: None,
+            hold_ms: None,
+            auto_makeup: false,
+            active: true,
+            solo: false,
+            bypass: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -391,6 +418,18 @@ impl MultibandExpanderPlugin {
                 .with_group(&group),
             );
             params.push(
+                Parameter::new_bool(
+                    &format!("band_{}_auto_makeup", i),
+                    "Auto Makeup",
+                    bp.auto_makeup,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_bool(&format!("band_{}_active", i), "Active", bp.active)
+                    .with_group(&group),
+            );
+            params.push(
                 Parameter::new_bool(&format!("band_{}_solo", i), "Solo", bp.solo)
                     .with_group(&group),
             );
@@ -610,6 +649,16 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                                 self.update_coefficients();
                             }
                         }
+                        "auto" => {
+                            bp.auto_makeup = value
+                                .as_bool()
+                                .ok_or_else(|| format!("{} must be a boolean", name))?
+                        }
+                        "active" => {
+                            bp.active = value
+                                .as_bool()
+                                .ok_or_else(|| format!("{} must be a boolean", name))?
+                        }
                         "solo" => {
                             bp.solo = value
                                 .as_bool()
@@ -710,6 +759,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         "release" => Some(ParameterValue::Float(
                             bp.release_ms.unwrap_or(self.release_ms),
                         )),
+                        "auto" => Some(ParameterValue::Bool(bp.auto_makeup)),
+                        "active" => Some(ParameterValue::Bool(bp.active)),
                         "solo" => Some(ParameterValue::Bool(bp.solo)),
                         "bypass" => Some(ParameterValue::Bool(bp.bypass)),
                         _ => None,
@@ -824,6 +875,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         for b in 0..self.num_bands {
             let bp = self.band_params.get(b);
             let is_bypassed = bp.map(|p| p.bypass).unwrap_or(false);
+            let is_passive = !bp.map(|p| p.active).unwrap_or(true);
             let is_muted = any_solo && !bp.map(|p| p.solo).unwrap_or(false);
 
             if is_muted {
@@ -833,7 +885,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 continue;
             }
 
-            if is_bypassed {
+            if is_bypassed || is_passive {
                 // Keep band signal as is, but still track levels
                 let off = b * stride;
                 let mut max_abs = 0.0f32;
@@ -854,6 +906,13 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             let hs = (bp.and_then(|p| p.hold_ms).unwrap_or(self.hold_ms)
                 * 0.001
                 * self.sample_rate as f32) as usize;
+            let auto_makeup_gain = if bp.map(|p| p.auto_makeup).unwrap_or(false) {
+                let slope = 1.0 - 1.0 / rat.max(1.0);
+                let avg_atten = rg.max(0.0) * slope * 0.5;
+                fast_pow10(avg_atten / 20.0)
+            } else {
+                1.0
+            };
 
             let bexp = &mut self.band_expanders[b];
             let off = b * stride;
@@ -924,7 +983,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         bexp.attack_coeff
                     };
                     bexp.envelope[ch] = target + c * (bexp.envelope[ch] - target);
-                    self.band_buffers[idx] *= fast_pow10(-bexp.envelope[ch] / 20.0);
+                    self.band_buffers[idx] *=
+                        fast_pow10(-bexp.envelope[ch] / 20.0) * auto_makeup_gain;
                 }
             }
             self.band_levels_db[b] = 20.0 * fast_log10(band_max_abs.max(1e-10));

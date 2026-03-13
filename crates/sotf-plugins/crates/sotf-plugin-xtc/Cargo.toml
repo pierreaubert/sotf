@@ -1,7 +1,7 @@
 [package]
 name = "sotf-plugin-xtc"
 description = "SOTF XTC plugin - crosstalk cancellation"
-version = "0.5.34"
+version = "0.5.35"
 edition.workspace = true
 
 [lib]

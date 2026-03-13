@@ -693,6 +693,7 @@ pub mod expander {
         ParamSpec::float("Mix", "mix", 1.0, 0.0, 1.0, 0.01, "%", "Output")
             .scaled(100.0)
             .output(),
+        ParamSpec::bool_param("Auto Makeup", "auto_makeup", false, "Output").output(),
         ParamSpec::bool_labeled(
             "Link Channels",
             "link_channels",
@@ -1528,6 +1529,8 @@ pub mod multiband_compressor {
             "dB",
             "Band",
         ),
+        ParamSpec::bool_param("Auto Makeup", "auto_makeup", false, "Band"),
+        ParamSpec::bool_labeled("Active", "active", true, "Active", "Passive", "Band"),
     ];
 }
 
@@ -2155,6 +2158,8 @@ pub mod multiband_expander {
             "Band",
         ),
         ParamSpec::float("Hold", "hold", 10.0, 0.0, 500.0, 1.0, "ms", "Band"),
+        ParamSpec::bool_param("Auto Makeup", "auto_makeup", false, "Band"),
+        ParamSpec::bool_labeled("Active", "active", true, "Active", "Passive", "Band"),
     ];
 }
 

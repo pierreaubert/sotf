@@ -20,6 +20,7 @@ fn main() {
         mix: 1.0,
         link_channels: true,
         sidechain_hpf_hz: 0.0,
+        auto_makeup: false,
     };
 
     let mut inner = ExpanderPlugin::from_params(channels, params);

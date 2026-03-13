@@ -14,6 +14,8 @@ use std::any::Any;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
+const AUTO_MAKEUP_OVERSHOOT_FACTOR: f32 = 0.5;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpanderPluginParams {
     #[serde(default = "default_threshold_db")]
@@ -38,6 +40,8 @@ pub struct ExpanderPluginParams {
     pub link_channels: bool,
     #[serde(default = "default_sidechain_hpf_hz")]
     pub sidechain_hpf_hz: f32,
+    #[serde(default = "default_auto_makeup")]
+    pub auto_makeup: bool,
 }
 
 fn default_threshold_db() -> f32 {
@@ -73,6 +77,9 @@ fn default_link_channels() -> bool {
 fn default_sidechain_hpf_hz() -> f32 {
     pk(EX, "sidechain_hpf_hz").default_f64() as f32
 }
+fn default_auto_makeup() -> bool {
+    pk(EX, "auto_makeup").default_bool()
+}
 
 impl Default for ExpanderPluginParams {
     fn default() -> Self {
@@ -88,6 +95,7 @@ impl Default for ExpanderPluginParams {
             mix: default_mix(),
             link_channels: default_link_channels(),
             sidechain_hpf_hz: default_sidechain_hpf_hz(),
+            auto_makeup: default_auto_makeup(),
         }
     }
 }
@@ -161,6 +169,8 @@ pub struct ExpanderPlugin {
     link_channels: bool,
     param_sidechain_hpf_hz: ParameterId,
     sidechain_hpf_hz: f32,
+    param_auto_makeup: ParameterId,
+    auto_makeup: bool,
     envelope: Vec<f32>,
     gate_state: Vec<GateState>,
     hold_counter: Vec<usize>,
@@ -208,6 +218,8 @@ impl ExpanderPlugin {
             link_channels: params.link_channels,
             param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
             sidechain_hpf_hz: params.sidechain_hpf_hz.max(0.0),
+            param_auto_makeup: ParameterId::from("auto_makeup"),
+            auto_makeup: params.auto_makeup,
             envelope: vec![0.0; channels],
             gate_state: vec![GateState::Open; channels],
             hold_counter: vec![0; channels],
@@ -322,6 +334,10 @@ impl ExpanderPlugin {
             Parameter::new_bool("link_channels", "Link Channels", self.link_channels)
                 .with_description("Use linked sidechain for all channels")
                 .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("auto_makeup", "Auto Makeup", self.auto_makeup)
+                .with_description("Automatically compensate for expansion attenuation")
+                .with_group("Output")
                 .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "sidechain_hpf_hz",
@@ -522,6 +538,10 @@ impl InPlacePlugin for ExpanderPlugin {
             self.link_channels = value
                 .as_bool()
                 .unwrap_or(pk(EX, "link_channels").default_bool());
+        } else if id == self.param_auto_makeup {
+            self.auto_makeup = value
+                .as_bool()
+                .unwrap_or(pk(EX, "auto_makeup").default_bool());
         } else if id == self.param_sidechain_hpf_hz {
             let v = value
                 .as_float()
@@ -557,6 +577,8 @@ impl InPlacePlugin for ExpanderPlugin {
             Some(ParameterValue::Float(self.mix))
         } else if id == &self.param_link_channels {
             Some(ParameterValue::Bool(self.link_channels))
+        } else if id == &self.param_auto_makeup {
+            Some(ParameterValue::Bool(self.auto_makeup))
         } else if id == &self.param_sidechain_hpf_hz {
             Some(ParameterValue::Float(self.sidechain_hpf_hz))
         } else {
@@ -589,6 +611,15 @@ impl InPlacePlugin for ExpanderPlugin {
         let thresh = self.threshold_smoother.next_n(num_frames);
         let mix = self.mix_smoother.next_n(num_frames);
 
+        // Auto-makeup: compensate for average expansion attenuation
+        let auto_makeup_gain = if self.auto_makeup {
+            let slope = 1.0 - 1.0 / self.ratio.max(1.0);
+            let avg_atten = self.range_db.max(0.0) * slope * AUTO_MAKEUP_OVERSHOOT_FACTOR;
+            fast_pow10(avg_atten / 20.0)
+        } else {
+            1.0
+        };
+
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
                 let mut det_level = 0.0f32;
@@ -602,7 +633,7 @@ impl InPlacePlugin for ExpanderPlugin {
 
                 let input_db = 20.0 * fast_log10(det_level.max(1e-10));
                 let atten = self.process_channel(0, input_db, hold_samples, thresh);
-                let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0);
+                let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0) * auto_makeup_gain;
 
                 for ch in 0..self.channels {
                     buffer[frame * self.channels + ch] *= gain;
@@ -618,7 +649,7 @@ impl InPlacePlugin for ExpanderPlugin {
                     self.input_levels_db[ch] = input_db;
 
                     let atten = self.process_channel(ch, input_db, hold_samples, thresh);
-                    let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0);
+                    let gain = (1.0 - mix) + mix * fast_pow10(-atten / 20.0) * auto_makeup_gain;
                     buffer[idx] *= gain;
                 }
             }
@@ -667,5 +698,78 @@ mod tests {
         )
         .unwrap();
         assert!(b[999] < 0.1);
+    }
+
+    #[test]
+    fn test_auto_makeup_with_zero_mix_is_unity() {
+        // With mix=0, the expander has no effect on the signal.
+        // Auto-makeup should not add gain when there's no expansion.
+        let params = ExpanderPluginParams {
+            mix: 0.0,
+            auto_makeup: true,
+            ratio: 4.0,
+            range_db: 40.0,
+            ..Default::default()
+        };
+        let mut p = ExpanderPlugin::with_params(1, params);
+        p.initialize(48000).unwrap();
+        let input_val = 0.5f32;
+        let mut b = vec![input_val; 480];
+        p.process_in_place(
+            &mut b,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 480,
+            },
+        )
+        .unwrap();
+        // With mix=0, output should equal input regardless of auto_makeup
+        let last = b[479];
+        assert!(
+            (last - input_val).abs() < 1e-5,
+            "mix=0 + auto_makeup should be unity, got {last} (expected {input_val})"
+        );
+    }
+
+    #[test]
+    fn test_auto_makeup_boosts_with_full_mix() {
+        // With mix=1 and auto_makeup, the output should be boosted relative to
+        // expansion-only (no auto_makeup) to compensate for attenuation.
+        let base = ExpanderPluginParams {
+            mix: 1.0,
+            auto_makeup: false,
+            threshold_db: -10.0,
+            ratio: 4.0,
+            range_db: 40.0,
+            ..Default::default()
+        };
+        let mut p_no_am = ExpanderPlugin::with_params(1, base.clone());
+        p_no_am.initialize(48000).unwrap();
+        let mut p_am = ExpanderPlugin::with_params(
+            1,
+            ExpanderPluginParams {
+                auto_makeup: true,
+                ..base
+            },
+        );
+        p_am.initialize(48000).unwrap();
+
+        let input_val = 0.01f32; // quiet signal, below threshold
+        let mut b_no = vec![input_val; 4800];
+        let mut b_am = vec![input_val; 4800];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 4800,
+        };
+        p_no_am.process_in_place(&mut b_no, &ctx).unwrap();
+        p_am.process_in_place(&mut b_am, &ctx).unwrap();
+
+        // Auto-makeup version should be louder than non-auto-makeup
+        let last_no = b_no[4799].abs();
+        let last_am = b_am[4799].abs();
+        assert!(
+            last_am > last_no,
+            "auto_makeup should boost output: {last_am} > {last_no}"
+        );
     }
 }
