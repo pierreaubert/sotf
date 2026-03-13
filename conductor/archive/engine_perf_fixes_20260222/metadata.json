@@ -1,8 +1,0 @@
-{
-  "track_id": "engine_perf_fixes_20260222",
-  "type": "bug",
-  "status": "new",
-  "created_at": "2026-02-22T00:00:00Z",
-  "updated_at": "2026-02-22T00:00:00Z",
-  "description": "Optimize engine crate for performance (remove allocations/locks from hot path) and fix parameter update scratchiness."
-}

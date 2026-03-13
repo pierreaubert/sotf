@@ -1,8 +1,0 @@
-{
-  "track_id": "iir_allpass_20260219",
-  "type": "feature",
-  "status": "new",
-  "created_at": "2026-02-19T15:30:00Z",
-  "updated_at": "2026-02-19T15:30:00Z",
-  "description": "Add AllPass filter to math-iir-fir"
-}
