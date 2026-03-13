@@ -167,6 +167,7 @@ impl Surface3DRenderer {
                 required_limits: wgpu::Limits::default(),
                 memory_hints: wgpu::MemoryHints::default(),
                 trace: wgpu::Trace::Off,
+                experimental_features: wgpu::ExperimentalFeatures::default(),
             })
             .await
             .expect("Failed to create device")
@@ -226,7 +227,7 @@ impl Surface3DRenderer {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Surface3D Pipeline Layout"),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         // Vertex buffer layout
@@ -290,7 +291,7 @@ impl Surface3DRenderer {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -336,7 +337,7 @@ impl Surface3DRenderer {
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 }),
             )
@@ -384,7 +385,7 @@ impl Surface3DRenderer {
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 }),
             )
@@ -442,7 +443,7 @@ impl Surface3DRenderer {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -603,6 +604,7 @@ impl Surface3DRenderer {
                         }),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 }
             } else {
                 wgpu::RenderPassColorAttachment {
@@ -617,6 +619,7 @@ impl Surface3DRenderer {
                         }),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 }
             };
 
@@ -720,7 +723,10 @@ impl Surface3DRenderer {
             tx.send(result).unwrap();
         });
 
-        let _ = self.device.poll(wgpu::PollType::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: Default::default(),
+            timeout: None,
+        });
 
         match rx.recv() {
             Ok(Ok(())) => {

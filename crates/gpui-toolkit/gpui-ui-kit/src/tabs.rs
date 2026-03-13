@@ -257,7 +257,12 @@ impl Tabs {
                 container = container.gap_2().p_1().bg(theme.container_bg).rounded_lg();
             }
             TabVariant::VerticalCard => {
-                container = container.gap_2().p_1().bg(theme.container_bg).rounded_lg();
+                container = container
+                    .flex_wrap()
+                    .gap_2()
+                    .p_1()
+                    .bg(theme.container_bg)
+                    .rounded_lg();
             }
         }
 

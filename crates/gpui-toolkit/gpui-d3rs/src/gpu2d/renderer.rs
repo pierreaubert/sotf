@@ -149,7 +149,7 @@ impl Chart2DRenderer {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Line Pipeline Layout"),
             bind_group_layouts: &[uniform_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -197,7 +197,7 @@ impl Chart2DRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -214,7 +214,7 @@ impl Chart2DRenderer {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Rect Pipeline Layout"),
             bind_group_layouts: &[uniform_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -272,7 +272,7 @@ impl Chart2DRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -289,7 +289,7 @@ impl Chart2DRenderer {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Circle Pipeline Layout"),
             bind_group_layouts: &[uniform_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -342,7 +342,7 @@ impl Chart2DRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -359,7 +359,7 @@ impl Chart2DRenderer {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Triangle Pipeline Layout"),
             bind_group_layouts: &[uniform_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -402,7 +402,7 @@ impl Chart2DRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -420,7 +420,7 @@ impl Chart2DRenderer {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Text Pipeline Layout"),
             bind_group_layouts: &[uniform_layout, atlas_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -468,7 +468,7 @@ impl Chart2DRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     }
@@ -640,6 +640,7 @@ impl Chart2DRenderer {
                         }),
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 ..Default::default()
@@ -810,7 +811,10 @@ impl Chart2DRenderer {
             tx.send(result).unwrap();
         });
 
-        let _ = self.device.poll(wgpu::PollType::Wait);
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: Default::default(),
+            timeout: None,
+        });
 
         match rx.recv() {
             Ok(Ok(())) => {
