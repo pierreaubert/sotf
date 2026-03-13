@@ -35,3 +35,5 @@ pub mod pages;
 pub mod runner;
 pub mod scenarios;
 pub mod simulator;
+pub mod assertions;
+pub mod factories;

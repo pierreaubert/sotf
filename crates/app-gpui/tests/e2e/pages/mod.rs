@@ -1,6 +1,10 @@
+pub mod dialogs;
+pub mod header;
+pub mod footer;
 pub mod level_meter;
 pub mod library;
 pub mod plugin_rack;
+pub mod queue;
 pub mod recording;
 pub mod settings;
 pub mod spinorama;

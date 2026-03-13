@@ -6,6 +6,8 @@ pub mod playback;
 pub mod queue;
 pub mod search;
 pub mod settings;
+pub mod spectrum;
 pub mod startup;
+pub mod studio;
 pub mod view_switching;
 pub mod volume;

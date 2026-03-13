@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
-use sotf_audio_player_gpui::app::InputMode;
 use sotf_audio_player_gpui::app::actions::ToggleSearch;
+use sotf_audio_player_gpui::app::InputMode;
 use std::error::Error;
 
 pub struct LibraryPage<'a, 'b> {
@@ -65,5 +65,16 @@ impl<'a, 'b> LibraryPage<'a, 'b> {
     pub fn get_filtered_albums_count(&mut self) -> usize {
         self.driver
             .read_app(|app| app.library_state.filtered_albums().len())
+    }
+
+    pub fn select_album(&mut self, index: usize) {
+        self.driver.update_app(|app, _| {
+            app.library_state.selected_index = index;
+        });
+        self.driver.run_until_parked();
+    }
+
+    pub fn get_selected_index(&mut self) -> usize {
+        self.driver.read_app(|app| app.library_state.selected_index)
     }
 }

@@ -2,43 +2,69 @@
 //!
 //! Tests for verifying application startup behavior.
 
-use gpui::TestAppContext;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::driver::AppDriver;
+use crate::runner::{E2ERunner, TestScenario};
+use gpui::{TestAppContext, VisualTestContext, WindowHandle};
+use sotf_audio_player_gpui::app::Screen;
+use sotf_audio_player_gpui::ui::PlayerView;
+use std::error::Error;
 
-/// Scenario: Verify startup test infrastructure works.
-#[gpui::test]
-async fn test_startup_infrastructure(_cx: &mut TestAppContext) {
-    // Test infrastructure verification - if we reach this point, the test passes
+struct StartupDefaultsScenario;
+
+impl TestScenario for StartupDefaultsScenario {
+    fn name(&self) -> &'static str {
+        "Startup Defaults"
+    }
+
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        window: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut driver = AppDriver::new(cx, window);
+
+        // Default screen should be Library
+        let screen = driver.read_app(|app| app.ui_state.current_screen);
+        if screen != Screen::Library {
+            return Err(format!("Expected Library screen, got {:?}", screen).into());
+        }
+
+        // Default volume should be 0.1 (10%)
+        let volume = driver.read_app(|app| app.playback.volume);
+        if (volume - 0.1).abs() > 0.001 {
+            return Err(format!("Expected volume ~0.1, got {}", volume).into());
+        }
+
+        // Should not be playing
+        let is_playing = driver.read_app(|app| app.playback.is_playing);
+        if is_playing {
+            return Err("Should not be playing on startup".into());
+        }
+
+        // Should not be muted
+        let muted = driver.read_app(|app| app.playback.muted);
+        if muted {
+            return Err("Should not be muted on startup".into());
+        }
+
+        // Queue should be empty
+        let queue_len = driver.read_app(|app| app.queue.len());
+        if queue_len != 0 {
+            return Err(format!("Expected empty queue, got {} items", queue_len).into());
+        }
+
+        Ok(())
+    }
 }
 
-/// Scenario: Volume tracker test infrastructure.
 #[gpui::test]
-async fn test_volume_tracker_infrastructure(_cx: &mut TestAppContext) {
-    let tracker = Rc::new(RefCell::new(0.1f32));
-    assert_eq!(*tracker.borrow(), 0.1, "Initial volume should be 0.1");
-    *tracker.borrow_mut() = 0.5;
-    assert_eq!(*tracker.borrow(), 0.5, "Volume should be updated to 0.5");
-    *tracker.borrow_mut() = 0.75;
-    assert!(*tracker.borrow() > 0.5, "Volume should increase");
-}
-
-/// Scenario: Volume clamping at boundaries.
-#[gpui::test]
-async fn test_volume_clamping(_cx: &mut TestAppContext) {
-    let clamp = |v: f32| v.clamp(0.0, 1.0);
-    assert_eq!(clamp(0.0), 0.0);
-    assert_eq!(clamp(0.5), 0.5);
-    assert_eq!(clamp(1.0), 1.0);
-    assert_eq!(clamp(-0.5), 0.0);
-    assert_eq!(clamp(1.5), 1.0);
-}
-
-/// Scenario: Volume step constants.
-#[gpui::test]
-async fn test_volume_step_constants(_cx: &mut TestAppContext) {
-    const VOLUME_STEP_SMALL: f32 = 0.02;
-    const VOLUME_STEP_LARGE: f32 = 0.05;
-    assert_eq!(VOLUME_STEP_SMALL, 0.02, "Small step should be 2%");
-    assert_eq!(VOLUME_STEP_LARGE, 0.05, "Large step should be 5%");
+async fn test_startup_defaults(cx: &mut TestAppContext) {
+    let scenario = StartupDefaultsScenario;
+    let runner = E2ERunner::new(scenario);
+    let result = runner.run(cx).await;
+    assert!(
+        result.is_ok(),
+        "Startup defaults test failed: {:?}",
+        result.err()
+    );
 }
