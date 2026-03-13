@@ -4,11 +4,14 @@
 use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_sample_rate};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use gpui_ui_kit::{ButtonSet, ButtonSetOption};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, HStack, StackAlign, StackSpacing,
+    Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -36,118 +39,35 @@ impl PlayerView {
                         .size(TextSize::Xs)
                         .weight(TextWeight::Semibold),
                 )
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .child({
-                            // File Player option
-                            let is_selected = !is_hal_mode;
-                            let theme = theme_for_source.clone();
-                            let state_clone = state_entity.clone();
-                            div()
-                                .id("source-file")
-                                .px_4()
-                                .py_2()
-                                .rounded_md()
-                                .cursor_pointer()
-                                .border_1()
-                                .when(is_selected, |d| {
-                                    d.bg(theme.accent).border_color(theme.accent)
-                                })
-                                .when(!is_selected, |d| {
-                                    d.bg(theme.surface)
-                                        .border_color(theme.border)
-                                        .hover(|s| s.bg(theme.surface_hover))
-                                })
-                                .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .child(
-                                            Text::new("File Player")
-                                                .size(TextSize::Xs)
-                                                .weight(TextWeight::Semibold)
-                                                .color(if is_selected {
-                                                    theme.text_on_accent
-                                                } else {
-                                                    theme.text_primary
-                                                }),
-                                        )
-                                        .child(
-                                            Text::new("Play audio files from library")
-                                                .size(TextSize::Xs)
-                                                .color(if is_selected {
-                                                    theme.text_on_accent
-                                                } else {
-                                                    theme.text_muted
-                                                }),
-                                        ),
-                                )
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    move |_: &MouseUpEvent, _window, cx| {
-                                        state_clone.update(cx, |state, _cx| {
-                                            state.app.audio_device_state.playback_source =
-                                                PlaybackSource::File;
-                                            // Stop HAL playback if running
-                                            if let Err(e) = state.player.lock().stop() {
-                                                log::error!("Failed to stop HAL playback: {}", e);
-                                            }
-                                            state.app.playback.is_playing = false;
-                                        });
-                                    },
-                                )
+                .child({
+                    let state_clone = state_entity.clone();
+                    let selected = if is_hal_mode { "hal" } else { "file" };
+
+                    ButtonSet::new("audio-source")
+                        .options(vec![
+                            ButtonSetOption::new("file", "File Player"),
+                            ButtonSetOption::new("hal", "HAL Device"),
+                        ])
+                        .selected(selected)
+                        .theme(theme_for_source.to_button_set_theme())
+                        .on_change(move |value, _window, cx| {
+                            let source = if value == "hal" {
+                                PlaybackSource::HalDevice
+                            } else {
+                                PlaybackSource::File
+                            };
+                            state_clone.update(cx, |state, _cx| {
+                                state.app.audio_device_state.playback_source = source;
+                                // Stop HAL playback if switching to File mode
+                                if matches!(source, PlaybackSource::File) {
+                                    if let Err(e) = state.player.lock().stop() {
+                                        log::error!("Failed to stop HAL playback: {}", e);
+                                    }
+                                    state.app.playback.is_playing = false;
+                                }
+                            });
                         })
-                        .child({
-                            // HAL Device option
-                            let is_selected = is_hal_mode;
-                            let theme = theme_for_source.clone();
-                            let state_clone = state_entity.clone();
-                            div()
-                                .id("source-hal")
-                                .px_4()
-                                .py_2()
-                                .rounded_md()
-                                .cursor_pointer()
-                                .border_1()
-                                .when(is_selected, |d| {
-                                    d.bg(theme.accent).border_color(theme.accent)
-                                })
-                                .when(!is_selected, |d| {
-                                    d.bg(theme.surface)
-                                        .border_color(theme.border)
-                                        .hover(|s| s.bg(theme.surface_hover))
-                                })
-                                .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .child(
-                                            Text::new("HAL Device")
-                                                .size(TextSize::Xs)
-                                                .weight(TextWeight::Semibold)
-                                                .color(if is_selected {
-                                                    theme.text_on_accent
-                                                } else {
-                                                    theme.text_primary
-                                                }),
-                                        )
-                                        .child(
-                                            Text::new("Process system audio through plugins")
-                                                .size(TextSize::Xs)
-                                                .color(if is_selected {
-                                                    theme.text_on_accent
-                                                } else {
-                                                    theme.text_muted
-                                                }),
-                                        ),
-                                )
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    move |_: &MouseUpEvent, _window, cx| {
-                                        Self::start_hal_playback_from_ui(&state_clone, cx);
-                                    },
-                                )
-                        }),
-                )
+                })
                 .child(div().h(px(8.0))); // Spacer between sections
 
             // HAL Configuration section (only show when in HAL mode)

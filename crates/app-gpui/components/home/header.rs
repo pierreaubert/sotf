@@ -6,7 +6,9 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, LoadingDots, Menu, MenuItem, StackSpacing, menu_bar_button};
+use gpui_ui_kit::{
+    HStack, LoadingDots, Menu, MenuItem, StackSpacing, TabItem, TabVariant, Tabs, menu_bar_button,
+};
 
 impl PlayerView {
     /// Render the application menu bar with dropdown menus
@@ -282,12 +284,13 @@ impl PlayerView {
             return div().into_any_element();
         }
 
-        // Custom tab rendering to avoid context issues
+        let screens = [Screen::Library, Screen::Queue];
+        let selected_index = screens
+            .iter()
+            .position(|s| *s == current_screen)
+            .unwrap_or(0);
+
         let state_entity = self.state.clone();
-        let tab_data = [
-            (translations.screen_library, Screen::Library),
-            (translations.screen_queue, Screen::Queue),
-        ];
 
         div()
             .flex()
@@ -303,53 +306,23 @@ impl PlayerView {
                     .font_weight(FontWeight::BOLD)
                     .child(translations.app_title),
             )
-            .child({
-                let mut tabs_container = div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .p_1()
-                    .bg(theme.surface)
-                    .rounded_lg();
-
-                for (label, screen_variant) in tab_data {
-                    let is_selected = current_screen == screen_variant;
-                    let entity_clone = state_entity.clone();
-                    let accent = theme.accent;
-                    let text_on_accent = theme.text_on_accent;
-                    let text_secondary = theme.text_secondary;
-                    let bg_secondary = theme.background_secondary;
-                    let surface_hover = theme.surface_hover;
-
-                    let tab = div()
-                        .id(SharedString::from(format!("nav-tab-{:?}", screen_variant)))
-                        .px_4()
-                        .py_2()
-                        .text_sm()
-                        .rounded_md()
-                        .cursor_pointer()
-                        .when(is_selected, |d| {
-                            d.bg(accent)
-                                .text_color(text_on_accent)
-                                .font_weight(FontWeight::SEMIBOLD)
-                        })
-                        .when(!is_selected, |d| {
-                            d.bg(bg_secondary)
-                                .text_color(text_secondary)
-                                .hover(move |s| s.bg(surface_hover))
-                        })
-                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                            entity_clone.update(cx, |state, _cx| {
-                                state.app.ui_state.current_screen = screen_variant;
+            .child(
+                Tabs::new("nav-tabs")
+                    .tabs(vec![
+                        TabItem::new("library", translations.screen_library),
+                        TabItem::new("queue", translations.screen_queue),
+                    ])
+                    .selected_index(selected_index)
+                    .variant(TabVariant::Pills)
+                    .theme(theme.to_tabs_theme())
+                    .on_change(move |index, _window, cx| {
+                        if let Some(screen) = screens.get(index).copied() {
+                            state_entity.update(cx, |state, _cx| {
+                                state.app.ui_state.current_screen = screen;
                             });
-                        })
-                        .child(label);
-
-                    tabs_container = tabs_container.child(tab);
-                }
-
-                tabs_container
-            })
+                        }
+                    }),
+            )
             .into_any_element()
     }
 }

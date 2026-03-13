@@ -30,6 +30,12 @@ publish-autoeq:
 	cd crates/autoeq && cargo publish
 	cd crates/autoeq-roomsim && cargo publish
 
+[group('demo')]
+demo-headphone-loss:
+	cargo run --release --example headphone_loss_demo -- \
+	--spl "./data_tests/headphones/asr/bowerwilkins_p7/Bowers & Wilkins P7.csv" \
+	--target "./data_tests/targets/harman-over-ear-2018.csv"
+
 # ----------------------------------------------------------------------
 # QA AUTOEQ
 # ----------------------------------------------------------------------

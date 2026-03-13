@@ -221,6 +221,7 @@ gpui_linux = { version="*", git = "https://github.com/zed-industries/zed.git", r
 gpui_windows = { version="*", git = "https://github.com/zed-industries/zed.git", rev = "dd9efd9cbe73af15fae92d9d34137d253c16d12f" }
 
 # System and low-level
+block = "0.1"
 objc = "0.2"
 cocoa = "0.26"
 dirs = "6"
@@ -284,6 +285,9 @@ souvlaki = "0.8"
 
 # Camera capture
 nokhwa = { version = "0.10", default-features = false }
+
+# QR code decoding from camera
+rqrr = "0.10.0"
 
 # ONNX Runtime
 ort = "2.0.0-rc.10"

@@ -5,7 +5,7 @@ use crate::theme::ThemeId;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Toggle, ToggleStyle};
+use gpui_ui_kit::{Button, ButtonSet, ButtonSetOption, ButtonSize, ButtonVariant, Toggle, ToggleStyle};
 
 impl PlayerView {
     /// Render theme settings content
@@ -71,38 +71,27 @@ impl PlayerView {
                         .child(translations.settings_language),
                 )
                 .child({
-                    let button_theme = theme.to_button_theme();
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .gap_2()
-                        .children(Language::all().iter().map(|lang| {
-                            let is_selected = language == *lang;
-                            let lang = *lang;
-                            let btn_theme = button_theme.clone();
-                            Button::new(
-                                SharedString::from(format!("language-{}", lang.name())),
-                                lang.name(),
-                            )
-                            .variant(if is_selected {
-                                ButtonVariant::Primary
-                            } else {
-                                ButtonVariant::Secondary
-                            })
-                            .size(ButtonSize::Xs)
-                            .selected(is_selected)
-                            .theme(btn_theme)
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.set_language(lang);
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                        }))
+                    let state_entity = self.state.clone();
+                    ButtonSet::new("language-select")
+                        .options(
+                            Language::all()
+                                .iter()
+                                .map(|lang| ButtonSetOption::new(lang.name(), lang.name()))
+                                .collect(),
+                        )
+                        .selected(language.name())
+                        .theme(theme.to_button_set_theme())
+                        .on_change(move |value, _window, cx| {
+                            let lang = Language::all()
+                                .iter()
+                                .find(|l| l.name() == value.as_ref())
+                                .copied();
+                            if let Some(lang) = lang {
+                                state_entity.update(cx, |state, _cx| {
+                                    state.app.set_language(lang);
+                                });
+                            }
+                        })
                 }),
         )
     }

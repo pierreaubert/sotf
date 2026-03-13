@@ -3,13 +3,13 @@
 #	  cargo install just
 # ----------------------------------------------------------------------
 import? 'builds/cross.just'
-
 import? 'builds/macos.just'
 import? 'builds/windows.just'
 import? 'builds/linux.just'
 
 import? 'crates/math-audio/Justfile'
 import? 'crates/autoeq/Justfile'
+import? 'crates/gpui-toolkit/Justfile'
 import? 'crates/sotf-plugins/Justfile'
 
 default:
@@ -76,13 +76,6 @@ generate-ml-dataset-ava:
 [group('test')]
 test:
 	RUST_MIN_STACK=16777216 cargo check --workspace  --lib --bins --tests --examples
-
-# Build gpui-ui-kit examples to verify they compile (doesn't run them)
-[group('test')]
-test-examples:
-	@echo "Building gpui-ui-kit examples..."
-	RUST_MIN_STACK=16777216 cargo build --examples -p gpui-ui-kit
-	@echo "✓ All gpui-ui-kit examples compiled successfully"
 
 [group('test')]
 test-negative:
@@ -254,50 +247,12 @@ update-pre-commit:
 [group('demo')]
 demo: demo-d3rs demo-px demo-ui-kit demo-headphone-loss
 
-[group('demo')]
-demo-ui-kit:
-	cargo build --release --example showcase -p gpui-ui-kit
-
-[group('demo')]
-demo-d3rs:
-	cargo build --release --bin d3rs-spinorama --features="spinorama, gpu-3d"
-
-[group('demo')]
-demo-px:
-	cargo build --release --bin px-spinorama -p gpui-px --features="autoeq, tokio, reqwest, urlencoding, gpu-3d"
-
-[group('demo')]
-demo-headphone-loss:
-	cargo run --release --example headphone_loss_demo -- \
-	--spl "./data_tests/headphones/asr/bowerwilkins_p7/Bowers & Wilkins P7.csv" \
-	--target "./data_tests/targets/harman-over-ear-2018.csv"
-
 # ----------------------------------------------------------------------
 # EXAMPLES
 # ----------------------------------------------------------------------
 
 [group('examples')]
-examples: examples-autoeq examples-math
-
-[group('examples')]
-examples-math: examples-iir examples-de examples-testfunctions
-
-[group('examples')]
-examples-iir :
-	cargo run --release --example format_demo
-	cargo run --release --example readme_example
-
-[group('examples')]
-examples-de :
-	cargo run --release --example optde_basic
-	cargo run --release --example optde_adaptive_demo
-	cargo run --release --example optde_linear_constraints
-	cargo run --release --example optde_nonlinear_constraints
-	cargo run --release --example optde_parallel
-
-[group('examples')]
-examples-testfunctions:
-	cargo run --release --example test_hartman_4d
+examples: examples-autoeq examples-math examples-ui-kit
 
 # ----------------------------------------------------------------------
 # Install rustup

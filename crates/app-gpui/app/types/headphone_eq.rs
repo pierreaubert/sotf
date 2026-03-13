@@ -98,6 +98,35 @@ impl Default for HeadphoneEqState {
 }
 
 impl HeadphoneEqState {
+    pub fn ui_loss_type(&self) -> &'static str {
+        match self.optimizer_config.loss.as_str() {
+            "flat" | "headphone-flat" => "flat",
+            "score" | "headphone-score" => "score",
+            _ => "score",
+        }
+    }
+
+    pub fn set_ui_loss_type(&mut self, loss_type: &str) {
+        self.loss_type = match loss_type {
+            "flat" | "headphone-flat" => "flat".to_string(),
+            _ => "score".to_string(),
+        };
+        self.optimizer_config.loss = match loss_type {
+            "flat" | "headphone-flat" => "headphone-flat".to_string(),
+            _ => "headphone-score".to_string(),
+        };
+    }
+
+    pub fn requires_custom_target_path(&self) -> bool {
+        self.target_preset == "custom"
+    }
+
+    pub fn has_custom_target_path(&self) -> bool {
+        self.custom_target_path
+            .as_ref()
+            .is_some_and(|path| !path.trim().is_empty())
+    }
+
     /// Check if we can proceed from the current step
     pub fn can_advance(&self) -> bool {
         match self.step {

@@ -1174,7 +1174,7 @@ impl PlayerView {
         // Build Args using library defaults
         let mut params = autoeq::Args::speaker_defaults();
         params.num_filters = optimizer_config.num_filters;
-        params.sample_rate = 48000.0;
+        params.sample_rate = optimizer_config.sample_rate as f64;
         params.min_db = optimizer_config.min_db;
         params.max_db = optimizer_config.max_db;
         params.min_q = optimizer_config.min_q;
@@ -1188,10 +1188,12 @@ impl PlayerView {
         params.refine = optimizer_config.refine;
         params.local_algo = optimizer_config.local_algo.clone();
         params.smooth = optimizer_config.smooth;
+        params.smooth_n = optimizer_config.smooth_n;
+        params.spacing_weight = optimizer_config.spacing_weight;
+        params.min_spacing_oct = optimizer_config.min_spacing_oct;
         params.peq_model = sotf_audio_player::autoeq::parse_peq_model(&optimizer_config.peq_model);
-        // Set very small tolerances to prevent early convergence - run full maxeval iterations
-        params.tolerance = 1e-10;
-        params.atolerance = 1e-10;
+        params.tolerance = optimizer_config.tolerance;
+        params.atolerance = optimizer_config.atolerance;
         params.loss = sotf_audio_player::autoeq::parse_loss_type(&loss);
         params.algo = algo;
         params.curve_name = effective_curve_name.clone();

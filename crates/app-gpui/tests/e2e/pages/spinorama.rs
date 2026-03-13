@@ -1,4 +1,5 @@
 use crate::driver::AppDriver;
+use sotf_audio_player_gpui::app::InputMode;
 use sotf_audio_player_gpui::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
 
 pub struct SpinoramaPage<'a, 'b> {
@@ -249,6 +250,48 @@ impl<'a, 'b> SpinoramaPage<'a, 'b> {
                 .optimizer_config
                 .min_spacing_oct = min_spacing_oct;
         });
+    }
+
+    /// Enter search mode by setting state and navigating to Select step.
+    /// The Input widget handles all text via its native on_text_change callback.
+    pub fn enter_search_mode(&mut self) {
+        self.driver.update_app(|app, _| {
+            app.ui_state.input_mode = InputMode::SpinoramaSpeakerSearch;
+            app.measurement_state.spinorama_eq_state.speaker_search.clear();
+            // Ensure we're on the SelectSpeaker step so the Input widget renders
+            app.measurement_state.spinorama_eq_state.step =
+                sotf_audio_player_gpui::app::types::SpinoramaStep::SelectSpeaker;
+        });
+        self.driver.cx.run_until_parked();
+    }
+
+    /// Type characters into the search by directly updating state.
+    /// In the real app, the Input widget's on_text_change callback does this.
+    /// In tests without a focused Input widget, we simulate the result.
+    pub fn type_search_direct(&mut self, text: &str) {
+        let text = text.to_string();
+        self.driver.update_app(move |app, _| {
+            app.measurement_state
+                .spinorama_eq_state
+                .speaker_search
+                .push_str(&text);
+            app.measurement_state
+                .spinorama_eq_state
+                .update_suggestions();
+        });
+        self.driver.cx.run_until_parked();
+    }
+
+    /// Get the current search query from state
+    pub fn get_search_query(&mut self) -> String {
+        self.driver
+            .read_app(|app| app.measurement_state.spinorama_eq_state.speaker_search.clone())
+    }
+
+    /// Check if we're in search mode
+    pub fn is_search_mode(&mut self) -> bool {
+        self.driver
+            .read_app(|app| app.ui_state.input_mode == InputMode::SpinoramaSpeakerSearch)
     }
 
     pub fn inject_mock_data(&mut self) {

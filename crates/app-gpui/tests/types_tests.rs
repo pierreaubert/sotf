@@ -5,12 +5,14 @@
 
 use sotf_audio_player::library::{Album, Track};
 use sotf_audio_player::PluginType;
+use sotf_audio_player_gpui::app::types::{HeadphoneEqState, SpinoramaEqState};
 use sotf_audio_player_gpui::{
-    CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, ContextMenuType,
-    CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState, MeterDisplayMode,
-    PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, QueueItem, RecordingDeviceConfig,
-    RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
-    RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType, App,
+    App, CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState,
+    ContextMenuType, CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState,
+    MeterDisplayMode, PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, QueueItem,
+    RecordingDeviceConfig, RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode,
+    RoomEqAlgorithm, RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration,
+    ToastMessage, ToastType,
 };
 use std::path::PathBuf;
 
@@ -43,6 +45,84 @@ fn test_screen_copy_clone() {
     let cloned = screen;
     assert_eq!(screen, copied);
     assert_eq!(screen, cloned);
+}
+
+#[test]
+fn test_headphone_eq_ui_loss_type_uses_optimizer_source_of_truth() {
+    let state = HeadphoneEqState::default();
+    assert_eq!(state.ui_loss_type(), "score");
+    assert_eq!(state.optimizer_config.loss, "headphone-score");
+}
+
+#[test]
+fn test_headphone_eq_set_ui_loss_type_updates_optimizer_loss() {
+    let mut state = HeadphoneEqState::default();
+
+    state.set_ui_loss_type("flat");
+    assert_eq!(state.ui_loss_type(), "flat");
+    assert_eq!(state.loss_type, "flat");
+    assert_eq!(state.optimizer_config.loss, "headphone-flat");
+
+    state.set_ui_loss_type("score");
+    assert_eq!(state.ui_loss_type(), "score");
+    assert_eq!(state.loss_type, "score");
+    assert_eq!(state.optimizer_config.loss, "headphone-score");
+}
+
+#[test]
+fn test_headphone_eq_set_ui_loss_type_normalizes_unknown_values() {
+    let mut state = HeadphoneEqState::default();
+
+    // Unknown values should normalize to "score" (matching optimizer fallback)
+    state.set_ui_loss_type("garbage");
+    assert_eq!(state.ui_loss_type(), "score");
+    assert_eq!(state.loss_type, "score", "loss_type should be normalized to 'score' for unknown input");
+    assert_eq!(state.optimizer_config.loss, "headphone-score");
+
+    // Prefixed variants should also normalize
+    state.set_ui_loss_type("headphone-flat");
+    assert_eq!(state.ui_loss_type(), "flat");
+    assert_eq!(state.loss_type, "flat");
+    assert_eq!(state.optimizer_config.loss, "headphone-flat");
+
+    state.set_ui_loss_type("headphone-score");
+    assert_eq!(state.ui_loss_type(), "score");
+    assert_eq!(state.loss_type, "score");
+    assert_eq!(state.optimizer_config.loss, "headphone-score");
+}
+
+#[test]
+fn test_headphone_eq_custom_target_path_helpers() {
+    let mut state = HeadphoneEqState::default();
+    assert!(!state.requires_custom_target_path());
+    assert!(!state.has_custom_target_path());
+
+    state.target_preset = "custom".to_string();
+    assert!(state.requires_custom_target_path());
+    assert!(!state.has_custom_target_path());
+
+    state.custom_target_path = Some(" /tmp/custom-target.csv ".to_string());
+    assert!(state.has_custom_target_path());
+}
+
+#[test]
+fn test_spinorama_supported_eq_modes_are_iir_only() {
+    let state = SpinoramaEqState::default();
+    assert_eq!(state.supported_eq_modes(), &["iir"]);
+    assert_eq!(state.selected_eq_mode(), "iir");
+}
+
+#[test]
+fn test_spinorama_set_selected_eq_mode_normalizes_to_iir() {
+    let mut state = SpinoramaEqState::default();
+
+    state.set_selected_eq_mode("mixed");
+    assert_eq!(state.selected_eq_mode(), "iir");
+    assert_eq!(state.dropdowns.opt_mode, "iir");
+
+    state.set_selected_eq_mode("fir");
+    assert_eq!(state.selected_eq_mode(), "iir");
+    assert_eq!(state.dropdowns.opt_mode, "iir");
 }
 
 // ============================================================================

@@ -319,7 +319,7 @@ impl PlayerView {
                     )
                 })
                 // Search bar row (only visible when in search mode)
-                // Keyboard input is handled at the parent level in ui.rs via handle_search_input
+                // Uses Input component's native text handling via on_text_change
                 .when(is_search_mode, |el| {
                     el.child(
                         div().flex().justify_center().mb_2().child(

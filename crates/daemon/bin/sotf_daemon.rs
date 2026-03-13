@@ -1418,6 +1418,7 @@ fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
         PluginType::BandMerge => "band_merge",
         PluginType::Downmix => "downmix",
         PluginType::MonoToStereo => "mono_to_stereo",
+        PluginType::Crossfeed => "crossfeed",
     }
 }
 
@@ -1442,7 +1443,7 @@ fn plugin_type_category(pt: &PluginType) -> &'static str {
         PluginType::Denoiser | PluginType::Pnd => "Restoration",
         PluginType::LoudnessMonitor | PluginType::SpectrumAnalyzer => "Monitoring",
         PluginType::ABCompare => "Utility",
-        PluginType::BandSplit | PluginType::BandMerge => "Utility",
+        PluginType::BandSplit | PluginType::BandMerge | PluginType::Crossfeed => "Utility",
     }
 }
 

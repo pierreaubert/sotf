@@ -496,6 +496,22 @@ impl Theme {
         }
     }
 
+    /// Convert to ContextMenuTheme for use with ui_kit ContextMenu component
+    pub fn to_context_menu_theme(&self) -> gpui_ui_kit::ContextMenuTheme {
+        gpui_ui_kit::ContextMenuTheme {
+            backdrop: gpui::rgba(0x00000001),
+            background: self.surface,
+            border: self.border,
+            separator: self.border,
+            text: self.text_secondary,
+            text_hover: self.text_primary,
+            text_disabled: self.text_disabled,
+            text_shortcut: self.text_muted,
+            hover_bg: self.surface_hover,
+            danger_hover_bg: self.error,
+        }
+    }
+
     /// Convert to SelectTheme for use with ui_kit Select component
     pub fn to_select_theme(&self) -> gpui_ui_kit::SelectTheme {
         gpui_ui_kit::SelectTheme {

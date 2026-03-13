@@ -303,10 +303,8 @@ impl Render for PlayerView {
                 );
 
                 match input_mode {
-                    crate::app::InputMode::Search => {
-                        cx.stop_propagation(); // Prevent actions from processing this keystroke
-                        view.handle_search_input(event, cx);
-                    }
+                    // Search mode now uses Input component's native text handling
+                    // No global keyboard interception needed
                     crate::app::InputMode::AddDirectory => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_directory_input(event, cx);
@@ -331,8 +329,8 @@ impl Render for PlayerView {
                         // Stepper-based editing doesn't need keyboard input
                     }
                     crate::app::InputMode::SpinoramaSpeakerSearch => {
-                        cx.stop_propagation();
-                        view.handle_spinorama_speaker_search_input(event, cx);
+                        // Handled by the Input widget's native on_text_change callback
+                        // in step_1_select.rs. No global interception needed.
                     }
                     crate::app::InputMode::ChannelConflict => {
                         cx.stop_propagation();

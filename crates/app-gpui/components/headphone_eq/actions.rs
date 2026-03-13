@@ -31,6 +31,29 @@ impl PlayerView {
         .detach();
     }
 
+    pub(crate) fn browse_headphone_eq_target(&mut self, cx: &mut Context<Self>) {
+        let state_entity = self.state.clone();
+        cx.spawn(async move |_, cx| {
+            let file = rfd::AsyncFileDialog::new()
+                .add_filter("CSV Files", &["csv", "txt"])
+                .set_title("Select Headphone Target Curve")
+                .pick_file()
+                .await;
+
+            if let Some(file) = file {
+                let path = file.path().to_string_lossy().to_string();
+                state_entity.update(&mut cx.clone(), |state, _| {
+                    state
+                        .app
+                        .measurement_state
+                        .headphone_eq_state
+                        .custom_target_path = Some(path);
+                });
+            }
+        })
+        .detach();
+    }
+
     pub(crate) fn start_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         let measurement_path = state
@@ -70,6 +93,17 @@ impl PlayerView {
             return;
         }
         let measurement_path = measurement_path.unwrap();
+
+        if target_preset == "custom" && custom_target_path.trim().is_empty() {
+            log::warn!("Custom target selected but no target file provided");
+            self.state.update(cx, |state, cx| {
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::error(
+                    "Please select a custom target curve file",
+                ));
+                cx.notify();
+            });
+            return;
+        }
 
         // Update status to running
         self.state.update(cx, |state, cx| {

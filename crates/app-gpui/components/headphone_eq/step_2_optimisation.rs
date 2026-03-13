@@ -4,7 +4,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, OptimizationType};
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, Progress,
+    Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Progress,
     ProgressSize, ProgressVariant, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
@@ -51,7 +51,7 @@ impl PlayerView {
             local_algo: config.local_algo.clone(),
             smooth: config.smooth,
             // Goals - use headphone_eq_state values
-            loss_type: headphone_eq.loss_type.clone(),
+            loss_type: headphone_eq.ui_loss_type().to_string(),
             target_curve: headphone_eq.target_preset.clone(),
             ..Default::default()
         };
@@ -84,8 +84,11 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |loss_type, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.loss_type =
-                            loss_type.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .set_ui_loss_type(loss_type);
                         state
                             .app
                             .measurement_state
@@ -497,6 +500,69 @@ impl PlayerView {
                     })
                     .child(autoeq_form),
             )
+            .when(headphone_eq.requires_custom_target_path(), |vstack| {
+                let custom_target_path = headphone_eq.custom_target_path.clone().unwrap_or_default();
+                let path_text = if custom_target_path.is_empty() {
+                    "No target curve selected".to_string()
+                } else {
+                    custom_target_path
+                };
+
+                vstack.child(
+                    Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
+                        .header(
+                            Text::new("Custom Target Curve")
+                                .color(theme.text_primary)
+                                .weight(TextWeight::Semibold),
+                        )
+                        .content(
+                            VStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .child(
+                                    Text::new(
+                                        "Choose a CSV target curve to use with the custom preset.",
+                                    )
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary),
+                                )
+                                .child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .px_3()
+                                                .py_2()
+                                                .rounded_md()
+                                                .bg(theme.background_secondary)
+                                                .text_sm()
+                                                .text_color(if headphone_eq.has_custom_target_path() {
+                                                    theme.text_primary
+                                                } else {
+                                                    theme.text_muted
+                                                })
+                                                .child(path_text),
+                                        )
+                                        .child(
+                                            Button::new("browse-custom-target", "Browse...")
+                                                .variant(ButtonVariant::Secondary)
+                                                .size(ButtonSize::Sm)
+                                                .theme(button_theme.clone())
+                                                .build()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|view, _, _, cx| {
+                                                        view.browse_headphone_eq_target(cx);
+                                                    }),
+                                                ),
+                                        ),
+                                ),
+                        ),
+                )
+            })
             // Generate EQ section
             .child(
                 Card::new()

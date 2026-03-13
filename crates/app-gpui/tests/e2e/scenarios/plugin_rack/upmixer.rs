@@ -534,8 +534,8 @@ async fn test_subharmonic_envelope(_cx: &mut TestAppContext) {
 async fn test_decorrelation_mode(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(UpmixerState::default()));
 
-    // Mode 0 = off, 1 = velvet noise, 2 = all-pass, etc.
-    for mode in 0..4 {
+    let supported_modes = [0usize, 1usize];
+    for mode in supported_modes {
         state.borrow_mut().decorrelation_mode = mode;
         assert_eq!(state.borrow().decorrelation_mode, mode);
     }

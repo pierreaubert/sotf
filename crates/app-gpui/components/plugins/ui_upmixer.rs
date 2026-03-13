@@ -868,6 +868,7 @@ fn render_config_decorrelation(
     theme: &Theme,
 ) -> impl IntoElement {
     let decorrelation_mode = state.decorrelation_mode;
+    let decorrelation_modes = [(0usize, "Velvet"), (1usize, "LFO")];
 
     VStack::new()
         .spacing(StackSpacing::Xs)
@@ -878,27 +879,31 @@ fn render_config_decorrelation(
                 .gap_3()
                 .child(render_section_header("Decorrelation", theme))
                 .child(
-                    Toggle::new(("decorr-toggle", plugin_idx))
-                        .checked(decorrelation_mode == 1)
-                        .label(if decorrelation_mode == 1 {
-                            "LFO"
-                        } else {
-                            "Velvet"
-                        })
-                        .style(ToggleStyle::Segmented)
-                        .theme(theme.to_toggle_theme())
-                        .on_change({
+                    HStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .children(decorrelation_modes.into_iter().map(|(mode, label)| {
+                            let is_active = decorrelation_mode == mode;
                             let entity = entity.clone();
-                            move |new_value, _, cx| {
+                            render_tab_button(
+                                if mode == 0 {
+                                    "decorr-velvet"
+                                } else {
+                                    "decorr-lfo"
+                                },
+                                label,
+                                is_active,
+                                theme,
+                            )
+                            .on_click(move |_, _window, cx| {
                                 entity.update(cx, |state, _| {
                                     state.app.set_plugin_param(
                                         plugin_idx,
                                         param_idx::DECORRELATION_MODE,
-                                        if new_value { 1.0 } else { 0.0 },
+                                        mode as f64,
                                     );
                                 });
-                            }
-                        }),
+                            })
+                        })),
                 ),
         )
         .child(

@@ -17,6 +17,30 @@ bench-math:
 	cargo run --release --bin benchmark-convergence
 
 # ----------------------------------------------------------------------
+# EXAMPLES
+# ----------------------------------------------------------------------
+
+[group('examples')]
+examples-math: examples-iir examples-de examples-testfunctions
+
+[group('examples')]
+examples-iir :
+	cargo run --release --example format_demo
+	cargo run --release --example readme_example
+
+[group('examples')]
+examples-de :
+	cargo run --release --example optde_basic
+	cargo run --release --example optde_adaptive_demo
+	cargo run --release --example optde_linear_constraints
+	cargo run --release --example optde_nonlinear_constraints
+	cargo run --release --example optde_parallel
+
+[group('examples')]
+examples-testfunctions:
+	cargo run --release --example test_hartman_4d
+
+# ----------------------------------------------------------------------
 # QA MATH
 # ----------------------------------------------------------------------
 

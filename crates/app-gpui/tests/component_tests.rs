@@ -1334,3 +1334,70 @@ fn test_freq_logarithmic_scaling() {
         rel_diff
     );
 }
+
+// ============================================================================
+// SEARCH INPUT TESTS (Input component integration)
+// ============================================================================
+
+#[test]
+fn test_library_state_set_search_query_clears_previous() {
+    use sotf_audio_player_gpui::app::state::library::LibraryState;
+    let mut state = LibraryState::new_for_test();
+    
+    // Set initial query
+    state.set_search_query("first query".to_string());
+    assert_eq!(state.search_query, "first query");
+    
+    // Setting new query should replace previous
+    state.set_search_query("second query".to_string());
+    assert_eq!(state.search_query, "second query");
+}
+
+#[test]
+fn test_library_state_set_search_query_empty() {
+    use sotf_audio_player_gpui::app::state::library::LibraryState;
+    let mut state = LibraryState::new_for_test();
+    
+    state.set_search_query("test".to_string());
+    assert_eq!(state.search_query, "test");
+    
+    // Setting empty string should clear
+    state.set_search_query("".to_string());
+    assert_eq!(state.search_query, "");
+}
+
+#[test]
+fn test_library_state_search_query_default_empty() {
+    use sotf_audio_player_gpui::app::state::library::LibraryState;
+    let state = LibraryState::new_for_test();
+    assert_eq!(state.search_query, "");
+}
+
+// ============================================================================
+// INPUT MODE TESTS (Search focus management)
+// ============================================================================
+
+#[test]
+fn test_input_mode_is_text_input_search() {
+    use sotf_audio_player_gpui::app::InputMode;
+    assert!(InputMode::Search.is_text_input());
+}
+
+#[test]
+fn test_input_mode_is_text_input_normal() {
+    use sotf_audio_player_gpui::app::InputMode;
+    assert!(!InputMode::Normal.is_text_input());
+}
+
+#[test]
+fn test_input_mode_is_text_input_add_directory() {
+    use sotf_audio_player_gpui::app::InputMode;
+    assert!(InputMode::AddDirectory.is_text_input());
+}
+
+#[test]
+fn test_input_mode_is_text_input_editing_param() {
+    use sotf_audio_player_gpui::app::InputMode;
+    // EditingParam uses stepper/knob interaction, not text input
+    assert!(!InputMode::EditingParam.is_text_input());
+}

@@ -29,5 +29,9 @@
     <!-- Network (for spinorama.org API access) -->
     <key>com.apple.security.network.client</key>
     <true/>
+
+    <!-- Camera access (for QR code scanning) -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
 </dict>
 </plist>

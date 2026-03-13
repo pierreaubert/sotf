@@ -286,12 +286,37 @@ impl SpinoramaEqState {
         self.error_message = None;
     }
 
+    pub fn supported_eq_modes(&self) -> &'static [&'static str] {
+        &["iir"]
+    }
+
+    pub fn selected_eq_mode(&self) -> &'static str {
+        "iir"
+    }
+
+    pub fn set_selected_eq_mode(&mut self, _mode: &str) {
+        self.dropdowns.opt_mode = "iir".to_string();
+    }
+
     /// Update speaker suggestions based on search query with fuzzy matching
     pub fn update_suggestions(&mut self) {
         if self.speaker_search.is_empty() {
+            // Show all speakers when search is empty (original behavior)
             self.speaker_suggestions = self.available_speakers.clone();
+            return;
+        }
+
+        let query_lower = self.speaker_search.to_lowercase();
+        let exact_matches: Vec<String> = self
+            .available_speakers
+            .iter()
+            .filter(|s| s.to_lowercase().contains(&query_lower))
+            .cloned()
+            .collect();
+
+        if !exact_matches.is_empty() {
+            self.speaker_suggestions = exact_matches;
         } else {
-            // Score and filter speakers using fuzzy matching
             let mut scored: Vec<(String, f64)> = self
                 .available_speakers
                 .iter()
@@ -300,11 +325,10 @@ impl SpinoramaEqState {
                 })
                 .collect();
 
-            // Sort by score descending (best matches first)
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
             self.speaker_suggestions = scored.into_iter().map(|(s, _)| s).collect();
         }
+
         // Limit to reasonable number for UI
         self.speaker_suggestions.truncate(50);
     }

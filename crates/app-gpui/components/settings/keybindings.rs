@@ -4,7 +4,7 @@ use crate::app::keybindings::{KeybindingCategory, KeymapPreset, get_documented_k
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{ButtonSet, ButtonSetOption};
 use std::collections::HashMap;
 
 impl PlayerView {
@@ -48,38 +48,27 @@ impl PlayerView {
                             .child("Keymap Preset"),
                     )
                     .child({
-                        let button_theme = theme.to_button_theme();
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_2()
-                            .children(KeymapPreset::all().iter().map(|preset| {
-                                let is_selected = current_preset == *preset;
-                                let preset = *preset;
-                                let btn_theme = button_theme.clone();
-                                Button::new(
-                                    SharedString::from(format!("preset-{}", preset.name())),
-                                    preset.name(),
-                                )
-                                .variant(if is_selected {
-                                    ButtonVariant::Primary
-                                } else {
-                                    ButtonVariant::Secondary
-                                })
-                                .size(ButtonSize::Xs)
-                                .selected(is_selected)
-                                .theme(btn_theme)
-                                .build()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                        view.state.update(cx, |state, _cx| {
-                                            state.app.set_keymap_preset(preset);
-                                        });
-                                        cx.notify();
-                                    }),
-                                )
-                            }))
+                        let state_entity = self.state.clone();
+                        ButtonSet::new("keymap-preset")
+                            .options(
+                                KeymapPreset::all()
+                                    .iter()
+                                    .map(|p| ButtonSetOption::new(p.name(), p.name()))
+                                    .collect(),
+                            )
+                            .selected(current_preset.name())
+                            .theme(theme.to_button_set_theme())
+                            .on_change(move |value, _window, cx| {
+                                let preset = KeymapPreset::all()
+                                    .iter()
+                                    .find(|p| p.name() == value.as_ref())
+                                    .copied();
+                                if let Some(preset) = preset {
+                                    state_entity.update(cx, |state, _cx| {
+                                        state.app.set_keymap_preset(preset);
+                                    });
+                                }
+                            })
                     })
                     .child(
                         div()

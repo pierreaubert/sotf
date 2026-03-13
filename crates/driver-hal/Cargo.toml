@@ -1,6 +1,6 @@
 [package]
 name = "driver-hal"
-version.workspace = true
+version = "0.1.10"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true

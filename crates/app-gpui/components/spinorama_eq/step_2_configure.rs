@@ -20,19 +20,12 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
 
-        // Filter available modes based on phase data availability
-        // Default is IIR. If phase data is available, add FIR and mixed options.
-        let allowed_modes = if spinorama.has_phase_data {
-            vec!["iir".to_string(), "fir".to_string(), "mixed".to_string()]
-        } else {
-            vec!["iir".to_string()] // Only IIR when no phase data
-        };
-
-        let mut opt_mode = spinorama.dropdowns.opt_mode.clone();
-        // If no phase data and mode requires it (FIR/mixed), fall back to IIR
-        if !spinorama.has_phase_data && (opt_mode == "fir" || opt_mode == "mixed") {
-            opt_mode = "iir".to_string();
-        }
+        let allowed_modes = spinorama
+            .supported_eq_modes()
+            .iter()
+            .map(|mode| (*mode).to_string())
+            .collect::<Vec<_>>();
+        let opt_mode = spinorama.selected_eq_mode().to_string();
 
         // Build AutoEqConfig from our SpinoramaOptimizerConfig
         let config = &spinorama.optimizer_config;
@@ -100,8 +93,7 @@ impl PlayerView {
                             .app
                             .measurement_state
                             .spinorama_eq_state
-                            .dropdowns
-                            .opt_mode = mode.to_string();
+                            .set_selected_eq_mode(mode);
                         state
                             .app
                             .measurement_state
@@ -614,6 +606,11 @@ impl PlayerView {
                 Text::new("Set the optimization parameters for your speaker EQ.")
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
+            )
+            .child(
+                Text::new("Spinorama EQ currently supports PEQ/IIR output in this workflow.")
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
             )
             .child(
                 Card::new()

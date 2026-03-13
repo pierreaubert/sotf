@@ -127,55 +127,6 @@ impl PlayerView {
         }
     }
 
-    pub(crate) fn handle_spinorama_speaker_search_input(
-        &mut self,
-        event: &KeyDownEvent,
-        cx: &mut Context<Self>,
-    ) {
-        log::info!(
-            "[SPINORAMA] handle_spinorama_speaker_search_input called, key={}",
-            event.keystroke.key
-        );
-        // Handle text input for spinorama speaker search mode
-        match event.keystroke.key.as_str() {
-            "backspace" => {
-                log::info!("[SPINORAMA] Backspace pressed");
-                self.state.update(cx, |state, _cx| {
-                    state.app.measurement_state.spinorama_eq_state.speaker_search.pop();
-                    state.app.measurement_state.spinorama_eq_state.update_suggestions();
-                });
-                cx.notify();
-            }
-            "escape" => {
-                log::info!("[SPINORAMA] Escape pressed - exiting search mode");
-                // Exit search mode
-                self.state.update(cx, |state, _cx| {
-                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                });
-                cx.notify();
-            }
-            "enter" => {
-                log::info!("[SPINORAMA] Enter pressed - exiting search mode");
-                // Exit search mode, keep current search results
-                self.state.update(cx, |state, _cx| {
-                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                });
-                cx.notify();
-            }
-            _ => {
-                // Add character to search query using key_char (handles all printable chars including space)
-                if let Some(text) = event.keystroke.key_char.as_ref() {
-                    log::info!("[SPINORAMA] Character typed: '{}'", text);
-                    self.state.update(cx, |state, _cx| {
-                        state.app.measurement_state.spinorama_eq_state.speaker_search.push_str(text);
-                        state.app.measurement_state.spinorama_eq_state.update_suggestions();
-                    });
-                    cx.notify();
-                }
-            }
-        }
-    }
-
     fn handle_save_plugins_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for save plugins mode
         match event.keystroke.key.as_str() {
@@ -361,6 +312,11 @@ impl PlayerView {
                 | InputMode::LoadApoFile
                 | InputMode::LoadSofaFile => {
                     // Don't execute action - these modes handle Enter themselves via keyboard handlers
+                    return;
+                }
+                InputMode::SpinoramaSpeakerSearch => {
+                    // Exit search mode, keep current search results
+                    state.app.ui_state.input_mode = InputMode::Normal;
                     return;
                 }
                 InputMode::AddDirectory => {
