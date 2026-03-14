@@ -161,7 +161,7 @@ fn test_bounds_with_free_filters() {
     for i in 0..3 {
         let type_idx = i * 4;
         assert_eq!(lower_bounds[type_idx], 0.0);
-        assert!(upper_bounds[type_idx] > 7.0 && upper_bounds[type_idx] < 8.0);
+        assert!(upper_bounds[type_idx] > 8.0 && upper_bounds[type_idx] < 9.0);
     }
 }
 
