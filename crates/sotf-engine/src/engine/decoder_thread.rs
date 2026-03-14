@@ -606,7 +606,7 @@ impl DecoderState {
         if let Some(reader) = &mut self.hal_reader {
             // Check if we have enough frames available
             if reader.available_read_frames() < frame_size {
-                return Ok(false);
+                return Ok((false, None));
             }
 
             // Read from HAL - use actual HAL config

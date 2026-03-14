@@ -1056,10 +1056,12 @@ mod tests {
     /// attenuated quickly (gate closes fast).
     #[test]
     fn test_mb_expander_attack_release_not_swapped() {
-        let mut params = MultibandExpanderPluginParams::default();
-        params.num_bands = 2;
-        params.mix = 1.0; // wet-only to observe expansion effect
-        params.range_db = 60.0; // allow up to 60 dB of expansion attenuation
+        let mut params = MultibandExpanderPluginParams {
+            num_bands: 2,
+            mix: 1.0, // wet-only to observe expansion effect
+            range_db: 60.0, // allow up to 60 dB of expansion attenuation
+            ..Default::default()
+        };
         params.bands = vec![
             BandExpanderParams {
                 threshold_db: Some(-20.0),
@@ -1135,8 +1137,10 @@ mod tests {
     /// the expander should not alter the signal significantly.
     #[test]
     fn test_mb_expander_unity_passthrough() {
-        let mut params = MultibandExpanderPluginParams::default();
-        params.num_bands = 3;
+        let mut params = MultibandExpanderPluginParams {
+            num_bands: 3,
+            ..Default::default()
+        };
         for band in &mut params.bands {
             band.ratio = Some(1.0); // no expansion
         }

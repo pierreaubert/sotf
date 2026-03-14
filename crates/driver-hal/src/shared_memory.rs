@@ -1887,8 +1887,8 @@ mod tests {
         buffer[4..8].copy_from_slice(&SHARED_MEMORY_VERSION.to_ne_bytes());
         buffer[8..12].copy_from_slice(&48000u32.to_ne_bytes());
         buffer[12..16].copy_from_slice(&1024u32.to_ne_bytes());
-        // channel_count = 100 (exceeds max of 16)
-        buffer[16..20].copy_from_slice(&100u32.to_ne_bytes());
+        // channel_count = 200 (exceeds max of 128)
+        buffer[16..20].copy_from_slice(&200u32.to_ne_bytes());
 
         file.write_all(&buffer).expect("Failed to write");
         file.flush().expect("Failed to flush");

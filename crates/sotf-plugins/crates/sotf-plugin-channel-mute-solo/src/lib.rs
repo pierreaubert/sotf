@@ -183,6 +183,13 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
                 .with_description("Enable/disable the plugin")
                 .with_group("General")
                 .with_importance(ParameterImportance::Critical),
+            Parameter::new_string(
+                "channel_states",
+                "Channel States",
+                serde_json::to_string(&self.channel_states).unwrap_or_default(),
+            )
+            .with_description("Per-channel mute/solo/dim states (JSON)")
+            .with_group("General"),
         ]
     }
 

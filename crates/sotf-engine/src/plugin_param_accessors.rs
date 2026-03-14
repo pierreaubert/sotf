@@ -7,6 +7,7 @@
 
 use crate::plugins::PluginSettings;
 use sotf_plugins::param_specs::{self, ParamSpec};
+use sotf_plugins::plugin_layout::PluginLayout;
 use sotf_plugins::{CrossfeedMode, CrossfeedPreset};
 
 // ============================================================================
@@ -142,6 +143,48 @@ impl PluginSettings {
             | Self::SpectrumAnalyzer { .. }
             | Self::ChannelMuteSolo { .. }
             | Self::Matrix { .. } => &[],
+        }
+    }
+
+    /// Return the declarative `PluginLayout` for this variant, if one is defined.
+    ///
+    /// Returns `None` for plugins that keep custom renderers (EQ, SpectrumAnalyzer,
+    /// Matrix, ChannelMuteSolo, LoudnessMonitor) or dynamic-param plugins that
+    /// require band selection UI (MultibandCompressor, MultibandExpander).
+    pub fn layout(&self) -> Option<&'static PluginLayout> {
+        match self {
+            Self::Gain { .. } => Some(&param_specs::gain::LAYOUT),
+            Self::Compressor { .. } => Some(&param_specs::compressor::LAYOUT),
+            Self::Gate { .. } => Some(&param_specs::gate::LAYOUT),
+            Self::Expander { .. } => Some(&param_specs::expander::LAYOUT),
+            Self::Limiter { .. } => Some(&param_specs::limiter::LAYOUT),
+            Self::LoudnessCompensation { .. } => {
+                Some(&param_specs::loudness_compensation::LAYOUT)
+            }
+            Self::FletcherMunson { .. } => Some(&param_specs::fletcher_munson::LAYOUT),
+            Self::Upmixer { .. } => Some(&param_specs::upmixer::LAYOUT),
+            Self::Convolution { .. } => Some(&param_specs::convolution::LAYOUT),
+            Self::BinauralDecoder { .. } => Some(&param_specs::binaural::LAYOUT),
+            Self::XTC { .. } => Some(&param_specs::xtc::LAYOUT),
+            Self::Denoiser { .. } => Some(&param_specs::denoiser::LAYOUT),
+            Self::Pnd { .. } => Some(&param_specs::pnd::LAYOUT),
+            Self::ABCompare { .. } => Some(&param_specs::ab_compare::LAYOUT),
+            Self::BandSplit { .. } => Some(&param_specs::band_split::LAYOUT),
+            Self::BandMerge { .. } => Some(&param_specs::band_merge::LAYOUT),
+            Self::Downmix { .. } => Some(&param_specs::downmix::LAYOUT),
+            Self::MonoToStereo { .. } => Some(&param_specs::mono_to_stereo::LAYOUT),
+            Self::Crossfeed { .. } => Some(&param_specs::crossfeed::LAYOUT),
+            Self::Delay { .. } => Some(&param_specs::delay::LAYOUT),
+            Self::MultibandCompressor { .. } => {
+                Some(&param_specs::multiband_compressor::LAYOUT)
+            }
+            Self::MultibandExpander { .. } => Some(&param_specs::multiband_expander::LAYOUT),
+            // Custom renderers — no declarative layout
+            Self::EQ { .. }
+            | Self::SpectrumAnalyzer { .. }
+            | Self::ChannelMuteSolo { .. }
+            | Self::Matrix { .. }
+            | Self::LoudnessMonitor => None,
         }
     }
 

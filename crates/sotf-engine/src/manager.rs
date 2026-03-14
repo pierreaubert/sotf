@@ -15,7 +15,8 @@ use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe
 /// The verification probe (creating test streams) is expensive (~300ms per rate)
 /// and can cause ALSA device locking issues if called repeatedly. Cache the result
 /// so subsequent calls for the same device return immediately.
-static VERIFIED_RATE_CACHE: Mutex<Option<((Option<String>, usize), u32)>> = Mutex::new(None);
+type VerifiedRateCacheEntry = ((Option<String>, usize), u32);
+static VERIFIED_RATE_CACHE: Mutex<Option<VerifiedRateCacheEntry>> = Mutex::new(None);
 
 /// Clear the verified rate cache (e.g., when the output device changes)
 pub fn clear_verified_rate_cache() {
@@ -53,8 +54,8 @@ pub fn select_output_sample_rate_for_channels(
     let cache_key = verified_rate_cache_key(output_device, output_channels);
     if let Ok(cache) = VERIFIED_RATE_CACHE.lock()
         && let Some((ref cached_key, cached_rate)) = *cache
+        && cached_key == &cache_key
     {
-        if cached_key == &cache_key {
             if cached_rate == file_sample_rate {
                 log::debug!(
                     "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
@@ -67,8 +68,7 @@ pub fn select_output_sample_rate_for_channels(
                     file_sample_rate
                 );
             }
-            return cached_rate;
-        }
+        return cached_rate;
     }
 
     // Prefer the file's sample rate to avoid resampling when the device supports it.

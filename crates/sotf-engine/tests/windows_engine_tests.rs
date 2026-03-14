@@ -64,7 +64,7 @@ mod windows_tests {
 
 #[cfg(not(target_os = "windows"))]
 mod windows_tests {
-    use sotf_audio::engine::{AudioEngine, EngineConfig};
+    use sotf_audio::engine::EngineConfig;
 
     /// Test: Verify engine config works on non-Windows
     #[test]

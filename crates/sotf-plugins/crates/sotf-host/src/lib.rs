@@ -9,6 +9,8 @@ pub mod auto_gain;
 pub mod automation;
 pub mod error;
 pub mod host;
+pub mod layout_solver;
+pub mod plugin_layout;
 pub mod param_registry;
 pub mod param_specs;
 pub mod parameters;

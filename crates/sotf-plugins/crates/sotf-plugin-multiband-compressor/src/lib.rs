@@ -970,8 +970,10 @@ mod tests {
     /// the crossover should reconstruct the signal without significant loss.
     #[test]
     fn test_mb_comp_crossover_reconstruction() {
-        let mut params = MultibandCompressorPluginParams::default();
-        params.num_bands = 3;
+        let mut params = MultibandCompressorPluginParams {
+            num_bands: 3,
+            ..Default::default()
+        };
         for band in &mut params.bands {
             band.ratio = Some(1.0); // no compression
         }

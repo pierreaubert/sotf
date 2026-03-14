@@ -11,6 +11,8 @@ pub struct Gpu2DContext {
     pub device: Arc<wgpu::Device>,
     /// The wgpu queue for submitting commands
     pub queue: Arc<wgpu::Queue>,
+    /// Keep the instance alive to prevent TLS access-after-destruction on drop
+    _instance: wgpu::Instance,
 }
 
 impl Gpu2DContext {
@@ -19,10 +21,11 @@ impl Gpu2DContext {
     /// This lazily initializes the wgpu device on first access.
     pub fn global() -> &'static Self {
         static CONTEXT: LazyLock<Gpu2DContext> = LazyLock::new(|| {
-            let (device, queue) = pollster::block_on(create_device());
+            let (instance, device, queue) = pollster::block_on(create_device());
             Gpu2DContext {
                 device: Arc::new(device),
                 queue: Arc::new(queue),
+                _instance: instance,
             }
         });
         &CONTEXT
@@ -39,8 +42,8 @@ impl Gpu2DContext {
     }
 }
 
-/// Create a new wgpu device and queue
-async fn create_device() -> (wgpu::Device, wgpu::Queue) {
+/// Create a new wgpu instance, device and queue
+async fn create_device() -> (wgpu::Instance, wgpu::Device, wgpu::Queue) {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..Default::default()
@@ -55,7 +58,7 @@ async fn create_device() -> (wgpu::Device, wgpu::Queue) {
         .await
         .expect("Failed to find suitable GPU adapter");
 
-    adapter
+    let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("Chart2D Device"),
             required_features: wgpu::Features::empty(),
@@ -65,5 +68,7 @@ async fn create_device() -> (wgpu::Device, wgpu::Queue) {
             experimental_features: wgpu::ExperimentalFeatures::default(),
         })
         .await
-        .expect("Failed to create device")
+        .expect("Failed to create device");
+
+    (instance, device, queue)
 }

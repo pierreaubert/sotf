@@ -420,7 +420,7 @@ mod tests {
             num_frames: 4800,
         };
         p.process_in_place(&mut b, &ctx).unwrap();
-        let output_before = b[4799];
+        let _output_before = b[4799];
 
         // Now change threshold from -6 dB to -20 dB
         p.set_parameter(
