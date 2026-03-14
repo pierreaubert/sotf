@@ -236,8 +236,15 @@ impl ProcessingState {
         input_frames: usize,
     ) -> Result<usize, String> {
         if self.bypassed {
-            // Bypass - just copy
-            output.copy_from_slice(input);
+            // Bypass — copy input to output. When the plugin chain changes
+            // channel count (e.g. upmixer 2ch→5ch), output is sized for the
+            // host's output_channels while input has input_channels.
+            // Copy what fits, zero-fill the rest to avoid a panic.
+            let copy_len = input.len().min(output.len());
+            output[..copy_len].copy_from_slice(&input[..copy_len]);
+            if copy_len < output.len() {
+                output[copy_len..].fill(0.0);
+            }
             return Ok(input_frames);
         }
 
@@ -245,18 +252,31 @@ impl ProcessingState {
         if let Some(ref mut prev_host) = self.prev_host {
             let actual_frames = self.host.process(input, output)?;
 
-            let output_samples = actual_frames * self.channels;
-            if self.prev_process_buffer.len() < output_samples {
-                self.prev_process_buffer.resize(output_samples, 0.0);
+            // Size prev_process_buffer to match output (not actual_frames from
+            // new host), so prev_host has enough room even if it produces a
+            // slightly different frame count.
+            let buf_len = output.len();
+            if self.prev_process_buffer.len() < buf_len {
+                self.prev_process_buffer.resize(buf_len, 0.0);
             }
 
-            let _ = prev_host.process(input, &mut self.prev_process_buffer[..output_samples])?;
+            let output_samples = actual_frames * self.channels;
+            let prev_actual = prev_host.process(input, &mut self.prev_process_buffer[..buf_len])?;
+            let blend_samples = output_samples.min(prev_actual * self.channels);
+
+            // Compute crossfade step from actual frame size (~50ms crossfade)
+            if self.crossfade_step == 0.0 && input_frames > 0 {
+                let crossfade_duration_ms = 50.0;
+                let block_duration_ms =
+                    (input_frames as f32 * 1000.0) / self.sample_rate as f32;
+                self.crossfade_step = (block_duration_ms / crossfade_duration_ms).min(0.5);
+            }
 
             // Blend buffers: output = (1-alpha)*prev + alpha*current
             let alpha = self.crossfade_progress;
             sotf_plugins::simd::blend_simd(
-                output,
-                &self.prev_process_buffer[..output_samples],
+                &mut output[..blend_samples],
+                &self.prev_process_buffer[..blend_samples],
                 alpha,
             );
 
@@ -295,12 +315,10 @@ fn handle_processing_command(
                 state.prev_host = Some(std::mem::replace(&mut state.host, new_host));
                 state.crossfade_progress = 0.0;
 
-                // Crossfade over ~50ms
-                // For a 1024 frame size at 48kHz, this is ~2.3 blocks.
-                // We ensure it takes at least 2 blocks for a smooth transition.
-                let crossfade_duration_ms = 50.0;
-                let block_duration_ms = (1024.0 * 1000.0) / state.sample_rate as f32;
-                state.crossfade_step = (block_duration_ms / crossfade_duration_ms).min(0.5);
+                // crossfade_step is computed lazily in process_frame using
+                // the actual input_frames, so it adapts to any frame size.
+                // Initialize to 0 so first process_frame computes it.
+                state.crossfade_step = 0.0;
             } else {
                 // Immediate swap for first host or channel mismatch
                 state.host = new_host;
@@ -585,6 +603,13 @@ fn run_processing_thread(
                 }
             }
             Ok(DecoderMessage::Flush) => {
+                // Reset plugin state (IIR filter history, compressor envelopes,
+                // limiter lookahead, upmixer FFT buffers) so that stale pre-seek
+                // audio doesn't cause transient artifacts in post-seek output.
+                state.host.reset();
+                if let Some(ref mut prev) = state.prev_host {
+                    prev.reset();
+                }
                 let mut pending_msg = Some(ProcessingMessage::Flush);
                 while let Some(msg) = pending_msg.take() {
                     match send_or_interrupt(&message_tx, &command_rx, msg) {

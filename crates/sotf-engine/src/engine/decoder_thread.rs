@@ -586,12 +586,18 @@ impl DecoderState {
     }
 
     /// Read from HAL input or generate silent frame
+    /// Process HAL input. Returns:
+    /// - `Ok((true, None))` — frame sent successfully
+    /// - `Ok((false, None))` — no frame to send
+    /// - `Ok((false, Some(cmd)))` — send was interrupted by a command that must be handled
     fn process_hal_input(
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,
+        #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(unused_variables))]
+        command_rx: &Receiver<DecoderCommand>,
         frame_size: usize,
         target_sample_rate: u32,
-    ) -> Result<bool, String> {
+    ) -> Result<(bool, Option<DecoderCommand>), String> {
         // Static counter for periodic logging (avoid log spam)
         static LOG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let count = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -688,9 +694,17 @@ impl DecoderState {
                     target_sample_rate,
                 );
 
-                message_tx
-                    .send(DecoderMessage::Frame(frame))
-                    .map_err(|_| "Failed to send resampled HAL frame")?;
+                // Use send_or_interrupt so we can still receive commands
+                // (Stop/Shutdown/Seek) while the downstream pipeline is full,
+                // preventing a deadlock if processing or playback stalls.
+                match send_or_interrupt(message_tx, command_rx, DecoderMessage::Frame(frame)) {
+                    Ok(Some(cmd)) => {
+                        log::debug!("[Decoder Thread] HAL send interrupted by command");
+                        return Ok((false, Some(cmd)));
+                    }
+                    Ok(None) => {} // sent successfully
+                    Err(e) => return Err(format!("Failed to send resampled HAL frame: {}", e)),
+                }
             } else {
                 // No resampling needed
                 if self.resampler.is_some() {
@@ -707,12 +721,17 @@ impl DecoderState {
                 // Send frame with HAL sample rate (which matches target)
                 let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);
 
-                message_tx
-                    .send(DecoderMessage::Frame(frame))
-                    .map_err(|_| "Failed to send HAL frame")?;
+                match send_or_interrupt(message_tx, command_rx, DecoderMessage::Frame(frame)) {
+                    Ok(Some(cmd)) => {
+                        log::debug!("[Decoder Thread] HAL send interrupted by command");
+                        return Ok((false, Some(cmd)));
+                    }
+                    Ok(None) => {}
+                    Err(e) => return Err(format!("Failed to send HAL frame: {}", e)),
+                }
             }
 
-            return Ok(true);
+            return Ok((true, None));
         }
 
         // Log that we don't have a HAL reader
@@ -736,7 +755,7 @@ impl DecoderState {
             .send(DecoderMessage::Frame(frame))
             .map_err(|_| "Failed to send silent frame")?;
 
-        Ok(true)
+        Ok((true, None))
     }
 }
 
@@ -841,15 +860,81 @@ fn run_decoder_thread(
         // Generate frames based on mode
         if state.silent_source && !state.paused {
             // HAL Input / Silent Source mode
-            match state.process_hal_input(&message_tx, frame_size, target_sample_rate) {
-                Ok(true) => {
+            match state.process_hal_input(&message_tx, &command_rx, frame_size, target_sample_rate) {
+                Ok((true, _)) => {
                     // Frame processed successfully
                     // Don't sleep if connected - rely on backpressure from message_tx
                 }
-                Ok(false) => {
-                    // No frame processed (not enough data yet)
-                    // Sleep briefly to avoid busy loop
-                    std::thread::sleep(std::time::Duration::from_millis(1));
+                Ok((false, pending_cmd)) => {
+                    // No frame processed — either not enough data or send was
+                    // interrupted by a command. If a command was consumed from
+                    // command_rx by send_or_interrupt, handle it now so it isn't lost.
+                    if let Some(cmd) = pending_cmd {
+                        // Re-inject the command by processing it inline.
+                        // This mirrors the command handling at the top of the loop.
+                        match cmd {
+                            DecoderCommand::Stop => {
+                                state.stop();
+                                message_tx.send(DecoderMessage::Flush).ok();
+                                log::debug!("[Decoder Thread] Stopped (from HAL interrupt)");
+                                response_tx.send(DecoderResponse::Ok).ok();
+                            }
+                            DecoderCommand::Shutdown => {
+                                log::debug!("[Decoder Thread] Shutting down (from HAL interrupt)");
+                                return Ok(());
+                            }
+                            DecoderCommand::Pause => {
+                                state.paused = true;
+                                log::debug!("[Decoder Thread] Paused (from HAL interrupt)");
+                                response_tx.send(DecoderResponse::Ok).ok();
+                            }
+                            DecoderCommand::Resume => {
+                                state.paused = false;
+                                log::debug!("[Decoder Thread] Resumed (from HAL interrupt)");
+                                response_tx.send(DecoderResponse::Ok).ok();
+                            }
+                            DecoderCommand::Seek(position) => {
+                                message_tx.send(DecoderMessage::Flush).ok();
+                                if let Err(e) = state.seek(position) {
+                                    response_tx.send(DecoderResponse::Error(e)).ok();
+                                } else {
+                                    event_tx.send(ThreadEvent::SeekComplete).ok();
+                                    response_tx.send(DecoderResponse::Ok).ok();
+                                }
+                            }
+                            DecoderCommand::Play(path) => {
+                                message_tx.send(DecoderMessage::Flush).ok();
+                                state.stop();
+                                if let Err(e) = state.play(path, target_sample_rate, frame_size) {
+                                    log::debug!("[Decoder Thread] Play failed (from HAL interrupt): {}", e);
+                                    event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                                    response_tx.send(DecoderResponse::Error("Failed to start playback".to_string())).ok();
+                                } else {
+                                    response_tx.send(DecoderResponse::Ok).ok();
+                                }
+                            }
+                            DecoderCommand::PlayAt(path, position) => {
+                                message_tx.send(DecoderMessage::Flush).ok();
+                                state.stop();
+                                if let Err(e) = state.play(path, target_sample_rate, frame_size) {
+                                    log::debug!("[Decoder Thread] PlayAt failed (from HAL interrupt): {}", e);
+                                    event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                                    response_tx.send(DecoderResponse::Error("Failed to start playback".to_string())).ok();
+                                } else if let Err(e) = state.seek(position) {
+                                    log::debug!("[Decoder Thread] PlayAt seek failed (from HAL interrupt): {}", e);
+                                    event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                                    response_tx.send(DecoderResponse::Error("Failed to seek during play_at".to_string())).ok();
+                                } else {
+                                    response_tx.send(DecoderResponse::Ok).ok();
+                                }
+                            }
+                            DecoderCommand::StartSilentSource => {
+                                state.start_silent_source();
+                            }
+                        }
+                    } else {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
                 }
                 Err(e) => {
                     log::debug!("[Decoder Thread] HAL input error: {}", e);

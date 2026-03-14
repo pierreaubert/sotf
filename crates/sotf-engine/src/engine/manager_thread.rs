@@ -13,7 +13,7 @@ use crate::engine::processing_thread::build_plugin_host;
 use arc_swap::ArcSwap;
 use std::any::Any;
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 
 const SPIN_MS_SLEEP_MANAGER: u64 = 10;
@@ -294,7 +294,7 @@ impl ConfigUpdateQueue {
 /// Manager thread handle
 pub struct ManagerThread {
     command_tx: Sender<ManagerCommand>,
-    response_rx: Receiver<ManagerResponse>,
+    response_rx: Mutex<Receiver<ManagerResponse>>,
     state: Arc<ArcSwap<AudioEngineState>>,
     plugin_data_cache: PluginDataCache,
     thread_handle: Option<std::thread::JoinHandle<()>>,
@@ -326,7 +326,7 @@ impl ManagerThread {
 
         Ok(Self {
             command_tx,
-            response_rx,
+            response_rx: Mutex::new(response_rx),
             state,
             plugin_data_cache,
             thread_handle: Some(thread_handle),
@@ -343,6 +343,8 @@ impl ManagerThread {
     /// Receive a response (blocking)
     pub fn recv_response(&self) -> Result<ManagerResponse, String> {
         self.response_rx
+            .lock()
+            .map_err(|e| format!("Failed to lock response_rx: {}", e))?
             .recv()
             .map_err(|e| format!("Failed to receive response: {}", e))
     }
@@ -353,13 +355,15 @@ impl ManagerThread {
         timeout: std::time::Duration,
     ) -> Result<ManagerResponse, String> {
         self.response_rx
+            .lock()
+            .map_err(|e| format!("Failed to lock response_rx: {}", e))?
             .recv_timeout(timeout)
             .map_err(|e| format!("Failed to receive response: {}", e))
     }
 
     /// Try to receive a response (non-blocking)
     pub fn try_recv_response(&self) -> Option<ManagerResponse> {
-        self.response_rx.try_recv().ok()
+        self.response_rx.lock().ok()?.try_recv().ok()
     }
 
     /// Get current state (lock-free)

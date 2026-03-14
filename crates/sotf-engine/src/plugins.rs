@@ -81,6 +81,7 @@ pub enum PluginType {
     Downmix,
     MonoToStereo,
     Crossfeed,
+    Delay,
 }
 
 impl PluginType {
@@ -112,6 +113,7 @@ impl PluginType {
             Self::Downmix => "Downmix",
             Self::MonoToStereo => "Mono to Stereo",
             Self::Crossfeed => "Crossfeed",
+            Self::Delay => "Delay",
         }
     }
 
@@ -143,6 +145,7 @@ impl PluginType {
             Self::Downmix => "Phase-coherent surround to stereo downmix",
             Self::MonoToStereo => "Convert mono signal to pseudo-stereo",
             Self::Crossfeed => "Headphone crossfeed for speaker-like listening",
+            Self::Delay => "Simple delay effect with feedback",
         }
     }
 
@@ -174,6 +177,7 @@ impl PluginType {
             Self::Downmix,
             Self::MonoToStereo,
             Self::Crossfeed,
+            Self::Delay,
         ]
     }
 
@@ -193,6 +197,7 @@ impl PluginType {
             | Self::Compressor
             | Self::ChannelMuteSolo
             | Self::Crossfeed
+            | Self::Delay
             | Self::Expander
             | Self::FletcherMunson
             | Self::Gate
@@ -362,6 +367,7 @@ use sotf_plugins::param_specs::channel_mute_solo as cms_specs;
 use sotf_plugins::param_specs::compressor as compressor_specs;
 use sotf_plugins::param_specs::convolution as convolution_specs;
 use sotf_plugins::param_specs::crossfeed as crossfeed_specs;
+use sotf_plugins::param_specs::delay as delay_specs;
 use sotf_plugins::param_specs::denoiser as denoiser_specs;
 use sotf_plugins::param_specs::downmix as downmix_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
@@ -643,6 +649,9 @@ sotf_plugins::serde_param_default! {
     fn default_crossfeed_autogain_max_gain_db() -> f64 = "autogain_max_gain_db";
     fn default_crossfeed_autogain_smoothing_ms() -> f64 = "autogain_smoothing_ms";
     fn default_crossfeed_mix() -> f64 = "mix";
+    fn default_delay_ms() -> f64 = "delay_ms";
+    fn default_delay_feedback() -> f64 = "feedback";
+    fn default_delay_mix() -> f64 = "mix";
 }
 
 fn default_spectrum_num_bins() -> usize {
@@ -1275,6 +1284,14 @@ pub enum PluginSettings {
         #[serde(default = "default_crossfeed_autogain_smoothing_ms")]
         autogain_smoothing_ms: f64,
     },
+    Delay {
+        #[serde(default = "default_delay_ms")]
+        delay_ms: f64,
+        #[serde(default = "default_delay_feedback")]
+        feedback: f64,
+        #[serde(default = "default_delay_mix")]
+        mix: f64,
+    },
 }
 
 impl PluginSettings {
@@ -1306,6 +1323,7 @@ impl PluginSettings {
             Self::Downmix { .. } => PluginType::Downmix,
             Self::MonoToStereo { .. } => PluginType::MonoToStereo,
             Self::Crossfeed { .. } => PluginType::Crossfeed,
+            Self::Delay { .. } => PluginType::Delay,
         }
     }
 
@@ -1358,6 +1376,18 @@ impl PluginSettings {
                     "autogain_target_lufs": autogain_target_lufs,
                     "autogain_max_gain_db": autogain_max_gain_db,
                     "autogain_smoothing_ms": autogain_smoothing_ms,
+                }),
+            ),
+            Self::Delay {
+                delay_ms,
+                feedback,
+                mix,
+            } => PluginConfig::new(
+                "delay",
+                json!({
+                    "delay_ms": delay_ms,
+                    "feedback": feedback,
+                    "mix": mix,
                 }),
             ),
             Self::EQ {
@@ -2514,6 +2544,14 @@ impl PluginSettings {
                     autogain_smoothing_ms: p(cf, "autogain_smoothing_ms").default_f64(),
                 }
             }
+            PluginType::Delay => {
+                let d = delay_specs::PARAMS;
+                Self::Delay {
+                    delay_ms: p(d, "delay_ms").default_f64(),
+                    feedback: p(d, "feedback").default_f64(),
+                    mix: p(d, "mix").default_f64(),
+                }
+            }
         }
     }
 }
@@ -3176,14 +3214,15 @@ impl PluginChain {
     }
 
     pub fn move_plugin(&mut self, from: usize, to: usize) {
-        if from < self.plugins.len()
-            && to < self.plugins.len()
-            && !self.plugins[from].is_permanent()
-            && !self.plugins[to].is_permanent()
+        if from >= self.plugins.len()
+            || to >= self.plugins.len()
+            || self.plugins[from].is_permanent()
+            || self.plugins[to].is_permanent()
         {
-            let plugin = self.plugins.remove(from);
-            self.plugins.insert(to, plugin);
+            return;
         }
+        let plugin = self.plugins.remove(from);
+        self.plugins.insert(to, plugin);
     }
 
     /// Check if a plugin at the given index can be moved in the given direction

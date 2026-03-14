@@ -86,7 +86,11 @@ fn index_to_crossover_type(index: f64) -> String {
 
 #[inline]
 fn b2f(b: bool) -> f64 {
-    if b { 1.0 } else { 0.0 }
+    if b {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 #[inline]
@@ -128,6 +132,7 @@ impl PluginSettings {
             Self::Downmix { .. } => param_specs::downmix::PARAMS,
             Self::MonoToStereo { .. } => param_specs::mono_to_stereo::PARAMS,
             Self::Crossfeed { .. } => param_specs::crossfeed::PARAMS,
+            Self::Delay { .. } => param_specs::delay::PARAMS,
             // Dynamic-param plugins: return global params only
             Self::EQ { .. } => param_specs::eq::GLOBAL_PARAMS,
             Self::MultibandCompressor { .. } => param_specs::multiband_compressor::GLOBAL_PARAMS,
@@ -690,6 +695,17 @@ impl PluginSettings {
                 13 => Some(*autogain_target_lufs),
                 14 => Some(*autogain_max_gain_db),
                 15 => Some(*autogain_smoothing_ms),
+                _ => None,
+            },
+            // ----------------------------------------------------------------
+            Self::Delay {
+                delay_ms,
+                feedback,
+                mix,
+            } => match index {
+                0 => Some(*delay_ms),
+                1 => Some(*feedback),
+                2 => Some(*mix),
                 _ => None,
             },
             // ----------------------------------------------------------------
@@ -1306,6 +1322,17 @@ impl PluginSettings {
                 13 => *autogain_target_lufs = value,
                 14 => *autogain_max_gain_db = value,
                 15 => *autogain_smoothing_ms = value,
+                _ => {}
+            },
+            // ----------------------------------------------------------------
+            Self::Delay {
+                delay_ms,
+                feedback,
+                mix,
+            } => match index {
+                0 => *delay_ms = value,
+                1 => *feedback = value,
+                2 => *mix = value,
                 _ => {}
             },
             // ----------------------------------------------------------------
