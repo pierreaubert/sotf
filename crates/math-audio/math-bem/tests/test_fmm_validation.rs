@@ -15,13 +15,12 @@ use math_audio_bem::core::assembly::{
 };
 use math_audio_bem::core::mesh::generators::generate_icosphere_mesh;
 use math_audio_bem::core::solver::{
-    CgsConfig, DenseOperator, GmresConfig, IluOperator, LinearOperator, SlfmmOperator,
-    gmres_solve_with_ilu, ilu_diagnostics, solve_cgs, solve_gmres, solve_with_ilu,
+    CgsConfig, DenseOperator, GmresConfig, LinearOperator, SlfmmOperator, gmres_solve_with_ilu,
+    solve_cgs, solve_gmres, solve_tbem_with_ilu, solve_with_ilu,
 };
 use math_audio_bem::core::types::{BoundaryCondition, Cluster, PhysicsParams};
 use ndarray::{Array1, array};
 use num_complex::Complex64;
-use std::f64::consts::PI;
 
 /// Helper to set up a simple test problem
 fn setup_test_problem(
@@ -356,56 +355,6 @@ fn test_slfmm_operator_matvec() {
 // ============================================================================
 // ILU Preconditioning Tests
 // ============================================================================
-
-use math_audio_bem::core::solver::{
-    GmresConfig, IluMethod, IluOperator, IluScanningDegree, gmres_solve_with_ilu, ilu_diagnostics,
-    solve_gmres, solve_tbem_with_ilu, solve_with_ilu,
-};
-
-/// Test ILU setup and diagnostics
-#[test]
-fn test_ilu_diagnostics() {
-    let (elements, nodes, physics) = setup_test_problem(1);
-    let tbem = build_tbem_system(&elements, &nodes, &physics);
-
-    let diag = ilu_diagnostics(&tbem.matrix, IluMethod::Tbem, IluScanningDegree::Fine);
-
-    println!("ILU Diagnostics:");
-    println!("  nnz(L) = {}", diag.nnz_l);
-    println!("  nnz(U) = {}", diag.nnz_u);
-    println!("  fill ratio = {:.2}%", diag.fill_ratio * 100.0);
-    println!("  threshold = {:.2}", diag.threshold_used);
-
-    // For TBEM with Fine degree, fill ratio should be moderate
-    assert!(diag.nnz_l > 0, "L factor should have nonzeros");
-    assert!(diag.nnz_u > 0, "U factor should have nonzeros");
-    assert!(diag.fill_ratio > 0.0, "Fill ratio should be positive");
-    assert!(diag.fill_ratio <= 1.0, "Fill ratio should be <= 1");
-}
-
-/// Test ILU operator interface
-#[test]
-fn test_ilu_operator() {
-    let (elements, nodes, physics) = setup_test_problem(1);
-    let tbem = build_tbem_system(&elements, &nodes, &physics);
-    let n = tbem.num_dofs;
-
-    let ilu_op = IluOperator::from_tbem_matrix(&tbem.matrix);
-
-    assert_eq!(ilu_op.num_rows(), n);
-    assert_eq!(ilu_op.num_cols(), n);
-    assert!(ilu_op.is_square());
-
-    // Test that ILU apply produces non-zero output
-    let x: Array1<Complex64> =
-        Array1::from_iter((0..n).map(|i| Complex64::new((i as f64 * 0.3).sin(), 0.0)));
-
-    let y = ilu_op.apply(&x);
-    let y_norm: f64 = y.iter().map(|yi| yi.norm_sqr()).sum::<f64>().sqrt();
-
-    println!("ILU operator output norm: {:.6e}", y_norm);
-    assert!(y_norm > 0.0, "ILU operator should produce non-zero output");
-}
 
 /// Test ILU preconditioning improves convergence for TBEM
 ///

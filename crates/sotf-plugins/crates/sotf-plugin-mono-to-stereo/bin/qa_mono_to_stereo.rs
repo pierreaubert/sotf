@@ -1,4 +1,4 @@
-use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_mono_to_stereo::{MonoToStereoPlugin, MonoToStereoPluginParams};
 use std::f32::consts::PI;

@@ -87,11 +87,6 @@ impl<'a> AppDriver<'a> {
         SpinoramaPage::new(self)
     }
 
-    pub fn click_element(&mut self, _element_id: &str) -> Result<(), Box<dyn Error>> {
-        self.cx.run_until_parked();
-        Ok(())
-    }
-
     pub fn simulate_keystrokes(&mut self, keystrokes: &str) {
         self.cx.simulate_keystrokes(keystrokes);
     }

@@ -11,15 +11,14 @@
 //! | [Transition] knob|                                            |                  |
 //! +------------------+--------------------------------------------+------------------+
 
+use super::actions::OpenAbConfigFile;
 use super::common::{render_knob, render_section_title};
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    ButtonSet, ButtonSetOption, ButtonSetSize, Select, SelectOption, SelectSize, Slider,
-};
+use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize, Slider};
 
 /// State for rendering the A/B Compare plugin
 pub struct ABCompareRenderState<'a> {
@@ -39,6 +38,9 @@ pub struct ABCompareRenderState<'a> {
     /// Dropdown open states
     pub path_a_select_open: bool,
     pub path_b_select_open: bool,
+    /// Loaded file paths (for display)
+    pub file_a: &'a Option<String>,
+    pub file_b: &'a Option<String>,
 }
 
 /// Path config presets
@@ -137,8 +139,6 @@ pub fn render_ab_compare_plugin(
         "B".into()
     };
 
-    let path_a_preset = config_to_preset_value(state.path_a_config);
-    let path_b_preset = config_to_preset_value(state.path_b_config);
 
     let mode_selected: SharedString = if is_pot_mode {
         "MIX A+B".into()
@@ -233,57 +233,31 @@ pub fn render_ab_compare_plugin(
             theme,
         ));
 
-    // === CENTER COLUMN: Path Config ===
+    // === PATH CONFIG: A/B file loaders ===
+    let path_a_display = display_for_path(state.path_a_config, state.file_a);
+    let path_b_display = display_for_path(state.path_b_config, state.file_b);
+
     let center_col = div()
         .flex()
         .flex_col()
-        .flex_1()
-        .gap_3()
+        .gap_2()
         .child(render_section_title("PATH CONFIG", theme))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_muted)
-                        .child("PATH A"),
-                )
-                .child(render_path_selector(
-                    entity.clone(),
-                    plugin_idx,
-                    "a",
-                    path_a_preset,
-                    9,
-                    state.path_a_select_open,
-                    theme,
-                )),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_muted)
-                        .child("PATH B"),
-                )
-                .child(render_path_selector(
-                    entity.clone(),
-                    plugin_idx,
-                    "b",
-                    path_b_preset,
-                    10,
-                    state.path_b_select_open,
-                    theme,
-                )),
-        );
+        // A: <load button> <filename>
+        .child(render_path_loader(
+            entity.clone(),
+            plugin_idx,
+            "A",
+            &path_a_display,
+            theme,
+        ))
+        // B: <load button> <filename>
+        .child(render_path_loader(
+            entity.clone(),
+            plugin_idx,
+            "B",
+            &path_b_display,
+            theme,
+        ));
 
     // === RIGHT COLUMN: Auto Gain ===
     let right_col = div()
@@ -366,15 +340,23 @@ pub fn render_ab_compare_plugin(
             theme,
         ));
 
-    // === Main layout: 3 columns ===
+    // === Main layout: Mix+AutoGain top row, Path config below ===
     div()
         .flex()
+        .flex_col()
         .gap_4()
         .p_3()
         .w_full()
-        .child(mix_col)
+        // Top row: Mix + Auto Gain side by side
+        .child(
+            div()
+                .flex()
+                .gap_6()
+                .child(mix_col)
+                .child(right_col),
+        )
+        // Bottom: Path config
         .child(center_col)
-        .child(right_col)
 }
 
 /// Render a horizontal slider using gpui-ui-kit Slider
@@ -409,68 +391,85 @@ fn render_horizontal_slider(
         })
 }
 
-/// Render a path config selector dropdown
-fn render_path_selector(
-    entity: Entity<AppState>,
+/// Get a display string for a path config.
+/// If a file was loaded, show the filename. Otherwise show the preset name.
+fn display_for_path(
+    config: &str,
+    loaded_file: &Option<String>,
+) -> String {
+    // If we have a loaded file path, show its filename
+    if let Some(path) = loaded_file {
+        return std::path::Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path.as_str())
+            .to_string();
+    }
+    if config.is_empty() || config == r#"{"type":"None"}"# {
+        return "None".to_string();
+    }
+    // Fall back to preset name
+    for (_, label, json) in PATH_PRESETS {
+        if config == *json {
+            return label.to_string();
+        }
+    }
+    config_to_preset_value(config).to_string()
+}
+
+/// Render a path config row with label and load button
+fn render_path_loader(
+    _entity: Entity<AppState>,
     plugin_idx: usize,
-    path_id: &str,
-    current_preset: &str,
-    param_idx: usize,
-    is_open: bool,
+    label: &str,
+    display: &str,
     theme: &Theme,
 ) -> impl IntoElement {
-    let options: Vec<SelectOption> = PATH_PRESETS
-        .iter()
-        .map(|(value, label, _)| SelectOption::new(*value, *label))
-        .collect();
+    let path_id = label.to_lowercase();
+    let display_text: SharedString = display.to_string().into();
 
-    let select_id = if path_id == "a" {
-        plugin_idx * 2
-    } else {
-        plugin_idx * 2 + 1
-    };
-    let selected: SharedString = current_preset.to_string().into();
-    let is_path_a = path_id == "a";
-
-    Select::new(("path-select", select_id))
-        .options(options)
-        .selected(selected)
-        .size(SelectSize::Xs)
-        .placeholder("Select config...")
-        .is_open(is_open)
-        .theme(theme.to_select_theme())
-        .on_toggle({
-            let entity = entity.clone();
-            move |open, _, cx| {
-                entity.update(cx, |state, cx| {
-                    if is_path_a {
-                        state.app.plugin_state.ab_compare_dropdowns.path_a_open = open;
-                    } else {
-                        state.app.plugin_state.ab_compare_dropdowns.path_b_open = open;
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::BOLD)
+                .text_color(theme.text_primary)
+                .w(px(16.0))
+                .child(format!("{}:", label)),
+        )
+        .child(
+            div()
+                .id(SharedString::from(format!("ab-load-{}-{}", path_id, plugin_idx)))
+                .px_2()
+                .py_0p5()
+                .rounded_sm()
+                .text_xs()
+                .bg(theme.surface_hover)
+                .text_color(theme.text_primary)
+                .cursor_pointer()
+                .hover(|s| s.bg(theme.accent).text_color(theme.text_on_accent))
+                .on_mouse_up(MouseButton::Left, {
+                    let path_id = path_id.clone();
+                    move |_, _window, cx| {
+                        cx.dispatch_action(&OpenAbConfigFile {
+                            plugin_idx,
+                            path_id: path_id.clone(),
+                        });
                     }
-                    cx.notify();
-                });
-            }
-        })
-        .on_change({
-            let entity = entity.clone();
-            move |value, _, cx| {
-                if let Some((_, _, json)) =
-                    PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref())
-                {
-                    entity.update(cx, |state, _| {
-                        if is_path_a {
-                            state.app.plugin_state.ab_compare_dropdowns.path_a_open = false;
-                        } else {
-                            state.app.plugin_state.ab_compare_dropdowns.path_b_open = false;
-                        }
-                        state
-                            .app
-                            .set_plugin_param_string(plugin_idx, param_idx, json.to_string());
-                    });
-                }
-            }
-        })
+                })
+                .child("Load"),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme.text_secondary)
+                .max_w(px(200.0))
+                .overflow_hidden()
+                .child(display_text),
+        )
 }
 
 /// Render the A/N/B button group

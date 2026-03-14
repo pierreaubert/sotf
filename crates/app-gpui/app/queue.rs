@@ -35,6 +35,13 @@ impl App {
         let selected_album = albums.get(self.library_state.selected_index).copied();
 
         if let Some(album) = selected_album {
+            if album
+                .id
+                .is_some_and(|id| self.queue.iter().any(|item| item.album.id == Some(id)))
+            {
+                return None;
+            }
+
             self.queue.add_album(album.clone());
             self.expanded_queue_items.push(false);
             self.assert_queue_consistency();
@@ -52,6 +59,20 @@ impl App {
         let selected_album = albums.get(self.library_state.selected_index).copied();
 
         if let Some(album) = selected_album {
+            if let Some(existing_index) = album
+                .id
+                .and_then(|id| self.queue.iter().position(|item| item.album.id == Some(id)))
+            {
+                self.queue.current_index = Some(existing_index);
+                self.queue.items[existing_index].current_track_index = 0;
+                self.sync_queue_index();
+                if let Some(path) = self.queue.current_track_path() {
+                    self.playback.is_playing = true;
+                    return Some(path);
+                }
+                return None;
+            }
+
             let effect = self.queue.play_album_now(album.clone());
             self.expanded_queue_items.push(false);
             self.sync_queue_index();

@@ -116,13 +116,12 @@ mod param_idx {
 }
 
 /// Configuration menu items
-const CONFIG_ITEMS: [&str; 6] = [
+const CONFIG_ITEMS: [&str; 5] = [
     "LFE & Bass",
     "Dialogue",
     "Ambient",
     "Height",
     "Decorrelation",
-    "Config",
 ];
 
 /// Render the upmixer plugin controls
@@ -132,27 +131,46 @@ pub fn render_upmixer_plugin(
     state: UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let selected_config = state.upmixer_tab; // 0=none, 1-6=config panels
+    let selected_config = state.upmixer_tab; // 0=none, 1-5=config panels (Config moved to column)
 
-    // Main area: Channel Gains + Spatial Controls side by side
+    // Config column (left-aligned, always visible)
+    let config_col = render_config_diagnostic(entity.clone(), plugin_idx, &state, theme);
+
+    // Main area: Channel Gains + Spatial Controls side by side (centered)
     let main_area = render_main_area(entity.clone(), plugin_idx, &state, theme);
 
-    // Tab bar below main area
+    // Tab bar below main area (only LFE, Dialogue, Ambient, Height, Decorrelation)
     let tab_bar = render_tab_bar(entity.clone(), selected_config, theme);
 
-    // Configuration row: conditional on selected_config
+    // Configuration row: conditional on selected_config (1-5 only, Config removed)
     let config_row = render_config_row(entity.clone(), plugin_idx, selected_config, &state, theme);
 
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .child(main_area)
-        .child(tab_bar)
-        .when((1..=6).contains(&selected_config), |el| {
-            el.child(config_row)
-        })
-        .build()
+    div()
+        .flex()
+        .gap_4()
         .p_3()
         .w_full()
+        // Left: Config column
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .w(px(160.0))
+                .child(config_col),
+        )
+        // Center: Main area + tabs + config row
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(main_area)
+                .child(tab_bar)
+                .when((1..=5).contains(&selected_config), |el| {
+                    el.child(config_row)
+                })
+                .build()
+                .flex_1(),
+        )
 }
 
 /// Render an underline tab button
@@ -165,10 +183,11 @@ fn render_tab_button(
     div()
         .id(id)
         .cursor_pointer()
-        .px_3()
+        .px_4()
         .pb(px(6.0))
         .pt(px(4.0))
         .text_xs()
+        .text_center()
         .font_weight(if is_active {
             FontWeight::BOLD
         } else {
@@ -205,6 +224,7 @@ fn render_tab_bar(
     div()
         .flex()
         .items_end()
+        .justify_center()
         .w_full()
         .border_b_1()
         .border_color(theme.border)
@@ -418,7 +438,6 @@ fn render_config_row(
         3 => render_config_ambient(entity, plugin_idx, state, theme).into_any_element(),
         4 => render_config_height(entity, plugin_idx, state, theme).into_any_element(),
         5 => render_config_decorrelation(entity, plugin_idx, state, theme).into_any_element(),
-        6 => render_config_diagnostic(entity, plugin_idx, state, theme).into_any_element(),
         _ => div().into_any_element(),
     };
 

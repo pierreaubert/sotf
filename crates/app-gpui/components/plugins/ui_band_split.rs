@@ -4,8 +4,9 @@
 //! - Crossover frequency (Hz)
 //! - Crossover type (LR24/LR48)
 
-use super::common::{render_knob, render_section_title, render_toggle};
+use super::common::{render_knob, render_section_title};
 use crate::app::AppState;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -63,20 +64,57 @@ pub fn render_band_split_plugin(
                                 .gap_1()
                                 .items_center()
                                 .child(div().text_xs().text_color(theme.text_muted).child("Type"))
-                                .child(render_toggle(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    if state.crossover_type == "LR48" {
-                                        "LR48 (48dB)"
-                                    } else {
-                                        "LR24 (24dB)"
-                                    },
-                                    state.crossover_type == "LR48",
-                                    1,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                )),
+                                .child({
+                                    let is_lr24 = state.crossover_type != "LR48";
+                                    let is_lr48 = state.crossover_type == "LR48";
+                                    let accent = theme.accent;
+                                    let surface = theme.surface;
+                                    let text_on_accent = theme.text_on_accent;
+                                    let text_muted = theme.text_muted;
+                                    let entity_a = entity.clone();
+                                    let entity_b = entity.clone();
+                                    div()
+                                        .flex()
+                                        .gap(px(1.0))
+                                        .rounded_md()
+                                        .border_1()
+                                        .border_color(theme.border)
+                                        .overflow_hidden()
+                                        .child(
+                                            div()
+                                                .id("xover-lr24")
+                                                .px_2()
+                                                .py_1()
+                                                .text_xs()
+                                                .cursor_pointer()
+                                                .bg(if is_lr24 { accent } else { surface })
+                                                .text_color(if is_lr24 { text_on_accent } else { text_muted })
+                                                .on_mouse_up(MouseButton::Left, move |_, _, cx| {
+                                                    entity_a.update(cx, |state, cx| {
+                                                        state.app.set_plugin_param(plugin_idx, 1, 0.0);
+                                                        cx.notify();
+                                                    });
+                                                })
+                                                .child("LR24"),
+                                        )
+                                        .child(
+                                            div()
+                                                .id("xover-lr48")
+                                                .px_2()
+                                                .py_1()
+                                                .text_xs()
+                                                .cursor_pointer()
+                                                .bg(if is_lr48 { accent } else { surface })
+                                                .text_color(if is_lr48 { text_on_accent } else { text_muted })
+                                                .on_mouse_up(MouseButton::Left, move |_, _, cx| {
+                                                    entity_b.update(cx, |state, cx| {
+                                                        state.app.set_plugin_param(plugin_idx, 1, 1.0);
+                                                        cx.notify();
+                                                    });
+                                                })
+                                                .child("LR48"),
+                                        )
+                                }),
                         ),
                 ),
         )

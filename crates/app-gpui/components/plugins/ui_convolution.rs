@@ -8,6 +8,7 @@
 //! |                  |                                            | [Gain]     knob  |
 //! +------------------+--------------------------------------------+------------------+
 
+use super::actions::OpenIrFile;
 use super::common::{render_knob, render_section_title};
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -45,49 +46,80 @@ pub fn render_convolution_plugin(
         .w(px(SETUP_WIDTH))
         .gap_3()
         .child(render_section_title("SETUP", theme))
-        // IR file status
+        // IR file status with Browse button
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap_3()
+                .justify_between()
                 .child(
                     div()
-                        .w(px(40.0))
-                        .h(px(40.0))
-                        .rounded_lg()
-                        .bg(if has_ir { theme.accent } else { theme.surface })
                         .flex()
                         .items_center()
-                        .justify_center()
-                        .text_lg()
-                        .text_color(theme.text_on_accent)
-                        .child("∿"),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
+                        .gap_3()
                         .child(
                             div()
-                                .text_sm()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(theme.text_primary)
-                                .child(if has_ir { "IR Loaded" } else { "No IR File" }),
+                                .w(px(40.0))
+                                .h(px(40.0))
+                                .rounded_lg()
+                                .bg(if has_ir { theme.accent } else { theme.surface })
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_lg()
+                                .text_color(theme.text_on_accent)
+                                .child("∿"),
                         )
                         .child(
                             div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .overflow_hidden()
-                                .text_ellipsis()
-                                .max_w(px(120.0))
-                                .child(if has_ir {
-                                    ir_file.rsplit('/').next().unwrap_or(ir_file).to_string()
-                                } else {
-                                    "Load an IR file".to_string()
-                                }),
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(theme.text_primary)
+                                        .child(if has_ir {
+                                            "IR Loaded"
+                                        } else {
+                                            "No IR File"
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .max_w(px(90.0))
+                                        .child(if has_ir {
+                                            ir_file
+                                                .rsplit('/')
+                                                .next()
+                                                .unwrap_or(ir_file)
+                                                .to_string()
+                                        } else {
+                                            "Load an IR file".to_string()
+                                        }),
+                                ),
                         ),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme.surface)
+                        .border_1()
+                        .border_color(theme.border)
+                        .text_xs()
+                        .id("load-ir-btn")
+                        .cursor_pointer()
+                        .hover(|s| s.bg(theme.surface_hover))
+                        .on_click(move |_, _, cx| {
+                            cx.dispatch_action(&OpenIrFile { plugin_idx });
+                        })
+                        .child("Load"),
                 ),
         );
 

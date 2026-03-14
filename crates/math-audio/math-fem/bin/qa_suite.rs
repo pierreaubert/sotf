@@ -23,7 +23,6 @@ use ndarray::Array1;
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 use spec_math::Bessel;
-use std::f64::consts::PI;
 use std::path::Path;
 use std::time::Instant;
 

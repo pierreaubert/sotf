@@ -653,7 +653,7 @@ pub fn verify_working_sample_rate(
                         move |data: &mut [u32], _: &cpal::OutputCallbackInfo| {
                             cc.fetch_add(1, Ordering::Relaxed);
                             ts.fetch_add(data.len() as u64, Ordering::Relaxed);
-                            data.fill(u32::from_sample(0.0f32));
+                            data.fill(0);
                         },
                         |_err| {},
                         None,
@@ -693,7 +693,7 @@ pub fn verify_working_sample_rate(
             if count_phase1 == 0 {
                 drop(stream);
                 #[cfg(target_os = "linux")]
-                std::thread::sleep(std::time::Duration::from_millis(200));
+                std::thread::sleep(std::time::Duration::from_millis(50));
                 #[cfg(not(target_os = "linux"))]
                 std::thread::sleep(std::time::Duration::from_millis(30));
                 log::debug!(
@@ -710,7 +710,7 @@ pub fn verify_working_sample_rate(
 
             drop(stream);
             #[cfg(target_os = "linux")]
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            std::thread::sleep(std::time::Duration::from_millis(50));
             #[cfg(not(target_os = "linux"))]
             std::thread::sleep(std::time::Duration::from_millis(30));
 

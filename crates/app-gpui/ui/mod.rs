@@ -13,7 +13,9 @@ use std::time::Duration;
 // Re-export all actions for backward compatibility
 pub use crate::app::actions::*;
 use crate::components::plugins::actions::{
-    ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam,
+    OpenAbConfigFile, OpenIrFile, OpenSofaFile, ResetPluginParam, SelectPluginParam,
+    StartKnobDrag,
+    UpdatePluginParam,
 };
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::level_meters::LevelMeterManager;
@@ -584,6 +586,29 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn add_to_queue(&mut self, _: &AddToQueue, _: &mut Window, cx: &mut Context<Self>) {
+        log::info!("[UI] AddToQueue action handler triggered");
+        self.state.update(cx, |state, _cx| {
+            // add_album_to_queue returns Some(path) only when playback should start
+            // (queue was empty or not playing). The method already handles the logic internally.
+            if let Some(path) = state.app.add_album_to_queue() {
+                Self::play_track(state, path);
+            }
+        });
+        cx.notify();
+    }
+
+    fn play_now(&mut self, _: &PlayNow, _: &mut Window, cx: &mut Context<Self>) {
+        log::info!("[UI] PlayNow action handler triggered");
+        self.state.update(cx, |state, _cx| {
+            // Play album now (add to queue and start playing)
+            if let Some(path) = state.app.play_album_now() {
+                Self::play_track(state, path);
+            }
+        });
+        cx.notify();
+    }
+
     fn add_directory(&mut self, _: &AddDirectory, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
@@ -879,6 +904,114 @@ impl PlayerView {
             state.app.knob_drag_max = action.max;
         });
         cx.notify();
+    }
+
+    pub(crate) fn on_open_sofa_file(
+        &mut self,
+        action: &OpenSofaFile,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let plugin_idx = action.plugin_idx;
+        let state_entity = self.state.clone();
+        cx.spawn(async move |_, cx| {
+            let file = rfd::AsyncFileDialog::new()
+                .add_filter("SOFA Files", &["sofa"])
+                .set_title("Select SOFA File")
+                .pick_file()
+                .await;
+
+            if let Some(file) = file {
+                let path = file.path().to_string_lossy().to_string();
+                state_entity.update(&mut cx.clone(), |state, cx| {
+                    state
+                        .app
+                        .set_plugin_param_string(plugin_idx, 0, path);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn on_open_ir_file(
+        &mut self,
+        action: &OpenIrFile,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let plugin_idx = action.plugin_idx;
+        let state_entity = self.state.clone();
+        cx.spawn(async move |_, cx| {
+            let file = rfd::AsyncFileDialog::new()
+                .add_filter("Audio Files", &["wav", "flac", "aif", "aiff"])
+                .set_title("Select IR File")
+                .pick_file()
+                .await;
+
+            if let Some(file) = file {
+                let path = file.path().to_string_lossy().to_string();
+                state_entity.update(&mut cx.clone(), |state, cx| {
+                    state
+                        .app
+                        .set_plugin_param_string(plugin_idx, 0, path);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn on_open_ab_config_file(
+        &mut self,
+        action: &OpenAbConfigFile,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let plugin_idx = action.plugin_idx;
+        let path_id = action.path_id.clone();
+        let state_entity = self.state.clone();
+        cx.spawn(async move |_, cx| {
+            let file = rfd::AsyncFileDialog::new()
+                .add_filter("JSON Config Files", &["json"])
+                .set_title("Select Config File")
+                .pick_file()
+                .await;
+
+            if let Some(file) = file {
+                let file_path = file.path().to_string_lossy().to_string();
+                // Read the JSON content from file (blocking I/O is fine here —
+                // config files are tiny and we're already in a spawned task)
+                match std::fs::read_to_string(&file_path) {
+                    Ok(content) => {
+                        // Validate it's valid JSON
+                        if serde_json::from_str::<serde_json::Value>(&content).is_ok() {
+                            let param_idx = if path_id == "a" { 9 } else { 10 };
+                            state_entity.update(&mut cx.clone(), |state, cx| {
+                                state
+                                    .app
+                                    .set_plugin_param_string(plugin_idx, param_idx, content);
+                                // Store the source file path for display
+                                if path_id == "a" {
+                                    state.app.plugin_state.ab_compare_file_a =
+                                        Some(file_path);
+                                } else {
+                                    state.app.plugin_state.ab_compare_file_b =
+                                        Some(file_path);
+                                }
+                                cx.notify();
+                            });
+                        } else {
+                            log::warn!("AB Compare: file is not valid JSON: {file_path}");
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("AB Compare: failed to read config file: {e}");
+                    }
+                }
+            }
+        })
+        .detach();
     }
 
     /// Recalculate library pagination based on current layout.

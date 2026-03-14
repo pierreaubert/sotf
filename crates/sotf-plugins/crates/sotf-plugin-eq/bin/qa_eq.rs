@@ -1,4 +1,4 @@
-use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
+use sotf_host::{CountingAlloc, measure_peak_db, run_standard_tests};
 use sotf_host::{InPlacePlugin, InPlacePluginAdapter, ProcessContext};
 use sotf_plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 use std::f32::consts::PI;

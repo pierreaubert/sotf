@@ -3,7 +3,7 @@
 use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
-use crate::app::state::plugin::{PluginUiView, available_controllers};
+use crate::app::state::plugin::{available_controllers, PluginUiView};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::icons::{Icon, IconName};
@@ -17,8 +17,8 @@ use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
-use sotf_audio_player_midi::MidiMappingEngine;
 use sotf_audio_player_midi::mapping::MidiOverlay;
+use sotf_audio_player_midi::MidiMappingEngine;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -93,7 +93,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::FletcherMunson => theme.plugin_colors.loudness, // Reuse loudness color
         PluginType::BinauralDecoder => theme.plugin_colors.binaural,
         PluginType::Convolution => theme.plugin_colors.convolution,
-        PluginType::LoudnessMonitor => theme.plugin_colors.monitor,
+        // Use neutral text_primary color for monitor plugins (In/Out Monitor) instead of green
+        PluginType::LoudnessMonitor => theme.text_primary,
         PluginType::SpectrumAnalyzer => theme.plugin_colors.spectrum,
         PluginType::ChannelMuteSolo => theme.plugin_colors.mute_solo,
         PluginType::Matrix => theme.plugin_colors.upmixer, // Reuse upmixer color for matrix
@@ -106,6 +107,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::Downmix => theme.plugin_colors.upmixer,   // Reuse upmixer color for downmix
         PluginType::MonoToStereo => theme.plugin_colors.binaural, // Reuse binaural color for mono to stereo
         PluginType::Crossfeed => theme.plugin_colors.binaural, // Reuse binaural color for crossfeed
+        PluginType::Delay => theme.plugin_colors.eq,
     }
 }
 
@@ -145,13 +147,29 @@ fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool
         PluginType::Downmix => "▼",   // Downmix - downward triangle
         PluginType::MonoToStereo => "⊕", // Mono to Stereo - circular plus
         PluginType::Crossfeed => "⊞", // Crossfeed - boxed plus
+        PluginType::Delay => "⏱",
     }
 }
 
 fn short_name(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> &'static str {
+    short_name_with_permanent(plugin_type, is_input_mon, is_output_mon, false)
+}
+
+fn short_name_with_permanent(
+    plugin_type: &PluginType,
+    is_input_mon: bool,
+    is_output_mon: bool,
+    is_permanent: bool,
+) -> &'static str {
     match plugin_type {
         PluginType::EQ => "Equalizer",
-        PluginType::Gain => "Gain",
+        PluginType::Gain => {
+            if is_permanent {
+                "Replay Gain"
+            } else {
+                "Gain"
+            }
+        }
         PluginType::Upmixer => "Upmixer",
         PluginType::Compressor => "Compressor",
         PluginType::Limiter => "Limiter",
@@ -184,6 +202,7 @@ fn short_name(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool)
         PluginType::Downmix => "Downmix",
         PluginType::MonoToStereo => "Mono->2.0",
         PluginType::Crossfeed => "Crossfeed",
+        PluginType::Delay => "Delay",
     }
 }
 
@@ -244,7 +263,7 @@ impl PlayerView {
                     if let Some(start_y) = start_y {
                         let mouse_y: f32 = event.position.y.into();
                         let delta_y = start_y - mouse_y; // Inverted: up = positive (increase)
-                        // Scale: 150px drag = full range
+                                                         // Scale: 150px drag = full range
                         let range = max - min;
                         let value_delta = (delta_y as f64 / 150.0) * range;
                         let new_value = (start_value + value_delta).clamp(min, max);
@@ -457,7 +476,7 @@ impl PlayerView {
                     .id("plugin-rack")
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .gap(px(20.0))
                     .px_4()
                     .py_3()
                     .overflow_x_scroll()
@@ -468,7 +487,7 @@ impl PlayerView {
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
                                 source_index: idx,
-                                name: short_name(&plugin_type, is_input_mon, is_output_mon).to_string(),
+                                name: short_name_with_permanent(&plugin_type, is_input_mon, is_output_mon, is_permanent).to_string(),
                                 color,
                                 icon,
                                 surface: theme_c.surface,
@@ -827,49 +846,109 @@ impl PlayerView {
                                                         )
                                                 }
                                             ))
-                                            .child(
-                                                div()
-                                                    .id(("preset-save-btn", idx))
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .px_1()
-                                                    .py(px(2.0))
-                                                    .mt(px(2.0))
-                                                    .rounded_sm()
-                                                    .cursor_pointer()
-                                                    .text_xs()
-                                                    .text_color(accent_color)
-                                                    .border_1()
-                                                    .border_color(accent_color)
-                                                    .hover(|s| s.bg(accent_color).text_color(theme_p.text_on_accent))
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(
-                                                            move |view, _e: &MouseUpEvent, _, cx| {
+                                            .child({
+                                                let save_mode = self.state.read(cx).app.plugin_state.plugin_preset_save_mode;
+                                                let theme_s = theme_p.clone();
+                                                if save_mode {
+                                                    // Text input + confirm button
+                                                    let preset_name = self.state.read(cx).app.plugin_state.plugin_preset_input.clone();
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(2.0))
+                                                        .mt(px(2.0))
+                                                        .child({
+                                                            let state_for_text = self.state.clone();
+                                                            div()
+                                                                .flex_1()
+                                                                .child(
+                                                                    gpui_ui_kit::Input::new("preset-name-input")
+                                                                        .value(gpui::SharedString::from(preset_name))
+                                                                        .placeholder("Preset name...")
+                                                                        .size(gpui_ui_kit::InputSize::Xs)
+                                                                        .bg_color(theme_s.background_secondary)
+                                                                        .on_text_change(move |text, _window, cx| {
+                                                                            state_for_text.update(cx, |state, _cx| {
+                                                                                state.app.plugin_state.plugin_preset_input = text;
+                                                                            });
+                                                                        }),
+                                                                )
+                                                        })
+                                                        .child(
+                                                            div()
+                                                                .id(("preset-confirm", idx))
+                                                                .px_1()
+                                                                .py(px(2.0))
+                                                                .rounded_sm()
+                                                                .cursor_pointer()
+                                                                .text_xs()
+                                                                .text_color(accent_color)
+                                                                .border_1()
+                                                                .border_color(accent_color)
+                                                                .hover(|s| s.bg(accent_color).text_color(theme_s.text_on_accent))
+                                                                .on_mouse_up(
+                                                                    MouseButton::Left,
+                                                                    cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
+                                                                        cx.stop_propagation();
+                                                                        view.state.update(cx, |state, _cx| {
+                                                                            let ps = &mut state.app.plugin_state;
+                                                                            let name = ps.plugin_preset_input.trim().to_string();
+                                                                            if !name.is_empty() {
+                                                                                match ps.save_plugin_preset(idx, &name) {
+                                                                                    Ok(_) => {
+                                                                                        if let Some(plugin) = ps.chain.plugins().get(idx) {
+                                                                                            let pt = plugin.plugin_type().clone();
+                                                                                            ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
+                                                                                        }
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        log::error!("Failed to save preset: {e}");
+                                                                                    }
+                                                                                }
+                                                                                ps.plugin_preset_save_mode = false;
+                                                                                ps.plugin_preset_input.clear();
+                                                                            }
+                                                                        });
+                                                                        cx.notify();
+                                                                    }),
+                                                                )
+                                                                .child("OK"),
+                                                        )
+                                                        .into_any_element()
+                                                } else {
+                                                    // "+ Save" button that enters save mode
+                                                    div()
+                                                        .id(("preset-save-btn", idx))
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .px_1()
+                                                        .py(px(2.0))
+                                                        .mt(px(2.0))
+                                                        .rounded_sm()
+                                                        .cursor_pointer()
+                                                        .text_xs()
+                                                        .text_color(accent_color)
+                                                        .border_1()
+                                                        .border_color(accent_color)
+                                                        .hover(|s| s.bg(accent_color).text_color(theme_s.text_on_accent))
+                                                        .on_mouse_up(
+                                                            MouseButton::Left,
+                                                            cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
                                                                 cx.stop_propagation();
                                                                 view.state.update(cx, |state, _cx| {
                                                                     let ps = &mut state.app.plugin_state;
                                                                     let n = ps.plugin_preset_list.len() + 1;
-                                                                    let name = format!("Preset {n}");
-                                                                    match ps.save_plugin_preset(idx, &name) {
-                                                                        Ok(_) => {
-                                                                            if let Some(plugin) = ps.chain.plugins().get(idx) {
-                                                                                let pt = plugin.plugin_type().clone();
-                                                                                ps.plugin_preset_list = sotf_audio_player::PluginController::list_plugin_presets(&pt);
-                                                                            }
-                                                                        }
-                                                                        Err(e) => {
-                                                                            log::error!("Failed to save preset: {e}");
-                                                                        }
-                                                                    }
+                                                                    ps.plugin_preset_input = format!("Preset {n}");
+                                                                    ps.plugin_preset_save_mode = true;
                                                                 });
                                                                 cx.notify();
-                                                            },
-                                                        ),
-                                                    )
-                                                    .child("+ Save"),
-                                            )
+                                                            }),
+                                                        )
+                                                        .child("+ Save")
+                                                        .into_any_element()
+                                                }
+                                            })
                                     } else {
                                         // Normal view
                                         right_panel
@@ -882,7 +961,7 @@ impl PlayerView {
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .overflow_hidden()
                                                     .text_ellipsis()
-                                                    .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
+                                                    .child(short_name_with_permanent(&plugin_type, is_input_mon, is_output_mon, is_permanent)),
                                             )
                                             .child(
                                                 div()
@@ -910,23 +989,22 @@ impl PlayerView {
                                 })
                         },
                     ))
-                    // "+" Add plugin slot (dashed border, Ozone-style)
+                    // "+" Add plugin slot (visually distinct from solid plugin boxes)
                     .child({
                         let theme_add = theme.clone();
                         let drop_highlight = theme.drag_over_highlight;
                         let drop_border = theme.drag_over_border;
-                        let end_idx = plugin_count;
 
                         div()
                             .id("plugin-add-slot")
-                            .w(rems(4.0))
-                            .h(rems(5.5))
+                            .w(rems(8.0))
+                            .h(rems(6.5))
                             .flex()
                             .items_center()
                             .justify_center()
                             .rounded_md()
-                            .border_2()
-                            .border_color(theme_add.text_muted)
+                            .border_1()
+                            .border_color(Theme::opacity_8pct(theme_add.text_muted))
                             .cursor_pointer()
                             .text_2xl()
                             .text_color(theme_add.text_muted)
@@ -949,37 +1027,44 @@ impl PlayerView {
                             .on_drop(cx.listener(
                                 move |view, info: &PluginDragInfo, _window, cx| {
                                     let source = info.source_index;
-                                    let target = if end_idx > 0 { end_idx - 1 } else { 0 };
-                                    if source != target {
-                                        view.state.update(cx, |state, _cx| {
-                                            let chain_len =
-                                                state.app.plugin_state.chain.plugins().len();
-                                            let source_is_monitor = state
-                                                .app
-                                                .plugin_state
-                                                .chain
-                                                .get_plugin(source)
-                                                .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
-                                                .unwrap_or(false);
-                                            if source_is_monitor && target != chain_len - 1 {
-                                                return;
-                                            }
-                                            state.app.plugin_state.chain.move_plugin(source, target);
-                                            state.app.plugin_state.selected_plugin_index = target;
-                                            state.app.plugin_state.chain.update_channel_dependent_plugins();
-                                            state.app.plugin_state.pending_plugin_update =
-                                                Some(PluginUpdateType::Structural);
-                                            state.app.update_level_meter_groups();
-                                        });
-                                        cx.notify();
-                                    }
+                                    view.state.update(cx, |state, _cx| {
+                                        // Clamp target to last non-permanent plugin index
+                                        let target = state
+                                            .app
+                                            .plugin_state
+                                            .chain
+                                            .user_plugin_insert_index()
+                                            .saturating_sub(1);
+                                        if source == target {
+                                            return;
+                                        }
+                                        let source_is_monitor = state
+                                            .app
+                                            .plugin_state
+                                            .chain
+                                            .get_plugin(source)
+                                            .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
+                                            .unwrap_or(false);
+                                        let chain_len =
+                                            state.app.plugin_state.chain.plugins().len();
+                                        if source_is_monitor && target != chain_len - 1 {
+                                            return;
+                                        }
+                                        state.app.plugin_state.chain.move_plugin(source, target);
+                                        state.app.plugin_state.selected_plugin_index = target;
+                                        state.app.plugin_state.chain.update_channel_dependent_plugins();
+                                        state.app.plugin_state.pending_plugin_update =
+                                            Some(PluginUpdateType::Structural);
+                                        state.app.update_level_meter_groups();
+                                    });
+                                    cx.notify();
                                 },
                             ))
                             .child("+")
                     })
                     // Trailing permanent plugins (output matrix/monitor) after "+"
                     .children(tail_modules.into_iter().map(
-                        |(idx, color, icon, _name, enabled, is_selected, plugin_type, _is_permanent, is_input_mon, is_output_mon)| {
+                        |(idx, color, icon, _name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
                             let theme_c = theme.clone();
                             div()
                                 .id(("plugin-module", idx))
@@ -1010,18 +1095,24 @@ impl PlayerView {
                                 .on_drop(cx.listener(
                                     move |view, info: &PluginDragInfo, _window, cx| {
                                         let source = info.source_index;
-                                        let target = idx;
-                                        if source != target {
-                                            view.state.update(cx, |state, _cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            // Clamp to the last valid user-plugin position
+                                            // (don't drop onto permanent tail plugins)
+                                            let target = if is_permanent {
+                                                state.app.plugin_state.chain.user_plugin_insert_index().saturating_sub(1)
+                                            } else {
+                                                idx
+                                            };
+                                            if source != target {
                                                 state.app.plugin_state.chain.move_plugin(source, target);
                                                 state.app.plugin_state.selected_plugin_index = target;
                                                 state.app.plugin_state.chain.update_channel_dependent_plugins();
                                                 state.app.plugin_state.pending_plugin_update =
                                                     Some(PluginUpdateType::Structural);
                                                 state.app.update_level_meter_groups();
-                                            });
-                                            cx.notify();
-                                        }
+                                            }
+                                        });
+                                        cx.notify();
                                     },
                                 ))
                                 .on_mouse_up(
@@ -1074,17 +1165,51 @@ impl PlayerView {
                                                 )
                                                 .child(if is_on { "ON" } else { "OFF" })
                                         })
-                                        .child(
-                                            div()
-                                                .w(rems(1.125))
-                                                .h(rems(1.125))
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .text_size(rems(0.5))
-                                                .text_color(theme_c.text_muted)
-                                                .child("🔒"),
-                                        ),
+                                        // X (Remove) or lock icon
+                                        .when(!is_permanent, |d| {
+                                            d.child(
+                                                div()
+                                                    .id(("plugin-close-tail", idx))
+                                                    .w(rems(1.125))
+                                                    .h(rems(1.125))
+                                                    .rounded_full()
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.bg(theme_c.error).text_color(theme_c.text_on_accent))
+                                                    .text_size(rems(0.625))
+                                                    .text_color(theme_c.text_muted)
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(
+                                                            move |view, _e: &MouseUpEvent, _, cx| {
+                                                                cx.stop_propagation();
+                                                                view.state.update(cx, |state, _cx| {
+                                                                    state.app.remove_plugin(idx);
+                                                                    state.app.update_level_meter_groups();
+                                                                });
+                                                                cx.notify();
+                                                            },
+                                                        ),
+                                                    )
+                                                    .child("X"),
+                                            )
+                                        })
+                                        .when(is_permanent, |d| {
+                                            d.child(
+                                                div()
+                                                    .w(rems(1.125))
+                                                    .h(rems(1.125))
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .text_size(rems(0.5))
+                                                    .text_color(theme_c.text_muted)
+                                                    .child("🔒"),
+                                            )
+                                        }),
                                 )
                                 // Right content area
                                 .child(
@@ -1102,7 +1227,7 @@ impl PlayerView {
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .overflow_hidden()
                                                 .text_ellipsis()
-                                                .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
+                                                .child(short_name_with_permanent(&plugin_type, is_input_mon, is_output_mon, is_permanent)),
                                         )
                                         .child(
                                             div()
@@ -1135,7 +1260,7 @@ impl PlayerView {
                 d.child(
                     div()
                         .px_4()
-                        .py_2()
+                        .py_4()
                         .bg(theme.surface)
                         .border_t_1()
                         .border_color(theme.border)
@@ -1343,7 +1468,7 @@ impl PlayerView {
             )
     }
 
-    /// Render add plugin buttons grouped by category (2 rows)
+    /// Render add plugin buttons grouped by category
     fn render_add_plugin_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -1365,114 +1490,87 @@ impl PlayerView {
             .filter(|p| matches!(p, PluginType::LoudnessMonitor))
             .count();
 
-        // Row 1: Effects/Dynamics plugins
-        let row1_plugins = [
-            PluginType::EQ,
-            PluginType::Gain,
-            PluginType::Compressor,
-            PluginType::Limiter,
-            PluginType::Gate,
-            PluginType::Expander,
-            PluginType::MultibandCompressor,
-            PluginType::MultibandExpander,
-            PluginType::Denoiser,
+        // Categories with their plugins
+        let categories: &[(&str, &[PluginType])] = &[
+            (
+                "Dynamics",
+                &[
+                    PluginType::Compressor,
+                    PluginType::Limiter,
+                    PluginType::Gate,
+                    PluginType::Expander,
+                    PluginType::MultibandCompressor,
+                    PluginType::MultibandExpander,
+                ],
+            ),
+            (
+                "EQ & Tone",
+                &[
+                    PluginType::EQ,
+                    PluginType::Gain,
+                    PluginType::Denoiser,
+                    PluginType::Pnd,
+                    PluginType::LoudnessCompensation,
+                    PluginType::FletcherMunson,
+                ],
+            ),
+            (
+                "Spatial",
+                &[
+                    PluginType::Upmixer,
+                    PluginType::Matrix,
+                    PluginType::BinauralDecoder,
+                    PluginType::Convolution,
+                    PluginType::XTC,
+                    PluginType::Crossfeed,
+                    PluginType::Downmix,
+                    PluginType::MonoToStereo,
+                ],
+            ),
+            (
+                "Analysis",
+                &[
+                    PluginType::LoudnessMonitor,
+                    PluginType::SpectrumAnalyzer,
+                    PluginType::ABCompare,
+                ],
+            ),
+            ("Routing", &[PluginType::BandSplit, PluginType::BandMerge]),
         ];
 
-        // Row 2: Spatial, Monitor, and other plugins
-        let row2_plugins = [
-            PluginType::Upmixer,
-            PluginType::Matrix,
-            PluginType::BinauralDecoder,
-            PluginType::Convolution,
-            PluginType::XTC,
-            PluginType::Crossfeed,
-            PluginType::LoudnessCompensation,
-            PluginType::FletcherMunson,
-            PluginType::LoudnessMonitor,
-            PluginType::SpectrumAnalyzer,
-            PluginType::Pnd,
-            PluginType::ABCompare,
-            PluginType::Downmix,
-            PluginType::MonoToStereo,
-            PluginType::BandSplit,
-            PluginType::BandMerge,
-        ];
+        let mut category_rows: Vec<gpui::AnyElement> = Vec::new();
+        let mut global_idx = 0usize;
 
-        // Build row 1 buttons
-        let row1_buttons: Vec<_> = row1_plugins
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, pt)| {
+        for (cat_name, plugins) in categories {
+            let mut buttons: Vec<gpui::AnyElement> = Vec::new();
+
+            for pt in *plugins {
+                let pt = pt.clone();
                 if !release_channel.allows(pt.maturity()) {
-                    return None;
+                    continue;
                 }
                 let is_single_instance =
                     matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
                 if is_single_instance && present_plugins.contains(&pt) {
-                    return None;
+                    continue;
                 }
-
-                let color = plugin_color(&pt, &theme);
-                let name = short_name(&pt, false, false);
-                let theme_c = theme.clone();
-
-                let text_on_accent = theme_c.text_on_accent;
-                Some(
-                    div()
-                        .id(("add-plugin", i))
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
-                        .bg(theme_c.surface)
-                        .border_1()
-                        .border_color(color)
-                        .text_xs()
-                        .text_color(color)
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(color).text_color(text_on_accent))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.add_plugin(&pt);
-                                    state.app.update_level_meter_groups();
-                                    state.app.show_add_plugin_menu = false;
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .child(name),
-                )
-            })
-            .collect();
-
-        // Build row 2 buttons
-        let row2_buttons: Vec<_> = row2_plugins
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, pt)| {
-                if !release_channel.allows(pt.maturity()) {
-                    return None;
-                }
-                let is_single_instance =
-                    matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
-                if is_single_instance && present_plugins.contains(&pt) {
-                    return None;
-                }
-
-                // LoudnessMonitor: max 2 allowed (one for input, one for output)
                 if matches!(pt, PluginType::LoudnessMonitor) && monitor_count >= 2 {
-                    return None;
+                    continue;
                 }
 
                 let color = plugin_color(&pt, &theme);
                 let name = short_name(&pt, false, false);
                 let theme_c = theme.clone();
-
                 let text_on_accent = theme_c.text_on_accent;
-                Some(
+                let btn_id = global_idx;
+                global_idx += 1;
+
+                buttons.push(
                     div()
-                        .id(("add-plugin", i + 100))
+                        .id(("add-plugin", btn_id))
+                        .flex()
+                        .items_center()
+                        .gap_1()
                         .px_2()
                         .py_1()
                         .rounded_md()
@@ -1494,19 +1592,43 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                        .child(name),
-                )
-            })
-            .collect();
+                        // Colored dot + name
+                        .child(div().w(px(6.0)).h(px(6.0)).rounded_full().bg(color))
+                        .child(name)
+                        .into_any_element(),
+                );
+            }
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            // Row 1
-            .child(div().flex().items_center().gap_2().children(row1_buttons))
-            // Row 2
-            .child(div().flex().items_center().gap_2().children(row2_buttons))
+            if !buttons.is_empty() {
+                category_rows.push(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        // Category label
+                        .child(
+                            div()
+                                .text_size(rems(0.625))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_muted)
+                                .w(px(60.0))
+                                .child(*cat_name),
+                        )
+                        // Plugin buttons
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap_2()
+                                .children(buttons),
+                        )
+                        .into_any_element(),
+                );
+            }
+        }
+
+        div().flex().flex_col().gap_4().children(category_rows)
     }
 
     /// Render the plugin detail/settings panel

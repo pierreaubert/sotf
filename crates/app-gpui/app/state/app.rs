@@ -147,7 +147,6 @@ pub struct App {
     pub upmixer_tab: usize,
     pub spectrum_tilt_select_open: bool,
     pub spectrum_reference_select_open: bool,
-    pub crossfeed_preset_select_open: bool,
     pub show_add_plugin_menu: bool,
     /// Active secondary tab index for auto-layout plugins (per-plugin, keyed by plugin_idx)
     pub plugin_auto_tab: std::collections::HashMap<usize, usize>,
@@ -269,7 +268,6 @@ impl App {
             upmixer_tab: 1,
             spectrum_tilt_select_open: false,
             spectrum_reference_select_open: false,
-            crossfeed_preset_select_open: false,
             show_add_plugin_menu: false,
             plugin_auto_tab: std::collections::HashMap::new(),
             rack_detail_collapsed: false,
@@ -997,8 +995,13 @@ impl App {
         self.audio_device_state
             .output_devices
             .get(self.audio_device_state.selected_output_device_index)
-            .and_then(|device| device.default_config.as_ref())
-            .map(|config| config.channels as usize)
+            .and_then(|device| {
+                device
+                    .supported_configs
+                    .iter()
+                    .map(|c| c.channels as usize)
+                    .max()
+            })
     }
 
     /// Check and dismiss expired toast messages

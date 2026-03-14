@@ -63,6 +63,8 @@ pub enum InputMode {
     EditingPluginNode,
     /// Modal shown when track channels conflict with plugins in the chain
     ChannelConflict,
+    /// Context menu is open (album, queue item, etc.)
+    ContextMenu,
 }
 
 impl InputMode {

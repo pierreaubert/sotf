@@ -72,6 +72,8 @@ actions!(
         RemoveItem,
         ClearQueue,
         FillQueueMagic,
+        AddToQueue, // Album context menu: add album to queue
+        PlayNow,    // Album context menu: play album now
         MovePluginUp,
         MovePluginDown,
         TogglePlugin,

@@ -36,6 +36,7 @@ pub struct ExpanderRenderState {
     pub hysteresis_db: f64,
     pub hold_ms: f64,
     pub mix: f64,
+    pub auto_makeup: bool,
     pub link_channels: bool,
     pub sidechain_hpf_hz: f64,
     pub is_editing: bool,
@@ -71,7 +72,7 @@ pub fn render_expander_plugin(
             plugin_idx,
             "Link Ch",
             state.link_channels,
-            9,
+            10,
             state.selected_param,
             state.is_editing,
             theme,
@@ -84,7 +85,7 @@ pub fn render_expander_plugin(
             SIDECHAIN_HPF_UI_MIN,
             SIDECHAIN_HPF_UI_MAX,
             "Hz",
-            10,
+            11,
             state.selected_param,
             state.is_editing,
             Some('s'),
@@ -247,13 +248,18 @@ pub fn render_expander_plugin(
         );
 
     let center_col = div()
-        .flex()
         .flex_1()
-        .gap_4()
-        .child(dynamics_col)
-        .child(timing_col);
+        .flex()
+        .justify_center()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(dynamics_col)
+                .child(timing_col),
+        );
 
-    // === RIGHT COLUMN: Output (GR Meter + Mix) ===
+    // === RIGHT COLUMN: Output (GR Meter + AutoGain + Mix) ===
     let right_col = div()
         .flex()
         .flex_col()
@@ -261,6 +267,16 @@ pub fn render_expander_plugin(
         .gap_3()
         .child(render_section_title("OUTPUT", theme))
         .child(render_gr_meter(0.0, -40.0, theme))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "AutoGain",
+            state.auto_makeup,
+            9,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
         .child(render_knob(
             entity.clone(),
             plugin_idx,

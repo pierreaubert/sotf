@@ -517,6 +517,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Downmix => theme.accent,
         PluginType::MonoToStereo => theme.accent,
         PluginType::Crossfeed => theme.accent,
+        PluginType::Delay => theme.info,
     }
 }
 
@@ -560,6 +561,7 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::MonoToStereo => (1, 2),
         // Crossfeed: stereo in/out
         PluginType::Crossfeed => (2, 2),
+        PluginType::Delay => (2, 2),
     }
 }
 

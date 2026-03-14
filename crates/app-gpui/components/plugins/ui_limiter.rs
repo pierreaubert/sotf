@@ -91,88 +91,86 @@ pub fn render_limiter_plugin(
         theme,
     );
 
-    let sliders = div()
+    // Dynamics column with transfer curve aligned below
+    let dynamics_col = div()
         .flex()
-        .gap_4()
-        // Dynamics: Threshold
+        .flex_col()
+        .gap_1()
+        .child(render_section_title("DYNAMICS", theme))
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("DYNAMICS", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Ceiling",
-                            state.threshold_db,
-                            pk(LM, "threshold").min_f64(),
-                            pk(LM, "threshold").max_f64(),
-                            "dB",
-                            0,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('c'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        )),
-                ),
+                .gap_2()
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Ceiling",
+                    state.threshold_db,
+                    pk(LM, "threshold").min_f64(),
+                    pk(LM, "threshold").max_f64(),
+                    "dB",
+                    0,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('c'),
+                    SLIDER_HEIGHT,
+                    theme,
+                )),
         )
-        // Timing: Release, Lookahead
+        .child(transfer_curve);
+
+    let timing_col = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(render_section_title("TIMING", theme))
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("TIMING", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Release",
-                            state.release_ms,
-                            pk(LM, "release").min_f64(),
-                            pk(LM, "release").max_f64(),
-                            "ms",
-                            1,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('r'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Lookahead",
-                            state.lookahead_ms,
-                            pk(LM, "lookahead").min_f64(),
-                            pk(LM, "lookahead").max_f64(),
-                            "ms",
-                            2,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('l'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        )),
-                ),
+                .gap_2()
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Release",
+                    state.release_ms,
+                    pk(LM, "release").min_f64(),
+                    pk(LM, "release").max_f64(),
+                    "ms",
+                    1,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('r'),
+                    SLIDER_HEIGHT,
+                    theme,
+                ))
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Lookahead",
+                    state.lookahead_ms,
+                    pk(LM, "lookahead").min_f64(),
+                    pk(LM, "lookahead").max_f64(),
+                    "ms",
+                    2,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('l'),
+                    SLIDER_HEIGHT,
+                    theme,
+                )),
         );
 
     let center_col = div()
-        .flex()
-        .flex_col()
         .flex_1()
-        .gap_3()
-        .child(sliders)
-        .child(transfer_curve);
+        .flex()
+        .justify_center()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(dynamics_col)
+                .child(timing_col),
+        );
 
     // === RIGHT COLUMN: Output (GR Meter + Mix) ===
     let right_col = div()

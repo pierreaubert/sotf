@@ -103,6 +103,7 @@ impl<S: TestScenario> E2ERunner<S> {
 
     /// Run the scenario and return the result.
     pub async fn run(mut self, cx: &mut TestAppContext) -> Result<TestResult, Box<dyn Error>> {
+        crate::install_async_io_panic_filter();
         let start_time = std::time::Instant::now();
 
         // Setup phase
@@ -150,6 +151,11 @@ impl<S: TestScenario> E2ERunner<S> {
 
         // Execute the scenario
         self.scenario.execute(&mut visual_cx, window)?;
+
+        // Drain any pending async work spawned during the test so that background
+        // threads (e.g. async-io) don't try to wake tasks after the test scheduler
+        // is torn down (which causes a panic-in-destructor → SIGABRT).
+        visual_cx.run_until_parked();
 
         Ok(())
     }

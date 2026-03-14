@@ -40,6 +40,7 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Downmix => theme.plugin_colors.upmixer,
         PluginType::MonoToStereo => theme.plugin_colors.binaural,
         PluginType::Crossfeed => theme.plugin_colors.binaural,
+        PluginType::Delay => theme.plugin_colors.eq,
     }
 }
 
@@ -72,6 +73,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::Downmix => "▼",
         PluginType::MonoToStereo => "⊕",
         PluginType::Crossfeed => "⊞",
+        PluginType::Delay => "⏱",
     }
 }
 

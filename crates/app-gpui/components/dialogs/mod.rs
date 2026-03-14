@@ -6,8 +6,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, ContextMenu, Dialog, DialogSize, HStack, MenuItem, StackAlign,
-    StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, Toast, ToastVariant, VStack,
+    Badge, BadgeVariant, Dialog, DialogSize, HStack, StackAlign,
+    StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
 };
 
 impl PlayerView {
@@ -528,7 +528,6 @@ impl PlayerView {
     pub(crate) fn render_toast(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let theme_id = state.app.ui_state.theme_id;
 
         let toast_data = state.app.ui_state.toast_message.as_ref().map(|t| {
             let variant = match t.toast_type {
@@ -541,11 +540,28 @@ impl PlayerView {
         });
 
         if let Some((message, variant)) = toast_data {
-            let ui_kit_theme = theme.to_ui_kit_theme(theme_id);
-            let built_toast = Toast::new("app-toast", SharedString::from(message))
-                .variant(variant)
-                .closeable(false)
-                .build_with_theme(&ui_kit_theme);
+            let (bg_color, border_color, text_color) = match variant {
+                ToastVariant::Success => (
+                    theme.toast_success_bg,
+                    theme.success,
+                    theme.success,
+                ),
+                ToastVariant::Error => (
+                    theme.toast_error_bg,
+                    theme.error,
+                    theme.error,
+                ),
+                ToastVariant::Info => (
+                    theme.toast_info_bg,
+                    theme.info,
+                    theme.info,
+                ),
+                ToastVariant::Warning => (
+                    theme.toast_warning_bg,
+                    theme.warning,
+                    theme.warning,
+                ),
+            };
 
             div()
                 .absolute()
@@ -556,7 +572,20 @@ impl PlayerView {
                 .flex_col()
                 .items_center()
                 .p_4()
-                .child(built_toast)
+                .child(
+                    div()
+                        .max_w_96()
+                        .rounded_lg()
+                        .bg(bg_color)
+                        .border_1()
+                        .border_color(border_color)
+                        .p_3()
+                        .child(
+                            Text::new(message.clone())
+                                .size(TextSize::Sm)
+                                .color(text_color)
+                        )
+                )
         } else {
             div()
         }
@@ -569,90 +598,107 @@ impl PlayerView {
         if let Some(menu) = &state.app.ui_state.context_menu {
             let menu_type = menu.menu_type.clone();
             let item_idx = menu.item_index;
-            let position = point(px(menu.position_x), px(menu.position_y));
 
-            let items: Vec<MenuItem> = match menu.menu_type {
+            let menu_items: Vec<(&str, &str)> = match menu.menu_type {
                 crate::app::ContextMenuType::Album => vec![
-                    MenuItem::new("add-to-queue", "Add to Queue").with_shortcut("a"),
-                    MenuItem::new("play-now", "Play Now").with_shortcut("enter"),
+                    ("add-to-queue", "Add to Queue"),
+                    ("play-now", "Play Now"),
                 ],
                 crate::app::ContextMenuType::QueueItem => vec![
-                    MenuItem::new("remove-from-queue", "Remove from Queue").with_shortcut("d"),
-                    MenuItem::new("play-from-here", "Play from Here").with_shortcut("enter"),
+                    ("remove-from-queue", "Remove from Queue"),
+                    ("play-from-here", "Play from Here"),
                 ],
                 crate::app::ContextMenuType::Plugin => vec![
-                    MenuItem::new("toggle-enabled", "Toggle Enabled").with_shortcut("shift-t"),
-                    MenuItem::new("move-up", "Move Up").with_shortcut("u"),
-                    MenuItem::new("move-down", "Move Down").with_shortcut("shift-n"),
-                    MenuItem::new("remove-plugin", "Remove Plugin").with_shortcut("d"),
+                    ("toggle-enabled", "Toggle Enabled"),
+                    ("move-up", "Move Up"),
+                    ("move-down", "Move Down"),
+                    ("remove-plugin", "Remove Plugin"),
                 ],
                 crate::app::ContextMenuType::Directory => vec![
-                    MenuItem::new("remove-directory", "Remove Directory").with_shortcut("d"),
-                    MenuItem::new("rescan-library", "Rescan Library").with_shortcut("shift-s"),
+                    ("remove-directory", "Remove Directory"),
+                    ("rescan-library", "Rescan Library"),
                 ],
             };
 
             let state_entity = self.state.clone();
-            let close_state = self.state.clone();
 
-            ContextMenu::new("app-context-menu", items)
-                .position(position)
-                .on_close(move |_window, cx| {
-                    close_state.update(cx, |state, _cx| {
-                        state.app.ui_state.context_menu = None;
-                    });
-                })
-                .on_select(move |id, _window, cx| {
-                    state_entity.update(cx, |state, _cx| {
-                        state.app.ui_state.context_menu = None;
-                        match (menu_type.clone(), id.as_ref()) {
-                            (crate::app::ContextMenuType::Album, "add-to-queue") => {
-                                if let Some(path) = state.app.add_album_to_queue() {
-                                    Self::play_track(state, path);
-                                }
-                            }
-                            (crate::app::ContextMenuType::Album, "play-now") => {
-                                if let Some(path) = state.app.play_album_now() {
-                                    Self::play_track(state, path);
-                                }
-                            }
-                            (crate::app::ContextMenuType::QueueItem, "remove-from-queue") => {
-                                state.app.remove_from_queue(item_idx);
-                            }
-                            (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
-                                state.app.playback.current_queue_index = Some(item_idx);
-                                if let Some(queue_item) = state.app.queue.get(item_idx)
-                                    && let Some(first_track) = queue_item.album.tracks.first()
-                                {
-                                    Self::play_track(state, first_track.path.clone());
-                                }
-                            }
-                            (crate::app::ContextMenuType::Plugin, "toggle-enabled") => {
-                                state.app.toggle_plugin(item_idx);
-                            }
-                            (crate::app::ContextMenuType::Plugin, "move-up") => {
-                                state.app.move_plugin_up(item_idx);
-                            }
-                            (crate::app::ContextMenuType::Plugin, "move-down") => {
-                                state.app.move_plugin_down(item_idx);
-                            }
-                            (crate::app::ContextMenuType::Plugin, "remove-plugin") => {
-                                state.app.remove_plugin(item_idx);
-                            }
-                            (crate::app::ContextMenuType::Directory, "remove-directory") => {
-                                state.app.selected_directory_index = item_idx;
-                                state.app.remove_selected_directory();
-                            }
-                            (crate::app::ContextMenuType::Directory, "rescan-library") => {
-                                if let Err(e) = state.app.scan_library() {
-                                    log::error!("Scan failed: {}", e);
-                                }
-                            }
-                            _ => {}
-                        }
-                    });
-                })
-                .build_with_theme(&theme.to_context_menu_theme())
+            div()
+                .absolute()
+                .left(px(menu.position_x))
+                .top(px(menu.position_y))
+                .bg(theme.surface)
+                .border_1()
+                .border_color(theme.border)
+                .rounded_md()
+                .shadow_lg()
+                .children(menu_items.iter().map(|(id, label)| {
+                    let item_id = *id;
+                    let item_label = *label;
+                    let menu_type_clone = menu_type.clone();
+                    let state_clone = state_entity.clone();
+
+                    let item_id_str = SharedString::from(format!("context-menu-{}", item_id));
+
+                    div()
+                        .id(item_id_str)
+                        .w_40()
+                        .px_3()
+                        .py_2()
+                        .cursor_pointer()
+                        .when(true, |d| {
+                            d.hover(|d| d.bg(theme.surface_hover))
+                        })
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |_view, _event, _window, cx| {
+                                state_clone.update(cx, |state, _cx| {
+                                    state.app.ui_state.context_menu = None;
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                                    match (menu_type_clone.clone(), item_id) {
+                                        (crate::app::ContextMenuType::Album, "add-to-queue") => {
+                                            if let Some(path) = state.app.add_album_to_queue() {
+                                                Self::play_track(state, path);
+                                            }
+                                        }
+                                        (crate::app::ContextMenuType::Album, "play-now") => {
+                                            if let Some(path) = state.app.play_album_now() {
+                                                Self::play_track(state, path);
+                                            }
+                                        }
+                                        (crate::app::ContextMenuType::QueueItem, "remove-from-queue") => {
+                                            state.app.remove_from_queue(item_idx);
+                                        }
+                                        (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
+                                            state.app.playback.current_queue_index = Some(item_idx);
+                                            if let Some(queue_item) = state.app.queue.get(item_idx)
+                                                && let Some(first_track) = queue_item.album.tracks.first()
+                                            {
+                                                Self::play_track(state, first_track.path.clone());
+                                            }
+                                        }
+                                        (crate::app::ContextMenuType::Plugin, "toggle-enabled") => {
+                                            state.app.toggle_plugin(item_idx);
+                                        }
+                                        (crate::app::ContextMenuType::Plugin, "move-up") => {
+                                            state.app.move_plugin_up(item_idx);
+                                        }
+                                        (crate::app::ContextMenuType::Plugin, "move-down") => {
+                                            state.app.move_plugin_down(item_idx);
+                                        }
+                                        (crate::app::ContextMenuType::Plugin, "remove-plugin") => {
+                                            state.app.remove_plugin(item_idx);
+                                        }
+                                        _ => {}
+                                    }
+                                });
+                            }),
+                        )
+                        .child(
+                            Text::new(item_label)
+                                .size(TextSize::Sm)
+                                .color(theme.text_primary)
+                        )
+                }))
         } else {
             div()
         }

@@ -5,7 +5,7 @@ use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_samp
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 #[cfg(all(target_os = "macos", feature = "hal"))]
-use gpui_ui_kit::{ButtonSet, ButtonSetOption};
+use gpui_ui_kit::{ButtonSet, ButtonSetOption, Select, SelectOption};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -118,7 +118,7 @@ impl PlayerView {
                                     .options(sample_rate_options)
                                     .selected(hal_config.sample_rate.to_string())
                                     .is_open(hal_dropdowns.sample_rate_open)
-                                    .on_change(move |value, _window, cx| {
+                                    .on_change(move |value: &SharedString, _window, cx| {
                                         if let Ok(rate) = value.parse::<u32>() {
                                             Self::update_hal_sample_rate(
                                                 &state_for_change,
@@ -158,7 +158,7 @@ impl PlayerView {
                                     .options(channel_options)
                                     .selected(hal_config.channel_count.to_string())
                                     .is_open(hal_dropdowns.channel_count_open)
-                                    .on_change(move |value, _window, cx| {
+                                    .on_change(move |value: &SharedString, _window, cx| {
                                         if let Ok(channels) = value.parse::<u32>() {
                                             Self::update_hal_channel_count(
                                                 &state_for_change,
@@ -198,7 +198,7 @@ impl PlayerView {
                                     .options(buffer_options)
                                     .selected(hal_config.buffer_frames.to_string())
                                     .is_open(hal_dropdowns.buffer_size_open)
-                                    .on_change(move |value, _window, cx| {
+                                    .on_change(move |value: &SharedString, _window, cx| {
                                         if let Ok(size) = value.parse::<u32>() {
                                             Self::update_hal_buffer_size(
                                                 &state_for_change,

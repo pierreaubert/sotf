@@ -145,3 +145,50 @@ impl gpui::Action for OpenSofaFile {
         Err(anyhow::anyhow!("Not supported via keymaps"))
     }
 }
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct OpenIrFile {
+    pub plugin_idx: usize,
+}
+
+impl gpui::Action for OpenIrFile {
+    fn boxed_clone(&self) -> Box<dyn gpui::Action> {
+        Box::new(self.clone())
+    }
+    fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+        other.as_any().downcast_ref::<Self>() == Some(self)
+    }
+    fn name(&self) -> &'static str {
+        "OpenIrFile"
+    }
+    fn name_for_type() -> &'static str {
+        "OpenIrFile"
+    }
+    fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
+        Err(anyhow::anyhow!("Not supported via keymaps"))
+    }
+}
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct OpenAbConfigFile {
+    pub plugin_idx: usize,
+    pub path_id: String, // "a" or "b"
+}
+
+impl gpui::Action for OpenAbConfigFile {
+    fn boxed_clone(&self) -> Box<dyn gpui::Action> {
+        Box::new(self.clone())
+    }
+    fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+        other.as_any().downcast_ref::<Self>() == Some(self)
+    }
+    fn name(&self) -> &'static str {
+        "OpenAbConfigFile"
+    }
+    fn name_for_type() -> &'static str {
+        "OpenAbConfigFile"
+    }
+    fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
+        Err(anyhow::anyhow!("Not supported via keymaps"))
+    }
+}

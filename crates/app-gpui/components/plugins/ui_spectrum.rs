@@ -8,7 +8,7 @@ use gpui::*;
 use gpui_ui_kit::{Select, SelectOption, SelectSize};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
-use super::common::{render_knob, render_section_title};
+use super::common::render_knob;
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
@@ -534,30 +534,79 @@ pub struct SpectrumRenderState<'a> {
 
 /// Render the Spectrum Analyzer plugin
 ///
-/// Layout (3-column):
-/// +------------------+--------------------------------------------+------------------+
-/// | CONFIG           | SPECTRUM DISPLAY                           | (no output)      |
-/// |                  |                                            |                  |
-/// | [Num Bins]  knob | ┌─ Spectrum Graph ─────────────────┐       |                  |
-/// | [Min Freq]  knob | │                                  │       |                  |
-/// | [Max Freq]  knob | │                                  │       |                  |
-/// | [Smoothing] knob | └──────────────────────────────────┘       |                  |
-/// | [Tilt Corr] sel  |                                            |                  |
-/// | [Tilt Ref]  sel  |                                            |                  |
-/// +------------------+--------------------------------------------+------------------+
+/// Layout (vertical):
+/// +--------------------------------------------------------------------+
+/// | SPECTRUM DISPLAY (full width)                                      |
+/// | ┌─ dB axis ─┬─ Spectrum Graph ──────────────────────────────────┐  |
+/// | │            │                                                   │  |
+/// | │            │                                                   │  |
+/// | └────────────┴───────────────────────────────────────────────────┘  |
+/// |              [ frequency axis ]                                     |
+/// +--------------------------------------------------------------------+
+/// | CONFIG (horizontal row, wrapping)                                   |
+/// | [Bins] [Min Hz] [Max Hz] [Smooth] [Tilt] [Reference]               |
+/// +--------------------------------------------------------------------+
 pub fn render_spectrum_analyzer_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: SpectrumRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    // === LEFT COLUMN: Config ===
-    let config_col = div()
+    // === TOP: Spectrum display (full width) ===
+    let spectrum_display = div()
         .flex()
         .flex_col()
-        .w(px(130.0))
+        .w_full()
+        .gap_2()
+        // Main spectrum area with dB axis
+        .child(
+            div().flex().gap_1().child(render_db_axis(theme)).child(
+                div()
+                    .flex_1()
+                    .h(px(200.0))
+                    .bg(theme.surface)
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(theme.border)
+                    .flex()
+                    .items_end()
+                    .gap_px()
+                    .p_2()
+                    .child(if let Some(data) = state.data {
+                        let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
+                        SpectrumElement::new(magnitudes)
+                            .height(px(200.0))
+                            .frequency_range(state.min_freq, state.max_freq)
+                            .smoothing(state.smoothing)
+                            .colors(SpectrumColors::from(&theme.spectrum_colors))
+                            .into_any_element()
+                    } else {
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size_full()
+                            .text_color(theme.text_muted)
+                            .child("No signal")
+                            .into_any_element()
+                    }),
+            ),
+        )
+        // Frequency axis
+        .child(
+            div()
+                .flex()
+                .child(div().w(px(32.0)))
+                .child(render_frequency_axis(state.min_freq, state.max_freq, theme)),
+        );
+
+    // === BOTTOM: Config params (horizontal row with wrapping) ===
+    let config_row = div()
+        .flex()
+        .flex_wrap()
         .gap_3()
-        .child(render_section_title("CONFIG", theme))
+        .items_end()
+        .pt_2()
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -732,63 +781,15 @@ pub fn render_spectrum_analyzer_plugin(
                 ),
         );
 
-    // === CENTER COLUMN: Spectrum display ===
-    let center_col = div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .gap_2()
-        .child(render_section_title("SPECTRUM DISPLAY", theme))
-        // Main spectrum area with dB axis
-        .child(
-            div().flex().gap_1().child(render_db_axis(theme)).child(
-                div()
-                    .flex_1()
-                    .h(px(200.0))
-                    .bg(theme.surface)
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .items_end()
-                    .gap_px()
-                    .p_2()
-                    .child(if let Some(data) = state.data {
-                        let magnitudes: Arc<[f32]> = Arc::from(data.magnitudes.as_ref().as_slice());
-                        SpectrumElement::new(magnitudes)
-                            .height(px(200.0))
-                            .frequency_range(state.min_freq, state.max_freq)
-                            .smoothing(state.smoothing)
-                            .colors(SpectrumColors::from(&theme.spectrum_colors))
-                            .into_any_element()
-                    } else {
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size_full()
-                            .text_color(theme.text_muted)
-                            .child("No signal")
-                            .into_any_element()
-                    }),
-            ),
-        )
-        // Frequency axis
-        .child(
-            div()
-                .flex()
-                .child(div().w(px(32.0)))
-                .child(render_frequency_axis(state.min_freq, state.max_freq, theme)),
-        );
-
-    // === Main layout: 3 columns ===
+    // === Main layout: vertical stack ===
     div()
         .flex()
-        .gap_4()
+        .flex_col()
+        .gap_2()
         .p_3()
         .w_full()
-        .child(config_col)
-        .child(center_col)
+        .child(spectrum_display)
+        .child(config_row)
 }
 
 impl PlayerView {

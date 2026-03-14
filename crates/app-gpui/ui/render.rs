@@ -240,6 +240,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::remove_item))
             .on_action(cx.listener(Self::clear_queue))
             .on_action(cx.listener(Self::fill_queue_magic))
+            .on_action(cx.listener(Self::add_to_queue))
+            .on_action(cx.listener(Self::play_now))
             .on_action(cx.listener(Self::move_plugin_up))
             .on_action(cx.listener(Self::move_plugin_down))
             .on_action(cx.listener(Self::toggle_plugin))
@@ -271,6 +273,10 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_band_split))
             .on_action(cx.listener(Self::quick_add_band_merge))
             .on_action(cx.listener(Self::quick_add_crossfeed))
+            // Plugin file picker actions
+            .on_action(cx.listener(Self::on_open_sofa_file))
+            .on_action(cx.listener(Self::on_open_ir_file))
+            .on_action(cx.listener(Self::on_open_ab_config_file))
             // Plugin parameter actions
             .on_action(cx.listener(Self::on_update_plugin_param))
             .on_action(cx.listener(Self::on_select_plugin_param))
@@ -329,8 +335,41 @@ impl Render for PlayerView {
                         // Stepper-based editing doesn't need keyboard input
                     }
                     crate::app::InputMode::SpinoramaSpeakerSearch => {
-                        // Handled by the Input widget's native on_text_change callback
-                        // in step_1_select.rs. No global interception needed.
+                        // Let the GPUI Input component handle text natively via on_text_change.
+                        // Only intercept non-text keys like escape/enter (handled by actions).
+                    }
+                    crate::app::InputMode::ContextMenu => {
+                        cx.stop_propagation();
+                        match event.keystroke.key.as_str() {
+                            "a" => {
+                                // Add to queue
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                                    state.app.ui_state.context_menu = None;
+                                    if let Some(path) = state.app.add_album_to_queue() {
+                                        PlayerView::play_track(state, path);
+                                    }
+                                });
+                            }
+                            "enter" => {
+                                // Play now
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                                    state.app.ui_state.context_menu = None;
+                                    if let Some(path) = state.app.play_album_now() {
+                                        PlayerView::play_track(state, path);
+                                    }
+                                });
+                            }
+                            "escape" => {
+                                // Close context menu
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                                    state.app.ui_state.context_menu = None;
+                                });
+                            }
+                            _ => {}
+                        }
                     }
                     crate::app::InputMode::ChannelConflict => {
                         cx.stop_propagation();
@@ -351,14 +390,25 @@ impl Render for PlayerView {
                                     state.app.ui_state.input_mode =
                                         crate::app::InputMode::Normal;
                                 });
-                                let path = view
+                                let (path, track_channels) = view
                                     .state
                                     .update(cx, |state, _| {
-                                        state.app.channel_conflict_path.take()
+                                        let p = state.app.channel_conflict_path.take();
+                                        let ch = state.app.channel_conflict_track_channels;
+                                        (p, ch)
                                     });
                                 if let Some(path) = path {
                                     view.state.update(cx, |state, _| {
-                                        PlayerView::play_track(state, path);
+                                        // Call play_track_at_inner directly — conflict
+                                        // resolution already happened above, so we must
+                                        // skip play_track/play_track_at which would
+                                        // clear_suspensions and re-detect conflicts.
+                                        PlayerView::play_track_at_inner(
+                                            state,
+                                            path,
+                                            None,
+                                            track_channels,
+                                        );
                                     });
                                 }
                                 cx.notify();

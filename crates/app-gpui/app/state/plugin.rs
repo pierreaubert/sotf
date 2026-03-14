@@ -32,6 +32,9 @@ pub struct PluginState {
     pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
     /// Dropdown states for AB Compare plugin
     pub ab_compare_dropdowns: ABCompareDropdowns,
+    /// File paths for AB Compare loaded configs (for display)
+    pub ab_compare_file_a: Option<String>,
+    pub ab_compare_file_b: Option<String>,
     /// Which plugin UI view mode to show
     pub plugin_ui_view: PluginUiView,
     /// Whether the controller picker dropdown is open
@@ -137,6 +140,8 @@ impl Default for PluginState {
             workflow_node_mapping: None,
             editing_plugin_node: None,
             ab_compare_dropdowns: ABCompareDropdowns::default(),
+            ab_compare_file_a: None,
+            ab_compare_file_b: None,
             plugin_ui_view: PluginUiView::UI,
             controller_picker_open: false,
             midi_mapping: MidiMappingEngine::new(),

@@ -11,6 +11,9 @@ use gpui_ui_kit::{
 };
 use std::sync::Arc;
 
+/// Breakpoint below which the sort/filter bar switches to vertical layout
+const BREAKPOINT_NARROW_LAYOUT: f32 = 600.0;
+
 /// Selection action types for the library filter UI (Genre only)
 /// Note: Artist, Composer, Tracks now use filter bars like Year/Album
 #[derive(Clone)]
@@ -50,6 +53,8 @@ impl PlayerView {
         let surround_plus_count = stats.surround_plus_count;
 
         // Selection filters and counts for each category
+        let window_width = state.app.ui_state.window_width;
+
         let selected_genre = state.app.library_state.selected_genre.clone();
         let selected_decade = state.app.library_state.selected_decade;
         let selected_year = state.app.library_state.selected_year;
@@ -72,6 +77,7 @@ impl PlayerView {
 
         let is_search_mode = input_mode == crate::app::InputMode::Search;
         let is_filter_mode = filter_menu_open;
+        let has_active_filters = state.app.library_state.has_active_filters();
 
         // Map sort order to tab index (Filter=6, Search=7 are special)
         let sort_tab_index = if is_search_mode {
@@ -212,54 +218,78 @@ impl PlayerView {
                     .child(div().child(Spinner::new().size(SpinnerSize::Lg)))
             })
             .when(!state.app.is_loading_initial_data, |el| {
+                let state_for_clear = self.state.clone();
                 el.child(
-                    div().flex().justify_center().mb_2().child(
-                        Tabs::new("library-sort-tabs")
-                            .tabs(sort_tabs)
-                            .selected_index(sort_tab_index)
-                            .variant(TabVariant::VerticalCard)
-                            .theme(tabs_theme.clone())
-                            .on_change(move |index, _window, cx| {
-                                state_for_tabs.update(cx, |state, _cx| {
-                                    // Handle sort order tabs (0-5)
-                                    if index <= 5 {
-                                        let sort_order = match index {
-                                            0 => crate::app::LibrarySortOrder::Year,
-                                            1 => crate::app::LibrarySortOrder::Genre,
-                                            2 => crate::app::LibrarySortOrder::Artist,
-                                            3 => crate::app::LibrarySortOrder::Album,
-                                            4 => crate::app::LibrarySortOrder::Tracks,
-                                            5 => crate::app::LibrarySortOrder::Composer,
-                                            _ => crate::app::LibrarySortOrder::Album,
-                                        };
-                                        state.app.set_library_sort_order(sort_order);
-                                        // Close filter/search modes when selecting sort tab
-                                        state.app.ui_state.filter_menu_open = false;
-                                        state.app.ui_state.input_mode =
-                                            crate::app::InputMode::Normal;
-                                    } else if index == 6 {
-                                        // Filter tab
-                                        state.app.ui_state.filter_menu_open =
-                                            !state.app.ui_state.filter_menu_open;
-                                        state.app.ui_state.input_mode =
-                                            crate::app::InputMode::Normal;
-                                    } else if index == 7 {
-                                        // Search tab
-                                        if state.app.ui_state.input_mode
-                                            == crate::app::InputMode::Search
-                                        {
+                    div()
+                        .flex()
+                        .when(window_width < BREAKPOINT_NARROW_LAYOUT, |el| el.flex_col())
+                        .when(window_width >= BREAKPOINT_NARROW_LAYOUT, |el| el.flex_wrap())
+                        .items_center()
+                        .justify_center()
+                        .gap_2()
+                        .mb_2()
+                        .child(
+                            Tabs::new("library-sort-tabs")
+                                .tabs(sort_tabs)
+                                .selected_index(sort_tab_index)
+                                .variant(TabVariant::VerticalCard)
+                                .theme(tabs_theme.clone())
+                                .on_change(move |index, _window, cx| {
+                                    state_for_tabs.update(cx, |state, _cx| {
+                                        // Handle sort order tabs (0-5)
+                                        if index <= 5 {
+                                            let sort_order = match index {
+                                                0 => crate::app::LibrarySortOrder::Year,
+                                                1 => crate::app::LibrarySortOrder::Genre,
+                                                2 => crate::app::LibrarySortOrder::Artist,
+                                                3 => crate::app::LibrarySortOrder::Album,
+                                                4 => crate::app::LibrarySortOrder::Tracks,
+                                                5 => crate::app::LibrarySortOrder::Composer,
+                                                _ => crate::app::LibrarySortOrder::Album,
+                                            };
+                                            state.app.set_library_sort_order(sort_order);
+                                            // Close filter/search modes when selecting sort tab
+                                            state.app.ui_state.filter_menu_open = false;
                                             state.app.ui_state.input_mode =
                                                 crate::app::InputMode::Normal;
-                                            state.app.library_state.search_query.clear();
-                                        } else {
+                                        } else if index == 6 {
+                                            // Filter tab
+                                            state.app.ui_state.filter_menu_open =
+                                                !state.app.ui_state.filter_menu_open;
                                             state.app.ui_state.input_mode =
-                                                crate::app::InputMode::Search;
-                                            state.app.ui_state.filter_menu_open = false;
+                                                crate::app::InputMode::Normal;
+                                        } else if index == 7 {
+                                            // Search tab
+                                            if state.app.ui_state.input_mode
+                                                == crate::app::InputMode::Search
+                                            {
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                                state.app.library_state.search_query.clear();
+                                            } else {
+                                                state.app.ui_state.input_mode =
+                                                    crate::app::InputMode::Search;
+                                                state.app.ui_state.filter_menu_open = false;
+                                            }
                                         }
-                                    }
-                                });
-                            }),
-                    ),
+                                    });
+                                }),
+                        )
+                        .when(has_active_filters, |el| {
+                            el.child(
+                                Button::new("clear-filters", "Reset")
+                                    .variant(ButtonVariant::Ghost)
+                                    .size(ButtonSize::Sm)
+                                    .on_click(move |_, cx| {
+                                        state_for_clear.update(cx, |state, _| {
+                                            state.app.library_state.clear_all_filters();
+                                            state.app.ui_state.filter_menu_open = false;
+                                            state.app.ui_state.input_mode =
+                                                crate::app::InputMode::Normal;
+                                        });
+                                    }),
+                            )
+                        }),
                 )
                 // Filter options row (only visible when filter mode is active)
                 .when(is_filter_mode, |el| {
@@ -1456,7 +1486,9 @@ impl PlayerView {
                     MouseButton::Right,
                     cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
+                            use crate::app::InputMode;
                             state.app.library_state.selected_index = idx;
+                            state.app.ui_state.input_mode = InputMode::ContextMenu;
                             state.app.ui_state.context_menu = Some(crate::app::ContextMenuState {
                                 menu_type: crate::app::ContextMenuType::Album,
                                 position_x: event.position.x.into(),

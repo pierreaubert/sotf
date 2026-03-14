@@ -352,8 +352,9 @@ impl InPlacePlugin for LimiterPlugin {
             self.lookahead_pos = (self.lookahead_pos + 1) % self.lookahead_len;
         }
 
-        self.threshold_smoother.next_n(num_frames);
-        self.mix_smoother.next_n(num_frames);
+        // Smoothers already advanced at the start of this block via .advance().
+        // Do not call .next_n() again — that would double-advance, making
+        // threshold transitions ~500x faster than intended.
 
         // Update monitoring cache
         self.monitoring_peak_db = 20.0 * fast_log10(max_peak.max(1e-10));
@@ -401,6 +402,92 @@ mod tests {
         let thresh_lin = fast_pow10(-1.0 / 20.0);
         for &s in &b[500..] {
             assert!(s.abs() <= thresh_lin * 1.05);
+        }
+    }
+
+    /// Regression: threshold smoother was advanced twice per block (once via
+    /// .advance(), then again via .next_n(num_frames)), making transitions
+    /// ~500x faster than intended. This test verifies smooth threshold changes.
+    #[test]
+    fn test_threshold_transition_is_smooth() {
+        let mut p = LimiterPlugin::new(1, -6.0, 50.0, 0.0, false);
+        p.initialize(48000).unwrap();
+
+        // Feed loud signal to establish steady-state
+        let mut b = vec![1.0f32; 4800];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 4800,
+        };
+        p.process_in_place(&mut b, &ctx).unwrap();
+        let output_before = b[4799];
+
+        // Now change threshold from -6 dB to -20 dB
+        p.set_parameter(
+            ParameterId::from("threshold"),
+            ParameterValue::Float(-20.0),
+        )
+        .unwrap();
+
+        // Process one small block (≈1ms = 48 samples)
+        // With proper 5ms smoothing, the threshold should NOT have fully
+        // transitioned after just 1ms.
+        let mut b2 = vec![1.0f32; 48];
+        p.process_in_place(
+            &mut b2,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 48,
+            },
+        )
+        .unwrap();
+        let output_after_1ms = b2[47];
+
+        // The new threshold (-20 dB ≈ 0.1) is much lower than old (-6 dB ≈ 0.5).
+        // After only 1ms of a 5ms transition, the output should still be
+        // closer to the old threshold than the new one.
+        let old_thresh_lin = fast_pow10(-6.0 / 20.0); // ≈ 0.50
+        let new_thresh_lin = fast_pow10(-20.0 / 20.0); // ≈ 0.10
+        let midpoint = (old_thresh_lin + new_thresh_lin) / 2.0;
+
+        assert!(
+            output_after_1ms > midpoint,
+            "After 1ms of a 5ms threshold transition, output {output_after_1ms:.4} should be above \
+             midpoint {midpoint:.4} (old={old_thresh_lin:.4}, new={new_thresh_lin:.4}). \
+             Smoother may be double-advancing."
+        );
+    }
+
+    /// Verify the limiter actually limits output below threshold.
+    #[test]
+    fn test_limiter_clamps_output() {
+        let mut p = LimiterPlugin::new(2, -6.0, 50.0, 5.0, false);
+        p.initialize(48000).unwrap();
+
+        // Feed loud stereo signal (well above -6 dB threshold)
+        let mut b = vec![0.0f32; 2048 * 2];
+        for frame in 0..2048 {
+            let val = 0.9 * (frame as f32 * 0.1).sin(); // ~-1 dBFS sine
+            b[frame * 2] = val;
+            b[frame * 2 + 1] = val;
+        }
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 2048,
+        };
+        p.process_in_place(&mut b, &ctx).unwrap();
+
+        // After lookahead fills (≈5ms = 240 samples), all output should be
+        // below threshold. Allow a small overshoot margin.
+        let thresh_lin = fast_pow10(-6.0 / 20.0);
+        for frame in 500..2048 {
+            for ch in 0..2 {
+                let s = b[frame * 2 + ch].abs();
+                assert!(
+                    s <= thresh_lin * 1.1,
+                    "frame {frame} ch {ch}: {s:.4} exceeds threshold {thresh_lin:.4}"
+                );
+            }
         }
     }
 }

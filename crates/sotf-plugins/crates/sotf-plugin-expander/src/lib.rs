@@ -445,9 +445,9 @@ impl ExpanderPlugin {
             }
         };
         let coeff = if target > self.envelope[ch] {
-            self.release_coeff
-        } else {
             self.attack_coeff
+        } else {
+            self.release_coeff
         };
         self.envelope[ch] = target + coeff * (self.envelope[ch] - target);
         self.envelope[ch]
@@ -770,6 +770,57 @@ mod tests {
         assert!(
             last_am > last_no,
             "auto_makeup should boost output: {last_am} > {last_no}"
+        );
+    }
+
+    /// Regression: attack/release coefficients were swapped.
+    /// With fast attack (1ms) and slow release (200ms), the gate should close
+    /// quickly when signal drops below threshold. If coefficients are swapped,
+    /// the gate would close slowly (using release time instead).
+    #[test]
+    fn test_attack_release_not_swapped() {
+        let fast_attack = ExpanderPluginParams {
+            attack_ms: 1.0,
+            release_ms: 200.0,
+            threshold_db: -20.0,
+            ratio: 10.0,
+            range_db: 60.0,
+            mix: 1.0,
+            ..Default::default()
+        };
+        let mut p = ExpanderPlugin::with_params(1, fast_attack);
+        p.initialize(48000).unwrap();
+
+        // First, feed loud signal to open the gate
+        let mut loud = vec![0.5f32; 4800]; // -6 dBFS, well above -20 threshold
+        p.process_in_place(
+            &mut loud,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 4800,
+            },
+        )
+        .unwrap();
+
+        // Now feed quiet signal — gate should close within a few ms (fast attack)
+        let quiet_val = 0.001f32; // -60 dBFS, well below threshold
+        let mut quiet = vec![quiet_val; 480]; // 10ms of quiet
+        p.process_in_place(
+            &mut quiet,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 480,
+            },
+        )
+        .unwrap();
+
+        // After 10ms with 1ms attack, the gate should be mostly closed.
+        // The signal should be significantly attenuated (not just passing through).
+        let last_sample = quiet[479].abs();
+        assert!(
+            last_sample < quiet_val * 0.5,
+            "Gate should close fast with 1ms attack, but output {last_sample} is still near input {quiet_val}. \
+             Attack/release coefficients may be swapped."
         );
     }
 }

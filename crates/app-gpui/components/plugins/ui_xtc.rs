@@ -305,13 +305,13 @@ pub fn render_xtc_plugin(
                             theme,
                         )),
                 )
-                // Column 5: Advanced & Room
+                // Column 5: Advanced
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_2()
-                        .child(render_section_title("ADVANCED / ROOM", theme))
+                        .child(render_section_title("ADVANCED", theme))
                         .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
@@ -331,7 +331,15 @@ pub fn render_xtc_plugin(
                             state.selected_param,
                             state.is_editing,
                             theme,
-                        ))
+                        )),
+                )
+                // Column 6: Room
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("ROOM", theme))
                         .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
@@ -399,7 +407,45 @@ pub fn render_xtc_plugin(
                             theme,
                         )),
                 )
-                // Column 6: Auto Gain
+                // Column 7: Diagnostic bypasses (before Auto Gain)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("DIAGNOSTIC", theme))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Bypass Filters",
+                            state.bypass_xtc_filters,
+                            I_BYPASS_XTC,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Bypass Spec Norm",
+                            state.bypass_spectral_normalization,
+                            I_BYPASS_SPECTRAL,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Bypass Neumann",
+                            state.bypass_neumann_refinement,
+                            I_BYPASS_NEUMANN,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        )),
+                )
+                // Column 8: Auto Gain
                 .child(
                     div()
                         .flex()
@@ -442,44 +488,6 @@ pub fn render_xtc_plugin(
                             state.selected_param,
                             state.is_editing,
                             None,
-                            theme,
-                        )),
-                )
-                // Column 7: Diagnostic bypasses
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("DIAGNOSTIC", theme))
-                        .child(render_toggle(
-                            entity.clone(),
-                            plugin_idx,
-                            "Bypass Filters",
-                            state.bypass_xtc_filters,
-                            I_BYPASS_XTC,
-                            state.selected_param,
-                            state.is_editing,
-                            theme,
-                        ))
-                        .child(render_toggle(
-                            entity.clone(),
-                            plugin_idx,
-                            "Bypass Spec Norm",
-                            state.bypass_spectral_normalization,
-                            I_BYPASS_SPECTRAL,
-                            state.selected_param,
-                            state.is_editing,
-                            theme,
-                        ))
-                        .child(render_toggle(
-                            entity.clone(),
-                            plugin_idx,
-                            "Bypass Neumann",
-                            state.bypass_neumann_refinement,
-                            I_BYPASS_NEUMANN,
-                            state.selected_param,
-                            state.is_editing,
                             theme,
                         )),
                 ),

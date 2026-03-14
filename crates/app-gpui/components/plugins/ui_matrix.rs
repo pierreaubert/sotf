@@ -6,7 +6,7 @@
 //! - Click to toggle, scroll to adjust
 //! - Preset buttons (Identity, Swap L/R, Mono Mix)
 
-use super::common::{ParamSectionStyle, render_section_header};
+use super::common::ParamSectionStyle;
 use crate::app::AppState;
 use crate::app::types::PluginUpdateType;
 use crate::theme::Theme;
@@ -74,38 +74,6 @@ pub fn render_matrix_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Header with preset selector
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .param_section_style(theme)
-                .child(render_section_header("MATRIX MIXER", theme))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Preset:"),
-                        )
-                        .child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(theme.surface)
-                                .text_sm()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(theme.text_primary)
-                                .child(preset_name),
-                        ),
-                ),
-        )
         // Preset buttons
         .child(render_preset_buttons(
             entity.clone(),
@@ -122,20 +90,6 @@ pub fn render_matrix_plugin(
             &state,
             theme,
         ))
-        // Info footer
-        .child(
-            div()
-                .flex()
-                .justify_between()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .param_section_style(theme)
-                .child(format!(
-                    "{} inputs \u{2192} {} outputs",
-                    state.input_channels, state.output_channels
-                ))
-                .child("Click: toggle | Scroll: adjust | Double-click: reset"),
-        )
 }
 
 /// Render preset buttons
@@ -148,63 +102,84 @@ fn render_preset_buttons(
     theme: &Theme,
 ) -> impl IntoElement {
     let presets = available_matrix_presets(input_channels, output_channels);
+    let ms_disabled = input_channels > 2;
 
     div()
         .flex()
+        .items_center()
         .gap_2()
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child("Preset"),
+        )
         .children(presets.into_iter().map(|preset| {
             let is_active = current_preset == preset;
+            let is_ms = preset == "M/S Encode" || preset == "M/S Decode";
+            let disabled = is_ms && ms_disabled;
             let entity_clone = entity.clone();
             let preset_owned = preset.to_string();
 
-            div()
+            let mut el = div()
                 .px_3()
                 .py_1()
                 .rounded_lg()
-                .cursor_pointer()
-                .bg(if is_active {
-                    theme.accent
-                } else {
-                    theme.surface
-                })
                 .border_1()
-                .border_color(if is_active {
-                    theme.accent
-                } else {
-                    theme.border
-                })
-                .text_sm()
-                .text_color(if is_active {
-                    theme.text_on_accent
-                } else {
-                    theme.text_secondary
-                })
-                .hover(|s| {
-                    s.bg(if is_active {
+                .text_sm();
+
+            if disabled {
+                el = el
+                    .bg(theme.surface)
+                    .border_color(theme.border)
+                    .text_color(theme.text_muted)
+                    .opacity(0.5);
+            } else {
+                el = el
+                    .cursor_pointer()
+                    .bg(if is_active {
                         theme.accent
                     } else {
-                        theme.surface_hover
+                        theme.surface
                     })
-                })
-                .child(preset)
-                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    entity_clone.update(cx, |state, _| {
-                        // Get current matrix and apply preset
-                        if let Some(plugin) =
-                            state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
-                            && let sotf_audio_player::PluginSettings::Matrix {
-                                input_channels: in_ch,
-                                output_channels: out_ch,
-                                ref mut matrix,
-                                ..
-                            } = plugin.settings
-                        {
-                            apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);
-                            state.app.plugin_state.pending_plugin_update =
-                                Some(PluginUpdateType::Structural);
-                        }
+                    .border_color(if is_active {
+                        theme.accent
+                    } else {
+                        theme.border
+                    })
+                    .text_color(if is_active {
+                        theme.text_on_accent
+                    } else {
+                        theme.text_secondary
+                    })
+                    .hover(|s| {
+                        s.bg(if is_active {
+                            theme.accent
+                        } else {
+                            theme.surface_hover
+                        })
+                    })
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        entity_clone.update(cx, |state, _| {
+                            // Get current matrix and apply preset
+                            if let Some(plugin) =
+                                state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                                && let sotf_audio_player::PluginSettings::Matrix {
+                                    input_channels: in_ch,
+                                    output_channels: out_ch,
+                                    ref mut matrix,
+                                    ..
+                                } = plugin.settings
+                            {
+                                apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);
+                                state.app.plugin_state.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
+                            }
+                        });
                     });
-                })
+            }
+
+            el.child(preset)
         }))
 }
 

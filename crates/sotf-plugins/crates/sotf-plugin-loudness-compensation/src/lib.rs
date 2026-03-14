@@ -184,39 +184,25 @@ impl LoudnessCompensationPlugin {
     fn rebuild_filters(&mut self) {
         let q = 0.707;
         let sr = self.sample_rate as f64;
+        let lg = self.low_gain / 2.0;
+        let hg = self.high_gain / 2.0;
         for ch in 0..self.num_channels {
-            let lg = self.low_gain / 2.0;
-            let hg = self.high_gain / 2.0;
-            self.filters[ch] = vec![
-                Biquad::new(
-                    BiquadFilterType::Lowshelf,
-                    self.low_freq as f64,
-                    sr,
-                    q,
-                    lg as f64,
-                ),
-                Biquad::new(
-                    BiquadFilterType::Lowshelf,
-                    self.low_freq as f64,
-                    sr,
-                    q,
-                    lg as f64,
-                ),
-                Biquad::new(
-                    BiquadFilterType::Highshelf,
-                    self.high_freq as f64,
-                    sr,
-                    q,
-                    hg as f64,
-                ),
-                Biquad::new(
-                    BiquadFilterType::Highshelf,
-                    self.high_freq as f64,
-                    sr,
-                    q,
-                    hg as f64,
-                ),
-            ];
+            if self.filters[ch].len() == 4 {
+                // Update coefficients in place — preserves filter delay state
+                // (x1/x2/y1/y2) so parameter changes are click-free.
+                self.filters[ch][0].update_params(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64);
+                self.filters[ch][1].update_params(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64);
+                self.filters[ch][2].update_params(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64);
+                self.filters[ch][3].update_params(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64);
+            } else {
+                // First initialization — create filters from scratch
+                self.filters[ch] = vec![
+                    Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64),
+                    Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64),
+                    Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64),
+                    Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64),
+                ];
+            }
             let target = 10.0_f32.powf(-self.low_gain.max(self.high_gain) / 20.0);
             self.comp_gain_smoother[ch].set_target(target);
         }
@@ -397,5 +383,104 @@ mod tests {
         )
         .unwrap();
         assert!(b[999] > 0.0);
+    }
+
+    /// Regression: rebuild_filters() used to call Biquad::new() which resets
+    /// filter delay state (x1/x2/y1/y2), causing a click artifact on every
+    /// parameter change. Now it uses update_params() to preserve state.
+    #[test]
+    fn test_param_change_no_click() {
+        let mut p = LoudnessCompensationPlugin::new(1, 100.0, 6.0, 10000.0, 6.0);
+        InPlacePlugin::initialize(&mut p, 48000).unwrap();
+
+        // Process a block to establish filter state
+        let mut b = vec![0.3f32; 4800];
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 4800,
+        };
+        p.process_in_place(&mut b, &ctx).unwrap();
+        let last_before = b[4799];
+
+        // Change gain parameter — this should NOT reset filter state
+        p.set_parameter(
+            ParameterId::from("low_gain"),
+            ParameterValue::Float(7.0),
+        )
+        .unwrap();
+
+        // Process another block of the same signal
+        let mut b2 = vec![0.3f32; 480];
+        p.process_in_place(
+            &mut b2,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 480,
+            },
+        )
+        .unwrap();
+
+        // The first sample after param change should be close to the last
+        // sample before the change. A filter state reset would cause a
+        // transient (click) where the output jumps to near-zero.
+        let first_after = b2[0];
+        let jump = (first_after - last_before).abs();
+        assert!(
+            jump < 0.2,
+            "Parameter change caused discontinuity: last={last_before:.4}, first={first_after:.4}, \
+             jump={jump:.4}. Filter state may have been reset."
+        );
+    }
+
+    /// Verify that the plugin actually applies gain when configured.
+    /// With shelving filters active, a low-frequency signal should be processed
+    /// differently than a mid-frequency signal (spectral shaping occurs).
+    #[test]
+    fn test_loudness_comp_applies_gain() {
+        // Process a low-frequency signal (within the low shelf)
+        let mut p_low = LoudnessCompensationPlugin::new(1, 100.0, 12.0, 10000.0, 12.0);
+        InPlacePlugin::initialize(&mut p_low, 48000).unwrap();
+
+        // Process a mid-frequency signal (outside both shelves)
+        let mut p_mid = LoudnessCompensationPlugin::new(1, 100.0, 12.0, 10000.0, 12.0);
+        InPlacePlugin::initialize(&mut p_mid, 48000).unwrap();
+
+        let nf = 9600;
+        let sr = 48000.0f32;
+
+        let mut low_buf: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr).sin())
+            .collect();
+        let mut mid_buf: Vec<f32> = (0..nf)
+            .map(|i| 0.3 * (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin())
+            .collect();
+
+        let ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: nf,
+        };
+        p_low.process_in_place(&mut low_buf, &ctx).unwrap();
+        p_mid.process_in_place(&mut mid_buf, &ctx).unwrap();
+
+        // Measure RMS in the settled second half
+        let low_rms: f32 = (low_buf[nf / 2..]
+            .iter()
+            .map(|s| s * s)
+            .sum::<f32>()
+            / (nf / 2) as f32)
+            .sqrt();
+        let mid_rms: f32 = (mid_buf[nf / 2..]
+            .iter()
+            .map(|s| s * s)
+            .sum::<f32>()
+            / (nf / 2) as f32)
+            .sqrt();
+
+        // The low-freq signal should be louder relative to mid-freq due to shelf boost
+        assert!(
+            low_rms > mid_rms * 1.3,
+            "Loudness compensation should boost 50 Hz relative to 1 kHz, \
+             but low RMS {low_rms:.4} is not significantly greater than mid RMS {mid_rms:.4}"
+        );
     }
 }

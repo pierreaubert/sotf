@@ -12,7 +12,8 @@
 //! +------------------+--------------------------------------------+------------------+
 
 use super::common::{
-    render_knob, render_section_title, render_toggle, render_vertical_slider_with_ticks,
+    render_knob, render_section_title, render_toggle, render_transfer_curve_with_level,
+    render_vertical_slider_with_ticks,
 };
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -34,6 +35,8 @@ pub struct MbCompressorRenderState {
     pub release_ms: f64,
     pub knee_db: f64,
     pub makeup_gain_db: f64,
+    pub auto_makeup: bool,
+    pub active: bool,
     pub solo: bool,
     pub bypass: bool,
     pub mix: f64,
@@ -47,6 +50,7 @@ pub struct MbCompressorRenderState {
 const SLIDER_HEIGHT: f32 = 180.0;
 const GLOBAL_WIDTH: f32 = 120.0;
 const OUTPUT_WIDTH: f32 = 120.0;
+const TRANSFER_CURVE_SIZE: f32 = 140.0;
 
 /// Render the Multiband Compressor plugin
 pub fn render_mb_compressor_plugin(
@@ -186,13 +190,25 @@ pub fn render_mb_compressor_plugin(
                 .on_mouse_down(MouseButton::Left, {
                     let entity = entity.clone();
                     move |_, _window, cx| {
-                        entity.update(cx, |state, _| {
+                        entity.update(cx, |state, cx| {
                             state.app.plugin_state.selected_eq_band = i;
+                            cx.notify();
                         });
                     }
                 })
                 .child(label)
         }));
+
+    // Transfer curve for current band
+    let transfer_curve = render_transfer_curve_with_level(
+        state.threshold_db,
+        state.ratio,
+        state.knee_db,
+        false,
+        TRANSFER_CURVE_SIZE,
+        None,
+        theme,
+    );
 
     // Band sliders
     let sliders = div()
@@ -253,7 +269,8 @@ pub fn render_mb_compressor_plugin(
                             SLIDER_HEIGHT,
                             theme,
                         )),
-                ),
+                )
+                .child(transfer_curve),
         )
         .child(
             div()
@@ -323,13 +340,23 @@ pub fn render_mb_compressor_plugin(
         .child(band_tabs)
         .child(sliders);
 
-    // Band Solo/Bypass (only for band-level)
+    // Band Solo/Bypass/Active/AutoGain (only for band-level)
     if state.selected_band_idx > 0 {
         center_col = center_col.child(
             div()
                 .flex()
                 .gap_4()
                 .justify_center()
+                .child(render_toggle(
+                    entity.clone(),
+                    plugin_idx,
+                    "Active",
+                    state.active,
+                    get_param_idx(17),
+                    state.selected_param,
+                    state.is_editing,
+                    theme,
+                ))
                 .child(render_toggle(
                     entity.clone(),
                     plugin_idx,
@@ -346,6 +373,16 @@ pub fn render_mb_compressor_plugin(
                     "Bypass",
                     state.bypass,
                     get_param_idx(14),
+                    state.selected_param,
+                    state.is_editing,
+                    theme,
+                ))
+                .child(render_toggle(
+                    entity.clone(),
+                    plugin_idx,
+                    "AutoGain",
+                    state.auto_makeup,
+                    get_param_idx(16),
                     state.selected_param,
                     state.is_editing,
                     theme,

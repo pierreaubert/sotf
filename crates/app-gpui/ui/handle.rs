@@ -436,7 +436,7 @@ impl PlayerView {
 
         }
 
-    
+
 
         pub(crate) fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
 
@@ -625,7 +625,7 @@ impl PlayerView {
                 let mut should_load_more = false;
                 self.state.update(cx, |state, _cx| {
                     let total = state.app.filtered_albums().len();
-                    if state.app.library_state.selected_index < total - 1 {
+                    if total > 0 && state.app.library_state.selected_index < total - 1 {
                         state.app.library_state.select_grid_right(cols);
                     } else {
                         should_load_more = true;

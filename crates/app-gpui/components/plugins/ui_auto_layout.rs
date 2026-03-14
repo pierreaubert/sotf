@@ -14,6 +14,7 @@
 //! +------------------+--------------------------------------------+------------------+
 //! ```
 
+use super::actions::{OpenIrFile, OpenSofaFile};
 use super::common::{render_knob, render_section_title, render_toggle};
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -21,6 +22,7 @@ use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::param_specs::{ParamCategory, ParamSpec, ParamType};
+use std::collections::HashMap;
 
 /// Input for the auto layout renderer.
 pub struct AutoLayoutInput<'a> {
@@ -29,6 +31,8 @@ pub struct AutoLayoutInput<'a> {
     pub params: &'a [ParamSpec],
     /// Current raw values for each param index.
     pub values: Vec<f64>,
+    /// String values for FilePath params (param index → current path).
+    pub file_paths: HashMap<usize, String>,
     pub is_editing: bool,
     pub selected_param: usize,
     /// Which secondary/diagnostic tab is currently active (index into tab list).
@@ -43,6 +47,7 @@ fn render_param(
     idx: usize,
     spec: &ParamSpec,
     value: f64,
+    file_path: Option<&str>,
     selected_param: usize,
     is_editing: bool,
     theme: &Theme,
@@ -123,11 +128,76 @@ fn render_param(
             .into_any_element()
         }
         ParamType::FilePath => {
-            // File path params show as a label only in auto layout
+            let has_file = file_path.is_some_and(|p| !p.is_empty());
+            let display_name = file_path
+                .filter(|p| !p.is_empty())
+                .and_then(|p| p.rsplit('/').next())
+                .unwrap_or("None");
+            let text_color = if has_file {
+                theme.text_primary
+            } else {
+                theme.text_muted
+            };
+            let engine_key = spec.engine_key;
             div()
-                .text_xs()
-                .text_color(theme.text_secondary)
-                .child(format!("{}: (file)", spec.name))
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_3()
+                .py_2()
+                .rounded_lg()
+                .bg(theme.background_secondary)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child(spec.name),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(text_color)
+                                .overflow_hidden()
+                                .text_ellipsis()
+                                .max_w(px(120.0))
+                                .child(display_name.to_string()),
+                        ),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme.surface)
+                        .border_1()
+                        .border_color(theme.border)
+                        .text_xs()
+                        .id(("load-file-btn", plugin_idx * 1000 + idx))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(theme.surface_hover))
+                        .on_click(move |_, _, cx| {
+                            match engine_key {
+                                "sofa_file" => {
+                                    cx.dispatch_action(&OpenSofaFile { plugin_idx });
+                                }
+                                "ir_file" => {
+                                    cx.dispatch_action(&OpenIrFile { plugin_idx });
+                                }
+                                _ => {
+                                    log::warn!(
+                                        "No file open action for engine_key: {}",
+                                        engine_key
+                                    );
+                                }
+                            }
+                        })
+                        .child("Load"),
+                )
                 .into_any_element()
         }
     }
@@ -156,6 +226,7 @@ pub fn render_auto_layout(input: AutoLayoutInput) -> impl IntoElement {
         plugin_idx,
         params,
         values,
+        file_paths,
         is_editing,
         selected_param,
         active_tab,
@@ -197,6 +268,7 @@ pub fn render_auto_layout(input: AutoLayoutInput) -> impl IntoElement {
                 *idx,
                 spec,
                 values[*idx],
+                file_paths.get(idx).map(|s| s.as_str()),
                 selected_param,
                 is_editing,
                 theme,
@@ -230,6 +302,7 @@ pub fn render_auto_layout(input: AutoLayoutInput) -> impl IntoElement {
                     *idx,
                     spec,
                     values[*idx],
+                    file_paths.get(idx).map(|s| s.as_str()),
                     selected_param,
                     is_editing,
                     theme,
@@ -294,6 +367,7 @@ pub fn render_auto_layout(input: AutoLayoutInput) -> impl IntoElement {
                     *idx,
                     spec,
                     values[*idx],
+                    file_paths.get(idx).map(|s| s.as_str()),
                     selected_param,
                     is_editing,
                     theme,
@@ -316,6 +390,7 @@ pub fn render_auto_layout(input: AutoLayoutInput) -> impl IntoElement {
                 *idx,
                 spec,
                 values[*idx],
+                file_paths.get(idx).map(|s| s.as_str()),
                 selected_param,
                 is_editing,
                 theme,
@@ -342,11 +417,29 @@ pub fn render_plugin_auto(
         .map(|i| settings.param_value(i).unwrap_or(0.0))
         .collect();
 
+    // Extract file path strings for FilePath params
+    let mut file_paths = HashMap::new();
+    for (i, spec) in params.iter().enumerate() {
+        if matches!(spec.param_type, ParamType::FilePath) {
+            let path = match settings {
+                PluginSettings::BinauralDecoder { sofa_file, .. } if spec.engine_key == "sofa_file" => {
+                    sofa_file.clone()
+                }
+                PluginSettings::Convolution { ir_file, .. } if spec.engine_key == "ir_file" => {
+                    ir_file.clone()
+                }
+                _ => String::new(),
+            };
+            file_paths.insert(i, path);
+        }
+    }
+
     render_auto_layout(AutoLayoutInput {
         entity,
         plugin_idx,
         params,
         values,
+        file_paths,
         is_editing,
         selected_param,
         active_tab,

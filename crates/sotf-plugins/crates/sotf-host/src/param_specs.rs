@@ -758,7 +758,20 @@ pub mod limiter {
 // Delay Plugin
 // ============================================================================
 
-pub mod delay {}
+pub mod delay {
+    use super::ParamSpec;
+    pub const PARAMS: &[ParamSpec] = &[
+        ParamSpec::float(
+            "Delay", "delay_ms", 100.0, 0.0, 5000.0, 1.0, "ms", "General",
+        ),
+        ParamSpec::float(
+            "Feedback", "feedback", 0.3, -0.95, 0.95, 0.01, "", "General",
+        ),
+        ParamSpec::float("Mix", "mix", 0.5, 0.0, 1.0, 0.01, "%", "General")
+            .scaled(100.0)
+            .output(),
+    ];
+}
 
 // ============================================================================
 // Loudness Compensation Plugin

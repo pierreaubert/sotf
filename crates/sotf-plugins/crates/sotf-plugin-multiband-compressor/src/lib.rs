@@ -965,4 +965,85 @@ mod tests {
         .unwrap();
         assert!(b[999].is_finite());
     }
+
+    /// Unity passthrough: with ratio 1:1 on all bands (no compression),
+    /// the crossover should reconstruct the signal without significant loss.
+    #[test]
+    fn test_mb_comp_crossover_reconstruction() {
+        let mut params = MultibandCompressorPluginParams::default();
+        params.num_bands = 3;
+        for band in &mut params.bands {
+            band.ratio = Some(1.0); // no compression
+        }
+        let mut p = MultibandCompressorPlugin::with_params(1, params);
+        p.initialize(48000).unwrap();
+
+        // Generate test signal (broadband)
+        let nf = 4800;
+        let mut input = Vec::with_capacity(nf);
+        for i in 0..nf {
+            input.push(0.3 * (i as f32 * 0.1).sin() + 0.1 * (i as f32 * 0.5).sin());
+        }
+        let mut output = input.clone();
+        p.process_in_place(
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
+
+        // After crossover filter settling, RMS should be close to input
+        let half = nf / 2;
+        let rms_in: f32 =
+            (input[half..].iter().map(|s| s * s).sum::<f32>() / (nf - half) as f32).sqrt();
+        let rms_out: f32 =
+            (output[half..].iter().map(|s| s * s).sum::<f32>() / (nf - half) as f32).sqrt();
+        let ratio = rms_out / rms_in;
+        assert!(
+            (0.7..1.3).contains(&ratio),
+            "With ratio=1 (no compression), crossover should reconstruct signal. \
+             RMS ratio={ratio:.3} (in={rms_in:.4}, out={rms_out:.4})"
+        );
+    }
+
+    /// Verify compression actually reduces loud signals.
+    #[test]
+    fn test_mb_comp_reduces_loud_signal() {
+        let mut p = MultibandCompressorPlugin::new(1);
+        p.initialize(48000).unwrap();
+
+        // Set low threshold to ensure compression, and mix=1.0 for wet-only
+        p.set_parameter(
+            ParameterId::from("threshold"),
+            ParameterValue::Float(-30.0),
+        )
+        .unwrap();
+        p.set_parameter(ParameterId::from("ratio"), ParameterValue::Float(8.0))
+            .unwrap();
+        p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))
+            .unwrap();
+
+        // Process enough to let smoothers settle (200ms)
+        let nf = 9600;
+        let input_val = 0.5f32; // -6 dBFS
+        let mut b = vec![input_val; nf];
+        p.process_in_place(
+            &mut b,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: nf,
+            },
+        )
+        .unwrap();
+
+        // After settling, output should be quieter than input
+        let rms_out: f32 =
+            (b[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        assert!(
+            rms_out < input_val * 0.9,
+            "Multiband compressor should reduce loud signal, but RMS {rms_out:.4} ≈ input {input_val}"
+        );
+    }
 }

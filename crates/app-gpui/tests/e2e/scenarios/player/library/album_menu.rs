@@ -11,6 +11,7 @@ use crate::runner::{E2ERunner, TestScenario};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use sotf_audio_player::{Album, Track};
 use sotf_audio_player_gpui::app::{ContextMenuState, ContextMenuType, Screen};
+use sotf_audio_player_gpui::InputMode;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
@@ -33,7 +34,11 @@ impl TestScenario for AlbumContextMenuScenario {
             id: Some(1),
             title: "Test Album".to_string(),
             year: Some(2024),
-            tracks: vec![],
+            tracks: vec![Track {
+                path: std::path::PathBuf::from("/test/track.flac"),
+                title: Some("Test Track".to_string()),
+                ..Default::default()
+            }],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
@@ -93,23 +98,25 @@ impl TestScenario for AlbumContextMenuScenario {
             return Err("Menu type should be Album".into());
         }
 
-        // ===== Test 2: "Add to Queue" adds album to queue =====
-        // Close context menu first
+        // ===== Test 2: Click "Add to Queue" from context menu =====
+        // Instead of directly calling the function, simulate what happens when
+        // user clicks the "Add to Queue" menu item in the context menu
+        // This is what the UI does when menu item is selected
         driver.update_app(|app, _| {
+            // Simulate clicking "Add to Queue" - same as on_select handler
             app.ui_state.context_menu = None;
-        });
-
-        // Now trigger add_album_to_queue (simulates clicking "Add to Queue")
-        driver.update_app(|app, _| {
-            app.library_state.selected_index = 0;
-            app.add_album_to_queue();
+            app.ui_state.input_mode = InputMode::Normal;
+            if let Some(path) = app.add_album_to_queue() {
+                // In real UI, this would call PlayerView::play_track(state, path)
+                // But we just need to verify queue was added
+            }
         });
         driver.run_until_parked();
 
         // Verify album was added to queue
         let queue_len = driver.read_app(|app| app.queue.len());
         if queue_len == 0 {
-            return Err("Album should be added to queue".into());
+            return Err("Album should be added to queue via context menu".into());
         }
 
         // ===== Test 3: Verify queue has album =====
@@ -124,12 +131,7 @@ impl TestScenario for AlbumContextMenuScenario {
         }
         println!("Queue has albums: {:?}", queue_tracks);
 
-        // ===== Test 4: Playback started (add_album_to_queue starts if not playing) =====
-        let is_playing = driver.read_app(|app| app.playback.is_playing);
-        // Note: add_album_to_queue starts playing if queue was empty
-        println!("After add_album_to_queue, is_playing: {}", is_playing);
-
-        // ===== Test 5: Clear queue and test play_album_now =====
+        // ===== Test 4: Clear queue and test Play Now via context menu flow =====
         driver.update_app(|app, _| {
             app.queue.clear();
             app.expanded_queue_items.clear();
@@ -138,10 +140,25 @@ impl TestScenario for AlbumContextMenuScenario {
         });
         driver.run_until_parked();
 
-        // Trigger play_album_now (simulates clicking "Play Now")
+        // Open context menu first
         driver.update_app(|app, _| {
-            app.library_state.selected_index = 0;
-            app.play_album_now();
+            app.ui_state.context_menu = Some(ContextMenuState {
+                menu_type: ContextMenuType::Album,
+                position_x: 100.0,
+                position_y: 100.0,
+                item_index: 0,
+            });
+            app.ui_state.input_mode = InputMode::ContextMenu;
+        });
+        driver.run_until_parked();
+
+        // Simulate clicking "Play Now" menu item (same as on_select handler)
+        driver.update_app(|app, _| {
+            app.ui_state.context_menu = None;
+            app.ui_state.input_mode = InputMode::Normal;
+            if let Some(path) = app.play_album_now() {
+                // In real UI, this would call PlayerView::play_track(state, path)
+            }
         });
         driver.run_until_parked();
 

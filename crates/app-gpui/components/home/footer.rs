@@ -462,9 +462,10 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_1()
+            .gap_2()
             .pt_2()
-            .pb_0()
+            .pb_2()
+            .justify_around()
             .flex_1()
             .max_w(rems(37.5))
             // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges
@@ -658,7 +659,7 @@ impl PlayerView {
                     div()
                         .id("waveform-bar")
                         .w_full()
-                        .h(rems(2.5))
+                        .h(rems(2.0))
                         .cursor_pointer()
                         .on_mouse_down(
                             MouseButton::Left,
@@ -883,7 +884,8 @@ impl PlayerView {
             .bottom(rems(FOOTER_HEIGHT_REMS)) // Positioned above the footer
             .right(rems(0.625))
             .w(rems(15.625))
-            .max_h(rems(18.75))
+            .h(rems(30.0))  // Fixed height for up to ~20 devices
+            .min_h(rems(5.0))
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)
@@ -930,7 +932,7 @@ impl PlayerView {
                             )
                             .child(
                                 div()
-                                    .text_sm()
+                                    .text_2xl()
                                     .text_color(theme_header.text_muted)
                                     .child("⟳"),
                             ),

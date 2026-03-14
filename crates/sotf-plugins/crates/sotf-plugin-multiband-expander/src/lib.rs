@@ -978,9 +978,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                     };
 
                     let c = if target > bexp.envelope[ch] {
-                        bexp.release_coeff
-                    } else {
                         bexp.attack_coeff
+                    } else {
+                        bexp.release_coeff
                     };
                     bexp.envelope[ch] = target + c * (bexp.envelope[ch] - target);
                     self.band_buffers[idx] *=
@@ -1049,5 +1049,129 @@ mod tests {
         )
         .unwrap();
         assert!(b[999].is_finite());
+    }
+
+    /// Regression: attack/release coefficients were swapped in per-band processing.
+    /// With fast attack and slow release, quiet signals below threshold should be
+    /// attenuated quickly (gate closes fast).
+    #[test]
+    fn test_mb_expander_attack_release_not_swapped() {
+        let mut params = MultibandExpanderPluginParams::default();
+        params.num_bands = 2;
+        params.mix = 1.0; // wet-only to observe expansion effect
+        params.range_db = 60.0; // allow up to 60 dB of expansion attenuation
+        params.bands = vec![
+            BandExpanderParams {
+                threshold_db: Some(-20.0),
+                ratio: Some(10.0),
+                attack_ms: Some(1.0),
+                release_ms: Some(200.0),
+                hold_ms: Some(0.0),
+                hysteresis_db: Some(0.0),
+                range_db: Some(60.0),
+                ..Default::default()
+            },
+            BandExpanderParams {
+                threshold_db: Some(-20.0),
+                ratio: Some(10.0),
+                attack_ms: Some(1.0),
+                release_ms: Some(200.0),
+                hold_ms: Some(0.0),
+                hysteresis_db: Some(0.0),
+                range_db: Some(60.0),
+                ..Default::default()
+            },
+        ];
+        let mut p = MultibandExpanderPlugin::with_params(1, params);
+        p.initialize(48000).unwrap();
+
+        // Feed loud broadband signal to open gates
+        let mut loud = Vec::with_capacity(9600);
+        for i in 0..9600 {
+            loud.push(0.5 * (i as f32 * 0.3).sin());
+        }
+        p.process_in_place(
+            &mut loud,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 9600,
+            },
+        )
+        .unwrap();
+
+        // Feed quiet broadband signal — gates should close fast with 1ms attack
+        let quiet_peak = 0.001f32;
+        let mut quiet = Vec::with_capacity(2400);
+        for i in 0..2400 {
+            quiet.push(quiet_peak * (i as f32 * 0.3).sin());
+        }
+        let quiet_rms_in: f32 =
+            (quiet.iter().map(|s| s * s).sum::<f32>() / quiet.len() as f32).sqrt();
+        p.process_in_place(
+            &mut quiet,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 2400,
+            },
+        )
+        .unwrap();
+
+        // After 50ms with 1ms attack (and 0ms hold), the signal should be attenuated.
+        let quiet_rms_out: f32 = (quiet[1200..]
+            .iter()
+            .map(|s| s * s)
+            .sum::<f32>()
+            / (quiet.len() - 1200) as f32)
+            .sqrt();
+        assert!(
+            quiet_rms_out < quiet_rms_in * 0.8,
+            "Multiband expander gate should close fast with 1ms attack, \
+             but RMS out {quiet_rms_out:.6} is too close to RMS in {quiet_rms_in:.6}. \
+             Attack/release coefficients may be swapped."
+        );
+    }
+
+    /// Unity passthrough: with threshold at minimum and ratio 1:1,
+    /// the expander should not alter the signal significantly.
+    #[test]
+    fn test_mb_expander_unity_passthrough() {
+        let mut params = MultibandExpanderPluginParams::default();
+        params.num_bands = 3;
+        for band in &mut params.bands {
+            band.ratio = Some(1.0); // no expansion
+        }
+        let mut p = MultibandExpanderPlugin::with_params(2, params);
+        p.initialize(48000).unwrap();
+
+        // Generate test signal
+        let mut input = vec![0.0f32; 4800 * 2];
+        for i in 0..4800 {
+            let val = 0.3 * (i as f32 * 0.05).sin();
+            input[i * 2] = val;
+            input[i * 2 + 1] = val;
+        }
+        let mut output = input.clone();
+        p.process_in_place(
+            &mut output,
+            &ProcessContext {
+                sample_rate: 48000,
+                num_frames: 4800,
+            },
+        )
+        .unwrap();
+
+        // After settling (crossover filter delay), output should be close to input.
+        // Allow for crossover phase shift but RMS should be similar.
+        let rms_in: f32 = (input[2400..].iter().map(|s| s * s).sum::<f32>()
+            / (input.len() - 2400) as f32)
+            .sqrt();
+        let rms_out: f32 = (output[2400..].iter().map(|s| s * s).sum::<f32>()
+            / (output.len() - 2400) as f32)
+            .sqrt();
+        let ratio = rms_out / rms_in;
+        assert!(
+            (0.7..1.3).contains(&ratio),
+            "Unity ratio (1:1) should pass through, but RMS ratio is {ratio:.3}"
+        );
     }
 }

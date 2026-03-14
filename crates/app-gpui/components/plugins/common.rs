@@ -10,8 +10,8 @@ use gpui_ui_kit::{
     VerticalSliderTheme,
 };
 pub use sotf_audio_player::param_index_to_engine_param;
-use sotf_audio_player_midi::PhysicalControlKind;
 use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
+use sotf_audio_player_midi::PhysicalControlKind;
 
 /// Render a parameter row with name and value
 pub fn render_param_row(
@@ -708,7 +708,6 @@ pub fn render_transfer_curve_with_level(
     div()
         .flex()
         .flex_col()
-        .flex_1()
         .gap_2()
         // Title
         .child(
@@ -723,8 +722,7 @@ pub fn render_transfer_curve_with_level(
         .child(
             div()
                 .w(px(curve_width))
-                .flex_1()
-                .min_h(px(120.0))
+                .h(px(120.0))
                 .bg(theme.background)
                 .rounded_lg()
                 .border_1()
@@ -752,22 +750,23 @@ pub fn render_transfer_curve_with_level(
                         .bg(Theme::opacity_20pct(theme.warning))
                 })),
         )
-        // Axis labels
+        // X-axis labels (Input levels)
         .child(
             div()
                 .flex()
                 .justify_between()
+                .w_full()
                 .text_xs()
                 .text_color(theme.text_muted)
                 .child("-60 dB")
-                .child("Input")
                 .child("0 dB"),
         )
-        // Y-axis label
+        // Y-axis label (Output - rotated vertically)
         .child(
             div()
                 .flex()
-                .justify_between()
+                .items_center()
+                .h(px(80.0))
                 .text_xs()
                 .text_color(theme.text_muted)
                 .child("Output"),

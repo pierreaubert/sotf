@@ -1,5 +1,5 @@
 use sotf_host::Plugin;
-use sotf_host::{CountingAlloc, generate_dc, measure_peak_db, run_standard_tests};
+use sotf_host::{CountingAlloc, run_standard_tests};
 use sotf_plugin_pnd::PndPlugin;
 
 #[global_allocator]

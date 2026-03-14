@@ -123,118 +123,116 @@ pub fn render_compressor_plugin(
         theme,
     );
 
-    let sliders = div()
+    // Restructure center: (Dynamics + Transfer Curve) column + Timing column, centered
+    let dynamics_col = div()
         .flex()
-        .gap_4()
-        // Dynamics: Threshold, Ratio, Knee
+        .flex_col()
+        .gap_1()
+        .child(render_section_title("DYNAMIC", theme))
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("DYNAMIC", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Threshold",
-                            state.threshold_db,
-                            pk(CP, "threshold").min_f64(),
-                            pk(CP, "threshold").max_f64(),
-                            "dB",
-                            0,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('t'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Ratio",
-                            state.ratio,
-                            pk(CP, "ratio").min_f64(),
-                            pk(CP, "ratio").max_f64(),
-                            ":1",
-                            1,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('r'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Knee",
-                            state.knee_db,
-                            pk(CP, "knee").min_f64(),
-                            pk(CP, "knee").max_f64(),
-                            "dB",
-                            4,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('k'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        )),
-                ),
+                .gap_2()
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Threshold",
+                    state.threshold_db,
+                    pk(CP, "threshold").min_f64(),
+                    pk(CP, "threshold").max_f64(),
+                    "dB",
+                    0,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('t'),
+                    SLIDER_HEIGHT,
+                    theme,
+                ))
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Ratio",
+                    state.ratio,
+                    pk(CP, "ratio").min_f64(),
+                    pk(CP, "ratio").max_f64(),
+                    ":1",
+                    1,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('r'),
+                    SLIDER_HEIGHT,
+                    theme,
+                ))
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Knee",
+                    state.knee_db,
+                    pk(CP, "knee").min_f64(),
+                    pk(CP, "knee").max_f64(),
+                    "dB",
+                    4,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('k'),
+                    SLIDER_HEIGHT,
+                    theme,
+                )),
         )
-        // Timing: Attack, Release
+        .child(transfer_curve);
+
+    let timing_col = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(render_section_title("TIMING", theme))
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_1()
-                .child(render_section_title("TIMING", theme))
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Attack",
-                            state.attack_ms,
-                            pk(CP, "attack").min_f64(),
-                            pk(CP, "attack").max_f64(),
-                            "ms",
-                            2,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('a'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        ))
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Release",
-                            state.release_ms,
-                            pk(CP, "release").min_f64(),
-                            pk(CP, "release").max_f64(),
-                            "ms",
-                            3,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('e'),
-                            SLIDER_HEIGHT,
-                            theme,
-                        )),
-                ),
+                .gap_2()
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Attack",
+                    state.attack_ms,
+                    pk(CP, "attack").min_f64(),
+                    pk(CP, "attack").max_f64(),
+                    "ms",
+                    2,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('a'),
+                    SLIDER_HEIGHT,
+                    theme,
+                ))
+                .child(render_vertical_slider_with_ticks(
+                    entity.clone(),
+                    plugin_idx,
+                    "Release",
+                    state.release_ms,
+                    pk(CP, "release").min_f64(),
+                    pk(CP, "release").max_f64(),
+                    "ms",
+                    3,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('e'),
+                    SLIDER_HEIGHT,
+                    theme,
+                )),
         );
 
     let center_col = div()
-        .flex()
-        .flex_col()
         .flex_1()
-        .gap_3()
-        .child(sliders)
-        .child(transfer_curve);
+        .flex()
+        .justify_center()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(dynamics_col)
+                .child(timing_col),
+        );
 
     // === RIGHT COLUMN: Output (GR Meter + controls) ===
     let right_col = div()

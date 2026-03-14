@@ -1540,7 +1540,7 @@ impl PlayerView {
                 }
             } else {
                 // No EQ plugin exists, add one before monitoring plugins
-                let insert_idx = plugin_chain.find_processing_insert_index();
+                let insert_idx = plugin_chain.user_plugin_insert_index();
                 plugin_chain.insert_plugin(insert_idx, &sotf_audio_player::PluginType::EQ);
 
                 // Configure the newly inserted plugin

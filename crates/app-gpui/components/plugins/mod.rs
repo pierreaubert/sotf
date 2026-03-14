@@ -471,6 +471,7 @@ pub fn render_plugin_content(
             mix,
             link_channels,
             sidechain_hpf_hz,
+            auto_makeup,
         } => render_expander_plugin(
             entity.clone(),
             plugin_idx,
@@ -484,6 +485,7 @@ pub fn render_plugin_content(
                 hysteresis_db: *hysteresis_db,
                 hold_ms: *hold_ms,
                 mix: *mix,
+                auto_makeup: *auto_makeup,
                 link_channels: *link_channels,
                 sidechain_hpf_hz: *sidechain_hpf_hz,
                 is_editing,
@@ -519,6 +521,8 @@ pub fn render_plugin_content(
                 disp_release,
                 disp_knee,
                 disp_makeup,
+                disp_auto_makeup,
+                disp_active,
                 disp_solo,
                 disp_bypass,
             ) = if selected_band_idx > 0 {
@@ -530,6 +534,8 @@ pub fn render_plugin_content(
                     b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
                     b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
                     b.makeup_gain_db as f64,
+                    b.auto_makeup,
+                    b.active,
                     b.solo,
                     b.bypass,
                 )
@@ -541,6 +547,8 @@ pub fn render_plugin_content(
                     *release_ms,
                     *knee_db,
                     0.0,
+                    false,
+                    true,
                     false,
                     false,
                 )
@@ -562,6 +570,8 @@ pub fn render_plugin_content(
                     release_ms: disp_release,
                     knee_db: disp_knee,
                     makeup_gain_db: disp_makeup,
+                    auto_makeup: disp_auto_makeup,
+                    active: disp_active,
                     solo: disp_solo,
                     bypass: disp_bypass,
                     mix: *mix,
@@ -606,6 +616,8 @@ pub fn render_plugin_content(
                 disp_knee,
                 disp_hysteresis,
                 disp_hold,
+                disp_auto_makeup,
+                disp_active,
                 disp_solo,
                 disp_bypass,
             ) = if selected_band_idx > 0 {
@@ -619,6 +631,8 @@ pub fn render_plugin_content(
                     b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
                     b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
                     b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
+                    b.auto_makeup,
+                    b.active,
                     b.solo,
                     b.bypass,
                 )
@@ -632,6 +646,8 @@ pub fn render_plugin_content(
                     *knee_db,
                     *hysteresis_db,
                     *hold_ms,
+                    false,
+                    true,
                     false,
                     false,
                 )
@@ -655,6 +671,8 @@ pub fn render_plugin_content(
                     knee_db: disp_knee,
                     hysteresis_db: disp_hysteresis,
                     hold_ms: disp_hold,
+                    auto_makeup: disp_auto_makeup,
+                    active: disp_active,
                     solo: disp_solo,
                     bypass: disp_bypass,
                     mix: *mix,
@@ -731,16 +749,91 @@ pub fn render_plugin_content(
             theme,
         )
         .into_any_element(),
-        PluginSettings::Denoiser { .. } => render_plugin_auto(
-            entity.clone(),
-            plugin_idx,
-            settings,
-            is_editing,
-            selected_param,
-            auto_tab,
-            theme,
-        )
-        .into_any_element(),
+        PluginSettings::Denoiser { .. } => {
+            if let PluginSettings::Denoiser {
+                reduction_db,
+                floor_db,
+                smoothing,
+                attack_ms,
+                release_ms,
+                low_latency,
+                polyphonic_detection,
+                crack_sensitivity,
+                mcra_alpha_s,
+                mcra_alpha_p,
+                mcra_l,
+                mcra_delta,
+                transparency,
+                dd_enabled,
+                dd_alpha,
+                psychoacoustic_masking,
+                transient_enabled,
+                spectral_smoothing_enabled,
+                temporal_smoothing_enabled,
+                hiss_enabled,
+                hiss_threshold_db,
+                hiss_frequency_hz,
+                hiss_strength,
+                spectral_sub_enabled,
+                spectral_sub_alpha,
+                spectral_sub_beta,
+                learn_noise,
+                use_captured_profile,
+                clear_profile,
+            } = settings
+            {
+                render_denoiser_plugin(
+                    entity.clone(),
+                    plugin_idx,
+                    ui_denoiser::DenoiserRenderState {
+                        reduction_db: *reduction_db,
+                        floor_db: *floor_db,
+                        smoothing: *smoothing,
+                        attack_ms: *attack_ms,
+                        release_ms: *release_ms,
+                        low_latency: *low_latency,
+                        polyphonic_detection: *polyphonic_detection,
+                        crack_sensitivity: *crack_sensitivity,
+                        mcra_alpha_s: *mcra_alpha_s,
+                        mcra_alpha_p: *mcra_alpha_p,
+                        mcra_l: *mcra_l,
+                        mcra_delta: *mcra_delta,
+                        transparency: *transparency,
+                        dd_enabled: *dd_enabled,
+                        dd_alpha: *dd_alpha,
+                        psychoacoustic_masking: *psychoacoustic_masking,
+                        transient_enabled: *transient_enabled,
+                        spectral_smoothing_enabled: *spectral_smoothing_enabled,
+                        temporal_smoothing_enabled: *temporal_smoothing_enabled,
+                        hiss_enabled: *hiss_enabled,
+                        hiss_threshold_db: *hiss_threshold_db,
+                        hiss_frequency_hz: *hiss_frequency_hz,
+                        hiss_strength: *hiss_strength,
+                        spectral_sub_enabled: *spectral_sub_enabled,
+                        spectral_sub_alpha: *spectral_sub_alpha,
+                        spectral_sub_beta: *spectral_sub_beta,
+                        learn_noise: *learn_noise,
+                        use_captured_profile: *use_captured_profile,
+                        clear_profile: *clear_profile,
+                        is_editing,
+                        selected_param,
+                    },
+                    theme,
+                )
+                .into_any_element()
+            } else {
+                render_plugin_auto(
+                    entity.clone(),
+                    plugin_idx,
+                    settings,
+                    is_editing,
+                    selected_param,
+                    auto_tab,
+                    theme,
+                )
+                .into_any_element()
+            }
+        }
         PluginSettings::Pnd { .. } => render_plugin_auto(
             entity.clone(),
             plugin_idx,
@@ -765,9 +858,11 @@ pub fn render_plugin_content(
             path_b_config,
             ..
         } => {
-            // Read dropdown states from plugin state
+            // Read dropdown states and file paths from plugin state
             let app_state = entity.read(cx);
             let ab_dropdowns = app_state.app.plugin_state.ab_compare_dropdowns;
+            let file_a = app_state.app.plugin_state.ab_compare_file_a.clone();
+            let file_b = app_state.app.plugin_state.ab_compare_file_b.clone();
             let _ = app_state;
 
             render_ab_compare_plugin(
@@ -789,6 +884,8 @@ pub fn render_plugin_content(
                     selected_param,
                     path_a_select_open: ab_dropdowns.path_a_open,
                     path_b_select_open: ab_dropdowns.path_b_open,
+                    file_a: &file_a,
+                    file_b: &file_b,
                 },
                 theme,
             )
@@ -835,7 +932,47 @@ pub fn render_plugin_content(
         )
         .into_any_element(),
 
-        PluginSettings::Crossfeed { .. } => render_plugin_auto(
+        PluginSettings::Crossfeed {
+            mode,
+            mix,
+            bauer_fcut_hz,
+            bauer_feed_db,
+            meier_level,
+            mb_low_freq_hz,
+            mb_mid_high_freq_hz,
+            mb_low_feed_db,
+            mb_mid_feed_db,
+            mb_high_feed_db,
+            autogain_enabled,
+            autogain_target_lufs,
+            autogain_max_gain_db,
+            autogain_smoothing_ms,
+            ..
+        } => render_crossfeed_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_crossfeed::CrossfeedRenderState {
+                mode: *mode,
+                mix: *mix,
+                bauer_fcut_hz: *bauer_fcut_hz,
+                bauer_feed_db: *bauer_feed_db,
+                meier_level: *meier_level,
+                mb_low_freq_hz: *mb_low_freq_hz,
+                mb_mid_high_freq_hz: *mb_mid_high_freq_hz,
+                mb_low_feed_db: *mb_low_feed_db,
+                mb_mid_feed_db: *mb_mid_feed_db,
+                mb_high_feed_db: *mb_high_feed_db,
+                autogain_enabled: *autogain_enabled,
+                autogain_target_lufs: *autogain_target_lufs,
+                autogain_max_gain_db: *autogain_max_gain_db,
+                autogain_smoothing_ms: *autogain_smoothing_ms,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
+        PluginSettings::Delay { .. } => render_plugin_auto(
             entity.clone(),
             plugin_idx,
             settings,
