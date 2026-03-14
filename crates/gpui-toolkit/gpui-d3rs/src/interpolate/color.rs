@@ -23,14 +23,11 @@ use std::f64::consts::PI;
 /// assert!((purple.b - 0.5).abs() < 0.01);
 /// ```
 pub fn interpolate_rgb(a: D3Color, b: D3Color) -> impl Fn(f64) -> D3Color {
-    move |t| {
-        let t = t as f32;
-        D3Color {
-            r: a.r + (b.r - a.r) * t,
-            g: a.g + (b.g - a.g) * t,
-            b: a.b + (b.b - a.b) * t,
-            a: a.a + (b.a - a.a) * t,
-        }
+    move |t| D3Color {
+        r: (a.r as f64 + (b.r as f64 - a.r as f64) * t) as f32,
+        g: (a.g as f64 + (b.g as f64 - a.g as f64) * t) as f32,
+        b: (a.b as f64 + (b.b as f64 - a.b as f64) * t) as f32,
+        a: (a.a as f64 + (b.a as f64 - a.a as f64) * t) as f32,
     }
 }
 

@@ -183,20 +183,27 @@ impl Force for ForceManyBody {
                 let mut l2 = dx * dx + dy * dy;
 
                 if l2 == 0.0 {
-                    l2 = 1.0; // Avoid division by zero, should use random jiggle
+                    l2 = 1e-6; // Small epsilon to avoid division by zero
                 }
 
-                let w = self.strength * alpha / l2;
-                // Ideally should use distance bounds, etc.
-
                 let l = l2.sqrt();
-                // Apply force
+                // Correct Coulomb force: F = strength * alpha / l²
+                // Direction is (dx/l, dy/l), so force components are:
+                // dx/l * strength * alpha / l² = dx * strength * alpha / l³
+                // But for many-body we want: strength * alpha / l²
+                let w = self.strength * alpha / l2;
 
-                node_i.vx += dx / l * w;
-                node_i.vy += dy / l * w;
+                // Apply force: F = w * (dx/l, dy/l) = w * (dx, dy) / l
+                // This gives: dx * strength * alpha / (l² * l) = dx * strength * alpha / l³
+                // For correct Coulomb: dx * strength * alpha / l², we need dx * w / l
+                let force_x = dx * w / l;
+                let force_y = dy * w / l;
 
-                node_j.vx -= dx / l * w;
-                node_j.vy -= dy / l * w;
+                node_i.vx += force_x;
+                node_i.vy += force_y;
+
+                node_j.vx -= force_x;
+                node_j.vy -= force_y;
             }
         }
     }
