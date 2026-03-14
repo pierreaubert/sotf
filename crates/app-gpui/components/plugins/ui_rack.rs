@@ -288,7 +288,8 @@ impl PlayerView {
                             }
                             DividerType::OutputMeter => {
                                 // Dragging left increases output meter width
-                                let new_width = (drag.start_width - delta_x).clamp(60.0, 300.0);
+                                // Allow expanding to fit all channels — no fixed upper bound
+                                let new_width = (drag.start_width - delta_x).max(60.0);
                                 state.app.output_meter_width = new_width;
                             }
                         }
@@ -1863,16 +1864,20 @@ impl PlayerView {
                             }
                         }
                     }
-                    // Compute minimum meter width:
-                    // Input: 2ch (L/R) ~30px + legend ~16px + output groups
-                    // Each output channel: ~14px meter + spacing
-                    // Each group: ~20px for M/S/D buttons + gap
+                    // Compute minimum meter width based on actual element sizes:
+                    // Each meter bar: 1rem (16px) + 1px gap between bars
+                    // Each group: 2×2px padding (p_0p5) = 4px
+                    // Legend: ~16px
+                    // Input group: 2 bars (L/R) = 2×16 + 1 gap + 4 padding = 37px
                     let num_output_groups = state.app.level_meter_groups.len();
-                    // Each meter bar is 1rem (16px) + 1px gap; each group has ~4px padding + 4px gap
-                    let min_meter_width = 40.0 // input L/R (2 bars + padding)
-                        + (output_channels as f32 * 10.0) // meter bars + gaps
-                        + (num_output_groups as f32 * 8.0) // group padding + gaps
-                        + 16.0; // outer padding
+                    let meter_bar_width: f32 = 16.0; // 1rem
+                    let bar_gap: f32 = 1.0; // gap_px()
+                    let group_padding: f32 = 4.0; // p_0p5 = 2px each side
+                    let legend_width: f32 = 16.0;
+                    let input_width: f32 = 2.0 * meter_bar_width + bar_gap + group_padding;
+                    let output_width: f32 = output_channels as f32 * (meter_bar_width + bar_gap)
+                        + num_output_groups as f32 * group_padding;
+                    let min_meter_width = input_width + legend_width + output_width + 8.0; // 8px outer margin
 
                     let divider_theme = PaneDividerTheme {
                         background: theme.background,
@@ -1884,9 +1889,14 @@ impl PlayerView {
                     };
 
                     let output_collapsed = state.app.output_meter_collapsed;
-                    // Auto-fit: use min_meter_width as the target size, allow user to expand but not beyond 2x
+                    // Auto-fit: default to min width, allow user to expand up to 2x
                     let max_meter_width = min_meter_width * 2.0;
-                    let output_meter_width = state.app.output_meter_width.clamp(min_meter_width, max_meter_width);
+                    // If stored width is below minimum (e.g. channel count increased), snap to min
+                    let output_meter_width = if state.app.output_meter_width < min_meter_width {
+                        min_meter_width
+                    } else {
+                        state.app.output_meter_width.min(max_meter_width)
+                    };
 
                     // Create state clones for divider callbacks
                     let state_for_output_toggle = self.state.clone();

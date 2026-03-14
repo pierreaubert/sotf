@@ -3,7 +3,7 @@
 //! Device selection, channel routing, and microphone calibration.
 
 use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, SpeakerConfiguration};
-use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
+use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -142,22 +142,24 @@ impl PlayerView {
 
     /// Render recording device content for accordion
     fn render_recording_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, num_channels, sample_rate) = {
+        let (theme, num_channels, sample_rate, max_input_channels) = {
             let state = self.state.read(cx);
+            let rec_config = &state.app.measurement_state.recording_state.recording_config;
+            let input_devices = &state.app.audio_device_state.input_devices;
+            // Find selected device, or fall back to first available device
+            let selected_device = input_devices
+                .iter()
+                .find(|d| d.name == rec_config.device_name)
+                .or_else(|| input_devices.first());
+            let max_ch = selected_device
+                .and_then(|d| d.default_config.as_ref())
+                .map(|c| c.channels as usize)
+                .unwrap_or(128);
             (
                 state.app.ui_state.theme.clone(),
-                state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .recording_config
-                    .num_channels,
-                state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .recording_config
-                    .sample_rate,
+                rec_config.num_channels,
+                rec_config.sample_rate,
+                max_ch,
             )
         };
         let view = cx.entity().clone();
@@ -191,9 +193,9 @@ impl PlayerView {
             .child({
                 let view = view.clone();
                 NumberInput::new("recording_channel_count")
-                    .value(num_channels as f64)
+                    .value(num_channels.min(max_input_channels) as f64)
                     .min(1.0)
-                    .max(128.0)
+                    .max(max_input_channels as f64)
                     .step(1.0)
                     .size(NumberInputSize::Xs)
                     .on_change({
@@ -237,71 +239,141 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
+        let num_channels = recording_state.recording_config.num_channels;
 
-        // Extract calibration data for the graph
-        let calibration_data = recording_state.mic_calibration_data.clone();
-        let calibration_path = recording_state.mic_calibration_path.clone();
-
-        VStack::new()
-            .spacing(StackSpacing::Sm)
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .align(StackAlign::Center)
-                    .child(
-                        Input::new("calibration_file")
-                            .placeholder("No calibration file loaded")
-                            .value(calibration_path.clone().unwrap_or_default())
-                            .size(InputSize::Sm)
-                            .disabled(true),
-                    )
-                    .child(
-                        Button::new("browse_calibration", "Browse...")
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
-                            .theme(theme.to_button_theme())
-                            .on_click({
-                                let view = view.clone();
-                                move |_, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.browse_calibration_file(cx);
-                                    });
-                                }
-                            }),
-                    )
-                    .when(calibration_path.is_some(), |stack| {
-                        let view = view.clone();
-                        let theme = theme.clone();
-                        stack.child(
-                            Button::new("clear_calibration", "Clear")
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Sm)
-                                .theme(theme.to_button_theme())
-                                .on_click({
-                                    move |_, cx| {
-                                        view.update(cx, |this, cx| {
-                                            this.state.update(cx, |state, _| {
-                                                state.app.measurement_state.recording_state.mic_calibration_path =
-                                                    None;
-                                                state.app.measurement_state.recording_state.mic_calibration_data =
-                                                    None;
-                                            });
-                                            cx.notify();
-                                        });
-                                    }
-                                }),
-                        )
-                    }),
-            )
-            .child(
-                Text::new("Load a microphone calibration file (CSV) to compensate for microphone frequency response")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
-            // Add calibration graph when data is available
-            .when_some(calibration_data, |stack, data| {
-                stack.child(Self::render_calibration_graph(&data, &theme))
+        // Collect per-channel paths and data
+        let channel_paths: Vec<Option<String>> = (0..num_channels)
+            .map(|i| {
+                recording_state
+                    .mic_calibration_paths
+                    .get(i)
+                    .cloned()
+                    .flatten()
             })
+            .collect();
+        let channel_data: Vec<Option<CalibrationData>> = (0..num_channels)
+            .map(|i| {
+                recording_state
+                    .mic_calibration_data_per_channel
+                    .get(i)
+                    .cloned()
+                    .flatten()
+            })
+            .collect();
+
+        let mut container = VStack::new().spacing(StackSpacing::Sm);
+
+        // Render one row per channel (ch used as index into multiple vecs and for element IDs)
+        #[allow(clippy::needless_range_loop)]
+        for ch in 0..num_channels {
+            let path = channel_paths[ch].clone();
+            let ch_view = view.clone();
+            let ch_theme = theme.clone();
+
+            let input_id = format!("calibration_file_{ch}");
+            let browse_id = format!("browse_calibration_{ch}");
+            let clear_id = format!("clear_calibration_{ch}");
+
+            let mut row = HStack::new()
+                .spacing(StackSpacing::Sm)
+                .align(StackAlign::Center);
+
+            // Show channel label only when multiple channels
+            if num_channels > 1 {
+                row = row.child(
+                    Text::new(format!("Channel {}:", ch + 1))
+                        .size(TextSize::Xs)
+                        .color(ch_theme.text_secondary),
+                );
+            }
+
+            row = row
+                .child(
+                    Input::new(gpui::SharedString::from(input_id))
+                        .placeholder("No calibration file loaded")
+                        .value(path.clone().unwrap_or_default())
+                        .size(InputSize::Sm)
+                        .disabled(true),
+                )
+                .child(
+                    Button::new(
+                        gpui::ElementId::from(gpui::SharedString::from(browse_id)),
+                        "Browse...",
+                    )
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Sm)
+                    .theme(ch_theme.to_button_theme())
+                    .on_click({
+                        let view = ch_view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.browse_calibration_file_for_channel(ch, cx);
+                            });
+                        }
+                    }),
+                );
+
+            if path.is_some() {
+                row = row.child(
+                    Button::new(
+                        gpui::ElementId::from(gpui::SharedString::from(clear_id)),
+                        "Clear",
+                    )
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Sm)
+                    .theme(ch_theme.to_button_theme())
+                    .on_click({
+                        let view = ch_view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let rs =
+                                        &mut state.app.measurement_state.recording_state;
+                                    if let Some(slot) = rs.mic_calibration_paths.get_mut(ch)
+                                    {
+                                        *slot = None;
+                                    }
+                                    if let Some(slot) =
+                                        rs.mic_calibration_data_per_channel.get_mut(ch)
+                                    {
+                                        *slot = None;
+                                    }
+                                    // Sync legacy fields from channel 0
+                                    if ch == 0 {
+                                        rs.mic_calibration_path = None;
+                                        rs.mic_calibration_data = None;
+                                    }
+                                });
+                                cx.notify();
+                            });
+                        }
+                    }),
+                );
+            }
+
+            container = container.child(row);
+        }
+
+        container = container.child(
+            Text::new(
+                "Load a microphone calibration file (CSV) to compensate for microphone frequency response",
+            )
+            .size(TextSize::Xs)
+            .color(theme.text_muted),
+        );
+
+        // Add calibration graph when any channel has data
+        let cal_entries: Vec<(usize, CalibrationData)> = channel_data
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, d)| d.map(|data| (i, data)))
+            .collect();
+        if !cal_entries.is_empty() {
+            container =
+                container.child(Self::render_calibration_graph_multi(&cal_entries, &theme));
+        }
+
+        container
     }
 
     /// Render output directory content for accordion
@@ -556,6 +628,26 @@ impl PlayerView {
                                     .recording_state
                                     .playback_config
                                     .available_sample_rates = device.available_sample_rates.clone();
+
+                                // Clamp playback channels to device max
+                                if let Some(max_ch) =
+                                    device.default_config.as_ref().map(|c| c.channels as usize)
+                                {
+                                    let pb = &mut state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .playback_config;
+                                    if pb.num_channels > max_ch {
+                                        // Truncate channel mappings to fit device
+                                        while pb.total_interface_channels() > max_ch
+                                            && !pb.channel_mappings.is_empty()
+                                        {
+                                            pb.channel_mappings.pop();
+                                        }
+                                        pb.sync_channel_count();
+                                    }
+                                }
                             }
                             state
                                 .app
@@ -658,8 +750,24 @@ impl PlayerView {
         let sample_rate = recording_state.playback_config.sample_rate;
         let view = cx.entity().clone();
 
+        // Determine max output channels from the selected device
+        let max_output_channels = state
+            .app
+            .audio_device_state
+            .output_devices
+            .iter()
+            .find(|d| d.name == recording_state.playback_config.device_name)
+            .and_then(|d| d.default_config.as_ref())
+            .map(|c| c.channels as usize)
+            .unwrap_or(128);
+
+        // Only show speaker configs that fit within the device's channel count
         let options: Vec<SelectOption> = SpeakerConfiguration::all()
             .iter()
+            .filter(|config| {
+                **config == SpeakerConfiguration::Custom
+                    || config.channel_count() <= max_output_channels
+            })
             .map(|config| SelectOption::new(config.as_str(), config.as_str()))
             .collect();
 
@@ -1429,6 +1537,23 @@ impl PlayerView {
                                     .recording_state
                                     .recording_config
                                     .available_sample_rates = device.available_sample_rates.clone();
+
+                                // Clamp channel count to device max
+                                if let Some(max_ch) =
+                                    device.default_config.as_ref().map(|c| c.channels as usize)
+                                {
+                                    let rec = &mut state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .recording_config;
+                                    if rec.num_channels > max_ch {
+                                        rec.num_channels = max_ch;
+                                        update_recording_channel_mappings(
+                                            &mut state.app.measurement_state.recording_state,
+                                        );
+                                    }
+                                }
                             }
                             state
                                 .app
@@ -1597,23 +1722,26 @@ impl PlayerView {
             .into_any_element()
     }
 
-    /// Render calibration data as a frequency response graph using gpui-px
-    fn render_calibration_graph(
-        data: &CalibrationData,
+    /// Render calibration data as a frequency response graph with multiple channel curves
+    fn render_calibration_graph_multi(
+        entries: &[(usize, CalibrationData)],
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
+        use crate::components::graphs::response_graphs::CHANNEL_COLORS;
+
         let chart_width: f32 = 500.0;
         let chart_height: f32 = 200.0;
 
-        // Find y-axis range (spl_db is f64)
-        let (min_db, max_db) = data
-            .spl_db
-            .iter()
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
-                (min.min(v), max.max(v))
-            });
+        // Find y-axis range across all channels
+        let (min_db, max_db) = entries.iter().fold(
+            (f64::INFINITY, f64::NEG_INFINITY),
+            |(min, max), (_, data)| {
+                data.spl_db
+                    .iter()
+                    .fold((min, max), |(min, max), &v| (min.min(v), max.max(v)))
+            },
+        );
 
-        // Add some padding to Y range
         let y_min = if min_db.is_finite() {
             min_db - 5.0
         } else {
@@ -1626,9 +1754,17 @@ impl PlayerView {
         };
 
         let chart_theme = theme_to_chart_theme(theme);
-        let stroke_color = rgba_to_u32(theme.text_primary);
 
-        let chart_element = line(&data.frequencies, &data.spl_db)
+        // Build chart from first channel as primary series
+        let (first_ch, first_data) = &entries[0];
+        let first_color = CHANNEL_COLORS[*first_ch % CHANNEL_COLORS.len()];
+        let first_label = if entries.len() == 1 {
+            "Calibration".to_string()
+        } else {
+            format!("Ch {}", first_ch + 1)
+        };
+
+        let mut builder = line(&first_data.frequencies, &first_data.spl_db)
             .x_scale(ScaleType::Log)
             .y_scale(ScaleType::Linear)
             .x_label("Frequency (Hz)")
@@ -1636,11 +1772,25 @@ impl PlayerView {
             .x_range(20.0, 20000.0)
             .y_range(y_min, y_max)
             .size(chart_width, chart_height)
-            .color(stroke_color)
+            .color(first_color)
             .stroke_width(2.0)
-            .label("Calibration")
-            .theme(chart_theme)
-            .build();
+            .label(first_label)
+            .theme(chart_theme);
+
+        // Add additional channels as extra series
+        for &(ch_idx, ref data) in &entries[1..] {
+            let color = CHANNEL_COLORS[ch_idx % CHANNEL_COLORS.len()];
+            builder = builder.add_series_with_x(
+                &data.frequencies,
+                &data.spl_db,
+                Some(format!("Ch {}", ch_idx + 1)),
+                color,
+                2.0,
+                1.0,
+            );
+        }
+
+        let chart_element = builder.build();
 
         div()
             .mt_4()
@@ -1665,14 +1815,15 @@ impl PlayerView {
             .into_any_element()
     }
 
-    /// Open file dialog to browse for calibration file
-    fn browse_calibration_file(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::CalibrationData;
-
+    /// Open file dialog to browse for calibration file for a specific channel
+    fn browse_calibration_file_for_channel(
+        &mut self,
+        channel_idx: usize,
+        cx: &mut Context<Self>,
+    ) {
         let state_entity = self.state.clone();
 
         cx.spawn(async move |_, cx| {
-            // Open file dialog
             let file = rfd::AsyncFileDialog::new()
                 .add_filter("CSV", &["csv", "txt"])
                 .add_filter("All files", &["*"])
@@ -1682,9 +1833,12 @@ impl PlayerView {
 
             if let Some(file) = file {
                 let path = file.path().to_string_lossy().to_string();
-                log::info!("Selected calibration file: {}", path);
+                log::info!(
+                    "Selected calibration file for channel {}: {}",
+                    channel_idx,
+                    path
+                );
 
-                // Read and parse the calibration file
                 let calibration_data = match std::fs::read_to_string(&path) {
                     Ok(content) => CalibrationData::parse(&content),
                     Err(e) => {
@@ -1703,16 +1857,25 @@ impl PlayerView {
                 }
 
                 state_entity.update(&mut cx.clone(), |state, _| {
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .mic_calibration_path = Some(path);
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .mic_calibration_data = calibration_data;
+                    let rs = &mut state.app.measurement_state.recording_state;
+
+                    // Grow vecs if needed
+                    while rs.mic_calibration_paths.len() <= channel_idx {
+                        rs.mic_calibration_paths.push(None);
+                    }
+                    while rs.mic_calibration_data_per_channel.len() <= channel_idx {
+                        rs.mic_calibration_data_per_channel.push(None);
+                    }
+
+                    rs.mic_calibration_paths[channel_idx] = Some(path.clone());
+                    rs.mic_calibration_data_per_channel[channel_idx] =
+                        calibration_data.clone();
+
+                    // Sync legacy fields from channel 0
+                    if channel_idx == 0 {
+                        rs.mic_calibration_path = Some(path);
+                        rs.mic_calibration_data = calibration_data;
+                    }
                 });
             }
         })
@@ -1720,7 +1883,7 @@ impl PlayerView {
     }
 }
 
-/// Update recording channel mappings when channel count changes
+/// Update recording channel mappings and calibration vecs when channel count changes
 fn update_recording_channel_mappings(state: &mut RecordingState) {
     let target_count = state.recording_config.num_channels;
     let current_count = state.recording_config.channel_mappings.len();
@@ -1737,6 +1900,19 @@ fn update_recording_channel_mappings(state: &mut RecordingState) {
             .channel_mappings
             .truncate(target_count);
     }
+
+    // Sync calibration vecs to match channel count
+    let cal_paths = &mut state.mic_calibration_paths;
+    while cal_paths.len() < target_count {
+        cal_paths.push(None);
+    }
+    cal_paths.truncate(target_count);
+
+    let cal_data = &mut state.mic_calibration_data_per_channel;
+    while cal_data.len() < target_count {
+        cal_data.push(None);
+    }
+    cal_data.truncate(target_count);
 }
 
 /// Renumber all interface channels sequentially across all speakers.

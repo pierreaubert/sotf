@@ -32,7 +32,9 @@ impl PlayerView {
                     ),
             )
             .child(self.render_signal_config_section(cx))
+            .child(self.render_channel_config_section(cx))
             .child(self.render_channel_status_section(cx))
+            .child(self.render_channel_metrics_section(cx))
             .child(self.render_capture_redo_actions(cx))
     }
 
@@ -40,140 +42,64 @@ impl PlayerView {
     fn render_signal_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let signal_level_db = state.app.measurement_state.recording_state.signal_level_db;
-        let signal_type = state.app.measurement_state.recording_state.signal_type;
-        let sweep_start_freq = state.app.measurement_state.recording_state.sweep_start_freq;
-        let sweep_end_freq = state.app.measurement_state.recording_state.sweep_end_freq;
         let _ = state;
 
-        let is_sweep = signal_type == RecordingSignalType::Sweep;
-
         Card::new().content(
-            VStack::new()
-                .spacing(StackSpacing::Sm)
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .align(StackAlign::Center)
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
                         .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .align(StackAlign::Center)
-                                .child(
-                                    Text::new("Signal Type:")
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold),
-                                )
-                                .child(self.render_signal_type_dropdown(cx)),
+                            Text::new("Signal Type:")
+                                .size(TextSize::Xs)
+                                .weight(TextWeight::Semibold),
                         )
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .align(StackAlign::Center)
-                                .child(
-                                    Text::new("Duration:")
-                                        .size(TextSize::Xs)
-                                        .weight(TextWeight::Semibold),
-                                )
-                                .child(self.render_duration_dropdown(cx)),
-                        )
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .align(StackAlign::Center)
-                                .child(Text::new("Level:").size(TextSize::Xs))
-                                .child({
-                                    let view = cx.entity().clone();
-                                    NumberInput::new("signal_level")
-                                        .value(signal_level_db as f64)
-                                        .min(-60.0)
-                                        .max(6.0)
-                                        .step(1.0)
-                                        .decimals(0)
-                                        .unit("dB")
-                                        .size(NumberInputSize::Xs)
-                                        .width(100.0)
-                                        .on_change(move |val, _window, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.state.update(cx, |state, _| {
-                                                    state
-                                                        .app
-                                                        .measurement_state
-                                                        .recording_state
-                                                        .signal_level_db = val as f32;
-                                                });
-                                                cx.notify();
-                                            });
-                                        })
-                                }),
-                        ),
+                        .child(self.render_signal_type_dropdown(cx)),
                 )
-                .when(is_sweep, |stack| {
-                    let view = cx.entity().clone();
-                    let view2 = cx.entity().clone();
-                    stack.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .align(StackAlign::Center)
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .align(StackAlign::Center)
-                                    .child(Text::new("Start Freq:").size(TextSize::Xs))
-                                    .child(
-                                        NumberInput::new("sweep_start_freq")
-                                            .value(sweep_start_freq as f64)
-                                            .min(1.0)
-                                            .max(20000.0)
-                                            .step(1.0)
-                                            .decimals(0)
-                                            .unit("Hz")
-                                            .size(NumberInputSize::Xs)
-                                            .width(100.0)
-                                            .on_change(move |val, _window, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state
-                                                            .app
-                                                            .measurement_state
-                                                            .recording_state
-                                                            .sweep_start_freq = val as f32;
-                                                    });
-                                                    cx.notify();
-                                                });
-                                            }),
-                                    ),
-                            )
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .align(StackAlign::Center)
-                                    .child(Text::new("End Freq:").size(TextSize::Xs))
-                                    .child(
-                                        NumberInput::new("sweep_end_freq")
-                                            .value(sweep_end_freq as f64)
-                                            .min(100.0)
-                                            .max(48000.0)
-                                            .step(100.0)
-                                            .decimals(0)
-                                            .unit("Hz")
-                                            .size(NumberInputSize::Xs)
-                                            .width(100.0)
-                                            .on_change(move |val, _window, cx| {
-                                                view2.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state
-                                                            .app
-                                                            .measurement_state
-                                                            .recording_state
-                                                            .sweep_end_freq = val as f32;
-                                                    });
-                                                    cx.notify();
-                                                });
-                                            }),
-                                    ),
-                            ),
-                    )
-                }),
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new("Duration:")
+                                .size(TextSize::Xs)
+                                .weight(TextWeight::Semibold),
+                        )
+                        .child(self.render_duration_dropdown(cx)),
+                )
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(Text::new("Level:").size(TextSize::Xs))
+                        .child({
+                            let view = cx.entity().clone();
+                            NumberInput::new("signal_level")
+                                .value(signal_level_db as f64)
+                                .min(-60.0)
+                                .max(6.0)
+                                .step(1.0)
+                                .decimals(0)
+                                .unit("dB")
+                                .size(NumberInputSize::Xs)
+                                .width(100.0)
+                                .on_change(move |val, _window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .signal_level_db = val as f32;
+                                        });
+                                        cx.notify();
+                                    });
+                                })
+                        }),
+                ),
         )
     }
 
@@ -291,6 +217,296 @@ impl PlayerView {
                     });
                 }
             })
+    }
+
+    /// Render per-channel sweep frequency configuration
+    fn render_channel_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let recording_state = &state.app.measurement_state.recording_state;
+        let is_sweep = recording_state.signal_type == RecordingSignalType::Sweep;
+
+        if !is_sweep || recording_state.channel_recordings.is_empty() {
+            return Card::new()
+                .content(
+                    Text::new("Frequency range configuration is only available for sweep signals")
+                        .size(TextSize::Xs)
+                        .color(theme.text_muted),
+                )
+                .into_any_element();
+        }
+
+        let channel_data: Vec<(usize, String, f32, f32)> = recording_state
+            .channel_recordings
+            .iter()
+            .enumerate()
+            .map(|(vec_idx, r)| {
+                (
+                    vec_idx,
+                    r.channel_name.clone(),
+                    r.sweep_start_freq,
+                    r.sweep_end_freq,
+                )
+            })
+            .collect();
+        let _ = state;
+        let view = cx.entity().clone();
+
+        Card::new()
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(
+                        Text::new("CHANNEL FREQUENCY RANGE")
+                            .size(TextSize::Xs)
+                            .weight(TextWeight::Bold)
+                            .color(theme.accent),
+                    )
+                    .children(channel_data.iter().map(
+                        |(idx, name, start_freq, end_freq)| {
+                            let idx = *idx;
+                            let view_start = view.clone();
+                            let view_end = view.clone();
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    div().w(px(100.0)).child(
+                                        Text::new(format!("{}:", name))
+                                            .size(TextSize::Xs)
+                                            .weight(TextWeight::Semibold)
+                                            .color(theme.text_primary),
+                                    ),
+                                )
+                                .child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .align(StackAlign::Center)
+                                        .child(
+                                            Text::new("Start:")
+                                                .size(TextSize::Xs)
+                                                .color(theme.text_secondary),
+                                        )
+                                        .child(
+                                            NumberInput::new(SharedString::from(format!(
+                                                "ch_start_freq_{idx}"
+                                            )))
+                                            .value(*start_freq as f64)
+                                            .min(1.0)
+                                            .max(20000.0)
+                                            .step(1.0)
+                                            .decimals(0)
+                                            .unit("Hz")
+                                            .size(NumberInputSize::Xs)
+                                            .width(90.0)
+                                            .on_change(move |val, _window, cx| {
+                                                view_start.update(cx, |this, cx| {
+                                                    this.state.update(cx, |state, _| {
+                                                        if let Some(rec) = state
+                                                            .app
+                                                            .measurement_state
+                                                            .recording_state
+                                                            .channel_recordings
+                                                            .get_mut(idx)
+                                                        {
+                                                            rec.sweep_start_freq = val as f32;
+                                                        }
+                                                    });
+                                                    cx.notify();
+                                                });
+                                            }),
+                                        ),
+                                )
+                                .child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .align(StackAlign::Center)
+                                        .child(
+                                            Text::new("End:")
+                                                .size(TextSize::Xs)
+                                                .color(theme.text_secondary),
+                                        )
+                                        .child(
+                                            NumberInput::new(SharedString::from(format!(
+                                                "ch_end_freq_{idx}"
+                                            )))
+                                            .value(*end_freq as f64)
+                                            .min(100.0)
+                                            .max(48000.0)
+                                            .step(100.0)
+                                            .decimals(0)
+                                            .unit("Hz")
+                                            .size(NumberInputSize::Xs)
+                                            .width(90.0)
+                                            .on_change(move |val, _window, cx| {
+                                                view_end.update(cx, |this, cx| {
+                                                    this.state.update(cx, |state, _| {
+                                                        if let Some(rec) = state
+                                                            .app
+                                                            .measurement_state
+                                                            .recording_state
+                                                            .channel_recordings
+                                                            .get_mut(idx)
+                                                        {
+                                                            rec.sweep_end_freq = val as f32;
+                                                        }
+                                                    });
+                                                    cx.notify();
+                                                });
+                                            }),
+                                        ),
+                                )
+                                .into_any_element()
+                        },
+                    )),
+            )
+            .into_any_element()
+    }
+
+    /// Render per-channel recording metrics (avg SPL and noise floor)
+    fn render_channel_metrics_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let recording_state = &state.app.measurement_state.recording_state;
+
+        // Collect metrics for channels that have results
+        let metrics: Vec<(String, usize, f32, f32)> = recording_state
+            .channel_recordings
+            .iter()
+            .filter_map(|rec| {
+                let result = rec.result.as_ref()?;
+                if result.frequencies.is_empty() {
+                    return None;
+                }
+
+                // Compute avg SPL in 100 Hz - 10 kHz range
+                let mut sum = 0.0_f32;
+                let mut count = 0usize;
+                for (&freq, &mag) in result.frequencies.iter().zip(result.magnitude_db.iter()) {
+                    if (100.0..=10000.0).contains(&freq) {
+                        sum += mag;
+                        count += 1;
+                    }
+                }
+                let avg_spl = if count > 0 {
+                    sum / count as f32
+                } else {
+                    0.0
+                };
+
+                // Estimate noise floor from the lowest 5% of magnitude values
+                let mut sorted_mags: Vec<f32> = result.magnitude_db.clone();
+                sorted_mags.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let bottom_count = (sorted_mags.len() / 20).max(1);
+                let noise_floor: f32 =
+                    sorted_mags[..bottom_count].iter().sum::<f32>() / bottom_count as f32;
+
+                // Mic input channel used for this speaker
+                let mic_ch = recording_state
+                    .recording_config
+                    .channel_mappings
+                    .get(rec.channel_index)
+                    .copied()
+                    .unwrap_or(0);
+
+                Some((rec.channel_name.clone(), mic_ch, avg_spl, noise_floor))
+            })
+            .collect();
+
+        if metrics.is_empty() {
+            return div().into_any_element();
+        }
+
+        Card::new()
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(
+                        Text::new("CHANNEL METRICS")
+                            .size(TextSize::Xs)
+                            .weight(TextWeight::Bold)
+                            .color(theme.accent),
+                    )
+                    // Header row
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(
+                                div().w(px(100.0)).child(
+                                    Text::new("Channel")
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(theme.text_secondary),
+                                ),
+                            )
+                            .child(
+                                div().w(px(60.0)).child(
+                                    Text::new("Mic In")
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(theme.text_secondary),
+                                ),
+                            )
+                            .child(
+                                div().w(px(80.0)).child(
+                                    Text::new("Avg SPL")
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(theme.text_secondary),
+                                ),
+                            )
+                            .child(
+                                div().w(px(80.0)).child(
+                                    Text::new("Noise Floor")
+                                        .size(TextSize::Xs)
+                                        .weight(TextWeight::Semibold)
+                                        .color(theme.text_secondary),
+                                ),
+                            ),
+                    )
+                    // Data rows
+                    .children(metrics.iter().map(|(name, mic_ch, avg_spl, noise_floor)| {
+                        let spl_color = if *avg_spl < -50.0 {
+                            theme.warning
+                        } else {
+                            theme.text_primary
+                        };
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(
+                                div().w(px(100.0)).child(
+                                    Text::new(format!("{}:", name))
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_primary),
+                                ),
+                            )
+                            .child(
+                                div().w(px(60.0)).child(
+                                    Text::new(format!("Ch {}", mic_ch + 1))
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_secondary),
+                                ),
+                            )
+                            .child(
+                                div().w(px(80.0)).child(
+                                    Text::new(format!("{:.1} dB", avg_spl))
+                                        .size(TextSize::Xs)
+                                        .color(spl_color),
+                                ),
+                            )
+                            .child(
+                                div().w(px(80.0)).child(
+                                    Text::new(format!("{:.1} dB", noise_floor))
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_muted),
+                                ),
+                            )
+                            .into_any_element()
+                    })),
+            )
+            .into_any_element()
     }
 
     /// Render channel status section with recording controls
@@ -620,7 +836,10 @@ impl PlayerView {
                 log::error!("Invalid channel index: {}", channel_idx);
                 return;
             }
-            let channel_name = channel_info.unwrap().channel_name.clone();
+            let channel = channel_info.unwrap();
+            let channel_name = channel.channel_name.clone();
+            let sweep_start = channel.sweep_start_freq;
+            let sweep_end = channel.sweep_end_freq;
             let recording_directory = rec_state.recording_directory.clone();
 
             // Map signal type
@@ -643,22 +862,34 @@ impl PlayerView {
             let input_ch = rec_state
                 .recording_config
                 .channel_mappings
-                .first()
+                .get(channel_idx)
+                .or_else(|| rec_state.recording_config.channel_mappings.first())
                 .copied()
                 .unwrap_or(0);
+
+            // Use per-channel calibration index with fallback to channel 0
+            let mic_idx = if channel_idx < rec_state.recording_config.channel_mappings.len() {
+                channel_idx
+            } else {
+                0
+            };
 
             (
                 signal_type,
                 rec_state.signal_duration_secs,
                 rec_state.signal_level_db,
-                rec_state.sweep_start_freq,
-                rec_state.sweep_end_freq,
+                sweep_start,
+                sweep_end,
                 rec_state.playback_config.device_name.clone(),
                 rec_state.recording_config.device_name.clone(),
                 output_ch as u16,
                 input_ch as u16,
                 rec_state.playback_config.sample_rate,
-                rec_state.mic_calibration_path.clone(),
+                rec_state
+                    .mic_calibration_paths
+                    .get(mic_idx)
+                    .and_then(|p| p.clone())
+                    .or_else(|| rec_state.mic_calibration_path.clone()),
                 channel_name,
                 recording_directory,
             )
@@ -1142,6 +1373,14 @@ impl PlayerView {
                 recording_sample_rate: Some(rec_state.recording_config.sample_rate),
                 recording_channels: Some(rec_state.recording_config.num_channels),
                 mic_calibration_path: rec_state.mic_calibration_path.clone(),
+                mic_calibration_paths: {
+                    let paths = &rec_state.mic_calibration_paths;
+                    if paths.is_empty() {
+                        None
+                    } else {
+                        Some(paths.clone())
+                    }
+                },
                 recording_directory: Some(recording_dir.clone()),
                 signal_type: Some(rec_state.signal_type.as_str().to_string()),
                 signal_duration_secs: Some(rec_state.signal_duration_secs),
@@ -1490,12 +1729,10 @@ impl PlayerView {
                                 spectrogram_db: None,
                             };
 
-                            ChannelRecording {
-                                channel_index: idx,
-                                channel_name,
-                                state: ChannelRecordingState::Done,
-                                result: Some(result),
-                            }
+                            let mut rec = ChannelRecording::new(idx, channel_name);
+                            rec.state = ChannelRecordingState::Done;
+                            rec.result = Some(result);
+                            rec
                         })
                     })
                     .collect();
@@ -1561,12 +1798,10 @@ impl PlayerView {
                                 }
                             }
 
-                            ChannelRecording {
-                                channel_index: idx,
-                                channel_name: cm.channel_name,
-                                state: ChannelRecordingState::Done,
-                                result: Some(result),
-                            }
+                            let mut rec = ChannelRecording::new(idx, cm.channel_name);
+                            rec.state = ChannelRecordingState::Done;
+                            rec.result = Some(result);
+                            rec
                         })
                         .collect();
 
@@ -1884,12 +2119,11 @@ impl PlayerView {
                                     }
                                 }
 
-                                ChannelRecording {
-                                    channel_index: idx,
-                                    channel_name: ch.channel_name.clone(),
-                                    state: ChannelRecordingState::Done,
-                                    result: Some(result),
-                                }
+                                let mut rec =
+                                    ChannelRecording::new(idx, ch.channel_name.clone());
+                                rec.state = ChannelRecordingState::Done;
+                                rec.result = Some(result);
+                                rec
                             })
                             .collect();
 

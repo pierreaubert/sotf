@@ -162,6 +162,9 @@ pub struct RecordingConfiguration {
 
     /// Microphone calibration file path (if used)
     pub mic_calibration_path: Option<String>,
+    /// Per-channel microphone calibration file paths
+    #[serde(default)]
+    pub mic_calibration_paths: Vec<Option<String>>,
     /// Recording output directory
     pub recording_directory: Option<String>,
 

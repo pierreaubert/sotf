@@ -816,17 +816,15 @@ fn test_recording_state_init_channel_recordings() {
 fn test_recording_state_all_channels_recorded() {
     let mut state = RecordingState::default();
     state.channel_recordings = vec![
-        ChannelRecording {
-            channel_index: 0,
-            channel_name: "L".to_string(),
-            state: ChannelRecordingState::Done,
-            result: None,
+        {
+            let mut rec = ChannelRecording::new(0, "L".to_string());
+            rec.state = ChannelRecordingState::Done;
+            rec
         },
-        ChannelRecording {
-            channel_index: 1,
-            channel_name: "R".to_string(),
-            state: ChannelRecordingState::Done,
-            result: None,
+        {
+            let mut rec = ChannelRecording::new(1, "R".to_string());
+            rec.state = ChannelRecordingState::Done;
+            rec
         },
     ];
 

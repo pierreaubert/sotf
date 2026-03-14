@@ -23,8 +23,12 @@ pub struct RecordingState {
     pub playback_config: PlaybackDeviceConfig,
     pub recording_config: RecordingDeviceConfig,
     pub mic_calibration_path: Option<String>,
+    /// Per-channel microphone calibration file paths (parallel to recording_config.channel_mappings)
+    pub mic_calibration_paths: Vec<Option<String>>,
     /// Parsed calibration data for display
     pub mic_calibration_data: Option<CalibrationData>,
+    /// Per-channel parsed calibration data for display
+    pub mic_calibration_data_per_channel: Vec<Option<CalibrationData>>,
 
     // === Capture Step State ===
     pub signal_type: RecordingSignalType,
@@ -101,7 +105,9 @@ impl Default for RecordingState {
             playback_config: PlaybackDeviceConfig::default(),
             recording_config: RecordingDeviceConfig::default(),
             mic_calibration_path: None,
+            mic_calibration_paths: Vec::new(),
             mic_calibration_data: None,
+            mic_calibration_data_per_channel: Vec::new(),
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
             signal_level_db: -20.0,
@@ -148,12 +154,7 @@ impl RecordingState {
             .channel_mappings
             .iter()
             .enumerate()
-            .map(|(idx, mapping)| ChannelRecording {
-                channel_index: idx,
-                channel_name: mapping.group_name.clone(),
-                state: ChannelRecordingState::Empty,
-                result: None,
-            })
+            .map(|(idx, mapping)| ChannelRecording::new(idx, mapping.group_name.clone()))
             .collect();
     }
 

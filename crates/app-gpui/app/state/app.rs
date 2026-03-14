@@ -802,6 +802,29 @@ impl App {
                         );
                     }
                 }
+                // Clamp recording channel count to selected device's max channels
+                let rec_config = &self.measurement_state.recording_state.recording_config;
+                if let Some(device) = input_devices
+                    .iter()
+                    .find(|d| d.name == rec_config.device_name)
+                {
+                    if let Some(max_ch) =
+                        device.default_config.as_ref().map(|c| c.channels as usize)
+                    {
+                        if self
+                            .measurement_state
+                            .recording_state
+                            .recording_config
+                            .num_channels
+                            > max_ch
+                        {
+                            self.measurement_state
+                                .recording_state
+                                .recording_config
+                                .num_channels = max_ch;
+                        }
+                    }
+                }
             }
         }
     }
@@ -865,20 +888,45 @@ impl App {
         self.measurement_state.recording_state.signal_level_db =
             config.recording_config.signal_level_db;
         self.measurement_state.recording_state.mic_calibration_path =
-            config.recording_config.mic_calibration_path;
+            config.recording_config.mic_calibration_path.clone();
+        // Migrate per-channel calibration paths
+        let mut mic_cal_paths = config.recording_config.mic_calibration_paths;
+        if mic_cal_paths.is_empty()
+            && let Some(ref path) = config.recording_config.mic_calibration_path
+        {
+            mic_cal_paths = vec![Some(path.clone())];
+        }
+        self.measurement_state.recording_state.mic_calibration_paths = mic_cal_paths;
         self.measurement_state.recording_state.recording_directory =
             config.recording_config.recording_directory;
         self.measurement_state
             .recording_state
             .recording_base_directory = config.recording_config.recording_base_directory;
 
-        // Reload calibration data if path exists
+        // Reload calibration data if path exists (global)
         if let Some(ref path) = self.measurement_state.recording_state.mic_calibration_path
             && let Ok(content) = std::fs::read_to_string(path)
         {
             self.measurement_state.recording_state.mic_calibration_data =
                 crate::app::types::CalibrationData::parse(&content);
         }
+
+        // Reload per-channel calibration data
+        self.measurement_state
+            .recording_state
+            .mic_calibration_data_per_channel = self
+            .measurement_state
+            .recording_state
+            .mic_calibration_paths
+            .iter()
+            .map(|opt_path| {
+                opt_path.as_ref().and_then(|path| {
+                    std::fs::read_to_string(path)
+                        .ok()
+                        .and_then(|content| crate::app::types::CalibrationData::parse(&content))
+                })
+            })
+            .collect();
 
         // Restore plugin presets path if we had a last loaded preset
         if let Some(preset_name) = config.last_loaded_plugin_preset {
@@ -971,6 +1019,11 @@ impl App {
                     .measurement_state
                     .recording_state
                     .mic_calibration_path
+                    .clone(),
+                mic_calibration_paths: self
+                    .measurement_state
+                    .recording_state
+                    .mic_calibration_paths
                     .clone(),
                 recording_directory: self
                     .measurement_state

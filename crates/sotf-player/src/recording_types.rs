@@ -279,9 +279,11 @@ fn default_sweep_end_freq() -> f32 {
 }
 
 impl ChannelRecording {
-    /// Create a new channel recording with default freq range based on channel name
+    /// Create a new channel recording with default freq range based on channel name.
+    /// LFE/Sub channels default to 10-500 Hz; all others to 20-20000 Hz.
     pub fn new(channel_index: usize, channel_name: String) -> Self {
-        let is_lfe = channel_name == "LFE";
+        let name_lower = channel_name.to_ascii_lowercase();
+        let is_lfe = name_lower == "lfe" || name_lower == "sub";
         Self {
             channel_index,
             channel_name,
@@ -566,6 +568,43 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: MicrophonePresetsConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.presets.len(), 1);
+    }
+
+    #[test]
+    fn test_channel_recording_lfe_detection() {
+        // Exact match
+        let rec = ChannelRecording::new(0, "LFE".to_string());
+        assert_eq!(rec.sweep_start_freq, 10.0);
+        assert_eq!(rec.sweep_end_freq, 500.0);
+
+        // Case-insensitive
+        let rec = ChannelRecording::new(0, "lfe".to_string());
+        assert_eq!(rec.sweep_start_freq, 10.0);
+        assert_eq!(rec.sweep_end_freq, 500.0);
+
+        // "Sub" variant
+        let rec = ChannelRecording::new(0, "Sub".to_string());
+        assert_eq!(rec.sweep_start_freq, 10.0);
+        assert_eq!(rec.sweep_end_freq, 500.0);
+
+        // Non-LFE channel
+        let rec = ChannelRecording::new(0, "L".to_string());
+        assert_eq!(rec.sweep_start_freq, 20.0);
+        assert_eq!(rec.sweep_end_freq, 20000.0);
+    }
+
+    #[test]
+    fn test_channel_recording_serde_backward_compat() {
+        // Old format without sweep freq fields should deserialize with defaults
+        let json = r#"{
+            "channel_index": 0,
+            "channel_name": "L",
+            "state": "Empty",
+            "result": null
+        }"#;
+        let rec: ChannelRecording = serde_json::from_str(json).unwrap();
+        assert_eq!(rec.sweep_start_freq, 20.0);
+        assert_eq!(rec.sweep_end_freq, 20000.0);
     }
 
     #[test]

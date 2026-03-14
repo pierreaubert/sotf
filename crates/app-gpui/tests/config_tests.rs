@@ -88,6 +88,7 @@ fn test_recording_config_state_serialization() {
         signal_duration_secs: 10.0,
         signal_level_db: -12.0,
         mic_calibration_path: Some("/path/to/cal.txt".to_string()),
+        mic_calibration_paths: vec![Some("/path/to/cal.txt".to_string())],
         recording_directory: Some("/recordings".to_string()),
         recording_base_directory: None,
     };

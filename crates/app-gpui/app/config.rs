@@ -38,6 +38,9 @@ pub struct RecordingConfigState {
     pub signal_duration_secs: f32,
     pub signal_level_db: f32,
     pub mic_calibration_path: Option<String>,
+    /// Per-channel microphone calibration file paths
+    #[serde(default)]
+    pub mic_calibration_paths: Vec<Option<String>>,
     pub recording_directory: Option<String>,
     pub recording_base_directory: Option<String>,
 }
@@ -51,8 +54,20 @@ impl Default for RecordingConfigState {
             signal_duration_secs: 5.0,
             signal_level_db: -20.0,
             mic_calibration_path: None,
+            mic_calibration_paths: Vec::new(),
             recording_directory: None,
             recording_base_directory: None,
+        }
+    }
+}
+
+impl RecordingConfigState {
+    /// Migrate from old single-path format to per-channel format if needed
+    pub fn migrate_calibration_paths(&mut self) {
+        if self.mic_calibration_paths.is_empty()
+            && let Some(ref path) = self.mic_calibration_path
+        {
+            self.mic_calibration_paths = vec![Some(path.clone())];
         }
     }
 }
