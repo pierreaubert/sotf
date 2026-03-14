@@ -398,7 +398,13 @@ impl EbuR128 {
             sub_block_pos: 0,
             momentary_ring: SubBlockRing::new(4), // 4 × 100ms = 400ms
             shortterm_ring: SubBlockRing::new(30), // 30 × 100ms = 3s
-            gating_blocks: Vec::new(),
+            gating_blocks: if mode.has(Mode::I) {
+                // Pre-allocate for ~10 minutes (6000 blocks at 10 blocks/sec)
+                // to avoid re-allocations on the audio thread hot path.
+                Vec::with_capacity(6_000)
+            } else {
+                Vec::new()
+            },
             sample_peak: vec![0.0; nc],
             prev_sample_peak: vec![0.0; nc],
             true_peak_detector,
@@ -510,6 +516,7 @@ impl EbuR128 {
     }
 
     /// Two-pass gating algorithm per EBU R128.
+    /// Zero-allocation: computes means via running sum+count instead of collecting into Vecs.
     fn compute_gated_loudness(&self) -> f64 {
         let blocks = &self.gating_blocks;
         if blocks.is_empty() {
@@ -518,29 +525,35 @@ impl EbuR128 {
 
         // Pass 1: Absolute gate at -70 LUFS
         let abs_gate_energy = loudness_to_energy(-70.0);
-        let above_abs: Vec<f64> = blocks
-            .iter()
-            .copied()
-            .filter(|&e| e > abs_gate_energy)
-            .collect();
-        if above_abs.is_empty() {
+        let mut sum_abs = 0.0f64;
+        let mut count_abs = 0usize;
+        for &e in blocks {
+            if e > abs_gate_energy {
+                sum_abs += e;
+                count_abs += 1;
+            }
+        }
+        if count_abs == 0 {
             return f64::NEG_INFINITY;
         }
 
-        let mean_above_abs = above_abs.iter().sum::<f64>() / above_abs.len() as f64;
+        let mean_above_abs = sum_abs / count_abs as f64;
 
         // Pass 2: Relative gate at mean - 10 LUFS
         let rel_gate_energy = mean_above_abs * loudness_to_energy(-10.0); // -10 dB below mean
-        let above_rel: Vec<f64> = blocks
-            .iter()
-            .copied()
-            .filter(|&e| e > rel_gate_energy)
-            .collect();
-        if above_rel.is_empty() {
+        let mut sum_rel = 0.0f64;
+        let mut count_rel = 0usize;
+        for &e in blocks {
+            if e > rel_gate_energy {
+                sum_rel += e;
+                count_rel += 1;
+            }
+        }
+        if count_rel == 0 {
             return f64::NEG_INFINITY;
         }
 
-        let mean_above_rel = above_rel.iter().sum::<f64>() / above_rel.len() as f64;
+        let mean_above_rel = sum_rel / count_rel as f64;
         energy_to_loudness(mean_above_rel)
     }
 
