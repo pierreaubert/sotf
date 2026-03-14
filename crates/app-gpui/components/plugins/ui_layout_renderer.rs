@@ -26,7 +26,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::audio::potentiometer::PotentiometerSize;
 use sotf_audio_player::PluginSettings;
-use sotf_plugins::layout_solver::{solve_layout, SolvedLayout};
+use sotf_plugins::layout_solver::{solve_layout, KnobSize, SolvedLayout};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 use sotf_plugins::plugin_layout::*;
 use std::collections::HashMap;
@@ -100,8 +100,8 @@ fn render_solved_layout(
 ) -> AnyElement {
     let mut root = div().flex().flex_col().gap_4();
 
-    // Build the main row (columns side-by-side)
-    let mut row = div().flex().gap_6().items_start();
+    // Build the main row (columns side-by-side, centered)
+    let mut row = div().flex().gap_6().items_start().justify_center();
 
     for col in &solved.columns {
         match col.role {
@@ -116,6 +116,7 @@ fn render_solved_layout(
                     is_editing,
                     selected_param,
                     col.width,
+                    solved.knob_size,
                     theme,
                 ));
             }
@@ -147,6 +148,7 @@ fn render_solved_layout(
                     selected_param,
                     plugin_data,
                     col.width,
+                    solved.knob_size,
                     theme,
                 ));
             }
@@ -169,6 +171,7 @@ fn render_config_column(
     is_editing: bool,
     selected_param: usize,
     width: f32,
+    knob_size: KnobSize,
     theme: &Theme,
 ) -> impl IntoElement {
     let mut col = div().flex().flex_col().gap_2().w(px(width));
@@ -184,6 +187,7 @@ fn render_config_column(
             is_editing,
             selected_param,
             None,
+            knob_size,
             theme,
         ));
     }
@@ -285,6 +289,7 @@ fn render_main_column(
                     is_editing,
                     selected_param,
                     None,
+                    solved.knob_size,
                     theme,
                 ));
             }
@@ -307,6 +312,7 @@ fn render_output_column(
     selected_param: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     width: f32,
+    knob_size: KnobSize,
     theme: &Theme,
 ) -> impl IntoElement {
     let mut col = div().flex().flex_col().gap_2().w(px(width));
@@ -322,6 +328,7 @@ fn render_output_column(
             is_editing,
             selected_param,
             plugin_data,
+            knob_size,
             theme,
         ));
     }
@@ -367,6 +374,7 @@ fn render_group(
                 is_editing,
                 selected_param,
                 plugin_data,
+                solved.knob_size,
                 theme,
             ));
         }
@@ -385,6 +393,7 @@ fn render_group(
                 is_editing,
                 selected_param,
                 plugin_data,
+                solved.knob_size,
                 theme,
             ));
         }
@@ -417,6 +426,24 @@ fn render_group(
 // Control Rendering
 // ============================================================================
 
+/// Convert solver knob size to GPUI potentiometer size.
+fn pot_size(knob_size: KnobSize) -> PotentiometerSize {
+    match knob_size {
+        KnobSize::Xs => PotentiometerSize::Xs,
+        KnobSize::Sm => PotentiometerSize::Sm,
+        KnobSize::Md => PotentiometerSize::Md,
+    }
+}
+
+/// One step larger than the solver's knob size (for KnobLarge controls).
+fn pot_size_large(knob_size: KnobSize) -> PotentiometerSize {
+    match knob_size {
+        KnobSize::Xs => PotentiometerSize::Sm,
+        KnobSize::Sm => PotentiometerSize::Md,
+        KnobSize::Md => PotentiometerSize::Lg,
+    }
+}
+
 /// Render a single control based on its ControlType.
 fn render_control(
     entity: Entity<AppState>,
@@ -428,6 +455,7 @@ fn render_control(
     is_editing: bool,
     selected_param: usize,
     plugin_data: Option<&std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    knob_size: KnobSize,
     theme: &Theme,
 ) -> AnyElement {
     let idx = spec.param_index;
@@ -438,7 +466,7 @@ fn render_control(
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_knob(
                     entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    PotentiometerSize::Sm, theme,
+                    pot_size(knob_size), theme,
                 )
             } else {
                 div().into_any_element()
@@ -449,7 +477,7 @@ fn render_control(
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_knob(
                     entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    PotentiometerSize::Lg, theme,
+                    pot_size_large(knob_size), theme,
                 )
             } else {
                 div().into_any_element()
@@ -460,7 +488,7 @@ fn render_control(
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_slider(
                     entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    theme,
+                    knob_size, theme,
                 )
             } else {
                 div().into_any_element()
@@ -471,7 +499,7 @@ fn render_control(
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_toggle(
                     entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    theme,
+                    knob_size, theme,
                 )
             } else {
                 div().into_any_element()
@@ -553,7 +581,7 @@ fn render_param_as_knob(
         }
         _ => {
             // Bool/Choice as knob — fall back to toggle
-            render_param_as_toggle(entity, plugin_idx, idx, param, value, is_editing, selected_param, theme)
+            render_param_as_toggle(entity, plugin_idx, idx, param, value, is_editing, selected_param, KnobSize::Sm, theme)
         }
     }
 }
@@ -567,6 +595,7 @@ fn render_param_as_slider(
     value: f64,
     is_editing: bool,
     selected_param: usize,
+    knob_size: KnobSize,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -589,7 +618,7 @@ fn render_param_as_slider(
         }
         _ => render_param_as_knob(
             entity, plugin_idx, idx, param, value, is_editing, selected_param,
-            PotentiometerSize::Sm, theme,
+            pot_size(knob_size), theme,
         ),
     }
 }
@@ -603,6 +632,7 @@ fn render_param_as_toggle(
     value: f64,
     is_editing: bool,
     selected_param: usize,
+    knob_size: KnobSize,
     theme: &Theme,
 ) -> AnyElement {
     match param.param_type {
@@ -637,7 +667,7 @@ fn render_param_as_toggle(
             // Float/Int as toggle doesn't make sense, render as knob
             render_param_as_knob(
                 entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                PotentiometerSize::Sm, theme,
+                pot_size(knob_size), theme,
             )
         }
     }
@@ -697,7 +727,7 @@ fn render_param_as_selector(
         }
         // Non-choice params: fall back to toggle
         _ => render_param_as_toggle(
-            entity, plugin_idx, idx, param, value, is_editing, selected_param, theme,
+            entity, plugin_idx, idx, param, value, is_editing, selected_param, KnobSize::Sm, theme,
         ),
     }
 }

@@ -49,8 +49,6 @@ const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
 // Layout constants
 const TRANSFER_CURVE_SIZE: f32 = 200.0;
 const SLIDER_HEIGHT: f32 = 180.0;
-const SETUP_WIDTH: f32 = 100.0;
-const METER_WIDTH: f32 = 120.0;
 
 /// Render the Compressor plugin
 pub fn render_compressor_plugin(
@@ -84,7 +82,7 @@ pub fn render_compressor_plugin(
     let setup_col = div()
         .flex()
         .flex_col()
-        .w(px(SETUP_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("SETUP", theme))
         .child(render_toggle(
@@ -223,22 +221,17 @@ pub fn render_compressor_plugin(
         );
 
     let center_col = div()
-        .flex_1()
         .flex()
-        .justify_center()
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .child(dynamics_col)
-                .child(timing_col),
-        );
+        .flex_shrink_0()
+        .gap_4()
+        .child(dynamics_col)
+        .child(timing_col);
 
     // === RIGHT COLUMN: Output (GR Meter + controls) ===
     let right_col = div()
         .flex()
         .flex_col()
-        .w(px(METER_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("OUTPUT", theme))
         .child(render_gr_meter(meter_value, -30.0, theme))
@@ -281,13 +274,18 @@ pub fn render_compressor_plugin(
             theme,
         ));
 
-    // === Main layout: 3 columns ===
+    // === Main layout: 3 columns, centered ===
     div()
-        .flex()
-        .gap_4()
-        .p_3()
         .w_full()
-        .child(setup_col)
-        .child(center_col)
-        .child(right_col)
+        .flex()
+        .justify_center()
+        .p_3()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(setup_col)
+                .child(center_col)
+                .child(right_col),
+        )
 }

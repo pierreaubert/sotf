@@ -1603,7 +1603,7 @@ impl PlayerView {
                 category_rows.push(
                     div()
                         .flex()
-                        .items_center()
+                        .items_start()
                         .gap_2()
                         // Category label
                         .child(
@@ -1612,6 +1612,8 @@ impl PlayerView {
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_muted)
                                 .w(px(60.0))
+                                .flex_shrink_0()
+                                .pt(px(3.0))
                                 .child(*cat_name),
                         )
                         // Plugin buttons
@@ -1619,6 +1621,8 @@ impl PlayerView {
                             div()
                                 .flex()
                                 .flex_wrap()
+                                .flex_1()
+                                .min_w_0()
                                 .items_center()
                                 .gap_2()
                                 .children(buttons),

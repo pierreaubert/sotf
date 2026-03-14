@@ -40,8 +40,6 @@ pub struct GateRenderState<'a> {
 
 // Layout constants
 const SLIDER_HEIGHT: f32 = 180.0;
-const SETUP_WIDTH: f32 = 100.0;
-const OUTPUT_WIDTH: f32 = 120.0;
 
 // Sidechain HPF UI range (40-160Hz)
 const SIDECHAIN_HPF_UI_MIN: f64 = 40.0;
@@ -83,7 +81,7 @@ pub fn render_gate_plugin(
     let setup_col = div()
         .flex()
         .flex_col()
-        .w(px(SETUP_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("SETUP", theme))
         .child(render_toggle(
@@ -292,7 +290,7 @@ pub fn render_gate_plugin(
     let center_col = div()
         .flex()
         .flex_col()
-        .flex_1()
+        .flex_shrink_0()
         .gap_3()
         .child(sliders)
         .child(gate_status);
@@ -301,7 +299,7 @@ pub fn render_gate_plugin(
     let right_col = div()
         .flex()
         .flex_col()
-        .w(px(OUTPUT_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("OUTPUT", theme))
         .child(render_gr_meter(-attenuation_db, -40.0, theme))
@@ -320,13 +318,18 @@ pub fn render_gate_plugin(
             theme,
         ));
 
-    // === Main layout: 3 columns ===
+    // === Main layout: 3 columns, centered ===
     div()
-        .flex()
-        .gap_4()
-        .p_3()
         .w_full()
-        .child(setup_col)
-        .child(center_col)
-        .child(right_col)
+        .flex()
+        .justify_center()
+        .p_3()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(setup_col)
+                .child(center_col)
+                .child(right_col),
+        )
 }

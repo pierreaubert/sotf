@@ -30,6 +30,12 @@ pub const COMPACT_SLIDER_THRESHOLD: f32 = 700.0;
 /// Below this width, hide visualizations.
 pub const HIDE_VIZ_THRESHOLD: f32 = 600.0;
 
+/// Below this main-column width, use compact (Xs) knobs instead of Sm.
+pub const COMPACT_KNOB_THRESHOLD: f32 = 400.0;
+
+/// Above this main-column width, use medium (Md) knobs instead of Sm.
+pub const LARGE_KNOB_THRESHOLD: f32 = 800.0;
+
 /// Standard slider height in pixels.
 pub const SLIDER_HEIGHT_NORMAL: f32 = 180.0;
 
@@ -56,6 +62,17 @@ pub enum Direction {
     Row,
     /// Groups stacked vertically.
     Column,
+}
+
+/// Knob size tier chosen by the solver based on available width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnobSize {
+    /// Extra-compact for very narrow layouts.
+    Xs,
+    /// Default compact size.
+    Sm,
+    /// Medium size for wide layouts.
+    Md,
 }
 
 /// A column that the solver decided should be visible.
@@ -89,6 +106,8 @@ pub struct SolvedLayout {
     pub slider_height: f32,
     /// Whether to show visualizations (transfer curves, graphs).
     pub show_visualizations: bool,
+    /// Knob size tier for standard controls (Xs/Sm/Md based on main width).
+    pub knob_size: KnobSize,
 }
 
 impl SolvedLayout {
@@ -194,20 +213,29 @@ pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> S
         columns.push(visible[pos]);
     }
 
-    // 7. Internal adaptations
-    let group_direction = if available_width < GROUP_STACK_THRESHOLD {
+    // 7. Internal adaptations — use main_width (not available_width) for decisions
+    //    about main-column content, since sidebars consume part of available_width.
+    let group_direction = if main_width < GROUP_STACK_THRESHOLD {
         Direction::Column
     } else {
         Direction::Row
     };
 
-    let slider_height = if available_width < COMPACT_SLIDER_THRESHOLD {
+    let slider_height = if main_width < COMPACT_SLIDER_THRESHOLD {
         SLIDER_HEIGHT_COMPACT
     } else {
         SLIDER_HEIGHT_NORMAL
     };
 
-    let show_visualizations = available_width >= HIDE_VIZ_THRESHOLD;
+    let show_visualizations = main_width >= HIDE_VIZ_THRESHOLD;
+
+    let knob_size = if main_width < COMPACT_KNOB_THRESHOLD {
+        KnobSize::Xs
+    } else if main_width >= LARGE_KNOB_THRESHOLD {
+        KnobSize::Md
+    } else {
+        KnobSize::Sm
+    };
 
     SolvedLayout {
         columns,
@@ -216,6 +244,7 @@ pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> S
         group_direction,
         slider_height,
         show_visualizations,
+        knob_size,
     }
 }
 
@@ -245,6 +274,7 @@ fn solve_vertical(constraints: &[ColumnConstraint], available_width: f32) -> Sol
         group_direction: Direction::Column,
         slider_height: SLIDER_HEIGHT_COMPACT,
         show_visualizations: false,
+        knob_size: KnobSize::Xs,
     }
 }
 
@@ -382,20 +412,24 @@ mod tests {
     #[test]
     fn test_compact_slider_height() {
         let constraints = compressor_constraints();
+        // main_width = 650 - 120 - 100 = 430 < 700 → compact
         let solved = solve_layout(&constraints, 650.0);
         assert_eq!(solved.slider_height, SLIDER_HEIGHT_COMPACT);
 
-        let solved_wide = solve_layout(&constraints, 800.0);
+        // main_width = 920 - 120 - 100 = 700 → normal
+        let solved_wide = solve_layout(&constraints, 920.0);
         assert_eq!(solved_wide.slider_height, SLIDER_HEIGHT_NORMAL);
     }
 
     #[test]
     fn test_group_direction_stacks_when_narrow() {
         let constraints = compressor_constraints();
+        // main_width = 480 - 120 (Config collapses) = 360 < 500 → Column
         let solved = solve_layout(&constraints, 480.0);
         assert_eq!(solved.group_direction, Direction::Column);
 
-        let solved_wide = solve_layout(&constraints, 600.0);
+        // main_width = 720 - 120 - 100 = 500 → Row
+        let solved_wide = solve_layout(&constraints, 720.0);
         assert_eq!(solved_wide.group_direction, Direction::Row);
     }
 
@@ -412,11 +446,48 @@ mod tests {
     #[test]
     fn test_viz_hidden_when_narrow() {
         let constraints = compressor_constraints();
+        // main_width = 550 - 120 - 100 = 330 < 600 → hidden
         let solved = solve_layout(&constraints, 550.0);
         assert!(!solved.show_visualizations);
 
-        let solved_wide = solve_layout(&constraints, 700.0);
+        // main_width = 820 - 120 - 100 = 600 → visible
+        let solved_wide = solve_layout(&constraints, 820.0);
         assert!(solved_wide.show_visualizations);
+    }
+
+    #[test]
+    fn test_group_direction_based_on_main_width_not_available() {
+        // available_width=600 (>500 GROUP_STACK_THRESHOLD), but sidebars eat 220px:
+        // Config(100) + Output(120) = 220, so main_width = 600 - 220 = 380.
+        // Groups should NOT be Row since main column only has 380px.
+        let constraints = compressor_constraints();
+        let solved = solve_layout(&constraints, 600.0);
+        let main_width = solved.column_width(ColumnRole::Main).unwrap();
+        assert!(
+            main_width < GROUP_STACK_THRESHOLD,
+            "main_width={main_width} should be < {GROUP_STACK_THRESHOLD}"
+        );
+        assert_eq!(
+            solved.group_direction,
+            Direction::Column,
+            "Groups should stack vertically when main area is only {main_width}px"
+        );
+    }
+
+    #[test]
+    fn test_group_direction_row_when_main_has_enough_space() {
+        // When main column has >= GROUP_STACK_THRESHOLD, groups should be side-by-side.
+        // No sidebars → all space goes to main.
+        let constraints = vec![ColumnConstraint::main(300.0)];
+        let solved = solve_layout(&constraints, 800.0);
+        assert_eq!(solved.group_direction, Direction::Row);
+
+        // With sidebars but plenty of total space → main still gets enough
+        let constraints = compressor_constraints();
+        let solved = solve_layout(&constraints, 1200.0);
+        let main_width = solved.column_width(ColumnRole::Main).unwrap();
+        assert!(main_width >= GROUP_STACK_THRESHOLD);
+        assert_eq!(solved.group_direction, Direction::Row);
     }
 
     #[test]

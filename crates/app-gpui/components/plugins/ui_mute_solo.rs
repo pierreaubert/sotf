@@ -23,7 +23,6 @@ pub struct ChannelMuteSoloRenderState<'a> {
 }
 
 // Layout constants
-const SETUP_WIDTH: f32 = 100.0;
 
 /// Render the Channel Mute/Solo plugin
 pub fn render_mute_solo_plugin(
@@ -46,7 +45,7 @@ pub fn render_mute_solo_plugin(
     let setup_col = div()
         .flex()
         .flex_col()
-        .w(px(SETUP_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("SETUP", theme))
         .child(render_toggle(
@@ -184,12 +183,17 @@ pub fn render_mute_solo_plugin(
             }),
         ));
 
-    // === Main layout: 3 columns ===
+    // === Main layout, centered ===
     div()
-        .flex()
-        .gap_4()
-        .p_3()
         .w_full()
-        .child(setup_col)
-        .child(center_col)
+        .flex()
+        .justify_center()
+        .p_3()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(setup_col)
+                .child(center_col),
+        )
 }

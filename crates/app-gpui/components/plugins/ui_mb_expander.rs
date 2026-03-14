@@ -50,8 +50,6 @@ pub struct MbExpanderRenderState {
 
 // Layout constants
 const SLIDER_HEIGHT: f32 = 180.0;
-const GLOBAL_WIDTH: f32 = 120.0;
-const OUTPUT_WIDTH: f32 = 120.0;
 const TRANSFER_CURVE_SIZE: f32 = 140.0;
 
 /// Render the Multiband Expander plugin
@@ -73,7 +71,7 @@ pub fn render_mb_expander_plugin(
     let mut global_col = div()
         .flex()
         .flex_col()
-        .w(px(GLOBAL_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("GLOBAL", theme))
         .child(render_knob(
@@ -424,7 +422,7 @@ pub fn render_mb_expander_plugin(
     let right_col = div()
         .flex()
         .flex_col()
-        .w(px(OUTPUT_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("OUTPUT", theme))
         .child(render_toggle(
@@ -452,13 +450,18 @@ pub fn render_mb_expander_plugin(
             theme,
         ));
 
-    // === Main layout: 3 columns ===
+    // === Main layout: 3 columns, centered ===
     div()
-        .flex()
-        .gap_4()
-        .p_3()
         .w_full()
-        .child(global_col)
-        .child(center_col)
-        .child(right_col)
+        .flex()
+        .justify_center()
+        .p_3()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(global_col)
+                .child(center_col)
+                .child(right_col),
+        )
 }

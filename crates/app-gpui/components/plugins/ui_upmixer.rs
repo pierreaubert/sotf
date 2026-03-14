@@ -131,35 +131,25 @@ pub fn render_upmixer_plugin(
     state: UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let selected_config = state.upmixer_tab; // 0=none, 1-5=config panels (Config moved to column)
-
-    // Config column (left-aligned, always visible)
-    let config_col = render_config_diagnostic(entity.clone(), plugin_idx, &state, theme);
+    let selected_config = state.upmixer_tab;
 
     // Main area: Channel Gains + Spatial Controls side by side (centered)
     let main_area = render_main_area(entity.clone(), plugin_idx, &state, theme);
 
-    // Tab bar below main area (only LFE, Dialogue, Ambient, Height, Decorrelation)
+    // Tab bar below main area
     let tab_bar = render_tab_bar(entity.clone(), selected_config, theme);
 
-    // Configuration row: conditional on selected_config (1-5 only, Config removed)
+    // Configuration row: conditional on selected_config (1-5)
     let config_row = render_config_row(entity.clone(), plugin_idx, selected_config, &state, theme);
 
+    // Diagnostic toggles row
+    let diag_row = render_config_diagnostic(entity.clone(), plugin_idx, &state, theme);
+
     div()
-        .flex()
-        .gap_4()
-        .p_3()
         .w_full()
-        // Left: Config column
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .w(px(160.0))
-                .child(config_col),
-        )
-        // Center: Main area + tabs + config row
+        .flex()
+        .justify_center()
+        .p_3()
         .child(
             VStack::new()
                 .spacing(StackSpacing::Xs)
@@ -168,8 +158,8 @@ pub fn render_upmixer_plugin(
                 .when((1..=5).contains(&selected_config), |el| {
                     el.child(config_row)
                 })
-                .build()
-                .flex_1(),
+                .child(diag_row)
+                .build(),
         )
 }
 

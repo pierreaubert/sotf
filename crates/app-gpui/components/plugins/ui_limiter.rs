@@ -38,8 +38,6 @@ pub struct LimiterRenderState<'a> {
 // Layout constants
 const TRANSFER_CURVE_SIZE: f32 = 200.0;
 const SLIDER_HEIGHT: f32 = 180.0;
-const SETUP_WIDTH: f32 = 100.0;
-const OUTPUT_WIDTH: f32 = 120.0;
 
 /// Render the Limiter plugin
 pub fn render_limiter_plugin(
@@ -66,7 +64,7 @@ pub fn render_limiter_plugin(
     let setup_col = div()
         .flex()
         .flex_col()
-        .w(px(SETUP_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("SETUP", theme))
         .child(render_toggle(
@@ -161,22 +159,17 @@ pub fn render_limiter_plugin(
         );
 
     let center_col = div()
-        .flex_1()
         .flex()
-        .justify_center()
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .child(dynamics_col)
-                .child(timing_col),
-        );
+        .flex_shrink_0()
+        .gap_4()
+        .child(dynamics_col)
+        .child(timing_col);
 
     // === RIGHT COLUMN: Output (GR Meter + Mix) ===
     let right_col = div()
         .flex()
         .flex_col()
-        .w(px(OUTPUT_WIDTH))
+        .flex_shrink_0()
         .gap_3()
         .child(render_section_title("OUTPUT", theme))
         .child(render_gr_meter(meter_value, -20.0, theme))
@@ -195,13 +188,18 @@ pub fn render_limiter_plugin(
             theme,
         ));
 
-    // === Main layout: 3 columns ===
+    // === Main layout: 3 columns, centered ===
     div()
-        .flex()
-        .gap_4()
-        .p_3()
         .w_full()
-        .child(setup_col)
-        .child(center_col)
-        .child(right_col)
+        .flex()
+        .justify_center()
+        .p_3()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(setup_col)
+                .child(center_col)
+                .child(right_col),
+        )
 }

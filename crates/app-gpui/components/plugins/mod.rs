@@ -14,20 +14,10 @@ pub mod level_meters;
 pub mod theme;
 pub mod ticks;
 
-mod ui_ab_compare;
-pub mod ui_auto_layout;
 pub mod ui_layout_renderer;
-mod ui_band_merge;
-mod ui_band_split;
-mod ui_binaural;
 mod ui_compressor;
-mod ui_convolution;
-mod ui_crossfeed;
-mod ui_denoiser;
 mod ui_downmix;
 pub mod ui_eq;
-mod ui_expander;
-mod ui_fletcher_munson;
 mod ui_gain;
 mod ui_gate;
 mod ui_graph;
@@ -39,12 +29,10 @@ mod ui_mb_expander;
 mod ui_mono_to_stereo;
 mod ui_mute_solo;
 pub mod ui_plugin_shell;
-mod ui_pnd;
 mod ui_rack;
 mod ui_simple;
 mod ui_spectrum;
 mod ui_upmixer;
-mod ui_xtc;
 
 pub use common::*;
 pub use editing::get_param_count;
@@ -56,37 +44,25 @@ pub use sotf_audio_player_midi::mapping::MidiOverlay;
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
-pub use ui_ab_compare::render_ab_compare_plugin;
-pub use ui_auto_layout::{AutoLayoutInput, render_auto_layout, render_plugin_auto};
-pub use ui_band_merge::render_band_merge_plugin;
-pub use ui_band_split::render_band_split_plugin;
-pub use ui_binaural::render_binaural_plugin;
 pub use ui_compressor::render_compressor_plugin;
-pub use ui_convolution::render_convolution_plugin;
-pub use ui_crossfeed::render_crossfeed_plugin;
-pub use ui_denoiser::render_denoiser_plugin;
 pub use ui_downmix::render_downmix_plugin;
 pub use ui_eq::render_eq_plugin;
-pub use ui_expander::render_expander_plugin;
-pub use ui_fletcher_munson::render_fletcher_munson_plugin;
 pub use ui_gain::render_gain_plugin;
 pub use ui_gate::render_gate_plugin;
 pub use ui_limiter::render_limiter_plugin;
-pub use ui_loudness::{render_loudness_compensation_plugin, render_loudness_monitor_plugin};
+pub use ui_loudness::render_loudness_monitor_plugin;
 pub use ui_matrix::render_matrix_plugin;
 pub use ui_mb_compressor::render_mb_compressor_plugin;
 pub use ui_mb_expander::render_mb_expander_plugin;
 pub use ui_mono_to_stereo::render_mono_to_stereo_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
 pub use ui_plugin_shell::render_plugin_shell;
-pub use ui_pnd::render_pnd_plugin;
 pub use ui_rack::PluginDragInfo;
 pub use ui_simple::render_simple_plugin_view;
 pub use ui_spectrum::{
     MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin,
 };
 pub use ui_upmixer::render_upmixer_plugin;
-pub use ui_xtc::render_xtc_plugin;
 
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -124,25 +100,30 @@ pub fn render_plugin_content(
         .copied()
         .unwrap_or(0);
 
-    // Compute available width for the plugin content area from window/layout state.
-    // Rack panel width = rack_h_ratio * window_width (horizontal mode).
-    // Plugin content = rack_width - output_meter_width - padding/dividers.
+    // Compute available width for the plugin content area.
+    // In Studio screen: plugin UI is full-width (not inside rack panel).
+    // In Library/Queue: plugin UI is inside the rack panel at rack_h_ratio fraction.
     let available_width = {
         let window_width = state.app.ui_state.window_width;
-        let layout_state = state.layout.read(cx);
-        let rack_ratio = if layout_state.rack_panel_collapsed {
-            0.0
+        let is_standalone = state.app.ui_state.current_screen == crate::app::Screen::Studio;
+        let content_width = if is_standalone {
+            window_width
         } else {
-            layout_state.rack_h_ratio
+            let layout_state = state.layout.read(cx);
+            let rack_ratio = if layout_state.rack_panel_collapsed {
+                0.0
+            } else {
+                layout_state.rack_h_ratio
+            };
+            rack_ratio * window_width
         };
-        let rack_width = rack_ratio * window_width;
         let output_meter_width = if state.app.output_meter_collapsed {
             0.0
         } else {
             state.app.output_meter_width
         };
         // Subtract output meter, dividers (~12px), and padding (~32px)
-        (rack_width - output_meter_width - 44.0).max(300.0)
+        (content_width - output_meter_width - 44.0).max(300.0)
     };
 
     match settings {
