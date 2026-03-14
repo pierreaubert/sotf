@@ -193,6 +193,9 @@ pub struct RecordingDeviceConfig {
     pub available_sample_rates: Vec<u32>,
     /// Mapping from physical input channels to recording channels
     pub channel_mappings: Vec<usize>,
+    /// Calibration file path for each input channel (parallel to channel_mappings)
+    #[serde(default)]
+    pub mic_calibration_paths: Vec<Option<String>>,
 }
 
 impl Default for RecordingDeviceConfig {
@@ -203,9 +206,53 @@ impl Default for RecordingDeviceConfig {
             num_channels: 1,
             sample_rate: 48000,
             available_sample_rates: vec![44100, 48000, 88200, 96000, 176400, 192000],
-            channel_mappings: vec![1],
+            channel_mappings: vec![0],
+            mic_calibration_paths: vec![None],
         }
     }
+}
+
+impl RecordingDeviceConfig {
+    /// Get the calibration file path for a given channel index
+    pub fn calibration_for_channel(&self, idx: usize) -> Option<&str> {
+        self.mic_calibration_paths
+            .get(idx)
+            .and_then(|p| p.as_deref())
+    }
+
+    /// Set the calibration file path for a given channel index, growing the vec if needed
+    pub fn set_calibration_for_channel(&mut self, idx: usize, path: Option<String>) {
+        // Grow to fit both channel_mappings and the target index
+        self.sync_calibration_paths();
+        while self.mic_calibration_paths.len() <= idx {
+            self.mic_calibration_paths.push(None);
+        }
+        self.mic_calibration_paths[idx] = path;
+    }
+
+    /// Pad mic_calibration_paths to match channel_mappings length
+    pub fn sync_calibration_paths(&mut self) {
+        while self.mic_calibration_paths.len() < self.channel_mappings.len() {
+            self.mic_calibration_paths.push(None);
+        }
+    }
+}
+
+/// A saved microphone setup
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MicrophonePreset {
+    pub name: String,
+    pub device_name: String,
+    /// Physical input channels used
+    pub channel_mappings: Vec<usize>,
+    /// Calibration file per channel (parallel to channel_mappings)
+    pub mic_calibration_paths: Vec<Option<String>>,
+}
+
+/// Persistent config for saved mic presets
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MicrophonePresetsConfig {
+    pub presets: Vec<MicrophonePreset>,
 }
 
 /// Recording for a single channel with results
@@ -215,6 +262,35 @@ pub struct ChannelRecording {
     pub channel_name: String,
     pub state: ChannelRecordingState,
     pub result: Option<RecordingResult>,
+    /// Per-speaker sweep start frequency in Hz
+    #[serde(default = "default_sweep_start_freq")]
+    pub sweep_start_freq: f32,
+    /// Per-speaker sweep end frequency in Hz
+    #[serde(default = "default_sweep_end_freq")]
+    pub sweep_end_freq: f32,
+}
+
+fn default_sweep_start_freq() -> f32 {
+    20.0
+}
+
+fn default_sweep_end_freq() -> f32 {
+    20000.0
+}
+
+impl ChannelRecording {
+    /// Create a new channel recording with default freq range based on channel name
+    pub fn new(channel_index: usize, channel_name: String) -> Self {
+        let is_lfe = channel_name == "LFE";
+        Self {
+            channel_index,
+            channel_name,
+            state: ChannelRecordingState::Empty,
+            result: None,
+            sweep_start_freq: if is_lfe { 10.0 } else { 20.0 },
+            sweep_end_freq: if is_lfe { 500.0 } else { 20000.0 },
+        }
+    }
 }
 
 /// Result of a single channel recording
@@ -389,5 +465,122 @@ impl SpeakerConfiguration {
             10 => SpeakerConfiguration::Surround91,
             _ => SpeakerConfiguration::Custom,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calibration_for_channel_returns_none_for_out_of_bounds() {
+        let config = RecordingDeviceConfig::default();
+        assert!(config.calibration_for_channel(5).is_none());
+    }
+
+    #[test]
+    fn test_calibration_for_channel_returns_path() {
+        let mut config = RecordingDeviceConfig::default();
+        config.mic_calibration_paths = vec![Some("/path/to/cal.txt".to_string())];
+        assert_eq!(
+            config.calibration_for_channel(0),
+            Some("/path/to/cal.txt")
+        );
+    }
+
+    #[test]
+    fn test_calibration_for_channel_returns_none_for_none_entry() {
+        let mut config = RecordingDeviceConfig::default();
+        config.mic_calibration_paths = vec![None, Some("/path.txt".to_string())];
+        assert!(config.calibration_for_channel(0).is_none());
+        assert_eq!(config.calibration_for_channel(1), Some("/path.txt"));
+    }
+
+    #[test]
+    fn test_set_calibration_grows_vec_beyond_channel_mappings() {
+        let mut config = RecordingDeviceConfig::default();
+        // Default has 1 channel_mapping, set calibration for channel 3
+        config.set_calibration_for_channel(3, Some("/path.txt".to_string()));
+        assert_eq!(config.mic_calibration_paths.len(), 4);
+        assert_eq!(config.calibration_for_channel(3), Some("/path.txt"));
+        // Intermediate entries should be None
+        assert!(config.calibration_for_channel(1).is_none());
+        assert!(config.calibration_for_channel(2).is_none());
+    }
+
+    #[test]
+    fn test_set_calibration_overwrites_existing() {
+        let mut config = RecordingDeviceConfig::default();
+        config.set_calibration_for_channel(0, Some("/old.txt".to_string()));
+        config.set_calibration_for_channel(0, Some("/new.txt".to_string()));
+        assert_eq!(config.calibration_for_channel(0), Some("/new.txt"));
+    }
+
+    #[test]
+    fn test_set_calibration_clear() {
+        let mut config = RecordingDeviceConfig::default();
+        config.set_calibration_for_channel(0, Some("/path.txt".to_string()));
+        config.set_calibration_for_channel(0, None);
+        assert!(config.calibration_for_channel(0).is_none());
+    }
+
+    #[test]
+    fn test_sync_calibration_paths_pads_to_channel_mappings() {
+        let mut config = RecordingDeviceConfig::default();
+        config.channel_mappings = vec![0, 1, 2];
+        config.mic_calibration_paths = vec![Some("/path.txt".to_string())];
+        config.sync_calibration_paths();
+        assert_eq!(config.mic_calibration_paths.len(), 3);
+        assert_eq!(config.calibration_for_channel(0), Some("/path.txt"));
+        assert!(config.calibration_for_channel(1).is_none());
+        assert!(config.calibration_for_channel(2).is_none());
+    }
+
+    #[test]
+    fn test_microphone_preset_serde_roundtrip() {
+        let preset = MicrophonePreset {
+            name: "UMIK-1".to_string(),
+            device_name: "UMIK-1 USB".to_string(),
+            channel_mappings: vec![0, 1],
+            mic_calibration_paths: vec![
+                Some("/cal/ch0.txt".to_string()),
+                Some("/cal/ch1.txt".to_string()),
+            ],
+        };
+        let json = serde_json::to_string(&preset).unwrap();
+        let deserialized: MicrophonePreset = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "UMIK-1");
+        assert_eq!(deserialized.mic_calibration_paths.len(), 2);
+    }
+
+    #[test]
+    fn test_presets_config_serde_roundtrip() {
+        let config = MicrophonePresetsConfig {
+            presets: vec![MicrophonePreset {
+                name: "Test".to_string(),
+                device_name: "Device".to_string(),
+                channel_mappings: vec![0],
+                mic_calibration_paths: vec![None],
+            }],
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: MicrophonePresetsConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.presets.len(), 1);
+    }
+
+    #[test]
+    fn test_recording_device_config_backward_compat_deserialization() {
+        // Old format without mic_calibration_paths field
+        let json = r#"{
+            "device_id": "test",
+            "device_name": "Test Device",
+            "num_channels": 1,
+            "sample_rate": 48000,
+            "available_sample_rates": [48000],
+            "channel_mappings": [0]
+        }"#;
+        let config: RecordingDeviceConfig = serde_json::from_str(json).unwrap();
+        assert!(config.mic_calibration_paths.is_empty());
+        assert!(config.calibration_for_channel(0).is_none());
     }
 }

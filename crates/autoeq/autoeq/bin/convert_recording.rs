@@ -140,6 +140,7 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
             recording_sample_rate: Some(cfg.recording_sample_rate),
             recording_channels: Some(cfg.recording_channels as usize),
             mic_calibration_path: cfg.mic_calibration_path.clone(),
+            mic_calibration_paths: None,
             recording_directory: cfg.recording_directory.clone(),
             signal_type: Some(cfg.signal_type.clone()),
             signal_duration_secs: Some(cfg.signal_duration_secs),

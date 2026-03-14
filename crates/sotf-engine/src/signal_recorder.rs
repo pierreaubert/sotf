@@ -668,6 +668,9 @@ pub struct RecordingSession {
     pub recording_device: Option<DeviceInfo>,
     /// Microphone calibration file path (relative to session directory)
     pub mic_calibration_path: Option<String>,
+    /// Per-channel microphone calibration file paths (parallel to channels)
+    #[serde(default)]
+    pub mic_calibration_paths: Vec<Option<String>>,
     /// Individual channel recordings
     pub channels: Vec<ChannelRecordingInfo>,
 }
@@ -699,6 +702,9 @@ pub struct ChannelRecordingInfo {
     pub success: bool,
     /// Error message if recording failed
     pub error: Option<String>,
+    /// Per-channel microphone calibration file path
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mic_calibration_path: Option<String>,
 }
 
 impl RecordingSession {
@@ -721,8 +727,21 @@ impl RecordingSession {
             playback_device: None,
             recording_device: None,
             mic_calibration_path: None,
+            mic_calibration_paths: Vec::new(),
             channels: Vec::new(),
         }
+    }
+
+    /// Get the effective calibration path for a channel, checking per-channel first, then global fallback
+    pub fn effective_calibration_for_channel(&self, idx: usize) -> Option<&str> {
+        // Per-channel calibration takes priority
+        if let Some(Some(path)) = self.mic_calibration_paths.get(idx)
+            && !path.is_empty()
+        {
+            return Some(path.as_str());
+        }
+        // Fall back to global
+        self.mic_calibration_path.as_deref()
     }
 
     /// Add a channel recording to the session
@@ -747,6 +766,7 @@ impl RecordingSession {
             csv_path: csv_path.to_string(),
             success,
             error,
+            mic_calibration_path: None,
         });
     }
 
@@ -804,8 +824,8 @@ pub fn reprocess_recordings(
         session_dir
     );
 
-    // Load microphone compensation if provided
-    let compensation = if let Some(comp_path) = mic_compensation_path {
+    // Load global microphone compensation (used as fallback)
+    let global_compensation = if let Some(comp_path) = mic_compensation_path {
         Some(MicrophoneCompensation::from_file(comp_path)?)
     } else if let Some(ref rel_path) = session.mic_calibration_path {
         let full_path = session_dir.join(rel_path);
@@ -821,7 +841,7 @@ pub fn reprocess_recordings(
     let mut updated_session = session.clone();
     updated_session.channels.clear();
 
-    for channel_info in &session.channels {
+    for (ch_idx, channel_info) in session.channels.iter().enumerate() {
         if !channel_info.success {
             // Keep failed channels as-is
             updated_session.channels.push(channel_info.clone());
@@ -850,6 +870,41 @@ pub fn reprocess_recordings(
             wav_path
         );
 
+        // Resolve per-channel compensation with fallback chain:
+        // 1. ChannelRecordingInfo.mic_calibration_path (per-recording override)
+        // 2. RecordingSession.mic_calibration_paths[idx] (per-channel session config)
+        // 3. Global compensation (from mic_compensation_path arg or session.mic_calibration_path)
+        let per_channel_cal_path = channel_info
+            .mic_calibration_path
+            .as_deref()
+            .or_else(|| {
+                session
+                    .mic_calibration_paths
+                    .get(ch_idx)
+                    .and_then(|p| p.as_deref())
+            })
+            .filter(|p| !p.is_empty());
+
+        let channel_compensation = if let Some(cal_path) = per_channel_cal_path {
+            let ch_path = Path::new(cal_path);
+            let full_path = if ch_path.is_absolute() {
+                ch_path.to_path_buf()
+            } else {
+                session_dir.join(ch_path)
+            };
+            if full_path.exists() {
+                Some(MicrophoneCompensation::from_file(&full_path)?)
+            } else {
+                log::warn!(
+                    "[reprocess_recordings] Per-channel calibration file not found: {:?}, using global",
+                    full_path
+                );
+                global_compensation.as_ref().cloned()
+            }
+        } else {
+            global_compensation.as_ref().cloned()
+        };
+
         // Re-analyze the recording
         match analyze_recording(
             &wav_path,
@@ -859,7 +914,9 @@ pub fn reprocess_recordings(
         ) {
             Ok(analysis) => {
                 // Write updated CSV
-                if let Err(e) = write_analysis_csv(&analysis, &csv_path, compensation.as_ref()) {
+                if let Err(e) =
+                    write_analysis_csv(&analysis, &csv_path, channel_compensation.as_ref())
+                {
                     log::error!(
                         "[reprocess_recordings] Failed to write CSV for channel '{}': {}",
                         channel_info.channel_name,
@@ -980,6 +1037,7 @@ pub fn migrate_legacy_recording(
         playback_device: None,
         recording_device: None,
         mic_calibration_path: None,
+        mic_calibration_paths: Vec::new(),
         channels: Vec::new(),
     };
 
@@ -1203,6 +1261,96 @@ mod tests {
     use super::*;
     use hound::WavReader;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_effective_calibration_per_channel_priority() {
+        let mut session = RecordingSession::new(48000, "sweep", 5.0, -20.0, None);
+        session.mic_calibration_path = Some("/global/cal.txt".to_string());
+        session.mic_calibration_paths = vec![
+            Some("/ch0/cal.txt".to_string()),
+            None,
+            Some("/ch2/cal.txt".to_string()),
+        ];
+        // Per-channel takes priority over global
+        assert_eq!(
+            session.effective_calibration_for_channel(0),
+            Some("/ch0/cal.txt")
+        );
+        // Falls back to global when per-channel is None
+        assert_eq!(
+            session.effective_calibration_for_channel(1),
+            Some("/global/cal.txt")
+        );
+        // Per-channel takes priority
+        assert_eq!(
+            session.effective_calibration_for_channel(2),
+            Some("/ch2/cal.txt")
+        );
+        // Out-of-bounds falls back to global
+        assert_eq!(
+            session.effective_calibration_for_channel(5),
+            Some("/global/cal.txt")
+        );
+    }
+
+    #[test]
+    fn test_effective_calibration_empty_string_falls_back() {
+        let mut session = RecordingSession::new(48000, "sweep", 5.0, -20.0, None);
+        session.mic_calibration_path = Some("/global/cal.txt".to_string());
+        session.mic_calibration_paths = vec![Some("".to_string())];
+        // Empty string should fall back to global
+        assert_eq!(
+            session.effective_calibration_for_channel(0),
+            Some("/global/cal.txt")
+        );
+    }
+
+    #[test]
+    fn test_effective_calibration_no_global_no_per_channel() {
+        let session = RecordingSession::new(48000, "sweep", 5.0, -20.0, None);
+        assert!(session.effective_calibration_for_channel(0).is_none());
+    }
+
+    #[test]
+    fn test_recording_session_serde_backward_compat() {
+        // Old format without mic_calibration_paths
+        let json = r#"{
+            "version": "2.0",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "sample_rate": 48000,
+            "signal_type": "sweep",
+            "signal_duration_secs": 5.0,
+            "signal_level_db": -20.0,
+            "sweep_range": null,
+            "playback_device": null,
+            "recording_device": null,
+            "mic_calibration_path": "/global.txt",
+            "channels": []
+        }"#;
+        let session: RecordingSession = serde_json::from_str(json).unwrap();
+        assert!(session.mic_calibration_paths.is_empty());
+        assert_eq!(
+            session.effective_calibration_for_channel(0),
+            Some("/global.txt")
+        );
+    }
+
+    #[test]
+    fn test_channel_recording_info_serde_backward_compat() {
+        // Old format without per-channel mic_calibration_path
+        let json = r#"{
+            "channel_index": 0,
+            "channel_name": "L",
+            "output_channel": 0,
+            "input_channel": 0,
+            "wav_path": "ch0.wav",
+            "csv_path": "ch0.csv",
+            "success": true,
+            "error": null
+        }"#;
+        let info: ChannelRecordingInfo = serde_json::from_str(json).unwrap();
+        assert!(info.mic_calibration_path.is_none());
+    }
 
     #[test]
     fn test_signal_type_from_str() {

@@ -101,6 +101,8 @@ pub struct RecordingConfiguration {
     pub recording_sample_rate: u32,
     pub recording_channels: usize,
     pub mic_calibration_path: Option<String>,
+    #[serde(default)]
+    pub mic_calibration_paths: Vec<Option<String>>,
     pub recording_directory: Option<String>,
     pub signal_type: String,
     pub signal_duration_secs: f32,

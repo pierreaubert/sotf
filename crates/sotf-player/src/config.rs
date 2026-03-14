@@ -132,6 +132,41 @@ pub fn get_music_db_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("music.db"))
 }
 
+/// Get the path to the microphone presets config file
+pub fn get_microphone_presets_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("microphones.json"))
+}
+
+/// Load microphone presets from disk
+pub fn load_microphone_presets(
+) -> Result<crate::recording_types::MicrophonePresetsConfig, Box<dyn std::error::Error>> {
+    if let Some(path) = get_microphone_presets_path() {
+        if path.exists() {
+            crate::security::validate_config_read_path(&path)?;
+            let json = std::fs::read_to_string(&path)?;
+            Ok(serde_json::from_str(&json)?)
+        } else {
+            Ok(crate::recording_types::MicrophonePresetsConfig::default())
+        }
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
+/// Save microphone presets to disk
+pub fn save_microphone_presets(
+    config: &crate::recording_types::MicrophonePresetsConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(path) = get_microphone_presets_path() {
+        crate::security::validate_write_path(&path)?;
+        let json = serde_json::to_string_pretty(config)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    } else {
+        Err("Could not determine config directory".into())
+    }
+}
+
 /// Get the path to the plugin presets directory
 pub fn get_plugin_presets_dir() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| {

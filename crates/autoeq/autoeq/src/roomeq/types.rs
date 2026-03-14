@@ -120,6 +120,9 @@ pub struct RecordingConfiguration {
     /// Microphone calibration file path (if used)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mic_calibration_path: Option<String>,
+    /// Per-channel microphone calibration file paths
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mic_calibration_paths: Option<Vec<Option<String>>>,
     /// Recording output directory
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording_directory: Option<String>,

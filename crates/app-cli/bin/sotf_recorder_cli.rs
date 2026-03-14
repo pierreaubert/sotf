@@ -76,9 +76,15 @@ struct Cli {
     amp2: Option<f32>,
 
     /// Microphone compensation file (freq/SPL pairs in CSV format)
-    /// When provided, inverse compensation is applied to the CSV output
+    /// When provided, inverse compensation is applied to the CSV output.
+    /// Applies to all channels as a default fallback.
     #[arg(long)]
     microphone_compensation: Option<String>,
+
+    /// Per-channel microphone calibration file in channel:path format.
+    /// Can be specified multiple times. Example: --mic-calibration 0:/path/to/umik1.txt
+    #[arg(long = "mic-calibration", value_name = "CHANNEL:PATH")]
+    mic_calibration: Vec<String>,
 }
 
 fn main() {
@@ -108,6 +114,29 @@ fn main() {
         std::process::exit(1);
     });
 
+    // Parse per-channel calibration args into a map
+    let mut mic_calibration_map: std::collections::HashMap<usize, String> =
+        std::collections::HashMap::new();
+    for entry in &cli.mic_calibration {
+        if let Some((ch_str, path)) = entry.split_once(':') {
+            match ch_str.parse::<usize>() {
+                Ok(ch) => {
+                    mic_calibration_map.insert(ch, path.to_string());
+                }
+                Err(_) => {
+                    eprintln!("Error: invalid channel number in --mic-calibration: {}", entry);
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            eprintln!(
+                "Error: --mic-calibration must be in CHANNEL:PATH format, got: {}",
+                entry
+            );
+            std::process::exit(1);
+        }
+    }
+
     if let Err(e) = record_signal(
         signal,
         duration,
@@ -126,6 +155,7 @@ fn main() {
         cli.amp1,
         cli.amp2,
         cli.microphone_compensation,
+        mic_calibration_map,
     ) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -241,6 +271,7 @@ pub fn record_signal(
     amp1: Option<f32>,
     amp2: Option<f32>,
     microphone_compensation: Option<String>,
+    mic_calibration_map: std::collections::HashMap<usize, String>,
 ) -> Result<(), String> {
     use sotf_audio::signal_recorder::*;
 
@@ -442,18 +473,24 @@ pub fn record_signal(
         println!("  Playing mono signal to hw output channel {}", send_ch);
         println!("  Recording mono from hw input channel {}", record_ch);
 
+        // Resolve per-channel calibration: per-channel override > global fallback
+        let effective_mic_comp = mic_calibration_map
+            .get(&(record_ch as usize))
+            .map(|s| s.as_str())
+            .or(microphone_compensation.as_deref());
+
         record_and_analyze(
             temp_wav.path(),  // Use the temporary WAV file for playback
             &wav_path,        // Record to the final output WAV file
             &prepared_signal, // Use the prepared mono signal for analysis
             sample_rate,
             &csv_path,
-            send_ch,                            // Output channel
-            record_ch,                          // Input channel
-            device.as_deref(),                  // Optional output device name
-            device.as_deref(),                  // Optional input device name
-            microphone_compensation.as_deref(), // Optional microphone compensation file
-            None,                               // Optional sweep range
+            send_ch,                // Output channel
+            record_ch,              // Input channel
+            device.as_deref(),      // Optional output device name
+            device.as_deref(),      // Optional input device name
+            effective_mic_comp,     // Per-channel or global microphone compensation
+            None,                   // Optional sweep range
         )?;
 
         println!("  ✓ Recording complete");

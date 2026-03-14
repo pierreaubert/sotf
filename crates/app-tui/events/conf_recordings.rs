@@ -546,12 +546,7 @@ pub(crate) fn init_recording_channels(app: &mut App) {
             .channel_mappings
             .iter()
             .enumerate()
-            .map(|(i, mapping)| ChannelRecording {
-                channel_index: i,
-                channel_name: mapping.group_name.clone(),
-                state: ChannelRecordingState::Empty,
-                result: None,
-            })
+            .map(|(i, mapping)| ChannelRecording::new(i, mapping.group_name.clone()))
             .collect();
         app.recording.current_channel = if expected_count > 0 { Some(0) } else { None };
     }
@@ -880,6 +875,7 @@ pub(crate) fn save_recordings(app: &mut App) {
         } else {
             Some(app.recording.mic_calibration_path.clone())
         },
+        mic_calibration_paths: app.recording.recording_config.mic_calibration_paths.clone(),
         recording_directory: if app.recording.output_directory.is_empty() {
             None
         } else {
