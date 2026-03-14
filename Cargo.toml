@@ -253,7 +253,7 @@ syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 # Graphics and visualization
 plotly = "0.13"
 plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"] }
-wgpu = "25"
+wgpu = "28"
 bytemuck = { version = "1.14", features = ["derive"] }
 glam = "0.30"
 pollster = "0.4"
