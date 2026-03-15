@@ -892,3 +892,222 @@ fn test_upmixer_dynamic_add_remove() {
 
     println!("\n✓ Dynamic upmixer add/remove passed\n");
 }
+
+// ============================================================================
+// Test 9: Stress test — rapid track changes with natural end-of-stream
+//
+// Simulates TUI auto-advance: short tracks play to completion (natural EOS),
+// then the next track starts immediately. This exercises the critical path
+// where the playback thread has already exited but the manager is still alive.
+// The bug this catches: sending commands (SetVolume, Stop) to a dead playback
+// thread after EOS drain would return "sending on a closed channel" errors.
+// ============================================================================
+
+#[test]
+fn test_stress_rapid_track_changes_with_natural_eos() {
+    if !should_run_e2e_tests() {
+        eprintln!("Skipping test (AEQ_E2E!=1)");
+        return;
+    }
+    let _ = env_logger::try_init();
+    let _lock = DEVICE_LOCK.lock().unwrap();
+
+    let device = require_test_device();
+    let sample_rate = 48000u32;
+
+    println!("\n=== E2E Test: Stress Rapid Track Changes (Natural EOS) ===");
+    println!("Device: {}", device);
+
+    use sotf_audio::manager::StreamingState;
+    use sotf_audio::AudioEngineManager;
+
+    // Configurations to cycle through: (plugins, output_channels, label)
+    let configs: Vec<(Vec<PluginConfig>, usize, &str)> = vec![
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("5.1")], 6, "upmixer 5.1"),
+        (vec![upmixer_plugin("5.0")], 5, "upmixer 5.0"),
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("7.1")], 8, "upmixer 7.1"),
+        (vec![upmixer_plugin("5.1.4")], 10, "upmixer 5.1.4"),
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("5.1")], 6, "upmixer 5.1"),
+    ];
+
+    let num_tracks = configs.len();
+
+    // Create short audio files (1.5s each — short enough to end quickly, long enough
+    // to verify playback started).
+    let track_duration = 1.5;
+    let tracks: Vec<(PathBuf, tempfile::NamedTempFile)> = (0..num_tracks)
+        .map(|_| create_stereo_pink_noise_wav(track_duration, sample_rate))
+        .collect();
+
+    let mut manager = AudioEngineManager::new();
+    manager.set_allow_virtual_output(true);
+
+    for (i, ((plugins, output_channels, label), (wav_path, _tmp))) in
+        configs.iter().zip(tracks.iter()).enumerate()
+    {
+        println!("\n  --- Track {}/{}: {} ({} ch) ---", i + 1, num_tracks, label, output_channels);
+
+        // Load and start playback
+        manager.load_file(wav_path).unwrap();
+        manager
+            .start_playback(Some(device.clone()), plugins.clone(), *output_channels)
+            .unwrap_or_else(|e| panic!("Track {}: start_playback failed: {}", i + 1, e));
+
+        // Verify playback started
+        std::thread::sleep(Duration::from_millis(200));
+        let state = manager.get_engine_state();
+        assert_eq!(
+            state.playback_state,
+            PlaybackState::Playing,
+            "Track {}: should be playing",
+            i + 1
+        );
+        assert!(state.position > 0.0, "Track {}: position should advance", i + 1);
+        println!(
+            "    Playing: pos={:.2}s, ch={}",
+            state.position, state.num_channels
+        );
+
+        // Wait for natural end-of-stream (track plays to completion)
+        let eos_timeout = Duration::from_secs(10);
+        let eos_start = std::time::Instant::now();
+        let mut got_eos = false;
+        while eos_start.elapsed() < eos_timeout {
+            // Drain events like the TUI does
+            let events = manager.drain_events();
+            for event in &events {
+                if matches!(
+                    event,
+                    sotf_audio::manager::StreamingEvent::EndOfStream
+                        | sotf_audio::manager::StreamingEvent::Error(_)
+                ) {
+                    got_eos = true;
+                }
+            }
+            if got_eos {
+                break;
+            }
+            // Also check state transition (Playing -> Stopped -> Idle via drain_events)
+            if manager.get_state() == StreamingState::Idle {
+                got_eos = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(got_eos, "Track {}: timed out waiting for end-of-stream", i + 1);
+        println!("    End of stream detected");
+
+        // === Simulate TUI auto-advance ===
+        // The TUI calls set_volume() before load_and_play(). This is the critical
+        // path: the old engine's playback thread has exited after EOS drain, so
+        // SetVolume must not fail with "sending on a closed channel".
+        let volume = 0.5 + (i as f32 * 0.05);
+        manager
+            .set_volume(volume)
+            .unwrap_or_else(|e| panic!("Track {}: set_volume after EOS failed: {}", i + 1, e));
+
+        // Stop the old engine (also hits the dead playback thread)
+        manager
+            .stop()
+            .unwrap_or_else(|e| panic!("Track {}: stop after EOS failed: {}", i + 1, e));
+
+        println!("    Stopped OK, advancing to next track");
+    }
+
+    println!(
+        "\n✓ Stress rapid track changes passed ({} tracks with natural EOS)\n",
+        num_tracks
+    );
+}
+
+// ============================================================================
+// Test 10: Stress test — rapid track changes with explicit stop (no EOS wait)
+//
+// Simulates the user rapidly skipping tracks: stop mid-playback, immediately
+// start the next track. Cycles through different plugin configs to exercise
+// channel count changes.
+// ============================================================================
+
+#[test]
+fn test_stress_rapid_skip_with_plugin_changes() {
+    if !should_run_e2e_tests() {
+        eprintln!("Skipping test (AEQ_E2E!=1)");
+        return;
+    }
+    let _ = env_logger::try_init();
+    let _lock = DEVICE_LOCK.lock().unwrap();
+
+    let device = require_test_device();
+    let sample_rate = 48000u32;
+
+    println!("\n=== E2E Test: Stress Rapid Skip with Plugin Changes ===");
+    println!("Device: {}", device);
+
+    use sotf_audio::AudioEngineManager;
+
+    let configs: Vec<(Vec<PluginConfig>, usize, &str)> = vec![
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("5.1")], 6, "5.1"),
+        (vec![upmixer_plugin("7.1")], 8, "7.1"),
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("5.1.4")], 10, "5.1.4"),
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("5.1")], 6, "5.1"),
+        (vec![upmixer_plugin("5.0")], 5, "5.0"),
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("7.1.4")], 12, "7.1.4"),
+        (vec![], 2, "stereo"),
+        (vec![upmixer_plugin("5.1")], 6, "5.1"),
+    ];
+
+    let num_tracks = configs.len();
+
+    // Longer files since we're skipping mid-playback
+    let tracks: Vec<(PathBuf, tempfile::NamedTempFile)> = (0..num_tracks)
+        .map(|_| create_stereo_pink_noise_wav(5.0, sample_rate))
+        .collect();
+
+    let mut manager = AudioEngineManager::new();
+    manager.set_allow_virtual_output(true);
+
+    for (i, ((plugins, output_channels, label), (wav_path, _tmp))) in
+        configs.iter().zip(tracks.iter()).enumerate()
+    {
+        println!(
+            "  Track {}/{}: {} ({} ch)",
+            i + 1,
+            num_tracks,
+            label,
+            output_channels
+        );
+
+        manager.load_file(wav_path).unwrap();
+        manager
+            .start_playback(Some(device.clone()), plugins.clone(), *output_channels)
+            .unwrap_or_else(|e| panic!("Track {}: start failed: {}", i + 1, e));
+
+        // Play for just 200ms then skip
+        std::thread::sleep(Duration::from_millis(200));
+
+        let state = manager.get_engine_state();
+        assert_eq!(
+            state.playback_state,
+            PlaybackState::Playing,
+            "Track {}: should be playing",
+            i + 1
+        );
+
+        // Stop mid-playback (simulates user pressing "next")
+        manager
+            .stop()
+            .unwrap_or_else(|e| panic!("Track {}: stop failed: {}", i + 1, e));
+    }
+
+    println!(
+        "\n✓ Stress rapid skip with plugin changes passed ({} tracks)\n",
+        num_tracks
+    );
+}

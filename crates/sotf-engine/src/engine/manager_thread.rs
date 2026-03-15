@@ -1357,8 +1357,10 @@ fn handle_command(
             ) {
                 return ManagerResponse::Error(e);
             }
+            // Best-effort: the playback thread may have already exited after
+            // end-of-stream drain. This is expected during auto-advance.
             if let Err(e) = playback.send_command(PlaybackCommand::Stop) {
-                return ManagerResponse::Error(e);
+                log::debug!("[Manager Thread] Stop send to playback failed (already exited): {}", e);
             }
 
             let mut new_state = (**state.load()).clone();
@@ -1400,8 +1402,11 @@ fn handle_command(
                 state.store(Arc::new(new_state));
             }
 
+            // Best-effort: the playback thread may have already exited after
+            // end-of-stream drain. The volume is stored in state and will be
+            // applied when the next engine starts.
             if let Err(e) = playback.send_command(PlaybackCommand::SetVolume(volume)) {
-                return ManagerResponse::Error(e);
+                log::debug!("[Manager Thread] SetVolume send failed (playback ended): {}", e);
             }
 
             ManagerResponse::Ok
@@ -1416,7 +1421,7 @@ fn handle_command(
             }
 
             if let Err(e) = playback.send_command(PlaybackCommand::Mute(muted)) {
-                return ManagerResponse::Error(e);
+                log::debug!("[Manager Thread] Mute send failed (playback ended): {}", e);
             }
 
             ManagerResponse::Ok
