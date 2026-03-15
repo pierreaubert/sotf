@@ -125,6 +125,7 @@ fn render_spinorama_main_response_plot(
 
     let chart = line(&result.frequencies, &result.input_curve)
         .x_scale(ScaleType::Log)
+        .y_label("SPL (dB)")
         .y_range(-15.0, 5.0)
         .label("Original")
         .color(rgba_to_u32(colors::input(theme)))
@@ -167,6 +168,7 @@ fn render_speaker_filter_response_plot(
     // Start with the total filter response (thicker line)
     let mut chart_builder = line(&result.frequencies, &result.filter_response)
         .x_scale(ScaleType::Log)
+        .y_label("dB")
         .label("Total")
         .legend_position(LegendPosition::Bottom)
         .color(rgba_to_u32(colors::filter(theme)))

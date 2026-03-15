@@ -6,7 +6,7 @@ use sotf_audio_player_gpui::{ChannelMeasurement, RecordingResult, RoomEqState, R
 fn test_room_eq_state_defaults() {
     let state = RoomEqState::default();
     assert_eq!(state.step, RoomEqStep::LoadData);
-    assert_eq!(state.optimizer_config.num_filters, 5);
+    assert_eq!(state.optimizer_config.num_filters, 7);
     assert!(state.channel_measurements.is_empty());
 }
 
@@ -46,7 +46,7 @@ fn test_room_eq_to_room_config_simple() {
     assert!(config.speakers.contains_key("L"));
 
     // Check optimizer config
-    assert_eq!(config.optimizer.num_filters, 5);
+    assert_eq!(config.optimizer.num_filters, 7);
     assert_eq!(config.optimizer.mode, "iir");
 }
 

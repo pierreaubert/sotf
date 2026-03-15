@@ -3692,7 +3692,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "approx",
  "autoeq",
@@ -3733,7 +3733,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "block",
  "gpui",

@@ -4,17 +4,16 @@
 //! 1. Measurement & Target - Choose measurement file and target curve
 //! 2. Optimization - EQ design, fine tuning, and generate EQ
 //! 3. Listen - Preview and apply EQ to playback
-//! 4. Save - Export format selection and save
+//! 4. Export - Apply to playback, export format selection and save
 
 mod actions;
-mod step4_step;
+mod step_4_export;
 mod step_1_measurements;
 mod step_2_optimisation;
 mod step_3_listen;
 
-use crate::app::types::{HeadphoneEqStep, PluginUpdateType, Screen};
+use crate::app::types::{HeadphoneEqStep, Screen};
 use crate::components::icons::{Icon, IconName};
-use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -27,37 +26,6 @@ impl PlayerView {
     // ========================================================================
     // Headphone EQ Wizard Screen
     // ========================================================================
-
-    /// Clear the headphone EQ from the playback chain
-    pub fn clear_headphone_eq_from_playback(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            // Find and remove EQ plugins
-            let plugins = state.app.plugin_state.chain.plugins();
-            let eq_indices: Vec<_> = plugins
-                .iter()
-                .enumerate()
-                .filter_map(|(i, p)| {
-                    if matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ) {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            // Remove in reverse order to maintain correct indices
-            for idx in eq_indices.into_iter().rev() {
-                state.app.plugin_state.chain.remove_plugin(idx);
-            }
-
-            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-            state.app.sync_spectrum_visible();
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
-                "Cleared EQ from playback",
-            ));
-        });
-        cx.notify();
-    }
 
     /// Main Headphone EQ screen entry point (wizard)
     pub(crate) fn render_headphone_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -74,7 +42,7 @@ impl PlayerView {
                 self.render_headphone_eq_optimization(cx).into_any_element()
             }
             HeadphoneEqStep::Listen => self.render_headphone_eq_listen(cx).into_any_element(),
-            HeadphoneEqStep::Save => self.render_headphone_eq_save(cx).into_any_element(),
+            HeadphoneEqStep::Export => self.render_headphone_eq_export(cx).into_any_element(),
         };
 
         div()
@@ -111,7 +79,7 @@ impl PlayerView {
             HeadphoneEqStep::MeasurementTarget => 0,
             HeadphoneEqStep::Optimization => 1,
             HeadphoneEqStep::Listen => 2,
-            HeadphoneEqStep::Save => 3,
+            HeadphoneEqStep::Export => 3,
         };
 
         // Define steps
@@ -119,7 +87,7 @@ impl PlayerView {
             WizardStep::new("measure", "Measurement"),
             WizardStep::new("optimize", "Optimization"),
             WizardStep::new("listen", "Listen"),
-            WizardStep::new("save", "Save"),
+            WizardStep::new("export", "Export"),
         ];
 
         // Calculate statuses
@@ -151,7 +119,7 @@ impl PlayerView {
             _ => "Back",
         };
         let next_label = match current_step {
-            HeadphoneEqStep::Save => "Finish",
+            HeadphoneEqStep::Export => "Finish",
             _ => "Next",
         };
 
@@ -203,7 +171,7 @@ impl PlayerView {
                         cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 match state.app.measurement_state.headphone_eq_state.step {
-                                    HeadphoneEqStep::Save => {
+                                    HeadphoneEqStep::Export => {
                                         state.app.ui_state.current_screen =
                                             state.app.ui_state.last_screen;
                                     }

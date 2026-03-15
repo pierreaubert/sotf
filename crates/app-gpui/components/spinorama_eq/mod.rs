@@ -8,7 +8,6 @@
 
 use crate::app::types::{PluginUpdateType, Screen, SpinoramaStep};
 use crate::components::icons::{Icon, IconName};
-use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -201,37 +200,6 @@ impl PlayerView {
     // ========================================================================
     // Spinorama EQ Wizard Screen
     // ========================================================================
-
-    /// Clear the spinorama EQ from the playback chain
-    pub fn clear_spinorama_eq_from_playback(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            // Find and remove EQ plugins
-            let plugins = state.app.plugin_state.chain.plugins();
-            let eq_indices: Vec<_> = plugins
-                .iter()
-                .enumerate()
-                .filter_map(|(i, p)| {
-                    if matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ) {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            // Remove in reverse order to maintain correct indices
-            for idx in eq_indices.into_iter().rev() {
-                state.app.plugin_state.chain.remove_plugin(idx);
-            }
-
-            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-            state.app.sync_spectrum_visible();
-            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
-                "Cleared EQ from playback",
-            ));
-        });
-        cx.notify();
-    }
 
     /// Main Spinorama EQ screen entry point (wizard)
     pub(crate) fn render_spinorama_eq_screen(

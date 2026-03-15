@@ -129,8 +129,9 @@ impl PlayerView {
     );
 
     /// Check if we're in a text input mode where actions should be blocked.
-    /// Delegates to InputMode::is_text_input() for consistency.
+    /// Returns true for explicit input modes (search, directory entry, etc.)
+    /// and also when a NumberInput component is actively being edited.
     pub(crate) fn is_text_input_mode(input_mode: crate::app::InputMode) -> bool {
-        input_mode.is_text_input()
+        input_mode.is_text_input() || gpui_ui_kit::is_number_input_editing()
     }
 }

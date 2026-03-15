@@ -232,9 +232,7 @@ impl PlayerView {
                                                     .on_mouse_up(
                                                         MouseButton::Left,
                                                         cx.listener(|view, _, _, cx| {
-                                                            view.clear_headphone_eq_from_playback(
-                                                                cx,
-                                                            );
+                                                            view.clear_eq_from_playback(cx);
                                                         }),
                                                     ),
                                             ),

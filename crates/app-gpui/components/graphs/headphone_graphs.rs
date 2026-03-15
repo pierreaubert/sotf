@@ -73,6 +73,7 @@ fn render_filter_response_plot(
     // Start with the sum (combined filter response) as the primary series
     let mut chart_builder = line(&freqs, &sum_response)
         .x_scale(ScaleType::Log)
+        .y_label("Amplitude (dB SPL)")
         .y_range(-10.0, 10.0)
         .title("Filter Response")
         .label("Sum")

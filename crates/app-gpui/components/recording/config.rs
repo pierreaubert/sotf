@@ -1323,12 +1323,8 @@ impl PlayerView {
         let view = cx.entity().clone();
         let current_name = current_name.to_string();
 
-        // Capture key events to prevent global shortcuts while typing
         div()
             .size_full()
-            .on_key_down(|_event, _window, cx| {
-                cx.stop_propagation();
-            })
             .child(
                 Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
                     .placeholder("Name")

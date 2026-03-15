@@ -8,44 +8,59 @@ use gpui_ui_kit::{
 
 impl PlayerView {
     // ========================================================================
-    // Step 4: Save
+    // Step 4: Export
     // ========================================================================
 
-    pub(crate) fn render_headphone_eq_save(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_headphone_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
-        let result = headphone_eq.result.as_ref();
+        let has_result = headphone_eq.result.is_some();
         let export_format = headphone_eq.export_format.clone();
 
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Save EQ")
+                Text::new("Apply & Export")
                     .color(theme.text_primary)
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
             .child(
-                Text::new("Choose an export format and save your EQ configuration.")
+                Text::new("Apply the EQ to playback or export to various formats.")
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
-            .when_some(result, |vstack, _result| {
+            .when(has_result, |vstack| {
+                let theme = theme.clone();
+                let button_theme = button_theme.clone();
+
                 vstack
+                    .child(self.render_apply_to_playback_card(
+                        cx,
+                        "headphone",
+                        &theme,
+                        &button_theme,
+                        Self::apply_headphone_eq_result,
+                        Self::clear_eq_from_playback,
+                    ))
                     .child(
                         Card::new()
                             .background(theme.surface)
                             .header_background(theme.background_secondary)
                             .border(theme.border)
-                            .header(Text::new("Export Format").color(theme.text_primary).weight(TextWeight::Semibold))
+                            .header(
+                                Text::new("Export")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
                             .content(
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Text::new("Select the format for your EQ file.")
+                                        Text::new("Select export format and save your EQ.")
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     )
@@ -55,14 +70,16 @@ impl PlayerView {
                                             .spacing(StackSpacing::Xs)
                                             .wrap(true)
                                             .children(
-                                                sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS.iter().map(
-                                                    |(value, label, _ext)| {
-                                                        let is_selected = export_format == *value;
+                                                sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS
+                                                    .iter()
+                                                    .map(|(value, label, _ext)| {
+                                                        let is_selected =
+                                                            export_format == *value;
                                                         let value = value.to_string();
 
                                                         Button::new(
                                                             SharedString::from(format!(
-                                                                "export-format-{}",
+                                                                "headphone-export-format-{}",
                                                                 value
                                                             )),
                                                             *label,
@@ -94,26 +111,13 @@ impl PlayerView {
                                                                 },
                                                             ),
                                                         )
-                                                    },
-                                                ),
+                                                    }),
                                             )
-                                    }),
-                            ),
-                    )
-                    .child(
-                        Card::new()
-                            .background(theme.surface)
-                            .header_background(theme.background_secondary)
-                            .border(theme.border)
-                            .header(Text::new("Save").color(theme.text_primary).weight(TextWeight::Semibold))
-                            .content(
-                                VStack::new()
-                                    .spacing(StackSpacing::Sm)
+                                    })
                                     .child(
-                                        Button::new("save-eq", "Save EQ File")
+                                        Button::new("save-headphone-eq", "Save EQ File")
                                             .variant(ButtonVariant::Primary)
-                                            .size(ButtonSize::Md)
-                                            .full_width(true)
+                                            .size(ButtonSize::Sm)
                                             .theme(button_theme.clone())
                                             .build()
                                             .on_mouse_up(
@@ -122,28 +126,27 @@ impl PlayerView {
                                                     view.save_headphone_eq_result(cx);
                                                 }),
                                             ),
-                                    )
-                                    .child(
-                                        Text::new(
-                                            "Your EQ will be saved to ~/Library/Application Support/org.spinorama.sotf/EQ",
-                                        )
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
                                     ),
                             ),
                     )
             })
-            .when(result.is_none(), |vstack| {
+            .when(!has_result, |vstack| {
                 vstack.child(
                     Card::new()
                         .background(theme.surface)
                         .header_background(theme.background_secondary)
                         .border(theme.border)
-                        .header(Text::new("No Results").color(theme.text_primary).weight(TextWeight::Semibold))
+                        .header(
+                            Text::new("No Results")
+                                .color(theme.text_primary)
+                                .weight(TextWeight::Semibold),
+                        )
                         .content(
-                            Text::new("Go back and run optimization to generate an EQ curve.")
-                                .size(TextSize::Xs)
-                                .color(theme.text_secondary),
+                            Text::new(
+                                "Go back and run optimization to generate an EQ curve.",
+                            )
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
                         ),
                 )
             })

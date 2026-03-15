@@ -18,10 +18,16 @@ pub use plugins::{
 };
 
 use crate::app::Screen;
+use crate::app::types::PluginUpdateType;
 use crate::components::icons::{Icon, IconName};
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
+};
 
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -197,6 +203,102 @@ impl PlayerView {
                     .flex_1()
                     .p_4()
                     .child(content),
+            )
+    }
+
+    /// Clear all EQ plugins from the playback chain.
+    /// Shared by spinorama_eq and headphone_eq workflows.
+    pub fn clear_eq_from_playback(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            let plugins = state.app.plugin_state.chain.plugins();
+            let eq_indices: Vec<_> = plugins
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    if matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            for idx in eq_indices.into_iter().rev() {
+                state.app.plugin_state.chain.remove_plugin(idx);
+            }
+
+            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.sync_spectrum_visible();
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
+                "Cleared EQ from playback",
+            ));
+        });
+        cx.notify();
+    }
+
+    /// Render the "Apply to Playback" card used in export steps.
+    /// `apply_fn` and `clear_fn` are method pointers for applying/clearing EQ.
+    pub(crate) fn render_apply_to_playback_card(
+        &self,
+        cx: &mut Context<Self>,
+        id_prefix: &str,
+        theme: &crate::theme::Theme,
+        button_theme: &ButtonTheme,
+        apply_fn: fn(&mut Self, &mut Context<Self>),
+        clear_fn: fn(&mut Self, &mut Context<Self>),
+    ) -> Card {
+        let apply_id = SharedString::from(format!("apply-{}-eq", id_prefix));
+        let clear_id = SharedString::from(format!("clear-{}-eq", id_prefix));
+
+        Card::new()
+            .background(theme.surface)
+            .header_background(theme.background_secondary)
+            .border(theme.border)
+            .header(
+                Text::new("Apply to Playback")
+                    .color(theme.text_primary)
+                    .weight(TextWeight::Semibold),
+            )
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(
+                        Text::new(
+                            "Apply the EQ to your current playback to hear the difference.",
+                        )
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .child(
+                                Button::new(apply_id, "Apply to Playback")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Sm)
+                                    .theme(button_theme.clone())
+                                    .build()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |view, _, _, cx| {
+                                            apply_fn(view, cx);
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                Button::new(clear_id, "Clear EQ")
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Sm)
+                                    .theme(button_theme.clone())
+                                    .build()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |view, _, _, cx| {
+                                            clear_fn(view, cx);
+                                        }),
+                                    ),
+                            ),
+                    ),
             )
     }
 }

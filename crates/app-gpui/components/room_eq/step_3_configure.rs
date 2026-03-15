@@ -1394,18 +1394,7 @@ impl PlayerView {
             )
             // Mode selector inline
             .child(mode_selector)
-            // Wrap in div to capture key events and prevent global shortcuts
-            // from firing while typing in input fields, but allow
-            // meta/Cmd key combos (Cmd+Q, Cmd+C, etc.) to pass through
-            .child(
-                div()
-                    .on_key_down(|event, _window, cx| {
-                        if !event.keystroke.modifiers.platform {
-                            cx.stop_propagation();
-                        }
-                    })
-                    .child(autoeq_form),
-            );
+            .child(autoeq_form);
 
         // Only show channel configuration for multi-driver measurements
         if has_multi_driver {

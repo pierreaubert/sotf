@@ -17,7 +17,7 @@ impl PlayerView {
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let spinorama = &state.app.measurement_state.spinorama_eq_state;
-        let result = spinorama.result.as_ref();
+        let has_result = spinorama.result.is_some();
         let export_format = spinorama.export_format.clone();
 
         VStack::new()
@@ -33,66 +33,19 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
-            .when_some(result, |vstack, _result| {
+            .when(has_result, |vstack| {
                 let theme = theme.clone();
                 let button_theme = button_theme.clone();
 
                 vstack
-                    .child(
-                        Card::new()
-                            .background(theme.surface)
-                            .header_background(theme.background_secondary)
-                            .border(theme.border)
-                            .header(
-                                Text::new("Apply to Playback")
-                                    .color(theme.text_primary)
-                                    .weight(TextWeight::Semibold),
-                            )
-                            .content(
-                                VStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        Text::new(
-                                            "Apply the EQ to your current playback to hear the difference.",
-                                        )
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Button::new(
-                                                    "apply-spinorama-eq",
-                                                    "Apply to Playback",
-                                                )
-                                                .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Sm)
-                                                .theme(button_theme.clone())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
-                                                        view.apply_spinorama_eq_result(cx);
-                                                    }),
-                                                ),
-                                            )
-                                            .child(
-                                                Button::new("clear-spinorama-eq", "Clear EQ")
-                                                    .variant(ButtonVariant::Secondary)
-                                                    .size(ButtonSize::Sm)
-                                                    .theme(button_theme.clone())
-                                                    .build()
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(|view, _, _, cx| {
-                                                            view.clear_spinorama_eq_from_playback(cx);
-                                                        }),
-                                                    ),
-                                            ),
-                                    ),
-                            ),
-                    )
+                    .child(self.render_apply_to_playback_card(
+                        cx,
+                        "spinorama",
+                        &theme,
+                        &button_theme,
+                        Self::apply_spinorama_eq_result,
+                        Self::clear_eq_from_playback,
+                    ))
                     .child(
                         Card::new()
                             .background(theme.surface)
@@ -174,7 +127,7 @@ impl PlayerView {
                             ),
                     )
             })
-            .when(result.is_none(), |vstack| {
+            .when(!has_result, |vstack| {
                 vstack.child(
                     Card::new()
                         .background(theme.surface)

@@ -135,7 +135,7 @@ impl HeadphoneEqState {
                 self.optimization_status == OptimizationStatus::Completed
             }
             HeadphoneEqStep::Listen => self.result.is_some(),
-            HeadphoneEqStep::Save => true,
+            HeadphoneEqStep::Export => true,
         }
     }
 

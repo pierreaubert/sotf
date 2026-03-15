@@ -1,7 +1,4 @@
 {
-  "enabledPlugins": {
-    "code-simplifier@claude-plugins-official": true
-  },
   "hooks": {
     "PostToolUse": [
       {
@@ -23,5 +20,9 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "code-simplifier@claude-plugins-official": true,
+    "cli-anything@cli-anything": true
   }
 }

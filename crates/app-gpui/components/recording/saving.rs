@@ -82,10 +82,6 @@ impl PlayerView {
                         .child(
                             div()
                                 .w(px(300.0))
-                                // Stop keyboard/mouse events from propagating to global handlers
-                                .on_key_down(|_event, _window, cx| {
-                                    cx.stop_propagation();
-                                })
                                 .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
                                     cx.stop_propagation();
                                 })

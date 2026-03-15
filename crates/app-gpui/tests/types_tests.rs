@@ -782,7 +782,7 @@ fn test_recording_state_default() {
 fn test_room_eq_optimizer_config_default() {
     let config = RoomEqOptimizerConfig::default();
     assert_eq!(config.algorithm, "autoeq:de");
-    assert_eq!(config.num_filters, 5);
+    assert_eq!(config.num_filters, 7);
     assert!((config.min_q - 0.5).abs() < 0.001);
     assert!((config.max_q - 6.0).abs() < 0.001);
 }

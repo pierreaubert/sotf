@@ -12,8 +12,8 @@ pub enum HeadphoneEqStep {
     Optimization,
     /// Step 3: Preview and apply EQ to playback
     Listen,
-    /// Step 4: Export format selection and save
-    Save,
+    /// Step 4: Apply & Export
+    Export,
 }
 
 impl HeadphoneEqStep {
@@ -23,7 +23,7 @@ impl HeadphoneEqStep {
             HeadphoneEqStep::MeasurementTarget,
             HeadphoneEqStep::Optimization,
             HeadphoneEqStep::Listen,
-            HeadphoneEqStep::Save,
+            HeadphoneEqStep::Export,
         ]
     }
 
@@ -33,7 +33,7 @@ impl HeadphoneEqStep {
             HeadphoneEqStep::MeasurementTarget => 0,
             HeadphoneEqStep::Optimization => 1,
             HeadphoneEqStep::Listen => 2,
-            HeadphoneEqStep::Save => 3,
+            HeadphoneEqStep::Export => 3,
         }
     }
 
@@ -43,7 +43,7 @@ impl HeadphoneEqStep {
             HeadphoneEqStep::MeasurementTarget => "Measurement",
             HeadphoneEqStep::Optimization => "Optimization",
             HeadphoneEqStep::Listen => "Listen",
-            HeadphoneEqStep::Save => "Save",
+            HeadphoneEqStep::Export => "Export",
         }
     }
 
@@ -52,8 +52,8 @@ impl HeadphoneEqStep {
         match self {
             HeadphoneEqStep::MeasurementTarget => Some(HeadphoneEqStep::Optimization),
             HeadphoneEqStep::Optimization => Some(HeadphoneEqStep::Listen),
-            HeadphoneEqStep::Listen => Some(HeadphoneEqStep::Save),
-            HeadphoneEqStep::Save => None,
+            HeadphoneEqStep::Listen => Some(HeadphoneEqStep::Export),
+            HeadphoneEqStep::Export => None,
         }
     }
 
@@ -63,7 +63,7 @@ impl HeadphoneEqStep {
             HeadphoneEqStep::MeasurementTarget => None,
             HeadphoneEqStep::Optimization => Some(HeadphoneEqStep::MeasurementTarget),
             HeadphoneEqStep::Listen => Some(HeadphoneEqStep::Optimization),
-            HeadphoneEqStep::Save => Some(HeadphoneEqStep::Listen),
+            HeadphoneEqStep::Export => Some(HeadphoneEqStep::Listen),
         }
     }
 }
