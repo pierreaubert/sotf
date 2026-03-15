@@ -11,6 +11,7 @@ import? 'crates/math-audio/Justfile'
 import? 'crates/autoeq/Justfile'
 import? 'crates/gpui-toolkit/Justfile'
 import? 'crates/sotf-plugins/Justfile'
+import? 'crates/sotf-engine/Justfile'
 
 default:
 	just --list
@@ -284,7 +285,11 @@ publish: publish-autoeq publish-math
 # ----------------------------------------------------------------------
 
 [group('qa')]
-qa: qa-autoeq qa-math qa-plugins qa-roomeq
+qa: qa-autoeq \
+	qa-math \
+	qa-plugins \
+	qa-roomeq \
+	qa-engine
 
 # ----------------------------------------------------------------------
 # POST

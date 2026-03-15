@@ -911,13 +911,23 @@ impl PlayerView {
 
     /// Start recording all channels sequentially
     pub fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
-        // Enable auto-record mode
+        // Enable auto-record mode and clear all previous results upfront
+        // so the evaluating graphs don't show stale data from a prior session.
         self.state.update(cx, |state, _| {
             state
                 .app
                 .measurement_state
                 .recording_state
                 .auto_record_remaining = true;
+            for rec in &mut state
+                .app
+                .measurement_state
+                .recording_state
+                .channel_recordings
+            {
+                rec.state = ChannelRecordingState::Empty;
+                rec.result = None;
+            }
         });
 
         // Start with the first channel
@@ -1068,7 +1078,8 @@ impl PlayerView {
             }
         };
 
-        // Mark all mic entries for this speaker as Recording
+        // Mark all mic entries for this speaker as Recording and clear old results
+        // so the evaluating graphs reset immediately (not showing stale data).
         let mic_vec_indices: Vec<usize> = params.mics.iter().map(|m| m.vec_idx).collect();
         self.state.update(cx, |state, _| {
             for &vi in &mic_vec_indices {
@@ -1080,6 +1091,7 @@ impl PlayerView {
                     .get_mut(vi)
                 {
                     recording.state = ChannelRecordingState::Recording;
+                    recording.result = None; // Clear old result so graphs reset
                 }
             }
             state
@@ -1096,6 +1108,18 @@ impl PlayerView {
                 .recording_progress = 0.0;
         });
         cx.notify();
+
+        // Log the exact parameters for diagnostics
+        log::info!(
+            "Recording params: speaker={}, output_ch={}, sweep={:.0}-{:.0}Hz, sr={}, level={:.1}dB, mics={}",
+            params.speaker_name,
+            params.output_channel,
+            params.sweep_start_freq,
+            params.sweep_end_freq,
+            params.sample_rate,
+            params.level_db,
+            params.mics.len(),
+        );
 
         // Generate signal
         let amplitude = 10.0_f32.powf(params.level_db / 20.0);
