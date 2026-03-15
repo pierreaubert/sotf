@@ -49,6 +49,7 @@ impl Default for ChordLayout {
     }
 }
 
+#[derive(Debug)]
 pub struct ChordResult {
     pub chords: Vec<Chord>,
     pub groups: Vec<ChordGroup>,

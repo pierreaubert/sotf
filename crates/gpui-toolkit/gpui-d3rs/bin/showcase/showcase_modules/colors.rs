@@ -1,4 +1,6 @@
-use d3rs::color::{ColorScheme, D3Color};
+use d3rs::color::{
+    ColorScheme, D3Color, DivergingScale, DivergingScheme, Hcl, SequentialScale, SequentialScheme,
+};
 use gpui::*;
 
 pub fn render(_app: &ShowcaseApp) -> Div {
@@ -188,12 +190,45 @@ pub fn render(_app: &ShowcaseApp) -> Div {
                        .mb_2()
                        .child("Sequential and Diverging scales from d3-scale-chromatic:"),
                 )
-                // TODO: Fix type inference/coercion for function pointers to render_chromatic_row
-                // .child(render_chromatic_row("Turbo", turbo_wrapper))
-                // .child(render_chromatic_row("Viridis", viridis_wrapper))
-                // .child(render_chromatic_row("Magma", magma_wrapper))
-                // .child(render_chromatic_row("RdBu", rdbu_wrapper)),
-                .child(div().text_sm().text_color(rgb(0x888888)).child("(Chromatic scales disabled due to temporary compilation issue)")),
+                .child(render_sequential_scale_row("Turbo", SequentialScheme::turbo()))
+                .child(render_sequential_scale_row("Viridis", SequentialScheme::viridis()))
+                .child(render_sequential_scale_row("Magma", SequentialScheme::magma()))
+                .child(render_sequential_scale_row("Blues", SequentialScheme::blues()))
+                .child(render_sequential_scale_row("Greens", SequentialScheme::greens()))
+                .child(render_diverging_scale_row("RdBu", DivergingScheme::rd_bu()))
+                .child(render_diverging_scale_row("RdYlBu", DivergingScheme::rd_yl_bu()))
+                .child(render_diverging_scale_row("Spectral", DivergingScheme::spectral())),
+        )
+        // HCL/LAB Interpolation
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child("HCL/LAB Perceptual Interpolation"),
+                )
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(rgb(0x666666))
+                        .mb_2()
+                        .child("Perceptually uniform color interpolation using HCL (Hue-Chroma-Luminance) color space. Unlike RGB, HCL preserves perceptual uniformity - equal distances in color space correspond to equal perceptual differences."),
+                )
+                .child(render_hcl_interpolation_row("Red → Blue", D3Color::rgb(255, 0, 0), D3Color::rgb(0, 0, 255)))
+                .child(render_hcl_interpolation_row("Green → Purple", D3Color::rgb(0, 200, 0), D3Color::rgb(128, 0, 128)))
+                .child(render_hcl_interpolation_row("Orange → Teal", D3Color::rgb(255, 165, 0), D3Color::rgb(0, 128, 128)))
+                .child(render_hcl_interpolation_row("Yellow → Navy", D3Color::rgb(255, 255, 0), D3Color::rgb(0, 0, 128)))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(rgb(0x888888))
+                        .mt_2()
+                        .child("Compare to RGB interpolation above - HCL produces more perceptually uniform gradients without muddy midpoints."),
+                ),
         )
         // Code example
         .child(
@@ -453,5 +488,68 @@ fn render_chromatic_row(label: &'static str, scale_fn: fn(f64) -> D3Color) -> Di
             let t = i as f64 / 49.0;
             let color = scale_fn(t);
             div().w(px(8.0)).h(px(30.0)).bg(color.to_rgba())
+        })))
+}
+
+/// Render a sequential scale row with label
+fn render_sequential_scale_row(label: &'static str, scale: SequentialScale) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .child(
+            div()
+                .w(px(120.0))
+                .text_sm()
+                .text_color(rgb(0x333333))
+                .child(label),
+        )
+        .child(div().flex().children((0..50).map(|i| {
+            let t = i as f64 / 49.0;
+            let color = scale.get(t);
+            div().w(px(8.0)).h(px(30.0)).bg(color.to_rgba())
+        })))
+}
+
+/// Render a diverging scale row with label
+fn render_diverging_scale_row(label: &'static str, scale: DivergingScale) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .child(
+            div()
+                .w(px(120.0))
+                .text_sm()
+                .text_color(rgb(0x333333))
+                .child(label),
+        )
+        .child(div().flex().children((0..50).map(|i| {
+            let t = i as f64 / 49.0;
+            let color = scale.get(t);
+            div().w(px(8.0)).h(px(30.0)).bg(color.to_rgba())
+        })))
+}
+
+/// Render an HCL interpolation row with label (perceptually uniform)
+fn render_hcl_interpolation_row(label: &'static str, start: D3Color, end: D3Color) -> Div {
+    let start_hcl = Hcl::from_rgb(&start);
+    let end_hcl = Hcl::from_rgb(&end);
+
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .child(
+            div()
+                .w(px(120.0))
+                .text_sm()
+                .text_color(rgb(0x333333))
+                .child(label),
+        )
+        .child(div().flex().children((0..30).map(|i| {
+            let t = i as f64 / 29.0;
+            let color = start_hcl.interpolate(&end_hcl, t).to_rgb();
+            div().w(px(14.0)).h(px(30.0)).bg(color.to_rgba())
         })))
 }

@@ -315,35 +315,54 @@ impl Stack {
             }
             StackOffset::Wiggle => {
                 // Minimize weighted wiggle (streamgraph offset)
+                // Matches D3.js stackOffsetWiggle exactly:
+                // Track a running baseline offset y for series[0], then restack.
                 if n == 0 || series.is_empty() {
                     return;
                 }
 
-                let m = series.len() as f64;
+                let num_series = series.len();
+                let mut y = 0.0_f64;
 
-                for j in 0..n {
-                    let mut sum = 0.0;
-                    let mut s0 = 0.0;
+                for j in 1..n {
+                    let mut s1 = 0.0; // sum of (sij - si(j-1)) across all series
+                    let mut s2 = 0.0; // weighted sum
 
-                    for (i, s) in series.iter().enumerate() {
-                        let value = s.values[j][1] - s.values[j][0];
-                        if j > 0 {
-                            let prev_value = s.values[j - 1][1] - s.values[j - 1][0];
-                            let dy = value - prev_value;
-                            s0 += dy * (m - i as f64 - 0.5);
+                    for i in 0..num_series {
+                        let sij0 = series[i].values[j][1] - series[i].values[j][0];
+                        let sij1 = series[i].values[j - 1][1] - series[i].values[j - 1][0];
+                        let mut s3 = (sij0 - sij1) / 2.0;
+
+                        for k in 0..i {
+                            let skj0 = series[k].values[j][1] - series[k].values[j][0];
+                            let skj1 =
+                                series[k].values[j - 1][1] - series[k].values[j - 1][0];
+                            s3 += skj0 - skj1;
                         }
-                        sum += value;
+
+                        s1 += sij0 - sij1;
+                        s2 += s3 * (sij0 - sij1);
                     }
 
-                    let offset = if j == 0 {
-                        -sum / 2.0
-                    } else {
-                        series[0].values[j - 1][0] - s0 / m - (sum / 2.0)
-                    };
+                    series[0].values[j - 1][1] += y;
+                    series[0].values[j - 1][0] += y;
+                    if s1 != 0.0 {
+                        y -= s2 / s1;
+                    }
+                }
+                // Apply to last column
+                let last = n - 1;
+                series[0].values[last][1] += y;
+                series[0].values[last][0] += y;
 
+                // Restack: apply StackOffset::None (cumulative from series[0] baseline)
+                for j in 0..n {
+                    let mut y0 = series[0].values[j][0];
                     for s in series.iter_mut() {
-                        s.values[j][0] += offset;
-                        s.values[j][1] += offset;
+                        let width = s.values[j][1] - s.values[j][0];
+                        s.values[j][0] = y0;
+                        s.values[j][1] = y0 + width;
+                        y0 += width;
                     }
                 }
             }

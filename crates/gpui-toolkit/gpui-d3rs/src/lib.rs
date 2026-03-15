@@ -34,7 +34,9 @@
 pub mod array;
 pub mod brush;
 pub mod chord;
+pub mod examples;
 pub mod color;
+pub mod dispatch;
 pub mod ease;
 pub mod force;
 pub mod format;
@@ -55,6 +57,7 @@ pub mod contour;
 pub mod delaunay;
 pub mod fetch;
 pub mod geo;
+pub mod hexbin;
 #[cfg(all(feature = "gpu-2d", not(test)))]
 pub mod gpu2d;
 #[cfg(feature = "gpu-3d")]

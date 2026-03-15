@@ -1,6 +1,6 @@
 [package]
 name = "gpui-d3rs"
-version = "0.6.3"
+version = "0.6.4"
 edition.workspace = true
 authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"
@@ -13,7 +13,7 @@ exclude = ["bin/"]
 name = "d3rs"
 
 [features]
-default = ["gpui", "gpu-2d"]
+default = ["gpui", "gpu-2d", "gpu-3d"]
 gpui = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui_macos", "dep:smol"]
 spinorama = ["dep:autoeq", "dep:autoeq-cea2034", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]

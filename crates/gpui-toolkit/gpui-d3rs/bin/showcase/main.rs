@@ -37,6 +37,22 @@ pub enum DemoSection {
     D3Revenue,
     D3Horizon,
     D3Choropleth,
+    // New D3 Examples
+    D3Sankey,
+    D3Calendar,
+    D3RadialLine,
+    D3ParallelCoordinates,
+    // Observable Examples (using src/examples/ compute modules)
+    D3Hexbin,
+    D3PieChart,
+    D3DonutChart,
+    D3LineChart,
+    D3Streamgraph,
+    D3StackedBar,
+    D3StackedArea,
+    D3BoxPlot,
+    D3ChordDiagram,
+    D3ForceDirected,
 }
 
 impl DemoSection {
@@ -67,6 +83,22 @@ impl DemoSection {
             Self::D3Revenue,
             Self::D3Horizon,
             Self::D3Choropleth,
+            // New D3 Examples
+            Self::D3Sankey,
+            Self::D3Calendar,
+            Self::D3RadialLine,
+            Self::D3ParallelCoordinates,
+            // Observable Examples (golden-tested)
+            Self::D3Hexbin,
+            Self::D3PieChart,
+            Self::D3DonutChart,
+            Self::D3LineChart,
+            Self::D3Streamgraph,
+            Self::D3StackedBar,
+            Self::D3StackedArea,
+            Self::D3BoxPlot,
+            Self::D3ChordDiagram,
+            Self::D3ForceDirected,
         ]
     }
 
@@ -97,6 +129,22 @@ impl DemoSection {
             Self::D3Revenue => "D3: Revenue Stream",
             Self::D3Horizon => "D3: Horizon Chart",
             Self::D3Choropleth => "D3: Choropleth",
+            // New D3 Examples
+            Self::D3Sankey => "D3: Sankey Diagram",
+            Self::D3Calendar => "D3: Calendar Heatmap",
+            Self::D3RadialLine => "D3: Radial Line",
+            Self::D3ParallelCoordinates => "D3: Parallel Coord",
+            // Observable Examples (golden-tested)
+            Self::D3Hexbin => "D3: Hexbin",
+            Self::D3PieChart => "D3: Pie Chart",
+            Self::D3DonutChart => "D3: Donut Chart",
+            Self::D3LineChart => "D3: Line Chart",
+            Self::D3Streamgraph => "D3: Streamgraph",
+            Self::D3StackedBar => "D3: Stacked Bar",
+            Self::D3StackedArea => "D3: Stacked Area",
+            Self::D3BoxPlot => "D3: Box Plot",
+            Self::D3ChordDiagram => "D3: Chord Diagram",
+            Self::D3ForceDirected => "D3: Force Directed",
         }
     }
 }
@@ -415,9 +463,27 @@ impl ShowcaseApp {
             DemoSection::D3Choropleth => {
                 showcase_modules::d3_examples::choropleth::render(self, cx)
             }
+            // New D3 Examples
+            DemoSection::D3Sankey => showcase_modules::d3_examples::sankey::render(self, cx),
+            DemoSection::D3Calendar => showcase_modules::d3_examples::calendar::render(self, cx),
+            DemoSection::D3RadialLine => showcase_modules::d3_examples::radial_line::render(self, cx),
+            DemoSection::D3ParallelCoordinates => {
+                showcase_modules::d3_examples::parallel_coordinates::render(self, cx)
+            }
             DemoSection::Hierarchy => showcase_modules::hierarchy::render(self, cx),
             DemoSection::Force => showcase_modules::force::render(self, cx),
             DemoSection::Chord => showcase_modules::chord::render(self, cx),
+            // Observable Examples (golden-tested, using src/examples/ compute)
+            DemoSection::D3Hexbin => showcase_modules::d3_examples::obs_hexbin::render(self, cx),
+            DemoSection::D3PieChart => showcase_modules::d3_examples::obs_pie_chart::render(self, cx),
+            DemoSection::D3DonutChart => showcase_modules::d3_examples::obs_donut_chart::render(self, cx),
+            DemoSection::D3LineChart => showcase_modules::d3_examples::obs_line_chart::render(self, cx),
+            DemoSection::D3Streamgraph => showcase_modules::d3_examples::obs_streamgraph::render(self, cx),
+            DemoSection::D3StackedBar => showcase_modules::d3_examples::obs_stacked_bar::render(self, cx),
+            DemoSection::D3StackedArea => showcase_modules::d3_examples::obs_stacked_area::render(self, cx),
+            DemoSection::D3BoxPlot => showcase_modules::d3_examples::obs_box_plot::render(self, cx),
+            DemoSection::D3ChordDiagram => showcase_modules::d3_examples::obs_chord::render(self, cx),
+            DemoSection::D3ForceDirected => showcase_modules::d3_examples::obs_force_directed::render(self, cx),
         };
 
         div()
