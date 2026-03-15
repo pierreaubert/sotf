@@ -96,18 +96,22 @@ impl Player {
         &mut self,
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        log::info!(
+            "[Player] update_plugins: {} plugins",
+            plugins.len(),
+        );
         match self.manager.update_plugin_chain(plugins.clone()) {
             Ok(()) => {
                 // Update saved config so crash recovery uses latest plugins.
-                // Also update output_channels from the engine state so auto-restart
-                // doesn't fail ensure_output_channel_capacity when an upmixer was added.
                 if let Some(ref mut config) = self.saved_config {
                     config.plugins = plugins;
-                    let engine_state = self.manager.get_engine_state();
-                    if engine_state.num_channels > 0 {
-                        config.output_channels = engine_state.num_channels;
-                    }
+                    // Note: do NOT update config.output_channels from engine state here.
+                    // engine_state.num_channels reflects the hardware channel count (e.g., 94
+                    // for an RME), not the processing chain's logical output. The TUI's
+                    // start_playback() correctly calculates output_channels from the plugin
+                    // chain, so the saved_config value from the last start is already correct.
                 }
+                log::info!("[Player] update_plugins: success");
                 Ok(())
             }
             Err(e) if e == "No engine running" => {
