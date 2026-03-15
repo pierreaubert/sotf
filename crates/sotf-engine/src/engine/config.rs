@@ -52,6 +52,11 @@ pub struct EngineConfig {
     /// HAL mode: audio comes from shared memory instead of file decoder
     #[serde(default)]
     pub hal_mode: bool,
+
+    /// Allow output to virtual devices (BlackHole, loopback, etc.)
+    /// Normally these are blocked to prevent feedback loops, but tests need them.
+    #[serde(default)]
+    pub allow_virtual_output: bool,
 }
 
 fn default_engine_config_version() -> u32 {
@@ -68,6 +73,7 @@ impl Default for EngineConfig {
             input_channels: 2,
             output_channels: 2,
             hal_mode: false,
+            allow_virtual_output: false,
             output_device: None,
             plugins: Vec::new(),
             volume: 1.0,

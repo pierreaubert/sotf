@@ -294,25 +294,69 @@ pub fn record_and_analyze(
             .unwrap_or_else(|_| "Unknown Device".to_string())
     );
 
-    // Get the maximum number of input channels supported by the device
-    // (not just the default, which might be less than the hardware capability)
-    let hardware_input_channels = input_device
-        .supported_input_configs()
-        .map_err(|e| format!("Failed to get supported input configs: {}", e))?
-        .map(|config| config.channels() as usize)
-        .max()
-        .unwrap_or_else(|| {
-            // Fallback to default config if we can't query supported configs
-            input_device
-                .default_input_config()
-                .map(|cfg| cfg.channels() as usize)
-                .unwrap_or(2) // Ultimate fallback to stereo
-        });
+    // Find a supported input config that has enough channels for our input_channel
+    // and supports the requested sample rate. Use default config as primary choice
+    // since it's known to work with the device.
+    let default_input_config = input_device
+        .default_input_config()
+        .map_err(|e| format!("Failed to get default input config: {}", e))?;
+
+    let default_input_channels = default_input_config.channels() as usize;
+    let default_input_sample_rate = default_input_config.sample_rate();
 
     log::info!(
-        "[record_and_analyze] Hardware input channels: {}",
-        hardware_input_channels
+        "[record_and_analyze] Input device default config: {}ch, {}Hz",
+        default_input_channels,
+        default_input_sample_rate,
     );
+
+    // Find the best supported config: prefer one that matches our requested sample rate
+    // and has enough channels, falling back to default
+    let min_channels_needed = (input_channel as usize) + 1;
+
+    let best_config = input_device
+        .supported_input_configs()
+        .ok()
+        .and_then(|configs| {
+            configs
+                .filter(|c| {
+                    let ch = c.channels() as usize;
+                    ch >= min_channels_needed
+                        && c.min_sample_rate() <= sample_rate
+                        && c.max_sample_rate() >= sample_rate
+                })
+                // Prefer fewer channels (less data to process)
+                .min_by_key(|c| c.channels())
+        });
+
+    let (hardware_input_channels, input_sample_rate) = if let Some(config) = best_config {
+        let ch = config.channels() as usize;
+        log::info!(
+            "[record_and_analyze] Using supported config: {}ch, {}Hz (requested {}Hz)",
+            ch,
+            sample_rate,
+            sample_rate,
+        );
+        (ch, sample_rate)
+    } else {
+        // Fall back to default config
+        log::warn!(
+            "[record_and_analyze] No supported config for {}ch at {}Hz, using default ({}ch, {}Hz)",
+            min_channels_needed,
+            sample_rate,
+            default_input_channels,
+            default_input_sample_rate,
+        );
+        (default_input_channels, default_input_sample_rate)
+    };
+
+    if input_sample_rate != sample_rate {
+        log::warn!(
+            "[record_and_analyze] INPUT SAMPLE RATE MISMATCH: recording at {}Hz but sweep/reference at {}Hz",
+            input_sample_rate,
+            sample_rate,
+        );
+    }
 
     // Validate that input_channel is within hardware capabilities
     if (input_channel as usize) >= hardware_input_channels {
@@ -322,18 +366,18 @@ pub fn record_and_analyze(
         ));
     }
 
-    // Configure input stream to use all available hardware channels
-    // We'll extract the specific channel we want in the callback
+    // Configure input stream
     let input_config = cpal::StreamConfig {
         channels: hardware_input_channels as u16,
-        sample_rate,
+        sample_rate: input_sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
     log::info!(
-        "[record_and_analyze] Recording from input channel {} (0-indexed) out of {} total channels",
+        "[record_and_analyze] Recording from input channel {} (0-indexed) out of {} total channels at {}Hz",
         input_channel,
-        hardware_input_channels
+        hardware_input_channels,
+        input_sample_rate,
     );
 
     // Shared state for recording
@@ -377,7 +421,10 @@ pub fn record_and_analyze(
     sleep(Duration::from_millis(100));
 
     // Start playback using AudioEngineManager
+    // Allow virtual output devices (BlackHole, loopback) — recording intentionally
+    // sends signal through a loopback or to real speakers for mic capture.
     let mut manager = AudioEngineManager::new();
+    manager.set_allow_virtual_output(true);
     manager
         .load_file(temp_wav_path)
         .map_err(|e| format!("Failed to load file: {}", e))?;
@@ -459,6 +506,20 @@ pub fn record_and_analyze(
         output_channel
     );
 
+    // Check what output sample rate the engine will actually use
+    let actual_output_rate = crate::manager::select_output_sample_rate_for_channels(
+        sample_rate,
+        output_device_name,
+        hardware_channels,
+    );
+    if actual_output_rate != sample_rate {
+        log::warn!(
+            "[record_and_analyze] OUTPUT SAMPLE RATE MISMATCH: engine will use {}Hz but sweep is at {}Hz (engine will resample)",
+            actual_output_rate,
+            sample_rate,
+        );
+    }
+
     manager
         .start_playback(
             output_device_name.map(|s| s.to_string()),
@@ -538,14 +599,41 @@ pub fn record_and_analyze(
 
     // Get recorded samples
     let recorded = recorded_samples.lock().unwrap().clone();
+    // Use the actual input sample rate for duration/WAV/analysis calculations
+    let analysis_sample_rate = input_sample_rate;
+    let recorded_duration = recorded.len() as f64 / analysis_sample_rate as f64;
     log::info!(
-        "[record_and_analyze] Total recorded: {} samples ({:.2}s)",
+        "[record_and_analyze] Total recorded: {} samples ({:.2}s at {}Hz)",
         recorded.len(),
-        recorded.len() as f64 / sample_rate as f64
+        recorded_duration,
+        analysis_sample_rate,
     );
 
     if recorded.is_empty() {
         return Err("No samples were recorded".to_string());
+    }
+
+    // Diagnostic: check recorded signal statistics
+    let max_amplitude = recorded.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+    let rms = (recorded.iter().map(|s| s * s).sum::<f32>() / recorded.len() as f32).sqrt();
+    let rms_db = if rms > 0.0 {
+        20.0 * rms.log10()
+    } else {
+        f32::NEG_INFINITY
+    };
+    log::info!(
+        "[record_and_analyze] Recorded signal: max={:.6}, RMS={:.6} ({:.1} dBFS)",
+        max_amplitude,
+        rms,
+        rms_db,
+    );
+    if max_amplitude < 1e-6 {
+        log::warn!("[record_and_analyze] WARNING: Recorded signal is essentially silence!");
+    } else if rms_db < -60.0 {
+        log::warn!(
+            "[record_and_analyze] WARNING: Recorded signal is very quiet ({:.1} dBFS RMS)",
+            rms_db
+        );
     }
 
     // Write recorded samples to WAV file as MONO (1 channel)
@@ -553,7 +641,7 @@ pub fn record_and_analyze(
         "[record_and_analyze] Writing {} mono samples to WAV file...",
         recorded.len()
     );
-    write_wav_file(recorded_wav_path, &recorded, sample_rate, 1)?;
+    write_wav_file(recorded_wav_path, &recorded, analysis_sample_rate, 1)?;
     log::info!(
         "[record_and_analyze] Wrote {} samples as MONO (1 channel) to {:?}",
         recorded.len(),
@@ -595,7 +683,7 @@ pub fn record_and_analyze(
     let analysis = analyze_recording(
         recorded_wav_path,
         reference_signal,
-        sample_rate,
+        analysis_sample_rate,
         sweep_range,
     )?;
     write_analysis_csv(&analysis, output_csv_path, compensation.as_ref())?;
@@ -605,6 +693,311 @@ pub fn record_and_analyze(
     );
 
     Ok(analysis)
+}
+
+/// Record and analyze capturing multiple input channels simultaneously.
+///
+/// Plays the signal on `output_channel` and records from all `input_channels` at once.
+/// Returns one `AnalysisResult` per input channel (same order as `input_channels`).
+/// Each channel's WAV and CSV are written to `recorded_wav_paths` / `csv_paths`.
+///
+/// `mic_calibrations` must be the same length as `input_channels` (use `None` for uncalibrated).
+#[allow(clippy::too_many_arguments)]
+pub fn record_and_analyze_multi(
+    temp_wav_path: &Path,
+    recorded_wav_paths: &[PathBuf],
+    reference_signal: &[f32],
+    sample_rate: u32,
+    csv_paths: &[PathBuf],
+    output_channel: u16,
+    input_channels: &[u16],
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
+    mic_calibrations: &[Option<String>],
+    sweep_range: Option<(f32, f32)>,
+) -> Result<Vec<crate::signal_analysis::AnalysisResult>, String> {
+    use crate::AudioEngineManager;
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    assert_eq!(input_channels.len(), recorded_wav_paths.len());
+    assert_eq!(input_channels.len(), csv_paths.len());
+    assert_eq!(input_channels.len(), mic_calibrations.len());
+
+    let num_mics = input_channels.len();
+    log::info!(
+        "[record_and_analyze_multi] Starting: {} mics, output_ch={}, input_chs={:?}",
+        num_mics,
+        output_channel,
+        input_channels,
+    );
+
+    let expected_duration = reference_signal.len() as f64 / sample_rate as f64;
+    log::info!(
+        "[record_and_analyze_multi] Expected duration: {:.2}s",
+        expected_duration,
+    );
+
+    // --- Set up input device ---
+    let host = cpal::default_host();
+
+    let input_device = if let Some(dev_name) = input_device_name {
+        crate::devices::find_device(&host, dev_name, true)?
+    } else {
+        host.default_input_device()
+            .ok_or_else(|| "No default input device available".to_string())?
+    };
+
+    let default_input_config = input_device
+        .default_input_config()
+        .map_err(|e| format!("Failed to get default input config: {}", e))?;
+
+    let max_input_ch = input_channels.iter().copied().max().unwrap_or(0) as usize;
+    let min_channels_needed = max_input_ch + 1;
+
+    let best_config = input_device
+        .supported_input_configs()
+        .ok()
+        .and_then(|configs| {
+            configs
+                .filter(|c| {
+                    let ch = c.channels() as usize;
+                    ch >= min_channels_needed
+                        && c.min_sample_rate() <= sample_rate
+                        && c.max_sample_rate() >= sample_rate
+                })
+                .min_by_key(|c| c.channels())
+        });
+
+    let (hardware_input_channels, input_sample_rate) = if let Some(config) = best_config {
+        (config.channels() as usize, sample_rate)
+    } else {
+        (
+            default_input_config.channels() as usize,
+            default_input_config.sample_rate(),
+        )
+    };
+
+    if input_sample_rate != sample_rate {
+        log::warn!(
+            "[record_and_analyze_multi] INPUT SAMPLE RATE MISMATCH: {}Hz vs {}Hz",
+            input_sample_rate,
+            sample_rate,
+        );
+    }
+
+    for &ch in input_channels {
+        if (ch as usize) >= hardware_input_channels {
+            return Err(format!(
+                "Input channel {} exceeds hardware channel count {}",
+                ch, hardware_input_channels,
+            ));
+        }
+    }
+
+    let input_config = cpal::StreamConfig {
+        channels: hardware_input_channels as u16,
+        sample_rate: input_sample_rate,
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    // --- Shared recording buffers (one Vec<f32> per mic) ---
+    let recorded_buffers: Vec<Arc<Mutex<Vec<f32>>>> = (0..num_mics)
+        .map(|_| Arc::new(Mutex::new(Vec::new())))
+        .collect();
+    let buffers_clone: Vec<Arc<Mutex<Vec<f32>>>> =
+        recorded_buffers.iter().map(Arc::clone).collect();
+
+    let input_channels_vec: Vec<usize> = input_channels.iter().map(|&c| c as usize).collect();
+
+    let input_stream = input_device
+        .build_input_stream(
+            &input_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                for frame in data.chunks(hardware_input_channels) {
+                    for (mic_i, &ch_idx) in input_channels_vec.iter().enumerate() {
+                        if ch_idx < frame.len() {
+                            buffers_clone[mic_i].lock().unwrap().push(frame[ch_idx]);
+                        }
+                    }
+                }
+            },
+            |err| log::debug!("[record_and_analyze_multi] Input stream error: {}", err),
+            None,
+        )
+        .map_err(|e| format!("Failed to build input stream: {}", e))?;
+
+    input_stream
+        .play()
+        .map_err(|e| format!("Failed to start input stream: {}", e))?;
+
+    sleep(Duration::from_millis(100));
+
+    // --- Start playback ---
+    let mut manager = AudioEngineManager::new();
+    manager
+        .load_file(temp_wav_path)
+        .map_err(|e| format!("Failed to load file: {}", e))?;
+
+    let output_device = if let Some(dev_name) = output_device_name {
+        crate::devices::find_device(&host, dev_name, false)?
+    } else {
+        host.default_output_device()
+            .ok_or_else(|| "No default output device available".to_string())?
+    };
+
+    let hardware_channels = output_device
+        .supported_output_configs()
+        .map_err(|e| format!("Failed to get supported output configs: {}", e))?
+        .map(|config| config.channels() as usize)
+        .max()
+        .unwrap_or_else(|| {
+            output_device
+                .default_output_config()
+                .map(|cfg| cfg.channels() as usize)
+                .unwrap_or(2)
+        });
+
+    if (output_channel as usize) >= hardware_channels {
+        return Err(format!(
+            "Output channel {} exceeds hardware channel count {}",
+            output_channel, hardware_channels,
+        ));
+    }
+
+    let mut matrix = vec![0.0_f32; hardware_channels];
+    matrix[output_channel as usize] = 1.0;
+    let matrix_params = serde_json::json!({
+        "input_channels": 1,
+        "output_channels": hardware_channels,
+        "matrix": matrix,
+    });
+
+    use crate::engine::PluginConfig;
+    let plugins = vec![PluginConfig::new("matrix", matrix_params)];
+
+    let actual_output_rate = crate::manager::select_output_sample_rate_for_channels(
+        sample_rate,
+        output_device_name,
+        hardware_channels,
+    );
+    if actual_output_rate != sample_rate {
+        log::warn!(
+            "[record_and_analyze_multi] OUTPUT SAMPLE RATE MISMATCH: engine {}Hz vs sweep {}Hz",
+            actual_output_rate,
+            sample_rate,
+        );
+    }
+
+    manager
+        .start_playback(
+            output_device_name.map(|s| s.to_string()),
+            plugins,
+            hardware_channels,
+        )
+        .map_err(|e| format!("Failed to start playback: {}", e))?;
+
+    // --- Wait for playback to complete ---
+    let total_wait = Duration::from_secs_f64(expected_duration + 3.0);
+    let check_interval = Duration::from_millis(50);
+    let mut elapsed = Duration::ZERO;
+    let mut last_sample_count = 0usize;
+    let mut stable_count = 0;
+
+    while elapsed < total_wait {
+        sleep(check_interval);
+        elapsed += check_interval;
+
+        let current_sample_count = recorded_buffers[0].lock().unwrap().len();
+
+        if elapsed.as_millis() % 1000 < check_interval.as_millis() {
+            let recorded_duration = current_sample_count as f64 / sample_rate as f64;
+            log::info!(
+                "[record_and_analyze_multi] Progress: {:.2}s / {:.2}s",
+                recorded_duration,
+                expected_duration,
+            );
+        }
+
+        if current_sample_count == last_sample_count && current_sample_count > 0 {
+            stable_count += 1;
+            if stable_count >= 3 {
+                break;
+            }
+        } else {
+            stable_count = 0;
+        }
+        last_sample_count = current_sample_count;
+
+        manager.try_recv_event();
+        if manager.get_state() == crate::StreamingState::Idle {
+            break;
+        }
+    }
+
+    sleep(Duration::from_millis(1000));
+    manager
+        .stop()
+        .map_err(|e| format!("Failed to stop playback: {}", e))?;
+    std::mem::drop(input_stream);
+    sleep(Duration::from_millis(100));
+
+    // --- Analyze each mic channel independently ---
+    let analysis_sample_rate = input_sample_rate;
+    let mut results = Vec::with_capacity(num_mics);
+
+    for mic_i in 0..num_mics {
+        let recorded = recorded_buffers[mic_i].lock().unwrap().clone();
+        let recorded_duration = recorded.len() as f64 / analysis_sample_rate as f64;
+        log::info!(
+            "[record_and_analyze_multi] Mic {}: {} samples ({:.2}s)",
+            mic_i,
+            recorded.len(),
+            recorded_duration,
+        );
+
+        if recorded.is_empty() {
+            return Err(format!("No samples recorded on mic {}", mic_i));
+        }
+
+        // Write WAV
+        write_wav_file(&recorded_wav_paths[mic_i], &recorded, analysis_sample_rate, 1)?;
+
+        // Verify WAV
+        let reader = hound::WavReader::open(&recorded_wav_paths[mic_i])
+            .map_err(|e| format!("Failed to verify WAV for mic {}: {}", mic_i, e))?;
+        if reader.spec().channels != 1 {
+            return Err(format!(
+                "WAV for mic {} has {} channels instead of 1",
+                mic_i,
+                reader.spec().channels,
+            ));
+        }
+
+        // Load mic compensation
+        let compensation = if let Some(Some(comp_path)) = mic_calibrations.get(mic_i) {
+            use crate::signal_analysis::MicrophoneCompensation;
+            Some(MicrophoneCompensation::from_file(Path::new(comp_path))?)
+        } else {
+            None
+        };
+
+        // Analyze
+        let analysis = analyze_recording(
+            &recorded_wav_paths[mic_i],
+            reference_signal,
+            analysis_sample_rate,
+            sweep_range,
+        )?;
+        write_analysis_csv(&analysis, &csv_paths[mic_i], compensation.as_ref())?;
+
+        results.push(analysis);
+    }
+
+    Ok(results)
 }
 
 /// Parse comma-separated channel list (0-based indices)

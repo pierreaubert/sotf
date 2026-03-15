@@ -1,6 +1,7 @@
 pub mod dialogs;
-pub mod header;
 pub mod footer;
+pub mod header;
+pub mod headphone;
 pub mod level_meter;
 pub mod library;
 pub mod plugin_rack;

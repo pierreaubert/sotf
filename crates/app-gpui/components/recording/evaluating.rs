@@ -534,26 +534,67 @@ impl PlayerView {
             return div().child("No data").into_any_element();
         }
 
+        // Limit total cells to avoid exceeding GPU buffer limits.
+        // wgpu max buffer is 256MB; each heatmap cell uses ~48-96 bytes of vertex data.
+        // Cap at ~200K cells by downsampling time and/or frequency axes.
+        const MAX_CELLS: usize = 200_000;
+        let total_cells = num_time_slices * num_freq_bins;
+
+        let (time_step, freq_step) = if total_cells > MAX_CELLS {
+            // Downsample primarily along time axis (usually has more data)
+            let scale = (total_cells as f64 / MAX_CELLS as f64).sqrt().ceil() as usize;
+            let time_step = scale.max(1);
+            let ds_time_est = num_time_slices.div_ceil(time_step);
+            let freq_step = if ds_time_est * num_freq_bins > MAX_CELLS {
+                (ds_time_est * num_freq_bins).div_ceil(MAX_CELLS).max(1)
+            } else {
+                1
+            };
+            log::info!(
+                "[Spectrogram] Downsampling {}x{} ({} cells) by time_step={}, freq_step={}",
+                num_time_slices, num_freq_bins, total_cells, time_step, freq_step,
+            );
+            (time_step, freq_step)
+        } else {
+            (1, 1)
+        };
+
+        let ds_time = num_time_slices.div_ceil(time_step);
+        let ds_freq = num_freq_bins.div_ceil(freq_step);
+
         // Generate Frequency bins (Y axis) - Linear from 0 to Nyquist
         let nyquist = sample_rate / 2.0;
-        let y_values: Vec<f64> = (0..num_freq_bins)
-            .map(|i| i as f64 * nyquist as f64 / num_freq_bins as f64)
+        let y_values: Vec<f64> = (0..ds_freq)
+            .map(|i| (i * freq_step) as f64 * nyquist as f64 / num_freq_bins as f64)
             .collect();
 
         // Generate Time bins (X axis) - Seconds
         // Backend uses hop_size = 128
         let hop_size = 128.0;
-        let x_values: Vec<f64> = (0..num_time_slices)
-            .map(|i| i as f64 * hop_size / sample_rate as f64)
+        let x_values: Vec<f64> = (0..ds_time)
+            .map(|i| (i * time_step) as f64 * hop_size / sample_rate as f64)
             .collect();
 
         // Flatten data for Heatmap (Row-major: Y then X)
         // Spectrogram is [time][freq] (X then Y columns).
         // We need [Freq0_Time0, Freq0_Time1...], [Freq1_Time0...]
-        let mut z_values = Vec::with_capacity(num_time_slices * num_freq_bins);
-        for f in 0..num_freq_bins {
-            for row in spectrogram.iter().take(num_time_slices) {
-                z_values.push(row[f] as f64);
+        // When downsampling, take the max value in each block (preserves peaks)
+        let mut z_values = Vec::with_capacity(ds_time * ds_freq);
+        for fi in 0..ds_freq {
+            let f_start = fi * freq_step;
+            let f_end = (f_start + freq_step).min(num_freq_bins);
+            for ti in 0..ds_time {
+                let t_start = ti * time_step;
+                let t_end = (t_start + time_step).min(num_time_slices);
+                let mut max_val = f32::NEG_INFINITY;
+                for row in spectrogram.iter().take(t_end).skip(t_start) {
+                    for &val in row.iter().take(f_end).skip(f_start) {
+                        if val > max_val {
+                            max_val = val;
+                        }
+                    }
+                }
+                z_values.push(max_val as f64);
             }
         }
 

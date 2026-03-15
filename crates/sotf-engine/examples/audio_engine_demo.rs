@@ -39,6 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config_path: None,   // No config file watching
         watch_config: false, // Disable config watching for demo
         hal_mode: false,
+        allow_virtual_output: false,
     };
 
     println!("Creating audio engine...");

@@ -568,6 +568,7 @@ fn run_manager_thread(
         actual_output_channels,
         config.output_device.clone(),
         recycle_tx,
+        config.allow_virtual_output,
     )?;
 
     // Set initial volume and mute

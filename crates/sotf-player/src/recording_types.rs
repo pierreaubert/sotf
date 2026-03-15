@@ -258,8 +258,12 @@ pub struct MicrophonePresetsConfig {
 /// Recording for a single channel with results
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelRecording {
+    /// Speaker/output channel index (into playback_config.channel_mappings)
     pub channel_index: usize,
     pub channel_name: String,
+    /// Microphone input index (into recording_config.channel_mappings)
+    #[serde(default)]
+    pub mic_index: usize,
     pub state: ChannelRecordingState,
     pub result: Option<RecordingResult>,
     /// Per-speaker sweep start frequency in Hz
@@ -282,11 +286,21 @@ impl ChannelRecording {
     /// Create a new channel recording with default freq range based on channel name.
     /// LFE/Sub channels default to 10-500 Hz; all others to 20-20000 Hz.
     pub fn new(channel_index: usize, channel_name: String) -> Self {
+        Self::with_mic(channel_index, channel_name, 0)
+    }
+
+    /// Create a new channel recording for a specific mic index.
+    pub fn with_mic(channel_index: usize, channel_name: String, mic_index: usize) -> Self {
         let name_lower = channel_name.to_ascii_lowercase();
-        let is_lfe = name_lower == "lfe" || name_lower == "sub";
+        // Strip " (mic N)" suffix so LFE detection works in multi-mic mode
+        let base_name = name_lower
+            .find(" (mic ")
+            .map_or(name_lower.as_str(), |pos| &name_lower[..pos]);
+        let is_lfe = base_name == "lfe" || base_name == "sub";
         Self {
             channel_index,
             channel_name,
+            mic_index,
             state: ChannelRecordingState::Empty,
             result: None,
             sweep_start_freq: if is_lfe { 10.0 } else { 20.0 },
@@ -621,5 +635,34 @@ mod tests {
         let config: RecordingDeviceConfig = serde_json::from_str(json).unwrap();
         assert!(config.mic_calibration_paths.is_empty());
         assert!(config.calibration_for_channel(0).is_none());
+    }
+
+    /// In multi-mic mode, channel names get a " (Mic N)" suffix.
+    /// The LFE/Sub detection must still work so those channels get
+    /// the narrow 10-500 Hz sweep range, not the default 20-20000 Hz.
+    #[test]
+    fn test_lfe_sweep_bounds_with_mic_suffix() {
+        // Single-mic: plain name → LFE detection works
+        let single = ChannelRecording::new(0, "LFE".to_string());
+        assert_eq!(single.sweep_start_freq, 10.0, "single-mic LFE start");
+        assert_eq!(single.sweep_end_freq, 500.0, "single-mic LFE end");
+
+        let single_sub = ChannelRecording::new(0, "Sub".to_string());
+        assert_eq!(single_sub.sweep_start_freq, 10.0, "single-mic Sub start");
+        assert_eq!(single_sub.sweep_end_freq, 500.0, "single-mic Sub end");
+
+        // Multi-mic: name has " (Mic N)" suffix → LFE detection must still work
+        let multi_lfe = ChannelRecording::with_mic(0, "LFE (Mic 1)".to_string(), 0);
+        assert_eq!(multi_lfe.sweep_start_freq, 10.0, "multi-mic LFE start");
+        assert_eq!(multi_lfe.sweep_end_freq, 500.0, "multi-mic LFE end");
+
+        let multi_sub = ChannelRecording::with_mic(0, "Sub (Mic 2)".to_string(), 1);
+        assert_eq!(multi_sub.sweep_start_freq, 10.0, "multi-mic Sub start");
+        assert_eq!(multi_sub.sweep_end_freq, 500.0, "multi-mic Sub end");
+
+        // Non-LFE channels must still get full range
+        let multi_l = ChannelRecording::with_mic(0, "L (Mic 1)".to_string(), 0);
+        assert_eq!(multi_l.sweep_start_freq, 20.0, "multi-mic L start");
+        assert_eq!(multi_l.sweep_end_freq, 20000.0, "multi-mic L end");
     }
 }

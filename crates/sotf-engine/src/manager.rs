@@ -131,6 +131,8 @@ pub struct AudioEngineManager {
     current_volume: AtomicU32,
     /// Current mute state (preserved across song changes)
     current_muted: AtomicBool,
+    /// Allow output to virtual/loopback devices (needed for recording tests)
+    allow_virtual_output: bool,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -214,7 +216,14 @@ impl AudioEngineManager {
             spectrum_plugin_index: AtomicU64::new(ATOMIC_NONE),
             current_volume: AtomicU32::new(1.0f32.to_bits()),
             current_muted: AtomicBool::new(false),
+            allow_virtual_output: false,
         }
+    }
+
+    /// Allow output to virtual/loopback devices (e.g. BlackHole).
+    /// Required for recording tests where the signal must go through the loopback.
+    pub fn set_allow_virtual_output(&mut self, allow: bool) {
+        self.allow_virtual_output = allow;
     }
 
     /// Load an audio file and prepare for streaming
@@ -313,6 +322,7 @@ impl AudioEngineManager {
             config_path: None,
             watch_config: self.watch_signals, // Enable signal watching if requested
             hal_mode: false,
+            allow_virtual_output: self.allow_virtual_output,
         };
 
         log::warn!(
@@ -399,6 +409,7 @@ impl AudioEngineManager {
             config_path: None,
             watch_config: self.watch_signals,
             hal_mode: true,
+            allow_virtual_output: false,
         };
 
         log::info!(

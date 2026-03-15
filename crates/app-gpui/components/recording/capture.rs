@@ -236,17 +236,26 @@ impl PlayerView {
                 .into_any_element();
         }
 
+        // Group by speaker (channel_index), show 1 row per speaker.
+        // With multi-mic setups, multiple ChannelRecording entries share the same
+        // channel_index — freq range is a speaker property, not per-mic.
+        let mut seen_speakers = std::collections::HashSet::new();
         let channel_data: Vec<(usize, String, f32, f32)> = recording_state
             .channel_recordings
             .iter()
             .enumerate()
-            .map(|(vec_idx, r)| {
-                (
-                    vec_idx,
-                    r.channel_name.clone(),
-                    r.sweep_start_freq,
-                    r.sweep_end_freq,
-                )
+            .filter_map(|(vec_idx, r)| {
+                if seen_speakers.insert(r.channel_index) {
+                    // Use the speaker name (strip " (Mic N)" suffix if present)
+                    let speaker_name = r
+                        .channel_name
+                        .find(" (Mic ")
+                        .map(|pos| r.channel_name[..pos].to_string())
+                        .unwrap_or_else(|| r.channel_name.clone());
+                    Some((vec_idx, speaker_name, r.sweep_start_freq, r.sweep_end_freq))
+                } else {
+                    None
+                }
             })
             .collect();
         let _ = state;
@@ -302,14 +311,26 @@ impl PlayerView {
                                             .on_change(move |val, _window, cx| {
                                                 view_start.update(cx, |this, cx| {
                                                     this.state.update(cx, |state, _| {
-                                                        if let Some(rec) = state
+                                                        // Update all mic entries for this speaker
+                                                        let speaker_idx = state
                                                             .app
                                                             .measurement_state
                                                             .recording_state
                                                             .channel_recordings
-                                                            .get_mut(idx)
-                                                        {
-                                                            rec.sweep_start_freq = val as f32;
+                                                            .get(idx)
+                                                            .map(|r| r.channel_index);
+                                                        if let Some(si) = speaker_idx {
+                                                            for rec in &mut state
+                                                                .app
+                                                                .measurement_state
+                                                                .recording_state
+                                                                .channel_recordings
+                                                            {
+                                                                if rec.channel_index == si {
+                                                                    rec.sweep_start_freq =
+                                                                        val as f32;
+                                                                }
+                                                            }
                                                         }
                                                     });
                                                     cx.notify();
@@ -341,14 +362,26 @@ impl PlayerView {
                                             .on_change(move |val, _window, cx| {
                                                 view_end.update(cx, |this, cx| {
                                                     this.state.update(cx, |state, _| {
-                                                        if let Some(rec) = state
+                                                        // Update all mic entries for this speaker
+                                                        let speaker_idx = state
                                                             .app
                                                             .measurement_state
                                                             .recording_state
                                                             .channel_recordings
-                                                            .get_mut(idx)
-                                                        {
-                                                            rec.sweep_end_freq = val as f32;
+                                                            .get(idx)
+                                                            .map(|r| r.channel_index);
+                                                        if let Some(si) = speaker_idx {
+                                                            for rec in &mut state
+                                                                .app
+                                                                .measurement_state
+                                                                .recording_state
+                                                                .channel_recordings
+                                                            {
+                                                                if rec.channel_index == si {
+                                                                    rec.sweep_end_freq =
+                                                                        val as f32;
+                                                                }
+                                                            }
                                                         }
                                                     });
                                                     cx.notify();
@@ -401,11 +434,11 @@ impl PlayerView {
                 let noise_floor: f32 =
                     sorted_mags[..bottom_count].iter().sum::<f32>() / bottom_count as f32;
 
-                // Mic input channel used for this speaker
+                // Mic input channel used for this recording
                 let mic_ch = recording_state
                     .recording_config
                     .channel_mappings
-                    .get(rec.channel_index)
+                    .get(rec.mic_index)
                     .copied()
                     .unwrap_or(0);
 
@@ -628,13 +661,17 @@ impl PlayerView {
         )
     }
 
-    /// Render the list of channels with their recording status
+    /// Render the list of channels with their recording status.
+    ///
+    /// Groups by speaker (channel_index). With multi-mic, shows mic sub-statuses
+    /// within each speaker row.
     fn render_channel_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
         let is_recording = recording_state.is_recording();
+        let num_mics = recording_state.recording_config.channel_mappings.len().max(1);
 
         if recording_state.channel_recordings.is_empty() {
             return VStack::new()
@@ -651,72 +688,171 @@ impl PlayerView {
                 .into_any_element();
         }
 
+        // Build grouped data: Vec<(speaker_name, speaker_idx, first_vec_idx, Vec<(mic_idx, state)>)>
+        let mut speaker_groups: Vec<(String, usize, usize, Vec<(usize, ChannelRecordingState)>)> =
+            Vec::new();
+        for (vec_idx, rec) in recording_state.channel_recordings.iter().enumerate() {
+            if let Some(group) = speaker_groups
+                .iter_mut()
+                .find(|(_, si, _, _)| *si == rec.channel_index)
+            {
+                group.3.push((rec.mic_index, rec.state));
+            } else {
+                let speaker_name = rec
+                    .channel_name
+                    .find(" (Mic ")
+                    .map(|pos| rec.channel_name[..pos].to_string())
+                    .unwrap_or_else(|| rec.channel_name.clone());
+                speaker_groups.push((
+                    speaker_name,
+                    rec.channel_index,
+                    vec_idx,
+                    vec![(rec.mic_index, rec.state)],
+                ));
+            }
+        }
+
         VStack::new()
             .spacing(StackSpacing::Xs)
-            .children(recording_state.channel_recordings.iter().enumerate().map(
-                |(idx, recording)| {
+            .children(speaker_groups.into_iter().map(
+                move |(speaker_name, _speaker_idx, first_vec_idx, mic_states)| {
                     let theme = theme.clone();
                     let view = view.clone();
-                    let channel_name = recording.channel_name.clone();
-                    let channel_state = recording.state;
 
-                    let (state_icon, state_text, state_color) = match channel_state {
-                        ChannelRecordingState::Empty => ("○", "Not recorded", theme.text_muted),
-                        ChannelRecordingState::Recording => ("●", "Recording...", theme.warning),
-                        ChannelRecordingState::Done => ("✓", "Complete", theme.success),
-                        ChannelRecordingState::Error => ("✗", "Error", theme.error),
-                    };
+                    // Aggregate state across all mics for this speaker
+                    let all_done = mic_states
+                        .iter()
+                        .all(|(_, s)| *s == ChannelRecordingState::Done);
+                    let any_recording = mic_states
+                        .iter()
+                        .any(|(_, s)| *s == ChannelRecordingState::Recording);
+                    let any_error = mic_states
+                        .iter()
+                        .any(|(_, s)| *s == ChannelRecordingState::Error);
 
-                    let button_label = if channel_state == ChannelRecordingState::Done {
-                        "Re-record"
+                    let (state_icon, state_text, state_color) = if any_recording {
+                        ("●", "Recording...", theme.warning)
+                    } else if all_done {
+                        ("✓", "Complete", theme.success)
+                    } else if any_error {
+                        ("✗", "Error", theme.error)
                     } else {
-                        "Record"
+                        ("○", "Not recorded", theme.text_muted)
                     };
 
-                    div()
+                    let button_label = if all_done { "Re-record" } else { "Record" };
+
+                    let mut row = div()
                         .flex()
-                        .items_center()
-                        .gap_3()
+                        .flex_col()
+                        .gap_1()
                         .p_2()
                         .rounded_md()
                         .bg(theme.surface)
                         .child(
-                            div().w(px(100.0)).child(
-                                Text::new(format!("{}:", channel_name))
-                                    .size(TextSize::Xs)
-                                    .weight(TextWeight::Semibold)
-                                    .color(theme.text_primary),
-                            ),
-                        )
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Xs)
-                                .align(StackAlign::Center)
-                                .child(Text::new(state_icon).size(TextSize::Xs).color(state_color))
-                                .child(Text::new(state_text).size(TextSize::Xs).color(state_color)),
-                        )
-                        .child(div().flex_1()) // Spacer
-                        .child(
-                            Button::new(
-                                SharedString::from(format!("record_ch_{}", idx)),
-                                button_label,
-                            )
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Xs)
-                            .disabled(
-                                is_recording || channel_state == ChannelRecordingState::Recording,
-                            )
-                            .theme(theme.to_button_theme())
-                            .on_click({
-                                let view = view.clone();
-                                move |_, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.start_recording_channel(idx, cx);
-                                    });
-                                }
-                            }),
-                        )
-                        .into_any_element()
+                            // Main speaker row
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_3()
+                                .child(
+                                    div().w(px(100.0)).child(
+                                        Text::new(format!("{}:", speaker_name))
+                                            .size(TextSize::Xs)
+                                            .weight(TextWeight::Semibold)
+                                            .color(theme.text_primary),
+                                    ),
+                                )
+                                .child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .align(StackAlign::Center)
+                                        .child(
+                                            Text::new(state_icon)
+                                                .size(TextSize::Xs)
+                                                .color(state_color),
+                                        )
+                                        .child(
+                                            Text::new(state_text)
+                                                .size(TextSize::Xs)
+                                                .color(state_color),
+                                        ),
+                                )
+                                .child(div().flex_1())
+                                .child(
+                                    Button::new(
+                                        SharedString::from(format!(
+                                            "record_speaker_{}",
+                                            first_vec_idx
+                                        )),
+                                        button_label,
+                                    )
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Xs)
+                                    .disabled(is_recording || any_recording)
+                                    .theme(theme.to_button_theme())
+                                    .on_click({
+                                        let view = view.clone();
+                                        move |_, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.start_recording_channel(first_vec_idx, cx);
+                                            });
+                                        }
+                                    }),
+                                ),
+                        );
+
+                    // Show per-mic sub-statuses when multi-mic and at least one is done
+                    if num_mics > 1 {
+                        let has_any_result = mic_states
+                            .iter()
+                            .any(|(_, s)| *s != ChannelRecordingState::Empty);
+                        if has_any_result {
+                            row = row.child(
+                                div().pl_6().child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .children(mic_states.iter().map(
+                                            |(mic_idx, mic_state)| {
+                                                let (icon, color) = match mic_state {
+                                                    ChannelRecordingState::Empty => {
+                                                        ("○", theme.text_muted)
+                                                    }
+                                                    ChannelRecordingState::Recording => {
+                                                        ("●", theme.warning)
+                                                    }
+                                                    ChannelRecordingState::Done => {
+                                                        ("✓", theme.success)
+                                                    }
+                                                    ChannelRecordingState::Error => {
+                                                        ("✗", theme.error)
+                                                    }
+                                                };
+                                                HStack::new()
+                                                    .spacing(StackSpacing::Xs)
+                                                    .align(StackAlign::Center)
+                                                    .child(
+                                                        Text::new(format!(
+                                                            "Mic {}:",
+                                                            mic_idx + 1
+                                                        ))
+                                                        .size(TextSize::Xs)
+                                                        .color(theme.text_secondary),
+                                                    )
+                                                    .child(
+                                                        Text::new(icon)
+                                                            .size(TextSize::Xs)
+                                                            .color(color),
+                                                    )
+                                                    .into_any_element()
+                                            },
+                                        )),
+                                ),
+                            );
+                        }
+                    }
+
+                    row.into_any_element()
                 },
             ))
             .into_any_element()
@@ -790,114 +926,137 @@ impl PlayerView {
         log::info!("Starting auto-record mode - all channels will be recorded sequentially");
     }
 
-    /// Start recording a single channel
+    /// Start recording a speaker (all mics captured simultaneously).
+    ///
+    /// `channel_idx` is a vec index into `channel_recordings` — any entry belonging
+    /// to the target speaker works (typically the first one for that speaker).
+    /// With a single mic this behaves exactly as before; with N mics it captures
+    /// all N input channels in one pass and populates every mic entry for the speaker.
     #[allow(clippy::type_complexity)]
     pub fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         use sotf_audio_player::signal_recorder::{
             SignalParams, SignalType, generate_signal, write_temp_wav,
         };
 
-        // Get recording parameters from state
-        let (
-            signal_type,
-            duration_secs,
-            level_db,
-            sweep_start_freq,
-            sweep_end_freq,
-            output_device,
-            input_device,
-            output_channel,
-            input_channel,
-            sample_rate,
-            mic_calibration,
-            channel_name,
-            recording_directory,
-        ): (
-            _,              // signal_type
-            f32,            // duration_secs
-            f32,            // level_db
-            f32,            // sweep_start_freq
-            f32,            // sweep_end_freq
-            String,         // output_device
-            String,         // input_device
-            u16,            // output_channel
-            u16,            // input_channel
-            u32,            // sample_rate
-            Option<String>, // mic_calibration
-            String,         // channel_name
-            Option<String>, // recording_directory
-        ) = {
+        // --- Gather parameters from state ---
+        #[derive(Clone)]
+        struct MicInfo {
+            vec_idx: usize,
+            #[allow(dead_code)]
+            mic_index: usize,
+            input_channel: u16,
+            calibration: Option<String>,
+            safe_name: String,
+        }
+
+        struct RecParams {
+            signal_type: SignalType,
+            duration_secs: f32,
+            level_db: f32,
+            sweep_start_freq: f32,
+            sweep_end_freq: f32,
+            output_device: String,
+            input_device: String,
+            output_channel: u16,
+            sample_rate: u32,
+            speaker_name: String,
+            recording_directory: Option<String>,
+            mics: Vec<MicInfo>,
+        }
+
+        let params = {
             let state = self.state.read(cx);
             let rec_state = &state.app.measurement_state.recording_state;
 
-            // Get the channel info
-            let channel_info = rec_state.channel_recordings.get(channel_idx);
-            if channel_info.is_none() {
-                log::error!("Invalid channel index: {}", channel_idx);
-                return;
-            }
-            let channel = channel_info.unwrap();
-            let channel_name = channel.channel_name.clone();
+            let channel = match rec_state.channel_recordings.get(channel_idx) {
+                Some(c) => c,
+                None => {
+                    log::error!("Invalid channel index: {}", channel_idx);
+                    return;
+                }
+            };
+
+            let speaker_idx = channel.channel_index;
             let sweep_start = channel.sweep_start_freq;
             let sweep_end = channel.sweep_end_freq;
-            let recording_directory = rec_state.recording_directory.clone();
 
-            // Map signal type
+            // Collect all mic entries for this speaker
+            let mics: Vec<MicInfo> = rec_state
+                .channel_recordings
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.channel_index == speaker_idx)
+                .map(|(vi, r)| {
+                    let input_ch = rec_state
+                        .recording_config
+                        .channel_mappings
+                        .get(r.mic_index)
+                        .or_else(|| rec_state.recording_config.channel_mappings.first())
+                        .copied()
+                        .unwrap_or(0) as u16;
+                    let calibration = rec_state
+                        .mic_calibration_paths
+                        .get(r.mic_index)
+                        .and_then(|p| p.clone())
+                        .or_else(|| rec_state.mic_calibration_path.clone());
+                    let safe_name: String = r
+                        .channel_name
+                        .chars()
+                        .map(|c| {
+                            if c.is_alphanumeric() || c == '_' || c == '-' {
+                                c
+                            } else {
+                                '_'
+                            }
+                        })
+                        .collect();
+                    MicInfo {
+                        vec_idx: vi,
+                        mic_index: r.mic_index,
+                        input_channel: input_ch,
+                        calibration,
+                        safe_name,
+                    }
+                })
+                .collect();
+
             let signal_type = match rec_state.signal_type {
                 RecordingSignalType::Sweep => SignalType::Sweep,
                 RecordingSignalType::WhiteNoise => SignalType::WhiteNoise,
                 RecordingSignalType::PinkNoise => SignalType::PinkNoise,
             };
 
-            // Get output channel from playback config (stored as 0-based index)
-            // For multi-channel speakers, use the first interface channel
             let output_ch = rec_state
                 .playback_config
                 .channel_mappings
-                .get(channel_idx)
+                .get(speaker_idx)
                 .map(|m| m.interface_channel())
-                .unwrap_or(0);
+                .unwrap_or(0) as u16;
 
-            // Get input channel from recording config (stored as 0-based index)
-            let input_ch = rec_state
-                .recording_config
-                .channel_mappings
-                .get(channel_idx)
-                .or_else(|| rec_state.recording_config.channel_mappings.first())
-                .copied()
-                .unwrap_or(0);
+            let speaker_name = channel
+                .channel_name
+                .find(" (Mic ")
+                .map(|pos| channel.channel_name[..pos].to_string())
+                .unwrap_or_else(|| channel.channel_name.clone());
 
-            // Use per-channel calibration index with fallback to channel 0
-            let mic_idx = if channel_idx < rec_state.recording_config.channel_mappings.len() {
-                channel_idx
-            } else {
-                0
-            };
-
-            (
+            RecParams {
                 signal_type,
-                rec_state.signal_duration_secs,
-                rec_state.signal_level_db,
-                sweep_start,
-                sweep_end,
-                rec_state.playback_config.device_name.clone(),
-                rec_state.recording_config.device_name.clone(),
-                output_ch as u16,
-                input_ch as u16,
-                rec_state.playback_config.sample_rate,
-                rec_state
-                    .mic_calibration_paths
-                    .get(mic_idx)
-                    .and_then(|p| p.clone())
-                    .or_else(|| rec_state.mic_calibration_path.clone()),
-                channel_name,
-                recording_directory,
-            )
+                duration_secs: rec_state.signal_duration_secs,
+                level_db: rec_state.signal_level_db,
+                sweep_start_freq: sweep_start,
+                sweep_end_freq: sweep_end,
+                output_device: rec_state.playback_config.device_name.clone(),
+                input_device: rec_state.recording_config.device_name.clone(),
+                output_channel: output_ch,
+                sample_rate: rec_state.playback_config.sample_rate,
+                speaker_name,
+                recording_directory: rec_state.recording_directory.clone(),
+                mics,
+            }
         };
 
-        // Check if recording directory is set
-        let recording_dir = match recording_directory {
-            Some(dir) => std::path::PathBuf::from(dir),
+        let recording_dir = match params.recording_directory {
+            Some(ref dir) => std::path::PathBuf::from(dir),
             None => {
                 log::error!("No recording directory selected");
                 self.state.update(cx, |state, _| {
@@ -909,16 +1068,19 @@ impl PlayerView {
             }
         };
 
-        // Update UI to show recording state
+        // Mark all mic entries for this speaker as Recording
+        let mic_vec_indices: Vec<usize> = params.mics.iter().map(|m| m.vec_idx).collect();
         self.state.update(cx, |state, _| {
-            if let Some(recording) = state
-                .app
-                .measurement_state
-                .recording_state
-                .channel_recordings
-                .get_mut(channel_idx)
-            {
-                recording.state = ChannelRecordingState::Recording;
+            for &vi in &mic_vec_indices {
+                if let Some(recording) = state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .channel_recordings
+                    .get_mut(vi)
+                {
+                    recording.state = ChannelRecordingState::Recording;
+                }
             }
             state
                 .app
@@ -926,7 +1088,7 @@ impl PlayerView {
                 .recording_state
                 .current_recording_channel = Some(channel_idx);
             state.app.measurement_state.recording_state.status_message =
-                format!("Recording channel {}...", channel_name);
+                format!("Recording {}...", params.speaker_name);
             state
                 .app
                 .measurement_state
@@ -935,40 +1097,44 @@ impl PlayerView {
         });
         cx.notify();
 
-        // Convert dB level to linear amplitude
-        let amplitude = 10.0_f32.powf(level_db / 20.0);
-
-        // Generate signal parameters
-        let params = match signal_type {
+        // Generate signal
+        let amplitude = 10.0_f32.powf(params.level_db / 20.0);
+        let sig_params = match params.signal_type {
             SignalType::Sweep => SignalParams::Sweep {
-                start_freq: sweep_start_freq,
-                end_freq: sweep_end_freq,
+                start_freq: params.sweep_start_freq,
+                end_freq: params.sweep_end_freq,
                 amp: amplitude,
             },
             SignalType::WhiteNoise | SignalType::PinkNoise => {
                 SignalParams::Noise { amp: amplitude }
             }
             _ => SignalParams::Sweep {
-                start_freq: sweep_start_freq,
-                end_freq: sweep_end_freq,
+                start_freq: params.sweep_start_freq,
+                end_freq: params.sweep_end_freq,
                 amp: amplitude,
             },
         };
 
-        // Generate the test signal
-        let signal = match generate_signal(signal_type, &params, duration_secs, sample_rate) {
+        let signal = match generate_signal(
+            params.signal_type,
+            &sig_params,
+            params.duration_secs,
+            params.sample_rate,
+        ) {
             Ok(s) => s,
             Err(e) => {
                 log::error!("Failed to generate signal: {}", e);
                 self.state.update(cx, |state, _| {
-                    if let Some(recording) = state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .channel_recordings
-                        .get_mut(channel_idx)
-                    {
-                        recording.state = ChannelRecordingState::Error;
+                    for &vi in &mic_vec_indices {
+                        if let Some(rec) = state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .channel_recordings
+                            .get_mut(vi)
+                        {
+                            rec.state = ChannelRecordingState::Error;
+                        }
                     }
                     state
                         .app
@@ -983,23 +1149,21 @@ impl PlayerView {
             }
         };
 
-        // Prepare signal with fades and padding
-        let prepared_signal = signal.clone(); // prepare_signal(signal.clone(), sample_rate);
-
-        // Write to temp file
-        let temp_wav = match write_temp_wav(&prepared_signal, sample_rate, 1) {
+        let temp_wav = match write_temp_wav(&signal, params.sample_rate, 1) {
             Ok(f) => f,
             Err(e) => {
                 log::error!("Failed to write temp WAV: {}", e);
                 self.state.update(cx, |state, _| {
-                    if let Some(recording) = state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .channel_recordings
-                        .get_mut(channel_idx)
-                    {
-                        recording.state = ChannelRecordingState::Error;
+                    for &vi in &mic_vec_indices {
+                        if let Some(rec) = state
+                            .app
+                            .measurement_state
+                            .recording_state
+                            .channel_recordings
+                            .get_mut(vi)
+                        {
+                            rec.state = ChannelRecordingState::Error;
+                        }
                     }
                     state
                         .app
@@ -1014,113 +1178,194 @@ impl PlayerView {
             }
         };
 
-        // Create output paths in the recording directory
-        // Use channel name for descriptive filenames (sanitize for filesystem)
-        let safe_channel_name: String = channel_name
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
+        // Build per-mic paths
+        let wav_paths: Vec<std::path::PathBuf> = params
+            .mics
+            .iter()
+            .map(|m| recording_dir.join(format!("{}.wav", m.safe_name)))
             .collect();
-        let recorded_wav_path = recording_dir.join(format!("{}.wav", safe_channel_name));
-        let csv_path = recording_dir.join(format!("{}.csv", safe_channel_name));
+        let csv_paths: Vec<std::path::PathBuf> = params
+            .mics
+            .iter()
+            .map(|m| recording_dir.join(format!("{}.csv", m.safe_name)))
+            .collect();
+        let input_channels: Vec<u16> = params.mics.iter().map(|m| m.input_channel).collect();
+        let mic_calibrations: Vec<Option<String>> =
+            params.mics.iter().map(|m| m.calibration.clone()).collect();
 
-        // Spawn background task for recording
         let state_entity = self.state.clone();
         let view_entity = cx.entity().clone();
         let reference_signal = signal.clone();
         let temp_wav_path = temp_wav.path().to_path_buf();
+        let mics = params.mics.clone();
+        let speaker_name = params.speaker_name.clone();
+        let signal_type = params.signal_type;
+        let sweep_start_freq = params.sweep_start_freq;
+        let sweep_end_freq = params.sweep_end_freq;
+        let output_channel = params.output_channel;
+        let output_device = params.output_device.clone();
+        let input_device = params.input_device.clone();
+        let sample_rate = params.sample_rate;
 
         cx.spawn(async move |_, cx| {
-            use sotf_audio_player::signal_recorder::{record_and_analyze, SignalType};
+            use sotf_audio_player::signal_recorder::SignalType;
 
-            log::info!(
-                "Starting recording: output_ch={}, input_ch={}, device={}",
-                output_channel,
-                input_channel,
-                output_device
-            );
-
-            // Determine sweep range for THD calculation
             let sweep_range = if signal_type == SignalType::Sweep {
                 Some((sweep_start_freq, sweep_end_freq))
             } else {
                 None
             };
 
-            // Run the recording
-            let result = record_and_analyze(
-                &temp_wav_path,
-                &recorded_wav_path,
-                &reference_signal,
-                sample_rate,
-                &csv_path,
+            let out_dev = if output_device.is_empty() {
+                None
+            } else {
+                Some(output_device.as_str())
+            };
+            let in_dev = if input_device.is_empty() {
+                None
+            } else {
+                Some(input_device.as_str())
+            };
+
+            let num_mics = mics.len();
+            log::info!(
+                "Starting recording: speaker={}, output_ch={}, {} mics, input_chs={:?}",
+                speaker_name,
                 output_channel,
-                input_channel,
-                if output_device.is_empty() {
-                    None
-                } else {
-                    Some(output_device.as_str())
-                },
-                if input_device.is_empty() {
-                    None
-                } else {
-                    Some(input_device.as_str())
-                },
-                mic_calibration.as_deref(),
-                sweep_range,
+                num_mics,
+                input_channels,
             );
 
-            // Parse results and update state
+            // Use multi-channel recording when multiple mics, single-channel otherwise
+            let results: Result<Vec<_>, String> = if num_mics <= 1 {
+                use sotf_audio_player::signal_recorder::record_and_analyze;
+                record_and_analyze(
+                    &temp_wav_path,
+                    &wav_paths[0],
+                    &reference_signal,
+                    sample_rate,
+                    &csv_paths[0],
+                    output_channel,
+                    input_channels[0],
+                    out_dev,
+                    in_dev,
+                    mic_calibrations[0].as_deref(),
+                    sweep_range,
+                )
+                .map(|r| vec![r])
+            } else {
+                use sotf_audio_player::signal_recorder::record_and_analyze_multi;
+                record_and_analyze_multi(
+                    &temp_wav_path,
+                    &wav_paths,
+                    &reference_signal,
+                    sample_rate,
+                    &csv_paths,
+                    output_channel,
+                    &input_channels,
+                    out_dev,
+                    in_dev,
+                    &mic_calibrations,
+                    sweep_range,
+                )
+            };
+
+            // Update state with results
             let (should_auto_continue, next_channel_idx) =
                 state_entity.update(&mut cx.clone(), |state, _| {
-                    let should_continue = match result {
-                        Ok(analysis_result) => {
-                            // Check for noise floor warning (signal too weak)
-                            // Compute average SPL in 100 Hz - 10 kHz range
+                    let should_continue = match results {
+                        Ok(analysis_results) => {
                             const NOISE_FLOOR_THRESHOLD_DB: f32 = -50.0;
-                            let avg_spl = {
-                                let mut sum = 0.0_f32;
-                                let mut count = 0;
-                                for (&freq, &mag) in analysis_result
-                                    .frequencies
-                                    .iter()
-                                    .zip(analysis_result.spl_db.iter())
-                                {
-                                    if (100.0..=10000.0).contains(&freq) {
-                                        sum += mag;
-                                        count += 1;
-                                    }
-                                }
-                                if count > 0 {
-                                    sum / count as f32
-                                } else {
-                                    0.0
-                                }
-                            };
+                            let mut any_low_signal = false;
 
-                            // Set noise floor warning if signal is too weak
-                            if avg_spl < NOISE_FLOOR_THRESHOLD_DB {
+                            for (mic_i, analysis_result) in
+                                analysis_results.into_iter().enumerate()
+                            {
+                                let vi = mics[mic_i].vec_idx;
+                                let mic_name = &mics[mic_i].safe_name;
+
+                                // Compute avg SPL
+                                let avg_spl = {
+                                    let mut sum = 0.0_f32;
+                                    let mut count = 0;
+                                    for (&freq, &mag) in analysis_result
+                                        .frequencies
+                                        .iter()
+                                        .zip(analysis_result.spl_db.iter())
+                                    {
+                                        if (100.0..=10000.0).contains(&freq) {
+                                            sum += mag;
+                                            count += 1;
+                                        }
+                                    }
+                                    if count > 0 {
+                                        sum / count as f32
+                                    } else {
+                                        0.0
+                                    }
+                                };
+
+                                if avg_spl < NOISE_FLOOR_THRESHOLD_DB {
+                                    any_low_signal = true;
+                                    log::warn!(
+                                        "Noise floor warning: {} avg SPL = {:.1} dB",
+                                        mic_name,
+                                        avg_spl,
+                                    );
+                                }
+
+                                if let Some(recording) = state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .channel_recordings
+                                    .get_mut(vi)
+                                {
+                                    recording.state = ChannelRecordingState::Done;
+                                    recording.result = Some(RecordingResult {
+                                        channel: vi,
+                                        wav_path: Some(
+                                            wav_paths[mic_i].to_string_lossy().to_string(),
+                                        ),
+                                        csv_path: Some(
+                                            csv_paths[mic_i].to_string_lossy().to_string(),
+                                        ),
+                                        frequencies: analysis_result.frequencies,
+                                        magnitude_db: analysis_result.spl_db,
+                                        phase_deg: analysis_result.phase_deg,
+                                        impulse_response: Some(
+                                            analysis_result.impulse_response,
+                                        ),
+                                        impulse_time_ms: Some(
+                                            analysis_result.impulse_time_ms,
+                                        ),
+                                        excess_group_delay_ms: Some(
+                                            analysis_result.excess_group_delay_ms,
+                                        ),
+                                        thd_percent: Some(analysis_result.thd_percent),
+                                        harmonic_distortion_db: Some(
+                                            analysis_result.harmonic_distortion_db,
+                                        ),
+                                        rt60_ms: Some(analysis_result.rt60_ms),
+                                        clarity_c50_db: Some(analysis_result.clarity_c50_db),
+                                        clarity_c80_db: Some(analysis_result.clarity_c80_db),
+                                        spectrogram_db: Some(
+                                            analysis_result.spectrogram_db,
+                                        ),
+                                    });
+                                }
+                            }
+
+                            if any_low_signal {
                                 state
                                     .app
                                     .measurement_state
                                     .recording_state
                                     .noise_floor_warning = Some(format!(
-                                    "Channel '{}' has very low signal level ({:.1} dB). Check microphone connection or increase signal level.",
-                                    channel_name, avg_spl
+                                    "Speaker '{}' has mic(s) with very low signal. Check connections or increase level.",
+                                    speaker_name,
                                 ));
-                                log::warn!(
-                                    "Noise floor warning: Channel '{}' avg SPL = {:.1} dB (threshold: {} dB)",
-                                    channel_name,
-                                    avg_spl,
-                                    NOISE_FLOOR_THRESHOLD_DB
-                                );
                             } else {
-                                // Clear any previous warning
                                 state
                                     .app
                                     .measurement_state
@@ -1128,36 +1373,9 @@ impl PlayerView {
                                     .noise_floor_warning = None;
                             }
 
-                            if let Some(recording) = state
-                                .app
-                                .measurement_state
-                                .recording_state
-                                .channel_recordings
-                                .get_mut(channel_idx)
-                            {
-                                recording.state = ChannelRecordingState::Done;
-                                recording.result = Some(RecordingResult {
-                                    channel: channel_idx,
-                                    wav_path: Some(recorded_wav_path.to_string_lossy().to_string()),
-                                    csv_path: Some(csv_path.to_string_lossy().to_string()),
-                                    frequencies: analysis_result.frequencies,
-                                    magnitude_db: analysis_result.spl_db, // Use spl_db from AnalysisResult
-                                    phase_deg: analysis_result.phase_deg,
-                                    impulse_response: Some(analysis_result.impulse_response),
-                                    impulse_time_ms: Some(analysis_result.impulse_time_ms),
-                                    excess_group_delay_ms: Some(analysis_result.excess_group_delay_ms),
-                                    thd_percent: Some(analysis_result.thd_percent),
-                                    harmonic_distortion_db: Some(analysis_result.harmonic_distortion_db),
-                                    rt60_ms: Some(analysis_result.rt60_ms),
-                                    clarity_c50_db: Some(analysis_result.clarity_c50_db),
-                                    clarity_c80_db: Some(analysis_result.clarity_c80_db),
-                                    spectrogram_db: Some(analysis_result.spectrogram_db),
-                                });
-                            }
                             state.app.measurement_state.recording_state.status_message =
-                                format!("Channel {} recording complete", channel_name);
+                                format!("{} recording complete", speaker_name);
 
-                            // Check if we should auto-record the next channel
                             state
                                 .app
                                 .measurement_state
@@ -1166,19 +1384,19 @@ impl PlayerView {
                         }
                         Err(e) => {
                             log::error!("Recording failed: {}", e);
-                            if let Some(recording) = state
-                                .app
-                                .measurement_state
-                                .recording_state
-                                .channel_recordings
-                                .get_mut(channel_idx)
-                            {
-                                recording.state = ChannelRecordingState::Error;
+                            for mic in &mics {
+                                if let Some(recording) = state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .channel_recordings
+                                    .get_mut(mic.vec_idx)
+                                {
+                                    recording.state = ChannelRecordingState::Error;
+                                }
                             }
                             state.app.measurement_state.recording_state.status_message =
                                 format!("Recording error: {}", e);
-
-                            // Stop auto-recording on error
                             state
                                 .app
                                 .measurement_state
@@ -1199,8 +1417,12 @@ impl PlayerView {
                         .recording_state
                         .recording_progress = 1.0;
 
-                    // Find next channel to record if in auto-record mode
+                    // Find next speaker to record: first entry with Empty state
+                    // that belongs to a speaker not yet recorded.
+                    // We find the first Empty entry and use it as the start of the
+                    // next speaker group.
                     let next_channel_idx = if should_continue {
+                        let mut seen = std::collections::HashSet::new();
                         state
                             .app
                             .measurement_state
@@ -1208,7 +1430,10 @@ impl PlayerView {
                             .channel_recordings
                             .iter()
                             .enumerate()
-                            .find(|(_, r)| r.state == ChannelRecordingState::Empty)
+                            .find(|(_, r)| {
+                                r.state == ChannelRecordingState::Empty
+                                    && seen.insert(r.channel_index)
+                            })
                             .map(|(idx, _)| idx)
                     } else {
                         None
@@ -1217,15 +1442,13 @@ impl PlayerView {
                     (should_continue, next_channel_idx)
                 });
 
-            // If we should continue auto-recording, start the next channel
             if should_auto_continue {
                 if let Some(next_idx) = next_channel_idx {
-                    log::info!("Auto-recording: starting next channel {}", next_idx);
+                    log::info!("Auto-recording: starting next speaker at idx {}", next_idx);
                     view_entity.update(cx, |view, cx| {
                         view.start_recording_channel(next_idx, cx);
                     });
                 } else {
-                    // No more channels to record - auto-record complete
                     log::info!("Auto-recording complete - all channels recorded");
                     view_entity.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
@@ -1242,12 +1465,11 @@ impl PlayerView {
                 }
             }
 
-            // Clean up temp file (it will be dropped automatically)
             drop(temp_wav);
         })
         .detach();
 
-        log::info!("Recording started for channel {}", channel_idx);
+        log::info!("Recording started for speaker {}", params.speaker_name);
     }
 
     /// Stop all recording

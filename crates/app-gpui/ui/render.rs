@@ -6,6 +6,14 @@ impl Render for PlayerView {
             self.focus_handle.focus(window, cx);
             window.activate_window();
             cx.activate(true);
+
+            // When the window close button (red X) is clicked, dispatch QuitApp
+            // so that cleanup (save config/geometry, stop player) runs the same
+            // path as Cmd-Q.
+            window.on_window_should_close(cx, |window, cx| {
+                window.dispatch_action(Box::new(QuitApp), cx);
+                false // prevent default close — QuitApp calls cx.quit()
+            });
         }
 
         // Update layout mode based on window height

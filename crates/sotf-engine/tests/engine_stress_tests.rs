@@ -10,8 +10,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+/// Serialize all stress tests to avoid thread starvation when multiple tests
+/// each spawn a multi-threaded audio engine simultaneously.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[test]
 fn stress_rapid_play_stop() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -32,6 +37,7 @@ fn stress_rapid_play_stop() {
 
 #[test]
 fn stress_rapid_pause_resume() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -59,6 +65,7 @@ fn stress_rapid_pause_resume() {
 
 #[test]
 fn stress_rapid_seek() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -80,6 +87,7 @@ fn stress_rapid_seek() {
 
 #[test]
 fn stress_rapid_volume_changes() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -100,6 +108,7 @@ fn stress_rapid_volume_changes() {
 
 #[test]
 fn stress_rapid_mute_toggle() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -119,6 +128,7 @@ fn stress_rapid_mute_toggle() {
 
 #[test]
 fn stress_concurrent_state_queries() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = Arc::new(Mutex::new(AudioEngine::new(config).unwrap()));
 
@@ -157,6 +167,7 @@ fn stress_concurrent_state_queries() {
 
 #[test]
 fn stress_concurrent_commands() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = Arc::new(Mutex::new(AudioEngine::new(config).unwrap()));
 
@@ -221,6 +232,7 @@ fn stress_concurrent_commands() {
 
 #[test]
 fn stress_plugin_chain_updates() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -253,6 +265,7 @@ fn stress_plugin_chain_updates() {
 
 #[test]
 fn stress_long_playback() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -282,6 +295,7 @@ fn stress_long_playback() {
 
 #[test]
 fn stress_many_short_files() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -304,6 +318,7 @@ fn stress_many_short_files() {
 
 #[test]
 fn stress_seek_to_extremes() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -326,6 +341,7 @@ fn stress_seek_to_extremes() {
 
 #[test]
 fn stress_bypass_toggle() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -353,6 +369,7 @@ fn stress_bypass_toggle() {
 
 #[test]
 fn stress_interleaved_operations() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -396,6 +413,7 @@ fn stress_interleaved_operations() {
 
 #[test]
 fn stress_rapid_engine_recreation() {
+    let _lock = TEST_LOCK.lock().unwrap();
     // Create and destroy engines rapidly
     for _ in 0..10 {
         let config = common::test_engine_config();
@@ -413,6 +431,7 @@ fn stress_rapid_engine_recreation() {
 
 #[test]
 fn stress_position_polling() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -430,6 +449,7 @@ fn stress_position_polling() {
 
 #[test]
 fn stress_state_polling() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -448,6 +468,7 @@ fn stress_state_polling() {
 
 #[test]
 fn stress_empty_plugin_chain_updates() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -477,6 +498,7 @@ fn stress_empty_plugin_chain_updates() {
 
 #[test]
 fn stress_volume_extremes() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -494,6 +516,7 @@ fn stress_volume_extremes() {
 
 #[test]
 fn stress_different_sample_rates() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let sample_rates = [44100, 48000, 88200, 96000];
 
     for &sr in &sample_rates {
@@ -520,6 +543,7 @@ fn stress_different_sample_rates() {
 
 #[test]
 fn stress_mixed_sample_rate_files() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 

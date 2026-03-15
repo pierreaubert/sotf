@@ -1,3 +1,4 @@
+use crate::pages::headphone::HeadphoneEqPage;
 use crate::pages::spinorama::SpinoramaPage;
 use gpui::{Context, VisualTestContext, WindowHandle};
 use sotf_audio_player_gpui::app::{App, AppState, Screen, SettingsTab};
@@ -85,6 +86,10 @@ impl<'a> AppDriver<'a> {
     }
     pub fn spinorama<'s>(&'s mut self) -> SpinoramaPage<'s, 'a> {
         SpinoramaPage::new(self)
+    }
+
+    pub fn headphone_eq<'s>(&'s mut self) -> HeadphoneEqPage<'s, 'a> {
+        HeadphoneEqPage::new(self)
     }
 
     pub fn simulate_keystrokes(&mut self, keystrokes: &str) {

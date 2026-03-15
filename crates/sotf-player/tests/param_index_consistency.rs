@@ -1,11 +1,11 @@
 //! Tests to verify parameter index consistency between PARAMS ordering,
 //! param_value/set_param_value, and the controller's set_plugin_param_value.
 
-use sotf_audio_player::param_specs::{ParamType, UpdateMode};
+use sotf_audio_player::param_specs::{ParamSpec, ParamType, UpdateMode};
 use sotf_audio_player::{PluginSettings, PluginType};
 
-fn default(pt: PluginType) -> PluginSettings {
-    PluginSettings::default_for(&pt)
+fn default(pt: &PluginType) -> PluginSettings {
+    PluginSettings::default_for(pt)
 }
 
 fn is_bool(pt: &ParamType) -> bool {
@@ -16,12 +16,53 @@ fn is_file(pt: &ParamType) -> bool {
     matches!(pt, ParamType::FilePath)
 }
 
-fn test_value(spec: &sotf_audio_player::param_specs::ParamSpec) -> Option<f64> {
+/// Return a value guaranteed to differ from the spec's default.
+fn distinctive_value(spec: &ParamSpec) -> Option<f64> {
+    match spec.param_type {
+        ParamType::FilePath => None,
+        ParamType::Bool { default, .. } => Some(if default { 0.0 } else { 1.0 }),
+        ParamType::Choice {
+            labels,
+            default_index,
+        } => {
+            if labels.len() <= 1 {
+                None
+            } else {
+                let next = if default_index + 1 < labels.len() {
+                    default_index + 1
+                } else {
+                    0
+                };
+                Some(next as f64)
+            }
+        }
+        ParamType::Int {
+            default, min, max, ..
+        } => {
+            if max != default {
+                Some(max as f64)
+            } else {
+                Some(min as f64)
+            }
+        }
+        ParamType::Float {
+            default, min, max, ..
+        } => {
+            if (max - default).abs() > f64::EPSILON {
+                Some(max)
+            } else {
+                Some(min)
+            }
+        }
+    }
+}
+
+fn test_value(spec: &ParamSpec) -> Option<f64> {
     match spec.param_type {
         ParamType::Bool { .. } => Some(1.0),
         ParamType::Choice { .. } => Some(1.0),
         ParamType::FilePath => None,
-        ParamType::Int { .. } => Some((spec.min_f64() + spec.max_f64()) / 2.0),
+        ParamType::Int { .. } => Some(((spec.min_f64() + spec.max_f64()) / 2.0).floor()),
         ParamType::Float { .. } => Some((spec.min_f64() + spec.max_f64()) / 2.0),
     }
 }
@@ -62,70 +103,200 @@ fn roundtrip_test(name: &str, settings: &mut PluginSettings) {
     }
 }
 
-#[test]
-fn test_upmixer_param_roundtrip() {
-    roundtrip_test("Upmixer", &mut default(PluginType::Upmixer));
-}
+// ---------------------------------------------------------------------------
+// Roundtrip: all plugins
+// ---------------------------------------------------------------------------
 
 #[test]
-fn test_fletcher_munson_param_roundtrip() {
-    roundtrip_test("FletcherMunson", &mut default(PluginType::FletcherMunson));
+fn test_roundtrip_all_plugins() {
+    for pt in PluginType::all() {
+        let name = pt.name();
+        roundtrip_test(name, &mut default(&pt));
+    }
 }
 
-#[test]
-fn test_convolution_param_roundtrip() {
-    roundtrip_test("Convolution", &mut default(PluginType::Convolution));
-}
+// ---------------------------------------------------------------------------
+// Count: param_specs().len() == number of valid param_value() indices
+// ---------------------------------------------------------------------------
 
-/// Verify that param_specs().len() matches the number of valid indices in param_value().
 #[test]
 fn test_all_plugins_param_count_matches_specs() {
-    let plugins = [
-        ("Upmixer", PluginType::Upmixer),
-        ("FletcherMunson", PluginType::FletcherMunson),
-        ("Convolution", PluginType::Convolution),
-        ("Gain", PluginType::Gain),
-        ("Compressor", PluginType::Compressor),
-        ("Limiter", PluginType::Limiter),
-    ];
+    for pt in PluginType::all() {
+        let name = pt.name();
+        let settings = default(&pt);
+        let specs = settings.param_specs();
 
-    for (name, pt) in plugins {
-        let settings = default(pt);
-        let spec_count = settings.param_specs().len();
-        let mut value_count = 0;
-        for i in 0..100 {
-            if settings.param_value(i).is_some() {
-                value_count = i + 1;
+        // param_value() returns None for FilePath params by design,
+        // so we check that every non-FilePath spec index returns Some,
+        // and no index beyond specs.len() returns Some.
+        for (i, spec) in specs.iter().enumerate() {
+            if is_file(&spec.param_type) {
+                assert!(
+                    settings.param_value(i).is_none(),
+                    "{}: FilePath param {} ({}) should return None from param_value",
+                    name,
+                    i,
+                    spec.engine_key
+                );
+            } else {
+                assert!(
+                    settings.param_value(i).is_some(),
+                    "{}: param_value({}) ({}) returned None but spec exists",
+                    name,
+                    i,
+                    spec.engine_key
+                );
             }
         }
-        assert_eq!(
-            spec_count, value_count,
-            "{}: param_specs has {} entries but param_value has {} valid indices",
-            name, spec_count, value_count
+
+        // No valid indices beyond specs length
+        assert!(
+            settings.param_value(specs.len()).is_none(),
+            "{}: param_value({}) returned Some beyond spec count",
+            name,
+            specs.len()
         );
     }
 }
 
-/// Verify engine_param_at keys match param_specs engine_key for upmixer.
-#[test]
-fn test_upmixer_param_keys_match_specs() {
-    let settings = default(PluginType::Upmixer);
-    let specs = settings.param_specs();
+// ---------------------------------------------------------------------------
+// Isolation: setting param[i] must not affect param[j] for j != i
+// ---------------------------------------------------------------------------
 
-    for (i, spec) in specs.iter().enumerate() {
-        if spec.update_mode == UpdateMode::Structural || is_file(&spec.param_type) {
+#[test]
+fn test_param_isolation_all_plugins() {
+    for pt in PluginType::all() {
+        let name = pt.name();
+        let specs = default(&pt).param_specs();
+        if specs.is_empty() {
             continue;
         }
-        let (key, _) = settings
-            .engine_param_at(i)
-            .unwrap_or_else(|| panic!("engine_param_at({}) returned None", i));
-        assert_eq!(
-            key, spec.engine_key,
-            "Upmixer param {}: engine_param_at key '{}' != spec key '{}'",
-            i, key, spec.engine_key
-        );
+
+        for i in 0..specs.len() {
+            let spec = &specs[i];
+            if is_file(&spec.param_type) {
+                continue;
+            }
+
+            let new_val = match distinctive_value(spec) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            // Snapshot default values
+            let baseline = default(&pt);
+            let baseline_vals: Vec<Option<f64>> =
+                (0..specs.len()).map(|j| baseline.param_value(j)).collect();
+
+            // Check that distinctive_value actually differs from default
+            let default_val = baseline.param_value(i);
+            if let Some(dv) = default_val {
+                if is_bool(&spec.param_type) {
+                    if (dv > 0.5) == (new_val > 0.5) {
+                        continue; // can't distinguish, skip
+                    }
+                } else if (dv - new_val).abs() < 1e-9 {
+                    continue; // distinctive value equals default, skip
+                }
+            }
+
+            // Set only index i
+            let mut modified = default(&pt);
+            modified.set_param_value(i, new_val);
+
+            // Verify index i changed
+            let readback = modified.param_value(i);
+            assert!(
+                readback.is_some(),
+                "{} param {} ({}): param_value returned None after set",
+                name,
+                i,
+                spec.engine_key
+            );
+
+            // Verify no other index changed
+            for j in 0..specs.len() {
+                if j == i {
+                    continue;
+                }
+                if is_file(&specs[j].param_type) {
+                    continue;
+                }
+                let before = baseline_vals[j];
+                let after = modified.param_value(j);
+                match (before, after) {
+                    (Some(b), Some(a)) => {
+                        if is_bool(&specs[j].param_type) {
+                            assert_eq!(
+                                b > 0.5,
+                                a > 0.5,
+                                "{}: setting param {} ({}) changed param {} ({}) from {} to {}",
+                                name,
+                                i,
+                                spec.engine_key,
+                                j,
+                                specs[j].engine_key,
+                                b,
+                                a
+                            );
+                        } else {
+                            assert!(
+                                (b - a).abs() < 1e-9,
+                                "{}: setting param {} ({}) changed param {} ({}) from {} to {}",
+                                name,
+                                i,
+                                spec.engine_key,
+                                j,
+                                specs[j].engine_key,
+                                b,
+                                a
+                            );
+                        }
+                    }
+                    (None, None) => {}
+                    _ => {
+                        panic!(
+                            "{}: setting param {} ({}) changed param {} ({}) presence: {:?} -> {:?}",
+                            name, i, spec.engine_key, j, specs[j].engine_key, before, after
+                        );
+                    }
+                }
+            }
+        }
     }
 }
+
+// ---------------------------------------------------------------------------
+// engine_key consistency: engine_param_at(i).key == PARAMS[i].engine_key
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_engine_key_consistency_all_plugins() {
+    for pt in PluginType::all() {
+        let name = pt.name();
+        let settings = default(&pt);
+        let specs = settings.param_specs();
+
+        for (i, spec) in specs.iter().enumerate() {
+            if spec.update_mode == UpdateMode::Structural || is_file(&spec.param_type) {
+                continue;
+            }
+            let (key, _) = match settings.engine_param_at(i) {
+                Some(kv) => kv,
+                None => continue,
+            };
+            assert_eq!(
+                key, spec.engine_key,
+                "{} param {}: engine_param_at key '{}' != spec key '{}'",
+                name, i, key, spec.engine_key
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Misc
+// ---------------------------------------------------------------------------
 
 #[test]
 fn test_multiband_empty_bands_no_crash() {

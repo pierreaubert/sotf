@@ -674,6 +674,7 @@ fn optimize_multidriver(
         min_db,
         max_db,
         None, // Optional: initial crossover frequencies
+        config.args.seed,
     )
     .map_err(|e| e.to_string())?;
 
@@ -751,6 +752,7 @@ fn optimize_multisub(
         max_iter,
         min_db,
         max_db,
+        config.args.seed,
     )
     .map_err(|e| e.to_string())?;
 
@@ -839,6 +841,7 @@ fn optimize_dba(
         max_iter,
         min_db,
         max_db,
+        config.args.seed,
     )
     .map_err(|e| e.to_string())?;
 

@@ -970,11 +970,13 @@ fn create_plugin(
             } else if let (Some(in_ch), Some(out_ch)) =
                 (params.input_channels, params.output_channels)
             {
-                // Auto-resize matrix when file channel count differs from config
-                // (e.g., matrix was 2x2 from stereo session, now playing 5.1)
-                if in_ch != channels || out_ch != channels {
+                // Auto-resize only for square matrices (in_ch == out_ch) that don't
+                // match the current chain channel count. Non-square matrices (in_ch != out_ch)
+                // intentionally change channel count (e.g., 1→2 for recording routing)
+                // and must be used as-is when in_ch matches the chain.
+                if in_ch == out_ch && in_ch != channels {
                     log::info!(
-                        "[create_plugin:matrix] Resizing matrix from {}x{} to {}x{} to match chain",
+                        "[create_plugin:matrix] Resizing square matrix from {}x{} to {}x{} to match chain",
                         in_ch,
                         out_ch,
                         channels,
@@ -985,7 +987,7 @@ fn create_plugin(
                     MatrixPlugin::with_matrix(channels, channels, matrix)
                         .map_err(|e| format!("Failed to create resized matrix plugin: {}", e))?
                 } else {
-                    // Dense mapping (legacy)
+                    // Use the matrix as configured (including non-square channel-changing matrices)
                     MatrixPlugin::with_matrix(in_ch, out_ch, params.matrix)
                         .map_err(|e| format!("Failed to create matrix plugin: {}", e))?
                 }
@@ -1366,5 +1368,128 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Test that a non-square matrix (1 input → N outputs) is NOT auto-resized.
+    /// This is the exact routing used by recording: mono sweep → specific output channel.
+    /// Regression test for the bug where the matrix was incorrectly resized to 1×1,
+    /// causing all sweeps to play on channel 0 regardless of output_channel.
+    #[test]
+    fn test_matrix_mono_to_multichannel_not_resized() {
+        let sample_rate = 48000;
+
+        // Simulate recording routing: mono signal → channel 1 (Right) of a stereo output
+        for target_ch in 0..4 {
+            let hw_channels = 4;
+            let mut matrix = vec![0.0f32; hw_channels];
+            matrix[target_ch] = 1.0;
+
+            let matrix_params = serde_json::json!({
+                "input_channels": 1,
+                "output_channels": hw_channels,
+                "matrix": matrix,
+            });
+
+            let config = PluginConfig::new("matrix", matrix_params);
+
+            // Chain starts with 1 channel (mono WAV file)
+            let host = build_plugin_host(std::slice::from_ref(&config), sample_rate, 1)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "build_plugin_host failed for 1→{} matrix targeting ch{}: {}",
+                        hw_channels, target_ch, e
+                    )
+                });
+
+            // Verify the chain expanded to the correct output channel count
+            assert_eq!(
+                host.output_channels(),
+                hw_channels,
+                "Matrix 1→{} should produce {} output channels, got {}",
+                hw_channels,
+                hw_channels,
+                host.output_channels()
+            );
+        }
+    }
+
+    /// Test that a square matrix IS auto-resized when chain channels differ.
+    /// E.g., a 2×2 matrix applied to a 4-channel chain should resize to 4×4.
+    #[test]
+    fn test_matrix_square_auto_resize() {
+        let sample_rate = 48000;
+
+        // 2×2 identity matrix applied to a 4-channel chain
+        let matrix_params = serde_json::json!({
+            "input_channels": 2,
+            "output_channels": 2,
+            "matrix": [1.0, 0.0, 0.0, 1.0],
+        });
+
+        let config = PluginConfig::new("matrix", matrix_params);
+        let host = build_plugin_host(std::slice::from_ref(&config), sample_rate, 4)
+            .expect("build_plugin_host failed for 2×2 matrix on 4ch chain");
+
+        // Should have been resized to 4×4
+        assert_eq!(
+            host.output_channels(),
+            4,
+            "Square 2×2 matrix on 4ch chain should auto-resize to 4×4"
+        );
+    }
+
+    /// Test that a mono→stereo matrix correctly routes signal to the target channel.
+    #[test]
+    fn test_matrix_mono_routing_signal_integrity() {
+        let sample_rate = 48000;
+        let num_frames = 256;
+
+        // Route mono to channel 1 (Right) of stereo output
+        let matrix_params = serde_json::json!({
+            "input_channels": 1,
+            "output_channels": 2,
+            "matrix": [0.0, 1.0],  // silence on L, signal on R
+        });
+
+        let config = PluginConfig::new("matrix", matrix_params);
+        let mut host = build_plugin_host(std::slice::from_ref(&config), sample_rate, 1)
+            .expect("build_plugin_host failed");
+
+        assert_eq!(host.output_channels(), 2);
+
+        // Mono 440Hz sine input
+        let input: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                (2.0 * std::f32::consts::PI * 440.0 * i as f32 / sample_rate as f32).sin() * 0.5
+            })
+            .collect();
+
+        let mut output = vec![0.0f32; num_frames * 2];
+        host.process(&input, &mut output).unwrap();
+
+        // Channel 0 (Left) should be silent
+        let left_max: f32 = output
+            .iter()
+            .step_by(2)
+            .map(|s| s.abs())
+            .fold(0.0, f32::max);
+        // Channel 1 (Right) should have signal
+        let right_max: f32 = output
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .map(|s| s.abs())
+            .fold(0.0, f32::max);
+
+        assert!(
+            left_max < 1e-6,
+            "Left channel should be silent but has max={}",
+            left_max
+        );
+        assert!(
+            right_max > 0.1,
+            "Right channel should have signal but max={}",
+            right_max
+        );
     }
 }

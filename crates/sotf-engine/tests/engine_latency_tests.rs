@@ -12,12 +12,18 @@ mod common;
 
 use common::{create_test_wav, test_engine_config};
 use sotf_audio::engine::{AudioEngine, PlaybackState};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+/// Serialize all latency tests to avoid thread starvation when 15 tests each
+/// spawn a multi-threaded audio engine simultaneously.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Test: Play to audible latency
 /// Measures how long it takes from play() call to actual audio output
 #[test]
 fn test_play_to_audible_latency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -53,6 +59,7 @@ fn test_play_to_audible_latency() {
 /// Measures how long pause() takes to stop audio output
 #[test]
 fn test_pause_latency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -80,6 +87,7 @@ fn test_pause_latency() {
 /// Measures how long resume() takes to restart audio output
 #[test]
 fn test_resume_latency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -116,6 +124,7 @@ fn test_resume_latency() {
 /// Measures how long stop() takes to halt playback
 #[test]
 fn test_stop_latency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -144,6 +153,7 @@ fn test_stop_latency() {
 /// Measures how long seek() takes to complete
 #[test]
 fn test_seek_latency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -180,6 +190,7 @@ fn test_seek_latency() {
 /// Verifies that position is accurate after seeking
 #[test]
 fn test_seek_position_accuracy() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -218,6 +229,7 @@ fn test_seek_position_accuracy() {
 /// Verifies that position always increases during playback (never goes backwards)
 #[test]
 fn test_position_monotonic() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -248,6 +260,7 @@ fn test_position_monotonic() {
 /// Verifies underrun counter works correctly
 #[test]
 fn test_underrun_monitoring() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -279,6 +292,7 @@ fn test_underrun_monitoring() {
 /// Stress test for rapid state transitions
 #[test]
 fn test_rapid_play_pause_cycles() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -311,6 +325,7 @@ fn test_rapid_play_pause_cycles() {
 /// Stress test for rapid seeking
 #[test]
 fn test_rapid_seek_cycles() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -338,6 +353,7 @@ fn test_rapid_seek_cycles() {
 /// Measures how quickly volume changes take effect
 #[test]
 fn test_volume_change_latency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -363,6 +379,7 @@ fn test_volume_change_latency() {
 /// Measures how quickly mute takes effect
 #[test]
 fn test_mute_latency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -400,6 +417,7 @@ fn test_mute_latency() {
 /// Verifies engine handles long playback without major issues
 #[test]
 fn test_long_duration_playback() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -427,6 +445,7 @@ fn test_long_duration_playback() {
 /// Tests engine behavior with sequential track playback
 #[test]
 fn test_sequential_tracks() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -466,6 +485,7 @@ fn test_sequential_tracks() {
 /// Verifies correct behavior when playback reaches end
 #[test]
 fn test_end_of_stream() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = test_engine_config();
     let engine = AudioEngine::new(config).unwrap();

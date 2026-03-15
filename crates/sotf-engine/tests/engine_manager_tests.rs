@@ -7,10 +7,16 @@ mod common;
 use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
 use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+/// Serialize all manager tests to avoid thread starvation when multiple tests
+/// each spawn a multi-threaded audio engine simultaneously.
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn test_engine_creation() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config);
 
@@ -19,6 +25,7 @@ fn test_engine_creation() {
 
 #[test]
 fn test_engine_initial_state() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -33,6 +40,7 @@ fn test_engine_initial_state() {
 
 #[test]
 fn test_engine_play_file() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -52,6 +60,7 @@ fn test_engine_play_file() {
 
 #[test]
 fn test_engine_pause_resume() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -77,6 +86,7 @@ fn test_engine_pause_resume() {
 
 #[test]
 fn test_engine_stop() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -96,6 +106,7 @@ fn test_engine_stop() {
 
 #[test]
 fn test_engine_seek() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -121,6 +132,7 @@ fn test_engine_seek() {
 
 #[test]
 fn test_engine_seek_without_file_returns_error() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -135,6 +147,7 @@ fn test_engine_seek_without_file_returns_error() {
 
 #[test]
 fn test_engine_volume_control() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -152,6 +165,7 @@ fn test_engine_volume_control() {
 
 #[test]
 fn test_engine_mute() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -173,6 +187,7 @@ fn test_engine_mute() {
 
 #[test]
 fn test_engine_update_plugin_chain() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -192,6 +207,7 @@ fn test_engine_update_plugin_chain() {
 
 #[test]
 fn test_engine_update_plugin_chain_allows_upmixer_channel_increase() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config_with(|c| {
         c.output_channels = 2;
@@ -232,6 +248,7 @@ fn test_engine_update_plugin_chain_allows_upmixer_channel_increase() {
 
 #[test]
 fn test_engine_bypass_processing() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -252,6 +269,7 @@ fn test_engine_bypass_processing() {
 
 #[test]
 fn test_engine_set_plugin_parameter_propagates_processing_error() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -262,6 +280,7 @@ fn test_engine_set_plugin_parameter_propagates_processing_error() {
 
 #[test]
 fn test_engine_invalid_file() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -275,6 +294,7 @@ fn test_engine_invalid_file() {
 
 #[test]
 fn test_engine_multiple_plays() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -295,6 +315,7 @@ fn test_engine_multiple_plays() {
 
 #[test]
 fn test_engine_rapid_commands() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -325,6 +346,7 @@ fn test_engine_rapid_commands() {
 
 #[test]
 fn test_engine_shutdown() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -345,6 +367,7 @@ fn test_engine_shutdown() {
 
 #[test]
 fn test_engine_position_tracking() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -376,6 +399,7 @@ fn test_engine_position_tracking() {
 
 #[test]
 fn test_engine_state_consistency() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -408,6 +432,7 @@ fn test_engine_state_consistency() {
 
 #[test]
 fn test_engine_config_with_plugins() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let plugins = vec![
         PluginConfig::new("gain", serde_json::json!({"gain_db": -3.0})),
         PluginConfig::new("gain", serde_json::json!({"gain_db": 6.0})),
@@ -423,6 +448,7 @@ fn test_engine_config_with_plugins() {
 
 #[test]
 fn test_engine_custom_sample_rate() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config_with(|c| {
         c.output_sample_rate = 96000;
     });
@@ -448,6 +474,7 @@ fn test_engine_custom_sample_rate() {
 
 #[test]
 fn test_engine_drop_cleanup() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
@@ -465,6 +492,7 @@ fn test_engine_drop_cleanup() {
 
 #[test]
 fn test_engine_remove_plugin_during_playback() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -512,6 +540,7 @@ fn test_engine_remove_plugin_during_playback() {
 
 #[test]
 fn test_engine_remove_all_plugins_during_playback() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -539,6 +568,7 @@ fn test_engine_remove_all_plugins_during_playback() {
 
 #[test]
 fn test_engine_rapid_plugin_updates_during_playback() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
@@ -580,6 +610,7 @@ fn test_engine_rapid_plugin_updates_during_playback() {
 
 #[test]
 fn test_engine_update_preserves_playback_after_channel_change() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
     let config = common::test_engine_config_with(|c| {
         c.output_channels = 2;
@@ -625,6 +656,7 @@ fn test_engine_update_preserves_playback_after_channel_change() {
 
 #[test]
 fn test_engine_auto_advance_after_end_of_stream() {
+    let _lock = TEST_LOCK.lock().unwrap();
     let _ = env_logger::builder().is_test(true).try_init();
 
     let device = common::require_virtual_device();

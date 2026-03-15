@@ -45,6 +45,7 @@ impl PlaybackThread {
         channels: usize,
         output_device: Option<String>,
         recycle_tx: SyncSender<Vec<f32>>,
+        allow_virtual_output: bool,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
 
@@ -61,6 +62,7 @@ impl PlaybackThread {
                     channels,
                     output_device,
                     recycle_tx,
+                    allow_virtual_output,
                 ) {
                     log::debug!("[Playback Thread] Error: {}", e);
                     error_tx
@@ -165,6 +167,7 @@ fn run_playback_thread(
     initial_channels: usize,
     output_device: Option<String>,
     recycle_tx: SyncSender<Vec<f32>>,
+    allow_virtual_output: bool,
 ) -> Result<(), String> {
     // Initialize cpal
     let host = cpal::default_host();
@@ -204,8 +207,8 @@ fn run_playback_thread(
         };
 
         // If explicitly requested a virtual device (likely by accident due to it being default),
-        // force a fallback to avoid feedback loop
-        if is_virtual_output_device_name(&device_identifier) {
+        // force a fallback to avoid feedback loop — unless allow_virtual_output is set
+        if is_virtual_output_device_name(&device_identifier) && !allow_virtual_output {
             log::warn!(
                 "[Playback Thread] Virtual output device '{}' requested as output - forcing fallback to prevent feedback loop",
                 device_identifier

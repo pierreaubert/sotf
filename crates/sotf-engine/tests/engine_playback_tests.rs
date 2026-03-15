@@ -25,6 +25,7 @@ fn test_playback_thread_creation() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     );
 
     assert!(
@@ -47,6 +48,7 @@ fn test_playback_send_commands() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -78,6 +80,7 @@ fn test_playback_volume_commands() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -103,6 +106,7 @@ fn test_playback_shutdown() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -128,6 +132,7 @@ fn test_playback_receives_frames() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -170,6 +175,7 @@ fn test_playback_detects_underrun() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -212,6 +218,7 @@ fn test_playback_handles_eos() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -241,6 +248,7 @@ fn test_playback_handles_flush() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -277,6 +285,7 @@ fn test_playback_channel_update() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -302,6 +311,7 @@ fn test_playback_rapid_volume_changes() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -328,6 +338,7 @@ fn test_playback_rapid_mute_toggle() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -355,6 +366,7 @@ fn test_playback_mixed_commands() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 
@@ -397,6 +409,7 @@ fn test_playback_different_sample_rates() {
             2,
             common::blackhole_device_option(),
             sync_channel::<Vec<f32>>(64).0,
+            true,
         );
 
         match result {
@@ -438,6 +451,7 @@ fn test_playback_different_channel_counts() {
             channels,
             common::blackhole_device_option(),
             sync_channel::<Vec<f32>>(64).0,
+            true,
         );
 
         match result {
@@ -473,6 +487,7 @@ fn test_playback_drop_cleanup() {
         2,
         common::blackhole_device_option(),
         sync_channel::<Vec<f32>>(64).0,
+        true,
     )
     .expect("Failed to create playback thread with BlackHole");
 

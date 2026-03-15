@@ -1,4 +1,5 @@
-//! Headphone EQ E2E tests — placeholder.
+//! Headphone EQ E2E tests.
 //!
-//! Previous tests here tested local mock structs, not production code.
-//! Real tests should use AppDriver to exercise the actual headphone EQ wizard.
+//! Tests for the headphone EQ wizard flow using AppDriver.
+
+pub mod flow;

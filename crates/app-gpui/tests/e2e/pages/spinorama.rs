@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
-use sotf_audio_player_gpui::app::InputMode;
 use sotf_audio_player_gpui::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
+use sotf_audio_player_gpui::app::InputMode;
 
 pub struct SpinoramaPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
@@ -257,7 +257,10 @@ impl<'a, 'b> SpinoramaPage<'a, 'b> {
     pub fn enter_search_mode(&mut self) {
         self.driver.update_app(|app, _| {
             app.ui_state.input_mode = InputMode::SpinoramaSpeakerSearch;
-            app.measurement_state.spinorama_eq_state.speaker_search.clear();
+            app.measurement_state
+                .spinorama_eq_state
+                .speaker_search
+                .clear();
             // Ensure we're on the SelectSpeaker step so the Input widget renders
             app.measurement_state.spinorama_eq_state.step =
                 sotf_audio_player_gpui::app::types::SpinoramaStep::SelectSpeaker;
@@ -284,8 +287,12 @@ impl<'a, 'b> SpinoramaPage<'a, 'b> {
 
     /// Get the current search query from state
     pub fn get_search_query(&mut self) -> String {
-        self.driver
-            .read_app(|app| app.measurement_state.spinorama_eq_state.speaker_search.clone())
+        self.driver.read_app(|app| {
+            app.measurement_state
+                .spinorama_eq_state
+                .speaker_search
+                .clone()
+        })
     }
 
     /// Check if we're in search mode

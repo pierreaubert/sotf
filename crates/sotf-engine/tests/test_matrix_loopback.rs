@@ -5,10 +5,13 @@ use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+static DEVICE_LOCK: Mutex<()> = Mutex::new(());
+
 fn find_device(
     name_part: &str,
     input: bool,
 ) -> Option<(cpal::Device, cpal::SupportedStreamConfig)> {
+    let target_rate: u32 = 48000;
     let host = cpal::default_host();
     let devices = if input {
         host.input_devices().ok()?
@@ -22,16 +25,22 @@ fn find_device(
                 if input {
                     if let Ok(configs) = device.supported_input_configs() {
                         for config in configs {
-                            if config.channels() >= 2 {
-                                return Some((device, config.with_max_sample_rate()));
+                            if config.channels() >= 2
+                                && config.min_sample_rate() <= target_rate
+                                && config.max_sample_rate() >= target_rate
+                            {
+                                return Some((device, config.with_sample_rate(target_rate)));
                             }
                         }
                     }
                 } else {
                     if let Ok(configs) = device.supported_output_configs() {
                         for config in configs {
-                            if config.channels() >= 2 {
-                                return Some((device, config.with_max_sample_rate()));
+                            if config.channels() >= 2
+                                && config.min_sample_rate() <= target_rate
+                                && config.max_sample_rate() >= target_rate
+                            {
+                                return Some((device, config.with_sample_rate(target_rate)));
                             }
                         }
                     }
@@ -43,8 +52,9 @@ fn find_device(
 }
 
 #[test]
-#[ignore] // Requires BlackHole loopback audio routing to be configured
+
 fn test_matrix_swap_channels_loopback_verification() {
+    let _guard = DEVICE_LOCK.lock().unwrap();
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -81,6 +91,7 @@ fn test_matrix_swap_channels_loopback_verification() {
     config.output_device = Some(out_device.description().unwrap().name().to_string());
     config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
+    config.allow_virtual_output = true;
     config.plugins = vec![PluginConfig::new(
         "matrix",
         json!({
@@ -196,8 +207,9 @@ fn test_matrix_swap_channels_loopback_verification() {
 }
 
 #[test]
-#[ignore] // Requires BlackHole loopback audio routing to be configured
+
 fn test_matrix_mono_sum_loopback_verification() {
+    let _guard = DEVICE_LOCK.lock().unwrap();
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -231,6 +243,7 @@ fn test_matrix_mono_sum_loopback_verification() {
     config.output_device = Some(out_device.description().unwrap().name().to_string());
     config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
+    config.allow_virtual_output = true;
     config.plugins = vec![PluginConfig::new(
         "matrix",
         json!({

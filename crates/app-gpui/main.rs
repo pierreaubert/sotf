@@ -278,8 +278,6 @@ fn main() {
                 },
             );
 
-            // Note: Window activation is handled in PlayerView::render on first frame
-            // to ensure macOS menu bar is properly active
             let _ = window;
         });
 }

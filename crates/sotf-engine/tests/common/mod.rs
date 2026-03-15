@@ -12,19 +12,29 @@ use std::sync::OnceLock;
 use tempfile::NamedTempFile;
 
 /// Virtual audio device names to try (in order of preference)
-/// SotF HAL driver is preferred, then BlackHole variants
+/// BlackHole is preferred (most commonly installed), then SotF HAL driver
 const VIRTUAL_DEVICES: &[&str] = &[
-    "SotF Virtual Audio",
     "BlackHole 2ch",
     "BlackHole 16ch",
     "BlackHole 64ch",
+    "SotF Virtual Audio",
 ];
 
 /// Cached virtual device name (checked once per test run)
 static VIRTUAL_DEVICE: OnceLock<Option<String>> = OnceLock::new();
 
-/// Find an available virtual audio device (SotF HAL or BlackHole)
+/// Find an available virtual audio device.
+///
+/// Checks `AEQ_E2E_DEVICE` env var first (allows overriding the device),
+/// then auto-detects BlackHole or SotF HAL driver.
 pub fn find_virtual_device() -> Option<String> {
+    // Allow explicit override via environment variable
+    if let Ok(device) = std::env::var("AEQ_E2E_DEVICE") {
+        if !device.is_empty() {
+            return Some(device);
+        }
+    }
+
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();
@@ -60,14 +70,15 @@ pub fn require_virtual_device() -> String {
             ╔═══════════════════════════════════════════════════════════════════════╗\n\
             ║  AUDIO ENGINE TESTS REQUIRE A VIRTUAL AUDIO DEVICE                    ║\n\
             ╠═══════════════════════════════════════════════════════════════════════╣\n\
-            ║  No virtual audio device found (SotF HAL or BlackHole).               ║\n\
+            ║  No virtual audio device found (BlackHole or SotF HAL).               ║\n\
             ║                                                                       ║\n\
             ║  Tests use virtual devices to avoid playing sound on real speakers.   ║\n\
             ║                                                                       ║\n\
             ║  Options:                                                             ║\n\
-            ║  1. Install the SotF HAL driver (preferred)                           ║\n\
-            ║  2. Install BlackHole: brew install blackhole-2ch                     ║\n\
+            ║  1. Install BlackHole: brew install blackhole-2ch                     ║\n\
             ║     or from: https://existential.audio/blackhole/                     ║\n\
+            ║  2. Install the SotF HAL driver                                       ║\n\
+            ║  3. Set AEQ_E2E_DEVICE='Your Device Name' to use a specific device   ║\n\
             ╚═══════════════════════════════════════════════════════════════════════╝\n\n",
         )
 }
@@ -98,6 +109,7 @@ pub fn blackhole_device_option() -> Option<String> {
 pub fn test_engine_config() -> EngineConfig {
     let mut config = EngineConfig::default();
     config.output_device = Some(require_virtual_device());
+    config.allow_virtual_output = true;
     config
 }
 

@@ -147,15 +147,37 @@ impl Default for RecordingState {
 }
 
 impl RecordingState {
-    /// Initialize channel recordings from playback config
+    /// Initialize channel recordings from playback config × recording config.
+    /// With 1 mic: one entry per speaker (e.g. [L, R]).
+    /// With 2+ mics: one entry per (speaker, mic) pair (e.g. [L/Mic1, L/Mic2, R/Mic1, R/Mic2]).
     pub fn init_channel_recordings(&mut self) {
-        self.channel_recordings = self
-            .playback_config
-            .channel_mappings
-            .iter()
-            .enumerate()
-            .map(|(idx, mapping)| ChannelRecording::new(idx, mapping.group_name.clone()))
-            .collect();
+        let raw_num_mics = self.recording_config.channel_mappings.len();
+        let num_mics = raw_num_mics.max(1);
+
+        if raw_num_mics <= 1 {
+            // Single mic: one entry per speaker, mic_index=0
+            self.channel_recordings = self
+                .playback_config
+                .channel_mappings
+                .iter()
+                .enumerate()
+                .map(|(idx, mapping)| ChannelRecording::new(idx, mapping.group_name.clone()))
+                .collect();
+        } else {
+            // Multiple mics: one entry per (speaker, mic) pair
+            self.channel_recordings = self
+                .playback_config
+                .channel_mappings
+                .iter()
+                .enumerate()
+                .flat_map(|(speaker_idx, mapping)| {
+                    (0..num_mics).map(move |mic_idx| {
+                        let name = format!("{} (Mic {})", mapping.group_name, mic_idx + 1);
+                        ChannelRecording::with_mic(speaker_idx, name, mic_idx)
+                    })
+                })
+                .collect();
+        }
     }
 
     /// Check if all channels have been recorded
