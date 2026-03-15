@@ -721,7 +721,7 @@ impl AudioEngineManager {
     }
 
     /// Get current engine state (snapshot from ArcSwap, lock-free)
-    fn get_engine_state(&self) -> AudioEngineState {
+    pub fn get_engine_state(&self) -> AudioEngineState {
         if let Some(engine) = &*self.engine.load() {
             engine.get_state()
         } else {

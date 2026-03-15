@@ -352,8 +352,8 @@ fn run_playback_thread(
     // Record stream start time for rate measurement
     let stream_start_time = std::time::Instant::now();
 
-    // Warn if the device name looks like a virtual device
-    if is_virtual_output_device_name(&device_name) {
+    // Warn if the device name looks like a virtual device (unless explicitly allowed)
+    if is_virtual_output_device_name(&device_name) && !allow_virtual_output {
         log::error!(
             "[Playback Thread] WARNING: Output device '{}' appears to be a virtual device! This will cause a feedback loop.",
             device_name
@@ -551,155 +551,151 @@ fn run_playback_thread(
                             channels,
                             new_channels
                         );
-                        log::trace!(
-                            "[Playback Thread] UpdateChannels: Draining pending frames with old channel count"
-                        );
 
-                        // Clear ring buffer logic is replaced by creating a new ring buffer
-                        log::debug!("[Playback Thread] Recreating ring buffer for channel update");
-
-                        // CRITICAL: Drain all pending frames from the message queue
-                        // These frames may have the OLD channel count and would cause mismatches
-                        let mut drained_count = 0;
-                        while message_rx.try_recv().is_ok() {
-                            drained_count += 1;
-                        }
-                        if drained_count > 0 {
-                            log::debug!(
-                                "[Playback Thread] Drained {} stale frames during channel update",
-                                drained_count
-                            );
-                        }
-
-                        // Build new config and state, but only commit them if stream rebuild succeeds
-                        let mut new_config = StreamConfig {
+                        // Check what the device actually supports BEFORE doing any
+                        // disruptive work (pausing stream, draining frames).
+                        let probe_config = StreamConfig {
                             channels: new_channels as u16,
                             sample_rate: config.sample_rate,
                             buffer_size: config.buffer_size,
                         };
-
-                        // Create new ring buffer for the new channel configuration
-                        let new_buffer_capacity =
-                            playback_buffer_capacity(sample_rate, new_channels, buffer_ms);
-                        let (new_producer, new_consumer) =
-                            RingBuffer::<f32>::new(new_buffer_capacity);
-
-                        let new_state = Arc::new(PlaybackState::new(new_buffer_capacity));
-
-                        // Continuously drain frames during rebuild - they may have wrong channel count
-                        // Use a closure to drain and count
-                        let drain_frames = || {
-                            let mut count = 0;
-                            while message_rx.try_recv().is_ok() {
-                                count += 1;
-                            }
-                            count
-                        };
-
-                        drained_count += drain_frames();
-
-                        // Stop the old stream first to prevent any race conditions
-                        // The stream.pause() ensures the audio callback stops
-                        if let Err(e) = stream.pause() {
-                            log::warn!("[Playback Thread] Failed to pause old stream: {}", e);
-                        }
-
-                        // Small delay to let audio callback finish
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-
-                        // Final drain after stopping old stream
-                        drained_count += drain_frames();
-
-                        // Rebuild and start new stream
-                        let (new_format, new_hw_ch) = choose_output_format(&device, &new_config);
-                        if new_hw_ch != new_config.channels {
+                        let (new_format, new_hw_ch) = choose_output_format(&device, &probe_config);
+                        if new_hw_ch as usize != new_channels {
                             log::warn!(
-                                "[Playback Thread] Adjusting rebuild channels from {} to {}",
-                                new_config.channels,
+                                "[Playback Thread] Device adjusts requested {}ch to {}ch",
+                                new_channels,
                                 new_hw_ch
                             );
-                            new_config.channels = new_hw_ch;
                             new_channels = new_hw_ch as usize;
                         }
-                        log::info!(
-                            "[Playback Thread] Building new stream with config: {}ch, {}Hz, format: {:?} (drained {} frames)",
-                            new_config.channels,
-                            new_config.sample_rate,
-                            new_format,
-                            drained_count
-                        );
 
-                        match build_output_stream(
-                            &device,
-                            &new_config,
-                            Arc::clone(&new_state),
-                            event_tx.clone(),
-                            new_consumer,
-                            new_format,
-                        ) {
-                            Ok(new_stream) => {
-                                log::info!("[Playback Thread] Stream built, starting playback...");
-                                if let Err(e) = new_stream.play() {
+                        // If the device-adjusted channel count matches current,
+                        // skip the stream rebuild entirely. The playback thread
+                        // already handles channel mismatches via downmix/upmix
+                        // in the frame receive path (frame.num_channels != channels).
+                        if new_channels == channels {
+                            log::info!(
+                                "[Playback Thread] Device adjusted channels back to {} (same as current), \
+                                 skipping rebuild. Processing chain output will be converted in the frame receive path.",
+                                channels
+                            );
+                        } else {
+                            // Device supports a different channel count — rebuild stream
+                            log::trace!(
+                                "[Playback Thread] UpdateChannels: Draining pending frames with old channel count"
+                            );
+
+                            // Drain pending frames (may have OLD channel count)
+                            let mut drained_count = 0;
+                            while message_rx.try_recv().is_ok() {
+                                drained_count += 1;
+                            }
+
+                            let mut new_config = StreamConfig {
+                                channels: new_channels as u16,
+                                sample_rate: config.sample_rate,
+                                buffer_size: config.buffer_size,
+                            };
+                            new_config.channels = new_hw_ch;
+
+                            let new_buffer_capacity =
+                                playback_buffer_capacity(sample_rate, new_channels, buffer_ms);
+                            let (new_producer, new_consumer) =
+                                RingBuffer::<f32>::new(new_buffer_capacity);
+                            let new_state = Arc::new(PlaybackState::new(new_buffer_capacity));
+
+                            let drain_frames = || {
+                                let mut count = 0;
+                                while message_rx.try_recv().is_ok() {
+                                    count += 1;
+                                }
+                                count
+                            };
+
+                            drained_count += drain_frames();
+
+                            if let Err(e) = stream.pause() {
+                                log::warn!("[Playback Thread] Failed to pause old stream: {}", e);
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                            drained_count += drain_frames();
+
+                            log::info!(
+                                "[Playback Thread] Building new stream with config: {}ch, {}Hz, format: {:?} (drained {} frames)",
+                                new_config.channels,
+                                new_config.sample_rate,
+                                new_format,
+                                drained_count
+                            );
+
+                            match build_output_stream(
+                                &device,
+                                &new_config,
+                                Arc::clone(&new_state),
+                                event_tx.clone(),
+                                new_consumer,
+                                new_format,
+                            ) {
+                                Ok(new_stream) => {
+                                    log::info!("[Playback Thread] Stream built, starting playback...");
+                                    if let Err(e) = new_stream.play() {
+                                        log::error!(
+                                            "[Playback Thread] Failed to start new stream: {}",
+                                            e
+                                        );
+                                        event_tx
+                                            .send(ThreadEvent::ProcessingError(format!(
+                                                "Playback stream start failed for {} channels: {}",
+                                                new_channels, e
+                                            )))
+                                            .ok();
+                                    } else {
+                                        stream = new_stream;
+                                        config = new_config;
+                                        state = new_state;
+                                        channels = new_channels;
+                                        producer = new_producer;
+                                        buffer_capacity = new_buffer_capacity;
+                                        event_tx
+                                            .send(ThreadEvent::PlaybackChannelsChanged(channels))
+                                            .ok();
+
+                                        let mut final_drained = 0;
+                                        while message_rx.try_recv().is_ok() {
+                                            final_drained += 1;
+                                        }
+                                        if final_drained > 0 {
+                                            log::debug!(
+                                                "[Playback Thread] Drained {} additional frames after stream rebuild",
+                                                final_drained
+                                            );
+                                        }
+
+                                        log::warn!(
+                                            "[Playback Thread] STREAM REBUILT successfully with {} channels",
+                                            channels
+                                        );
+                                    }
+                                }
+                                Err(e) => {
                                     log::error!(
-                                        "[Playback Thread] Failed to start new stream: {}",
+                                        "[Playback Thread] Failed to build stream for {} channels: {}",
+                                        new_channels,
                                         e
                                     );
+                                    if let Err(resume_err) = stream.play() {
+                                        log::error!(
+                                            "[Playback Thread] Failed to resume old stream: {}",
+                                            resume_err
+                                        );
+                                    }
                                     event_tx
                                         .send(ThreadEvent::ProcessingError(format!(
-                                            "Playback stream start failed for {} channels: {}",
+                                            "Playback stream rebuild failed for {} channels: {}",
                                             new_channels, e
                                         )))
                                         .ok();
-                                } else {
-                                    // Replace old stream with new one (old one drops automatically)
-                                    stream = new_stream;
-                                    config = new_config;
-                                    state = new_state;
-                                    channels = new_channels;
-                                    producer = new_producer;
-                                    buffer_capacity = new_buffer_capacity;
-                                    event_tx
-                                        .send(ThreadEvent::PlaybackChannelsChanged(channels))
-                                        .ok();
-
-                                    // Final drain - discard any frames that arrived during rebuild
-                                    // These might have wrong channel count
-                                    let mut final_drained = 0;
-                                    while message_rx.try_recv().is_ok() {
-                                        final_drained += 1;
-                                    }
-                                    if final_drained > 0 {
-                                        log::debug!(
-                                            "[Playback Thread] Drained {} additional frames after stream rebuild",
-                                            final_drained
-                                        );
-                                    }
-
-                                    log::warn!(
-                                        "[Playback Thread] STREAM REBUILT successfully with {} channels",
-                                        channels
-                                    );
                                 }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "[Playback Thread] Failed to build stream for {} channels: {}",
-                                    new_channels,
-                                    e
-                                );
-                                // Resume the old stream so audio doesn't stop
-                                if let Err(resume_err) = stream.play() {
-                                    log::error!(
-                                        "[Playback Thread] Failed to resume old stream: {}",
-                                        resume_err
-                                    );
-                                }
-                                event_tx
-                                    .send(ThreadEvent::ProcessingError(format!(
-                                        "Playback stream rebuild failed for {} channels: {}",
-                                        new_channels, e
-                                    )))
-                                    .ok();
                             }
                         }
                     } else {

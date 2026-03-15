@@ -98,9 +98,15 @@ impl Player {
     ) -> Result<(), Box<dyn std::error::Error>> {
         match self.manager.update_plugin_chain(plugins.clone()) {
             Ok(()) => {
-                // Update saved config so crash recovery uses latest plugins
+                // Update saved config so crash recovery uses latest plugins.
+                // Also update output_channels from the engine state so auto-restart
+                // doesn't fail ensure_output_channel_capacity when an upmixer was added.
                 if let Some(ref mut config) = self.saved_config {
                     config.plugins = plugins;
+                    let engine_state = self.manager.get_engine_state();
+                    if engine_state.num_channels > 0 {
+                        config.output_channels = engine_state.num_channels;
+                    }
                 }
                 Ok(())
             }

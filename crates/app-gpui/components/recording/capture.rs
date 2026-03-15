@@ -1110,15 +1110,23 @@ impl PlayerView {
         cx.notify();
 
         // Log the exact parameters for diagnostics
-        log::info!(
-            "Recording params: speaker={}, output_ch={}, sweep={:.0}-{:.0}Hz, sr={}, level={:.1}dB, mics={}",
+        log::warn!(
+            "Recording params: speaker={}, speaker_idx={}, output_ch={}, sweep={:.0}-{:.0}Hz, sr={}, level={:.1}dB, mics={}, mic_vec_indices={:?}",
             params.speaker_name,
+            // Re-read speaker_idx from the first mic entry
+            params.mics.first().map(|m| {
+                self.state.read(cx).app.measurement_state.recording_state
+                    .channel_recordings.get(m.vec_idx)
+                    .map(|r| r.channel_index)
+                    .unwrap_or(999)
+            }).unwrap_or(999),
             params.output_channel,
             params.sweep_start_freq,
             params.sweep_end_freq,
             params.sample_rate,
             params.level_db,
             params.mics.len(),
+            mic_vec_indices,
         );
 
         // Generate signal

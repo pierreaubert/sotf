@@ -916,17 +916,17 @@ fn ensure_output_channel_capacity(
     output_device: Option<&str>,
 ) -> Result<(), ConfigError> {
     if configured_output_channels > 0 && required_output_channels > configured_output_channels {
-        let reason = match output_device {
-            Some(device) => format!(
-                "Plugin chain requires {} output channels, but output device '{}' is configured for {} channels. Disable the upmixer or choose a compatible output device.",
-                required_output_channels, device, configured_output_channels
-            ),
-            None => format!(
-                "Plugin chain requires {} output channels, but the current output is configured for {} channels. Disable the upmixer or choose a compatible output device.",
-                required_output_channels, configured_output_channels
-            ),
-        };
-        return Err(ConfigError::ProcessingError { reason });
+        // Log a warning but don't fail — the playback thread handles
+        // channel mismatches via downmix in the frame receive path.
+        // Blocking here would prevent engine creation during auto-restart
+        // when the upmixer was added at runtime (saved_config.output_channels
+        // is still the original 2ch, but plugins now include the upmixer).
+        let device_str = output_device.unwrap_or("default");
+        log::warn!(
+            "[Manager Thread] Plugin chain requires {} output channels, but device '{}' is configured for {}. \
+             Playback thread will downmix automatically.",
+            required_output_channels, device_str, configured_output_channels
+        );
     }
 
     Ok(())
@@ -1756,18 +1756,11 @@ mod tests {
     }
 
     #[test]
-    fn test_ensure_output_channel_capacity_rejects_incompatible_chain() {
+    fn test_ensure_output_channel_capacity_warns_but_allows_mismatch() {
+        // When the chain needs more channels than configured, the function
+        // logs a warning but succeeds — the playback thread handles downmix.
         let result = ensure_output_channel_capacity(6, 2, Some("Built-in Output"));
-
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ConfigError::ProcessingError { reason } => {
-                assert!(reason.contains("requires 6 output channels"));
-                assert!(reason.contains("Built-in Output"));
-                assert!(reason.contains("configured for 2 channels"));
-            }
-            other => panic!("Expected ProcessingError, got {:?}", other),
-        }
+        assert!(result.is_ok());
     }
 
     #[test]
