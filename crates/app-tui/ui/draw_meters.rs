@@ -496,20 +496,39 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     };
 
     // Calculate total width for multi-group layout
-    let total_groups_width: usize = app
+    let num_group_gaps = app.level_meter_groups.len().saturating_sub(1);
+
+    // First try with padded group widths (min 3 for [M][S][D] controls)
+    let padded_groups_width: usize = app
         .level_meter_groups
         .iter()
         .map(|g| g.channels.len().max(3))
         .sum::<usize>()
-        + app.level_meter_groups.len().saturating_sub(1); // 1-char gaps between groups
+        + num_group_gaps;
 
-    // Right-align: legend + gap + meters flush against the right edge
-    // Right-align: meters flush against the right edge
-    // For stereo, the stereo branch handles its own centering
+    // Available space for meters (after the dB scale legend)
+    let meters_area = available_width.saturating_sub(scale_width);
+
+    // If padded widths don't fit, use actual channel counts (no min 3 padding)
+    let compact_groups_width: usize = app
+        .level_meter_groups
+        .iter()
+        .map(|g| g.channels.len())
+        .sum::<usize>()
+        + num_group_gaps;
+
+    let (total_groups_width, use_compact) = if padded_groups_width <= meters_area {
+        (padded_groups_width, false)
+    } else {
+        (compact_groups_width, true)
+    };
+
+    // Right-align within the meters area (after scale), clamped so we don't go before scale
     let mut x_offset = if is_single_stereo_group {
         scale_width // stereo branch handles its own centering
     } else {
-        available_width.saturating_sub(total_groups_width)
+        let right_aligned = scale_width + meters_area.saturating_sub(total_groups_width);
+        right_aligned.max(scale_width)
     };
 
     // Position the dB scale legend just before the meters (2 chars gap)
@@ -572,6 +591,8 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         let is_stereo = is_single_stereo_group;
         let group_width = if is_stereo {
             8 // 3 + 2 + 3 for stereo
+        } else if use_compact {
+            num_channels
         } else {
             num_channels.max(3)
         };
