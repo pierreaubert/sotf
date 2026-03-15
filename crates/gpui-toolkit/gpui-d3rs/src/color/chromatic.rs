@@ -303,6 +303,19 @@ impl SequentialScheme {
         )
     }
 
+    pub fn bu_pu() -> SequentialScale {
+        SequentialScale::new(
+            vec![
+                Hcl::new(250.0, 5.0, 95.0),
+                Hcl::new(260.0, 25.0, 80.0),
+                Hcl::new(270.0, 50.0, 55.0),
+                Hcl::new(280.0, 60.0, 35.0),
+                Hcl::new(290.0, 50.0, 15.0),
+            ],
+            "BuPu",
+        )
+    }
+
     pub fn cubehelix() -> SequentialScale {
         SequentialScale::new(
             vec![
@@ -334,6 +347,7 @@ impl SequentialScheme {
             "Inferno" => Some(Self::inferno()),
             "Plasma" => Some(Self::plasma()),
             "Turbo" => Some(Self::turbo()),
+            "BuPu" => Some(Self::bu_pu()),
             "Cubehelix" => Some(Self::cubehelix()),
             _ => None,
         }

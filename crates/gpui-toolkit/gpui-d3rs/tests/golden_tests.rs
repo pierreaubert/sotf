@@ -3672,6 +3672,7 @@ fn test_observable_hexbin() {
 
     let result = examples::hexbin::compute(&pairs);
 
+    // Verify bin count and positions
     let expected_bins: Vec<serde_json::Value> =
         serde_json::from_value(case["bins"].clone()).unwrap();
     let expected_bin_count = case["bin_count"].as_u64().unwrap() as usize;
@@ -3697,6 +3698,58 @@ fn test_observable_hexbin() {
             ex, ey, actual.count, ecount
         );
     }
+
+    // Verify log scale samples (x_scale)
+    let x_cfg = &case["x_scale"];
+    let x_domain = x_cfg["domain"].as_array().unwrap();
+    let x_range = x_cfg["range"].as_array().unwrap();
+    let x_scale = LogScale::new()
+        .domain(x_domain[0].as_f64().unwrap(), x_domain[1].as_f64().unwrap())
+        .range(x_range[0].as_f64().unwrap(), x_range[1].as_f64().unwrap());
+
+    for sample in x_cfg["samples"].as_array().unwrap() {
+        let input = sample["input"].as_f64().unwrap();
+        let expected = sample["output"].as_f64().unwrap();
+        let actual = x_scale.scale(input);
+        assert!(
+            approx_eq(expected, actual),
+            "hexbin x_scale({}) = {} expected {}",
+            input, actual, expected
+        );
+    }
+
+    // Verify log scale samples (y_scale)
+    let y_cfg = &case["y_scale"];
+    let y_domain = y_cfg["domain"].as_array().unwrap();
+    let y_range = y_cfg["range"].as_array().unwrap();
+    let y_scale = LogScale::new()
+        .domain(y_domain[0].as_f64().unwrap(), y_domain[1].as_f64().unwrap())
+        .range(y_range[0].as_f64().unwrap(), y_range[1].as_f64().unwrap());
+
+    for sample in y_cfg["samples"].as_array().unwrap() {
+        let input = sample["input"].as_f64().unwrap();
+        let expected = sample["output"].as_f64().unwrap();
+        let actual = y_scale.scale(input);
+        assert!(
+            approx_eq(expected, actual),
+            "hexbin y_scale({}) = {} expected {}",
+            input, actual, expected
+        );
+    }
+
+    // Verify hex radius
+    let hex_cfg = &case["hexbin_config"];
+    let expected_radius = hex_cfg["radius"].as_f64().unwrap();
+    assert!(
+        approx_eq(expected_radius, result.hex_radius),
+        "hexbin radius: got {} expected {}",
+        result.hex_radius, expected_radius
+    );
+
+    // Verify max bin count
+    let expected_max = case["max_bin_count"].as_u64().unwrap() as usize;
+    let actual_max = result.bins.iter().map(|b| b.count).max().unwrap_or(0);
+    assert_eq!(actual_max, expected_max, "hexbin max_bin_count mismatch");
 }
 
 /// Test streamgraph: stack with wiggle offset and insideOut order.
@@ -3763,6 +3816,57 @@ fn test_observable_streamgraph() {
                     key, i, act_width, exp_width
                 );
             }
+        }
+
+        // Verify x_scale samples
+        let x_cfg = &case["x_scale"];
+        let x_domain = x_cfg["domain"].as_array().unwrap();
+        let x_range = x_cfg["range"].as_array().unwrap();
+        let x_scale = LinearScale::new()
+            .domain(x_domain[0].as_f64().unwrap(), x_domain[1].as_f64().unwrap())
+            .range(x_range[0].as_f64().unwrap(), x_range[1].as_f64().unwrap());
+
+        for sample in x_cfg["samples"].as_array().unwrap() {
+            let input = sample["input"].as_f64().unwrap();
+            let expected = sample["output"].as_f64().unwrap();
+            let actual = x_scale.scale(input);
+            assert!(
+                approx_eq(expected, actual),
+                "streamgraph x_scale({}) = {} expected {}",
+                input, actual, expected
+            );
+        }
+
+        // Verify area paths exist
+        let area_paths = case["area_paths"].as_array().unwrap();
+        assert_eq!(
+            area_paths.len(), categories.len(),
+            "streamgraph: area_paths count mismatch"
+        );
+        for ap in area_paths {
+            let key = ap["key"].as_str().unwrap();
+            let path = ap["path"].as_str().unwrap();
+            assert!(
+                path.starts_with('M'),
+                "streamgraph: area path for '{}' doesn't start with M", key
+            );
+        }
+
+        // Verify widths sum at each time step is consistent
+        // (total stack width should equal sum of raw data at each time)
+        for t in 0..time_steps {
+            let total_width: f64 = series.iter()
+                .map(|s| {
+                    let v = s.get(t).unwrap();
+                    v[1] - v[0]
+                })
+                .sum();
+            let total_data: f64 = matrix[t].iter().sum();
+            assert!(
+                approx_eq(total_width, total_data),
+                "streamgraph t={}: total width {} != total data {}",
+                t, total_width, total_data
+            );
         }
     }
 }
@@ -3870,39 +3974,80 @@ fn test_observable_box_plot() {
     assert_eq!(golden.module, "d3-array");
 
     for case in &golden.test_cases {
-        // We verify the statistical computations from the golden file
-        let groups = case["groups"].as_array().unwrap();
-        for group in groups {
-            let group_name = group["group"].as_str().unwrap();
-            let eq1 = group["q1"].as_f64().unwrap();
-            let emedian = group["median"].as_f64().unwrap();
-            let eq3 = group["q3"].as_f64().unwrap();
+        // Use examples::box_plot to compute and compare
+        let data = examples::box_plot::default_data();
+        let result = examples::box_plot::compute(&data);
 
-            // d3rs array statistics: quantile
-            // We can verify using the raw data if we extract it
-            // For now verify the scale outputs
-            let _whisker_low = group["whisker_low"].as_f64().unwrap();
-            let _whisker_high = group["whisker_high"].as_f64().unwrap();
-            let iqr = group["iqr"].as_f64().unwrap();
+        // Verify statistical computations match golden file
+        let golden_groups = case["groups"].as_array().unwrap();
+        assert_eq!(
+            result.groups.len(), golden_groups.len(),
+            "box_plot group count mismatch"
+        );
 
-            // Verify IQR = Q3 - Q1
+        for (i, exp_group) in golden_groups.iter().enumerate() {
+            let group_name = exp_group["group"].as_str().unwrap();
+            let eq1 = exp_group["q1"].as_f64().unwrap();
+            let emedian = exp_group["median"].as_f64().unwrap();
+            let eq3 = exp_group["q3"].as_f64().unwrap();
+            let e_whisker_low = exp_group["whisker_low"].as_f64().unwrap();
+            let e_whisker_high = exp_group["whisker_high"].as_f64().unwrap();
+            let iqr = exp_group["iqr"].as_f64().unwrap();
+            let e_count = exp_group["count"].as_u64().unwrap() as usize;
+
+            let act = &result.groups[i];
+
+            // Verify all statistics
             assert!(
-                approx_eq(iqr, eq3 - eq1),
-                "box_plot '{}': IQR={} but Q3-Q1={}",
-                group_name,
-                iqr,
-                eq3 - eq1
+                approx_eq(eq1, act.q1),
+                "box_plot '{}': q1 got {} expected {}", group_name, act.q1, eq1
+            );
+            assert!(
+                approx_eq(emedian, act.median),
+                "box_plot '{}': median got {} expected {}", group_name, act.median, emedian
+            );
+            assert!(
+                approx_eq(eq3, act.q3),
+                "box_plot '{}': q3 got {} expected {}", group_name, act.q3, eq3
+            );
+            assert!(
+                approx_eq(iqr, act.iqr),
+                "box_plot '{}': iqr got {} expected {}", group_name, act.iqr, iqr
+            );
+            assert!(
+                approx_eq(e_whisker_low, act.whisker_low),
+                "box_plot '{}': whisker_low got {} expected {}",
+                group_name, act.whisker_low, e_whisker_low
+            );
+            assert!(
+                approx_eq(e_whisker_high, act.whisker_high),
+                "box_plot '{}': whisker_high got {} expected {}",
+                group_name, act.whisker_high, e_whisker_high
+            );
+            assert_eq!(
+                act.count, e_count,
+                "box_plot '{}': count got {} expected {}", group_name, act.count, e_count
             );
 
-            // Verify median is between Q1 and Q3
+            // Verify whisker bounds: low >= min, high <= max
             assert!(
-                emedian >= eq1 && emedian <= eq3,
-                "box_plot '{}': median {} not between Q1={} and Q3={}",
-                group_name,
-                emedian,
-                eq1,
-                eq3
+                act.whisker_low >= act.min - TOLERANCE,
+                "box_plot '{}': whisker_low {} < min {}", group_name, act.whisker_low, act.min
             );
+            assert!(
+                act.whisker_high <= act.max + TOLERANCE,
+                "box_plot '{}': whisker_high {} > max {}", group_name, act.whisker_high, act.max
+            );
+
+            // Verify outliers are outside whisker range
+            for outlier in &act.outliers {
+                assert!(
+                    *outlier < act.whisker_low - TOLERANCE
+                        || *outlier > act.whisker_high + TOLERANCE,
+                    "box_plot '{}': outlier {} is within whisker range [{}, {}]",
+                    group_name, outlier, act.whisker_low, act.whisker_high
+                );
+            }
         }
 
         // Verify band scale positions
@@ -3924,6 +4069,13 @@ fn test_observable_box_plot() {
             expected_bw
         );
 
+        // Verify bandwidth matches compute result
+        assert!(
+            approx_eq(result.bandwidth, expected_bw),
+            "box_plot compute bandwidth: got {} expected {}",
+            result.bandwidth, expected_bw
+        );
+
         let positions = x_scale_cfg["positions"].as_array().unwrap();
         for pos in positions {
             let group = pos["group"].as_str().unwrap();
@@ -3935,6 +4087,39 @@ fn test_observable_box_plot() {
                 group,
                 actual_pos,
                 expected_pos
+            );
+        }
+
+        // Verify y_scale samples (maps statistics to pixel positions)
+        let y_scale_cfg = &case["y_scale"];
+        let y_domain = y_scale_cfg["domain"].as_array().unwrap();
+        let y_range = y_scale_cfg["range"].as_array().unwrap();
+        let y_scale = LinearScale::new()
+            .domain(y_domain[0].as_f64().unwrap(), y_domain[1].as_f64().unwrap())
+            .range(y_range[0].as_f64().unwrap(), y_range[1].as_f64().unwrap());
+
+        for sample in y_scale_cfg["samples"].as_array().unwrap() {
+            let group_name = sample["group"].as_str().unwrap();
+            let e_q1_y = sample["q1_y"].as_f64().unwrap();
+            let e_median_y = sample["median_y"].as_f64().unwrap();
+            let e_q3_y = sample["q3_y"].as_f64().unwrap();
+
+            let act_group = result.groups.iter().find(|g| g.group == group_name).unwrap();
+            let a_q1_y = y_scale.scale(act_group.q1);
+            let a_median_y = y_scale.scale(act_group.median);
+            let a_q3_y = y_scale.scale(act_group.q3);
+
+            assert!(
+                approx_eq(e_q1_y, a_q1_y),
+                "box_plot y_scale '{}' q1: got {} expected {}", group_name, a_q1_y, e_q1_y
+            );
+            assert!(
+                approx_eq(e_median_y, a_median_y),
+                "box_plot y_scale '{}' median: got {} expected {}", group_name, a_median_y, e_median_y
+            );
+            assert!(
+                approx_eq(e_q3_y, a_q3_y),
+                "box_plot y_scale '{}' q3: got {} expected {}", group_name, a_q3_y, e_q3_y
             );
         }
     }
@@ -3950,41 +4135,74 @@ fn test_observable_chord() {
     assert_eq!(golden.module, "d3-chord");
 
     for case in &golden.test_cases {
-        let _pad_angle = case["pad_angle"].as_f64().unwrap();
+        let pad_angle = case["pad_angle"].as_f64().unwrap();
 
-        // Reconstruct matrix
         let n = case["matrix_size"].as_u64().unwrap() as usize;
-        // The matrix is embedded in the groups data, reconstruct from the original Observable values
-        // Since the exact matrix is in the JS, we verify group angles match
         let expected_groups = case["groups"].as_array().unwrap();
 
         // Verify group count
-        assert_eq!(
-            expected_groups.len(),
-            n,
-            "chord group count: expected {} got {}",
-            n,
-            expected_groups.len()
+        assert_eq!(expected_groups.len(), n, "chord group count mismatch");
+
+        // Use examples::chord to compute and compare
+        let (names, matrix) = examples::chord::default_matrix();
+        let result = examples::chord::compute(&names, &matrix);
+
+        // Verify pad angle
+        assert!(
+            approx_eq(pad_angle, result.pad_angle),
+            "chord pad_angle: got {} expected {}",
+            result.pad_angle, pad_angle
         );
 
-        // Verify all groups have valid angle ranges
-        for g in expected_groups {
-            let start = g["startAngle"].as_f64().unwrap();
-            let end = g["endAngle"].as_f64().unwrap();
-            let name = g["name"].as_str().unwrap();
+        // Verify group angles match golden data
+        assert_eq!(
+            result.chord_result.groups.len(),
+            expected_groups.len(),
+            "chord computed group count mismatch"
+        );
+
+        for (i, exp_g) in expected_groups.iter().enumerate() {
+            let e_start = exp_g["startAngle"].as_f64().unwrap();
+            let e_end = exp_g["endAngle"].as_f64().unwrap();
+            let e_name = exp_g["name"].as_str().unwrap();
+            let act_g = &result.chord_result.groups[i];
+
             assert!(
-                end > start,
-                "chord group '{}': endAngle {} <= startAngle {}",
-                name,
-                end,
-                start
+                approx_eq(e_start, act_g.start_angle),
+                "chord group '{}': startAngle got {} expected {}",
+                e_name, act_g.start_angle, e_start
+            );
+            assert!(
+                approx_eq(e_end, act_g.end_angle),
+                "chord group '{}': endAngle got {} expected {}",
+                e_name, act_g.end_angle, e_end
             );
         }
+
+        // Verify groups span the full circle: last group endAngle should be near 2π
+        let max_end = result
+            .chord_result
+            .groups
+            .iter()
+            .map(|g| g.end_angle)
+            .fold(0.0f64, f64::max);
+        // With padding, the total covered area (groups + gaps) should approach 2π
+        // The exact relationship depends on how many groups have padding
+        assert!(
+            max_end <= std::f64::consts::TAU + TOLERANCE,
+            "chord: max group endAngle {} exceeds 2π",
+            max_end
+        );
 
         // Verify chord count
         let expected_chords = case["chords"].as_array().unwrap();
         let expected_count = case["chord_count"].as_u64().unwrap() as usize;
         assert_eq!(expected_chords.len(), expected_count);
+        assert_eq!(
+            result.chord_result.chords.len(),
+            expected_count,
+            "chord computed chord count mismatch"
+        );
     }
 }
 
@@ -4004,17 +4222,61 @@ fn test_observable_pie_chart() {
     let expected_slices = case["slices"].as_array().unwrap();
     assert_eq!(result.slices.len(), expected_slices.len(), "pie slice count mismatch");
 
+    // Verify total value
+    let expected_total = case["total_value"].as_f64().unwrap();
+    assert!(
+        approx_eq(expected_total, result.total_value),
+        "pie total_value: got {} expected {}",
+        result.total_value, expected_total
+    );
+
     for (i, exp) in expected_slices.iter().enumerate() {
         let e_start = exp["startAngle"].as_f64().unwrap();
         let e_end = exp["endAngle"].as_f64().unwrap();
         let act = &result.slices[i];
 
+        // Verify angles
         assert!(
             approx_eq(e_start, act.start_angle) && approx_eq(e_end, act.end_angle),
             "pie slice {}: angles got ({}, {}) expected ({}, {})",
             i, act.start_angle, act.end_angle, e_start, e_end
         );
+
+        // Verify name and value
+        let e_name = exp["name"].as_str().unwrap();
+        let e_value = exp["value"].as_f64().unwrap();
+        assert_eq!(act.name, e_name, "pie slice {}: name mismatch", i);
+        assert!(
+            approx_eq(e_value, act.value),
+            "pie slice {}: value got {} expected {}",
+            i, act.value, e_value
+        );
+
+        // Verify centroid
+        let e_centroid = exp["centroid"].as_array().unwrap();
+        let ecx = e_centroid[0].as_f64().unwrap();
+        let ecy = e_centroid[1].as_f64().unwrap();
+        assert!(
+            approx_eq(ecx, act.centroid[0]) && approx_eq(ecy, act.centroid[1]),
+            "pie slice {}: centroid got ({}, {}) expected ({}, {})",
+            i, act.centroid[0], act.centroid[1], ecx, ecy
+        );
+
+        // Verify arc path is non-empty and starts with M
+        assert!(
+            act.arc_path.starts_with('M'),
+            "pie slice {}: arc_path doesn't start with M: {}",
+            i, &act.arc_path[..20.min(act.arc_path.len())]
+        );
     }
+
+    // Verify angles sum to 2π
+    let last = &result.slices[result.slices.len() - 1];
+    assert!(
+        approx_eq(last.end_angle, std::f64::consts::TAU),
+        "pie: last slice endAngle {} should be 2π",
+        last.end_angle
+    );
 }
 
 /// Test donut chart: inner radius, pad angle, slice angles.
@@ -4051,6 +4313,15 @@ fn test_observable_donut_chart() {
         let expected_slices = case["slices"].as_array().unwrap();
         assert_eq!(slices.len(), expected_slices.len());
 
+        // Verify total value
+        let expected_total = case["total_value"].as_f64().unwrap();
+        let actual_total: f64 = data.iter().map(|d| d.value).sum();
+        assert!(
+            approx_eq(expected_total, actual_total),
+            "donut total_value: got {} expected {}",
+            actual_total, expected_total
+        );
+
         // Verify slice angular widths are proportional to values
         // (padAngle affects absolute positions but not proportions)
         let _total: f64 = values.iter().sum();
@@ -4079,6 +4350,32 @@ fn test_observable_donut_chart() {
                 i,
                 act.arc.inner_radius,
                 inner_radius
+            );
+
+            // Verify name matches
+            let e_name = exp["name"].as_str().unwrap();
+            assert_eq!(
+                data[i].name, e_name,
+                "donut slice {}: name mismatch",
+                i
+            );
+
+            // Verify centroid from golden (validates arc centroid computation)
+            let e_centroid = exp["centroid"].as_array().unwrap();
+            let ecx = e_centroid[0].as_f64().unwrap();
+            let ecy = e_centroid[1].as_f64().unwrap();
+            let mid_angle = (act.arc.start_angle + act.arc.end_angle) / 2.0;
+            let mid_radius = (inner_radius + radius - 1.0) / 2.0;
+            let acx = mid_radius * mid_angle.sin();
+            // Note: D3 arc centroid uses -cos for y (SVG convention)
+            let acy = -mid_radius * mid_angle.cos();
+            // Use wider tolerance for centroid (pad_angle shifts positions)
+            let centroid_tol = pad_angle * mid_radius * slices.len() as f64;
+            assert!(
+                (ecx - acx).abs() < centroid_tol + TOLERANCE
+                    && (ecy - acy).abs() < centroid_tol + TOLERANCE,
+                "donut slice {}: centroid got ({:.3}, {:.3}) expected ({:.3}, {:.3}) (tol={:.3})",
+                i, acx, acy, ecx, ecy, centroid_tol
             );
         }
     }
@@ -4112,41 +4409,62 @@ fn test_observable_stacked_bar() {
             expected_bw
         );
 
-        // Verify stack series
+        // Verify band scale positions
+        let positions = x_cfg["positions"].as_array().unwrap();
+        for pos in positions {
+            let state = pos["state"].as_str().unwrap();
+            let expected_pos = pos["position"].as_f64().unwrap();
+            let actual_pos = band.scale(&state.to_string()).unwrap();
+            assert!(
+                approx_eq(expected_pos, actual_pos),
+                "stacked_bar band('{}') = {} expected {}",
+                state, actual_pos, expected_pos
+            );
+        }
+
+        // Verify stack series values against golden
         let categories: Vec<String> =
             serde_json::from_value(case["categories"].clone()).unwrap();
-        let _states: Vec<String> = serde_json::from_value(case["states"].clone()).unwrap();
+        let states: Vec<String> = serde_json::from_value(case["states"].clone()).unwrap();
 
         let expected_series = case["series"].as_array().unwrap();
         assert_eq!(expected_series.len(), categories.len());
 
-        // Verify linear scale
+        // Use examples::stacked_bar to compute and compare
+        let (_, _, default_matrix) = examples::stacked_bar::default_data();
+        let result = examples::stacked_bar::compute(&states, &categories, &default_matrix);
+
+        // Compare stacked series values
+        for exp_s in expected_series {
+            let key = exp_s["key"].as_str().unwrap();
+            let exp_values: Vec<[f64; 2]> =
+                serde_json::from_value(exp_s["values"].clone()).unwrap();
+
+            let actual = result.series.iter().find(|s| s.key == key)
+                .unwrap_or_else(|| panic!("stacked_bar: series '{}' not found", key));
+
+            assert_eq!(
+                actual.values.len(), exp_values.len(),
+                "stacked_bar series '{}': value count mismatch", key
+            );
+
+            for (i, (exp_v, act_v)) in exp_values.iter().zip(actual.values.iter()).enumerate() {
+                assert!(
+                    approx_eq(exp_v[0], act_v[0]) && approx_eq(exp_v[1], act_v[1]),
+                    "stacked_bar series '{}' at {}: got [{}, {}] expected [{}, {}]",
+                    key, i, act_v[0], act_v[1], exp_v[0], exp_v[1]
+                );
+            }
+        }
+
+        // Verify linear scale config
         let y_cfg = &case["y_scale"];
         let y_domain = y_cfg["domain"].as_array().unwrap();
-        let y_range = y_cfg["range"].as_array().unwrap();
-        let _y_scale = LinearScale::new()
-            .domain(y_domain[0].as_f64().unwrap(), y_domain[1].as_f64().unwrap())
-            .range(y_range[0].as_f64().unwrap(), y_range[1].as_f64().unwrap());
-
-        // Verify bar positions for first state
-        let bars = case["bars_first_state"].as_array().unwrap();
-        for bar in bars {
-            let y0_expected = bar["y0"].as_f64().unwrap();
-            let y1_expected = bar["y1"].as_f64().unwrap();
-            // y0 and y1 are scale outputs — verify they're within range
-            assert!(
-                y0_expected >= y_range[1].as_f64().unwrap()
-                    && y0_expected <= y_range[0].as_f64().unwrap(),
-                "bar y0 {} out of range",
-                y0_expected
-            );
-            assert!(
-                y1_expected >= y_range[1].as_f64().unwrap()
-                    && y1_expected <= y_range[0].as_f64().unwrap(),
-                "bar y1 {} out of range",
-                y1_expected
-            );
-        }
+        assert!(
+            approx_eq(y_domain[0].as_f64().unwrap(), result.y_domain[0])
+                && approx_eq(y_domain[1].as_f64().unwrap(), result.y_domain[1]),
+            "stacked_bar y_domain mismatch"
+        );
     }
 }
 
@@ -4200,15 +4518,80 @@ fn test_observable_line_chart() {
             );
         }
 
-        // Verify line paths exist for each curve type
-        let paths = case["line_paths"].as_object().unwrap();
-        for (curve_name, path) in paths {
-            let path_str = path.as_str().unwrap();
+        // Use examples::line_chart to compute and verify path generation
+        let data: Vec<(f64, f64)> = case["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d["day"].as_f64().unwrap(),
+                    d["value"].as_f64().unwrap(),
+                )
+            })
+            .collect();
+
+        let result = examples::line_chart::compute(&data);
+
+        // Verify computed raw domains are within golden niced domains
+        // Golden uses .nice() which rounds outward
+        let gx0 = x_domain[0].as_f64().unwrap();
+        let gx1 = x_domain[1].as_f64().unwrap();
+        assert!(
+            result.x_domain[0] >= gx0 - TOLERANCE && result.x_domain[1] <= gx1 + TOLERANCE,
+            "line x_domain {:?} not within niced range [{}, {}]",
+            result.x_domain, gx0, gx1
+        );
+        let gy0 = y_domain[0].as_f64().unwrap();
+        let gy1 = y_domain[1].as_f64().unwrap();
+        assert!(
+            result.y_domain[0] >= gy0 - TOLERANCE && result.y_domain[1] <= gy1 + TOLERANCE,
+            "line y_domain {:?} not within niced range [{}, {}]",
+            result.y_domain, gy0, gy1
+        );
+
+        // Verify all 7 golden curve types are present in compute result
+        let golden_paths = case["line_paths"].as_object().unwrap();
+        assert_eq!(
+            golden_paths.len(), result.paths.len(),
+            "line: curve count mismatch: golden={} compute={}",
+            golden_paths.len(), result.paths.len()
+        );
+
+        for (golden_name, golden_path) in golden_paths {
+            let golden_path_str = golden_path.as_str().unwrap();
+
+            let actual_path = result
+                .paths
+                .iter()
+                .find(|(name, _)| name == golden_name)
+                .map(|(_, p)| p.as_str());
+
             assert!(
-                path_str.starts_with('M'),
-                "line path for curve '{}' doesn't start with M: {}",
-                curve_name,
-                &path_str[..20.min(path_str.len())]
+                actual_path.is_some(),
+                "line: curve '{}' not in computed result (available: {:?})",
+                golden_name,
+                result.paths.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+            );
+
+            let actual_path = actual_path.unwrap();
+
+            // Both golden (D3.js) and d3rs paths should start with M and be non-trivial.
+            // Note: D3.js emits native SVG curves (C/S commands) while d3rs
+            // interpolates to points and emits L commands. So exact string comparison
+            // is not meaningful. Instead we verify structural properties.
+            assert!(
+                golden_path_str.starts_with('M'),
+                "line: golden path for '{}' doesn't start with M", golden_name
+            );
+            assert!(
+                actual_path.starts_with('M'),
+                "line: d3rs path for '{}' doesn't start with M", golden_name
+            );
+            assert!(
+                actual_path.len() > 50,
+                "line: curve '{}' d3rs path suspiciously short ({} chars)",
+                golden_name, actual_path.len()
             );
         }
     }
@@ -4230,31 +4613,61 @@ fn test_observable_stacked_area() {
         let expected_series = case["series"].as_array().unwrap();
         assert_eq!(expected_series.len(), categories.len());
 
-        // Verify each series has correct number of values
-        for exp_s in expected_series {
-            let values: Vec<[f64; 2]> = serde_json::from_value(exp_s["values"].clone()).unwrap();
-            assert_eq!(values.len(), data_count);
+        // Use examples::stacked_area default_data and compute
+        let (default_cats, default_matrix) = examples::stacked_area::default_data();
+        let result = examples::stacked_area::compute(&default_cats, &default_matrix);
 
-            // Verify stacking: y0 of each point should be >= 0 (none offset)
-            for v in &values {
+        // Compare stacked series values against golden
+        for exp_s in expected_series {
+            let key = exp_s["key"].as_str().unwrap();
+            let exp_values: Vec<[f64; 2]> =
+                serde_json::from_value(exp_s["values"].clone()).unwrap();
+            assert_eq!(exp_values.len(), data_count);
+
+            let actual = result.series.iter().find(|s| s.key == key)
+                .unwrap_or_else(|| panic!("stacked_area: series '{}' not found", key));
+
+            for (i, (exp_v, act_v)) in exp_values.iter().zip(actual.values.iter()).enumerate() {
                 assert!(
-                    v[0] >= -TOLERANCE,
-                    "stacked_area y0 = {} should be >= 0",
-                    v[0]
+                    approx_eq(exp_v[0], act_v[0]) && approx_eq(exp_v[1], act_v[1]),
+                    "stacked_area series '{}' at {}: got [{}, {}] expected [{}, {}]",
+                    key, i, act_v[0], act_v[1], exp_v[0], exp_v[1]
                 );
-                assert!(v[1] >= v[0] - TOLERANCE, "stacked_area y1 < y0");
             }
         }
 
-        // Verify area paths exist
+        // Verify area paths exist and match count
         let area_paths = case["area_paths"].as_array().unwrap();
+        assert_eq!(
+            result.area_paths.len(), area_paths.len(),
+            "stacked_area: area_paths count mismatch"
+        );
+
         for ap in area_paths {
-            let path = ap["path"].as_str().unwrap();
+            let key = ap["key"].as_str().unwrap();
+            let golden_path = ap["path"].as_str().unwrap();
             assert!(
-                path.starts_with('M'),
-                "area path doesn't start with M"
+                golden_path.starts_with('M'),
+                "stacked_area: area path for '{}' doesn't start with M", key
+            );
+
+            // Verify d3rs also produced a path for this key
+            let actual_path = result.area_paths.iter().find(|(k, _)| k == key);
+            assert!(
+                actual_path.is_some(),
+                "stacked_area: area path for '{}' not in computed result", key
             );
         }
+
+        // Verify y_domain
+        let y_cfg = &case["y_scale"];
+        let y_domain = y_cfg["domain"].as_array().unwrap();
+        assert!(
+            approx_eq(y_domain[0].as_f64().unwrap(), result.y_domain[0])
+                && approx_eq(y_domain[1].as_f64().unwrap(), result.y_domain[1]),
+            "stacked_area y_domain mismatch: got {:?} expected {:?}",
+            result.y_domain, y_domain
+        );
     }
 }
 
@@ -4275,11 +4688,11 @@ fn test_observable_force_directed() {
         let link_count = case["link_count"].as_u64().unwrap() as usize;
         let iterations = case["iterations"].as_u64().unwrap() as usize;
 
-        let nodes = case["nodes"].as_array().unwrap();
-        let links = case["links"].as_array().unwrap();
+        let golden_nodes = case["nodes"].as_array().unwrap();
+        let golden_links = case["links"].as_array().unwrap();
 
-        assert_eq!(nodes.len(), node_count);
-        assert_eq!(links.len(), link_count);
+        assert_eq!(golden_nodes.len(), node_count);
+        assert_eq!(golden_links.len(), link_count);
         assert!(iterations > 0);
 
         // After 300 iterations, alpha should have decayed significantly
@@ -4287,16 +4700,74 @@ fn test_observable_force_directed() {
         assert!(
             alpha < 0.01,
             "force alpha {} should be near 0 after {} iterations",
-            alpha,
-            iterations
+            alpha, iterations
         );
 
-        // Nodes should have finite positions
-        for node in nodes {
+        // Verify alpha_decay matches D3.js default formula
+        let alpha_decay = case["alpha_decay"].as_f64().unwrap();
+        let expected_decay = 1.0 - case["alpha_min"].as_f64().unwrap().powf(1.0 / 300.0);
+        assert!(
+            (alpha_decay - expected_decay).abs() < 1e-4,
+            "force alpha_decay: got {} expected {}",
+            alpha_decay, expected_decay
+        );
+
+        // Golden nodes should have finite positions and velocities
+        for node in golden_nodes {
             let x = node["x"].as_f64().unwrap();
             let y = node["y"].as_f64().unwrap();
+            let vx = node["vx"].as_f64().unwrap();
+            let vy = node["vy"].as_f64().unwrap();
             assert!(x.is_finite(), "node x is not finite");
             assert!(y.is_finite(), "node y is not finite");
+            // After convergence, velocities should be near zero
+            assert!(
+                vx.abs() < 1.0 && vy.abs() < 1.0,
+                "node velocity ({}, {}) too high after convergence",
+                vx, vy
+            );
+        }
+
+        // Verify link structure: all source/target IDs exist in nodes
+        let node_ids: Vec<String> = golden_nodes
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().to_string())
+            .collect();
+
+        for link in golden_links {
+            let source = link["source"].as_str().unwrap();
+            let target = link["target"].as_str().unwrap();
+            assert!(
+                node_ids.contains(&source.to_string()),
+                "force: link source '{}' not in nodes", source
+            );
+            assert!(
+                node_ids.contains(&target.to_string()),
+                "force: link target '{}' not in nodes", target
+            );
+        }
+
+        // Use examples::force_directed to compute and verify structure
+        let (def_nodes, def_links) = examples::force_directed::default_data();
+        let result = examples::force_directed::compute(&def_nodes, &def_links, iterations);
+
+        assert_eq!(result.nodes.len(), node_count, "force computed node count mismatch");
+        assert_eq!(result.links.len(), link_count, "force computed link count mismatch");
+
+        // Verify convergence
+        assert!(
+            result.alpha < 0.01,
+            "force computed alpha {} should be < 0.01",
+            result.alpha
+        );
+
+        // Verify all computed positions are finite and bounded
+        for node in &result.nodes {
+            assert!(
+                node.x.is_finite() && node.y.is_finite(),
+                "force: computed node '{}' has non-finite position ({}, {})",
+                node.id, node.x, node.y
+            );
         }
     }
 }
@@ -4311,16 +4782,16 @@ fn test_observable_sankey() {
     assert_eq!(golden.module, "d3-sankey");
 
     for case in &golden.test_cases {
-        let nodes = case["nodes"].as_array().unwrap();
-        let links = case["links"].as_array().unwrap();
+        let golden_nodes = case["nodes"].as_array().unwrap();
+        let golden_links = case["links"].as_array().unwrap();
         let node_count = case["node_count"].as_u64().unwrap() as usize;
         let link_count = case["link_count"].as_u64().unwrap() as usize;
 
-        assert_eq!(nodes.len(), node_count);
-        assert_eq!(links.len(), link_count);
+        assert_eq!(golden_nodes.len(), node_count);
+        assert_eq!(golden_links.len(), link_count);
 
-        // Verify node positions are valid
-        for node in nodes {
+        // Verify golden node positions are valid
+        for node in golden_nodes {
             let x0 = node["x0"].as_f64().unwrap();
             let x1 = node["x1"].as_f64().unwrap();
             let y0 = node["y0"].as_f64().unwrap();
@@ -4334,8 +4805,8 @@ fn test_observable_sankey() {
             );
         }
 
-        // Verify link paths are valid SVG
-        for link in links {
+        // Verify golden link paths are valid SVG
+        for link in golden_links {
             let path = link["path"].as_str().unwrap();
             assert!(
                 path.starts_with('M'),
@@ -4343,6 +4814,76 @@ fn test_observable_sankey() {
             );
             let width = link["width"].as_f64().unwrap();
             assert!(width > 0.0, "sankey link width should be > 0");
+        }
+
+        // Build input from golden data and run d3rs sankey layout
+        let names: Vec<String> = golden_nodes
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().to_string())
+            .collect();
+        let links: Vec<d3rs::sankey::SankeyLinkInput> = golden_links
+            .iter()
+            .map(|l| d3rs::sankey::SankeyLinkInput {
+                source: l["source"].as_str().unwrap().to_string(),
+                target: l["target"].as_str().unwrap().to_string(),
+                value: l["value"].as_f64().unwrap(),
+            })
+            .collect();
+
+        let result = d3rs::sankey::SankeyLayout::new()
+            .width(928.0)
+            .height(600.0)
+            .margins(5.0, 1.0, 5.0, 1.0)
+            .node_width(15.0)
+            .node_padding(10.0)
+            .compute(&names, &links);
+
+        // Verify d3rs computed the same number of nodes and links
+        assert_eq!(result.nodes.len(), node_count, "sankey computed node count");
+        assert_eq!(result.links.len(), link_count, "sankey computed link count");
+
+        // Verify node width is 15 in computed result
+        for node in &result.nodes {
+            assert!(
+                approx_eq(node.x1 - node.x0, 15.0),
+                "sankey computed nodeWidth: got {}", node.x1 - node.x0
+            );
+        }
+
+        // Verify computed nodes have valid positions (y1 > y0)
+        for node in &result.nodes {
+            assert!(
+                node.y1 > node.y0 - TOLERANCE,
+                "sankey computed node '{}': y1 {} <= y0 {}",
+                node.id, node.y1, node.y0
+            );
+        }
+
+        // Verify node value is max(incoming, outgoing)
+        for node in &result.nodes {
+            let incoming: f64 = result.links.iter()
+                .filter(|l| l.target == node.index)
+                .map(|l| l.value)
+                .sum();
+            let outgoing: f64 = result.links.iter()
+                .filter(|l| l.source == node.index)
+                .map(|l| l.value)
+                .sum();
+            let expected_value = incoming.max(outgoing);
+            assert!(
+                approx_eq(expected_value, node.value),
+                "sankey node '{}': value {} != max(in={}, out={})",
+                node.id, node.value, incoming, outgoing
+            );
+        }
+
+        // Verify computed link paths start with M
+        for link in &result.links {
+            assert!(
+                link.path.starts_with('M'),
+                "sankey computed link path doesn't start with M"
+            );
+            assert!(link.width > 0.0, "sankey computed link width should be > 0");
         }
     }
 }
@@ -4356,44 +4897,78 @@ fn test_observable_parallel_sets() {
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
 
     for case in &golden.test_cases {
-        let nodes = case["nodes"].as_array().unwrap();
-        let links = case["links"].as_array().unwrap();
+        let golden_nodes = case["nodes"].as_array().unwrap();
+        let golden_links = case["links"].as_array().unwrap();
 
-        // Verify flow conservation: total input = total output for intermediate nodes
-        for node in nodes {
+        // Verify flow conservation in golden data
+        for node in golden_nodes {
             let id = node["id"].as_str().unwrap();
-            let _depth = node["depth"].as_u64().unwrap();
-
-            // Only check intermediate nodes (not source/sink)
-            let in_flow: f64 = links
+            let in_flow: f64 = golden_links
                 .iter()
                 .filter(|l| l["target"].as_str().unwrap() == id)
                 .map(|l| l["value"].as_f64().unwrap())
                 .sum();
-            let out_flow: f64 = links
+            let out_flow: f64 = golden_links
                 .iter()
                 .filter(|l| l["source"].as_str().unwrap() == id)
                 .map(|l| l["value"].as_f64().unwrap())
                 .sum();
-
             if in_flow > 0.0 && out_flow > 0.0 {
                 assert!(
                     approx_eq(in_flow, out_flow),
                     "parallel_sets node '{}' flow mismatch: in={} out={}",
-                    id,
-                    in_flow,
-                    out_flow
+                    id, in_flow, out_flow
                 );
             }
+        }
+
+        // Build input from golden data and run d3rs parallel_sets compute
+        let names: Vec<String> = golden_nodes
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().to_string())
+            .collect();
+        let links: Vec<d3rs::sankey::SankeyLinkInput> = golden_links
+            .iter()
+            .map(|l| d3rs::sankey::SankeyLinkInput {
+                source: l["source"].as_str().unwrap().to_string(),
+                target: l["target"].as_str().unwrap().to_string(),
+                value: l["value"].as_f64().unwrap(),
+            })
+            .collect();
+
+        let result = examples::parallel_sets::compute(&names, &links);
+
+        // Verify computed results
+        assert_eq!(result.nodes.len(), golden_nodes.len(), "parallel_sets node count");
+        assert_eq!(result.links.len(), golden_links.len(), "parallel_sets link count");
+
+        // Verify all computed nodes have valid positions
+        for node in &result.nodes {
+            assert!(
+                node.x1 > node.x0,
+                "parallel_sets node '{}': x1 {} <= x0 {}",
+                node.id, node.x1, node.x0
+            );
+            assert!(
+                node.y1 >= node.y0 - TOLERANCE,
+                "parallel_sets node '{}': y1 {} < y0 {}",
+                node.id, node.y1, node.y0
+            );
+        }
+
+        // Verify computed link paths start with M
+        for link in &result.links {
+            assert!(
+                link.path.starts_with('M'),
+                "parallel_sets link path doesn't start with M"
+            );
+            assert!(link.width > 0.0, "parallel_sets link width should be > 0");
         }
     }
 }
 
-/// Test circle packing layout structure.
-/// Source: https://observablehq.com/@d3/zoomable-circle-packing
-///
-/// Note: d3rs hierarchy does not yet implement pack layout.
-/// This test verifies the golden file structure and validates properties.
+/// Test circle packing layout.
+/// Source: https://observablehq.com/@d3/pack/2
 #[test]
 fn test_observable_circle_packing() {
     let content = fs::read_to_string("golden/observable/circle_packing.json")
@@ -4428,13 +5003,34 @@ fn test_observable_circle_packing() {
         let mid = zoom["midpoint"].as_array().unwrap();
         assert_eq!(mid.len(), 3, "zoom midpoint should have 3 values [x,y,w]");
     }
+
+    // Run d3rs circle packing compute and validate structural properties
+    let result = examples::circle_packing::compute();
+    assert!(
+        result.circles.len() > 10,
+        "circle packing should produce multiple circles, got {}",
+        result.circles.len()
+    );
+
+    // Verify all circles have positive radius
+    for c in &result.circles {
+        assert!(c.r > 0.0, "circle '{}' has non-positive radius {}", c.name, c.r);
+    }
+
+    // Verify root circle (depth=0) exists
+    let root_circle = result.circles.iter().find(|c| c.depth == 0);
+    assert!(root_circle.is_some(), "circle packing should have a root at depth 0");
+
+    // Verify circle paths match circle count
+    assert_eq!(
+        result.circle_paths.len(),
+        result.circles.len(),
+        "circle_paths count should match circles count"
+    );
 }
 
-/// Test sunburst partition layout structure.
-/// Source: https://observablehq.com/@d3/sunburst
-///
-/// Note: d3rs hierarchy does not yet implement partition layout.
-/// This test validates the golden file structure and angular properties.
+/// Test sunburst partition layout.
+/// Source: https://observablehq.com/@d3/sunburst/2
 #[test]
 fn test_observable_sunburst() {
     let content =
@@ -4468,12 +5064,53 @@ fn test_observable_sunburst() {
                     depth
                 );
                 let path = node["arc_path"].as_str().unwrap();
-                assert!(
-                    path.starts_with('M'),
-                    "arc path should start with M"
-                );
+                assert!(path.starts_with('M'), "arc path should start with M");
             }
         }
+    }
+
+    // Run d3rs sunburst compute and validate structural properties
+    let result = examples::sunburst::compute();
+    assert!(
+        !result.slices.is_empty(),
+        "sunburst should produce slices"
+    );
+
+    // Verify all slices have valid angular ranges
+    for slice in &result.slices {
+        assert!(
+            slice.x1 > slice.x0,
+            "sunburst slice '{}': x1 {} <= x0 {}",
+            slice.name, slice.x1, slice.x0
+        );
+        assert!(
+            slice.y1 > slice.y0,
+            "sunburst slice '{}': y1 {} <= y0 {}",
+            slice.name, slice.y1, slice.y0
+        );
+    }
+
+    // Verify depth-1 slices span the full circle
+    let depth1_extent: f64 = result
+        .slices
+        .iter()
+        .filter(|s| s.depth == 1)
+        .map(|s| s.x1 - s.x0)
+        .sum();
+    assert!(
+        (depth1_extent - std::f64::consts::TAU).abs() < 0.1,
+        "sunburst depth-1 slices should span ~2π, got {}",
+        depth1_extent
+    );
+
+    // Verify all slices have arc paths starting with M
+    for slice in &result.slices {
+        let svg = slice.arc_path.to_svg_string();
+        assert!(
+            svg.starts_with('M'),
+            "sunburst slice '{}' arc_path doesn't start with M",
+            slice.name
+        );
     }
 }
 
@@ -4516,6 +5153,407 @@ fn test_observable_versor_dragging() {
             approx_eq(q_len, 1.0),
             "quaternion should be unit length, got {}",
             q_len
+        );
+    }
+}
+
+// ============================================================================
+// SELF-VALIDATING TESTS (no golden file — verify structural invariants)
+// ============================================================================
+
+/// Test horizon chart band computation against golden D3.js data.
+/// Source: https://observablehq.com/@d3/horizon-chart/2
+#[test]
+fn test_observable_horizon_chart() {
+    let content = fs::read_to_string("golden/observable/horizon_chart.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    for case in &golden.test_cases {
+        let data_count = case["data_count"].as_u64().unwrap() as usize;
+        let bands = case["bands"].as_u64().unwrap() as usize;
+        let max_abs = case["max_abs"].as_f64().unwrap();
+        let step = case["step"].as_f64().unwrap();
+
+        assert!(data_count > 0);
+        assert_eq!(bands, 4);
+        assert!(max_abs > 0.0);
+        assert!(approx_eq(step, max_abs / bands as f64),
+            "step {} should be max_abs/bands {}", step, max_abs / bands as f64);
+
+        // Verify band data
+        let band_data = case["band_data"].as_array().unwrap();
+        assert_eq!(band_data.len(), bands);
+
+        for bd in band_data {
+            let values = bd["values"].as_array().unwrap();
+            assert_eq!(values.len(), data_count);
+            // All band values should be >= 0 and <= step
+            for v in values {
+                let val = v.as_f64().unwrap();
+                assert!(val >= -TOLERANCE, "band value {} should be >= 0", val);
+                assert!(val <= step + TOLERANCE, "band value {} should be <= step {}", val, step);
+            }
+        }
+    }
+}
+
+/// Test proper 3D sphere rotation (D3's d3.geoRotation).
+/// Validates that latitude rotation works correctly for all projections.
+#[test]
+fn test_sphere_rotation() {
+    use d3rs::geo::projection::SphereRotation;
+
+    // Lambda-only rotation: simple longitude offset
+    let r1 = SphereRotation::from_degrees(90.0, 0.0, 0.0);
+    let (l, p) = r1.rotate(0.0, 0.0); // equator, prime meridian
+    assert!(approx_eq(l, std::f64::consts::FRAC_PI_2), "lambda rotation: got {l}");
+    assert!(approx_eq(p, 0.0), "phi should be unchanged: got {p}");
+
+    // Phi rotation: north pole should move to equator
+    let r2 = SphereRotation::from_degrees(0.0, -90.0, 0.0);
+    let (_l, p) = r2.rotate(0.0, std::f64::consts::FRAC_PI_2); // north pole
+    // After rotating phi by -90°, north pole (0, π/2) should go to (0, 0) or nearby
+    assert!(
+        p.abs() < 0.01,
+        "north pole after -90° phi rotation should be near equator: got phi={p}"
+    );
+
+    // Phi rotation: equator at lon=0 should move to south
+    let r3 = SphereRotation::from_degrees(0.0, 45.0, 0.0);
+    let (_l, p) = r3.rotate(0.0, 0.0); // equator, prime meridian
+    // After +45° phi rotation, (0,0) should be at latitude ~ -45°
+    assert!(
+        (p + std::f64::consts::FRAC_PI_4).abs() < 0.1,
+        "equator after +45° phi rotation: expected ~-π/4, got {p}"
+    );
+
+    // Round-trip: rotate then invert should return original
+    let r4 = SphereRotation::from_degrees(30.0, 45.0, 15.0);
+    let original = (0.5, 0.8); // arbitrary point in radians
+    let rotated = r4.rotate(original.0, original.1);
+    let recovered = r4.invert(rotated.0, rotated.1);
+    assert!(
+        approx_eq(original.0, recovered.0) && approx_eq(original.1, recovered.1),
+        "round-trip failed: original=({}, {}), recovered=({}, {})",
+        original.0, original.1, recovered.0, recovered.1
+    );
+
+    // Orthographic: rotate(0, -45) should show south-tilted globe
+    use d3rs::geo::{Orthographic, Projection};
+    let p1 = Orthographic::new();
+    let mut p1_mut = p1;
+    p1_mut.set_scale(100.0);
+    p1_mut.set_translate(0.0, 0.0);
+    p1_mut.set_rotate(0.0, -45.0, 0.0);
+
+    // North pole should be visible and shifted down from center
+    let (x, y) = p1_mut.project(0.0, 90.0);
+    assert!(x.is_finite() && y.is_finite(), "north pole should be visible");
+    assert!(y < 0.0, "north pole should be above center (negative y): got {y}");
+}
+
+/// Bug regression: difference_chart should not panic on empty input.
+#[test]
+fn test_difference_chart_empty_input() {
+    let result = examples::difference_chart::compute(&[]);
+    assert_eq!(result.x_domain, [0.0, 0.0]);
+    assert_eq!(result.y_domain, [0.0, 0.0]);
+}
+
+/// Bug regression: ridgeline should handle uniform temperature data.
+#[test]
+fn test_ridgeline_uniform_data() {
+    let monthly = vec![("Jan".to_string(), vec![50.0; 100])];
+    let result = examples::ridgeline::compute(&monthly);
+    assert_eq!(result.area_paths.len(), 1);
+    // Should not panic or produce NaN
+    for (_, path) in &result.area_paths {
+        let svg = path.to_svg_string();
+        assert!(svg.starts_with('M'), "path should be valid");
+        assert!(!svg.contains("NaN"), "path should not contain NaN");
+    }
+}
+
+/// Bug regression: sankey should not infinite loop on cyclic input.
+#[test]
+fn test_sankey_cyclic_input() {
+    use d3rs::sankey::{SankeyLayout, SankeyLinkInput};
+    let names = vec!["A".to_string(), "B".to_string()];
+    let links = vec![
+        SankeyLinkInput { source: "A".to_string(), target: "B".to_string(), value: 10.0 },
+        SankeyLinkInput { source: "B".to_string(), target: "A".to_string(), value: 5.0 },
+    ];
+    // This should complete without infinite loop
+    let result = SankeyLayout::new().compute(&names, &links);
+    assert_eq!(result.nodes.len(), 2);
+}
+
+/// Test difference chart: validates against golden D3.js data.
+/// Source: https://observablehq.com/@d3/difference-chart/2
+#[test]
+fn test_observable_difference_chart() {
+    let content = fs::read_to_string("golden/observable/difference_chart.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    for case in &golden.test_cases {
+        let data_count = case["data_count"].as_u64().unwrap() as usize;
+        assert!(data_count > 0, "difference chart should have data");
+
+        // Verify scale samples from golden
+        let x_cfg = &case["x_scale"];
+        let x_domain = x_cfg["domain"].as_array().unwrap();
+        let x_range = x_cfg["range"].as_array().unwrap();
+        let x_scale = LinearScale::new()
+            .domain(x_domain[0].as_f64().unwrap(), x_domain[1].as_f64().unwrap())
+            .range(x_range[0].as_f64().unwrap(), x_range[1].as_f64().unwrap());
+
+        for sample in x_cfg["samples"].as_array().unwrap() {
+            let input = sample["input"].as_f64().unwrap();
+            let expected = sample["output"].as_f64().unwrap();
+            let actual = x_scale.scale(input);
+            assert!(
+                approx_eq(expected, actual),
+                "diff x_scale({}) = {} expected {}", input, actual, expected
+            );
+        }
+
+        // Verify golden paths start with M
+        let above = case["above_path"].as_str().unwrap();
+        let below = case["below_path"].as_str().unwrap();
+        assert!(above.starts_with('M'), "golden above_path should start with M");
+        assert!(below.starts_with('M'), "golden below_path should start with M");
+    }
+
+    // Also run d3rs compute with deterministic data and verify structural validity
+    let data: Vec<examples::difference_chart::DiffChartRow> = (0..30)
+        .map(|i| {
+            let t = i as f64 / 29.0;
+            examples::difference_chart::DiffChartRow {
+                date_index: i,
+                value0: 60.0 + 10.0 * (t * std::f64::consts::TAU).sin(),
+                value1: 55.0 + 8.0 * (t * std::f64::consts::TAU + 1.0).sin(),
+            }
+        })
+        .collect();
+    let result = examples::difference_chart::compute(&data);
+    assert!(result.x_domain[1] > result.x_domain[0]);
+    assert!(result.y_domain[1] > result.y_domain[0]);
+    assert!(result.line0_path.to_svg_string().starts_with('M'));
+    assert!(result.line1_path.to_svg_string().starts_with('M'));
+}
+
+/// Test ridgeline plot: validates against golden D3.js data.
+/// Source: https://observablehq.com/@d3/ridgeline-plot
+#[test]
+fn test_observable_ridgeline() {
+    let content = fs::read_to_string("golden/observable/ridgeline.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    for case in &golden.test_cases {
+        let month_count = case["month_count"].as_u64().unwrap() as usize;
+        assert_eq!(month_count, 12);
+
+        let x_domain = case["x_domain"].as_array().unwrap();
+        assert!(
+            x_domain[1].as_f64().unwrap() > x_domain[0].as_f64().unwrap(),
+            "ridgeline x_domain should have positive range"
+        );
+
+        let distributions = case["distributions"].as_array().unwrap();
+        assert_eq!(distributions.len(), 12);
+
+        // Verify each distribution has bins
+        for dist in distributions {
+            let name = dist["name"].as_str().unwrap();
+            let bins = dist["bins"].as_array().unwrap();
+            assert_eq!(bins.len(), 50, "ridgeline '{}' should have 50 bins", name);
+        }
+    }
+
+    // Run d3rs compute with same deterministic data used by golden generator
+    let monthly: Vec<(String, Vec<f64>)> = (0..12)
+        .map(|m| {
+            let name = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m];
+            let values: Vec<f64> = (0..50)
+                .map(|i| 40.0 + 20.0 * m as f64 / 11.0 + 5.0 * (i as f64 * 0.7).sin())
+                .collect();
+            (name.to_string(), values)
+        })
+        .collect();
+
+    let result = examples::ridgeline::compute(&monthly);
+    assert_eq!(result.area_paths.len(), 12);
+
+    // Verify y offsets are monotonically increasing
+    for i in 1..result.y_offsets.len() {
+        assert!(result.y_offsets[i] > result.y_offsets[i - 1]);
+    }
+
+    // Verify paths start with M
+    for (name, path) in &result.area_paths {
+        let svg = path.to_svg_string();
+        assert!(svg.starts_with('M'), "ridgeline '{}' path bad", name);
+    }
+}
+
+/// Test radial tree layout against golden D3.js data.
+/// Source: https://observablehq.com/@d3/radial-tree/2
+#[test]
+fn test_observable_radial_tree() {
+    let content = fs::read_to_string("golden/observable/radial_tree.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    for case in &golden.test_cases {
+        let node_count = case["node_count"].as_u64().unwrap() as usize;
+        let leaf_count = case["leaf_count"].as_u64().unwrap() as usize;
+
+        // Validate golden tree nodes
+        let tree_nodes = case["tree_nodes"].as_array().unwrap();
+        assert_eq!(tree_nodes.len(), node_count);
+        let actual_leaves = tree_nodes.iter()
+            .filter(|n| n["is_leaf"].as_bool().unwrap())
+            .count();
+        assert_eq!(actual_leaves, leaf_count);
+
+        // Golden nodes should have positions spread around the circle
+        for node in tree_nodes {
+            let px = node["px"].as_f64().unwrap();
+            let py = node["py"].as_f64().unwrap();
+            assert!(px.is_finite() && py.is_finite(),
+                "golden node '{}' position not finite", node["name"].as_str().unwrap());
+        }
+
+        // Validate golden cluster nodes
+        let cluster_nodes = case["cluster_nodes"].as_array().unwrap();
+        assert_eq!(cluster_nodes.len(), node_count);
+
+        // In D3 cluster, all leaves should be at the same radius
+        let leaf_radii: Vec<f64> = cluster_nodes.iter()
+            .filter(|n| n["is_leaf"].as_bool().unwrap())
+            .map(|n| n["y"].as_f64().unwrap())
+            .collect();
+        if leaf_radii.len() > 1 {
+            let min_r = leaf_radii.iter().fold(f64::MAX, |a, &b| a.min(b));
+            let max_r = leaf_radii.iter().fold(0.0f64, |a, &b| a.max(b));
+            assert!(
+                approx_eq(min_r, max_r),
+                "D3 cluster leaves should be at same radius: min={} max={}", min_r, max_r
+            );
+        }
+    }
+
+    // Run d3rs compute and compare node count
+    let result = examples::radial_tree::compute(false);
+    assert!(result.nodes.len() > 10, "radial tree should have multiple nodes");
+    assert!(!result.link_paths.is_empty(), "should have links");
+
+    for node in &result.nodes {
+        assert!(node.x.is_finite() && node.y.is_finite(),
+            "d3rs node '{}' position not finite ({}, {})", node.name, node.x, node.y);
+    }
+
+    let cluster_result = examples::radial_tree::compute(true);
+    assert_eq!(cluster_result.nodes.len(), result.nodes.len());
+}
+
+/// Test radial cluster layout (same data, different layout).
+/// Source: https://observablehq.com/@d3/radial-cluster/2
+#[test]
+fn test_observable_radial_cluster() {
+    let result = examples::radial_tree::compute(true);
+
+    // Basic structural checks
+    assert!(result.nodes.len() > 10, "cluster should have nodes");
+    assert!(!result.link_paths.is_empty(), "cluster should have links");
+
+    // All positions should be finite
+    for node in &result.nodes {
+        assert!(
+            node.x.is_finite() && node.y.is_finite(),
+            "cluster node '{}' at ({}, {}) not finite", node.name, node.x, node.y
+        );
+    }
+
+    // Same node count as tree mode
+    let tree_result = examples::radial_tree::compute(false);
+    assert_eq!(result.nodes.len(), tree_result.nodes.len());
+    assert_eq!(result.link_paths.len(), tree_result.link_paths.len());
+}
+
+/// Test Voronoi airports layout against golden D3.js data.
+/// Source: https://observablehq.com/@d3/world-airports-voronoi
+#[test]
+fn test_observable_voronoi_airports() {
+    let content = fs::read_to_string("golden/observable/voronoi_airports.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    for case in &golden.test_cases {
+        let point_count = case["point_count"].as_u64().unwrap() as usize;
+        let cell_count = case["cell_count"].as_u64().unwrap() as usize;
+        let cells = case["cells"].as_array().unwrap();
+
+        assert_eq!(cells.len(), point_count);
+        let actual_cells = cells.iter()
+            .filter(|c| !c["cell_vertices"].is_null())
+            .count();
+        assert_eq!(actual_cells, cell_count);
+
+        // Verify golden projected positions are within bounds
+        let layout = &case["layout"];
+        let width = layout["width"].as_f64().unwrap();
+        let height = layout["height"].as_f64().unwrap();
+
+        for cell in cells {
+            let px = cell["px"].as_f64().unwrap();
+            let py = cell["py"].as_f64().unwrap();
+            assert!(px >= 0.0 && px <= width, "golden px {} out of bounds", px);
+            assert!(py >= 0.0 && py <= height, "golden py {} out of bounds", py);
+        }
+
+        // Verify golden cell vertices are within bounds
+        for cell in cells.iter().filter(|c| !c["cell_vertices"].is_null()) {
+            let verts = cell["cell_vertices"].as_array().unwrap();
+            assert!(verts.len() >= 3, "cell should have >= 3 vertices");
+            for v in verts {
+                let vx = v[0].as_f64().unwrap();
+                let vy = v[1].as_f64().unwrap();
+                assert!(vx >= -1.0 && vx <= width + 1.0, "vertex x {} out of bounds", vx);
+                assert!(vy >= -1.0 && vy <= height + 1.0, "vertex y {} out of bounds", vy);
+            }
+        }
+    }
+
+    // Run d3rs compute with same deterministic data
+    let coords: Vec<(f64, f64)> = (0..50)
+        .map(|i| {
+            let lon = -180.0 + (i as f64 / 49.0) * 360.0;
+            let lat = -60.0 + 30.0 * (i as f64 * 0.3).sin();
+            (lon, lat)
+        })
+        .collect();
+    let result = examples::voronoi_airports::compute(&coords);
+
+    assert_eq!(result.point_count, 50);
+    assert!(!result.voronoi_paths.is_empty(), "d3rs should produce Voronoi cells");
+
+    // Compare d3rs projected positions against golden (golden uses round(v, 2))
+    let case = &golden.test_cases[0];
+    let golden_cells = case["cells"].as_array().unwrap();
+    let pos_tol = 0.01; // golden rounded to 2 decimal places
+    for (i, gc) in golden_cells.iter().enumerate() {
+        if i >= result.points.len() { break; }
+        let gpx = gc["px"].as_f64().unwrap();
+        let gpy = gc["py"].as_f64().unwrap();
+        assert!(
+            (gpx - result.points[i].px).abs() < pos_tol
+                && (gpy - result.points[i].py).abs() < pos_tol,
+            "voronoi point {}: d3rs ({}, {}) vs D3 ({}, {})",
+            i, result.points[i].px, result.points[i].py, gpx, gpy
         );
     }
 }

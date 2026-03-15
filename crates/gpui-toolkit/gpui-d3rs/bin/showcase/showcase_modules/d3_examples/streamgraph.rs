@@ -1,20 +1,25 @@
 //! Streamgraph -- Observable example using d3rs::examples::streamgraph
+//!
+//! Demonstrates idiomatic d3rs usage: `Stack` with `InsideOut` order + `Wiggle` offset,
+//! `LinearScale` for axes, `PathBuilder` for area paths, `d3rs_path_to_gpui_simple` for rendering.
 use crate::ShowcaseApp;
+use d3rs::color::ColorScheme;
 use d3rs::scale::{LinearScale, Scale};
+use d3rs::shape::path::PathBuilder as D3PathBuilder;
+use d3rs::shape::stack::{Stack, StackOffset, StackOrder};
 use gpui::prelude::*;
 use gpui::*;
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    let (categories, matrix) = d3rs::examples::streamgraph::default_data();
-    let result = d3rs::examples::streamgraph::compute(&categories, &matrix);
+const UNEMPLOYMENT_CSV: &str = include_str!("../../data/unemployment.csv");
 
-    let colors = [
-        rgb(0x4e79a7),
-        rgb(0xf28e2b),
-        rgb(0xe15759),
-        rgb(0x76b7b2),
-        rgb(0x59a14f),
-    ];
+pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+    // Load real unemployment data via d3rs CSV parser + stacked_area pivot
+    let (categories, rows) =
+        d3rs::examples::stacked_area::load_csv(UNEMPLOYMENT_CSV, "date", "industry", "unemployed");
+    let matrix: Vec<Vec<f64>> = rows.iter().map(|r| r.values.clone()).collect();
+
+    let scheme = ColorScheme::tableau10();
+    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
 
     let width = 700.0_f64;
     let height = 450.0_f64;
@@ -26,43 +31,55 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let plot_h = height - margin_top - margin_bottom;
     let n = matrix.len();
 
+    // Use d3rs Stack with InsideOut order and Wiggle offset for streamgraph layout
+    let stack = Stack::new()
+        .keys(categories.clone())
+        .order(StackOrder::InsideOut)
+        .offset(StackOffset::Wiggle);
+    let series = stack.generate(&matrix);
+
+    // Compute y extent from stacked values
+    let mut y_min = f64::MAX;
+    let mut y_max = f64::MIN;
+    for s in &series {
+        for v in &s.values {
+            y_min = y_min.min(v[0]);
+            y_max = y_max.max(v[1]);
+        }
+    }
+
     let x_scale = LinearScale::new()
         .domain(0.0, (n - 1) as f64)
         .range(0.0, plot_w);
-
     let y_scale = LinearScale::new()
-        .domain(result.y_extent[0], result.y_extent[1])
+        .domain(y_min, y_max)
         .range(plot_h, 0.0);
 
-    let mut series_paths: Vec<String> = Vec::new();
-    for s in &result.series {
-        let mut path_d = String::new();
+    // Build area paths using D3PathBuilder: top line forward + bottom line reversed + close
+    let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
+    for s in &series {
+        let mut builder = D3PathBuilder::new();
         // Top line (y1 values)
         for i in 0..n {
-            if let Some(v) = s.get(i) {
-                let x = x_scale.scale(i as f64);
-                let y = y_scale.scale(v[1]);
-                if i == 0 {
-                    path_d.push_str(&format!("M {} {}", x, y));
-                } else {
-                    path_d.push_str(&format!(" L {} {}", x, y));
-                }
+            let x = x_scale.scale(i as f64);
+            let y = y_scale.scale(s.values[i][1]);
+            if i == 0 {
+                builder = builder.move_to(x, y);
+            } else {
+                builder = builder.line_to(x, y);
             }
         }
         // Bottom line reversed (y0 values)
         for i in (0..n).rev() {
-            if let Some(v) = s.get(i) {
-                let x = x_scale.scale(i as f64);
-                let y = y_scale.scale(v[0]);
-                path_d.push_str(&format!(" L {} {}", x, y));
-            }
+            let x = x_scale.scale(i as f64);
+            let y = y_scale.scale(s.values[i][0]);
+            builder = builder.line_to(x, y);
         }
-        path_d.push_str(" Z");
-        series_paths.push(path_d);
+        builder = builder.close_path();
+        d3_paths.push(builder.build());
     }
 
-    let legend_items: Vec<Div> = result
-        .categories
+    let legend_items: Vec<Div> = categories
         .iter()
         .enumerate()
         .map(|(i, name)| {
@@ -79,12 +96,12 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let x_ticks: Vec<f64> = (0..n).step_by(2).map(|v| v as f64).collect();
 
     // Y-axis ticks
-    let y_range = result.y_extent[1] - result.y_extent[0];
+    let y_range = y_max - y_min;
     let y_step = (y_range / 5.0).ceil();
-    let y_min_tick = (result.y_extent[0] / y_step).floor() * y_step;
+    let y_min_tick = (y_min / y_step).floor() * y_step;
     let y_ticks: Vec<f64> = (0..=8)
         .map(|i| y_min_tick + i as f64 * y_step)
-        .filter(|v| *v >= result.y_extent[0] - 0.1 && *v <= result.y_extent[1] + 0.1)
+        .filter(|v| *v >= y_min - 0.1 && *v <= y_max + 0.1)
         .collect();
 
     div()
@@ -192,9 +209,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .child(
                             canvas(
                                 move |bounds, _, _| {
-                                    series_paths
+                                    d3_paths
                                         .iter()
-                                        .map(|d| super::path_utils::parse_svg_path(d, bounds))
+                                        .map(|p| {
+                                            super::path_utils::d3rs_path_to_gpui_simple(
+                                                p, bounds, 0.0, 0.0,
+                                            )
+                                        })
                                         .collect::<Vec<_>>()
                                 },
                                 move |_bounds, paths, window, _| {

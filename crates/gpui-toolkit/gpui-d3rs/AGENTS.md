@@ -101,38 +101,128 @@ Each test captures the full chain: data -> scales -> layout -> color -> axes.
 
 \* = d3rs does not yet implement pack/partition layouts; test validates golden file structure.
 
-### How to Add a New Observable Example
+### Pipeline: Porting Observable Examples (7 Steps)
 
-1. **Find the Observable notebook** (e.g. `https://observablehq.com/@d3/treemap`)
+Every Observable example follows this disciplined pipeline. Complete all steps
+before starting the next example.
 
-2. **Add d3 package** if needed:
-   ```bash
-   cd golden && npm install d3-xxx
-   ```
+#### Step 1: Capture the Observable Source
 
-3. **Add JS generator** in `golden/generate_observable_examples.js`:
-   - Deterministic data (`Math.sin()`, not `Math.random()`)
-   - Use `.range()` not `.rangeRound()` for exact float comparison
-   - Capture ALL intermediate values (scales, layout coords, paths)
-   ```bash
-   cd golden && node generate_observable_examples.js treemap
-   ```
+- Fetch the Observable notebook URL
+- Extract the **exact D3.js code**: scales, generators, data transforms, color maps
+- Identify **every D3 API call** used (e.g., `d3.scaleUtc`, `d3.area`, `d3.curveLinearClosed`)
+- Note the exact dataset (CSV/JSON), column names, and any data transforms
 
-4. **Add plot module** in `src/examples/treemap.rs`:
-   - Pure computation: `pub fn compute(data) -> TreemapResult`
-   - No GPUI, no test harness
-   - Include `default_data()` for documentation/demo
-   - Register in `src/examples/mod.rs`
+#### Step 2: Generate Golden Data
 
-5. **Add golden test** in `tests/golden_tests.rs`:
-   - Call `examples::treemap::compute()` with golden file data
-   - Compare output against golden JSON values
-   ```bash
-   cargo test -p gpui-d3rs --no-default-features --tests test_observable_treemap
-   ```
+**File**: `golden/generate_observable_examples.js` — add a new generator function
 
-6. **Add showcase render** in `bin/showcase/showcase_modules/d3_examples/`:
-   - Call `examples::treemap::compute()`, render result with GPUI
+Rules:
+- Data must be **deterministic** (`Math.sin(i*k)` or embed real data, never `Math.random()`)
+- Prefer **real datasets** from `bin/showcase/data/` when available
+- Use `.range()` not `.rangeRound()` for exact float comparison
+- Capture **ALL intermediate outputs**:
+  - Scale domains, ranges, and sample input→output pairs
+  - Layout coordinates (every node/bin/slice position)
+  - Generated paths (SVG path strings)
+  - Axis tick values and formatted labels
+  - Color assignments per data item
+- Run: `cd golden && node generate_observable_examples.js <name>`
+- Commit the JSON golden file
+
+#### Step 3: Write the Compute Module
+
+**File**: `src/examples/<name>.rs`
+
+Rules:
+- **Pure computation only** — no GPUI, no test harness, no rendering
+- Use **d3rs APIs exclusively** — never hand-roll what d3rs provides:
+  - `LinearScale`, `LogScale`, `TimeScale`, `BandScale` for scales
+  - `Stack`, `Pie`, `Arc`, `Area`, `Curve` for shapes
+  - `Hexbin`, `ChordLayout`, `Simulation` for layouts
+  - `ColorScheme`, `SequentialScheme` for colors
+  - `fetch::parse_csv` for data loading
+  - `array::statistics::quantile_sorted` etc. for stats
+- **Builder pattern** — chain `.domain().range().nice()` like D3.js
+- **Functional style** — use closures for accessors: `.x(|d| ...).y0(|d| ...).y1(|d| ...)`
+- Return a **result struct** with all computed geometry:
+  - Positions, paths, colors, scale info, tick values
+  - Everything the golden test and showcase need
+- Include `default_data()` or `load_csv()`/`load_json()` for the real dataset
+- Register in `src/examples/mod.rs`
+
+#### Step 4: Write the Golden Test
+
+**File**: `tests/golden_tests.rs` — add `test_observable_<name>()`
+
+Rules:
+- Load golden JSON file
+- Call `examples::<name>::compute()` with the golden file's input data
+- Assert **every intermediate value** against the golden data:
+  - Scale outputs (input→output samples)
+  - Layout positions (x, y, width, height for every element)
+  - Path existence and structure
+  - Bin counts, slice angles, node positions
+  - Color assignments
+- Use `approx_eq(expected, actual)` with tolerance 1e-6
+- For non-deterministic algorithms (force simulation): verify convergence properties, not exact positions
+- Run: `cargo test -p gpui-d3rs --no-default-features --test golden_tests test_observable_<name>`
+- **Do NOT proceed to Step 5 until ALL golden assertions pass**
+
+#### Step 5: Write the Showcase Renderer
+
+**File**: `bin/showcase/showcase_modules/d3_examples/<name>.rs`
+
+Rules:
+- Call `examples::<name>::compute()` — **never duplicate computation logic**
+- Use **d3rs path types** → `d3rs_path_to_gpui_simple()` for rendering
+- Use `PathBuilder::stroke()` for lines, `PathBuilder::fill()` for areas
+- Use **d3rs scales** for axis tick positions in the showcase too
+- Use **d3rs color schemes** (not hardcoded hex arrays unless the Observable specifies exact colors)
+- Include proper **axes**: tick labels, grid lines, axis lines
+- Include **title**, **source URL**, **legend**
+- Register in `d3_examples/mod.rs` and `main.rs` (DemoSection enum + label + render_content match)
+
+#### Step 6: Review Checklist
+
+For every example:
+- [ ] Golden JSON captures ALL D3.js outputs (scales, paths, colors, ticks)
+- [ ] `src/examples/<name>.rs` uses only d3rs APIs (no `format!("M {} {} L ...")`)
+- [ ] Golden test asserts intermediate values, not just structure
+- [ ] Showcase calls `compute()` and uses d3rs for rendering
+- [ ] `cargo test -p gpui-d3rs --no-default-features --tests` — all pass
+- [ ] `cargo clippy -p gpui-d3rs` — no new warnings
+- [ ] Visual output matches the Observable example
+
+#### Step 7: Update Documentation
+
+- Update this table in AGENTS.md with new example
+- Update `overview.rs` with clickable nav item
+- If new d3rs API was added, update the gap analysis table
+
+#### Key Principles
+
+1. **Golden data is the source of truth** — if d3rs disagrees with D3.js, fix d3rs (not the test)
+2. **No rendering before validation** — Step 4 must pass before Step 5 starts
+3. **Use d3rs or implement in d3rs** — if an API is missing, add it to the library first
+4. **Builder + functional > imperative** — `.x(|d| scale.scale(d.date)).y0(|d| ...)` not manual loops
+5. **Real data over synthetic** — use CSV/JSON from `bin/showcase/data/` whenever possible
+6. **One example at a time** — complete all 7 steps before starting the next example
+
+#### Files Modified Per Example
+
+| Step | File | Purpose |
+|------|------|---------|
+| 2 | `golden/generate_observable_examples.js` | JS generator |
+| 2 | `golden/observable/<name>.json` | Golden data |
+| 3 | `src/examples/<name>.rs` | Compute module |
+| 3 | `src/examples/mod.rs` | Module registration |
+| 4 | `tests/golden_tests.rs` | Golden test |
+| 5 | `bin/showcase/.../<name>.rs` | Showcase renderer |
+| 5 | `bin/showcase/.../d3_examples/mod.rs` | Module registration |
+| 5 | `bin/showcase/main.rs` | DemoSection + menu |
+| 7 | `AGENTS.md` | Documentation |
+| 7 | `bin/showcase/.../overview.rs` | Clickable nav |
 
 ### Known Discrepancies
 
@@ -142,6 +232,8 @@ Each test captures the full chain: data -> scales -> layout -> color -> axes.
 | Stack InsideOut | Ordering algorithm differs slightly | Test verifies widths not positions |
 | Hierarchy pack/partition | Not yet implemented in d3rs | Structure-only validation |
 | Force simulation | Non-deterministic initial positions | Verify convergence, not positions |
+| Line chart curves | D3.js emits native SVG curves (C/S), d3rs interpolates to L commands | Path structure validated, not exact strings |
+| Line chart .nice() | D3.js uses .nice() domains, d3rs compute uses raw extent | Scale samples validated separately |
 
 ### Regenerating Golden Files
 

@@ -1,79 +1,60 @@
-//! Donut Chart -- Observable example using d3rs::examples::donut_chart
+//! Pie Chart -- Observable example using d3rs::examples::pie_chart
+//!
+//! Demonstrates idiomatic d3rs usage: `Pie` layout + `Arc` generator + `d3rs_path_to_gpui_simple`.
 use crate::ShowcaseApp;
-use d3rs::shape::arc::{ArcDatum, arc_points};
+use d3rs::color::ColorScheme;
+use d3rs::shape::arc::Arc as D3Arc;
+use d3rs::shape::pie::Pie;
 use gpui::prelude::*;
 use gpui::*;
 
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    let result =
-        d3rs::examples::donut_chart::compute(d3rs::examples::donut_chart::DEFAULT_DATA);
+    let result = d3rs::examples::pie_chart::compute(d3rs::examples::pie_chart::DEFAULT_DATA);
 
-    let tableau10 = [
-        rgb(0x4e79a7),
-        rgb(0xf28e2b),
-        rgb(0xe15759),
-        rgb(0x76b7b2),
-        rgb(0x59a14f),
-        rgb(0xedc948),
-        rgb(0xb07aa1),
-        rgb(0xff9da7),
-        rgb(0x9c755f),
-        rgb(0xbab0ac),
-    ];
+    let scheme = ColorScheme::tableau10();
 
     let width = 700.0_f64;
     let height = 450.0_f64;
     let cx_center = width / 2.0;
     let cy_center = height / 2.0;
-    let outer_radius = width.min(height) / 2.0 - 20.0;
-    let inner_radius = outer_radius * 0.67;
+    let radius = width.min(height) / 2.0 - 20.0;
 
-    let mut slice_paths: Vec<String> = Vec::new();
+    // Use d3rs Pie layout to compute slices, then Arc generator to build d3rs Paths
+    let values: Vec<f64> = result.slices.iter().map(|s| s.value).collect();
+    let pie = Pie::new().outer_radius(radius).sort(false);
+    let slices = pie.generate(&values, |v| *v);
+
+    let arc_gen = D3Arc::new().center(cx_center, cy_center);
+
+    let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
     let mut slice_names: Vec<String> = Vec::new();
-    for s in &result.slices {
-        let datum = ArcDatum {
-            inner_radius,
-            outer_radius,
-            start_angle: s.start_angle,
-            end_angle: s.end_angle,
-            corner_radius: 0.0,
-            pad_angle: 0.0,
-        };
-        let points = arc_points(&datum, 64, cx_center, cy_center);
-        let mut path_d = String::new();
-        for (i, p) in points.iter().enumerate() {
-            if i == 0 {
-                path_d.push_str(&format!("M {} {}", p.x, p.y));
-            } else {
-                path_d.push_str(&format!(" L {} {}", p.x, p.y));
-            }
-        }
-        path_d.push_str(" Z");
-        slice_paths.push(path_d);
-        slice_names.push(s.name.clone());
+    let mut slice_pcts: Vec<f64> = Vec::new();
+    for (i, s) in slices.iter().enumerate() {
+        let path = arc_gen.generate(&s.arc);
+        d3_paths.push(path);
+        slice_names.push(result.slices[i].name.clone());
+        let pct = (s.arc.end_angle - s.arc.start_angle) / std::f64::consts::TAU * 100.0;
+        slice_pcts.push(pct);
     }
 
     let legend_items: Vec<Div> = slice_names
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let pct = (result.slices[i].end_angle - result.slices[i].start_angle)
-                / std::f64::consts::TAU
-                * 100.0;
             div()
                 .flex()
                 .items_center()
                 .gap_1()
-                .child(div().size_3().bg(tableau10[i % tableau10.len()]))
+                .child(div().size_3().bg(scheme.color(i).to_rgba()))
                 .child(
                     div()
                         .text_xs()
-                        .child(format!("{}: {:.1}%", name, pct)),
+                        .child(format!("{}: {:.1}%", name, slice_pcts[i])),
                 )
         })
         .collect();
 
-    let colors = tableau10;
+    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
     div()
         .flex()
         .flex_col()
@@ -84,14 +65,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .text_lg()
                 .font_weight(FontWeight::BOLD)
                 .mb_2()
-                .child("Donut Chart"),
+                .child("Pie Chart"),
         )
         .child(
             div()
                 .text_xs()
                 .text_color(rgb(0x666666))
                 .mb_2()
-                .child("Source: observablehq.com/@d3/donut-chart"),
+                .child("Source: observablehq.com/@d3/pie-chart"),
         )
         .child(div().flex().gap_4().mb_2().flex_wrap().children(legend_items))
         .child(
@@ -104,9 +85,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(
                     canvas(
                         move |bounds, _, _| {
-                            slice_paths
+                            d3_paths
                                 .iter()
-                                .map(|d| super::path_utils::parse_svg_path(d, bounds))
+                                .map(|p| {
+                                    super::path_utils::d3rs_path_to_gpui_simple(
+                                        p, bounds, 0.0, 0.0,
+                                    )
+                                })
                                 .collect::<Vec<_>>()
                         },
                         move |_bounds, paths, window, _| {

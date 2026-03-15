@@ -53,6 +53,15 @@ pub enum DemoSection {
     D3BoxPlot,
     D3ChordDiagram,
     D3ForceDirected,
+    D3ParallelSets,
+    D3DifferenceChart,
+    D3Ridgeline,
+    D3RealtimeHorizon,
+    D3RadialTree,
+    D3RadialCluster,
+    D3CirclePacking,
+    D3Sunburst,
+    D3VoronoiAirports,
 }
 
 impl DemoSection {
@@ -99,6 +108,15 @@ impl DemoSection {
             Self::D3BoxPlot,
             Self::D3ChordDiagram,
             Self::D3ForceDirected,
+            Self::D3ParallelSets,
+            Self::D3DifferenceChart,
+            Self::D3Ridgeline,
+            Self::D3RealtimeHorizon,
+            Self::D3RadialTree,
+            Self::D3RadialCluster,
+            Self::D3CirclePacking,
+            Self::D3Sunburst,
+            Self::D3VoronoiAirports,
         ]
     }
 
@@ -145,6 +163,15 @@ impl DemoSection {
             Self::D3BoxPlot => "D3: Box Plot",
             Self::D3ChordDiagram => "D3: Chord Diagram",
             Self::D3ForceDirected => "D3: Force Directed",
+            Self::D3ParallelSets => "D3: Parallel Sets",
+            Self::D3DifferenceChart => "D3: Difference Chart",
+            Self::D3Ridgeline => "D3: Ridgeline Plot",
+            Self::D3RealtimeHorizon => "D3: Realtime Horizon",
+            Self::D3RadialTree => "D3: Radial Tree",
+            Self::D3RadialCluster => "D3: Radial Cluster",
+            Self::D3CirclePacking => "D3: Circle Packing",
+            Self::D3Sunburst => "D3: Sunburst",
+            Self::D3VoronoiAirports => "D3: Voronoi Airports",
         }
     }
 }
@@ -435,7 +462,7 @@ impl ShowcaseApp {
 
     fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let content: Div = match self.current_section {
-            DemoSection::Overview => showcase_modules::overview::render(self),
+            DemoSection::Overview => showcase_modules::overview::render(self, cx),
             DemoSection::Scales => showcase_modules::scales::render(self),
             DemoSection::Axes => showcase_modules::axes::render(self),
             DemoSection::BarCharts => showcase_modules::bar_charts::render(self),
@@ -474,16 +501,25 @@ impl ShowcaseApp {
             DemoSection::Force => showcase_modules::force::render(self, cx),
             DemoSection::Chord => showcase_modules::chord::render(self, cx),
             // Observable Examples (golden-tested, using src/examples/ compute)
-            DemoSection::D3Hexbin => showcase_modules::d3_examples::obs_hexbin::render(self, cx),
-            DemoSection::D3PieChart => showcase_modules::d3_examples::obs_pie_chart::render(self, cx),
-            DemoSection::D3DonutChart => showcase_modules::d3_examples::obs_donut_chart::render(self, cx),
-            DemoSection::D3LineChart => showcase_modules::d3_examples::obs_line_chart::render(self, cx),
-            DemoSection::D3Streamgraph => showcase_modules::d3_examples::obs_streamgraph::render(self, cx),
-            DemoSection::D3StackedBar => showcase_modules::d3_examples::obs_stacked_bar::render(self, cx),
-            DemoSection::D3StackedArea => showcase_modules::d3_examples::obs_stacked_area::render(self, cx),
-            DemoSection::D3BoxPlot => showcase_modules::d3_examples::obs_box_plot::render(self, cx),
-            DemoSection::D3ChordDiagram => showcase_modules::d3_examples::obs_chord::render(self, cx),
-            DemoSection::D3ForceDirected => showcase_modules::d3_examples::obs_force_directed::render(self, cx),
+            DemoSection::D3Hexbin => showcase_modules::d3_examples::hexbin::render(self, cx),
+            DemoSection::D3PieChart => showcase_modules::d3_examples::pie_chart::render(self, cx),
+            DemoSection::D3DonutChart => showcase_modules::d3_examples::donut_chart::render(self, cx),
+            DemoSection::D3LineChart => showcase_modules::d3_examples::line_chart::render(self, cx),
+            DemoSection::D3Streamgraph => showcase_modules::d3_examples::streamgraph::render(self, cx),
+            DemoSection::D3StackedBar => showcase_modules::d3_examples::stacked_bar::render(self, cx),
+            DemoSection::D3StackedArea => showcase_modules::d3_examples::stacked_area::render(self, cx),
+            DemoSection::D3BoxPlot => showcase_modules::d3_examples::box_plot::render(self, cx),
+            DemoSection::D3ChordDiagram => showcase_modules::d3_examples::chord::render(self, cx),
+            DemoSection::D3ForceDirected => showcase_modules::d3_examples::force_directed::render(self, cx),
+            DemoSection::D3ParallelSets => showcase_modules::d3_examples::parallel_sets::render(self, cx),
+            DemoSection::D3DifferenceChart => showcase_modules::d3_examples::difference_chart::render(self, cx),
+            DemoSection::D3Ridgeline => showcase_modules::d3_examples::ridgeline::render(self, cx),
+            DemoSection::D3RealtimeHorizon => showcase_modules::d3_examples::realtime_horizon::render(self, cx),
+            DemoSection::D3RadialTree => showcase_modules::d3_examples::radial_tree::render(self, cx),
+            DemoSection::D3RadialCluster => showcase_modules::d3_examples::radial_tree::render_cluster(self, cx),
+            DemoSection::D3CirclePacking => showcase_modules::d3_examples::circle_packing::render(self, cx),
+            DemoSection::D3Sunburst => showcase_modules::d3_examples::sunburst::render(self, cx),
+            DemoSection::D3VoronoiAirports => showcase_modules::d3_examples::voronoi_airports::render(self, cx),
         };
 
         div()

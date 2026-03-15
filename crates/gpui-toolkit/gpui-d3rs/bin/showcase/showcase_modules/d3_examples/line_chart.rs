@@ -1,8 +1,11 @@
 //! Line Chart -- Observable example using d3rs::examples::line_chart
 //!
-//! Renders multiple curve interpolations with axes and tick labels.
+//! Demonstrates idiomatic d3rs usage: `LinearScale` for axes, `Curve::interpolate` for
+//! line interpolation, `PathBuilder` for ribbon paths, `d3rs_path_to_gpui_simple` for rendering.
 use crate::ShowcaseApp;
+use d3rs::color::ColorScheme;
 use d3rs::scale::{LinearScale, Scale};
+use d3rs::shape::path::{PathBuilder as D3PathBuilder, Point as D3Point};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -10,15 +13,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let data = d3rs::examples::line_chart::default_data();
     let result = d3rs::examples::line_chart::compute(&data);
 
-    let tableau10: [Rgba; 7] = [
-        rgb(0x4e79a7),
-        rgb(0xf28e2b),
-        rgb(0xe15759),
-        rgb(0x76b7b2),
-        rgb(0x59a14f),
-        rgb(0xedc948),
-        rgb(0xb07aa1),
-    ];
+    let scheme = ColorScheme::tableau10();
 
     let chart_w = 700.0_f64;
     let chart_h = 400.0_f64;
@@ -37,8 +32,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .domain(result.y_domain[0], result.y_domain[1])
         .range(plot_h, 0.0);
 
-    // Rebuild line paths in plot coordinates (result.paths are in compute's internal coords)
-    // We re-project the raw data through our local scales for clean mapping
+    // Map raw data to scaled points using d3rs types
+    let points: Vec<D3Point> = data
+        .iter()
+        .map(|(x, y)| D3Point::new(x_scale.scale(*x), y_scale.scale(*y)))
+        .collect();
+
+    // Use d3rs Curve interpolation for each curve type, then build ribbon paths via D3PathBuilder
     let curves: Vec<(&str, d3rs::shape::curve::Curve)> = vec![
         ("linear", d3rs::shape::curve::Curve::linear()),
         ("step", d3rs::shape::curve::Curve::Step),
@@ -49,19 +49,12 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         ("catmullRom", d3rs::shape::curve::Curve::catmull_rom(0.5)),
     ];
 
-    let points: Vec<d3rs::shape::path::Point> = data
-        .iter()
-        .map(|(x, y)| {
-            d3rs::shape::path::Point::new(x_scale.scale(*x), y_scale.scale(*y))
-        })
-        .collect();
-
-    let mut ribbon_paths: Vec<String> = Vec::new();
+    let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
     let mut curve_names: Vec<String> = Vec::new();
     for (name, curve) in &curves {
         let interpolated = curve.interpolate(&points);
-        let ribbon = points_to_ribbon(&interpolated, 1.8);
-        ribbon_paths.push(ribbon);
+        let path = points_to_ribbon_d3(&interpolated, 1.8);
+        d3_paths.push(path);
         curve_names.push(name.to_string());
     }
 
@@ -74,7 +67,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .flex()
                 .items_center()
                 .gap_1()
-                .child(div().size_3().bg(tableau10[i % tableau10.len()]))
+                .child(div().size_3().bg(scheme.color(i).to_rgba()))
                 .child(div().text_xs().child(name.clone()))
         })
         .collect();
@@ -90,7 +83,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .filter(|v| *v >= result.y_domain[0] - 0.1 && *v <= result.y_domain[1] + 0.1)
         .collect();
 
-    let colors = tableau10;
+    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
     div()
         .flex()
         .flex_col()
@@ -101,7 +94,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .text_lg()
                 .font_weight(FontWeight::BOLD)
                 .mb_2()
-                .child("Line Chart — 7 Curve Types"),
+                .child("Line Chart -- 7 Curve Types"),
         )
         .child(
             div()
@@ -207,9 +200,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .child(
                             canvas(
                                 move |bounds, _, _| {
-                                    ribbon_paths
+                                    d3_paths
                                         .iter()
-                                        .map(|d| super::path_utils::parse_svg_path(d, bounds))
+                                        .map(|p| {
+                                            super::path_utils::d3rs_path_to_gpui_simple(
+                                                p, bounds, 0.0, 0.0,
+                                            )
+                                        })
                                         .collect::<Vec<_>>()
                                 },
                                 move |_bounds, paths, window, _| {
@@ -230,7 +227,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .text_color(rgb(0x999999))
                 .mt_2()
                 .child(format!(
-                    "{} data points • x: [{:.0}..{:.0}] • y: [{:.1}..{:.1}]",
+                    "{} data points | x: [{:.0}..{:.0}] | y: [{:.1}..{:.1}]",
                     data.len(),
                     result.x_domain[0],
                     result.x_domain[1],
@@ -240,10 +237,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         )
 }
 
-/// Convert interpolated points to a thin filled ribbon to simulate a stroke.
-fn points_to_ribbon(points: &[d3rs::shape::path::Point], thickness: f64) -> String {
+/// Convert interpolated points to a thin filled ribbon d3rs Path to simulate a stroke.
+fn points_to_ribbon_d3(points: &[D3Point], thickness: f64) -> d3rs::shape::path::Path {
     if points.len() < 2 {
-        return String::new();
+        return D3PathBuilder::new().build();
     }
 
     let half = thickness / 2.0;
@@ -270,13 +267,14 @@ fn points_to_ribbon(points: &[d3rs::shape::path::Point], thickness: f64) -> Stri
         lower.push((points[i].x - nx, points[i].y - ny));
     }
 
-    let mut path_d = format!("M {:.2} {:.2}", upper[0].0, upper[0].1);
+    let mut builder = D3PathBuilder::new();
+    builder = builder.move_to(upper[0].0, upper[0].1);
     for p in upper.iter().skip(1) {
-        path_d.push_str(&format!(" L {:.2} {:.2}", p.0, p.1));
+        builder = builder.line_to(p.0, p.1);
     }
     for p in lower.iter().rev() {
-        path_d.push_str(&format!(" L {:.2} {:.2}", p.0, p.1));
+        builder = builder.line_to(p.0, p.1);
     }
-    path_d.push_str(" Z");
-    path_d
+    builder = builder.close_path();
+    builder.build()
 }

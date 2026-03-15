@@ -1372,6 +1372,327 @@ function generateParallelSetsObservable() {
 }
 
 // ============================================================================
+// DIFFERENCE CHART — https://observablehq.com/@d3/difference-chart/2
+// ============================================================================
+
+function generateDifferenceChartObservable() {
+  const testCases = [];
+
+  // Generate deterministic SFO-like temperature data (two series)
+  const n = 365;
+  const data = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    // Seasonal pattern
+    const seasonal = 55 + 15 * Math.sin((t - 0.25) * 2 * Math.PI);
+    const v0 = round(seasonal + 5 * Math.sin(i * 0.3) + 3 * Math.cos(i * 0.7), 2);
+    const v1 = round(seasonal + 3 * Math.sin(i * 0.5 + 1) + 2 * Math.cos(i * 1.1), 2);
+    data.push({ date_index: i, value0: v0, value1: v1 });
+  }
+
+  const width = 928, height = 500;
+  const marginTop = 20, marginRight = 20, marginBottom = 30, marginLeft = 40;
+
+  const yMin = d3.min(data, d => Math.min(d.value0, d.value1));
+  const yMax = d3.max(data, d => Math.max(d.value0, d.value1));
+
+  const x = d3.scaleLinear().domain([0, n - 1]).range([marginLeft, width - marginRight]);
+  const y = d3.scaleLinear().domain([yMin, yMax]).range([height - marginBottom, marginTop]);
+
+  // Generate area above (v0 > v1) using d3.area with clipping
+  const areaAbove = d3.area()
+    .x(d => x(d.date_index))
+    .y0(d => y(Math.min(d.value0, d.value1)))
+    .y1(d => y(d.value0));
+
+  const areaBelow = d3.area()
+    .x(d => x(d.date_index))
+    .y0(d => y(d.value1))
+    .y1(d => y(Math.min(d.value0, d.value1)));
+
+  const line0 = d3.line().x(d => x(d.date_index)).y(d => y(d.value0));
+  const line1 = d3.line().x(d => x(d.date_index)).y(d => y(d.value1));
+
+  testCases.push({
+    name: "difference_chart_sfo",
+    description: "Difference chart showing two temperature series",
+    layout: { width, height, marginTop, marginRight, marginBottom, marginLeft },
+    data_count: n,
+    data: data.slice(0, 10), // First 10 for validation
+    x_scale: {
+      domain: [0, n - 1],
+      range: [marginLeft, width - marginRight],
+      samples: [0, 100, 200, 364].map(i => ({ input: i, output: round(x(i)) }))
+    },
+    y_scale: {
+      domain: [round(yMin), round(yMax)],
+      range: [height - marginBottom, marginTop],
+      samples: [yMin, 50, 60, yMax].map(v => ({ input: round(v), output: round(y(v)) }))
+    },
+    above_path: areaAbove(data),
+    below_path: areaBelow(data),
+    line0_path: line0(data),
+    line1_path: line1(data),
+  });
+
+  writeGolden('difference_chart.json', createGoldenFile(
+    "https://observablehq.com/@d3/difference-chart/2", "d3-shape", "difference_chart", testCases));
+}
+
+// ============================================================================
+// RIDGELINE PLOT — https://observablehq.com/@d3/ridgeline-plot
+// ============================================================================
+
+function generateRidgelineObservable() {
+  const testCases = [];
+
+  // Generate deterministic monthly temperature distributions
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const monthlyData = monthNames.map((name, mi) => {
+    const values = [];
+    for (let i = 0; i < 50; i++) {
+      values.push(round(40 + 20 * mi / 11 + 5 * Math.sin(i * 0.7), 2));
+    }
+    values.sort((a, b) => a - b);
+    return { name, values };
+  });
+
+  const allMin = d3.min(monthlyData, m => d3.min(m.values));
+  const allMax = d3.max(monthlyData, m => d3.max(m.values));
+
+  // Simple histogram-based density for each month
+  const nBins = 50;
+  const binWidth = (allMax - allMin) / nBins;
+  const rowHeight = 40;
+  const overlap = 8;
+
+  const distributions = monthlyData.map((month, mi) => {
+    const bins = new Array(nBins).fill(0);
+    for (const v of month.values) {
+      const idx = Math.min(nBins - 1, Math.floor((v - allMin) / binWidth));
+      bins[idx]++;
+    }
+    const maxCount = d3.max(bins);
+    return {
+      name: month.name,
+      y_offset: 20 + mi * (rowHeight - overlap) + rowHeight,
+      bins: bins.map((count, bi) => ({
+        x_mid: round(allMin + (bi + 0.5) * binWidth, 2),
+        count,
+        density: round(count / maxCount, 4)
+      }))
+    };
+  });
+
+  testCases.push({
+    name: "ridgeline_temperature",
+    description: "Monthly temperature distributions as ridgeline",
+    month_count: 12,
+    x_domain: [round(allMin), round(allMax)],
+    bin_count: nBins,
+    distributions,
+  });
+
+  writeGolden('ridgeline.json', createGoldenFile(
+    "https://observablehq.com/@d3/ridgeline-plot", "d3-shape", "ridgeline", testCases));
+}
+
+// ============================================================================
+// RADIAL TREE — https://observablehq.com/@d3/radial-tree/2
+// ============================================================================
+
+function generateRadialTreeObservable() {
+  const testCases = [];
+
+  // Build a small Flare-like hierarchy
+  const data = {
+    name: "flare",
+    children: [
+      { name: "analytics", children: [
+        { name: "cluster", value: 1 }, { name: "graph", value: 1 }, { name: "optimization", value: 1 }
+      ]},
+      { name: "animate", children: [
+        { name: "Easing", value: 1 }, { name: "FunctionSequence", value: 1 }, { name: "Tween", value: 1 }
+      ]},
+      { name: "data", children: [
+        { name: "converters", value: 1 }, { name: "DataField", value: 1 }, { name: "DataSchema", value: 1 }
+      ]},
+      { name: "display", children: [
+        { name: "DirtySprite", value: 1 }, { name: "LineSprite", value: 1 }, { name: "TextSprite", value: 1 }
+      ]},
+      { name: "flex", children: [{ name: "FlareVis", value: 1 }] },
+      { name: "physics", children: [
+        { name: "DragForce", value: 1 }, { name: "GravityForce", value: 1 }, { name: "Spring", value: 1 }
+      ]},
+      { name: "query", children: [
+        { name: "AggregateExpr", value: 1 }, { name: "Expression", value: 1 }, { name: "Query", value: 1 }
+      ]},
+      { name: "scale", children: [
+        { name: "LinearScale", value: 1 }, { name: "LogScale", value: 1 }, { name: "OrdinalScale", value: 1 }
+      ]},
+      { name: "util", children: [
+        { name: "Arrays", value: 1 }, { name: "Dates", value: 1 }, { name: "Maths", value: 1 }, { name: "Sort", value: 1 }
+      ]},
+      { name: "vis", children: [
+        { name: "axis", value: 1 }, { name: "controls", value: 1 }, { name: "data", value: 1 }, { name: "legend", value: 1 }
+      ]}
+    ]
+  };
+
+  const root = d3.hierarchy(data).sum(d => d.value).sort((a, b) => b.value - a.value);
+  const width = 928, height = 928;
+  const radius = Math.min(width, height) / 2 - 60;
+
+  // Tree layout
+  const treeLayout = d3.tree().size([2 * Math.PI, radius]);
+  const treeRoot = treeLayout(root.copy());
+
+  const treeNodes = [];
+  treeRoot.each(node => {
+    treeNodes.push({
+      name: node.data.name,
+      depth: node.depth,
+      x: round(node.x, 6), // angle
+      y: round(node.y, 6), // radius
+      is_leaf: !node.children || node.children.length === 0,
+      // Projected cartesian coords
+      px: round(node.y * Math.cos(node.x - Math.PI / 2) + width / 2, 2),
+      py: round(node.y * Math.sin(node.x - Math.PI / 2) + height / 2, 2),
+    });
+  });
+
+  // Cluster layout
+  const clusterLayout = d3.cluster().size([2 * Math.PI, radius]);
+  const clusterRoot = clusterLayout(root.copy());
+
+  const clusterNodes = [];
+  clusterRoot.each(node => {
+    clusterNodes.push({
+      name: node.data.name,
+      depth: node.depth,
+      x: round(node.x, 6),
+      y: round(node.y, 6),
+      is_leaf: !node.children || node.children.length === 0,
+      px: round(node.y * Math.cos(node.x - Math.PI / 2) + width / 2, 2),
+      py: round(node.y * Math.sin(node.x - Math.PI / 2) + height / 2, 2),
+    });
+  });
+
+  testCases.push({
+    name: "radial_tree",
+    description: "Radial tree layout of Flare hierarchy",
+    layout: { width, height, radius },
+    node_count: treeNodes.length,
+    leaf_count: treeNodes.filter(n => n.is_leaf).length,
+    tree_nodes: treeNodes,
+    cluster_nodes: clusterNodes,
+  });
+
+  writeGolden('radial_tree.json', createGoldenFile(
+    "https://observablehq.com/@d3/radial-tree/2", "d3-hierarchy", "radial_tree", testCases));
+}
+
+// ============================================================================
+// VORONOI AIRPORTS — https://observablehq.com/@d3/world-airports-voronoi
+// ============================================================================
+
+function generateVoronoiAirportsObservable() {
+  const testCases = [];
+
+  // Deterministic airport subset (50 points spread around the world)
+  const airports = [];
+  for (let i = 0; i < 50; i++) {
+    const lon = round(-180 + (i / 49) * 360, 4);
+    const lat = round(-60 + 30 * Math.sin(i * 0.3), 4);
+    airports.push({ lon, lat });
+  }
+
+  const width = 928, height = 500;
+
+  // Equirectangular projection
+  const project = (lon, lat) => [
+    (lon + 180) / 360 * width,
+    (90 - lat) / 180 * height
+  ];
+
+  const projected = airports.map(a => project(a.lon, a.lat));
+
+  // D3 Delaunay + Voronoi
+  const delaunay = d3.Delaunay.from(projected);
+  const voronoi = delaunay.voronoi([0, 0, width, height]);
+
+  const cells = [];
+  for (let i = 0; i < airports.length; i++) {
+    const cell = voronoi.cellPolygon(i);
+    cells.push({
+      index: i,
+      lon: airports[i].lon,
+      lat: airports[i].lat,
+      px: round(projected[i][0], 2),
+      py: round(projected[i][1], 2),
+      cell_vertices: cell ? cell.map(p => [round(p[0], 2), round(p[1], 2)]) : null,
+    });
+  }
+
+  testCases.push({
+    name: "voronoi_airports",
+    description: "Voronoi cells for projected airport locations",
+    layout: { width, height },
+    point_count: airports.length,
+    cell_count: cells.filter(c => c.cell_vertices).length,
+    cells,
+  });
+
+  writeGolden('voronoi_airports.json', createGoldenFile(
+    "https://observablehq.com/@d3/world-airports-voronoi", "d3-delaunay", "voronoi_airports", testCases));
+}
+
+// ============================================================================
+// HORIZON CHART — https://observablehq.com/@d3/horizon-chart/2
+// ============================================================================
+
+function generateHorizonChartObservable() {
+  const testCases = [];
+
+  // Deterministic signal data
+  const n = 200;
+  const bands = 4;
+  const data = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const v = round(20 * Math.sin(t * 4 * Math.PI) + 10 * Math.cos(t * 7 * Math.PI) + 5 * Math.sin(t * 13 * Math.PI), 4);
+    data.push(v);
+  }
+
+  const maxAbs = d3.max(data, d => Math.abs(d));
+  const step = maxAbs / bands;
+
+  // Compute band values
+  const bandData = [];
+  for (let b = 0; b < bands; b++) {
+    const bandValues = data.map(v => {
+      const remainder = Math.abs(v) - b * step;
+      return round(Math.max(0, Math.min(step, remainder)), 6);
+    });
+    bandData.push({ band: b, values: bandValues });
+  }
+
+  testCases.push({
+    name: "horizon_chart",
+    description: "Multi-band horizon chart",
+    data_count: n,
+    bands,
+    max_abs: round(maxAbs),
+    step: round(step),
+    data: data.slice(0, 20), // First 20 for validation
+    band_data: bandData,
+  });
+
+  writeGolden('horizon_chart.json', createGoldenFile(
+    "https://observablehq.com/@d3/horizon-chart/2", "d3-shape", "horizon_chart", testCases));
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -1392,6 +1713,11 @@ const generators = {
   pie: generatePieChartObservable,
   donut: generateDonutChartObservable,
   parallel_sets: generateParallelSetsObservable,
+  difference_chart: generateDifferenceChartObservable,
+  ridgeline: generateRidgelineObservable,
+  radial_tree: generateRadialTreeObservable,
+  voronoi_airports: generateVoronoiAirportsObservable,
+  horizon_chart: generateHorizonChartObservable,
 };
 
 const args = process.argv.slice(2);

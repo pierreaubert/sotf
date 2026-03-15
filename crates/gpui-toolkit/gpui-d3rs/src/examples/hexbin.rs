@@ -2,6 +2,7 @@
 //!
 //! Demonstrates: `LogScale`, `Hexbin` binning through projected coordinates.
 
+use crate::color::{D3Color, SequentialScheme};
 use crate::hexbin::Hexbin as HexbinLayout;
 use crate::scale::{LogScale, Scale};
 
@@ -20,6 +21,7 @@ pub struct BinResult {
     pub x: f64,
     pub y: f64,
     pub count: usize,
+    pub color: D3Color,
 }
 
 /// Compute hexbin from (carat, price) data using log scales.
@@ -61,12 +63,19 @@ pub fn compute(data: &[(f64, f64)]) -> HexbinResult {
 
     let bins = hex.bin(projected);
 
+    let max_count = bins.iter().map(|b| b.len()).max().unwrap_or(1);
+    let color_scale = SequentialScheme::bu_pu();
+
     let bin_results: Vec<BinResult> = bins
         .iter()
-        .map(|b| BinResult {
-            x: b.x,
-            y: b.y,
-            count: b.len(),
+        .map(|b| {
+            let t = b.len() as f64 / max_count as f64;
+            BinResult {
+                x: b.x,
+                y: b.y,
+                count: b.len(),
+                color: color_scale.get(t),
+            }
         })
         .collect();
 

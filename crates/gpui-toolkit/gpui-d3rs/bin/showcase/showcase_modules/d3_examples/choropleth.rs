@@ -60,6 +60,7 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .w(px(width))
                 .h(px(height))
                 .bg(rgb(0xaadaff)) // Ocean color
+                .overflow_hidden()
                 .relative()
                 .child(canvas(
                     move |bounds, _, _| {

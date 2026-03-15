@@ -45,7 +45,9 @@ pub fn compute(names: &[String], matrix: &[Vec<f64>]) -> ChordDiagramResult {
     let inner_radius = outer_radius - 10.0;
     let pad_angle = 10.0 / inner_radius;
 
-    let layout = ChordLayout::new().pad_angle(pad_angle);
+    let layout = ChordLayout::new()
+        .pad_angle(pad_angle)
+        .sort_subgroups(|a, b| b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal));
     let chord_result = layout.compute(matrix);
 
     ChordDiagramResult {

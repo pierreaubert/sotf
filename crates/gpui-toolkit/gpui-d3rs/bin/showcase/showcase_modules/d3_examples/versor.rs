@@ -115,6 +115,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .w(px(width))
                 .h(px(height))
                 .bg(rgb(0xf0f0f0))
+                .overflow_hidden()
                 .relative()
                 // Mouse event listeners
                 .on_mouse_down(

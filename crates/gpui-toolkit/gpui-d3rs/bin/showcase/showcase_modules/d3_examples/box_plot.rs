@@ -1,17 +1,50 @@
 //! Box Plot -- Observable example using d3rs::examples::box_plot
+//!
+//! Demonstrates idiomatic d3rs usage: `BandScale` for groups, `LinearScale` for y-axis,
+//! `PathBuilder` for box/whisker/outlier paths, `d3rs_path_to_gpui_simple` for rendering.
 use crate::ShowcaseApp;
-use d3rs::scale::{LinearScale, Scale};
+use d3rs::color::ColorScheme;
+use d3rs::scale::{BandScale, LinearScale, Scale};
+use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
 
+const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
+
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    let data = d3rs::examples::box_plot::default_data();
+    // Load real diamonds data, bin by carat range for box plot groups
+    let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV);
+    let mut binned: std::collections::BTreeMap<String, Vec<f64>> = std::collections::BTreeMap::new();
+    for row in &rows {
+        let carat: f64 = row.get("carat").and_then(|s| s.parse().ok()).unwrap_or(0.0);
+        let price: f64 = row.get("price").and_then(|s| s.parse().ok()).unwrap_or(0.0);
+        if carat <= 0.0 || price <= 0.0 {
+            continue;
+        }
+        // Bin by carat range: 0-0.5, 0.5-1, 1-1.5, 1.5-2, 2-3, 3+
+        let group = if carat < 0.5 {
+            "0-0.5"
+        } else if carat < 1.0 {
+            "0.5-1"
+        } else if carat < 1.5 {
+            "1-1.5"
+        } else if carat < 2.0 {
+            "1.5-2"
+        } else if carat < 3.0 {
+            "2-3"
+        } else {
+            "3+"
+        };
+        binned.entry(group.to_string()).or_default().push(price);
+    }
+    let data: Vec<(String, Vec<f64>)> = binned.into_iter().collect();
     let result = d3rs::examples::box_plot::compute(&data);
 
-    let box_color = rgb(0x4e79a7);
-    let median_color = rgb(0xe15759);
+    let scheme = ColorScheme::tableau10();
+    let box_color = scheme.color(0).to_rgba();    // Blue
+    let median_color = scheme.color(2).to_rgba();  // Red
     let whisker_color = rgb(0x333333);
-    let outlier_color = rgb(0xf28e2b);
+    let outlier_color = scheme.color(1).to_rgba(); // Orange
 
     let width = 700.0_f64;
     let height = 450.0_f64;
@@ -22,22 +55,24 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let chart_width = width - margin_left - margin_right;
     let chart_height = height - margin_top - margin_bottom;
 
-    // Scale from compute's coordinate space
-    let compute_margin_left = 40.0;
-    let compute_chart_width = result.width - compute_margin_left - 20.0;
-    let bar_scale_x = chart_width / compute_chart_width;
-    let bw = result.bandwidth * bar_scale_x;
+    // Use d3rs BandScale for group positions
+    let group_names: Vec<String> = result.groups.iter().map(|g| g.group.clone()).collect();
+    let band = BandScale::new()
+        .domain(group_names.clone())
+        .range(0.0, chart_width)
+        .padding_inner(0.2);
+    let bw = band.bandwidth();
 
     let y_scale = LinearScale::new()
         .domain(result.y_domain[0] - 5.0, result.y_domain[1] + 5.0)
         .range(chart_height, 0.0);
 
-    // Build all the geometry as paths
-    let mut all_paths: Vec<String> = Vec::new();
+    // Build all the geometry as d3rs Paths using D3PathBuilder
+    let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
     let mut all_colors: Vec<Hsla> = Vec::new();
 
-    for (gi, group) in result.groups.iter().enumerate() {
-        let band_x = (result.band_positions[gi] - compute_margin_left) * bar_scale_x;
+    for group in &result.groups {
+        let band_x = band.scale(&group.group).unwrap_or(0.0);
         let box_x = band_x + bw * 0.15;
         let box_w = bw * 0.7;
 
@@ -47,25 +82,29 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         let top = q1_y.min(q3_y);
         let bottom = q1_y.max(q3_y);
         let box_h = (bottom - top).max(1.0);
-        all_paths.push(format!(
-            "M {} {} L {} {} L {} {} L {} {} Z",
-            box_x, top,
-            box_x + box_w, top,
-            box_x + box_w, top + box_h,
-            box_x, top + box_h
-        ));
+        d3_paths.push(
+            D3PathBuilder::new()
+                .move_to(box_x, top)
+                .line_to(box_x + box_w, top)
+                .line_to(box_x + box_w, top + box_h)
+                .line_to(box_x, top + box_h)
+                .close_path()
+                .build(),
+        );
         all_colors.push(box_color.into());
 
         // Median line
         let med_y = y_scale.scale(group.median);
         let line_h = 2.0;
-        all_paths.push(format!(
-            "M {} {} L {} {} L {} {} L {} {} Z",
-            box_x, med_y - line_h / 2.0,
-            box_x + box_w, med_y - line_h / 2.0,
-            box_x + box_w, med_y + line_h / 2.0,
-            box_x, med_y + line_h / 2.0
-        ));
+        d3_paths.push(
+            D3PathBuilder::new()
+                .move_to(box_x, med_y - line_h / 2.0)
+                .line_to(box_x + box_w, med_y - line_h / 2.0)
+                .line_to(box_x + box_w, med_y + line_h / 2.0)
+                .line_to(box_x, med_y + line_h / 2.0)
+                .close_path()
+                .build(),
+        );
         all_colors.push(median_color.into());
 
         let whisker_x = band_x + bw * 0.5;
@@ -75,61 +114,71 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         let wl_y = y_scale.scale(group.whisker_low);
         let wl_top = wl_y.min(bottom);
         let wl_bottom = wl_y.max(bottom);
-        all_paths.push(format!(
-            "M {} {} L {} {} L {} {} L {} {} Z",
-            whisker_x - whisker_w / 2.0, wl_top,
-            whisker_x + whisker_w / 2.0, wl_top,
-            whisker_x + whisker_w / 2.0, wl_bottom,
-            whisker_x - whisker_w / 2.0, wl_bottom
-        ));
+        d3_paths.push(
+            D3PathBuilder::new()
+                .move_to(whisker_x - whisker_w / 2.0, wl_top)
+                .line_to(whisker_x + whisker_w / 2.0, wl_top)
+                .line_to(whisker_x + whisker_w / 2.0, wl_bottom)
+                .line_to(whisker_x - whisker_w / 2.0, wl_bottom)
+                .close_path()
+                .build(),
+        );
         all_colors.push(whisker_color.into());
 
         // Whisker: high vertical line
         let wh_y = y_scale.scale(group.whisker_high);
         let wh_top = wh_y.min(top);
         let wh_bottom = wh_y.max(top);
-        all_paths.push(format!(
-            "M {} {} L {} {} L {} {} L {} {} Z",
-            whisker_x - whisker_w / 2.0, wh_top,
-            whisker_x + whisker_w / 2.0, wh_top,
-            whisker_x + whisker_w / 2.0, wh_bottom,
-            whisker_x - whisker_w / 2.0, wh_bottom
-        ));
+        d3_paths.push(
+            D3PathBuilder::new()
+                .move_to(whisker_x - whisker_w / 2.0, wh_top)
+                .line_to(whisker_x + whisker_w / 2.0, wh_top)
+                .line_to(whisker_x + whisker_w / 2.0, wh_bottom)
+                .line_to(whisker_x - whisker_w / 2.0, wh_bottom)
+                .close_path()
+                .build(),
+        );
         all_colors.push(whisker_color.into());
 
         // Whisker caps (horizontal lines)
         let cap_w = bw * 0.3;
         let cap_h = 1.5;
         // Low cap
-        all_paths.push(format!(
-            "M {} {} L {} {} L {} {} L {} {} Z",
-            whisker_x - cap_w / 2.0, wl_y - cap_h / 2.0,
-            whisker_x + cap_w / 2.0, wl_y - cap_h / 2.0,
-            whisker_x + cap_w / 2.0, wl_y + cap_h / 2.0,
-            whisker_x - cap_w / 2.0, wl_y + cap_h / 2.0
-        ));
+        d3_paths.push(
+            D3PathBuilder::new()
+                .move_to(whisker_x - cap_w / 2.0, wl_y - cap_h / 2.0)
+                .line_to(whisker_x + cap_w / 2.0, wl_y - cap_h / 2.0)
+                .line_to(whisker_x + cap_w / 2.0, wl_y + cap_h / 2.0)
+                .line_to(whisker_x - cap_w / 2.0, wl_y + cap_h / 2.0)
+                .close_path()
+                .build(),
+        );
         all_colors.push(whisker_color.into());
         // High cap
-        all_paths.push(format!(
-            "M {} {} L {} {} L {} {} L {} {} Z",
-            whisker_x - cap_w / 2.0, wh_y - cap_h / 2.0,
-            whisker_x + cap_w / 2.0, wh_y - cap_h / 2.0,
-            whisker_x + cap_w / 2.0, wh_y + cap_h / 2.0,
-            whisker_x - cap_w / 2.0, wh_y + cap_h / 2.0
-        ));
+        d3_paths.push(
+            D3PathBuilder::new()
+                .move_to(whisker_x - cap_w / 2.0, wh_y - cap_h / 2.0)
+                .line_to(whisker_x + cap_w / 2.0, wh_y - cap_h / 2.0)
+                .line_to(whisker_x + cap_w / 2.0, wh_y + cap_h / 2.0)
+                .line_to(whisker_x - cap_w / 2.0, wh_y + cap_h / 2.0)
+                .close_path()
+                .build(),
+        );
         all_colors.push(whisker_color.into());
 
         // Outlier dots (small diamonds)
         for &val in &group.outliers {
             let oy = y_scale.scale(val);
             let dot_r = 3.0;
-            all_paths.push(format!(
-                "M {} {} L {} {} L {} {} L {} {} Z",
-                whisker_x, oy - dot_r,
-                whisker_x + dot_r, oy,
-                whisker_x, oy + dot_r,
-                whisker_x - dot_r, oy
-            ));
+            d3_paths.push(
+                D3PathBuilder::new()
+                    .move_to(whisker_x, oy - dot_r)
+                    .line_to(whisker_x + dot_r, oy)
+                    .line_to(whisker_x, oy + dot_r)
+                    .line_to(whisker_x - dot_r, oy)
+                    .close_path()
+                    .build(),
+            );
             all_colors.push(outlier_color.into());
         }
     }
@@ -146,13 +195,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .collect();
 
     // Group labels
-    let group_labels: Vec<Div> = result
-        .groups
+    let group_labels: Vec<Div> = group_names
         .iter()
-        .enumerate()
-        .map(|(gi, g)| {
-            let band_x =
-                margin_left + (result.band_positions[gi] - compute_margin_left) * bar_scale_x;
+        .map(|name| {
+            let band_x = margin_left + band.scale(name).unwrap_or(0.0);
             div()
                 .absolute()
                 .left(px(band_x as f32))
@@ -161,7 +207,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .flex()
                 .justify_center()
                 .text_xs()
-                .child(format!("Group {}", g.group))
+                .child(format!("Group {}", name))
         })
         .collect();
 
@@ -225,9 +271,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .child(
                             canvas(
                                 move |bounds, _, _| {
-                                    all_paths
+                                    d3_paths
                                         .iter()
-                                        .map(|d| super::path_utils::parse_svg_path(d, bounds))
+                                        .map(|p| {
+                                            super::path_utils::d3rs_path_to_gpui_simple(
+                                                p, bounds, 0.0, 0.0,
+                                            )
+                                        })
                                         .collect::<Vec<_>>()
                                 },
                                 move |_bounds, paths, window, _| {

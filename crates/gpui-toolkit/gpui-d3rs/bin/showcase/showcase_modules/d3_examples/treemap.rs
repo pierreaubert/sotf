@@ -411,21 +411,9 @@ fn find_best_row(
     (best_count, final_sum)
 }
 
-/// Get color for a category index using Tableau10 scheme
+/// Get color for a category index using d3rs Tableau10 scheme
 fn category_color(index: usize) -> D3Color {
-    let colors = [
-        0x4e79a7, // blue
-        0xf28e2c, // orange
-        0xe15759, // red
-        0x76b7b2, // teal
-        0x59a14f, // green
-        0xedc949, // yellow
-        0xaf7aa1, // purple
-        0xff9da7, // pink
-        0x9c755f, // brown
-        0xbab0ab, // gray
-    ];
-    D3Color::from_hex(colors[index % colors.len()])
+    d3rs::color::ColorScheme::tableau10().color(index)
 }
 
 pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {

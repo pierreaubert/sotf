@@ -333,10 +333,9 @@ impl Stack {
                         let sij1 = series[i].values[j - 1][1] - series[i].values[j - 1][0];
                         let mut s3 = (sij0 - sij1) / 2.0;
 
-                        for k in 0..i {
-                            let skj0 = series[k].values[j][1] - series[k].values[j][0];
-                            let skj1 =
-                                series[k].values[j - 1][1] - series[k].values[j - 1][0];
+                        for sk in &series[..i] {
+                            let skj0 = sk.values[j][1] - sk.values[j][0];
+                            let skj1 = sk.values[j - 1][1] - sk.values[j - 1][0];
                             s3 += skj0 - skj1;
                         }
 

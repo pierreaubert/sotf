@@ -1,12 +1,12 @@
 //! Force-Directed Graph — <https://observablehq.com/@d3/force-directed-graph>
 //!
-//! Demonstrates: `ForceSimulation` with charge and center forces.
+//! Demonstrates: `ForceSimulation` with charge, link, and center forces.
 //!
-//! Note: d3rs force simulation has limited forces (center + many-body only,
-//! no link force). The simulation validates convergence rather than exact
+//! Note: The simulation validates convergence rather than exact
 //! positions (non-deterministic initial positions).
 
-use crate::force::{ForceCenter, ForceManyBody, Simulation, SimulationNode};
+use crate::force::{ForceCenter, ForceLink, ForceManyBody, Simulation, SimulationNode};
+use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -23,6 +23,46 @@ pub struct LinkData {
     pub source: String,
     pub target: String,
     pub value: usize,
+}
+
+/// JSON format matching the miserables.json file.
+#[derive(Deserialize)]
+struct JsonGraph {
+    nodes: Vec<JsonNode>,
+    links: Vec<JsonLink>,
+}
+
+#[derive(Deserialize)]
+struct JsonNode {
+    id: String,
+    group: usize,
+}
+
+#[derive(Deserialize)]
+struct JsonLink {
+    source: String,
+    target: String,
+    value: usize,
+}
+
+/// Load node and link data from a JSON file (miserables.json format).
+pub fn load_json(json_str: &str) -> (Vec<(String, usize)>, Vec<LinkData>) {
+    let graph: JsonGraph = serde_json::from_str(json_str).expect("invalid graph JSON");
+    let nodes = graph
+        .nodes
+        .into_iter()
+        .map(|n| (n.id, n.group))
+        .collect();
+    let links = graph
+        .links
+        .into_iter()
+        .map(|l| LinkData {
+            source: l.source,
+            target: l.target,
+            value: l.value,
+        })
+        .collect();
+    (nodes, links)
 }
 
 #[derive(Debug)]
@@ -75,14 +115,33 @@ pub fn compute(
     links: &[LinkData],
     iterations: usize,
 ) -> ForceGraphResult {
+    // Initialize nodes in a phyllotaxis spiral to avoid coincident positions
+    // (D3.js does the same — coincident nodes cause force explosions)
+    let golden_angle = std::f64::consts::PI * (3.0 - 5.0_f64.sqrt());
     let nodes: Vec<Rc<RefCell<SimulationNode>>> = node_data
         .iter()
         .enumerate()
-        .map(|(i, _)| SimulationNode::new(i, 0.0, 0.0))
+        .map(|(i, _)| {
+            let r = (i as f64).sqrt() * 10.0;
+            let theta = i as f64 * golden_angle;
+            SimulationNode::new(i, r * theta.cos(), r * theta.sin())
+        })
+        .collect();
+
+    // Build link index pairs from node names
+    let node_names: Vec<&str> = node_data.iter().map(|(n, _)| n.as_str()).collect();
+    let link_pairs: Vec<(usize, usize)> = links
+        .iter()
+        .filter_map(|l| {
+            let si = node_names.iter().position(|&n| n == l.source)?;
+            let ti = node_names.iter().position(|&n| n == l.target)?;
+            Some((si, ti))
+        })
         .collect();
 
     let mut sim = Simulation::new(nodes)
         .force(Box::new(ForceManyBody::new()))
+        .force(Box::new(ForceLink::new(link_pairs).distance(30.0)))
         .force(Box::new(ForceCenter::new(0.0, 0.0)));
 
     for _ in 0..iterations {

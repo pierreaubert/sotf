@@ -11,11 +11,19 @@
 
 pub mod box_plot;
 pub mod chord;
+pub mod circle_packing;
+pub mod difference_chart;
 pub mod donut_chart;
 pub mod force_directed;
 pub mod hexbin;
 pub mod line_chart;
+pub mod parallel_sets;
 pub mod pie_chart;
+pub mod radial_tree;
+pub mod ridgeline;
+pub mod sankey;
 pub mod stacked_area;
 pub mod stacked_bar;
+pub mod sunburst;
+pub mod voronoi_airports;
 pub mod streamgraph;

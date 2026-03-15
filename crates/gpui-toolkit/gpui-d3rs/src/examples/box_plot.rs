@@ -2,6 +2,7 @@
 //!
 //! Demonstrates: `d3.quantile`, IQR-based whiskers, `BandScale`, `LinearScale`.
 
+use crate::array::statistics::quantile_sorted;
 use crate::scale::BandScale;
 
 #[derive(Debug, Clone)]
@@ -27,24 +28,6 @@ pub struct BoxPlotResult {
     pub band_positions: Vec<f64>,
     pub bandwidth: f64,
     pub y_domain: [f64; 2],
-}
-
-/// Compute quartile using the same algorithm as D3.js (linear interpolation).
-fn quantile_sorted(sorted: &[f64], p: f64) -> f64 {
-    if sorted.is_empty() {
-        return f64::NAN;
-    }
-    if sorted.len() == 1 {
-        return sorted[0];
-    }
-    let h = (sorted.len() - 1) as f64 * p;
-    let i = h.floor() as usize;
-    let frac = h - i as f64;
-    if i + 1 < sorted.len() {
-        sorted[i] + frac * (sorted[i + 1] - sorted[i])
-    } else {
-        sorted[i]
-    }
 }
 
 /// Default data: 5 groups with varying distributions.
@@ -87,9 +70,9 @@ pub fn compute(data: &[(String, Vec<f64>)]) -> BoxPlotResult {
             let mut values = raw_values.clone();
             values.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            let q1 = quantile_sorted(&values, 0.25);
-            let q2 = quantile_sorted(&values, 0.50);
-            let q3 = quantile_sorted(&values, 0.75);
+            let q1 = quantile_sorted(&values, 0.25).unwrap_or(f64::NAN);
+            let q2 = quantile_sorted(&values, 0.50).unwrap_or(f64::NAN);
+            let q3 = quantile_sorted(&values, 0.75).unwrap_or(f64::NAN);
             let iqr = q3 - q1;
             let min = values[0];
             let max = values[values.len() - 1];

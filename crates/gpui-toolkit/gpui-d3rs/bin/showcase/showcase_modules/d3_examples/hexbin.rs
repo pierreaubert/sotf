@@ -1,26 +1,32 @@
 //! Hexbin Chart -- Observable example using d3rs::examples::hexbin
 //!
-//! Renders hexagonal bins colored by density, matching the Observable @d3/hexbin example.
+//! Demonstrates idiomatic d3rs usage: `LogScale` for axes, `Hexbin` for binning,
+//! `PathBuilder` for hex polygons, `d3rs_path_to_gpui_simple` for rendering.
 use crate::ShowcaseApp;
+use d3rs::color::SequentialScheme;
+use d3rs::hexbin::Hexbin;
 use d3rs::scale::{LogScale, Scale};
+use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
 
+const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
+
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    // Generate diamond-like (carat, price) data — same distribution as golden test
-    let data: Vec<(f64, f64)> = (0..200)
-        .map(|i| {
-            let t = i as f64 / 199.0;
-            let carat = 0.2 + t * t * 4.8;
-            let base_price = 326.0 * (carat / 0.2_f64).powf(1.8);
-            let noise =
-                1.0 + 0.3 * (i as f64 * 7.3).sin() + 0.15 * (i as f64 * 13.1).cos();
-            let price = (base_price * noise).clamp(326.0, 18823.0);
-            (carat, price)
+    // Load real diamonds dataset (53,940 rows) via d3rs CSV parser
+    let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV);
+    let data: Vec<[f64; 2]> = rows
+        .iter()
+        .filter_map(|row| {
+            let carat: f64 = row.get("carat")?.parse().ok()?;
+            let price: f64 = row.get("price")?.parse().ok()?;
+            if carat > 0.0 && price > 0.0 {
+                Some([carat, price])
+            } else {
+                None
+            }
         })
         .collect();
-
-    let result = d3rs::examples::hexbin::compute(&data);
 
     let width = 700.0_f64;
     let height = 700.0_f64;
@@ -32,53 +38,56 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let plot_h = height - margin_top - margin_bottom;
 
     // Log scales mapping data domain to plot area
-    let x_scale = LogScale::new()
-        .domain(result.x_domain[0].max(0.1), result.x_domain[1])
-        .range(0.0, plot_w);
-    let y_scale = LogScale::new()
-        .domain(result.y_domain[0].max(100.0), result.y_domain[1])
-        .range(plot_h, 0.0);
+    let x_min = data.iter().map(|d| d[0]).fold(f64::MAX, f64::min).max(0.1);
+    let x_max = data.iter().map(|d| d[0]).fold(f64::MIN, f64::max);
+    let y_min = data.iter().map(|d| d[1]).fold(f64::MAX, f64::min).max(100.0);
+    let y_max = data.iter().map(|d| d[1]).fold(f64::MIN, f64::max);
 
-    // Rescale hex bins from compute's coordinate space (928x928) to our plot area
-    let compute_margin_left = 40.0;
-    let compute_margin_top = 20.0;
-    let compute_chart_w = result.width - compute_margin_left - 20.0;
-    let compute_chart_h = result.height - compute_margin_top - 20.0;
-    let sx = plot_w / compute_chart_w;
-    let sy = plot_h / compute_chart_h;
+    let x_scale = LogScale::new().domain(x_min, x_max).range(0.0, plot_w);
+    let y_scale = LogScale::new().domain(y_min, y_max).range(plot_h, 0.0);
 
-    let max_count = result.bins.iter().map(|b| b.count).max().unwrap_or(1);
-    let hex_r = result.hex_radius * sx.min(sy);
+    // Map data points into plot coordinates and use d3rs Hexbin for binning
+    // Smaller radius for the dense 53k dataset (matches Observable's radius=8 at 928px)
+    let hex_radius = (8.0 * plot_w / 928.0).max(4.0);
+    let mapped_data: Vec<[f64; 2]> = data
+        .iter()
+        .map(|d| [x_scale.scale(d[0]), y_scale.scale(d[1])])
+        .collect();
 
-    // Build a hexagon path for each bin (pointy-top like D3)
-    let mut hex_paths: Vec<String> = Vec::new();
+    let hexbin: Hexbin<[f64; 2]> = Hexbin::new()
+        .radius(hex_radius)
+        .extent(0.0, 0.0, plot_w, plot_h);
+    let bins = hexbin.bin(mapped_data);
+
+    let max_count = bins.iter().map(|b| b.len()).max().unwrap_or(1);
+    let data_count = data.len();
+    let bin_count = bins.len();
+
+    // Build a hexagon d3rs Path for each bin using D3PathBuilder (pointy-top like D3)
+    let bu_pu = SequentialScheme::bu_pu();
+    let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
     let mut hex_colors: Vec<Hsla> = Vec::new();
-    for bin in &result.bins {
-        let cx = (bin.x - compute_margin_left) * sx;
-        let cy = (bin.y - compute_margin_top) * sy;
-
-        let mut path_d = String::new();
+    for bin in &bins {
+        let cx = bin.x;
+        let cy = bin.y;
+        let mut builder = D3PathBuilder::new();
         for v in 0..6 {
             let angle = std::f64::consts::PI / 3.0 * v as f64 - std::f64::consts::FRAC_PI_2;
-            let px_val = cx + hex_r * angle.cos();
-            let py_val = cy + hex_r * angle.sin();
+            let px_val = cx + hex_radius * angle.cos();
+            let py_val = cy + hex_radius * angle.sin();
             if v == 0 {
-                path_d.push_str(&format!("M {:.1} {:.1}", px_val, py_val));
+                builder = builder.move_to(px_val, py_val);
             } else {
-                path_d.push_str(&format!(" L {:.1} {:.1}", px_val, py_val));
+                builder = builder.line_to(px_val, py_val);
             }
         }
-        path_d.push_str(" Z");
-        hex_paths.push(path_d);
+        builder = builder.close_path();
+        d3_paths.push(builder.build());
 
-        // Color: interpolateBuPu-style — light for few, deep purple for many
-        let t = bin.count as f32 / max_count as f32;
-        let color = hsla(0.7 - t * 0.15, 0.5 + t * 0.3, 0.88 - t * 0.50, 1.0);
-        hex_colors.push(color);
+        // Color: interpolateBuPu from d3rs sequential scheme
+        let t = bin.len() as f64 / max_count as f64;
+        hex_colors.push(bu_pu.get(t).to_rgba().into());
     }
-
-    let bin_count = result.bins.len();
-    let data_count = data.len();
 
     // Log-scale friendly ticks
     let x_ticks: Vec<f64> = vec![0.2, 0.5, 1.0, 2.0, 5.0];
@@ -110,17 +119,17 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child(
                     div().flex().items_center().gap_1()
-                        .child(div().size_3().bg(hsla(0.68, 0.55, 0.85, 1.0)))
+                        .child(div().size_3().bg(bu_pu.get(0.1).to_rgba()))
                         .child(div().text_xs().child("Few points")),
                 )
                 .child(
                     div().flex().items_center().gap_1()
-                        .child(div().size_3().bg(hsla(0.55, 0.80, 0.38, 1.0)))
+                        .child(div().size_3().bg(bu_pu.get(0.9).to_rgba()))
                         .child(div().text_xs().child("Many points")),
                 )
                 .child(
                     div().text_xs().text_color(rgb(0x999999))
-                        .child(format!("{} points → {} bins", data_count, bin_count)),
+                        .child(format!("{} points -> {} bins", data_count, bin_count)),
                 ),
         )
         .child(
@@ -223,9 +232,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .child(
                             canvas(
                                 move |bounds, _, _| {
-                                    hex_paths
+                                    d3_paths
                                         .iter()
-                                        .map(|d| super::path_utils::parse_svg_path(d, bounds))
+                                        .map(|p| {
+                                            super::path_utils::d3rs_path_to_gpui_simple(
+                                                p, bounds, 0.0, 0.0,
+                                            )
+                                        })
                                         .collect::<Vec<_>>()
                                 },
                                 move |_bounds, paths, window, _| {

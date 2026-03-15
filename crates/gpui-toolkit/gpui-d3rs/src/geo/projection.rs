@@ -84,6 +84,156 @@ impl Default for ProjectionConfig {
 }
 
 // ============================================================================
+// Sphere Rotation (matches D3's d3-geo/src/rotation.js)
+// ============================================================================
+
+/// 3D sphere rotation matching D3's `d3.geoRotation([λ, φ, γ])`.
+///
+/// Applies proper Euler rotation on the sphere:
+/// 1. Rotate longitude by λ (simple offset)
+/// 2. Rotate the sphere around the Y-axis by φ (latitude rotation)
+/// 3. Rotate around the new pole by γ (gamma/tilt)
+///
+/// This uses the exact same math as D3:
+/// - Convert to Cartesian (x, y, z)
+/// - Apply rotation matrix
+/// - Convert back to spherical (λ, φ)
+#[derive(Clone, Debug)]
+pub struct SphereRotation {
+    delta_lambda: f64,
+    delta_phi: f64,
+    delta_gamma: f64,
+    // Precomputed sin/cos for phi and gamma
+    cos_delta_phi: f64,
+    sin_delta_phi: f64,
+    cos_delta_gamma: f64,
+    sin_delta_gamma: f64,
+}
+
+impl SphereRotation {
+    /// Create a rotation from angles in radians.
+    pub fn from_radians(delta_lambda: f64, delta_phi: f64, delta_gamma: f64) -> Self {
+        Self {
+            delta_lambda,
+            delta_phi,
+            delta_gamma,
+            cos_delta_phi: delta_phi.cos(),
+            sin_delta_phi: delta_phi.sin(),
+            cos_delta_gamma: delta_gamma.cos(),
+            sin_delta_gamma: delta_gamma.sin(),
+        }
+    }
+
+    /// Create a rotation from angles in degrees.
+    /// D3 convention: rotate([λ, φ, γ]) means the globe is rotated so that
+    /// the point at (λ, φ) appears at the center. The internal rotation
+    /// negates φ and γ to match D3's "move the globe" semantics.
+    pub fn from_degrees(lambda_deg: f64, phi_deg: f64, gamma_deg: f64) -> Self {
+        Self::from_radians(radians(lambda_deg), radians(-phi_deg), radians(-gamma_deg))
+    }
+
+    /// Identity rotation (no-op).
+    pub fn identity() -> Self {
+        Self::from_radians(0.0, 0.0, 0.0)
+    }
+
+    /// Returns true if this is effectively a lambda-only rotation.
+    pub fn is_lambda_only(&self) -> bool {
+        self.delta_phi.abs() < EPSILON && self.delta_gamma.abs() < EPSILON
+    }
+
+    /// Apply the forward rotation to spherical coordinates (in radians).
+    ///
+    /// Input: (lambda, phi) in radians
+    /// Output: (rotated_lambda, rotated_phi) in radians
+    pub fn rotate(&self, lambda: f64, phi: f64) -> (f64, f64) {
+        // Step 1: longitude rotation
+        let lambda = lambda + self.delta_lambda;
+
+        if self.is_lambda_only() {
+            return (normalize_longitude(lambda), phi);
+        }
+
+        // Step 2 + 3: latitude and gamma rotation via Cartesian
+        let cos_phi = phi.cos();
+        let x = lambda.cos() * cos_phi;
+        let y = lambda.sin() * cos_phi;
+        let z = phi.sin();
+
+        // Rotate around Y-axis by delta_phi, then around new Z-axis by delta_gamma
+        // D3's formula: k = z * cos(Δφ) + x * sin(Δφ)
+        let k = z * self.cos_delta_phi + x * self.sin_delta_phi;
+
+        let out_lambda = (y * self.cos_delta_gamma - k * self.sin_delta_gamma)
+            .atan2(x * self.cos_delta_phi - z * self.sin_delta_phi);
+        let out_phi = (k * self.cos_delta_gamma + y * self.sin_delta_gamma)
+            .clamp(-1.0, 1.0)
+            .asin();
+
+        (normalize_longitude(out_lambda), out_phi)
+    }
+
+    /// Apply the inverse rotation to spherical coordinates (in radians).
+    pub fn invert(&self, lambda: f64, phi: f64) -> (f64, f64) {
+        if self.is_lambda_only() {
+            return (normalize_longitude(lambda - self.delta_lambda), phi);
+        }
+
+        let cos_phi = phi.cos();
+        let x = lambda.cos() * cos_phi;
+        let y = lambda.sin() * cos_phi;
+        let z = phi.sin();
+
+        // Inverse: reverse gamma, then reverse phi
+        let k = z * self.cos_delta_gamma - y * self.sin_delta_gamma;
+
+        let out_lambda = (y * self.cos_delta_gamma + z * self.sin_delta_gamma)
+            .atan2(x * self.cos_delta_phi + k * self.sin_delta_phi)
+            - self.delta_lambda;
+        let out_phi = (k * self.cos_delta_phi - x * self.sin_delta_phi)
+            .clamp(-1.0, 1.0)
+            .asin();
+
+        (normalize_longitude(out_lambda), out_phi)
+    }
+}
+
+/// Normalize longitude to [-π, π].
+fn normalize_longitude(lambda: f64) -> f64 {
+    let l = lambda % TAU;
+    if l > PI {
+        l - TAU
+    } else if l < -PI {
+        l + TAU
+    } else {
+        l
+    }
+}
+
+/// Build a SphereRotation from a ProjectionConfig's rotate + center fields.
+/// D3 applies: rotate first, then center offset.
+fn build_rotation(config: &ProjectionConfig) -> SphereRotation {
+    SphereRotation::from_degrees(config.rotate.0, config.rotate.1, config.rotate.2)
+}
+
+/// Apply rotation + center to input (lon, lat) in degrees.
+/// Returns (lambda, phi) in radians, ready for project_raw.
+fn apply_rotation(config: &ProjectionConfig, lon: f64, lat: f64) -> (f64, f64) {
+    let rotation = build_rotation(config);
+    let lambda = radians(lon - config.center.0);
+    let phi = radians(lat - config.center.1);
+    rotation.rotate(lambda, phi)
+}
+
+/// Invert rotation: from raw projection output (lambda, phi) in radians
+/// back to (lon, lat) in degrees.
+fn invert_rotation(config: &ProjectionConfig, lambda: f64, phi: f64) -> (f64, f64) {
+    let rotation = build_rotation(config);
+    let (rl, rp) = rotation.invert(lambda, phi);
+    (degrees(rl) + config.center.0, degrees(rp) + config.center.1)
+}
+
+// ============================================================================
 // Mercator Projection
 // ============================================================================
 
@@ -161,11 +311,8 @@ impl Mercator {
 
 impl Projection for Mercator {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        let lambda = radians(lon - self.config.center.0);
-        let phi = radians(lat - self.config.center.1);
-
+        let (lambda, phi) = apply_rotation(&self.config, lon, lat);
         let (x, y) = Self::project_raw(lambda, phi);
-
         (
             self.config.translate.0 + self.config.scale * x,
             self.config.translate.1 - self.config.scale * y,
@@ -175,13 +322,8 @@ impl Projection for Mercator {
     fn invert(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let x = (x - self.config.translate.0) / self.config.scale;
         let y = -(y - self.config.translate.1) / self.config.scale;
-
         let (lambda, phi) = Self::invert_raw(x, y);
-
-        Some((
-            degrees(lambda) + self.config.center.0,
-            degrees(phi) + self.config.center.1,
-        ))
+        Some(invert_rotation(&self.config, lambda, phi))
     }
 
     fn scale(&self) -> f64 {
@@ -274,9 +416,7 @@ impl Equirectangular {
 
 impl Projection for Equirectangular {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        let lambda = radians(lon - self.config.center.0);
-        let phi = radians(lat - self.config.center.1);
-
+        let (lambda, phi) = apply_rotation(&self.config, lon, lat);
         (
             self.config.translate.0 + self.config.scale * lambda,
             self.config.translate.1 - self.config.scale * phi,
@@ -286,11 +426,7 @@ impl Projection for Equirectangular {
     fn invert(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let lambda = (x - self.config.translate.0) / self.config.scale;
         let phi = -(y - self.config.translate.1) / self.config.scale;
-
-        Some((
-            degrees(lambda) + self.config.center.0,
-            degrees(phi) + self.config.center.1,
-        ))
+        Some(invert_rotation(&self.config, lambda, phi))
     }
 
     fn scale(&self) -> f64 {
@@ -398,11 +534,8 @@ impl Orthographic {
 
 impl Projection for Orthographic {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        let lambda = radians(lon - self.config.center.0 + self.config.rotate.0);
-        let phi = radians(lat - self.config.center.1 + self.config.rotate.1);
-
+        let (lambda, phi) = apply_rotation(&self.config, lon, lat);
         let (x, y) = Self::project_raw(lambda, phi);
-
         (
             self.config.translate.0 + self.config.scale * x,
             self.config.translate.1 - self.config.scale * y,
@@ -412,13 +545,7 @@ impl Projection for Orthographic {
     fn invert(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let x = (x - self.config.translate.0) / self.config.scale;
         let y = -(y - self.config.translate.1) / self.config.scale;
-
-        Self::invert_raw(x, y).map(|(lambda, phi)| {
-            (
-                degrees(lambda) + self.config.center.0 - self.config.rotate.0,
-                degrees(phi) + self.config.center.1 - self.config.rotate.1,
-            )
-        })
+        Self::invert_raw(x, y).map(|(lambda, phi)| invert_rotation(&self.config, lambda, phi))
     }
 
     fn scale(&self) -> f64 {
@@ -532,11 +659,18 @@ impl Stereographic {
 
 impl Projection for Stereographic {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        let lambda = radians(lon - self.config.center.0 + self.config.rotate.0);
-        let phi = radians(lat - self.config.center.1 + self.config.rotate.1);
+        let (lambda, phi) = apply_rotation(&self.config, lon, lat);
+
+        // Clip: angular distance from center = acos(cos(phi)*cos(lambda))
+        if let Some(clip_deg) = self.config.clip_angle {
+            let cos_dist = (phi.cos() * lambda.cos()).clamp(-1.0, 1.0);
+            let dist_deg = cos_dist.acos().to_degrees();
+            if dist_deg > clip_deg {
+                return (f64::NAN, f64::NAN);
+            }
+        }
 
         let (x, y) = Self::project_raw(lambda, phi);
-
         (
             self.config.translate.0 + self.config.scale * x,
             self.config.translate.1 - self.config.scale * y,
@@ -546,13 +680,8 @@ impl Projection for Stereographic {
     fn invert(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let x = (x - self.config.translate.0) / self.config.scale;
         let y = -(y - self.config.translate.1) / self.config.scale;
-
         let (lambda, phi) = Self::invert_raw(x, y);
-
-        Some((
-            degrees(lambda) + self.config.center.0 - self.config.rotate.0,
-            degrees(phi) + self.config.center.1 - self.config.rotate.1,
-        ))
+        Some(invert_rotation(&self.config, lambda, phi))
     }
 
     fn scale(&self) -> f64 {
@@ -656,11 +785,8 @@ impl TransverseMercator {
 
 impl Projection for TransverseMercator {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        let lambda = radians(lon - self.config.center.0);
-        let phi = radians(lat - self.config.center.1);
-
+        let (lambda, phi) = apply_rotation(&self.config, lon, lat);
         let (x, y) = Self::project_raw(lambda, phi);
-
         (
             self.config.translate.0 + self.config.scale * x,
             self.config.translate.1 - self.config.scale * y,
@@ -670,13 +796,8 @@ impl Projection for TransverseMercator {
     fn invert(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let x = (x - self.config.translate.0) / self.config.scale;
         let y = -(y - self.config.translate.1) / self.config.scale;
-
         let (lambda, phi) = Self::invert_raw(x, y);
-
-        Some((
-            degrees(lambda) + self.config.center.0,
-            degrees(phi) + self.config.center.1,
-        ))
+        Some(invert_rotation(&self.config, lambda, phi))
     }
 
     fn scale(&self) -> f64 {
@@ -815,11 +936,21 @@ impl ConicEqualArea {
 
 impl Projection for ConicEqualArea {
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        let lambda = radians(lon - self.config.center.0 + self.config.rotate.0);
-        let phi = radians(lat);
+        let (lambda, phi) = apply_rotation(&self.config, lon, lat);
 
-        let r = (self.c - 2.0 * self.n * phi.sin()).sqrt() / self.n;
+        let rho_sq = self.c - 2.0 * self.n * phi.sin();
+        // Clip: points where rho² < 0 are outside the projection domain
+        if rho_sq < 0.0 {
+            return (f64::NAN, f64::NAN);
+        }
+
+        let r = rho_sq.sqrt() / self.n;
         let theta = lambda * self.n;
+
+        // Clip: reject points that wrap around (|theta| > PI means behind the cone)
+        if theta.abs() > std::f64::consts::PI {
+            return (f64::NAN, f64::NAN);
+        }
 
         let x = r * theta.sin();
         let y = self.r0 - r * theta.cos();

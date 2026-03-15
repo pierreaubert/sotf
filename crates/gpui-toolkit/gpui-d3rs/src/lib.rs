@@ -68,6 +68,7 @@ pub mod legend;
 pub mod polygon;
 pub mod quadtree;
 pub mod random;
+pub mod sankey;
 pub mod shape;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod surface;
