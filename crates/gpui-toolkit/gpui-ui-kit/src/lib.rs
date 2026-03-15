@@ -139,6 +139,7 @@ pub use input::{
 };
 pub use number_input::{
     NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state,
+    is_number_input_editing,
 };
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};

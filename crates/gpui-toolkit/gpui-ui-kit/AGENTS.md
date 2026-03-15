@@ -380,6 +380,30 @@ let input = MyInput::new("my-id")
 - `#[field(default = "expr")]` - Custom default value expression
 - `#[field(skip)]` - Skip field entirely
 
+## NumberInput Text Editing in App Context
+
+NumberInput uses `RenderOnce` with thread-local state for editing. Three mechanisms interact to make text editing work inside a full application:
+
+### 1. Key Binding Bypass
+
+GPUI dispatches action key bindings **before** `on_key_down` handlers. If the app binds `-`→VolumeDown or `enter`→Enter, those bindings consume keystrokes before NumberInput sees them.
+
+The app uses `is_text_input_mode()` to switch the root element's `key_context` from `"PlayerView"` to `"TextInput"`, which prevents `PlayerView`-scoped bindings from matching. NumberInput exposes `is_number_input_editing()` (thread-local check) so the app can include NumberInput editing in this check:
+
+```rust
+pub(crate) fn is_text_input_mode(input_mode: InputMode) -> bool {
+    input_mode.is_text_input() || gpui_ui_kit::is_number_input_editing()
+}
+```
+
+### 2. Focus Handle Stability Across Re-renders
+
+`focus_handle.is_focused(window)` returns **false** during `RenderOnce::render()` because the old element is destroyed before the new one calls `.track_focus()`. Never use `is_focused()` during render to gate editing state — it will always clear it. Instead, trust the thread-local `state.editing` flag and use `window.on_focus_out()` for actual blur detection.
+
+### 3. Parent `on_key_down` Wrappers
+
+Never wrap a NumberInput (or Input) in a parent `div().on_key_down(|..| cx.stop_propagation())`. In GPUI, `on_key_down` handlers on parent elements in the dispatch path fire **before** the focused child's handler (capture phase in `dispatch_key_down_up_event`). The parent's `stop_propagation` prevents the NumberInput from receiving any keystrokes. NumberInput already calls `cx.stop_propagation()` in its own handler, which prevents further bubbling to global handlers.
+
 ## Dependencies
 
 - `gpui` - GPU-accelerated UI framework

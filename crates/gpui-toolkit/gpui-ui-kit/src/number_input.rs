@@ -64,6 +64,23 @@ thread_local! {
     static NUMBER_INPUT_EDIT_STATES: RefCell<HashMap<ElementId, Rc<RefCell<NumberEditState>>>> = RefCell::new(HashMap::new());
 }
 
+// Thread-local registry for focus-out subscriptions, keyed by element ID.
+// Kept alive to receive focus-out notifications.
+thread_local! {
+    static NUMBER_INPUT_FOCUS_SUBS: RefCell<HashMap<ElementId, Subscription>> = RefCell::new(HashMap::new());
+}
+
+/// Returns true if any NumberInput is currently in editing mode.
+/// Useful for parent views that need to suppress keybindings during text entry.
+pub fn is_number_input_editing() -> bool {
+    NUMBER_INPUT_EDIT_STATES.with(|states| {
+        states
+            .borrow()
+            .values()
+            .any(|state| state.borrow().editing)
+    })
+}
+
 /// Evict oldest entries from NumberInput thread-local storage if over the limit.
 fn trim_number_input_storage() {
     NUMBER_INPUT_FOCUS_HANDLES.with(|handles| {
@@ -79,6 +96,14 @@ fn trim_number_input_storage() {
         while states.len() > MAX_NUMBER_INPUT_STATES {
             if let Some(key) = states.keys().next().cloned() {
                 states.remove(&key);
+            }
+        }
+    });
+    NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
+        let mut subs = subs.borrow_mut();
+        while subs.len() > MAX_NUMBER_INPUT_STATES {
+            if let Some(key) = subs.keys().next().cloned() {
+                subs.remove(&key);
             }
         }
     });
@@ -100,6 +125,9 @@ pub fn cleanup_number_input_state(id: &ElementId) {
     });
     NUMBER_INPUT_EDIT_STATES.with(|states| {
         states.borrow_mut().remove(id);
+    });
+    NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
+        subs.borrow_mut().remove(id);
     });
     trim_number_input_storage();
 }
@@ -646,36 +674,38 @@ impl RenderOnce for NumberInput {
                 .clone()
         });
 
-        // Check if we're focused - editing is only active when focused
-        let is_focused = focus_handle.is_focused(window);
-
-        // A4 fix: if we were editing but lost focus, defer the on_change call
-        // so it runs after rendering completes rather than inside render().
+        // Register a focus-out subscription to clear editing state when focus is
+        // actually lost (e.g. user clicks elsewhere). We register this once per
+        // element ID and keep the subscription alive in thread-local storage.
         {
-            let mut state = edit_state.borrow_mut();
-            if state.editing && !is_focused {
-                let parsed = Self::parse_value_str(&state.text, self.unit.as_ref(), min, max);
-                // Clear editing state immediately (safe inside render)
-                state.editing = false;
-                state.text.clear();
-                state.text_selected = false;
-                drop(state);
-                // Defer the side-effecting on_change call to after render
-                if let Some(value) = parsed
-                    && let Some(handler) = self.on_change.as_ref()
-                {
-                    // SAFETY: we re-read on_change below; clone the Rc wrapper
-                    // by wrapping in cx.defer which runs after the render pass.
-                    let _ = (handler, value); // handler consumed below via on_change_rc
-                }
-            } else {
-                drop(state);
+            let needs_sub = NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
+                !subs.borrow().contains_key(&self.id)
+            });
+            if needs_sub {
+                let edit_state_for_blur = edit_state.clone();
+                let sub = window.on_focus_out(&focus_handle, cx, move |_event, window, _cx| {
+                    let mut state = edit_state_for_blur.borrow_mut();
+                    if state.editing {
+                        state.editing = false;
+                        state.text.clear();
+                        state.text_selected = false;
+                        drop(state);
+                        window.refresh();
+                    }
+                });
+                let id = self.id.clone();
+                NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
+                    subs.borrow_mut().insert(id, sub);
+                });
             }
         }
 
-        // Read current edit state
+        // Read current edit state — trust the thread-local state directly.
+        // Focus loss is handled by on_focus_out (registered above), not during render,
+        // because is_focused() returns false during re-render before the element
+        // is re-associated with the focus handle via track_focus().
         let state = edit_state.borrow();
-        let editing = state.editing && is_focused; // Only edit when focused
+        let editing = state.editing;
         let text_selected = state.text_selected;
         let edit_text = if editing {
             state.text.clone()
@@ -694,19 +724,6 @@ impl RenderOnce for NumberInput {
 
         // Wrap handler in Rc for sharing
         let on_change_rc = self.on_change.map(Rc::new);
-
-        // A4 fix: on focus loss, only clear editing state here in render().
-        // The on_change call is intentionally omitted - callers should use the
-        // on_key_down Enter handler to confirm values. Calling on_change inside
-        // render() violates GPUI's rendering model.
-        {
-            let mut state = edit_state.borrow_mut();
-            if state.editing && !is_focused {
-                state.editing = false;
-                state.text.clear();
-                state.text_selected = false;
-            }
-        }
 
         let mut container = div().flex().flex_col().gap_1();
 
@@ -1062,6 +1079,7 @@ impl RenderOnce for NumberInput {
                     }
                 }
             });
+
         }
 
         input_row = input_row.child(value_field);
