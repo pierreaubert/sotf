@@ -331,6 +331,7 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()> {
         args.min_db,
         args.max_db,
         None, // No fixed crossover frequencies - optimize them
+        args.seed,
     )
     .map_err(|e| anyhow!("{}", e))
     .context("Driver optimization failed")?;

@@ -69,6 +69,7 @@ pub fn optimize_multisub(
         config.max_iter,
         config.min_db,
         config.max_db,
+        config.seed,
     )?;
 
     // Compute combined response

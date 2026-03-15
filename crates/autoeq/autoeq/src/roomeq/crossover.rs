@@ -178,6 +178,7 @@ pub fn optimize_crossover(
             config.min_db,
             config.max_db,
             fixed_freqs.clone(),
+            config.seed,
         )?;
 
         match best_opt {

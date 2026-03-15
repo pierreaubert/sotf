@@ -2,9 +2,6 @@
 //!
 //! These tests load pre-computed BEM simulation data and verify that
 //! the roomeq optimizer can improve the simulated frequency responses.
-//!
-//! Multi-sub scenarios are currently ignored due to a pre-existing bounds
-//! issue in the multi-sub optimizer (optim.rs:449 slice index out of range).
 
 use autoeq::roomeq::{RoomConfig, optimize_room};
 use std::path::PathBuf;
@@ -39,7 +36,7 @@ fn run_roomeq_on_generated(scenario_name: &str) {
     }
 
     // Reduce iterations for faster tests
-    config.optimizer.max_iter = 1000;
+    config.optimizer.max_iter = 2000;
     config.optimizer.refine = false;
     // Use fixed seed for reproducible results
     config.optimizer.seed = Some(42);
@@ -135,36 +132,28 @@ fn test_roomeq_medium_multi_seat() {
 }
 
 // --- Multi-sub scenarios ---
-// These are currently ignored due to a pre-existing bug in the multi-sub
-// optimizer where the parameter vector slice bounds don't match n_drivers
-// (optim.rs:449: "range end index N out of range for slice of length M")
 
 #[test]
-#[ignore = "multi-sub optimizer has pre-existing slice bounds bug"]
 fn test_roomeq_small_multi_sub_2() {
     run_roomeq_on_generated("small_multi_sub_2");
 }
 
 #[test]
-#[ignore = "multi-sub optimizer has pre-existing slice bounds bug"]
 fn test_roomeq_medium_multi_sub_4() {
     run_roomeq_on_generated("medium_multi_sub_4");
 }
 
 #[test]
-#[ignore = "multi-sub optimizer has pre-existing slice bounds bug"]
 fn test_roomeq_large_multi_sub_4() {
     run_roomeq_on_generated("large_multi_sub_4");
 }
 
 #[test]
-#[ignore = "multi-sub optimizer has pre-existing slice bounds bug"]
 fn test_roomeq_large_multi_seat_2_1() {
     run_roomeq_on_generated("large_multi_seat_2_1");
 }
 
 #[test]
-#[ignore = "multi-sub optimizer has pre-existing slice bounds bug"]
 fn test_roomeq_medium_multi_sub_multi_seat() {
     run_roomeq_on_generated("medium_multi_sub_multi_seat");
 }

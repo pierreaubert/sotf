@@ -1286,6 +1286,7 @@ fn create_driver_optimization_args(
     max_iter: usize,
     min_db: f64,
     max_db: f64,
+    seed: Option<u64>,
 ) -> crate::cli::Args {
     use crate::LossType;
     use crate::cli::{Args, PeqModel};
@@ -1333,7 +1334,7 @@ fn create_driver_optimization_args(
         driver4: None,
         crossover_type: "linkwitzriley4".to_string(),
         parallel_threads: num_cpus::get(),
-        seed: None,
+        seed,
         qa: None,
     }
 }
@@ -1370,6 +1371,8 @@ fn create_driver_optimization_args(
 ///     5000,     // max_iter
 ///     -12.0,    // min_db
 ///     12.0,     // max_db
+///     None,     // fixed_freqs
+///     None,     // seed
 /// )?;
 /// log::info!("Gains: {:?}", result.gains);
 /// log::info!("Crossover freqs: {:?}", result.crossover_freqs);
@@ -1385,6 +1388,7 @@ pub fn optimize_drivers_crossover(
     min_db: f64,
     max_db: f64,
     fixed_freqs: Option<Vec<f64>>,
+    seed: Option<u64>,
 ) -> Result<DriverOptimizationResult, Box<dyn std::error::Error>> {
     let n_drivers = drivers_data.drivers.len();
 
@@ -1397,6 +1401,7 @@ pub fn optimize_drivers_crossover(
         max_iter,
         min_db,
         max_db,
+        seed,
     );
 
     // Setup objective data with optional fixed frequencies
@@ -1525,6 +1530,7 @@ pub fn optimize_multisub(
     max_iter: usize,
     min_db: f64,
     max_db: f64,
+    seed: Option<u64>,
 ) -> Result<DriverOptimizationResult, Box<dyn std::error::Error>> {
     let n_drivers = drivers_data.drivers.len();
 
@@ -1537,6 +1543,7 @@ pub fn optimize_multisub(
         max_iter,
         min_db,
         max_db,
+        seed,
     );
     args.loss = crate::LossType::MultiSubFlat;
 

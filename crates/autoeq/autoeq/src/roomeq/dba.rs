@@ -89,6 +89,7 @@ pub fn optimize_dba(
     args.max_freq = config.max_freq;
     args.maxeval = config.max_iter;
     args.algo = config.algorithm.clone();
+    args.seed = config.seed;
     args.loss = crate::LossType::MultiSubFlat;
 
     let objective_data =
