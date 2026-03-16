@@ -54,7 +54,7 @@ fn test_e_constant(
 
     // Build system
     let system = build_tbem_system(&elements, &mesh.nodes, &physics);
-    let n = system.num_dofs;
+    let _n = system.num_dofs;
 
     // Apply matrix to constant vector p = [1, 1, ..., 1]
     // A * [1] = row sums of A

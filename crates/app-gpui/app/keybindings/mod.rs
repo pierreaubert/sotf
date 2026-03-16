@@ -123,30 +123,30 @@ fn default_bindings() -> Vec<KeyBinding> {
         // Sort and filter cycling
         KeyBinding::new("s", actions::CycleSortOrder, Some("PlayerView")),
         KeyBinding::new("c", actions::CycleChannelFilter, Some("PlayerView")),
-        // Navigation - arrow keys can remain global (useful for navigation even in search)
-        KeyBinding::new("left", actions::SelectLeft, None),
-        KeyBinding::new("right", actions::SelectRight, None),
-        KeyBinding::new("up", actions::SelectUp, None),
-        KeyBinding::new("down", actions::SelectDown, None),
+        // Navigation - PlayerView context so NumberInput/Input editing isn't intercepted
+        KeyBinding::new("left", actions::SelectLeft, Some("PlayerView")),
+        KeyBinding::new("right", actions::SelectRight, Some("PlayerView")),
+        KeyBinding::new("up", actions::SelectUp, Some("PlayerView")),
+        KeyBinding::new("down", actions::SelectDown, Some("PlayerView")),
         // Vim-style navigation alternatives (hjkl)
         KeyBinding::new("h", actions::SelectLeft, Some("PlayerView")),
         KeyBinding::new("l", actions::SelectRight, Some("PlayerView")),
         KeyBinding::new("k", actions::SelectUp, Some("PlayerView")),
         KeyBinding::new("j", actions::SelectDown, Some("PlayerView")),
-        // Page navigation - keep global
-        KeyBinding::new("pageup", actions::SelectPrevPage, None),
-        KeyBinding::new("pagedown", actions::SelectNextPage, None),
+        // Page navigation - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("pageup", actions::SelectPrevPage, Some("PlayerView")),
+        KeyBinding::new("pagedown", actions::SelectNextPage, Some("PlayerView")),
         // Library pagination (Ctrl/Cmd for page switching) - keep global
         KeyBinding::new("ctrl-left", actions::PrevPage, None),
         KeyBinding::new("ctrl-right", actions::NextPage, None),
         KeyBinding::new("cmd-left", actions::PrevPage, None),
         KeyBinding::new("cmd-right", actions::NextPage, None),
-        // Enter action - keep global but handler checks input mode
-        KeyBinding::new("enter", actions::Enter, None),
+        // Enter action - PlayerView context so text editing can use Enter
+        KeyBinding::new("enter", actions::Enter, Some("PlayerView")),
         KeyBinding::new("a", actions::Enter, Some("PlayerView")),
         // Remove/delete
         KeyBinding::new("d", actions::RemoveItem, Some("PlayerView")),
-        KeyBinding::new("delete", actions::RemoveItem, None),
+        KeyBinding::new("delete", actions::RemoveItem, Some("PlayerView")),
         // Plugin controls - PlayerView context
         KeyBinding::new("u", actions::MovePluginUp, Some("PlayerView")),
         KeyBinding::new("shift-n", actions::MovePluginDown, Some("PlayerView")),
@@ -154,9 +154,9 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-a", actions::AddDirectory, Some("PlayerView")),
         KeyBinding::new("shift-s", actions::ScanLibrary, Some("PlayerView")),
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
-        // Level meter controls - tab can stay global, letter keys need PlayerView
-        KeyBinding::new("tab", actions::SelectNextMeterGroup, None),
-        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, None),
+        // Level meter controls - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
+        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, Some("PlayerView")),
         KeyBinding::new("m", actions::ToggleMeterMute, Some("PlayerView")),
         KeyBinding::new("shift-m", actions::ToggleMeterSolo, Some("PlayerView")),
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),

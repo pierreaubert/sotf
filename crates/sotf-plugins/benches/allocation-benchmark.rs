@@ -18,7 +18,6 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use serde_json;
 
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
@@ -472,7 +471,6 @@ fn test_spectrum_analyzer_zero_alloc() {
         min_freq: 20.0,
         max_freq: 20000.0,
         smoothing: 0.7,
-        ..Default::default()
     };
     let mut plugin = SpectrumAnalyzerPlugin::with_config(2, config).unwrap();
     plugin.initialize(SAMPLE_RATE).unwrap();

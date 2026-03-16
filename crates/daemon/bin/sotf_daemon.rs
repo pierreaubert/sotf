@@ -796,12 +796,11 @@ impl AudioDaemon {
                 // Update shared memory fingerprint if encryption is enabled
                 #[cfg(target_os = "macos")]
                 {
-                    if key_manager.is_enabled() {
-                        if let Some(mut buffer) = self.get_shared_buffer() {
+                    if key_manager.is_enabled()
+                        && let Some(mut buffer) = self.get_shared_buffer() {
                             buffer.set_key_fingerprint(*key_manager.fingerprint());
                             buffer.set_config_changed();
                         }
-                    }
                 }
 
                 Response::ok(serde_json::json!({
@@ -870,7 +869,7 @@ impl AudioDaemon {
     async fn handle_set_buffer_frames(&self, frames: u32) -> Response {
         #[cfg(target_os = "macos")]
         {
-            if frames < 64 || frames > 4096 {
+            if !(64..=4096).contains(&frames) {
                 return Response::err(format!(
                     "Buffer frames must be between 64 and 4096, got: {}",
                     frames

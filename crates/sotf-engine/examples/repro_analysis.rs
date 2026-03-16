@@ -16,7 +16,7 @@ fn main() {
     let path = std::path::Path::new("temp_repro.wav");
     let spec = hound::WavSpec {
         channels: 1,
-        sample_rate: sample_rate,
+        sample_rate,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };

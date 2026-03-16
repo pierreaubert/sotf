@@ -656,6 +656,33 @@ impl Default for MixedModeUiConfig {
     }
 }
 
+/// Multi-measurement optimization configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiMeasurementUiConfig {
+    pub enabled: bool,
+    pub strategy: String,
+    pub variance_lambda: f64,
+    pub weights: Vec<f64>,
+}
+
+impl Default for MultiMeasurementUiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            strategy: "average".to_string(),
+            variance_lambda: 1.0,
+            weights: Vec::new(),
+        }
+    }
+}
+
+fn default_room_tolerance() -> f64 {
+    1e-5
+}
+fn default_room_atolerance() -> f64 {
+    1e-5
+}
+
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqOptimizerConfig {
@@ -680,6 +707,10 @@ pub struct RoomEqOptimizerConfig {
     pub loss_type: String,
     pub psychoacoustic: bool,
     pub asymmetric_loss: bool,
+    #[serde(default = "default_room_tolerance")]
+    pub tolerance: f64,
+    #[serde(default = "default_room_atolerance")]
+    pub atolerance: f64,
     pub target_curve: String,
     pub system_type: String,
     #[serde(default)]
@@ -704,6 +735,8 @@ pub struct RoomEqOptimizerConfig {
     pub phase_alignment: PhaseAlignmentConfig,
     #[serde(default)]
     pub multi_seat: MultiSeatConfig,
+    #[serde(default)]
+    pub multi_measurement: MultiMeasurementUiConfig,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -728,6 +761,8 @@ impl Default for RoomEqOptimizerConfig {
             loss_type: "flat".to_string(),
             psychoacoustic: true,
             asymmetric_loss: true,
+            tolerance: 1e-5,
+            atolerance: 1e-5,
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
             allow_delay: false,
@@ -741,6 +776,7 @@ impl Default for RoomEqOptimizerConfig {
             schroeder_split: SchroederSplitConfig::default(),
             phase_alignment: PhaseAlignmentConfig::default(),
             multi_seat: MultiSeatConfig::default(),
+            multi_measurement: MultiMeasurementUiConfig::default(),
         }
     }
 }
@@ -1032,5 +1068,61 @@ mod tests {
                 ch.channel_name
             );
         }
+    }
+
+    #[test]
+    fn multi_measurement_ui_config_serde_roundtrip() {
+        let config = MultiMeasurementUiConfig {
+            enabled: true,
+            strategy: "weighted_sum".to_string(),
+            variance_lambda: 2.5,
+            weights: vec![0.3, 0.7],
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let roundtrip: MultiMeasurementUiConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip.enabled, true);
+        assert_eq!(roundtrip.strategy, "weighted_sum");
+        assert_eq!(roundtrip.variance_lambda, 2.5);
+        assert_eq!(roundtrip.weights, vec![0.3, 0.7]);
+    }
+
+    #[test]
+    fn multi_measurement_ui_config_default_deserialize() {
+        // Ensure missing multi_measurement field in existing configs deserializes to default
+        let json = r#"{
+            "mode": "Iir",
+            "multi_speaker_mode": "Combined",
+            "algorithm": "autoeq:de",
+            "num_filters": 7,
+            "min_q": 0.5, "max_q": 6.0,
+            "min_db": -12.0, "max_db": 4.0,
+            "min_freq": 20.0, "max_freq": 1600.0,
+            "max_iter": 50000,
+            "peq_model": "pk",
+            "population": 50,
+            "refine": false,
+            "local_algo": "cobyla",
+            "loss_type": "flat",
+            "psychoacoustic": true,
+            "asymmetric_loss": true,
+            "target_curve": "flat",
+            "system_type": "stereo"
+        }"#;
+        let config: RoomEqOptimizerConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.multi_measurement.enabled, false);
+        assert_eq!(config.multi_measurement.strategy, "average");
+        assert_eq!(config.multi_measurement.variance_lambda, 1.0);
+        assert!(config.multi_measurement.weights.is_empty());
+    }
+
+    #[test]
+    fn multi_measurement_strategy_strings_match_constants() {
+        let valid_strategies = ["average", "weighted_sum", "minimax", "variance_penalized"];
+        let default = MultiMeasurementUiConfig::default();
+        assert!(
+            valid_strategies.contains(&default.strategy.as_str()),
+            "Default strategy '{}' not in valid set",
+            default.strategy
+        );
     }
 }

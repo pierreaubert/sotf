@@ -19,9 +19,9 @@ fn benchmark_plugin_full(
         b.iter(|| {
             plugin
                 .process(
-                    criterion::black_box(&input),
-                    criterion::black_box(&mut output),
-                    criterion::black_box(&context),
+                    std::hint::black_box(&input),
+                    std::hint::black_box(&mut output),
+                    std::hint::black_box(&context),
                 )
                 .unwrap();
         });

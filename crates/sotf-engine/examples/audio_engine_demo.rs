@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!();
 
-    let mut engine = AudioEngine::new(config)?;
+    let engine = AudioEngine::new(config)?;
 
     // Play the file
     println!("Playing: {}", audio_file);

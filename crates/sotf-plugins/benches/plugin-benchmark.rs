@@ -29,7 +29,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
             num_frames: buffer_size,
         };
 
-        group.bench_function(&format!("process_{}frames", buffer_size), |b| {
+        group.bench_function(format!("process_{}frames", buffer_size), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -50,7 +50,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
             num_frames: buffer_size,
         };
 
-        group.bench_function(&format!("process_{}hz", sample_rate), |b| {
+        group.bench_function(format!("process_{}hz", sample_rate), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -71,7 +71,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
             num_frames: buffer_size,
         };
 
-        group.bench_function(&format!("process_{}db", gain_db), |b| {
+        group.bench_function(format!("process_{}db", gain_db), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -92,7 +92,7 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
             num_frames: buffer_size,
         };
 
-        group.bench_function(&format!("process_{}ch", channels), |b| {
+        group.bench_function(format!("process_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -125,7 +125,7 @@ fn benchmark_host_chain(c: &mut Criterion) {
         let input = vec![0.5f32; buffer_size * 2];
         let mut output = vec![0.0f32; buffer_size * 2];
 
-        group.bench_function(&format!("{}plugins", chain_length), |b| {
+        group.bench_function(format!("{}plugins", chain_length), |b| {
             b.iter(|| {
                 host.process(black_box(&input), black_box(&mut output))
                     .unwrap();
@@ -146,7 +146,7 @@ fn benchmark_host_chain(c: &mut Criterion) {
         let input = vec![0.5f32; buffer_size * 2];
         let mut output = vec![0.0f32; buffer_size * 2];
 
-        group.bench_function(&format!("{}frames", buffer_size), |b| {
+        group.bench_function(format!("{}frames", buffer_size), |b| {
             b.iter(|| {
                 host.process(black_box(&input), black_box(&mut output))
                     .unwrap();
@@ -168,7 +168,7 @@ fn benchmark_host_chain(c: &mut Criterion) {
         let input = vec![0.5f32; buffer_size * 2];
         let mut output = vec![0.0f32; buffer_size * 2];
 
-        group.bench_function(&format!("{}hz", sample_rate), |b| {
+        group.bench_function(format!("{}hz", sample_rate), |b| {
             b.iter(|| {
                 host.process(black_box(&input), black_box(&mut output))
                     .unwrap();
@@ -198,7 +198,7 @@ fn benchmark_inplace_processing(c: &mut Criterion) {
             num_frames: buffer_size,
         };
 
-        group.bench_function(&format!("gain_{}ch", channels), |b| {
+        group.bench_function(format!("gain_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))

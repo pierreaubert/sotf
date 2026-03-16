@@ -108,6 +108,7 @@ impl HalManager {
     }
 
     /// Check if HAL manager has verified connectivity
+    #[allow(dead_code)]
     pub fn is_initialized(&self) -> bool {
         #[cfg(target_os = "macos")]
         {

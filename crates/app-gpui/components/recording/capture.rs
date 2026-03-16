@@ -689,8 +689,8 @@ impl PlayerView {
         }
 
         // Build grouped data: Vec<(speaker_name, speaker_idx, first_vec_idx, Vec<(mic_idx, state)>)>
-        let mut speaker_groups: Vec<(String, usize, usize, Vec<(usize, ChannelRecordingState)>)> =
-            Vec::new();
+        type SpeakerGroup = (String, usize, usize, Vec<(usize, ChannelRecordingState)>);
+        let mut speaker_groups: Vec<SpeakerGroup> = Vec::new();
         for (vec_idx, rec) in recording_state.channel_recordings.iter().enumerate() {
             if let Some(group) = speaker_groups
                 .iter_mut()

@@ -108,8 +108,8 @@ fn bench_dirichlet_bc(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("apply", n), &mesh, |b, mesh| {
             b.iter_batched(
                 || {
-                    let problem = HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k, source);
-                    problem
+                    
+                    HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k, source)
                 },
                 |mut problem| {
                     // Apply Dirichlet on all 6 faces

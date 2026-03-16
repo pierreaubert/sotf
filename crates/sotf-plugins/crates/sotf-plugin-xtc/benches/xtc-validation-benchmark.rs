@@ -5,7 +5,8 @@
 //! Run with:
 //!   cargo bench -p plugins --no-default-features -- xtc-validation
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use sotf_plugin_xtc::XtcPluginParams;
 use sotf_plugin_xtc::validation::{
     CANCELLATION_DEPTH_TARGETS, measure_cancellation_depth_db, measure_cancellation_depth_spectrum,
@@ -98,9 +99,11 @@ fn bench_validation_with_varying_geometry(c: &mut Criterion) {
             BenchmarkId::from_parameter(name),
             &(angle, distance),
             |b, &(a, d)| {
-                let mut params = XtcPluginParams::default();
-                params.speaker_angle_deg = a;
-                params.distance_m = d;
+                let params = XtcPluginParams {
+                    speaker_angle_deg: a,
+                    distance_m: d,
+                    ..Default::default()
+                };
                 b.iter(|| black_box(run_validation(&params, 48000)));
             },
         );

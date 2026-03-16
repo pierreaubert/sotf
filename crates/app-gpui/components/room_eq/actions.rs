@@ -41,6 +41,9 @@ impl PlayerView {
                 .measurement_state
                 .room_eq_state
                 .apply_smart_defaults();
+            // Recordings always produce single measurements
+            state.app.measurement_state.room_eq_state.has_multi_position_data = false;
+            state.app.measurement_state.room_eq_state.multi_position_counts = Vec::new();
 
             let channel_count = state
                 .app
@@ -126,6 +129,30 @@ impl PlayerView {
                                 room_config.speakers.len(),
                                 file_path
                             );
+
+                            // Detect multi-position data before consuming speakers
+                            let mut multi_position_counts: Vec<(String, usize)> = Vec::new();
+                            for (channel_name, speaker_config) in &room_config.speakers {
+                                match speaker_config {
+                                    autoeq::SpeakerConfig::Single(autoeq::MeasurementSource::Multiple(m)) => {
+                                        multi_position_counts.push((channel_name.clone(), m.measurements.len()));
+                                    }
+                                    autoeq::SpeakerConfig::Group(group) => {
+                                        let has_multi = group.measurements.iter().any(|ms| {
+                                            matches!(ms, autoeq::MeasurementSource::Multiple(_))
+                                        });
+                                        if has_multi {
+                                            log::warn!(
+                                                "Channel '{}' is a group speaker with multi-position measurements — \
+                                                 multi-measurement optimization is not yet supported for group speakers",
+                                                channel_name
+                                            );
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            let has_multi_position_data = !multi_position_counts.is_empty();
 
                             // Convert RoomConfig speakers to ChannelMeasurement
                             let mut channel_measurements: Vec<ChannelMeasurement> = room_config
@@ -292,6 +319,21 @@ impl PlayerView {
                                     );
                                 }
                                 state.app.measurement_state.room_eq_state.error_message = None;
+                                state.app.measurement_state.room_eq_state.has_multi_position_data = has_multi_position_data;
+                                state.app.measurement_state.room_eq_state.multi_position_counts = multi_position_counts;
+                                // Initialize equal weights for multi-measurement if detected
+                                if has_multi_position_data {
+                                    let max_count = state.app.measurement_state.room_eq_state.multi_position_counts
+                                        .iter()
+                                        .map(|(_, c)| *c)
+                                        .max()
+                                        .unwrap_or(0);
+                                    if max_count > 0 {
+                                        let equal_weight = 1.0 / max_count as f64;
+                                        state.app.measurement_state.room_eq_state.optimizer_config
+                                            .multi_measurement.weights = vec![equal_weight; max_count];
+                                    }
+                                }
                                 state.app.measurement_state.room_eq_state.apply_smart_defaults();
                             });
                             return;
@@ -420,6 +462,9 @@ impl PlayerView {
                                         );
                                     }
                                     state.app.measurement_state.room_eq_state.error_message = None;
+                                    // Legacy format: no multi-position data
+                                    state.app.measurement_state.room_eq_state.has_multi_position_data = false;
+                                    state.app.measurement_state.room_eq_state.multi_position_counts = Vec::new();
                                     state.app.measurement_state.room_eq_state.apply_smart_defaults();
                                 });
                             }

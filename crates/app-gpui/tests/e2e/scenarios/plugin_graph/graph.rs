@@ -174,8 +174,7 @@ impl TestScenario for PaletteElementsScenario {
         let first_is_eq = driver.read_app(|app| {
             app.plugin_state
                 .chain
-                .plugins()
-                .get(0)
+                .plugins().first()
                 .map(|p| p.plugin_type() == sotf_audio::plugins::PluginType::EQ)
                 .unwrap_or(false)
         });

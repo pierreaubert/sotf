@@ -307,6 +307,8 @@ pub fn run_multi_speaker_optimization(
             local_algo: "cobyla".to_string(),
             psychoacoustic: true,
             asymmetric_loss: true,
+            tolerance: config.args.tolerance,
+            atolerance: config.args.atolerance,
             allow_delay: None,
             target_tilt: None,
             excursion_protection: None,
@@ -316,6 +318,7 @@ pub fn run_multi_speaker_optimization(
             gd_opt: None,
             vog: None,
             broadband_target_matching: None,
+            multi_measurement: None,
         },
         recording_config: None,
     };
@@ -463,6 +466,8 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         local_algo: "cobyla".to_string(),
         psychoacoustic: true,
         asymmetric_loss: true,
+        tolerance: args.tolerance,
+        atolerance: args.atolerance,
         allow_delay: None,
         target_tilt: None,
         excursion_protection: None,
@@ -472,6 +477,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         gd_opt: None,
         vog: None,
         broadband_target_matching: None,
+        multi_measurement: None,
     }
 }
 

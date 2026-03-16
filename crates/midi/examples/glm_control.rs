@@ -54,7 +54,7 @@ fn get_percent(prompt: &str) -> Option<f32> {
     input
         .parse::<f32>()
         .ok()
-        .filter(|&n| n >= 0.0 && n <= 100.0)
+        .filter(|&n| (0.0..=100.0).contains(&n))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

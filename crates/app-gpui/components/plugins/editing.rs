@@ -390,8 +390,7 @@ impl PluginEditingManager for App {
         for plugin in self.plugin_state.chain.plugins_mut() {
             if plugin.is_permanent()
                 && matches!(plugin.plugin_type(), sotf_audio_player::PluginType::Matrix)
-            {
-                if let sotf_audio_player::PluginSettings::Matrix {
+                && let sotf_audio_player::PluginSettings::Matrix {
                     input_channels,
                     output_channels,
                     ref mut matrix,
@@ -416,7 +415,6 @@ impl PluginEditingManager for App {
                     );
                     break;
                 }
-            }
         }
         self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
@@ -426,8 +424,7 @@ impl PluginEditingManager for App {
         for plugin in self.plugin_state.chain.plugins_mut() {
             if plugin.is_permanent()
                 && matches!(plugin.plugin_type(), sotf_audio_player::PluginType::Matrix)
-            {
-                if let sotf_audio_player::PluginSettings::Matrix {
+                && let sotf_audio_player::PluginSettings::Matrix {
                     input_channels,
                     output_channels,
                     ref mut matrix,
@@ -452,7 +449,6 @@ impl PluginEditingManager for App {
                     );
                     break;
                 }
-            }
         }
         self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }

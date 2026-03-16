@@ -7,7 +7,8 @@
 // Uses broadband multi-sine input to exercise all code paths (energy
 // preservation, coherence computation, transient detection, HR overlay).
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
 use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_upmixer::UpmixerPlugin;
 use std::time::Duration;

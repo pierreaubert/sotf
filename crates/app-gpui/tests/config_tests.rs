@@ -398,14 +398,14 @@ fn test_compute_responsive_scale_uses_constraining_axis() {
 #[test]
 fn test_pagination_reference_window() {
     let (cols, rows) = estimate_grid_dimensions(1200.0, 800.0, 1.0);
-    assert!(cols >= 5 && cols <= 8, "expected 5-8 columns, got {cols}");
-    assert!(rows >= 1 && rows <= 4, "expected 1-4 rows, got {rows}");
+    assert!((5..=8).contains(&cols), "expected 5-8 columns, got {cols}");
+    assert!((1..=4).contains(&rows), "expected 1-4 rows, got {rows}");
 }
 
 #[test]
 fn test_pagination_phone_window() {
     let (cols, rows) = estimate_grid_dimensions(375.0, 667.0, 1.0);
-    assert!(cols >= 1 && cols <= 5, "expected 1-5 columns, got {cols}");
+    assert!((1..=5).contains(&cols), "expected 1-5 columns, got {cols}");
     assert!(rows >= 1, "expected at least 1 row, got {rows}");
 }
 

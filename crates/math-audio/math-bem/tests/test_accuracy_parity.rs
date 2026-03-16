@@ -35,6 +35,7 @@ fn relative_error(computed: f64, reference: f64) -> f64 {
 }
 
 /// Helper to compute L2 relative error between two pressure arrays
+#[allow(dead_code)]
 fn l2_relative_error(computed: &[Complex64], reference: &[Complex64]) -> f64 {
     assert_eq!(computed.len(), reference.len());
 

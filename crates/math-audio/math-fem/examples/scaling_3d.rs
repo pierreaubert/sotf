@@ -78,8 +78,10 @@ fn run_benchmark(n: usize, threads: usize, args: &Args) {
         Complex64::new((PI * x).sin() * (PI * y).sin() * (PI * z).sin(), 0.0)
     };
 
-    let mut solver_config = SolverConfig::default();
-    solver_config.solver_type = args.solver.into();
+    let mut solver_config = SolverConfig {
+        solver_type: args.solver.into(),
+        ..Default::default()
+    };
     solver_config.gmres.max_iterations = args.max_iters;
     solver_config.gmres.tolerance = args.tolerance;
 
@@ -143,8 +145,8 @@ fn main() {
     println!();
 
     println!(
-        "{:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}  {}",
-        "Threads", "DOFs", "Mesh(ms)", "Asm(ms)", "BC(ms)", "Solve(ms)", "Total(ms)", "Status"
+        "{:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}  Status",
+        "Threads", "DOFs", "Mesh(ms)", "Asm(ms)", "BC(ms)", "Solve(ms)", "Total(ms)"
     );
     println!("{}", "-".repeat(90));
 

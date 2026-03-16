@@ -48,6 +48,7 @@ members = [
     "crates/math-audio/math-dsp",
     "crates/math-audio/math-bem",
     "crates/math-audio/math-fem",
+    "crates/math-audio/math-delaunay",
     "crates/autoeq/autoeq-cea2034",
     "crates/autoeq/autoeq-roomsim",
     "crates/autoeq/autoeq-datagen",
@@ -131,6 +132,7 @@ nlopt = "0.8"
 math-test-functions = { path = "crates/math-audio/math-test-functions", version = "0.4", default-features = false }
 math-solvers = { path = "crates/math-audio/math-solvers", version = "0.4", default-features = false }
 math-wave = { path = "crates/math-audio/math-wave", version = "0.4" }
+math-delaunay = { path = "crates/math-audio/math-delaunay", version = "0.4" }
 math-xem-common = { path = "crates/math-audio/math-xem-common", version = "0.4" }
 math-iir-fir = { path = "crates/math-audio/math-iir-fir", version = "0.4" }
 math-optimisation = { path = "crates/math-audio/math-optimisation", version = "0.4" }
@@ -233,6 +235,14 @@ arc-swap = "1"
 # WASM support
 wasm-bindgen = { version = "0.2" }
 wasm-bindgen-rayon = { version = "1.2" }
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Navigator",
+    "Performance",
+    "DomException",
+] }
 
 # Utilities
 md-5 = "0.10"

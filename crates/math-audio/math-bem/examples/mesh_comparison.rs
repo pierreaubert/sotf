@@ -8,14 +8,14 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    use math_audio_bem::analytical::sphere_scattering_3d;
-    use math_audio_bem::core::assembly::tbem::{build_tbem_system, build_tbem_system_scaled};
-    use math_audio_bem::core::incident::IncidentField;
+    
+    
+    
     use math_audio_bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use math_audio_bem::core::solver::direct::lu_solve;
-    use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};
-    use ndarray::Array2;
-    use num_complex::Complex64;
+    
+    
+    
+    
     use std::f64::consts::PI;
 
     println!("=== Mesh Comparison: UV-sphere vs Icosphere ===");
@@ -157,7 +157,7 @@ fn test_mesh(
 
     // Statistics
     let p_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
-    let p_max = solution_x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
+    let _p_max = solution_x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
 
     // Get analytical reference
     let theta_refs: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0 * PI / 180.0).collect();

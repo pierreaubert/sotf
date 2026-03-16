@@ -26,7 +26,7 @@ fn main() {
 
     for ka_target in [0.5, 1.0, 2.0] {
         let frequency = ka_target * speed_of_sound / (2.0 * PI * radius);
-        let k = 2.0 * PI * frequency / speed_of_sound;
+        let _k = 2.0 * PI * frequency / speed_of_sound;
 
         println!("=== ka = {:.2} ===", ka_target);
 

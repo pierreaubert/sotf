@@ -29,11 +29,10 @@ static VIRTUAL_DEVICE: OnceLock<Option<String>> = OnceLock::new();
 /// then auto-detects BlackHole or SotF HAL driver.
 pub fn find_virtual_device() -> Option<String> {
     // Allow explicit override via environment variable
-    if let Ok(device) = std::env::var("AEQ_E2E_DEVICE") {
-        if !device.is_empty() {
+    if let Ok(device) = std::env::var("AEQ_E2E_DEVICE")
+        && !device.is_empty() {
             return Some(device);
         }
-    }
 
     use cpal::traits::{DeviceTrait, HostTrait};
 

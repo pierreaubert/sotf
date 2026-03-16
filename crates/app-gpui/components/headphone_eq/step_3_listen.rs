@@ -1,10 +1,7 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
-};
+use gpui_ui_kit::{Card, HStack, StackSpacing, Text, TextSize, TextWeight, VStack};
 
 impl PlayerView {
     // ========================================================================
@@ -14,8 +11,6 @@ impl PlayerView {
     pub(crate) fn render_headphone_eq_listen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let theme_id = state.app.ui_state.theme_id;
-        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let headphone_eq = &state.app.measurement_state.headphone_eq_state;
         let result = headphone_eq.result.as_ref();
 
@@ -182,61 +177,6 @@ impl PlayerView {
                                                     ),
                                             )
                                     })),
-                            ),
-                    )
-                    .child(
-                        Card::new()
-                            .background(theme.surface)
-                            .header_background(theme.background_secondary)
-                            .border(theme.border)
-                            .header(
-                                Text::new("Playback Preview")
-                                    .color(theme.text_primary)
-                                    .weight(TextWeight::Semibold),
-                            )
-                            .content(
-                                VStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        Text::new(
-                                            "Apply the EQ to your current playback to hear the difference.",
-                                        )
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .child(
-                                                Button::new(
-                                                    "apply-to-playback",
-                                                    "Apply to Playback",
-                                                )
-                                                .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Sm)
-                                                .theme(button_theme.clone())
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
-                                                        view.apply_headphone_eq_result(cx);
-                                                    }),
-                                                ),
-                                            )
-                                            .child(
-                                                Button::new("clear-eq", "Clear EQ")
-                                                    .variant(ButtonVariant::Secondary)
-                                                    .size(ButtonSize::Sm)
-                                                    .theme(button_theme.clone())
-                                                    .build()
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(|view, _, _, cx| {
-                                                            view.clear_eq_from_playback(cx);
-                                                        }),
-                                                    ),
-                                            ),
-                                    ),
                             ),
                     )
             })

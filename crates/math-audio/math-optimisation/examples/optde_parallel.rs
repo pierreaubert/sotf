@@ -30,15 +30,16 @@ fn main() {
 
     // Test sequential evaluation
     println!("Testing Sequential Evaluation:");
-    let mut cfg_seq = DEConfig::default();
-    cfg_seq.maxiter = 100;
-    cfg_seq.popsize = 15;
-    cfg_seq.strategy = Strategy::Best1Bin;
-    cfg_seq.mutation = Mutation::Factor(0.8);
-    cfg_seq.recombination = 0.9;
-    cfg_seq.seed = Some(42);
-    cfg_seq.disp = true;
-    cfg_seq.parallel.enabled = false; // Disable parallel evaluation
+    let cfg_seq = DEConfig {
+        maxiter: 100,
+        popsize: 15,
+        strategy: Strategy::Best1Bin,
+        mutation: Mutation::Factor(0.8),
+        recombination: 0.9,
+        seed: Some(42),
+        disp: true,
+        ..Default::default() // parallel.enabled = false by default
+    };
 
     let start_seq = Instant::now();
     let report_seq =
@@ -54,17 +55,19 @@ fn main() {
 
     // Test parallel evaluation
     println!("\n\nTesting Parallel Evaluation:");
-    let mut cfg_par = DEConfig::default();
-    cfg_par.maxiter = 100;
-    cfg_par.popsize = 15;
-    cfg_par.strategy = Strategy::Best1Bin;
-    cfg_par.mutation = Mutation::Factor(0.8);
-    cfg_par.recombination = 0.9;
-    cfg_par.seed = Some(42);
-    cfg_par.disp = true;
-    cfg_par.parallel = ParallelConfig {
-        enabled: true,
-        num_threads: None, // Use all available cores
+    let cfg_par = DEConfig {
+        maxiter: 100,
+        popsize: 15,
+        strategy: Strategy::Best1Bin,
+        mutation: Mutation::Factor(0.8),
+        recombination: 0.9,
+        seed: Some(42),
+        disp: true,
+        parallel: ParallelConfig {
+            enabled: true,
+            num_threads: None, // Use all available cores
+        },
+        ..Default::default()
     };
 
     let start_par = Instant::now();
@@ -93,17 +96,19 @@ fn main() {
     // Test with different thread counts
     println!("\n\nTesting with different thread counts:");
     for num_threads in [1, 2, 4, 8] {
-        let mut cfg_threads = DEConfig::default();
-        cfg_threads.maxiter = 50;
-        cfg_threads.popsize = 15;
-        cfg_threads.strategy = Strategy::Best1Bin;
-        cfg_threads.mutation = Mutation::Factor(0.8);
-        cfg_threads.recombination = 0.9;
-        cfg_threads.seed = Some(42);
-        cfg_threads.disp = false;
-        cfg_threads.parallel = ParallelConfig {
-            enabled: true,
-            num_threads: Some(num_threads),
+        let cfg_threads = DEConfig {
+            maxiter: 50,
+            popsize: 15,
+            strategy: Strategy::Best1Bin,
+            mutation: Mutation::Factor(0.8),
+            recombination: 0.9,
+            seed: Some(42),
+            disp: false,
+            parallel: ParallelConfig {
+                enabled: true,
+                num_threads: Some(num_threads),
+            },
+            ..Default::default()
         };
 
         let start = Instant::now();

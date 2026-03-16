@@ -207,7 +207,7 @@ fn main() {
     );
     println!("{}", "-".repeat(65));
 
-    for &(ka, optimal_scale, adaptive_error) in &optimal_betas {
+    for &(ka, _optimal_scale, adaptive_error) in &optimal_betas {
         let freq = ka * speed_of_sound / (2.0 * PI * radius);
         let k = ka / radius;
 

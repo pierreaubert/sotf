@@ -9,7 +9,7 @@
 // cargo run --example denoiser_demo --release
 
 use sotf_host::parameters::{ParameterId, ParameterValue};
-use sotf_host::plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, ProcessContext};
+use sotf_host::plugin::{InPlacePluginAdapter, Plugin, ProcessContext};
 use sotf_plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 
 fn main() {
@@ -80,12 +80,12 @@ fn main() {
     // Add some noise (simulate background noise)
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    for i in 0..num_frames * channels {
+    for (i, sample) in buffer.iter_mut().enumerate().take(num_frames * channels) {
         // Simple pseudo-random noise using hash
         let mut hasher = DefaultHasher::new();
         i.hash(&mut hasher);
         let noise = ((hasher.finish() % 1000) as f32 / 1000.0 - 0.5) * 0.1;
-        buffer[i] += noise;
+        *sample += noise;
     }
 
     // Compute input energy
@@ -132,8 +132,8 @@ fn main() {
     println!();
 
     // Get denoiser data for monitoring
-    if let Some(data) = plugin.get_data() {
-        if let Some(denoiser_data) = data.downcast_ref::<DenoiserData>() {
+    if let Some(data) = plugin.get_data()
+        && let Some(denoiser_data) = data.downcast_ref::<DenoiserData>() {
             println!("Denoiser Monitoring Data:");
             println!(
                 "  Average reduction: {:.1} dB",
@@ -147,7 +147,6 @@ fn main() {
             );
             println!();
         }
-    }
 
     // Demonstrate parameter adjustment
     println!("Testing parameter changes:");

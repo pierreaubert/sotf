@@ -4,7 +4,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
+    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
 
@@ -43,6 +43,8 @@ impl PlayerView {
             de_f: 0.8,
             de_cr: 0.9,
             strategy: "currenttobest1bin".to_string(),
+            adaptive_weight_f: 0.8,
+            adaptive_weight_cr: 0.7,
             refine: config.refine,
             local_algo: config.local_algo.clone(),
             // Smoothing uses defaults (hidden in room EQ form, uses psychoacoustic instead)
@@ -51,9 +53,8 @@ impl PlayerView {
             // Spacing uses defaults (hidden in room EQ form)
             spacing_weight: 1.0,
             min_spacing_oct: 0.08,
-            // Tolerance uses defaults (hidden in room EQ form)
-            tolerance: 0.00001,
-            atolerance: 0.00001,
+            tolerance: config.tolerance,
+            atolerance: config.atolerance,
             psychoacoustic: config.psychoacoustic,
             asymmetric_loss: config.asymmetric_loss,
             loss_type: config.loss_type.clone(),
@@ -106,6 +107,22 @@ impl PlayerView {
             multi_seat_strategy: config.multi_seat.strategy.clone(),
             multi_seat_primary_seat: config.multi_seat.primary_seat,
             multi_seat_max_deviation_db: config.multi_seat.max_deviation_db,
+
+            use_multi_measurement: config.multi_measurement.enabled,
+            multi_measurement_strategy: config.multi_measurement.strategy.clone(),
+            multi_measurement_variance_lambda: config.multi_measurement.variance_lambda,
+            multi_measurement_weights: config.multi_measurement.weights.clone(),
+            multi_measurement_labels: {
+                let max_count = room_eq
+                    .multi_position_counts
+                    .iter()
+                    .map(|(_, c)| *c)
+                    .max()
+                    .unwrap_or(0);
+                (0..max_count)
+                    .map(|i| format!("Position {}", i + 1))
+                    .collect()
+            },
         };
 
         // Build AutoEqFormUiState from our dropdowns
@@ -125,6 +142,7 @@ impl PlayerView {
             mixed_crossover_type_open: room_eq.dropdowns.mixed_crossover_type_open,
             mixed_fir_band_open: room_eq.dropdowns.mixed_fir_band_open,
             vog_reference_channel_open: room_eq.dropdowns.vog_reference_channel_open,
+            multi_measurement_strategy_open: room_eq.dropdowns.multi_measurement_strategy_open,
         };
 
         // Compute available modes: if no phase data, only IIR
@@ -154,6 +172,7 @@ impl PlayerView {
             .hide_sample_rate(true)
             .hide_phase_alignment(is_iir_mode) // Phase alignment only for non-IIR modes
             .hide_scenario_a_text(true) // Remove "Scenario A" subtitle
+            .hide_multi_measurement(!room_eq.has_multiple_measurements())
             .allowed_opt_modes(available_modes)
             .on_opt_mode_change({
                 let state = self.state.clone();
@@ -1045,6 +1064,86 @@ impl PlayerView {
                     });
                 }
             })
+            // Multi-Measurement
+            .on_use_multi_measurement_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_measurement
+                            .enabled = v;
+                    });
+                }
+            })
+            .on_multi_measurement_strategy_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_measurement
+                            .strategy = v.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .multi_measurement_strategy_open = false;
+                    });
+                }
+            })
+            .on_multi_measurement_strategy_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .multi_measurement_strategy_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_multi_measurement_variance_lambda_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_measurement
+                            .variance_lambda = v;
+                    });
+                }
+            })
+            .on_multi_measurement_weight_change({
+                let state = self.state.clone();
+                move |idx, v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        let weights = &mut state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .multi_measurement
+                            .weights;
+                        if idx < weights.len() {
+                            weights[idx] = v;
+                        }
+                    });
+                }
+            })
             // v2 features
             .on_allow_delay_change({
                 let state = self.state.clone();
@@ -1259,7 +1358,7 @@ impl PlayerView {
                 }
             });
 
-        // Build mode selector cards
+        // Build compact mode selector buttons (75px each)
         let current_mode = room_eq.optimizer_config.mode;
         let mode_selector = {
             let modes: Vec<RoomEqOptimizationMode> = if has_phase_data {
@@ -1268,116 +1367,46 @@ impl PlayerView {
                 vec![RoomEqOptimizationMode::Iir]
             };
 
-            Card::new()
-                .background(theme.surface)
-                .header_background(theme.background_secondary)
-                .border(theme.border)
-                .header(
-                    Text::new("Optimization Mode")
-                        .color(theme.text_primary)
-                        .weight(TextWeight::Semibold),
-                )
-                .content(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .child(if !has_phase_data {
-                            Text::new("Only IIR mode is available (no phase data in measurements).")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted)
-                                .into_any_element()
-                        } else {
-                            Text::new(
-                                "Choose the type of filters to generate for your room correction.",
-                            )
-                            .size(TextSize::Xs)
-                            .color(theme.text_secondary)
-                            .into_any_element()
-                        })
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .align(StackAlign::Stretch)
-                                .children(modes.iter().map(|mode| {
-                                    let is_selected = current_mode == *mode;
-                                    let mode_val = *mode;
+            HStack::new()
+                .spacing(StackSpacing::Xs)
+                .children(modes.iter().map(|mode| {
+                    let is_selected = current_mode == *mode;
+                    let mode_val = *mode;
+                    let short_name = match mode_val {
+                        RoomEqOptimizationMode::Iir => "IIR",
+                        RoomEqOptimizationMode::Fir => "FIR",
+                        RoomEqOptimizationMode::Mixed => "Mixed",
+                    };
 
-                                    div().flex_1().child(
-                                        Card::new()
-                                            .background(if is_selected {
-                                                theme.surface_selected
-                                            } else {
-                                                theme.surface
-                                            })
-                                            .border(if is_selected {
-                                                theme.accent
-                                            } else {
-                                                theme.border
-                                            })
-                                            .content(
-                                                VStack::new()
-                                                    .spacing(StackSpacing::Xs)
-                                                    .child(
-                                                        Text::new(mode.as_str())
-                                                            .weight(TextWeight::Semibold)
-                                                            .color(if is_selected {
-                                                                theme.accent
-                                                            } else {
-                                                                theme.text_primary
-                                                            }),
-                                                    )
-                                                    .child(
-                                                        Text::new(mode.description())
-                                                            .size(TextSize::Xs)
-                                                            .color(theme.text_secondary),
-                                                    )
-                                                    .child(
-                                                        div().mt_2().child(
-                                                            Button::new(
-                                                                SharedString::from(format!(
-                                                                    "cfg-select-mode-{:?}",
-                                                                    mode
-                                                                )),
-                                                                if is_selected {
-                                                                    "Selected"
-                                                                } else {
-                                                                    "Select"
-                                                                },
-                                                            )
-                                                            .variant(if is_selected {
-                                                                ButtonVariant::Primary
-                                                            } else {
-                                                                ButtonVariant::Secondary
-                                                            })
-                                                            .size(ButtonSize::Xs)
-                                                            .full_width(true)
-                                                            .theme(theme.to_button_theme())
-                                                            .build()
-                                                            .on_mouse_up(
-                                                                MouseButton::Left,
-                                                                cx.listener(
-                                                                    move |view, _, _, cx| {
-                                                                        view.state.update(
-                                                                            cx,
-                                                                            |state, _| {
-                                                                                state
-                                                                            .app
-                                                                            .measurement_state
-                                                                            .room_eq_state
-                                                                            .optimizer_config
-                                                                            .mode = mode_val;
-                                                                            },
-                                                                        );
-                                                                        cx.notify();
-                                                                    },
-                                                                ),
-                                                            ),
-                                                        ),
-                                                    ),
-                                            ),
-                                    )
-                                })),
-                        ),
-                )
+                    Button::new(
+                        SharedString::from(format!("cfg-select-mode-{:?}", mode)),
+                        short_name,
+                    )
+                    .variant(if is_selected {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .build()
+                    .w(px(75.0))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |view, _, _, cx| {
+                            view.state.update(cx, |state, _| {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .room_eq_state
+                                    .optimizer_config
+                                    .mode = mode_val;
+                            });
+                            cx.notify();
+                        }),
+                    )
+                    .into_any_element()
+                }))
         };
 
         let mut content = VStack::new()

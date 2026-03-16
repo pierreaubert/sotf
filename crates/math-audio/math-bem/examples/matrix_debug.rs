@@ -4,13 +4,13 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    use math_audio_bem::core::assembly::tbem::build_tbem_system;
-    use math_audio_bem::core::incident::IncidentField;
+    
+    
     use math_audio_bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use math_audio_bem::core::solver::direct::lu_solve;
-    use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};
-    use ndarray::Array2;
-    use num_complex::Complex64;
+    
+    
+    
+    
     use std::f64::consts::PI;
 
     let radius = 0.1;
@@ -129,7 +129,7 @@ fn analyze_system(
     let solution_x = lu_solve(&system.matrix, &total_rhs).expect("Solver failed");
 
     // Verify solution
-    let ax = system.matrix.dot(&solution_x);
+    let _ax = system.matrix.dot(&solution_x);
 
     println!("\n  Solution (first 3):");
     for i in 0..3.min(n) {

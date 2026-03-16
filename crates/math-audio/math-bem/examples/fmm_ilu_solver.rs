@@ -34,10 +34,10 @@ fn main() {
     use math_audio_bem::core::assembly::tbem::build_tbem_system_scaled;
     use math_audio_bem::core::incident::IncidentField;
     use math_audio_bem::core::mesh::generators::generate_icosphere_mesh;
-    use math_audio_bem::core::solver::IluPreconditioner;
-    use math_audio_bem::core::solver::Preconditioner;
+    
+    
     use math_audio_bem::core::solver::direct::lu_solve;
-    use math_audio_bem::core::solver::{CgsConfig, solve_cgs, solve_with_ilu};
+    use math_audio_bem::core::solver::{CgsConfig, solve_with_ilu};
     use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;

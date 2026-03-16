@@ -1060,6 +1060,14 @@ pub struct OptimizerConfig {
     #[serde(default = "default_asymmetric_loss")]
     pub asymmetric_loss: bool,
 
+    /// Optimization convergence tolerance (relative)
+    #[serde(default = "default_tolerance")]
+    pub tolerance: f64,
+
+    /// Optimization convergence tolerance (absolute)
+    #[serde(default = "default_atolerance")]
+    pub atolerance: f64,
+
     /// Allow inter-speaker delay optimization
     /// When true, the optimizer generates delay plugins to align speakers in time.
     /// This includes time alignment from WAV measurements, phase alignment, and group delay optimization.
@@ -1247,6 +1255,12 @@ fn default_psychoacoustic() -> bool {
 fn default_asymmetric_loss() -> bool {
     true // Enable asymmetric loss by default (peaks penalized more than dips)
 }
+fn default_tolerance() -> f64 {
+    1e-5
+}
+fn default_atolerance() -> f64 {
+    1e-5
+}
 
 impl Default for OptimizerConfig {
     fn default() -> Self {
@@ -1272,6 +1286,8 @@ impl Default for OptimizerConfig {
             local_algo: default_local_algo(),
             psychoacoustic: default_psychoacoustic(),
             asymmetric_loss: default_asymmetric_loss(),
+            tolerance: default_tolerance(),
+            atolerance: default_atolerance(),
             allow_delay: None,
             // Scenario B configs
             target_tilt: None,

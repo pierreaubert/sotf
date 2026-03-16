@@ -63,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     println!("Creating audio engine with config watching enabled...");
-    let mut engine = AudioEngine::new(config)?;
+    let engine = AudioEngine::new(config)?;
 
     // Play the file
     println!("Playing: {}", audio_file);

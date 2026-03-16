@@ -496,8 +496,10 @@ mod tests {
 
     #[test]
     fn test_calibration_for_channel_returns_path() {
-        let mut config = RecordingDeviceConfig::default();
-        config.mic_calibration_paths = vec![Some("/path/to/cal.txt".to_string())];
+        let config = RecordingDeviceConfig {
+            mic_calibration_paths: vec![Some("/path/to/cal.txt".to_string())],
+            ..Default::default()
+        };
         assert_eq!(
             config.calibration_for_channel(0),
             Some("/path/to/cal.txt")
@@ -506,8 +508,10 @@ mod tests {
 
     #[test]
     fn test_calibration_for_channel_returns_none_for_none_entry() {
-        let mut config = RecordingDeviceConfig::default();
-        config.mic_calibration_paths = vec![None, Some("/path.txt".to_string())];
+        let config = RecordingDeviceConfig {
+            mic_calibration_paths: vec![None, Some("/path.txt".to_string())],
+            ..Default::default()
+        };
         assert!(config.calibration_for_channel(0).is_none());
         assert_eq!(config.calibration_for_channel(1), Some("/path.txt"));
     }
@@ -542,9 +546,11 @@ mod tests {
 
     #[test]
     fn test_sync_calibration_paths_pads_to_channel_mappings() {
-        let mut config = RecordingDeviceConfig::default();
-        config.channel_mappings = vec![0, 1, 2];
-        config.mic_calibration_paths = vec![Some("/path.txt".to_string())];
+        let mut config = RecordingDeviceConfig {
+            channel_mappings: vec![0, 1, 2],
+            mic_calibration_paths: vec![Some("/path.txt".to_string())],
+            ..Default::default()
+        };
         config.sync_calibration_paths();
         assert_eq!(config.mic_calibration_paths.len(), 3);
         assert_eq!(config.calibration_for_channel(0), Some("/path.txt"));

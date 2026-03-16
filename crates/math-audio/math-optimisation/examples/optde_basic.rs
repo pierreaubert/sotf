@@ -17,14 +17,16 @@ fn main() {
 
     let bounds = [(-5.0, 5.0), (-5.0, 5.0)];
 
-    let mut cfg = DEConfig::default();
-    cfg.maxiter = 300;
-    cfg.popsize = 20;
-    cfg.strategy = Strategy::Best1Bin;
-    cfg.crossover = Crossover::Exponential; // demonstrate exponential crossover
-    cfg.mutation = Mutation::Range { min: 0.5, max: 1.0 }; // dithering
-    cfg.recombination = 0.9;
-    cfg.seed = Some(42);
+    let mut cfg = DEConfig {
+        maxiter: 300,
+        popsize: 20,
+        strategy: Strategy::Best1Bin,
+        crossover: Crossover::Exponential, // demonstrate exponential crossover
+        mutation: Mutation::Range { min: 0.5, max: 1.0 }, // dithering
+        recombination: 0.9,
+        seed: Some(42),
+        ..Default::default()
+    };
 
     // Penalty examples (here just a dummy inequality fc(x) <= 0):
     // Circle of radius 3: x0^2 + x1^2 - 9 <= 0
@@ -36,7 +38,7 @@ fn main() {
     // Callback every generation: stop early when convergence small enough
     let mut iter_log = 0usize;
     cfg.callback = Some(Box::new(move |inter| {
-        if iter_log % 25 == 0 {
+        if iter_log.is_multiple_of(25) {
             eprintln!(
                 "iter {:4}  best_f={:.6e}  conv(stdE)={:.3e}",
                 inter.iter, inter.fun, inter.convergence

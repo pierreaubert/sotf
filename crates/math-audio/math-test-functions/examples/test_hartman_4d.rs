@@ -18,7 +18,7 @@ fn main() {
     println!();
 
     // Test at some other known points for Hartmann functions
-    let test_points = vec![
+    let test_points = [
         vec![0.20169, 0.150011, 0.476874, 0.275332], // From 6D version adapted
         vec![0.1, 0.2, 0.3, 0.4],
         vec![0.5, 0.5, 0.5, 0.5],

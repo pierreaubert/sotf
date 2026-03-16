@@ -104,27 +104,23 @@ fn device_max_channels(device_name: &str) -> usize {
 
     let mut max_ch = 0usize;
     for device in host.output_devices().into_iter().flatten() {
-        if let Ok(desc) = device.description() {
-            if desc.name().contains(device_name) {
-                if let Ok(configs) = device.supported_output_configs() {
+        if let Ok(desc) = device.description()
+            && desc.name().contains(device_name)
+                && let Ok(configs) = device.supported_output_configs() {
                     for c in configs {
                         max_ch = max_ch.max(c.channels() as usize);
                     }
                 }
-            }
-        }
     }
     // Also check input side (may differ)
     for device in host.input_devices().into_iter().flatten() {
-        if let Ok(desc) = device.description() {
-            if desc.name().contains(device_name) {
-                if let Ok(configs) = device.supported_input_configs() {
+        if let Ok(desc) = device.description()
+            && desc.name().contains(device_name)
+                && let Ok(configs) = device.supported_input_configs() {
                     for c in configs {
                         max_ch = max_ch.min(c.channels() as usize); // use the lower of in/out
                     }
                 }
-            }
-        }
     }
     max_ch
 }
@@ -138,8 +134,8 @@ fn device_supported_sample_rates(device_name: &str) -> Vec<u32> {
     let mut supported = Vec::new();
 
     for device in host.output_devices().into_iter().flatten() {
-        if let Ok(desc) = device.description() {
-            if desc.name().contains(device_name) {
+        if let Ok(desc) = device.description()
+            && desc.name().contains(device_name) {
                 if let Ok(configs) = device.supported_output_configs() {
                     let configs: Vec<_> = configs.collect();
                     for &rate in &candidates {
@@ -153,7 +149,6 @@ fn device_supported_sample_rates(device_name: &str) -> Vec<u32> {
                 }
                 break;
             }
-        }
     }
     supported
 }
@@ -196,13 +191,11 @@ fn sweep_loopback(
     let mut spl_values = Vec::new();
     for line in csv.lines().skip(1) {
         let parts: Vec<&str> = line.split(',').collect();
-        if parts.len() >= 2 {
-            if let (Ok(freq), Ok(spl)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>()) {
-                if (100.0..=10000.0).contains(&freq) {
+        if parts.len() >= 2
+            && let (Ok(freq), Ok(spl)) = (parts[0].parse::<f32>(), parts[1].parse::<f32>())
+                && (100.0..=10000.0).contains(&freq) {
                     spl_values.push(spl);
                 }
-            }
-        }
     }
 
     if spl_values.is_empty() {

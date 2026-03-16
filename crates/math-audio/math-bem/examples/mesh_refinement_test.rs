@@ -81,7 +81,7 @@ fn main() {
 
         // Solve
         let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
-        let bem_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let _bem_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
         // Find elements near key angles
         let mut front_p: Vec<f64> = Vec::new();
@@ -179,7 +179,7 @@ fn main() {
 
         let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
 
-        let avg_p: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let _avg_p: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
         let mut front_p: Vec<f64> = Vec::new();
         let mut side_p: Vec<f64> = Vec::new();

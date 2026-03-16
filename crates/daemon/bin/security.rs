@@ -146,9 +146,9 @@ pub fn verify_peer_credentials(_stream: &UnixStream) -> Result<u32, String> {
 }
 
 /// Ensure the socket directory exists with secure permissions
-pub fn ensure_secure_socket_dir(socket_path: &PathBuf) -> std::io::Result<()> {
-    if let Some(parent) = socket_path.parent() {
-        if !parent.exists() {
+pub fn ensure_secure_socket_dir(socket_path: &std::path::Path) -> std::io::Result<()> {
+    if let Some(parent) = socket_path.parent()
+        && !parent.exists() {
             std::fs::create_dir_all(parent)?;
 
             // Set directory permissions to 0700 (owner only)
@@ -158,7 +158,6 @@ pub fn ensure_secure_socket_dir(socket_path: &PathBuf) -> std::io::Result<()> {
                 std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
             }
         }
-    }
     Ok(())
 }
 
@@ -179,6 +178,7 @@ fn get_key_path() -> PathBuf {
 /// - Key loading and validation
 /// - Key rotation
 /// - Periodic integrity checks
+#[allow(dead_code)]
 pub struct KeyManager {
     key: [u8; 32],
     fingerprint: [u8; 8],
@@ -219,7 +219,7 @@ impl KeyManager {
     }
 
     /// Load the encryption key from file
-    fn load_key_from_file(path: &PathBuf) -> io::Result<[u8; 32]> {
+    fn load_key_from_file(path: &std::path::Path) -> io::Result<[u8; 32]> {
         let mut file = File::open(path)?;
         let mut key = [0u8; 32];
         file.read_exact(&mut key)?;
@@ -228,7 +228,7 @@ impl KeyManager {
     }
 
     /// Create a new encryption key and save it to file
-    fn create_new_key(path: &PathBuf) -> io::Result<[u8; 32]> {
+    fn create_new_key(path: &std::path::Path) -> io::Result<[u8; 32]> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -253,7 +253,7 @@ impl KeyManager {
     }
 
     /// Get the modification time of a file
-    fn get_mtime(path: &PathBuf) -> Option<SystemTime> {
+    fn get_mtime(path: &std::path::Path) -> Option<SystemTime> {
         fs::metadata(path).ok()?.modified().ok()
     }
 
@@ -261,6 +261,7 @@ impl KeyManager {
     ///
     /// Returns Ok(true) if the key was reloaded, Ok(false) if unchanged.
     /// On key file deletion, regenerates a new key.
+    #[allow(dead_code)]
     pub fn check_and_reload(&mut self) -> io::Result<bool> {
         let key_path = get_key_path();
         let now = Instant::now();
@@ -337,6 +338,7 @@ impl KeyManager {
     }
 
     /// Get a reference to the cipher (if available)
+    #[allow(dead_code)]
     pub fn cipher(&self) -> Option<&AudioCipher> {
         self.cipher.as_ref()
     }
@@ -422,7 +424,7 @@ mod tests {
     fn test_current_uid() {
         let uid = get_current_uid();
         // Should be a valid UID (not u32::MAX which would indicate an error)
-        assert!(uid < 65534 || uid == 65534); // 65534 is nobody
+        assert!(uid <= 65534); // 65534 is nobody
     }
 
     #[test]

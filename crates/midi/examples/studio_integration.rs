@@ -164,11 +164,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(control) = LaunchControlXLProfile::identify_control(&msg, &template) {
                 if let MidiMessage::ControlChange { value, .. } = msg {
                     println!("[LCXL] {}: {}", control, value);
-                } else if let MidiMessage::NoteOn { velocity, .. } = msg {
-                    if velocity > 0 {
+                } else if let MidiMessage::NoteOn { velocity, .. } = msg
+                    && velocity > 0 {
                         println!("[LCXL] {} Pressed", control);
                     }
-                }
             }
         })?;
         println!("  Listening for Launch Control XL input...");

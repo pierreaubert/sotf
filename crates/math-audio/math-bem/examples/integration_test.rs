@@ -4,11 +4,11 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    use math_audio_bem::core::integration::regular_integration;
+    
     use math_audio_bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use math_audio_bem::core::types::{BoundaryCondition, ElementType, PhysicsParams};
-    use ndarray::{Array1, Array2};
-    use num_complex::Complex64;
+    
+    
+    
     use std::f64::consts::PI;
 
     let radius = 0.1;
@@ -42,8 +42,8 @@ fn test_integration(
     radius: f64,
 ) {
     use math_audio_bem::core::integration::regular_integration;
-    use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};
-    use ndarray::{Array1, Array2};
+    use math_audio_bem::core::types::PhysicsParams;
+    use ndarray::Array1;
     use num_complex::Complex64;
     use std::f64::consts::PI;
 

@@ -55,6 +55,8 @@ impl PlayerView {
             de_f: config.de_f,
             de_cr: config.de_cr,
             strategy: config.strategy.clone(),
+            adaptive_weight_f: config.adaptive_weight_f,
+            adaptive_weight_cr: config.adaptive_weight_cr,
             refine: config.refine,
             local_algo: config.local_algo.clone(),
             smooth: config.smooth,
@@ -365,6 +367,32 @@ impl PlayerView {
                     });
                 }
             })
+            .on_adaptive_weight_f_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .optimizer_config
+                            .adaptive_weight_f = value;
+                    });
+                }
+            })
+            .on_adaptive_weight_cr_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .spinorama_eq_state
+                            .optimizer_config
+                            .adaptive_weight_cr = value;
+                    });
+                }
+            })
             .on_refine_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
@@ -415,12 +443,15 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state
+                        let cfg = &mut state
                             .app
                             .measurement_state
                             .spinorama_eq_state
-                            .optimizer_config
-                            .smooth = value;
+                            .optimizer_config;
+                        cfg.smooth = value;
+                        if value {
+                            cfg.psychoacoustic = false;
+                        }
                     });
                 }
             })
@@ -552,12 +583,15 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state
+                        let cfg = &mut state
                             .app
                             .measurement_state
                             .spinorama_eq_state
-                            .optimizer_config
-                            .psychoacoustic = value;
+                            .optimizer_config;
+                        cfg.psychoacoustic = value;
+                        if value {
+                            cfg.smooth = false;
+                        }
                     });
                 }
             })

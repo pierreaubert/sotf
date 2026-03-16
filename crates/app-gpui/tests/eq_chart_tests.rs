@@ -202,7 +202,7 @@ fn test_control_points_within_bounds() {
         );
 
         assert!(
-            y >= CHART_TOP_MARGIN && y <= CHART_TOP_MARGIN + TEST_PLOT_HEIGHT,
+            (CHART_TOP_MARGIN..=CHART_TOP_MARGIN + TEST_PLOT_HEIGHT).contains(&y),
             "Y out of bounds for gain={}: y={}, bounds=[{}, {}]",
             gain,
             y,

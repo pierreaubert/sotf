@@ -3,7 +3,8 @@
 // This benchmark suite measures performance of the binaural decoder plugin
 // under various configurations and workloads.
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
 use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_binaural::{BinauralDecoderPlugin, RoomModel};
 use std::time::Duration;

@@ -30,25 +30,25 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         // Sort and filter (ctrl combos stay global)
         KeyBinding::new("ctrl-shift-s", actions::CycleSortOrder, None),
         KeyBinding::new("ctrl-shift-c", actions::CycleChannelFilter, None),
-        // Navigation - VSCode/standard style (arrow keys stay global)
-        KeyBinding::new("up", actions::SelectPrev, None),
-        KeyBinding::new("down", actions::SelectNext, None),
-        KeyBinding::new("pageup", actions::SelectPrevPage, None),
-        KeyBinding::new("pagedown", actions::SelectNextPage, None),
+        // Navigation - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("up", actions::SelectPrev, Some("PlayerView")),
+        KeyBinding::new("down", actions::SelectNext, Some("PlayerView")),
+        KeyBinding::new("pageup", actions::SelectPrevPage, Some("PlayerView")),
+        KeyBinding::new("pagedown", actions::SelectNextPage, Some("PlayerView")),
         KeyBinding::new("ctrl-home", actions::PrevPage, None),
         KeyBinding::new("ctrl-end", actions::NextPage, None),
-        KeyBinding::new("home", actions::PrevPage, None),
-        KeyBinding::new("end", actions::NextPage, None),
-        // Expand/collapse - VSCode explorer style (arrow keys stay global)
-        KeyBinding::new("left", actions::ToggleExpand, None),
-        KeyBinding::new("right", actions::ToggleExpand, None),
+        KeyBinding::new("home", actions::PrevPage, Some("PlayerView")),
+        KeyBinding::new("end", actions::NextPage, Some("PlayerView")),
+        // Expand/collapse - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("left", actions::ToggleExpand, Some("PlayerView")),
+        KeyBinding::new("right", actions::ToggleExpand, Some("PlayerView")),
         KeyBinding::new("ctrl-shift-[", actions::ToggleExpand, None),
         KeyBinding::new("ctrl-shift-]", actions::ToggleExpand, None),
-        // Enter action - stays global but handler checks mode
-        KeyBinding::new("enter", actions::Enter, None),
+        // Enter action - PlayerView context so text editing can use Enter
+        KeyBinding::new("enter", actions::Enter, Some("PlayerView")),
         KeyBinding::new("ctrl-enter", actions::Enter, None),
-        // Remove/delete - VSCode style (backspace needs PlayerView to allow text editing!)
-        KeyBinding::new("delete", actions::RemoveItem, None),
+        // Remove/delete - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("delete", actions::RemoveItem, Some("PlayerView")),
         KeyBinding::new("ctrl-shift-k", actions::RemoveItem, None),
         KeyBinding::new("backspace", actions::RemoveItem, Some("PlayerView")),
         // Plugin controls - VSCode style (alt combos stay global)
@@ -58,9 +58,9 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-shift-a", actions::AddDirectory, None),
         KeyBinding::new("ctrl-shift-r", actions::ScanLibrary, None),
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
-        // Level meter controls - single letter keys need PlayerView
-        KeyBinding::new("tab", actions::SelectNextMeterGroup, None),
-        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, None),
+        // Level meter controls - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
+        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, Some("PlayerView")),
         KeyBinding::new("m", actions::ToggleMeterMute, Some("PlayerView")),
         KeyBinding::new("shift-m", actions::ToggleMeterSolo, Some("PlayerView")),
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),

@@ -948,7 +948,7 @@ fn run_decoder_thread(
                 if state
                     .hal_reader
                     .as_ref()
-                    .map_or(true, |r| !r.is_connected())
+                    .is_none_or(|r| !r.is_connected())
                 {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }

@@ -68,6 +68,10 @@ impl HeadphoneEqStep {
     }
 }
 
+fn default_atolerance() -> f64 {
+    1e-5
+}
+
 /// Headphone EQ optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeadphoneEqOptimizerConfig {
@@ -101,8 +105,15 @@ pub struct HeadphoneEqOptimizerConfig {
     pub de_cr: f64,
     /// DE strategy
     pub strategy: String,
+    /// Adaptive weight for F parameter (DE adaptive strategies only)
+    pub adaptive_weight_f: f64,
+    /// Adaptive weight for CR parameter (DE adaptive strategies only)
+    pub adaptive_weight_cr: f64,
     /// Tolerance for convergence
     pub tolerance: f64,
+    /// Absolute tolerance for convergence
+    #[serde(default = "default_atolerance")]
+    pub atolerance: f64,
     /// Enable local refinement after global optimization
     pub refine: bool,
     /// Local refinement algorithm
@@ -131,7 +142,10 @@ impl Default for HeadphoneEqOptimizerConfig {
             de_f: 0.8,
             de_cr: 0.9,
             strategy: "currenttobest1bin".to_string(),
-            tolerance: 1e-3,
+            adaptive_weight_f: 0.8,
+            adaptive_weight_cr: 0.7,
+            tolerance: 1e-5,
+            atolerance: 1e-5,
             refine: false,
             local_algo: "cobyla".to_string(),
             smooth: false,

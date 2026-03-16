@@ -23,36 +23,36 @@ pub(super) fn emacs_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-s", actions::ToggleSearch, None),
         KeyBinding::new("/", actions::ToggleSearch, Some("PlayerView")),
         KeyBinding::new("ctrl-x v", actions::ToggleLibraryView, None),
-        KeyBinding::new("ctrl-h", actions::ToggleHelp, None),
+        KeyBinding::new("ctrl-h", actions::ToggleHelp, Some("PlayerView")),
         KeyBinding::new("ctrl-shift-h", actions::ToggleHelpSupport, None),
         KeyBinding::new("F1", actions::ToggleHelp, None),
         // Sort and filter - Emacs style (alt combos are fine)
         KeyBinding::new("alt-s", actions::CycleSortOrder, None),
         KeyBinding::new("alt-c", actions::CycleChannelFilter, None),
-        // Navigation - Emacs C-n/C-p (ctrl combos stay global)
-        KeyBinding::new("ctrl-p", actions::SelectPrev, None),
-        KeyBinding::new("up", actions::SelectPrev, None),
-        KeyBinding::new("ctrl-n", actions::SelectNext, None),
-        KeyBinding::new("down", actions::SelectNext, None),
+        // Navigation - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("ctrl-p", actions::SelectPrev, Some("PlayerView")),
+        KeyBinding::new("up", actions::SelectPrev, Some("PlayerView")),
+        KeyBinding::new("ctrl-n", actions::SelectNext, Some("PlayerView")),
+        KeyBinding::new("down", actions::SelectNext, Some("PlayerView")),
         KeyBinding::new("alt-v", actions::SelectPrevPage, None),
         KeyBinding::new("ctrl-v", actions::SelectNextPage, None),
-        KeyBinding::new("pageup", actions::SelectPrevPage, None),
-        KeyBinding::new("pagedown", actions::SelectNextPage, None),
+        KeyBinding::new("pageup", actions::SelectPrevPage, Some("PlayerView")),
+        KeyBinding::new("pagedown", actions::SelectNextPage, Some("PlayerView")),
         KeyBinding::new("alt-<", actions::PrevPage, None),
         KeyBinding::new("alt->", actions::NextPage, None),
-        // Expand/collapse - Emacs style (ctrl combos stay global)
-        KeyBinding::new("ctrl-b", actions::ToggleExpand, None),
-        KeyBinding::new("ctrl-f", actions::ToggleExpand, None),
-        KeyBinding::new("left", actions::ToggleExpand, None),
-        KeyBinding::new("right", actions::ToggleExpand, None),
-        // Enter action - enter stays global, ctrl combos stay global
-        KeyBinding::new("enter", actions::Enter, None),
+        // Expand/collapse - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("ctrl-b", actions::ToggleExpand, Some("PlayerView")),
+        KeyBinding::new("ctrl-f", actions::ToggleExpand, Some("PlayerView")),
+        KeyBinding::new("left", actions::ToggleExpand, Some("PlayerView")),
+        KeyBinding::new("right", actions::ToggleExpand, Some("PlayerView")),
+        // Enter action - PlayerView context so text editing can use Enter
+        KeyBinding::new("enter", actions::Enter, Some("PlayerView")),
         KeyBinding::new("ctrl-m", actions::Enter, None),
         KeyBinding::new("ctrl-j", actions::Enter, None),
-        // Remove/delete - Emacs style (ctrl combos stay global)
-        KeyBinding::new("ctrl-d", actions::RemoveItem, None),
-        KeyBinding::new("ctrl-k", actions::RemoveItem, None),
-        KeyBinding::new("delete", actions::RemoveItem, None),
+        // Remove/delete - PlayerView context so text editing isn't intercepted
+        KeyBinding::new("ctrl-d", actions::RemoveItem, Some("PlayerView")),
+        KeyBinding::new("ctrl-k", actions::RemoveItem, Some("PlayerView")),
+        KeyBinding::new("delete", actions::RemoveItem, Some("PlayerView")),
         // Plugin controls - alt combos stay global
         KeyBinding::new("alt-up", actions::MovePluginUp, None),
         KeyBinding::new("alt-down", actions::MovePluginDown, None),
@@ -61,8 +61,8 @@ pub(super) fn emacs_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-x s", actions::ScanLibrary, None),
         KeyBinding::new("alt-x S", actions::SwitchToSettings, None),
         // Level meter controls - alt combos stay global
-        KeyBinding::new("tab", actions::SelectNextMeterGroup, None),
-        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, None),
+        KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
+        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, Some("PlayerView")),
         KeyBinding::new("alt-m", actions::ToggleMeterMute, None),
         KeyBinding::new("alt-M", actions::ToggleMeterSolo, None),
         KeyBinding::new("ctrl-alt-m", actions::ToggleMeterDim, None),

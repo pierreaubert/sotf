@@ -5,7 +5,7 @@
 #[cfg(feature = "pure-rust")]
 fn main() {
     use math_audio_bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use std::f64::consts::PI;
+    
 
     let radius = 0.1;
 
@@ -23,7 +23,7 @@ fn main() {
 }
 
 #[cfg(feature = "pure-rust")]
-fn check_mesh(mesh: &math_audio_bem::core::types::Mesh, radius: f64, name: &str) {
+fn check_mesh(mesh: &math_audio_bem::core::types::Mesh, radius: f64, _name: &str) {
     let n = mesh.elements.len();
     println!("  {} elements, {} nodes", n, mesh.nodes.nrows());
 

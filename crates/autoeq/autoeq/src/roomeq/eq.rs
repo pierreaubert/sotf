@@ -186,8 +186,8 @@ pub fn optimize_channel_eq(
         loss: loss_type,
 
         // Optimization tuning
-        tolerance: 1e-3,
-        atolerance: 1e-4,
+        tolerance: config.tolerance,
+        atolerance: config.atolerance,
         recombination: 0.9,
         adaptive_weight_f: 0.9,
         adaptive_weight_cr: 0.9,
@@ -515,8 +515,8 @@ fn build_args(
         smooth: true,
         smooth_n: 2,
         loss: loss_type,
-        tolerance: 1e-3,
-        atolerance: 1e-4,
+        tolerance: config.tolerance,
+        atolerance: config.atolerance,
         recombination: 0.9,
         adaptive_weight_f: 0.9,
         adaptive_weight_cr: 0.9,

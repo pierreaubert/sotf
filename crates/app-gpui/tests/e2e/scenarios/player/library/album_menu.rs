@@ -106,7 +106,7 @@ impl TestScenario for AlbumContextMenuScenario {
             // Simulate clicking "Add to Queue" - same as on_select handler
             app.ui_state.context_menu = None;
             app.ui_state.input_mode = InputMode::Normal;
-            if let Some(path) = app.add_album_to_queue() {
+            if let Some(_path) = app.add_album_to_queue() {
                 // In real UI, this would call PlayerView::play_track(state, path)
                 // But we just need to verify queue was added
             }
@@ -156,7 +156,7 @@ impl TestScenario for AlbumContextMenuScenario {
         driver.update_app(|app, _| {
             app.ui_state.context_menu = None;
             app.ui_state.input_mode = InputMode::Normal;
-            if let Some(path) = app.play_album_now() {
+            if let Some(_path) = app.play_album_now() {
                 // In real UI, this would call PlayerView::play_track(state, path)
             }
         });

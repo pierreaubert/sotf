@@ -111,7 +111,7 @@ fn main() {
 
         // Build system WITH correction
         let mut system_corrected = build_tbem_system(&elements, &mesh.nodes, &physics);
-        let correction_applied = apply_row_sum_correction(&mut system_corrected);
+        let _correction_applied = apply_row_sum_correction(&mut system_corrected);
 
         // Verify row sums after correction
         let mut row_sums_after: Vec<Complex64> = Vec::new();

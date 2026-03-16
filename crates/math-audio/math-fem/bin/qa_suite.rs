@@ -377,12 +377,12 @@ fn run_sphere_scattering_test(
                 _ => Complex64::new(0.0, -1.0),
             };
 
-            let j_vals = spherical_bessel_j(n as usize + 1, kr);
-            let y_vals = spherical_bessel_y(n as usize + 1, kr);
-            let jn = j_vals[n as usize];
-            let yn = y_vals[n as usize];
+            let j_vals = spherical_bessel_j(n + 1, kr);
+            let y_vals = spherical_bessel_y(n + 1, kr);
+            let jn = j_vals[n];
+            let yn = y_vals[n];
             let hn = Complex64::new(jn, yn);
-            let pn = legendre_p(n as usize, cos_theta);
+            let pn = legendre_p(n, cos_theta);
 
             total += prefactor * i_pow * (jn - coeff * hn) * pn;
         }
@@ -588,10 +588,10 @@ fn compute_rigid_sphere_coefficients(ka: f64, num_terms: usize) -> Vec<Complex64
     let mut coefficients = Vec::with_capacity(num_terms);
     for n in 0..num_terms {
         let n_f64 = n as f64;
-        let j_n_vals = spherical_bessel_j(n as usize + 1, ka);
-        let y_n_vals = spherical_bessel_y(n as usize + 1, ka);
-        let jn = j_n_vals[n as usize];
-        let yn = y_n_vals[n as usize];
+        let j_n_vals = spherical_bessel_j(n + 1, ka);
+        let y_n_vals = spherical_bessel_y(n + 1, ka);
+        let jn = j_n_vals[n];
+        let yn = y_n_vals[n];
 
         let jn_minus_1 = if n > 0 {
             j_n_vals[n - 1]

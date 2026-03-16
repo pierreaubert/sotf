@@ -124,7 +124,7 @@ fn main() {
         let freq = ka * speed_of_sound / (2.0 * PI * radius);
         let k = ka / radius;
         let wavelength = speed_of_sound / freq;
-        let epw = wavelength / avg_element_size; // Elements per wavelength
+        let _epw = wavelength / avg_element_size; // Elements per wavelength
 
         let physics = PhysicsParams::new(freq, speed_of_sound, density, false);
 
@@ -139,8 +139,8 @@ fn main() {
         // Check if Mie computation is valid
         if mie.pressure.iter().any(|p| !p.is_finite()) {
             println!(
-                "{:>8.0} | {:>8.2} | {:>8.1} | {:>10} | {:>10} | {:>10} | {}",
-                freq, ka, scale, "NaN", "-", "-", "error"
+                "{:>8.0} | {:>8.2} | {:>8.1} | {:>10} | {:>10} | {:>10} | error",
+                freq, ka, scale, "NaN", "-", "-"
             );
             continue;
         }
@@ -166,8 +166,8 @@ fn main() {
 
         // Solve
         let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
-        let p_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
-        let p_max = solution_x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
+        let _p_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let _p_max = solution_x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
 
         // Compute regional averages from BEM
         let mut front_p: Vec<f64> = Vec::new();
@@ -186,17 +186,17 @@ fn main() {
             }
         }
 
-        let bem_front = if !front_p.is_empty() {
+        let _bem_front = if !front_p.is_empty() {
             front_p.iter().sum::<f64>() / front_p.len() as f64
         } else {
             0.0
         };
-        let bem_side = if !side_p.is_empty() {
+        let _bem_side = if !side_p.is_empty() {
             side_p.iter().sum::<f64>() / side_p.len() as f64
         } else {
             0.0
         };
-        let bem_back = if !back_p.is_empty() {
+        let _bem_back = if !back_p.is_empty() {
             back_p.iter().sum::<f64>() / back_p.len() as f64
         } else {
             0.0

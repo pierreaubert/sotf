@@ -334,9 +334,9 @@ impl MemoryEstimate {
         );
 
         // For heterogeneous CPUs, also show P-core only estimate
-        if let Some(info) = cpu_info {
-            if info.is_heterogeneous {
-                if let Some(p_cores) = info.perf_cores {
+        if let Some(info) = cpu_info
+            && info.is_heterogeneous
+                && let Some(p_cores) = info.perf_cores {
                     let p_core_mem = base + per_freq * p_cores;
                     println!(
                         "  {} P-cores only concurrent: {}",
@@ -344,8 +344,6 @@ impl MemoryEstimate {
                         Self::format_bytes(p_core_mem)
                     );
                 }
-            }
-        }
 
         // Memory for all frequencies at once (worst case)
         let all_at_once = base + per_freq * n_frequencies;
@@ -916,8 +914,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         for (name, override_opt) in wall_overrides {
-            if let Some(surface) = override_opt {
-                if !matches!(surface, SurfaceConfig::Rigid) {
+            if let Some(surface) = override_opt
+                && !matches!(surface, SurfaceConfig::Rigid) {
                     eprintln!(
                         "Error: {} only supports rigid boundaries, but {} is {:?}",
                         solver_label, name, surface
@@ -925,7 +923,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("Hint: Use a GMRES-based solver for non-rigid boundaries.");
                     std::process::exit(1);
                 }
-            }
         }
     }
 
@@ -1417,7 +1414,7 @@ fn run_fem_simulation(
 
                     // Update progress
                     let completed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
-                    if verbose || completed % 10 == 0 || completed == n_freqs {
+                    if verbose || completed.is_multiple_of(10) || completed == n_freqs {
                         let elapsed = solve_start.elapsed().as_secs_f64();
                         let rate = completed as f64 / elapsed;
                         let remaining = (n_freqs - completed) as f64 / rate;
@@ -1715,7 +1712,7 @@ fn run_fem_simulation_adaptive(
                     );
 
                     let completed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
-                    if verbose || completed % 10 == 0 || completed == band_n_freqs {
+                    if verbose || completed.is_multiple_of(10) || completed == band_n_freqs {
                         let elapsed = solve_start.elapsed().as_secs_f64();
                         let rate = completed as f64 / elapsed;
                         print!(
@@ -1766,11 +1763,9 @@ fn run_fem_simulation_adaptive(
 
     // Collect results sorted by frequency
     let mut all_lp_spl_values: Vec<Vec<f64>> = vec![Vec::with_capacity(n_freqs); n_lps];
-    for spl_values_opt in &all_spl_values {
-        if let Some(spl_values) = spl_values_opt {
-            for (lp_idx, &spl) in spl_values.iter().enumerate() {
-                all_lp_spl_values[lp_idx].push(spl);
-            }
+    for spl_values in all_spl_values.iter().flatten() {
+        for (lp_idx, &spl) in spl_values.iter().enumerate() {
+            all_lp_spl_values[lp_idx].push(spl);
         }
     }
 
@@ -2061,7 +2056,7 @@ fn run_hierarchical_solve(
 
             // Update progress
             let completed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
-            if verbose || completed % 10 == 0 {
+            if verbose || completed.is_multiple_of(10) {
                 let elapsed = solve_start.elapsed().as_secs_f64();
                 let rate = completed as f64 / elapsed;
                 let remaining = (n_freqs - completed) as f64 / rate;
@@ -2158,7 +2153,7 @@ fn run_hierarchical_solve(
 
             // Update progress
             let completed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
-            if verbose || completed % 10 == 0 || completed == n_freqs {
+            if verbose || completed.is_multiple_of(10) || completed == n_freqs {
                 let elapsed = solve_start.elapsed().as_secs_f64();
                 let rate = completed as f64 / elapsed;
                 let remaining = (n_freqs - completed) as f64 / rate;
@@ -2385,10 +2380,10 @@ fn assemble_rhs_parallel(
                 let f_val = compute_source_term(x, y, z, sources, frequency, source_width);
                 let det_j = jac.det.abs();
 
-                for i in 0..n_nodes {
-                    let contrib = f_val * Complex64::new(shape.values[i] * det_j * qp.weight, 0.0);
+                for (shape_val, &vert) in shape.values.iter().zip(vertices.iter()).take(n_nodes) {
+                    let contrib = f_val * Complex64::new(shape_val * det_j * qp.weight, 0.0);
                     if contrib.norm() > 1e-15 {
-                        local_contribs.push((vertices[i], contrib));
+                        local_contribs.push((vert, contrib));
                     }
                 }
             }

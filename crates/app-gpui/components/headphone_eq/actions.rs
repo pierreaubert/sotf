@@ -154,6 +154,7 @@ impl PlayerView {
                     params.recombination = config.de_cr;
                     params.strategy = config.strategy.clone();
                     params.tolerance = config.tolerance;
+                    params.atolerance = config.atolerance;
                     params.refine = config.refine;
                     params.local_algo = config.local_algo.clone();
                     params.smooth = config.smooth;

@@ -807,11 +807,9 @@ impl App {
                 if let Some(device) = input_devices
                     .iter()
                     .find(|d| d.name == rec_config.device_name)
-                {
-                    if let Some(max_ch) =
+                    && let Some(max_ch) =
                         device.default_config.as_ref().map(|c| c.channels as usize)
-                    {
-                        if self
+                        && self
                             .measurement_state
                             .recording_state
                             .recording_config
@@ -823,8 +821,6 @@ impl App {
                                 .recording_config
                                 .num_channels = max_ch;
                         }
-                    }
-                }
             }
         }
     }

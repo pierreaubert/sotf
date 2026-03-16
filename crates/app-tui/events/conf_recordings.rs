@@ -536,7 +536,7 @@ pub(crate) fn update_channel_mappings_for_config(
 }
 
 pub(crate) fn init_recording_channels(app: &mut App) {
-    use sotf_audio_player::recording_types::{ChannelRecording, ChannelRecordingState};
+    use sotf_audio_player::recording_types::ChannelRecording;
 
     let expected_count = app.recording.playback_config.channel_mappings.len();
     if app.recording.channel_recordings.len() != expected_count {

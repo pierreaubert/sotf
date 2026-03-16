@@ -29,7 +29,7 @@ fn main() {
     let ka_values: Vec<f64> = vec![0.3, 0.5, 0.7, 0.8, 0.9, 1.0, 1.5, 2.0, 3.0];
 
     // Test subdivisions 2, 3, and optionally 4
-    let subdivisions = vec![2, 3];
+    let subdivisions = [2, 3];
 
     // Precompute meshes
     let meshes: Vec<_> = subdivisions

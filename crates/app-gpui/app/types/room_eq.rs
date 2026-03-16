@@ -10,6 +10,7 @@ use autoeq::roomeq::{
     CrossoverConfig as BackendCrossoverConfig,
     ExcursionProtectionConfig as BackendExcursionProtectionConfig, FirConfig as BackendFirConfig,
     HighFreqFilterConfig, HighpassType, LowFreqFilterConfig, MeasurementSource,
+    MultiMeasurementConfig, MultiMeasurementStrategy,
     MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
     OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
     ProcessingMode as BackendProcessingMode, RoomConfig,
@@ -375,6 +376,13 @@ impl MultiSpeakerMode {
     }
 }
 
+fn default_tolerance() -> f64 {
+    1e-5
+}
+fn default_atolerance() -> f64 {
+    1e-5
+}
+
 // Re-export shared algorithm type from player crate
 pub use sotf_audio_player::room_eq_types::RoomEqAlgorithm;
 
@@ -618,6 +626,26 @@ impl Default for MultiSeatConfig {
     }
 }
 
+/// Multi-measurement optimization configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiMeasurementUiConfig {
+    pub enabled: bool,
+    pub strategy: String,
+    pub variance_lambda: f64,
+    pub weights: Vec<f64>,
+}
+
+impl Default for MultiMeasurementUiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            strategy: "average".to_string(),
+            variance_lambda: 1.0,
+            weights: Vec::new(),
+        }
+    }
+}
+
 /// Group Delay Optimization configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GroupDelayOptConfig {
@@ -713,6 +741,12 @@ pub struct RoomEqOptimizerConfig {
     pub psychoacoustic: bool,
     /// Enable asymmetric loss (penalize peaks more than dips)
     pub asymmetric_loss: bool,
+    /// Convergence tolerance (relative)
+    #[serde(default = "default_tolerance")]
+    pub tolerance: f64,
+    /// Convergence tolerance (absolute)
+    #[serde(default = "default_atolerance")]
+    pub atolerance: f64,
     /// Target curve (e.g., "flat", "harman")
     pub target_curve: String,
     /// System type (e.g., "stereo", "multichannel")
@@ -751,6 +785,8 @@ pub struct RoomEqOptimizerConfig {
     pub phase_alignment: PhaseAlignmentConfig,
     #[serde(default)]
     pub multi_seat: MultiSeatConfig,
+    #[serde(default)]
+    pub multi_measurement: MultiMeasurementUiConfig,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -775,6 +811,8 @@ impl Default for RoomEqOptimizerConfig {
             loss_type: "flat".to_string(),
             psychoacoustic: true,
             asymmetric_loss: true,
+            tolerance: 1e-5,
+            atolerance: 1e-5,
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
             allow_delay: false,
@@ -788,6 +826,7 @@ impl Default for RoomEqOptimizerConfig {
             schroeder_split: SchroederSplitConfig::default(),
             phase_alignment: PhaseAlignmentConfig::default(),
             multi_seat: MultiSeatConfig::default(),
+            multi_measurement: MultiMeasurementUiConfig::default(),
         }
     }
 }
@@ -1089,6 +1128,7 @@ pub struct RoomEqDropdowns {
     pub mixed_crossover_type_open: bool,
     pub mixed_fir_band_open: bool,
     pub vog_reference_channel_open: bool,
+    pub multi_measurement_strategy_open: bool,
 
     /// Review step smoothing dropdown
     pub review_smoothing_open: bool,
@@ -1161,6 +1201,12 @@ pub struct RoomEqState {
     pub progress_chart_state: Option<InteractiveChartStateWrapper>,
     /// Custom target curve for manual entry mode
     pub custom_target_curve: CustomTargetCurve,
+
+    // === Multi-position data detection ===
+    /// Whether loaded data has multi-position measurements (MeasurementSource::Multiple)
+    pub has_multi_position_data: bool,
+    /// Per-speaker measurement counts: (channel_name, count)
+    pub multi_position_counts: Vec<(String, usize)>,
 }
 
 impl Default for RoomEqState {
@@ -1188,6 +1234,8 @@ impl Default for RoomEqState {
             review_y_axis_auto: true,
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
+            has_multi_position_data: false,
+            multi_position_counts: Vec::new(),
         }
     }
 }
@@ -1234,6 +1282,11 @@ impl RoomEqState {
     /// Check if any channel is a multi-driver group
     pub fn has_multi_driver(&self) -> bool {
         self.channel_measurements.iter().any(|m| m.is_group)
+    }
+
+    /// Check if multi-position measurement data is available
+    pub fn has_multiple_measurements(&self) -> bool {
+        self.has_multi_position_data
     }
 
     /// Height channel names used for Voice of God detection
@@ -1562,6 +1615,8 @@ impl RoomEqState {
             local_algo: self.optimizer_config.local_algo.clone(),
             psychoacoustic: self.optimizer_config.psychoacoustic,
             asymmetric_loss: self.optimizer_config.asymmetric_loss,
+            tolerance: self.optimizer_config.tolerance,
+            atolerance: self.optimizer_config.atolerance,
             allow_delay: Some(self.optimizer_config.allow_delay),
             target_tilt: if self.optimizer_config.target_tilt.enabled {
                 let tilt_type = match self.optimizer_config.target_tilt.tilt_type.as_str() {
@@ -1662,6 +1717,27 @@ impl RoomEqState {
             },
             broadband_target_matching: if self.optimizer_config.broadband_target_matching.enabled {
                 Some(autoeq::roomeq::BroadbandTargetMatchingConfig { enabled: true })
+            } else {
+                None
+            },
+            multi_measurement: if self.optimizer_config.multi_measurement.enabled {
+                let strategy = match self.optimizer_config.multi_measurement.strategy.as_str() {
+                    "average" => MultiMeasurementStrategy::Average,
+                    "weighted_sum" => MultiMeasurementStrategy::WeightedSum,
+                    "minimax" => MultiMeasurementStrategy::Minimax,
+                    "variance_penalized" => MultiMeasurementStrategy::VariancePenalized,
+                    s => panic!("Unknown multi_measurement strategy: {s}"),
+                };
+                let weights = if self.optimizer_config.multi_measurement.weights.is_empty() {
+                    None
+                } else {
+                    Some(self.optimizer_config.multi_measurement.weights.clone())
+                };
+                Some(MultiMeasurementConfig {
+                    strategy,
+                    weights,
+                    variance_lambda: self.optimizer_config.multi_measurement.variance_lambda,
+                })
             } else {
                 None
             },

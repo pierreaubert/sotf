@@ -183,7 +183,7 @@ fn benchmark_eq(c: &mut Criterion) {
             num_frames: buf_size,
         };
 
-        group.bench_function(&format!("1band_{}frames", buf_size), |b| {
+        group.bench_function(format!("1band_{}frames", buf_size), |b| {
             b.iter(|| {
                 plugin
                     .process(
@@ -216,7 +216,7 @@ fn benchmark_delay(c: &mut Criterion) {
             num_frames: buf_size,
         };
 
-        group.bench_function(&format!("stereo_{}frames", buf_size), |b| {
+        group.bench_function(format!("stereo_{}frames", buf_size), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -236,7 +236,7 @@ fn benchmark_delay(c: &mut Criterion) {
             num_frames: BUFFER_SIZE,
         };
 
-        group.bench_function(&format!("feedback_{:.0}pct", feedback * 100.0), |b| {
+        group.bench_function(format!("feedback_{:.0}pct", feedback * 100.0), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -265,7 +265,7 @@ fn benchmark_gate(c: &mut Criterion) {
             num_frames: buf_size,
         };
 
-        group.bench_function(&format!("stereo_{}frames", buf_size), |b| {
+        group.bench_function(format!("stereo_{}frames", buf_size), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -335,7 +335,7 @@ fn benchmark_limiter(c: &mut Criterion) {
             num_frames: BUFFER_SIZE,
         };
 
-        group.bench_function(&format!("lookahead_{}ms", lookahead), |b| {
+        group.bench_function(format!("lookahead_{}ms", lookahead), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -364,7 +364,7 @@ fn benchmark_expander(c: &mut Criterion) {
             num_frames: buf_size,
         };
 
-        group.bench_function(&format!("stereo_{}frames", buf_size), |b| {
+        group.bench_function(format!("stereo_{}frames", buf_size), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -434,7 +434,7 @@ fn benchmark_crossover(c: &mut Criterion) {
             num_frames: BUFFER_SIZE,
         };
 
-        group.bench_function(&format!("lr24_{}ch", channels), |b| {
+        group.bench_function(format!("lr24_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
                     .process_in_place(black_box(&mut buffer), black_box(&context))
@@ -545,7 +545,6 @@ fn benchmark_analyzers(c: &mut Criterion) {
             min_freq: 20.0,
             max_freq: 20000.0,
             smoothing: 0.7,
-            ..Default::default()
         };
         let mut plugin = SpectrumAnalyzerPlugin::with_config(CHANNELS, config).unwrap();
         plugin.initialize(SAMPLE_RATE).unwrap();

@@ -813,6 +813,8 @@ fn spawn_room_eq_optimization(app: &mut App) {
             local_algo: config.local_algo.clone(),
             psychoacoustic: config.psychoacoustic,
             asymmetric_loss: config.asymmetric_loss,
+            tolerance: config.tolerance,
+            atolerance: config.atolerance,
             allow_delay: Some(config.allow_delay),
             target_tilt: if config.target_tilt.enabled {
                 let tilt_type = match config.target_tilt.tilt_type.as_str() {
@@ -912,6 +914,7 @@ fn spawn_room_eq_optimization(app: &mut App) {
             } else {
                 None
             },
+            multi_measurement: None,
         };
 
         let room_config = RoomConfig {

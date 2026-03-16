@@ -82,7 +82,7 @@ mod tests {
         let buffer = signal_gen.generate(10);
 
         for &sample in &buffer[..10] {
-            assert!((sample - 1.0).abs() < 1e-5);
+            assert!((sample - 1.0_f32).abs() < 1e-5);
         }
     }
 

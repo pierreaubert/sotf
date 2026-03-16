@@ -10,14 +10,14 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    use math_audio_bem::analytical::sphere_scattering_3d;
-    use math_audio_bem::core::assembly::tbem::build_tbem_system;
-    use math_audio_bem::core::incident::IncidentField;
+    
+    
+    
     use math_audio_bem::core::mesh::generators::generate_sphere_mesh;
-    use math_audio_bem::core::solver::direct::lu_solve;
-    use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};
-    use ndarray::{Array1, Array2};
-    use num_complex::Complex64;
+    
+    use math_audio_bem::core::types::PhysicsParams;
+    
+    
     use std::f64::consts::PI;
 
     println!("=== BEM Diagnostics: Step-by-Step Investigation ===\n");
@@ -65,7 +65,7 @@ fn investigate_incident_field(
 ) {
     use math_audio_bem::core::incident::IncidentField;
     use ndarray::Array2;
-    use std::f64::consts::PI;
+    
 
     let incident = IncidentField::plane_wave_z();
 
@@ -155,7 +155,7 @@ fn investigate_incident_field(
     // Expected values for plane wave at forward point
     // p_inc = exp(ik*z) where z ≈ radius (on surface)
     let expected_p = (k * radius).cos(); // Real part of exp(ik*r) at z=r
-    let expected_dpdn = -k * (k * radius).sin(); // ik * exp(ik*r) * cos(theta) where theta=0, so d·n = -1
+    let _expected_dpdn = -k * (k * radius).sin(); // ik * exp(ik*r) * cos(theta) where theta=0, so d·n = -1
     println!("\n  Expected (analytical):");
     println!(
         "    p_inc ≈ exp(ik*r) = cos({:.4}) = {:.6}",
@@ -396,9 +396,9 @@ fn investigate_solution(
     use math_audio_bem::core::incident::IncidentField;
     use math_audio_bem::core::solver::direct::lu_solve;
     use math_audio_bem::core::types::BoundaryCondition;
-    use ndarray::{Array1, Array2};
+    use ndarray::Array2;
     use num_complex::Complex64;
-    use std::f64::consts::PI;
+    
 
     // Prepare elements with velocity BC
     let mut elements = mesh.elements.clone();
