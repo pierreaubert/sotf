@@ -1806,6 +1806,290 @@ function generateProjectionsObservable() {
 }
 
 // ============================================================================
+// GLOBAL TEMPERATURE TRENDS — https://observablehq.com/@d3/global-temperature-trends
+// ============================================================================
+
+function generateTemperatureTrendsObservable() {
+  const fs = require('fs');
+  const testCases = [];
+
+  // Load real temperature data
+  const csv = fs.readFileSync('../bin/showcase/data/temperatures.csv', 'utf8');
+  const rows = csv.trim().split('\n').slice(1).map(line => {
+    const [date, value] = line.split(',');
+    return { date, value: +value };
+  });
+
+  const width = 928, height = 600;
+  const marginTop = 20, marginRight = 20, marginBottom = 30, marginLeft = 40;
+
+  const dates = rows.map(d => new Date(d.date));
+  const values = rows.map(d => d.value);
+
+  const x = d3.scaleUtc()
+    .domain(d3.extent(dates))
+    .range([marginLeft, width - marginRight]);
+
+  const y = d3.scaleLinear()
+    .domain(d3.extent(values)).nice()
+    .range([height - marginBottom, marginTop]);
+
+  const maxAbs = d3.max(values, d => Math.abs(d));
+  const color = d3.scaleSequential(d3.interpolateRdBu).domain([maxAbs, -maxAbs]);
+
+  // Sample points for validation
+  const samples = rows.filter((_, i) => i % 50 === 0).map(d => ({
+    date: d.date,
+    value: d.value,
+    x: round(x(new Date(d.date))),
+    y: round(y(d.value)),
+    color: color(d.value),
+  }));
+
+  testCases.push({
+    name: "temperature_trends",
+    description: "Global temperature anomaly scatter plot with diverging colors",
+    layout: { width, height, marginTop, marginRight, marginBottom, marginLeft },
+    data_count: rows.length,
+    x_domain: [dates[0].toISOString(), dates[dates.length - 1].toISOString()],
+    y_domain: [round(y.domain()[0]), round(y.domain()[1])],
+    max_abs: round(maxAbs),
+    radius: 2.5,
+    samples,
+  });
+
+  writeGolden('temperature_trends.json', createGoldenFile(
+    "https://observablehq.com/@d3/global-temperature-trends", "d3-scale", "temperature_trends", testCases));
+}
+
+// ============================================================================
+// ELECTRIC USAGE 2019 — https://observablehq.com/@mbostock/electric-usage-2019
+// ============================================================================
+
+function generateElectricUsageObservable() {
+  const fs = require('fs');
+  const testCases = [];
+
+  const csv = fs.readFileSync('../bin/showcase/data/pge-electric-data.csv', 'utf8');
+  const rows = csv.trim().split('\n').slice(1).map(line => {
+    const [date, usage] = line.split(',');
+    return { date, usage: +usage };
+  });
+
+  const width = 928, height = 3650; // 10px per day
+  const marginTop = 40, marginRight = 2, marginBottom = 0, marginLeft = 100;
+
+  // Extract unique dates and hours
+  const dates = [...new Set(rows.map(d => d.date.slice(0, 10)))].sort();
+  const hours = d3.range(24);
+
+  const x = d3.scaleBand().domain(hours).range([marginLeft, width - marginRight]);
+  const y = d3.scaleBand().domain(dates).range([marginTop, height - marginBottom]);
+  const usageExtent = d3.extent(rows, d => d.usage);
+  const colorScale = d3.scaleSequential(d3.interpolateYlOrRd).domain([0, usageExtent[1]]);
+
+  const samples = rows.filter((_, i) => i % 200 === 0).map(d => {
+    const dt = new Date(d.date);
+    const dateKey = d.date.slice(0, 10);
+    const hour = dt.getUTCHours();
+    return {
+      date: d.date, usage: d.usage,
+      x: round(x(hour)), y: round(y(dateKey)),
+      color: colorScale(d.usage),
+    };
+  });
+
+  testCases.push({
+    name: "electric_usage",
+    description: "Hourly electricity heatmap (hour × day)",
+    layout: { width, height: Math.min(height, 800), marginTop, marginRight, marginBottom, marginLeft },
+    data_count: rows.length,
+    usage_extent: [round(usageExtent[0]), round(usageExtent[1])],
+    unique_dates: dates.length,
+    cell_width: round(x.bandwidth()),
+    samples,
+  });
+
+  writeGolden('electric_usage.json', createGoldenFile(
+    "https://observablehq.com/@mbostock/electric-usage-2019", "d3-scale", "electric_usage", testCases));
+}
+
+// ============================================================================
+// VORONOI LABELS — https://observablehq.com/@d3/voronoi-labels
+// ============================================================================
+
+function generateVoronoiLabelsObservable() {
+  const fs = require('fs');
+  const testCases = [];
+
+  const csv = fs.readFileSync('../bin/showcase/data/voronoi.csv', 'utf8');
+  const points = csv.trim().split('\n').map(line => {
+    const [x, y] = line.split(',');
+    return [+x, +y];
+  });
+
+  const width = 928, height = 600;
+  const delaunay = d3.Delaunay.from(points);
+  const voronoi = delaunay.voronoi([0, 0, width, height]);
+
+  // For each point: compute cell area and centroid for label placement
+  const cellData = points.map((p, i) => {
+    const cell = voronoi.cellPolygon(i);
+    if (!cell) return { index: i, x: p[0], y: p[1], area: 0, show_label: false };
+    const area = -d3.polygonArea(cell); // negative because of winding order
+    const [cx, cy] = d3.polygonCentroid(cell);
+    const angle = Math.round(Math.atan2(cy - p[1], cx - p[0]) / Math.PI * 2);
+    return {
+      index: i, x: round(p[0]), y: round(p[1]),
+      area: round(area),
+      show_label: area > 2000,
+      centroid: [round(cx), round(cy)],
+      label_anchor: angle === 3 ? "top" : angle === 0 ? "right" : angle === 1 ? "bottom" : "left",
+    };
+  });
+
+  testCases.push({
+    name: "voronoi_labels",
+    description: "Scatter plot with Voronoi-based label placement",
+    layout: { width, height },
+    point_count: points.length,
+    label_count: cellData.filter(d => d.show_label).length,
+    cells: cellData.slice(0, 20), // first 20 for validation
+  });
+
+  writeGolden('voronoi_labels.json', createGoldenFile(
+    "https://observablehq.com/@d3/voronoi-labels", "d3-delaunay", "voronoi_labels", testCases));
+}
+
+// ============================================================================
+// STAR MAP — https://observablehq.com/@d3/star-map
+// ============================================================================
+
+function generateStarMapObservable() {
+  const testCases = [];
+
+  // Use deterministic star positions (first 100 from the CSV concept)
+  const stars = [];
+  for (let i = 0; i < 100; i++) {
+    const ra = (i / 100) * 360; // right ascension in degrees
+    const dec = -60 + 120 * Math.sin(i * 0.7); // declination
+    const mag = 0.5 + 4.5 * (i % 10) / 9; // magnitude 0.5 to 5.0
+    stars.push({ ra, dec, magnitude: round(mag, 2) });
+  }
+
+  const width = 928, height = 928;
+  const projection = d3.geoStereographic()
+    .reflectY(true)
+    .rotate([0, -90])
+    .fitExtent([[2, 2], [width - 2, height - 2]],
+      { type: "Sphere" });
+
+  // Project stars
+  const projectedStars = stars.map((s, i) => {
+    const [px, py] = projection([s.ra, s.dec]) || [NaN, NaN];
+    return {
+      index: i, ra: s.ra, dec: s.dec, magnitude: s.magnitude,
+      px: round(px), py: round(py),
+      radius: round(Math.max(0, d3.scaleLinear([6, -1], [0, 8])(s.magnitude)), 2),
+    };
+  }).filter(s => isFinite(s.px));
+
+  testCases.push({
+    name: "star_map",
+    description: "Stereographic star map with magnitude-scaled circles",
+    layout: { width, height },
+    star_count: projectedStars.length,
+    projection_config: { type: "stereographic", reflectY: true, rotate: [0, -90] },
+    stars: projectedStars.slice(0, 30), // first 30 for validation
+  });
+
+  writeGolden('star_map.json', createGoldenFile(
+    "https://observablehq.com/@d3/star-map", "d3-geo", "star_map", testCases));
+}
+
+// ============================================================================
+// HERTZSPRUNG-RUSSELL DIAGRAM — https://observablehq.com/@d3/hertzsprung-russell-diagram
+// ============================================================================
+
+function generateHertzsprungRussellObservable() {
+  const fs = require('fs');
+  const testCases = [];
+
+  const csv = fs.readFileSync('../bin/showcase/data/catalog.csv', 'utf8');
+  const rows = csv.trim().split('\n').slice(1).map(line => {
+    const [mag, color] = line.split(',');
+    return { absolute_magnitude: +mag, color: +color };
+  });
+
+  const width = 928, height = 924;
+  const marginTop = 40, marginRight = 40, marginBottom = 40, marginLeft = 40;
+
+  const x = d3.scaleLinear()
+    .domain([-0.39, 2.19])
+    .range([marginLeft, width - marginRight]);
+
+  const y = d3.scaleLinear()
+    .domain([-7, 19])
+    .range([marginTop, height - marginBottom]); // inverted: brighter at top
+
+  // BV color → RGB conversion (same as Observable)
+  function bv2rgb(bv) {
+    let r, g, b;
+    if (bv < -0.4) bv = -0.4;
+    if (bv > 2.0) bv = 2.0;
+    if (bv >= -0.40 && bv < 0.00) {
+      const t = (bv + 0.40) / 0.40;
+      r = 0.61 + 0.11 * t + 0.1 * t * t;
+      g = 0.70 + 0.07 * t + 0.1 * t * t;
+      b = 1.0;
+    } else if (bv >= 0.00 && bv < 0.40) {
+      const t = bv / 0.40;
+      r = 0.83 + (0.17 * t);
+      g = 0.87 + (0.11 * t);
+      b = 1.0;
+    } else if (bv >= 0.40 && bv < 1.60) {
+      const t = (bv - 0.40) / 1.20;
+      r = 1.0;
+      g = 0.98 - 0.16 * t;
+      b = Math.max(0, 1.0 - 0.5 * t);
+    } else {
+      const t = (bv - 1.60) / 0.40;
+      r = 1.0;
+      g = 0.82 - 0.5 * t;
+      b = Math.max(0, 0.4 - 0.4 * t);
+    }
+    return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+  }
+
+  const samples = rows.filter((_, i) => i % 500 === 0).map(d => ({
+    magnitude: d.absolute_magnitude,
+    color_index: d.color,
+    x: round(x(d.color)),
+    y: round(y(d.absolute_magnitude)),
+    rgb: bv2rgb(d.color),
+  }));
+
+  // Temperature from color: T = 4600 * (1/(0.92*BV + 1.7) + 1/(0.92*BV + 0.62))
+  const temp_samples = [0.0, 0.5, 1.0, 1.5].map(bv => ({
+    bv, temperature: round(4600 * (1/(0.92*bv + 1.7) + 1/(0.92*bv + 0.62)))
+  }));
+
+  testCases.push({
+    name: "hertzsprung_russell",
+    description: "HR diagram: absolute magnitude vs color index",
+    layout: { width, height, marginTop, marginRight, marginBottom, marginLeft },
+    data_count: rows.length,
+    x_domain: [-0.39, 2.19],
+    y_domain: [-7, 19],
+    samples,
+    temp_samples,
+  });
+
+  writeGolden('hertzsprung_russell.json', createGoldenFile(
+    "https://observablehq.com/@d3/hertzsprung-russell-diagram", "d3-scale", "hertzsprung_russell", testCases));
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -1832,6 +2116,11 @@ const generators = {
   voronoi_airports: generateVoronoiAirportsObservable,
   horizon_chart: generateHorizonChartObservable,
   projections: generateProjectionsObservable,
+  temperature_trends: generateTemperatureTrendsObservable,
+  electric_usage: generateElectricUsageObservable,
+  voronoi_labels: generateVoronoiLabelsObservable,
+  star_map: generateStarMapObservable,
+  hertzsprung_russell: generateHertzsprungRussellObservable,
 };
 
 const args = process.argv.slice(2);

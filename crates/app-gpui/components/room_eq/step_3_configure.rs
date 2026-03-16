@@ -168,7 +168,7 @@ impl PlayerView {
             .hide_de_params(true)
             .hide_smoothing(true)
             .hide_spacing(true)
-            .hide_tolerance(true)
+            .hide_tolerance(false)
             .hide_sample_rate(true)
             .hide_phase_alignment(is_iir_mode) // Phase alignment only for non-IIR modes
             .hide_scenario_a_text(true) // Remove "Scenario A" subtitle
@@ -436,6 +436,32 @@ impl PlayerView {
                             .room_eq_state
                             .optimizer_config
                             .population = value;
+                    });
+                }
+            })
+            .on_tolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .tolerance = value;
+                    });
+                }
+            })
+            .on_atolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .atolerance = value;
                     });
                 }
             })

@@ -28,11 +28,11 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         result.line1_path,
     ];
 
-    // Colors: orange where v0 > v1 (warmer), blue where v1 > v0 (cooler)
-    let above_color = hsla(0.07, 0.8, 0.5, 0.4); // warm orange
-    let below_color = hsla(0.6, 0.6, 0.5, 0.4); // cool blue
-    let line0_color = hsla(0.07, 0.9, 0.45, 0.8); // orange line
-    let line1_color = hsla(0.6, 0.7, 0.45, 0.8); // blue line
+    // D3 schemeRdYlBu[3]: orange (#fc8d59) where SF warmer, blue (#91bfdb) where NY warmer
+    let above_color = Hsla::from(rgb(0xfc8d59)).opacity(0.7); // SF warmer = orange
+    let below_color = Hsla::from(rgb(0x91bfdb)).opacity(0.7); // NY warmer = blue
+    let line0_color = hsla(0.0, 0.0, 0.15, 1.0); // black line for SF
+    let line1_color = hsla(0.0, 0.0, 0.15, 0.0); // invisible (Observable only shows value0 line)
     let all_colors = vec![above_color, below_color, line0_color, line1_color];
 
     // Y-axis ticks
@@ -106,16 +106,16 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().size_3().bg(hsla(0.07, 0.8, 0.5, 1.0)).rounded_sm())
-                        .child(div().text_xs().child("Actual > Normal")),
+                        .child(div().size_3().bg(rgb(0xfc8d59)).rounded_sm())
+                        .child(div().text_xs().child("San Francisco warmer")),
                 )
                 .child(
                     div()
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(div().size_3().bg(hsla(0.6, 0.6, 0.5, 1.0)).rounded_sm())
-                        .child(div().text_xs().child("Normal > Actual")),
+                        .child(div().size_3().bg(rgb(0x91bfdb)).rounded_sm())
+                        .child(div().text_xs().child("New York warmer")),
                 ),
         )
         .child(

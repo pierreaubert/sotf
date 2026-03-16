@@ -378,6 +378,16 @@ fn render_response_comparison_graph(
         .map(|(orig, eq)| orig + eq)
         .collect();
 
+    // Sanitize data early: replace non-finite values with 0.0 to prevent lyon_path panics
+    let sanitize = |v: &[f64]| -> Vec<f64> {
+        v.iter()
+            .map(|&x| if x.is_finite() { x } else { 0.0 })
+            .collect()
+    };
+    let original_values = sanitize(&original_values);
+    let corrected_values = sanitize(&corrected_values);
+    let eq_response = sanitize(&eq_response);
+
     // Compute Y-axis range
     // If auto: include all curves
     // If fixed: use -40 to +10 dB (relative to target/average?)

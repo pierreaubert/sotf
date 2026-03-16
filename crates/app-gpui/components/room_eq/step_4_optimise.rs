@@ -490,7 +490,10 @@ impl PlayerView {
                 let chart_theme = theme_to_chart_theme(&theme);
 
                 let iterations: Vec<f64> = history.iter().map(|&(i, _, _)| i as f64).collect();
-                let losses: Vec<f64> = history.iter().map(|&(_, loss, _)| loss).collect();
+                let losses: Vec<f64> = history
+                    .iter()
+                    .map(|&(_, loss, _)| if loss.is_finite() { loss } else { 0.0 })
+                    .collect();
 
                 let current_loss_val = losses.last().copied().unwrap_or(0.0);
                 let best_loss = losses.iter().copied().fold(f64::INFINITY, f64::min);

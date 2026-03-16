@@ -65,7 +65,7 @@ impl ParamLimits {
         step: 1.0,
     };
     pub const TOLERANCE: Self = Self {
-        min: 0.0,
+        min: 1e-12,
         max: 1.0,
         step: 0.00000001,
     };

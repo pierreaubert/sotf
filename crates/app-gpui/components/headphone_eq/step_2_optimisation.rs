@@ -82,7 +82,7 @@ impl PlayerView {
             .hide_de_params(true)
             .hide_smoothing(true)
             .hide_spacing(true)
-            .hide_tolerance(true)
+            .hide_tolerance(false)
             .hide_sample_rate(true)
             .on_loss_type_change({
                 let state = self.state.clone();
@@ -299,6 +299,19 @@ impl PlayerView {
                             .headphone_eq_state
                             .optimizer_config
                             .tolerance = value;
+                    });
+                }
+            })
+            .on_atolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .atolerance = value;
                     });
                 }
             })
