@@ -130,7 +130,10 @@ qa-edifierw830nb-mhfirefly:
 # ----------------------------------------------------------------------
 
 [group('qa-roomeq')]
-qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21 qa-roomeq-small-stereo-22 qa-roomeq-convergence
+qa-roomeq: qa-roomeq-small-stereo-20 \
+	qa-roomeq-small-stereo-21 \
+	qa-roomeq-small-stereo-22 \
+	qa-roomeq-convergence
 
 [group('qa-roomeq')]
 qa-roomeq-convergence:
@@ -191,6 +194,79 @@ qa-roomeq-small-stereo-51:
 		    --output       ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
 		python3 ./scripts/display-roomeq.py \
 		                   ./data_generated/roomeq/generated/$algo/medium_surround_5_1/dsp_$method.json; \
+	  done \
+	done
+
+# ----------------------------------------------------------------------
+# GENERATE ROOMEQ DATA (BEM/FEM simulation → CSV + config.json)
+# Re-run after modifying scenarios to regenerate multi-LP measurements
+# ----------------------------------------------------------------------
+
+[group('generate')]
+generate-roomeq-data-fem:
+	cargo run --bin generate-roomeq-data --release -- --solver fem --output-dir ./data_tests/roomeq/generated
+
+[group('generate')]
+generate-roomeq-data-bem:
+	cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir ./data_tests/roomeq/generated
+
+[group('generate')]
+generate-roomeq-data: generate-roomeq-data-fem generate-roomeq-data-bem
+
+# ----------------------------------------------------------------------
+# QA ROOMEQ — Multi-Measurement (5 listening positions per speaker)
+# Tests the multi-objective optimization across all strategies.
+# Requires data generated with 5 LPs (run `just generate-roomeq-data` first).
+# ----------------------------------------------------------------------
+
+[group('qa-roomeq-multi')]
+qa-roomeq-multi-measurement: \
+	qa-roomeq-multi-small-stereo-20 \
+	qa-roomeq-multi-small-stereo-21 \
+	qa-roomeq-multi-small-stereo-22-mso
+
+[group('qa-roomeq-multi')]
+qa-roomeq-multi-small-stereo-20:
+	@for strategy in minimax weighted_sum variance_penalized; do \
+	  for algo in bem fem; do \
+	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
+	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_0 ==="; \
+	    cargo run --bin roomeq --release -- \
+	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
+	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
+	    python3 ./scripts/display-roomeq.py \
+	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_iir_multi_$strategy.json; \
+	  done \
+	done
+
+[group('qa-roomeq-multi')]
+qa-roomeq-multi-small-stereo-21:
+	@for strategy in minimax weighted_sum variance_penalized; do \
+	  for algo in fem; do \
+	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
+	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_1 ==="; \
+	    cargo run --bin roomeq --release -- \
+	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
+	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
+	    python3 ./scripts/display-roomeq.py \
+	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_iir_multi_$strategy.json; \
+	  done \
+	done
+
+[group('qa-roomeq-multi')]
+qa-roomeq-multi-small-stereo-22-mso:
+	@for strategy in minimax weighted_sum variance_penalized; do \
+	  for algo in fem; do \
+	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso; \
+	    echo "=== Multi-measurement $strategy ($algo) small_stereo_2_2_mso ==="; \
+	    cargo run --bin roomeq --release -- \
+	      --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_2_mso/config.json \
+	      --override-config ./data_tests/roomeq/generated/optimiser-config/multi_measurement/$strategy.json \
+	      --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
+	    python3 ./scripts/display-roomeq.py \
+	                     ./data_generated/roomeq/generated/$algo/small_stereo_2_2_mso/dsp_iir_multi_$strategy.json; \
 	  done \
 	done
 

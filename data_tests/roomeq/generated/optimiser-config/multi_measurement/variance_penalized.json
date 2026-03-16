@@ -1,0 +1,8 @@
+{
+  "optimizer": {
+    "multi_measurement": {
+      "strategy": "variance_penalized",
+      "variance_lambda": 1.0
+    }
+  }
+}

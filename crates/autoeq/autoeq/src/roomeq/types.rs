@@ -1109,6 +1109,12 @@ pub struct OptimizerConfig {
     /// Fits shelf filters to match target curve across full spectrum before fine EQ
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub broadband_target_matching: Option<BroadbandTargetMatchingConfig>,
+
+    /// Multi-measurement optimization configuration
+    /// When a speaker has multiple measurements (different listening positions),
+    /// controls how they are combined during optimization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_measurement: Option<MultiMeasurementConfig>,
 }
 
 // ============================================================================
@@ -1131,6 +1137,53 @@ impl Default for BroadbandTargetMatchingConfig {
     fn default() -> Self {
         Self { enabled: true }
     }
+}
+
+// ============================================================================
+// Multi-Measurement Configuration
+// ============================================================================
+
+/// Strategy for handling multiple measurements per speaker
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiMeasurementStrategy {
+    /// RMS-average curves, optimize on average (existing behavior)
+    #[default]
+    Average,
+    /// loss = Σ w_i * loss_i — weighted sum of per-measurement losses
+    WeightedSum,
+    /// loss = max(loss_i) — optimize worst case across all measurements
+    Minimax,
+    /// loss = mean(loss_i) + λ * var(loss_i) — balance quality + consistency
+    VariancePenalized,
+}
+
+/// Configuration for multi-measurement optimization
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultiMeasurementConfig {
+    /// Strategy for combining per-measurement losses
+    #[serde(default)]
+    pub strategy: MultiMeasurementStrategy,
+    /// Weights for WeightedSum (normalized internally). Equal if omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weights: Option<Vec<f64>>,
+    /// Lambda for VariancePenalized (default 1.0). Higher = more consistent across positions.
+    #[serde(default = "default_variance_lambda")]
+    pub variance_lambda: f64,
+}
+
+impl Default for MultiMeasurementConfig {
+    fn default() -> Self {
+        Self {
+            strategy: MultiMeasurementStrategy::default(),
+            weights: None,
+            variance_lambda: default_variance_lambda(),
+        }
+    }
+}
+
+fn default_variance_lambda() -> f64 {
+    1.0
 }
 
 // Default values for OptimizerConfig
@@ -1231,6 +1284,7 @@ impl Default for OptimizerConfig {
             gd_opt: None,
             vog: None,
             broadband_target_matching: None,
+            multi_measurement: None,
         }
     }
 }

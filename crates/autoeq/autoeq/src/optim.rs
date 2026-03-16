@@ -306,6 +306,22 @@ pub struct ObjectiveData {
     pub penalty_w_mingain: f64,
     /// Integrality constraints - true for integer parameters, false for continuous
     pub integrality: Option<Vec<bool>>,
+    /// Multi-objective data for multi-measurement optimization.
+    /// When `Some`, `compute_base_fitness` delegates to `compute_multi_objective_fitness`.
+    pub multi_objective: Option<MultiObjectiveData>,
+}
+
+/// Data for multi-objective optimization across multiple measurements
+#[derive(Debug, Clone)]
+pub struct MultiObjectiveData {
+    /// One ObjectiveData per measurement curve
+    pub objectives: Vec<ObjectiveData>,
+    /// Strategy for combining per-measurement losses
+    pub strategy: crate::roomeq::MultiMeasurementStrategy,
+    /// Normalized weights (len == objectives.len()), used by WeightedSum
+    pub weights: Vec<f64>,
+    /// Lambda for VariancePenalized strategy
+    pub variance_lambda: f64,
 }
 
 /// Penalty configuration mode for optimizers.
@@ -401,10 +417,151 @@ pub fn parse_algorithm_name(name: &str) -> Option<AlgorithmCategory> {
     None
 }
 
+/// Compute multi-objective fitness across multiple measurement curves.
+///
+/// Each objective shares the same filter parameters `x` but evaluates against
+/// a different measurement curve. The per-curve losses are combined according
+/// to the configured strategy.
+fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
+    use crate::roomeq::MultiMeasurementStrategy;
+
+    let losses: Vec<f64> = mo
+        .objectives
+        .iter()
+        .map(|obj| compute_base_fitness_single(x, obj))
+        .collect();
+
+    match mo.strategy {
+        MultiMeasurementStrategy::Average => {
+            // Should not reach here (average mode uses pre-averaged curves),
+            // but handle gracefully: simple mean of losses
+            let sum: f64 = losses.iter().sum();
+            sum / losses.len() as f64
+        }
+        MultiMeasurementStrategy::WeightedSum => {
+            losses
+                .iter()
+                .zip(&mo.weights)
+                .map(|(l, w)| l * w)
+                .sum()
+        }
+        MultiMeasurementStrategy::Minimax => {
+            losses
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, f64::max)
+        }
+        MultiMeasurementStrategy::VariancePenalized => {
+            let n = losses.len() as f64;
+            let mean = losses.iter().sum::<f64>() / n;
+            let variance = losses.iter().map(|l| (l - mean).powi(2)).sum::<f64>() / n;
+            mean + mo.variance_lambda * variance
+        }
+    }
+}
+
+/// Compute the base fitness for a single ObjectiveData (no multi-objective delegation).
+/// This is the inner implementation that does not check `multi_objective`.
+fn compute_base_fitness_single(x: &[f64], data: &ObjectiveData) -> f64 {
+    match data.loss_type {
+        LossType::DriversFlat => {
+            if let Some(ref drivers_data) = data.drivers_data {
+                let n_drivers = drivers_data.drivers.len();
+                let gains = &x[0..n_drivers];
+                let delays = &x[n_drivers..2 * n_drivers];
+                let xover_freqs: Vec<f64> = if let Some(ref fixed) = data.fixed_crossover_freqs {
+                    fixed.clone()
+                } else {
+                    let xover_freqs_log10 = &x[2 * n_drivers..];
+                    xover_freqs_log10
+                        .iter()
+                        .map(|f| 10.0_f64.powf(*f))
+                        .collect()
+                };
+                drivers_flat_loss(
+                    drivers_data,
+                    gains,
+                    &xover_freqs,
+                    Some(delays),
+                    data.srate,
+                    data.min_freq,
+                    data.max_freq,
+                )
+            } else {
+                log::error!("drivers-flat loss requested but driver data is missing");
+                f64::INFINITY
+            }
+        }
+        LossType::MultiSubFlat => {
+            if let Some(ref drivers_data) = data.drivers_data {
+                let n_drivers = drivers_data.drivers.len();
+                let gains = &x[0..n_drivers];
+                let delays = &x[n_drivers..2 * n_drivers];
+                crate::loss::multisub_flat_loss(
+                    drivers_data,
+                    gains,
+                    delays,
+                    data.srate,
+                    data.min_freq,
+                    data.max_freq,
+                )
+            } else {
+                log::error!("multi-sub-flat loss requested but driver data is missing");
+                f64::INFINITY
+            }
+        }
+        LossType::HeadphoneFlat | LossType::SpeakerFlat => {
+            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+            let error = &peq_spl - &data.deviation;
+            flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
+        }
+        LossType::SpeakerFlatAsymmetric => {
+            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+            let error = &peq_spl - &data.deviation;
+            flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
+        }
+        LossType::SpeakerScore => {
+            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+            if let Some(ref sd) = data.speaker_score_data {
+                let error = &peq_spl - &data.deviation;
+                let s = speaker_score_loss(sd, &data.freqs, &peq_spl);
+                let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq) / 3.0;
+                100.0 - s + p
+            } else {
+                log::error!("speaker score loss requested but score data is missing");
+                f64::INFINITY
+            }
+        }
+        LossType::HeadphoneScore => {
+            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+            if let Some(ref _hd) = data.headphone_score_data {
+                let error = &data.deviation - &peq_spl;
+                let error_curve = Curve {
+                    freq: data.freqs.clone(),
+                    spl: error.clone(),
+                    phase: None,
+                };
+                let s = headphone_loss(&error_curve);
+                let p = flat_loss(&data.freqs, &error, data.min_freq, data.max_freq);
+                1000.0 - s + p * 20.0
+            } else {
+                log::error!("headphone score loss requested but headphone data is missing");
+                f64::INFINITY
+            }
+        }
+    }
+}
+
 /// Compute the base fitness value (without penalties) for given parameters
 ///
 /// This is the unified fitness function used by both NLOPT and metaheuristics optimizers.
+/// If `multi_objective` is set, delegates to multi-objective fitness computation.
 pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
+    // If multi-objective data is present, delegate to multi-objective fitness
+    if let Some(ref mo) = data.multi_objective {
+        return compute_multi_objective_fitness(x, mo);
+    }
+
     match data.loss_type {
         LossType::DriversFlat => {
             // Multi-driver crossover optimization

@@ -321,6 +321,53 @@ pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn E
     }
 }
 
+/// Load individual measurement curves from a source without averaging.
+///
+/// - `Single` → returns `vec![curve]`
+/// - `Multiple` → loads all curves, interpolates to first curve's frequency grid
+/// - `InMemory` → returns `vec![curve]`
+pub fn load_source_individual(source: &MeasurementSource) -> Result<Vec<Curve>, Box<dyn Error>> {
+    match source {
+        MeasurementSource::Single(s) => {
+            let curve = load_measurement(&s.measurement)?;
+            Ok(vec![curve])
+        }
+        MeasurementSource::InMemory(curve) => Ok(vec![curve.clone()]),
+        MeasurementSource::Multiple(m) => {
+            if m.measurements.is_empty() {
+                return Err("Measurement list is empty".into());
+            }
+
+            let mut curves = Vec::new();
+            for r in &m.measurements {
+                match load_measurement(r) {
+                    Ok(c) => curves.push(c),
+                    Err(e) => {
+                        let name = r
+                            .path()
+                            .map(|p| p.display().to_string())
+                            .or_else(|| r.name().map(String::from))
+                            .unwrap_or_else(|| "inline".to_string());
+                        log::debug!("Warning: failed to load measurement {}: {}", name, e)
+                    }
+                }
+            }
+
+            if curves.is_empty() {
+                return Err("No valid measurements loaded".into());
+            }
+
+            // Interpolate all curves to the first curve's frequency grid
+            let ref_freqs = curves[0].freq.clone();
+            let mut result = vec![curves[0].clone()];
+            for curve in &curves[1..] {
+                result.push(interpolate_log_space(&ref_freqs, curve));
+            }
+            Ok(result)
+        }
+    }
+}
+
 /// Load measurement(s) from a source and average if necessary
 pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> {
     match source {

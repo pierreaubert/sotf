@@ -4,21 +4,34 @@
 
 use anyhow::Result;
 use autoeq::roomeq::{
-    CardioidConfig, CrossoverConfig, MultiSubGroup, OptimizerConfig, ProcessingMode, RoomConfig,
-    SpeakerConfig, SpeakerGroup, SubwooferStrategy, SubwooferSystemConfig, SystemConfig,
-    SystemModel,
+    CardioidConfig, CrossoverConfig, MultiMeasurementConfig, MultiMeasurementStrategy,
+    MultiSubGroup, OptimizerConfig, ProcessingMode, RoomConfig, SpeakerConfig, SpeakerGroup,
+    SubwooferStrategy, SubwooferSystemConfig, SystemConfig, SystemModel,
 };
-use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
+use autoeq::{MeasurementMultiple, MeasurementRef, MeasurementSingle, MeasurementSource};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::scenarios::Scenario;
 
-fn make_csv_source(name: &str) -> MeasurementSource {
-    MeasurementSource::Single(MeasurementSingle {
-        measurement: MeasurementRef::Path(PathBuf::from(format!("{name}_lp0.csv"))),
-        speaker_name: None,
-    })
+/// Create a measurement source for a speaker. When `num_lps > 1`, generates
+/// a `MeasurementSource::Multiple` with one CSV per listening position so that
+/// the multi-measurement optimizer can optimize across all positions.
+fn make_csv_source_for_lps(name: &str, num_lps: usize) -> MeasurementSource {
+    if num_lps <= 1 {
+        MeasurementSource::Single(MeasurementSingle {
+            measurement: MeasurementRef::Path(PathBuf::from(format!("{name}_lp0.csv"))),
+            speaker_name: None,
+        })
+    } else {
+        let measurements: Vec<MeasurementRef> = (0..num_lps)
+            .map(|i| MeasurementRef::Path(PathBuf::from(format!("{name}_lp{i}.csv"))))
+            .collect();
+        MeasurementSource::Multiple(MeasurementMultiple {
+            measurements,
+            speaker_name: None,
+        })
+    }
 }
 
 fn make_crossovers() -> HashMap<String, CrossoverConfig> {
@@ -55,8 +68,13 @@ fn role_for_name(name: &str) -> &str {
 ///
 /// The config references CSV files by filename only (config.json sits alongside CSVs).
 /// `_csv_dir` is accepted for API compatibility but paths are always relative filenames.
+///
+/// When a scenario has multiple listening positions, each speaker source gets a
+/// `MeasurementSource::Multiple` referencing all LP CSVs, and the optimizer is
+/// configured with `multi_measurement` strategy `minimax` (optimize worst seat).
 pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfig> {
     let source_names = &scenario.source_names;
+    let num_lps = scenario.simulation.listening_positions.len();
 
     // 1. Detect group pattern: sources ending with "_sub" that have matching mains
     let mut group_pairs: Vec<(&str, &str)> = Vec::new(); // (main_name, sub_name)
@@ -96,7 +114,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
             let group = SpeakerGroup {
                 name: format!("{main_name}_group"),
                 speaker_name: None,
-                measurements: vec![make_csv_source(main_name), make_csv_source(sub_name)],
+                measurements: vec![make_csv_source_for_lps(main_name, num_lps), make_csv_source_for_lps(sub_name, num_lps)],
                 crossover: Some("first".to_string()),
             };
             speakers.insert(main_name.to_string(), SpeakerConfig::Group(group));
@@ -111,7 +129,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
             }
             speakers.insert(
                 name.to_string(),
-                SpeakerConfig::Single(make_csv_source(name)),
+                SpeakerConfig::Single(make_csv_source_for_lps(name, num_lps)),
             );
             let role = role_for_name(name);
             system_speakers.insert(role.to_string(), name.to_string());
@@ -121,7 +139,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         let model = SystemModel::Stereo;
         let crossovers = Some(make_crossovers());
 
-        let optimizer = make_optimizer();
+        let optimizer = make_optimizer(num_lps);
         let config = RoomConfig {
             version: "1.2.0".to_string(),
             system: Some(SystemConfig {
@@ -142,7 +160,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
     for &name in &main_sources {
         speakers.insert(
             name.to_string(),
-            SpeakerConfig::Single(make_csv_source(name)),
+            SpeakerConfig::Single(make_csv_source_for_lps(name, num_lps)),
         );
         let role = role_for_name(name);
         system_speakers.insert(role.to_string(), name.to_string());
@@ -167,8 +185,8 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         let config = SpeakerConfig::Cardioid(Box::new(CardioidConfig {
             name: "Cardioid Stack".to_string(),
             speaker_name: None,
-            front: make_csv_source("sub_bottom"),
-            rear: make_csv_source("sub_top"),
+            front: make_csv_source_for_lps("sub_bottom", num_lps),
+            rear: make_csv_source_for_lps("sub_top", num_lps),
             separation_meters: 0.5,
         }));
 
@@ -194,13 +212,13 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         let (speaker_config, strategy) = if sub_sources.len() == 1 {
             let name = sub_sources[0];
             (
-                SpeakerConfig::Single(make_csv_source(name)),
+                SpeakerConfig::Single(make_csv_source_for_lps(name, num_lps)),
                 SubwooferStrategy::Single,
             )
         } else {
             let sub_sources_objs: Vec<MeasurementSource> = sub_sources
                 .iter()
-                .map(|name| make_csv_source(name))
+                .map(|name| make_csv_source_for_lps(name, num_lps))
                 .collect();
             (
                 SpeakerConfig::MultiSub(MultiSubGroup {
@@ -227,7 +245,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         )
     };
 
-    let optimizer = make_optimizer();
+    let optimizer = make_optimizer(num_lps);
 
     let config = RoomConfig {
         version: "1.2.0".to_string(),
@@ -246,7 +264,17 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
     Ok(config)
 }
 
-fn make_optimizer() -> OptimizerConfig {
+fn make_optimizer(num_lps: usize) -> OptimizerConfig {
+    let multi_measurement = if num_lps > 1 {
+        Some(MultiMeasurementConfig {
+            strategy: MultiMeasurementStrategy::Minimax,
+            weights: None,
+            variance_lambda: 1.0,
+        })
+    } else {
+        None
+    };
+
     OptimizerConfig {
         algorithm: "autoeq:de".to_string(),
         num_filters: 7,
@@ -257,6 +285,7 @@ fn make_optimizer() -> OptimizerConfig {
         refine: true,
         asymmetric_loss: true,
         processing_mode: ProcessingMode::LowLatency,
+        multi_measurement,
         ..OptimizerConfig::default()
     }
 }

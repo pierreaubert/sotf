@@ -180,15 +180,14 @@ pub async fn plot_results(
                     let img_path = output_path.with_file_name(format!("{}-{}.png", stem, name));
 
                     // Ensure parent directory exists for PNG files
-                    if let Some(parent) = img_path.parent() {
-                        if let Err(e) = std::fs::create_dir_all(parent) {
+                    if let Some(parent) = img_path.parent()
+                        && let Err(e) = std::fs::create_dir_all(parent) {
                             eprintln!(
                                 "Warning: Failed to create PNG output directory {:?}: {}",
                                 parent, e
                             );
                             continue;
                         }
-                    }
 
                     let plot_json = match serde_json::to_value(&plot) {
                         Ok(v) => v,

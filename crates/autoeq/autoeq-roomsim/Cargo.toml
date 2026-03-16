@@ -1,6 +1,6 @@
 [package]
 name = "autoeq-roomsim"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 authors = { workspace = true }
 description = "Room acoustic simulator"
@@ -14,9 +14,12 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 wasm-bindgen = { workspace = true }
-serde = { workspace=true , features = ["derive"] }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-num-complex = { workspace = true , features = ["serde"] }
+csv = { workspace = true }
+num-complex = { workspace = true, features = ["serde"] }
 console_error_panic_hook = { workspace = true }
 ndarray = { version = "0.17", default-features = false, features = ["rayon", "serde"] }
 rayon = { workspace = true }

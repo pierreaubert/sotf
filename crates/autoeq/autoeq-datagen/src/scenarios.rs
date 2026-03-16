@@ -34,6 +34,70 @@ const CROSSOVER_FREQ: f64 = 80.0;
 /// Butterworth order for crossover filters
 const CROSSOVER_ORDER: u32 = 4;
 
+/// Generate 5 listening positions: the main LP plus 4 positions offset by `angle_deg`
+/// in the up/down/left/right directions as seen from the speaker midpoint.
+///
+/// The angular offset is measured from the speaker midpoint looking toward the LP.
+/// This simulates slight head movements at the listening position.
+fn multi_lp_from_speakers(
+    lp: Point3D,
+    speakers: &[Point3D],
+    angle_deg: f64,
+) -> Vec<Point3D> {
+    // Compute speaker midpoint
+    let n = speakers.len() as f64;
+    let mid = Point3D::new(
+        speakers.iter().map(|s| s.x).sum::<f64>() / n,
+        speakers.iter().map(|s| s.y).sum::<f64>() / n,
+        speakers.iter().map(|s| s.z).sum::<f64>() / n,
+    );
+
+    // Direction from speaker midpoint to LP
+    let dx = lp.x - mid.x;
+    let dy = lp.y - mid.y;
+    let dz = lp.z - mid.z;
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+    if dist < 1e-6 {
+        return vec![lp; 5];
+    }
+
+    // Normalized forward direction
+    let fwd = (dx / dist, dy / dist, dz / dist);
+
+    // Build a "right" vector perpendicular to forward and world-up (0,0,1)
+    // right = forward × up
+    let rx = fwd.1 * 1.0 - fwd.2 * 0.0; // fy*1 - fz*0
+    let ry = fwd.2 * 0.0 - fwd.0 * 1.0; // fz*0 - fx*1
+    let rz = fwd.0 * 0.0 - fwd.1 * 0.0; // fx*0 - fy*0
+    let rlen = (rx * rx + ry * ry + rz * rz).sqrt();
+    let right = if rlen > 1e-6 {
+        (rx / rlen, ry / rlen, rz / rlen)
+    } else {
+        // Forward is nearly vertical, use (1,0,0) as fallback right
+        (1.0, 0.0, 0.0)
+    };
+
+    // Build "up" vector = right × forward
+    let ux = right.1 * fwd.2 - right.2 * fwd.1;
+    let uy = right.2 * fwd.0 - right.0 * fwd.2;
+    let uz = right.0 * fwd.1 - right.1 * fwd.0;
+
+    // Linear offset for the given angle at the listener's distance from speakers
+    let offset = dist * (angle_deg.to_radians()).tan();
+
+    vec![
+        lp, // center (primary)
+        Point3D::new(lp.x + right.0 * offset, lp.y + right.1 * offset, lp.z + right.2 * offset), // right
+        Point3D::new(lp.x - right.0 * offset, lp.y - right.1 * offset, lp.z - right.2 * offset), // left
+        Point3D::new(lp.x + ux * offset, lp.y + uy * offset, lp.z + uz * offset), // up
+        Point3D::new(lp.x - ux * offset, lp.y - uy * offset, lp.z - uz * offset), // down
+    ]
+}
+
+/// Standard angular offset for multi-measurement positions (degrees)
+const MULTI_LP_ANGLE_DEG: f64 = 5.0;
+
 fn make_hp_source(position: Point3D, name: &str) -> Source {
     Source::classical(position, 60.0, 40.0, 1.0)
         .with_name(name.to_string())
@@ -162,33 +226,39 @@ fn small_room() -> RectangularRoom {
     RectangularRoom::new(3.0, 3.0, 2.4)
 }
 
-/// Scenario 1: Small room, stereo 2.0, fullrange, 1 LP
+/// Scenario 1: Small room, stereo 2.0, fullrange, 5 LPs (center + 4 at ±5°)
 fn scenario_01_small_stereo_2_0() -> Scenario {
     let room = small_room();
-    let left = make_fullrange_source(Point3D::new(0.8, 0.3, 1.1), "left");
-    let right = make_fullrange_source(Point3D::new(2.2, 0.3, 1.1), "right");
+    let left_pos = Point3D::new(0.8, 0.3, 1.1);
+    let right_pos = Point3D::new(2.2, 0.3, 1.1);
+    let left = make_fullrange_source(left_pos, "left");
+    let right = make_fullrange_source(right_pos, "right");
     let lp = Point3D::new(1.5, 2.0, 1.1);
+    let lps = multi_lp_from_speakers(lp, &[left_pos, right_pos], MULTI_LP_ANGLE_DEG);
 
     Scenario {
         name: "small_stereo_2_0".to_string(),
-        description: "Small 3x3x2.4m room, stereo 2.0, fullrange".to_string(),
-        simulation: make_simulation(room, vec![left, right], vec![lp]),
+        description: "Small 3x3x2.4m room, stereo 2.0, fullrange, 5 LPs".to_string(),
+        simulation: make_simulation(room, vec![left, right], lps),
         source_names: vec!["left".to_string(), "right".to_string()],
     }
 }
 
-/// Scenario 2: Small room, 2.1, HP@80Hz mains + LP@80Hz sub, 1 LP
+/// Scenario 2: Small room, 2.1, HP@80Hz mains + LP@80Hz sub, 5 LPs (center + 4 at ±5°)
 fn scenario_02_small_stereo_2_1() -> Scenario {
     let room = small_room();
-    let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
-    let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
+    let left_pos = Point3D::new(0.8, 0.3, 1.1);
+    let right_pos = Point3D::new(2.2, 0.3, 1.1);
+    let left = make_hp_source(left_pos, "left");
+    let right = make_hp_source(right_pos, "right");
     let sub = make_lp_source(Point3D::new(0.3, 0.3, 0.15), "subwoofer");
     let lp = Point3D::new(1.5, 2.0, 1.1);
+    let lps = multi_lp_from_speakers(lp, &[left_pos, right_pos], MULTI_LP_ANGLE_DEG);
 
     Scenario {
         name: "small_stereo_2_1".to_string(),
-        description: "Small 3x3x2.4m room, 2.1, sub at front-left corner".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub], vec![lp]),
+        description: "Small 3x3x2.4m room, 2.1, sub at front-left corner, 5 LPs".to_string(),
+        simulation: make_simulation(room, vec![left, right, sub], lps),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -197,22 +267,25 @@ fn scenario_02_small_stereo_2_1() -> Scenario {
     }
 }
 
-/// Scenario 3a: Small room, 2 subs (corners) + HP mains, 1 LP (MSO)
+/// Scenario 3a: Small room, 2 subs (corners) + HP mains, 5 LPs (MSO)
 fn scenario_03_small_stereo_2_2_mso() -> Scenario {
     let room = small_room();
-    let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
-    let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
+    let left_pos = Point3D::new(0.8, 0.3, 1.1);
+    let right_pos = Point3D::new(2.2, 0.3, 1.1);
+    let left = make_hp_source(left_pos, "left");
+    let right = make_hp_source(right_pos, "right");
     let sub1 = make_lp_source(Point3D::new(0.15, 0.15, 0.15), "sub1");
     let sub2 = make_lp_source(Point3D::new(2.85, 0.15, 0.15), "sub2");
     let lp = Point3D::new(1.5, 2.0, 1.1);
+    let lps = multi_lp_from_speakers(lp, &[left_pos, right_pos], MULTI_LP_ANGLE_DEG);
 
     Scenario {
         name: "small_stereo_2_2_mso".to_string(),
-        description: "Small 3x3x2.4m room, 2 subs in front corners (MSO)".to_string(),
+        description: "Small 3x3x2.4m room, 2 subs in front corners (MSO), 5 LPs".to_string(),
         simulation: make_simulation_with_boundaries(
             room,
             vec![left, right, sub1, sub2],
-            vec![lp],
+            lps,
             concrete_basement_boundaries(),
         ),
         source_names: vec![
@@ -224,21 +297,24 @@ fn scenario_03_small_stereo_2_2_mso() -> Scenario {
     }
 }
 
-/// Scenario 3b: Small room, 2 subs (stacked cardioid) + HP mains, 1 LP
+/// Scenario 3b: Small room, 2 subs (stacked cardioid) + HP mains, 5 LPs
 fn scenario_03_small_stereo_2_2_cardioid() -> Scenario {
     let room = small_room();
-    let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
-    let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
+    let left_pos = Point3D::new(0.8, 0.3, 1.1);
+    let right_pos = Point3D::new(2.2, 0.3, 1.1);
+    let left = make_hp_source(left_pos, "left");
+    let right = make_hp_source(right_pos, "right");
     // Stacked subs at front-left (like single sub in scenario 2)
     // Bottom sub at Z=0.15, Top sub at Z=0.65 (0.5m separation)
     let sub_bottom = make_lp_source(Point3D::new(0.3, 0.3, 0.15), "sub_bottom");
     let sub_top = make_lp_source(Point3D::new(0.3, 0.3, 0.65), "sub_top");
     let lp = Point3D::new(1.5, 2.0, 1.1);
+    let lps = multi_lp_from_speakers(lp, &[left_pos, right_pos], MULTI_LP_ANGLE_DEG);
 
     Scenario {
         name: "small_stereo_2_2_cardioid".to_string(),
-        description: "Small 3x3x2.4m room, stacked cardioid subs".to_string(),
-        simulation: make_simulation(room, vec![left, right, sub_bottom, sub_top], vec![lp]),
+        description: "Small 3x3x2.4m room, stacked cardioid subs, 5 LPs".to_string(),
+        simulation: make_simulation(room, vec![left, right, sub_bottom, sub_top], lps),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
@@ -248,22 +324,25 @@ fn scenario_03_small_stereo_2_2_cardioid() -> Scenario {
     }
 }
 
-/// Scenario 3c: Small room, 2 subs (grouped with mains) + HP mains, 1 LP
+/// Scenario 3c: Small room, 2 subs (grouped with mains) + HP mains, 5 LPs
 /// Each sub is directly below its corresponding main speaker.
 /// Naming convention: `{main}_sub` signals Group config to config gen.
 fn scenario_03_small_stereo_2_2_group() -> Scenario {
     let room = small_room();
-    let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
-    let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
+    let left_pos = Point3D::new(0.8, 0.3, 1.1);
+    let right_pos = Point3D::new(2.2, 0.3, 1.1);
+    let left = make_hp_source(left_pos, "left");
+    let right = make_hp_source(right_pos, "right");
     // Subs directly below their respective mains, on the floor
     let left_sub = make_lp_source(Point3D::new(0.8, 0.3, 0.15), "left_sub");
     let right_sub = make_lp_source(Point3D::new(2.2, 0.3, 0.15), "right_sub");
     let lp = Point3D::new(1.5, 2.0, 1.1);
+    let lps = multi_lp_from_speakers(lp, &[left_pos, right_pos], MULTI_LP_ANGLE_DEG);
 
     Scenario {
         name: "small_stereo_2_2_group".to_string(),
-        description: "Small 3x3x2.4m room, grouped subs below mains".to_string(),
-        simulation: make_simulation(room, vec![left, right, left_sub, right_sub], vec![lp]),
+        description: "Small 3x3x2.4m room, grouped subs below mains, 5 LPs".to_string(),
+        simulation: make_simulation(room, vec![left, right, left_sub, right_sub], lps),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),

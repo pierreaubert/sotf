@@ -30,9 +30,25 @@ pub use wasm_bindgen_rayon::init_thread_pool;
 mod bem_solver;
 mod scattering_objects;
 
+// WASM utilities
+mod worker_detect;
+mod loaders;
+mod adaptive;
+
 // Re-export BEM types for external use
 pub use bem_solver::{BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig};
 pub use scattering_objects::{BoxObject, CylinderObject, ScatteringObjectConfig, SphereObject};
+
+// Re-export WASM utilities
+pub use worker_detect::{
+    supports_threading, num_threads_available, recommended_chunk_size,
+    recommended_slice_resolution, get_wasm_info,
+};
+pub use loaders::{
+    parse_measurement_csv, parse_measurement_bundle_json,
+    interpolate_measurement, MeasurementData, MeasurementBundle,
+};
+pub use adaptive::{AdaptiveState, AdaptiveConfig, QualityMode, detect_optimal_quality};
 
 // ============================================================================
 // Wall Materials and Absorption Coefficients
@@ -211,6 +227,20 @@ macro_rules! console_log {
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
+    
+    // Log threading status
+    if supports_threading() {
+        console_log!(
+            "RoomSimulator WASM initialized: {} threads available, {} freq points/chunk",
+            num_threads_available(),
+            recommended_chunk_size()
+        );
+    } else {
+        console_log!(
+            "WASM: Running in single-threaded mode - {} threads, chunked computation",
+            num_threads_available()
+        );
+    }
 }
 
 // ============================================================================
@@ -2750,6 +2780,10 @@ pub struct RoomSimulatorWasm {
     edge_diffraction_enabled: bool,
     /// Pre-computed diffraction edges for the room
     diffraction_edges: Vec<DiffractionEdge>,
+    /// Chunked computation state
+    chunked_frequencies_completed: usize,
+    chunked_pressures: Option<Vec<f64>>,
+    chunked_in_progress: bool,
 }
 
 #[wasm_bindgen]
@@ -2924,6 +2958,9 @@ impl RoomSimulatorWasm {
             air_absorption_enabled,
             edge_diffraction_enabled,
             diffraction_edges,
+            chunked_frequencies_completed: 0,
+            chunked_pressures: None,
+            chunked_in_progress: false,
         })
     }
 
@@ -4237,6 +4274,157 @@ impl RoomSimulatorWasm {
     #[wasm_bindgen]
     pub fn num_sources(&self) -> usize {
         self.sources.len()
+    }
+
+    /// Initialize chunked computation
+    ///
+    /// Call this before using compute_chunk() to reset state
+    #[wasm_bindgen]
+    pub fn init_chunked_compute(&mut self) {
+        self.chunked_frequencies_completed = 0;
+        self.chunked_pressures = Some(Vec::with_capacity(self.frequencies.len()));
+        self.chunked_in_progress = true;
+        console_log!("Chunked compute initialized: {} frequencies", self.frequencies.len());
+    }
+
+    /// Compute a chunk of frequencies for progressive updates
+    ///
+    /// Returns JSON with progress and partial results:
+    /// ```json
+    /// {
+    ///   "progress": 25.0,
+    ///   "frequencies_completed": 32,
+    ///   "total_frequencies": 128,
+    ///   "done": false,
+    ///   "partial_spl": [...]  // Only included when done=true or periodically
+    /// }
+    /// ```
+    #[wasm_bindgen]
+    pub fn compute_chunk(&mut self, chunk_size: usize) -> String {
+        if !self.chunked_in_progress {
+            // Auto-initialize if not done
+            self.init_chunked_compute();
+        }
+
+        let start_idx = self.chunked_frequencies_completed;
+        let end_idx = (start_idx + chunk_size).min(self.frequencies.len());
+        
+        if start_idx >= self.frequencies.len() {
+            // Already done
+            return self.finalize_chunked_compute();
+        }
+
+        if self.chunked_pressures.is_none() {
+            return serde_json::json!({
+                "error": "Chunked compute not initialized",
+                "done": true
+            }).to_string();
+        }
+
+        console_log!("Computing frequencies {}-{} of {}", start_idx, end_idx, self.frequencies.len());
+
+        // Compute the chunk - collect results first to avoid borrow issues
+        let mut computed_spl = Vec::with_capacity(end_idx - start_idx);
+        
+        // Clone the needed data to avoid borrow issues
+        let listening_pos = self.listening_position;
+        let frequencies = self.frequencies.clone();
+        
+        for freq_idx in start_idx..end_idx {
+            let freq = frequencies[freq_idx];
+            let pressure = self.calculate_direct_field(&listening_pos, freq);
+            let spl = pressure_to_spl(pressure);
+            computed_spl.push(spl);
+        }
+
+        // Now update the state
+        if let Some(pressures) = &mut self.chunked_pressures {
+            pressures.extend(computed_spl);
+        }
+
+        self.chunked_frequencies_completed = end_idx;
+
+        let total = self.frequencies.len();
+        let progress = (end_idx as f64 / total as f64) * 100.0;
+        let done = end_idx >= total;
+
+        if done {
+            self.chunked_in_progress = false;
+        }
+
+        let result = serde_json::json!({
+            "progress": progress,
+            "frequencies_completed": end_idx,
+            "total_frequencies": total,
+            "done": done,
+        });
+
+        result.to_string()
+    }
+
+    /// Get final results after all chunks complete
+    ///
+    /// Returns the full frequency response as JSON
+    #[wasm_bindgen]
+    pub fn finalize_chunked_compute(&self) -> String {
+        let total = self.frequencies.len();
+        
+        // If we have computed pressures, return them
+        if let Some(pressures) = &self.chunked_pressures {
+            let progress = if total > 0 {
+                (pressures.len() as f64 / total as f64) * 100.0
+            } else {
+                100.0
+            };
+
+            let result = serde_json::json!({
+                "progress": progress,
+                "frequencies_completed": pressures.len(),
+                "total_frequencies": total,
+                "done": true,
+                "frequencies": self.frequencies,
+                "spl": pressures,
+            });
+            
+            result.to_string()
+        } else {
+            // No chunked data - compute synchronously
+            let mut spl_values = Vec::with_capacity(self.frequencies.len());
+            for freq in &self.frequencies {
+                let pressure = self.calculate_direct_field(&self.listening_position, *freq);
+                spl_values.push(pressure_to_spl(pressure));
+            }
+
+            let result = serde_json::json!({
+                "progress": 100.0,
+                "frequencies_completed": total,
+                "total_frequencies": total,
+                "done": true,
+                "frequencies": self.frequencies,
+                "spl": spl_values,
+            });
+
+            result.to_string()
+        }
+    }
+
+    /// Get chunked computation progress
+    #[wasm_bindgen]
+    pub fn get_chunk_progress(&self) -> String {
+        let completed = self.chunked_frequencies_completed;
+        let total = self.frequencies.len();
+        let progress = if total > 0 {
+            (completed as f64 / total as f64) * 100.0
+        } else {
+            100.0
+        };
+
+        serde_json::json!({
+            "progress": progress,
+            "frequencies_completed": completed,
+            "total_frequencies": total,
+            "in_progress": self.chunked_in_progress,
+        }).to_string()
     }
 
     fn get_room_dimensions(&self) -> (f64, f64, f64) {

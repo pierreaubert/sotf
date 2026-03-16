@@ -1190,6 +1190,62 @@ fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
     }
 }
 
+/// Optimize EQ filters, dispatching to multi-measurement if configured.
+///
+/// If the source is `Multiple` and a non-Average multi-measurement strategy is configured,
+/// loads individual curves and uses `optimize_channel_eq_multi`. Otherwise falls back to
+/// the standard single-curve path.
+fn optimize_eq_maybe_multi(
+    source: &MeasurementSource,
+    optimization_curve: &Curve,
+    optimizer_config: &OptimizerConfig,
+    target_config: Option<&super::types::TargetCurveConfig>,
+    sample_rate: f64,
+    channel_name: &str,
+) -> Result<(Vec<Biquad>, f64)> {
+    use super::types::MultiMeasurementStrategy;
+
+    let use_multi = matches!(source, MeasurementSource::Multiple(_))
+        && optimizer_config
+            .multi_measurement
+            .as_ref()
+            .is_some_and(|mc| mc.strategy != MultiMeasurementStrategy::Average);
+
+    if use_multi {
+        let multi_config = optimizer_config.multi_measurement.as_ref().unwrap();
+        let curves = load::load_source_individual(source).map_err(|e| {
+            AutoeqError::InvalidMeasurement {
+                message: format!(
+                    "Failed to load individual measurements for channel {}: {}",
+                    channel_name, e
+                ),
+            }
+        })?;
+
+        info!(
+            "  Multi-measurement optimization ({:?}) with {} curves",
+            multi_config.strategy,
+            curves.len()
+        );
+
+        eq::optimize_channel_eq_multi(&curves, optimizer_config, multi_config, target_config, sample_rate)
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: format!(
+                    "Multi-measurement EQ optimization failed for channel {}: {}",
+                    channel_name, e
+                ),
+            })
+    } else {
+        eq::optimize_channel_eq(optimization_curve, optimizer_config, target_config, sample_rate)
+            .map_err(|e| AutoeqError::OptimizationFailed {
+                message: format!(
+                    "EQ optimization failed for channel {}: {}",
+                    channel_name, e
+                ),
+            })
+    }
+}
+
 /// Process a simple speaker with a single measurement
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
@@ -1805,32 +1861,27 @@ fn process_single_speaker(
                     );
                     combined_filters
                 } else {
-                    // Standard optimization
-                    let (filters, _opt_loss) = eq::optimize_channel_eq(
+                    // Standard optimization (with multi-measurement dispatch)
+                    let (filters, _opt_loss) = optimize_eq_maybe_multi(
+                        source,
                         &optimization_curve,
                         &room_config.optimizer,
                         effective_target,
                         sample_rate,
-                    )
-                    .map_err(|e| AutoeqError::OptimizationFailed {
-                        message: format!(
-                            "EQ optimization failed for channel {}: {}",
-                            channel_name, e
-                        ),
-                    })?;
+                        channel_name,
+                    )?;
                     filters
                 }
             } else {
-                // Standard optimization
-                let (filters, _opt_loss) = eq::optimize_channel_eq(
+                // Standard optimization (with multi-measurement dispatch)
+                let (filters, _opt_loss) = optimize_eq_maybe_multi(
+                    source,
                     &optimization_curve,
                     &room_config.optimizer,
                     effective_target,
                     sample_rate,
-                )
-                .map_err(|e| AutoeqError::OptimizationFailed {
-                    message: format!("EQ optimization failed for channel {}: {}", channel_name, e),
-                })?;
+                    channel_name,
+                )?;
                 filters
             };
 

@@ -233,6 +233,7 @@ pub fn setup_objective_data(
         penalty_w_mingain: 0.0,
         // Integrality constraints - none for continuous optimization
         integrality: None,
+        multi_objective: None,
     };
 
     Ok((objective_data, use_cea))
@@ -308,6 +309,7 @@ pub fn setup_drivers_objective_data(
         penalty_w_spacing: 0.0,
         penalty_w_mingain: 0.0,
         integrality: None,
+        multi_objective: None,
     }
 }
 
@@ -1622,6 +1624,7 @@ pub fn setup_multisub_objective_data(
         penalty_w_spacing: 0.0,
         penalty_w_mingain: 0.0,
         integrality: None,
+        multi_objective: None,
     }
 }
 
