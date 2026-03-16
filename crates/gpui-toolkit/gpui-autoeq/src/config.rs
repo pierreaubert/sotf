@@ -67,7 +67,12 @@ impl ParamLimits {
     pub const TOLERANCE: Self = Self {
         min: 0.0,
         max: 1.0,
-        step: 0.000001,
+        step: 0.00000001,
+    };
+    pub const ADAPTIVE_WEIGHT: Self = Self {
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
     };
     pub const SPACING_WEIGHT: Self = Self {
         min: 0.0,
@@ -83,6 +88,16 @@ impl ParamLimits {
         min: -3.0,
         max: 3.0,
         step: 0.1,
+    };
+    pub const VARIANCE_LAMBDA: Self = Self {
+        min: 0.0,
+        max: 10.0,
+        step: 0.1,
+    };
+    pub const WEIGHT: Self = Self {
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
     };
     pub const BASS_SHELF: Self = Self {
         min: 0.0,
@@ -168,6 +183,10 @@ pub struct AutoEqConfig {
     pub de_cr: f64,
     /// DE strategy (e.g., "currenttobest1bin")
     pub strategy: String,
+    /// Adaptive weight for F parameter (DE adaptive strategies only)
+    pub adaptive_weight_f: f64,
+    /// Adaptive weight for CR parameter (DE adaptive strategies only)
+    pub adaptive_weight_cr: f64,
 
     // Refinement Parameters
     /// Enable local refinement after global optimization
@@ -278,6 +297,18 @@ pub struct AutoEqConfig {
     pub multi_seat_primary_seat: usize,
     /// Max deviation in dB
     pub multi_seat_max_deviation_db: f64,
+
+    // --- Multi-Measurement Optimization ---
+    /// Enable multi-measurement optimization
+    pub use_multi_measurement: bool,
+    /// Multi-measurement strategy
+    pub multi_measurement_strategy: String,
+    /// Variance lambda (for variance_penalized strategy)
+    pub multi_measurement_variance_lambda: f64,
+    /// Per-measurement weights (for weighted_sum strategy)
+    pub multi_measurement_weights: Vec<f64>,
+    /// Display labels for weight inputs
+    pub multi_measurement_labels: Vec<String>,
 }
 
 impl Default for AutoEqConfig {
@@ -305,6 +336,8 @@ impl Default for AutoEqConfig {
             de_f: 0.8,
             de_cr: 0.9,
             strategy: "currenttobest1bin".to_string(),
+            adaptive_weight_f: 0.8,
+            adaptive_weight_cr: 0.7,
             refine: true,
             local_algo: "cobyla".to_string(),
             smooth: false,
@@ -361,6 +394,12 @@ impl Default for AutoEqConfig {
             multi_seat_strategy: "variance".to_string(),
             multi_seat_primary_seat: 0,
             multi_seat_max_deviation_db: 6.0,
+
+            use_multi_measurement: false,
+            multi_measurement_strategy: "average".to_string(),
+            multi_measurement_variance_lambda: 1.0,
+            multi_measurement_weights: Vec::new(),
+            multi_measurement_labels: Vec::new(),
         }
     }
 }

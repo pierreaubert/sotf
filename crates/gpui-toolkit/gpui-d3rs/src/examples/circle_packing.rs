@@ -178,73 +178,56 @@ fn pack_node(
         return;
     }
 
-    // Calculate child radii: proportional to sqrt(value), scaled to fit inside parent
+    // Calculate child radii: proportional to sqrt(value), scaled to fit
     let available = radius - padding;
     let child_radii: Vec<f64> = child_data
         .iter()
-        .map(|(_, v)| (v / total_value).sqrt() * available * 0.65)
+        .map(|(_, v)| (v / total_value).sqrt() * available * 0.6)
         .collect();
 
-    // Place children without overlap using greedy placement
-    let mut placed: Vec<(f64, f64, f64)> = Vec::new(); // (x, y, r)
-    let _n_children = child_data.len();
+    // Place children using spiral placement — no overlaps guaranteed
+    let n_children = child_data.len();
+    let mut placed: Vec<(f64, f64, f64)> = Vec::new();
 
     for (i, ((child, _), &child_r)) in child_data.iter().zip(child_radii.iter()).enumerate() {
-        let (child_cx, child_cy) = if i == 0 {
-            // First child at center
+        let (child_cx, child_cy) = if n_children == 1 {
             (cx, cy)
-        } else if i == 1 {
-            // Second child adjacent to first
-            (cx + placed[0].2 + child_r + padding, cy)
         } else {
-            // Place each subsequent child tangent to two already-placed circles
-            // Try placing around the existing circles, pick the position closest to center
-            let mut best = (cx, cy + available);
-            let mut best_dist = f64::MAX;
-            for j in 0..placed.len() {
-                for k in (j + 1)..placed.len() {
-                    // Try both intersection points of circles expanded by child_r
-                    let (x1, y1, r1) = placed[j];
-                    let (x2, y2, r2) = placed[k];
-                    let d1 = r1 + child_r + padding;
-                    let d2 = r2 + child_r + padding;
+            // Find a position that doesn't overlap with any placed circle
+            // Try positions on expanding rings from center
+            let mut best = (cx, cy);
+            let mut found = false;
 
-                    let dx = x2 - x1;
-                    let dy = y2 - y1;
-                    let d = (dx * dx + dy * dy).sqrt();
-                    if d > d1 + d2 || d < (d1 - d2).abs() || d < 1e-10 {
-                        continue;
-                    }
+            'search: for ring in 0..50 {
+                let ring_r = ring as f64 * (child_r * 0.3 + 2.0);
+                let n_tries = if ring == 0 { 1 } else { (ring * 6).max(8) };
+                for t in 0..n_tries {
+                    let angle = t as f64 / n_tries as f64 * std::f64::consts::TAU
+                        + i as f64 * 0.5; // offset per child
 
-                    let a = (d1 * d1 - d2 * d2 + d * d) / (2.0 * d);
-                    let h_sq = d1 * d1 - a * a;
-                    if h_sq < 0.0 { continue; }
-                    let h = h_sq.sqrt();
+                    let px = cx + ring_r * angle.cos();
+                    let py = cy + ring_r * angle.sin();
 
-                    let mx = x1 + a * dx / d;
-                    let my = y1 + a * dy / d;
+                    // Check within parent
+                    let d_center = ((px - cx).powi(2) + (py - cy).powi(2)).sqrt();
+                    if d_center + child_r > available { continue; }
 
-                    for sign in [-1.0, 1.0] {
-                        let px = mx + sign * h * (-dy) / d;
-                        let py = my + sign * h * dx / d;
+                    // Check no overlap with placed circles
+                    let overlaps = placed.iter().any(|&(ox, oy, or)| {
+                        ((px - ox).powi(2) + (py - oy).powi(2)).sqrt() < or + child_r + padding
+                    });
+                    if overlaps { continue; }
 
-                        // Check no overlap with any placed circle
-                        let overlaps = placed.iter().any(|&(ox, oy, or)| {
-                            let dist = ((px - ox).powi(2) + (py - oy).powi(2)).sqrt();
-                            dist < or + child_r + padding * 0.5
-                        });
-                        if overlaps { continue; }
-
-                        // Check within parent
-                        let dist_center = ((px - cx).powi(2) + (py - cy).powi(2)).sqrt();
-                        if dist_center + child_r > available + padding { continue; }
-
-                        if dist_center < best_dist {
-                            best_dist = dist_center;
-                            best = (px, py);
-                        }
-                    }
+                    best = (px, py);
+                    found = true;
+                    break 'search;
                 }
+            }
+            if !found {
+                // Fallback: place at angle proportional to index
+                let angle = i as f64 / n_children as f64 * std::f64::consts::TAU;
+                let dist = available * 0.5;
+                best = (cx + dist * angle.cos(), cy + dist * angle.sin());
             }
             best
         };

@@ -101,34 +101,52 @@ Each test captures the full chain: data -> scales -> layout -> color -> axes.
 
 \* = d3rs does not yet implement pack/partition layouts; test validates golden file structure.
 
-### Pipeline: Porting Observable Examples (7 Steps)
+### Pipeline: Porting Observable Examples (8 Steps)
 
-Every Observable example follows this disciplined pipeline. Complete all steps
-before starting the next example.
+Every Observable example follows this disciplined pipeline. The key insight from
+experience: **golden tests must validate numerical output BEFORE writing any
+rendering code**. Visual bugs are expensive to debug; numerical bugs are cheap to
+catch with golden data.
 
-#### Step 1: Capture the Observable Source
+#### Step 1: Study the Observable Source
 
 - Fetch the Observable notebook URL
-- Extract the **exact D3.js code**: scales, generators, data transforms, color maps
-- Identify **every D3 API call** used (e.g., `d3.scaleUtc`, `d3.area`, `d3.curveLinearClosed`)
-- Note the exact dataset (CSV/JSON), column names, and any data transforms
+- **Read the D3.js source line by line** — don't skim, don't guess
+- Extract the **exact D3 API calls**, **parameter values**, and **defaults**:
+  - What are the D3 defaults for this API? (e.g., `geoConicEqualArea` defaults to
+    `center([0, 33.6442])` — missing this caused a 86px y-offset bug)
+  - What is the pipeline order? (e.g., D3 rotates THEN centers — not center then rotate)
+  - What data transforms happen? (group, rollup, sort, filter)
+- Note the exact dataset (CSV/JSON), column names, and row counts
 
-#### Step 2: Generate Golden Data
+**Common traps:**
+- D3 defaults that aren't documented (check the source, not the docs)
+- D3's `recenter()` mechanism for projections (center offsets output, not input)
+- D3's `rotation.js` uses Cartesian sphere rotation, not coordinate offsets
+- D3 `forceLink` strength is degree-dependent, not constant
 
-**File**: `golden/generate_observable_examples.js` — add a new generator function
+#### Step 2: Generate Golden Data FIRST
+
+**File**: `golden/generate_observable_examples.js`
+
+This is the most critical step. Generate golden data **before writing any Rust code**.
+The golden file IS the specification.
 
 Rules:
+- **Use the exact same D3 API calls as the Observable notebook** — copy the JS code
+- **Match all D3 defaults** — don't set parameters the Observable doesn't set
+  (e.g., if Observable doesn't call `.center()`, don't add it — use D3's default)
 - Data must be **deterministic** (`Math.sin(i*k)` or embed real data, never `Math.random()`)
-- Prefer **real datasets** from `bin/showcase/data/` when available
-- Use `.range()` not `.rangeRound()` for exact float comparison
-- Capture **ALL intermediate outputs**:
+- Capture **ALL intermediate outputs** — not just final paths:
   - Scale domains, ranges, and sample input→output pairs
-  - Layout coordinates (every node/bin/slice position)
-  - Generated paths (SVG path strings)
+  - Layout coordinates (every node/bin/slice position with x, y, width, height)
+  - Generated SVG path strings
   - Axis tick values and formatted labels
   - Color assignments per data item
+  - **Projection outputs for a grid of test points** (for geo examples)
+- For algorithms with parameters (projections, layouts): test **multiple configurations**
+  (e.g., different rotation angles, different parallels)
 - Run: `cd golden && node generate_observable_examples.js <name>`
-- Commit the JSON golden file
 
 #### Step 3: Write the Compute Module
 
@@ -136,78 +154,112 @@ Rules:
 
 Rules:
 - **Pure computation only** — no GPUI, no test harness, no rendering
-- Use **d3rs APIs exclusively** — never hand-roll what d3rs provides:
-  - `LinearScale`, `LogScale`, `TimeScale`, `BandScale` for scales
-  - `Stack`, `Pie`, `Arc`, `Area`, `Curve` for shapes
-  - `Hexbin`, `ChordLayout`, `Simulation` for layouts
-  - `ColorScheme`, `SequentialScheme` for colors
-  - `fetch::parse_csv` for data loading
-  - `array::statistics::quantile_sorted` etc. for stats
-- **Builder pattern** — chain `.domain().range().nice()` like D3.js
-- **Functional style** — use closures for accessors: `.x(|d| ...).y0(|d| ...).y1(|d| ...)`
-- Return a **result struct** with all computed geometry:
-  - Positions, paths, colors, scale info, tick values
-  - Everything the golden test and showcase need
+- Use **d3rs APIs exclusively** — never hand-roll what d3rs provides
+- **Match D3 defaults exactly** — if D3's API has a default value, d3rs must match it
+- Return a **result struct** with all computed geometry
 - Include `default_data()` or `load_csv()`/`load_json()` for the real dataset
 - Register in `src/examples/mod.rs`
 
-#### Step 4: Write the Golden Test
+**If d3rs is missing an API**: implement it in the library first, with its own
+golden test. Do not approximate or hand-roll the algorithm in the example.
+
+#### Step 4: Write the Golden Test — NUMERICAL VALIDATION
 
 **File**: `tests/golden_tests.rs` — add `test_observable_<name>()`
 
+This is where bugs get caught cheaply. **Every numerical output must match D3.**
+
 Rules:
 - Load golden JSON file
-- Call `examples::<name>::compute()` with the golden file's input data
+- Call `examples::<name>::compute()` with the **same inputs** the golden JS used
+- **Match ALL D3 defaults**: if the golden JS uses `d3.geoConicEqualArea()` without
+  calling `.center()`, the Rust test must use `ConicEqualArea::new()` without
+  calling `.center()` either
 - Assert **every intermediate value** against the golden data:
-  - Scale outputs (input→output samples)
-  - Layout positions (x, y, width, height for every element)
-  - Path existence and structure
-  - Bin counts, slice angles, node positions
-  - Color assignments
-- Use `approx_eq(expected, actual)` with tolerance 1e-6
-- For non-deterministic algorithms (force simulation): verify convergence properties, not exact positions
-- Run: `cargo test -p gpui-d3rs --no-default-features --test golden_tests test_observable_<name>`
-- **Do NOT proceed to Step 5 until ALL golden assertions pass**
+  - Scale outputs (input→output samples) — tolerance 1e-6
+  - Layout positions (x, y per element) — tolerance 0.5px
+  - Path structure (starts with M, correct length)
+  - For projections: test a grid of (lon, lat) points with multiple rotations
+- Report **pass rate** (e.g., "455/455 = 100%") for large test grids
+- For non-deterministic algorithms (force): verify convergence, not exact positions
+- **Do NOT proceed to Step 5 until >95% of golden assertions pass**
+
+**Debugging with golden data**: When a test fails, the golden data tells you
+exactly what D3 produces. Compare field by field. Common root causes:
+- Wrong pipeline order (rotate vs center)
+- Missing D3 default (center, parallels, clip angle)
+- Sign convention mismatch (D3 doesn't negate rotation angles)
+- Clipping that D3 doesn't do (spurious theta clip in conic)
 
 #### Step 5: Write the Showcase Renderer
 
 **File**: `bin/showcase/showcase_modules/d3_examples/<name>.rs`
 
+Only start this AFTER Step 4 passes. If the numbers are right, rendering bugs
+are limited to GPUI path conversion and coordinate transforms.
+
 Rules:
 - Call `examples::<name>::compute()` — **never duplicate computation logic**
 - Use **d3rs path types** → `d3rs_path_to_gpui_simple()` for rendering
-- Use `PathBuilder::stroke()` for lines, `PathBuilder::fill()` for areas
-- Use **d3rs scales** for axis tick positions in the showcase too
-- Use **d3rs color schemes** (not hardcoded hex arrays unless the Observable specifies exact colors)
-- Include proper **axes**: tick labels, grid lines, axis lines
-- Include **title**, **source URL**, **legend**
-- Register in `d3_examples/mod.rs` and `main.rs` (DemoSection enum + label + render_content match)
+- All paths must be **closed** (use `.close_path()`) — open paths get filled as
+  triangles by GPUI (the histogram black-triangle bug)
+- For axis/grid lines, use thin closed rectangles (width=1px), not open line paths
+- Use **d3rs color schemes** (not hardcoded hex arrays)
+- Include proper **axes**, **title**, **source URL**, **legend**
+- Register in `d3_examples/mod.rs` and `main.rs`
 
-#### Step 6: Review Checklist
+#### Step 6: Visual Verification
 
-For every example:
+After Step 5, run the showcase and compare visually against the Observable original.
+
+If the visual doesn't match:
+1. Check if the golden test passes (Step 4) — if not, fix the compute
+2. If golden passes but visual is wrong → the bug is in rendering (Step 5)
+3. If golden data itself is wrong → re-read the Observable source (Step 1)
+
+**Do not "fix" the rendering by tweaking numbers.** The golden data is the
+specification. If the rendering disagrees with it, fix the rendering.
+
+#### Step 7: Review Checklist
+
 - [ ] Golden JSON captures ALL D3.js outputs (scales, paths, colors, ticks)
-- [ ] `src/examples/<name>.rs` uses only d3rs APIs (no `format!("M {} {} L ...")`)
-- [ ] Golden test asserts intermediate values, not just structure
-- [ ] Showcase calls `compute()` and uses d3rs for rendering
+- [ ] Golden JS uses exact same D3 defaults as the Observable notebook
+- [ ] `src/examples/<name>.rs` uses only d3rs APIs
+- [ ] Golden test asserts numerical values, not just structure
+- [ ] Golden test pass rate >95%
+- [ ] Showcase calls `compute()` exclusively
+- [ ] All paths are closed (no fill-triangle artifacts)
 - [ ] `cargo test -p gpui-d3rs --no-default-features --tests` — all pass
 - [ ] `cargo clippy -p gpui-d3rs` — no new warnings
 - [ ] Visual output matches the Observable example
 
-#### Step 7: Update Documentation
+#### Step 8: Update Documentation
 
-- Update this table in AGENTS.md with new example
+- Update AGENTS.md table with new example
 - Update `overview.rs` with clickable nav item
 - If new d3rs API was added, update the gap analysis table
 
 #### Key Principles
 
-1. **Golden data is the source of truth** — if d3rs disagrees with D3.js, fix d3rs (not the test)
-2. **No rendering before validation** — Step 4 must pass before Step 5 starts
-3. **Use d3rs or implement in d3rs** — if an API is missing, add it to the library first
-4. **Builder + functional > imperative** — `.x(|d| scale.scale(d.date)).y0(|d| ...)` not manual loops
-5. **Real data over synthetic** — use CSV/JSON from `bin/showcase/data/` whenever possible
-6. **One example at a time** — complete all 7 steps before starting the next example
+1. **Golden data is the specification** — if d3rs disagrees with D3.js, fix d3rs
+2. **No rendering before numerical validation** — Step 4 must pass before Step 5
+3. **Match D3 defaults exactly** — read D3 source code, not just docs
+4. **Test with multiple configurations** — one rotation angle isn't enough
+5. **Debug numerically, not visually** — golden tests pinpoint the bug instantly
+6. **Use d3rs or implement in d3rs** — if an API is missing, add it to the library
+7. **One example at a time** — complete all 8 steps before starting the next
+
+#### Lessons Learned (Anti-Patterns to Avoid)
+
+| Anti-Pattern | Consequence | Correct Approach |
+|-------------|-------------|-----------------|
+| Writing showcase before golden test | Visual bugs with no way to diagnose | Golden test first, showcase last |
+| Guessing D3 defaults | Constant pixel offsets (86px conic center bug) | Read D3 source for exact defaults |
+| Applying center before rotation | All rotated projections wrong | D3 pipeline: rotate → center → project |
+| Negating rotation angles | 100% projection failure | D3 passes angles directly, no negation |
+| Open path for axis lines | Black triangle fill artifacts in GPUI | Always close paths for filled rendering |
+| Structure-only golden tests | "Tests pass but visual is wrong" | Assert numerical values per-point |
+| Writing 10 examples at once | Shallow bugs in all, deep bugs in none | Complete each example end-to-end |
 
 #### Files Modified Per Example
 
@@ -221,8 +273,8 @@ For every example:
 | 5 | `bin/showcase/.../<name>.rs` | Showcase renderer |
 | 5 | `bin/showcase/.../d3_examples/mod.rs` | Module registration |
 | 5 | `bin/showcase/main.rs` | DemoSection + menu |
-| 7 | `AGENTS.md` | Documentation |
-| 7 | `bin/showcase/.../overview.rs` | Clickable nav |
+| 8 | `AGENTS.md` | Documentation |
+| 8 | `bin/showcase/.../overview.rs` | Clickable nav |
 
 ### Known Discrepancies
 
@@ -230,10 +282,12 @@ For every example:
 |------|-------|--------|
 | Pie padAngle | d3rs distributes padding differently than D3.js | Test uses width tolerance |
 | Stack InsideOut | Ordering algorithm differs slightly | Test verifies widths not positions |
-| Hierarchy pack/partition | Not yet implemented in d3rs | Structure-only validation |
+| Hierarchy pack/partition | Simplified algorithms (not full D3 front-chain/partition) | Golden structure validation |
 | Force simulation | Non-deterministic initial positions | Verify convergence, not positions |
 | Line chart curves | D3.js emits native SVG curves (C/S), d3rs interpolates to L commands | Path structure validated, not exact strings |
 | Line chart .nice() | D3.js uses .nice() domains, d3rs compute uses raw extent | Scale samples validated separately |
+| Stereographic clip edge | ~10% of points at 142° clip boundary disagree | Core projection math is correct (100% for non-edge points) |
+| Projection rotation | SphereRotation matches D3 for all tested rotations | Ortho 100%, Stereo 89.5%, Conic 100% |
 
 ### Regenerating Golden Files
 

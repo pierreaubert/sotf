@@ -81,8 +81,8 @@ impl Render for HierarchyDemo {
             let n = node.borrow();
 
             // Link to parent
-            if let Some(parent_weak) = &n.parent {
-                if let Some(parent_rc) = parent_weak.upgrade() {
+            if let Some(parent_weak) = &n.parent
+                && let Some(parent_rc) = parent_weak.upgrade() {
                     let p = parent_rc.borrow();
 
                     // Draw link (simple SVG line)
@@ -100,7 +100,6 @@ impl Render for HierarchyDemo {
                         ),
                     );
                 }
-            }
 
             // Node
             nodes.push(
@@ -136,7 +135,7 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|cx| HierarchyDemo::new(cx)),
+                |_, cx| cx.new(HierarchyDemo::new),
             )
             .unwrap();
 

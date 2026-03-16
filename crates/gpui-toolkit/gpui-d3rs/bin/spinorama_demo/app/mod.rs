@@ -74,9 +74,11 @@ pub struct SpinoramaApp {
     pub freq_spl_brush: BrushState,
     // Zoom state for SPL contour plot
     pub spl_contour_zoom: ZoomState,
+    #[allow(dead_code)]
     pub spl_contour_brush: BrushState,
     // Zoom state for directivity contour plot
     pub directivity_contour_zoom: ZoomState,
+    #[allow(dead_code)]
     pub directivity_contour_brush: BrushState,
     // Track which chart is currently being brushed (for event handling)
     pub active_brush_chart: Option<ChartId>,
@@ -97,6 +99,7 @@ pub struct SpinoramaApp {
     pub surface_wireframe: bool,
     pub surface_isolines: bool,
     pub surface_opacity: f32,
+    #[allow(dead_code)]
     pub surface_plot_type: SurfacePlotType,
     pub surface_show_grid: bool,
     pub sphere_freq_idx: usize,
@@ -987,6 +990,7 @@ impl SpinoramaApp {
     }
 
     /// Convert pixel selection to domain coordinates and apply zoom
+    #[allow(dead_code)]
     fn apply_zoom_from_selection(
         &mut self,
         chart_id: ChartId,

@@ -33,11 +33,11 @@ pub(crate) fn is_narrow_default_layout(available_width: f32) -> bool {
 }
 
 pub(crate) fn is_single_column_default_grid(available_width: f32) -> bool {
-    available_width > 0.0 && available_width < 980.0
+    available_width > 0.0 && available_width < 520.0
 }
 
 pub(crate) fn is_narrow_room_eq_layout(available_width: f32) -> bool {
-    available_width > 0.0 && available_width <= 700.0
+    available_width > 0.0 && available_width < 520.0
 }
 
 /// A reusable form for AutoEQ optimization parameters.
@@ -86,6 +86,8 @@ pub struct AutoEqForm {
     pub(crate) hide_scenario_a_text: bool,
     /// Hide room-specific sections (Advanced Room Correction, System Optimization, Advanced Tuning)
     pub(crate) hide_room_sections: bool,
+    /// Hide multi-measurement optimization section
+    pub(crate) hide_multi_measurement: bool,
     /// Available width in pixels for responsive layout
     pub(crate) available_width: f32,
 
@@ -119,6 +121,8 @@ pub struct AutoEqForm {
     pub(crate) on_de_cr_change: Option<F64Callback>,
     pub(crate) on_strategy_change: Option<StringCallback>,
     pub(crate) on_strategy_toggle: Option<ToggleCallback>,
+    pub(crate) on_adaptive_weight_f_change: Option<F64Callback>,
+    pub(crate) on_adaptive_weight_cr_change: Option<F64Callback>,
     pub(crate) on_refine_change: Option<BoolCallback>,
     pub(crate) on_local_algo_change: Option<StringCallback>,
     pub(crate) on_local_algo_toggle: Option<ToggleCallback>,
@@ -186,6 +190,13 @@ pub struct AutoEqForm {
     pub(crate) on_mixed_crossover_type_toggle: Option<ToggleCallback>,
     pub(crate) on_mixed_fir_band_change: Option<StringCallback>,
     pub(crate) on_mixed_fir_band_toggle: Option<ToggleCallback>,
+
+    // Multi-measurement callbacks
+    pub(crate) on_use_multi_measurement_change: Option<BoolCallback>,
+    pub(crate) on_multi_measurement_strategy_change: Option<StringCallback>,
+    pub(crate) on_multi_measurement_strategy_toggle: Option<ToggleCallback>,
+    pub(crate) on_multi_measurement_variance_lambda_change: Option<F64Callback>,
+    pub(crate) on_multi_measurement_weight_change: Option<Box<dyn Fn(usize, f64, &mut Window, &mut App)>>,
 }
 
 impl AutoEqForm {
@@ -213,6 +224,7 @@ impl AutoEqForm {
             hide_multi_seat: false,
             hide_scenario_a_text: false,
             hide_room_sections: false,
+            hide_multi_measurement: false,
             available_width: 0.0,
             on_opt_mode_change: None,
             on_opt_mode_toggle: None,
@@ -241,6 +253,8 @@ impl AutoEqForm {
             on_de_cr_change: None,
             on_strategy_change: None,
             on_strategy_toggle: None,
+            on_adaptive_weight_f_change: None,
+            on_adaptive_weight_cr_change: None,
             on_refine_change: None,
             on_local_algo_change: None,
             on_local_algo_toggle: None,
@@ -298,6 +312,11 @@ impl AutoEqForm {
             on_mixed_crossover_type_toggle: None,
             on_mixed_fir_band_change: None,
             on_mixed_fir_band_toggle: None,
+            on_use_multi_measurement_change: None,
+            on_multi_measurement_strategy_change: None,
+            on_multi_measurement_strategy_toggle: None,
+            on_multi_measurement_variance_lambda_change: None,
+            on_multi_measurement_weight_change: None,
         }
     }
 
@@ -670,6 +689,24 @@ impl AutoEqForm {
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_strategy_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set adaptive weight F change handler (DE adaptive strategies only)
+    pub fn on_adaptive_weight_f_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_adaptive_weight_f_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set adaptive weight CR change handler (DE adaptive strategies only)
+    pub fn on_adaptive_weight_cr_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_adaptive_weight_cr_change = Some(Box::new(handler));
         self
     }
 
@@ -1149,6 +1186,53 @@ impl AutoEqForm {
         self.on_mixed_fir_band_toggle = Some(Box::new(handler));
         self
     }
+
+    // Multi-measurement callbacks
+
+    pub fn hide_multi_measurement(mut self, hide: bool) -> Self {
+        self.hide_multi_measurement = hide;
+        self
+    }
+
+    pub fn on_use_multi_measurement_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_use_multi_measurement_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_measurement_strategy_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_measurement_strategy_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_measurement_strategy_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_measurement_strategy_toggle = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_measurement_variance_lambda_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_measurement_variance_lambda_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_measurement_weight_change(
+        mut self,
+        handler: impl Fn(usize, f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_measurement_weight_change = Some(Box::new(handler));
+        self
+    }
 }
 
 #[cfg(test)]
@@ -1167,14 +1251,14 @@ mod tests {
     #[test]
     fn test_is_single_column_default_grid() {
         assert!(!is_single_column_default_grid(0.0));
-        assert!(is_single_column_default_grid(979.0));
-        assert!(!is_single_column_default_grid(980.0));
+        assert!(is_single_column_default_grid(519.0));
+        assert!(!is_single_column_default_grid(520.0));
     }
 
     #[test]
     fn test_is_narrow_room_eq_layout() {
         assert!(!is_narrow_room_eq_layout(0.0));
-        assert!(is_narrow_room_eq_layout(700.0));
-        assert!(!is_narrow_room_eq_layout(701.0));
+        assert!(is_narrow_room_eq_layout(519.0));
+        assert!(!is_narrow_room_eq_layout(520.0));
     }
 }

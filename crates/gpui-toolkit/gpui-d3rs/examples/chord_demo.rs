@@ -42,7 +42,7 @@ impl Render for ChordDemo {
 
         let ribbon = RibbonGenerator::new(inner_radius).center(center_x, center_y);
 
-        let colors = vec![rgb(0x000000), rgb(0xffdd89), rgb(0x957244), rgb(0xf26223)];
+        let colors = [rgb(0x000000), rgb(0xffdd89), rgb(0x957244), rgb(0xf26223)];
 
         let mut elements = Vec::new();
 
@@ -103,7 +103,7 @@ fn main() {
                     ))),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|cx| ChordDemo::new(cx)),
+                |_, cx| cx.new(ChordDemo::new),
             )
             .unwrap();
 

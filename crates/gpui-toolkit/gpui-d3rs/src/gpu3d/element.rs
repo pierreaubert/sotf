@@ -403,12 +403,11 @@ impl Element for Surface3DElement {
             let mut max_screen_y = -f32::INFINITY;
 
             for (pos, z_val) in x_candidates {
-                if let Some(screen_pos) = to_screen(pos) {
-                    if screen_pos.y > max_screen_y {
+                if let Some(screen_pos) = to_screen(pos)
+                    && screen_pos.y > max_screen_y {
                         max_screen_y = screen_pos.y;
                         best_x_z_val = z_val;
                     }
-                }
             }
 
             // Freq Labels (X axis)
@@ -458,12 +457,11 @@ impl Element for Surface3DElement {
             max_screen_y = -f32::INFINITY;
 
             for (pos, x_val) in z_candidates {
-                if let Some(screen_pos) = to_screen(pos) {
-                    if screen_pos.y > max_screen_y {
+                if let Some(screen_pos) = to_screen(pos)
+                    && screen_pos.y > max_screen_y {
                         max_screen_y = screen_pos.y;
                         best_z_x_val = x_val;
                     }
-                }
             }
 
             // Angle Labels (Z axis) - 30° major ticks
@@ -517,13 +515,12 @@ impl Element for Surface3DElement {
             let mut min_screen_x = f32::INFINITY;
 
             for (pos, x_val, z_val) in y_candidates {
-                if let Some(screen_pos) = to_screen(pos) {
-                    if screen_pos.x < min_screen_x {
+                if let Some(screen_pos) = to_screen(pos)
+                    && screen_pos.x < min_screen_x {
                         min_screen_x = screen_pos.x;
                         best_y_x = x_val;
                         best_y_z = z_val;
                     }
-                }
             }
 
             // SPL Labels (Y axis)

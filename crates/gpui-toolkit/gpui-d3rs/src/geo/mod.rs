@@ -24,6 +24,7 @@
 mod graticule;
 mod path;
 pub mod projection;
+pub mod versor;
 
 pub use graticule::{Graticule, GraticuleConfig};
 pub use path::{GeoJsonGeometry, GeoPath, GeoPathConfig};

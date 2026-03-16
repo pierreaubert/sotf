@@ -169,6 +169,6 @@ impl Render for TableDebug {
 
 fn main() {
     MiniApp::run(MiniAppConfig::new("Table Debug"), |cx| {
-        cx.new(|cx| TableDebug::new(cx))
+        cx.new(TableDebug::new)
     });
 }

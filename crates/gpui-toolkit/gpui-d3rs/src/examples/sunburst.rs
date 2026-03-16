@@ -1,6 +1,8 @@
 //! Sunburst — <https://observablehq.com/@d3/sunburst/2>
 //!
 //! Demonstrates: Partition layout with Arc rendering for hierarchical data.
+//! Uses `d3.partition().size([2π, radius])` to assign angular and radial extents,
+//! then renders each node as an arc slice.
 
 use crate::hierarchy::HierarchyNode;
 use crate::shape::arc::{Arc, ArcDatum};
@@ -33,48 +35,81 @@ pub struct SunNode {
     pub value: f64,
 }
 
-/// Build a sample hierarchy for sunburst.
+/// Build the same hierarchy used by the golden generator.
+/// 3-level deep: root → categories → items (some categories have sub-categories).
 pub fn default_hierarchy() -> Rc<RefCell<HierarchyNode<SunNode>>> {
-    let root = HierarchyNode::new(SunNode {
-        name: "root".to_string(),
-        value: 0.0,
-    });
+    let root = HierarchyNode::new(SunNode { name: "root".to_string(), value: 0.0 });
 
-    let categories = [
-        ("analytics", vec![("cluster", 3938.0), ("graph", 5714.0), ("optimization", 2105.0)]),
-        ("animate", vec![("easing", 1700.0), ("tween", 6006.0), ("interpolate", 2801.0)]),
-        ("data", vec![("converters", 1082.0), ("field", 1616.0), ("schema", 1255.0)]),
-        ("display", vec![("sprite", 3322.0), ("text", 2220.0), ("render", 4230.0)]),
-        ("physics", vec![("drag", 1200.0), ("spring", 2314.0), ("nbody", 3416.0)]),
-        ("scale", vec![("linear", 1316.0), ("log", 3151.0), ("time", 5290.0)]),
-        ("util", vec![("arrays", 8258.0), ("dates", 1727.0), ("maths", 3085.0)]),
+    // Exact data from golden/generate_observable_examples.js sunburst generator
+    type SubItem<'a> = (&'a str, Vec<(&'a str, f64)>);
+    type Category<'a> = (&'a str, Vec<SubItem<'a>>);
+    let categories: Vec<Category<'_>> = vec![
+        ("analytics", vec![
+            ("cluster", vec![]), ("graph", vec![]), ("optimization", vec![]),
+        ]),
+        ("animate", vec![
+            ("Easing", vec![]),
+            ("Parallel", vec![]),
+            ("interpolate", vec![
+                ("ArrayInterp", 2000.0), ("ColorInterp", 3000.0), ("NumberInterp", 1800.0),
+            ]),
+        ]),
+        ("data", vec![
+            ("DataField", vec![]), ("DataSchema", vec![]), ("DataUtil", vec![]),
+        ]),
+        ("display", vec![
+            ("DirtySprite", vec![]), ("LineSprite", vec![]), ("TextSprite", vec![]),
+        ]),
     ];
 
-    let mut children = Vec::new();
+    // Leaf values matching golden JS exactly
+    let leaf_values: std::collections::HashMap<&str, f64> = [
+        ("cluster", 10000.0), ("graph", 8000.0), ("optimization", 5000.0),
+        ("Easing", 17000.0), ("Parallel", 5000.0),
+        ("DirtySprite", 8800.0), ("LineSprite", 1700.0), ("TextSprite", 10000.0),
+        ("DataField", 1800.0), ("DataSchema", 2200.0), ("DataUtil", 3300.0),
+    ].into_iter().collect();
+
+    let mut top_children = Vec::new();
     for (cat_name, items) in &categories {
-        let cat = HierarchyNode::new(SunNode {
-            name: cat_name.to_string(),
-            value: 0.0,
-        });
+        let cat = HierarchyNode::new(SunNode { name: cat_name.to_string(), value: 0.0 });
         let mut cat_children = Vec::new();
-        for (item_name, val) in items {
-            cat_children.push(HierarchyNode::new(SunNode {
-                name: item_name.to_string(),
-                value: *val,
-            }));
+
+        for (item_name, sub_items) in items {
+            if sub_items.is_empty() {
+                let val = leaf_values.get(item_name).copied().unwrap_or(1000.0);
+                cat_children.push(HierarchyNode::new(SunNode {
+                    name: item_name.to_string(), value: val,
+                }));
+            } else {
+                // Sub-category with children
+                let sub = HierarchyNode::new(SunNode { name: item_name.to_string(), value: 0.0 });
+                let mut sub_children = Vec::new();
+                for (sub_name, sub_val) in sub_items {
+                    sub_children.push(HierarchyNode::new(SunNode {
+                        name: sub_name.to_string(), value: *sub_val,
+                    }));
+                }
+                sub.borrow_mut().set_children(&sub, sub_children);
+                cat_children.push(sub);
+            }
         }
         cat.borrow_mut().set_children(&cat, cat_children);
-        children.push(cat);
+        top_children.push(cat);
     }
-    root.borrow_mut().set_children(&root, children);
-    // Fix depths: set_children only propagates one level, so re-compute all depths
+    root.borrow_mut().set_children(&root, top_children);
     fix_depths(root.clone(), 0);
     HierarchyNode::sum(root.clone(), |d| if d.value > 0.0 { d.value } else { 0.0 });
+    // Sort descending by value (matching D3's .sort((a, b) => b.value - a.value))
+    HierarchyNode::sort(root.clone(), |a, b| {
+        let av = b.value.unwrap_or(0.0);
+        let bv = a.value.unwrap_or(0.0);
+        av.partial_cmp(&bv).unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     root
 }
 
-/// Recursively fix depth values after tree construction.
 fn fix_depths<T>(node: Rc<RefCell<HierarchyNode<T>>>, depth: usize) {
     node.borrow_mut().depth = depth;
     let children = node.borrow().children.clone();
@@ -86,40 +121,33 @@ fn fix_depths<T>(node: Rc<RefCell<HierarchyNode<T>>>, depth: usize) {
 }
 
 /// Compute sunburst layout using partition (angular x, radial y).
+/// Matches D3's `d3.partition().size([2π, radius])`.
 pub fn compute() -> SunburstResult {
     let width: f64 = 928.0;
     let height: f64 = 928.0;
     let radius = width.min(height) / 2.0;
+    let padding = 1.0;
 
     let root = default_hierarchy();
     let root_value = root.borrow().value.unwrap_or(1.0);
 
-    // Compute max depth by traversal (HierarchyNode.height isn't auto-computed)
+    // Compute max depth
     let mut max_depth = 0usize;
     HierarchyNode::each(root.clone(), |n| {
         let d = n.borrow().depth;
         if d > max_depth { max_depth = d; }
     });
-    let ring_width = radius / (max_depth as f64 + 1.0);
 
-    // Partition layout: assign angular extent based on value proportion
+    // Partition layout: evenly divide radius by depth, angles by value proportion.
+    // This matches d3.partition().size([2π, radius]).
     let mut slices = Vec::new();
     let arc_gen = Arc::default();
     partition_node(
-        &root,
-        0.0,
-        std::f64::consts::TAU,
-        root_value,
-        ring_width,
-        &arc_gen,
-        &mut slices,
+        &root, 0.0, std::f64::consts::TAU,
+        root_value, radius, max_depth, padding, &arc_gen, &mut slices,
     );
 
-    SunburstResult {
-        width,
-        height,
-        slices,
-    }
+    SunburstResult { width, height, slices }
 }
 
 fn partition_node(
@@ -127,49 +155,43 @@ fn partition_node(
     start_angle: f64,
     end_angle: f64,
     parent_value: f64,
-    ring_width: f64,
+    radius: f64,
+    max_depth: usize,
+    padding: f64,
     arc_gen: &Arc,
     result: &mut Vec<SunburstSlice>,
 ) {
-    // Extract all needed data from borrow, then drop it before recursion
     let (depth, value, name, children_data) = {
         let n = node.borrow();
         let children_data: Vec<(Rc<RefCell<HierarchyNode<SunNode>>>, f64)> = n
-            .children
-            .as_ref()
-            .map(|cs| {
-                cs.iter()
-                    .map(|c| (c.clone(), c.borrow().value.unwrap_or(0.0)))
-                    .collect()
-            })
+            .children.as_ref()
+            .map(|cs| cs.iter().map(|c| (c.clone(), c.borrow().value.unwrap_or(0.0))).collect())
             .unwrap_or_default();
         (n.depth, n.value.unwrap_or(0.0), n.data.name.clone(), children_data)
     };
 
-    let y0 = depth as f64 * ring_width;
-    let y1 = y0 + ring_width;
+    // d3.partition: y0 = depth * (radius / (max_depth + 1)), y1 = (depth + 1) * ...
+    let ring = radius / (max_depth as f64 + 1.0);
+    let y0 = depth as f64 * ring;
+    let y1 = (depth as f64 + 1.0) * ring;
 
-    // Skip root (depth 0) from rendering but still recurse
     if depth > 0 && end_angle - start_angle > 0.001 {
+        // Arc with padAngle matching Observable: min((x1-x0)/2, 2*padding/radius)
+        let angular_width = end_angle - start_angle;
+        let pad = (angular_width / 2.0).min(2.0 * padding / radius);
+
         let datum = ArcDatum {
             inner_radius: y0,
-            outer_radius: y1,
-            start_angle,
-            end_angle,
+            outer_radius: y1 - padding,
+            start_angle: start_angle + pad / 2.0,
+            end_angle: end_angle - pad / 2.0,
             corner_radius: 0.0,
             pad_angle: 0.0,
         };
         let arc_path = arc_gen.generate(&datum);
 
         result.push(SunburstSlice {
-            name,
-            depth,
-            x0: start_angle,
-            x1: end_angle,
-            y0,
-            y1,
-            value,
-            arc_path,
+            name, depth, x0: start_angle, x1: end_angle, y0, y1, value, arc_path,
         });
     }
 
@@ -178,17 +200,10 @@ fn partition_node(
     for (child, child_val) in &children_data {
         let child_extent = if parent_value > 0.0 {
             (end_angle - start_angle) * (child_val / parent_value)
-        } else {
-            0.0
-        };
+        } else { 0.0 };
         partition_node(
-            child,
-            angle,
-            angle + child_extent,
-            *child_val,
-            ring_width,
-            arc_gen,
-            result,
+            child, angle, angle + child_extent,
+            *child_val, radius, max_depth, padding, arc_gen, result,
         );
         angle += child_extent;
     }

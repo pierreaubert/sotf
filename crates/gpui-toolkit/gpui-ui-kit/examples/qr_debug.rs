@@ -756,7 +756,7 @@ fn request_camera_permission_macos() -> bool {
 
         // AVMediaTypeVideo = "vide"
         let media_type: *mut objc::runtime::Object =
-            msg_send![Class::get("NSString").unwrap(), stringWithUTF8String: b"vide\0".as_ptr()];
+            msg_send![Class::get("NSString").unwrap(), stringWithUTF8String: c"vide".as_ptr()];
 
         // Check current status first (0=notDetermined, 1=restricted, 2=denied, 3=authorized)
         let status: i64 = msg_send![cls, authorizationStatusForMediaType: media_type];

@@ -26,6 +26,7 @@ gpui-ui-kit = { workspace = true, optional = true }
 gpui_macos = { workspace = true, optional = true }
 regex = { workspace = true }
 delaunator = { workspace = true }
+math-delaunay = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 autoeq = { workspace = true, optional = true }

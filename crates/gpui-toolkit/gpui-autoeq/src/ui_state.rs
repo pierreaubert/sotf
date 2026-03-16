@@ -36,4 +36,6 @@ pub struct AutoEqFormUiState {
     pub mixed_fir_band_open: bool,
     /// VoG reference channel dropdown open state
     pub vog_reference_channel_open: bool,
+    /// Multi-measurement strategy dropdown open state
+    pub multi_measurement_strategy_open: bool,
 }

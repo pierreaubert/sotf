@@ -93,7 +93,7 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|cx| ForceDemo::new(cx)),
+                |_, cx| cx.new(ForceDemo::new),
             )
             .unwrap();
 

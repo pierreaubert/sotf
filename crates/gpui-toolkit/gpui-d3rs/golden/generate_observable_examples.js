@@ -1693,6 +1693,119 @@ function generateHorizonChartObservable() {
 }
 
 // ============================================================================
+// PROJECTION ROTATION TESTS — Stereographic, ConicEqualArea, Orthographic
+// ============================================================================
+
+function generateProjectionsObservable() {
+  const testCases = [];
+
+  // Test points: grid of (lon, lat) covering the globe
+  const testPoints = [];
+  for (let lon = -180; lon <= 180; lon += 30) {
+    for (let lat = -60; lat <= 60; lat += 30) {
+      testPoints.push([lon, lat]);
+    }
+  }
+
+  // Rotation configurations to test
+  const rotations = [
+    [0, 0, 0],
+    [90, 0, 0],
+    [0, -45, 0],
+    [-120, -30, 0],
+    [45, 45, 0],
+    [0, 0, 30],
+    [30, -60, 15],
+  ];
+
+  const width = 600, height = 400;
+
+  // === ORTHOGRAPHIC ===
+  const orthoResults = [];
+  for (const rot of rotations) {
+    const proj = d3.geoOrthographic()
+      .scale(250)
+      .translate([width / 2, height / 2])
+      .rotate(rot);
+
+    const points = testPoints.map(([lon, lat]) => {
+      const p = proj([lon, lat]);
+      return {
+        lon, lat,
+        x: p ? round(p[0]) : null,
+        y: p ? round(p[1]) : null,
+      };
+    });
+    orthoResults.push({ rotation: rot, points });
+  }
+
+  // === STEREOGRAPHIC ===
+  const stereoResults = [];
+  for (const rot of rotations) {
+    const proj = d3.geoStereographic()
+      .scale(250)
+      .translate([width / 2, height / 2])
+      .clipAngle(142)
+      .rotate(rot);
+
+    const points = testPoints.map(([lon, lat]) => {
+      const p = proj([lon, lat]);
+      return {
+        lon, lat,
+        x: p ? round(p[0]) : null,
+        y: p ? round(p[1]) : null,
+      };
+    });
+    stereoResults.push({ rotation: rot, points });
+  }
+
+  // === CONIC EQUAL-AREA ===
+  const conicResults = [];
+  for (const rot of rotations) {
+    const proj = d3.geoConicEqualArea()
+      .parallels([29.5, 45.5])
+      .scale(155.424)
+      .translate([width / 2, height / 2])
+      .rotate(rot);
+
+    const points = testPoints.map(([lon, lat]) => {
+      const p = proj([lon, lat]);
+      return {
+        lon, lat,
+        x: p ? round(p[0]) : null,
+        y: p ? round(p[1]) : null,
+      };
+    });
+    conicResults.push({ rotation: rot, points });
+  }
+
+  testCases.push({
+    name: "projection_rotation",
+    description: "Projection output for various rotations",
+    layout: { width, height },
+    test_points: testPoints.length,
+    rotations: rotations.length,
+    orthographic: {
+      scale: 250,
+      results: orthoResults,
+    },
+    stereographic: {
+      scale: 250,
+      clip_angle: 142,
+      results: stereoResults,
+    },
+    conic_equal_area: {
+      scale: 155.424,
+      parallels: [29.5, 45.5],
+      results: conicResults,
+    },
+  });
+
+  writeGolden('projections.json', createGoldenFile(
+    "https://observablehq.com/@d3/versor-dragging", "d3-geo", "projections", testCases));
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -1718,6 +1831,7 @@ const generators = {
   radial_tree: generateRadialTreeObservable,
   voronoi_airports: generateVoronoiAirportsObservable,
   horizon_chart: generateHorizonChartObservable,
+  projections: generateProjectionsObservable,
 };
 
 const args = process.argv.slice(2);

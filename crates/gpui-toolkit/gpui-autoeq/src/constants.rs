@@ -83,7 +83,7 @@ pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("mh:pso", "MH Particle Swarm"),
     ("mh:rga", "MH Genetic Algorithm"),
     ("mh:tlbo", "MH TLBO"),
-    ("mh:fa", "MH Firefly"),
+    ("mh:firefly", "MH Firefly"),
     ("nlopt:isres", "NLOPT ISRES"),
     ("nlopt:ags", "NLOPT AGS"),
     ("nlopt:cobyla", "NLOPT COBYLA"),
@@ -91,14 +91,24 @@ pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("nlopt:neldermead", "NLOPT Nelder-Mead"),
 ];
 
-/// DE strategy options
+/// DE strategy options (all variants from math-optimisation Strategy enum)
 pub const DE_STRATEGY_OPTIONS: &[(&str, &str)] = &[
     ("currenttobest1bin", "Current-to-Best/1/Bin (Recommended)"),
-    ("rand1bin", "Rand/1/Bin"),
+    ("currenttobest1exp", "Current-to-Best/1/Exp"),
     ("best1bin", "Best/1/Bin"),
+    ("best1exp", "Best/1/Exp"),
+    ("best2bin", "Best/2/Bin"),
+    ("best2exp", "Best/2/Exp"),
+    ("rand1bin", "Rand/1/Bin"),
+    ("rand1exp", "Rand/1/Exp"),
     ("rand2bin", "Rand/2/Bin"),
+    ("rand2exp", "Rand/2/Exp"),
     ("randtobest1bin", "Rand-to-Best/1/Bin"),
-    ("adaptivebin", "Adaptive/Bin (Experimental)"),
+    ("randtobest1exp", "Rand-to-Best/1/Exp"),
+    ("adaptivebin", "Adaptive/Bin"),
+    ("adaptiveexp", "Adaptive/Exp"),
+    ("lshadebin", "L-SHADE/Bin"),
+    ("lshadeexp", "L-SHADE/Exp"),
 ];
 
 /// PEQ model options
@@ -122,6 +132,14 @@ pub const MIXED_CROSSOVER_TYPE_OPTIONS: &[(&str, &str)] = &[
 pub const MIXED_FIR_BAND_OPTIONS: &[(&str, &str)] = &[
     ("low", "Low Frequencies (Bass)"),
     ("high", "High Frequencies"),
+];
+
+/// Multi-Measurement Strategy options
+pub const MULTI_MEASUREMENT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
+    ("average", "Average (RMS)"),
+    ("weighted_sum", "Weighted Sum"),
+    ("minimax", "Minimax (Worst Case)"),
+    ("variance_penalized", "Variance Penalized"),
 ];
 
 /// Local algorithm options for refinement

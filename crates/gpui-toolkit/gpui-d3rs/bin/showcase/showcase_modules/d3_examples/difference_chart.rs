@@ -69,7 +69,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     // Order: grid lines first (background), then areas, then lines
     let mut all_paths = grid_paths;
     let mut all_c: Vec<Hsla> =
-        std::iter::repeat(hsla(0.0, 0.0, 0.9, 1.0)).take(y_ticks.len()).collect();
+        std::iter::repeat_n(hsla(0.0, 0.0, 0.9, 1.0), y_ticks.len()).collect();
     all_paths.extend(d3_paths);
     all_c.extend(all_colors);
 

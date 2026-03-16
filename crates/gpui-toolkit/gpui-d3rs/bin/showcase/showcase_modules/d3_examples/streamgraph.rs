@@ -92,17 +92,23 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         })
         .collect();
 
-    // X-axis ticks (every 2 time steps)
-    let x_ticks: Vec<f64> = (0..n).step_by(2).map(|v| v as f64).collect();
+    // X-axis ticks (every 4 time steps to avoid label overlap)
+    let x_step = if n > 30 { 5 } else if n > 15 { 4 } else { 2 };
+    let x_ticks: Vec<f64> = (0..n).step_by(x_step).map(|v| v as f64).collect();
 
-    // Y-axis ticks
-    let y_range = y_max - y_min;
-    let y_step = (y_range / 5.0).ceil();
-    let y_min_tick = (y_min / y_step).floor() * y_step;
-    let y_ticks: Vec<f64> = (0..=8)
-        .map(|i| y_min_tick + i as f64 * y_step)
-        .filter(|v| *v >= y_min - 0.1 && *v <= y_max + 0.1)
-        .collect();
+    // Y-axis ticks: 1000-unit grid lines spanning the full y range
+    let y_tick_step = 1000.0;
+    let y_min_tick = (y_min / y_tick_step).floor() * y_tick_step;
+    let y_max_tick = (y_max / y_tick_step).ceil() * y_tick_step;
+    let y_ticks: Vec<f64> = {
+        let mut ticks = Vec::new();
+        let mut v = y_min_tick;
+        while v <= y_max_tick + 0.1 {
+            ticks.push(v);
+            v += y_tick_step;
+        }
+        ticks
+    };
 
     div()
         .flex()
@@ -167,7 +173,11 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             div()
                                 .text_color(rgb(0x888888))
                                 .text_xs()
-                                .child(format!("{:.0}", val)),
+                                .child(if val.abs() >= 1000.0 {
+                                    format!("{:.0}k", val / 1000.0)
+                                } else {
+                                    format!("{:.0}", val)
+                                }),
                         )
                 }))
                 // Y grid lines

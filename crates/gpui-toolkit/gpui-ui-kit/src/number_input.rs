@@ -674,30 +674,38 @@ impl RenderOnce for NumberInput {
                 .clone()
         });
 
-        // Register a focus-out subscription to clear editing state when focus is
-        // actually lost (e.g. user clicks elsewhere). We register this once per
-        // element ID and keep the subscription alive in thread-local storage.
+        // Wrap handler in Rc for sharing (needed by focus-out and key handler)
+        let on_change_rc = self.on_change.map(Rc::new);
+
+        // Register a focus-out subscription to commit the edited value when focus
+        // is lost (e.g. user clicks elsewhere). Always re-register to capture
+        // the latest on_change/min/max/unit values.
         {
-            let needs_sub = NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
-                !subs.borrow().contains_key(&self.id)
-            });
-            if needs_sub {
-                let edit_state_for_blur = edit_state.clone();
-                let sub = window.on_focus_out(&focus_handle, cx, move |_event, window, _cx| {
-                    let mut state = edit_state_for_blur.borrow_mut();
-                    if state.editing {
-                        state.editing = false;
-                        state.text.clear();
-                        state.text_selected = false;
-                        drop(state);
-                        window.refresh();
+            let edit_state_for_blur = edit_state.clone();
+            let on_change_blur = on_change_rc.clone();
+            let unit_for_blur = self.unit.clone();
+            let sub = window.on_focus_out(&focus_handle, cx, move |_event, window, cx| {
+                let mut state = edit_state_for_blur.borrow_mut();
+                if state.editing {
+                    let parsed =
+                        NumberInput::parse_value_str(&state.text, unit_for_blur.as_ref(), min, max);
+                    state.editing = false;
+                    state.text.clear();
+                    state.text_selected = false;
+                    drop(state);
+
+                    if let Some(ref handler) = on_change_blur
+                        && let Some(value) = parsed
+                    {
+                        handler(value, window, cx);
                     }
-                });
-                let id = self.id.clone();
-                NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
-                    subs.borrow_mut().insert(id, sub);
-                });
-            }
+                    window.refresh();
+                }
+            });
+            let id = self.id.clone();
+            NUMBER_INPUT_FOCUS_SUBS.with(|subs| {
+                subs.borrow_mut().insert(id, sub);
+            });
         }
 
         // Read current edit state — trust the thread-local state directly.
@@ -721,9 +729,6 @@ impl RenderOnce for NumberInput {
         let dec_id = ElementId::Name(SharedString::from(parent_id.clone() + "-dec"));
         let value_id = ElementId::Name(SharedString::from(parent_id.clone() + "-value"));
         let inc_id = ElementId::Name(SharedString::from(parent_id + "-inc"));
-
-        // Wrap handler in Rc for sharing
-        let on_change_rc = self.on_change.map(Rc::new);
 
         let mut container = div().flex().flex_col().gap_1();
 

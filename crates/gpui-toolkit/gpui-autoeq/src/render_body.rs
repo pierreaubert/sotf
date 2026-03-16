@@ -40,7 +40,8 @@
                     .selected(&config.system_type)
                     .is_open(ui_state.system_type_open)
                     .disabled(disabled)
-                    .theme(theme.select_theme.clone());
+                    .size(SelectSize::Xs)
+                .theme(theme.select_theme.clone());
 
                 if let Some(ref handler) = on_system_type_toggle_rc {
                     let h = handler.clone();
@@ -69,6 +70,7 @@
                 .selected(&config.loss_type)
                 .is_open(ui_state.loss_type_open)
                 .disabled(disabled)
+                .size(SelectSize::Xs)
                 .theme(theme.select_theme.clone());
 
             if let Some(ref handler) = on_loss_type_toggle_rc {
@@ -117,6 +119,7 @@
                 .selected(&config.target_curve)
                 .is_open(ui_state.target_curve_open) // Assuming target_curve_open exists in ui_state
                 .disabled(disabled)
+                .size(SelectSize::Xs)
                 .theme(theme.select_theme.clone());
 
             if let Some(ref handler) = on_target_curve_change_rc {
@@ -181,6 +184,7 @@
                 .selected(&config.opt_mode)
                 .is_open(ui_state.opt_mode_open)
                 .disabled(disabled)
+                .size(SelectSize::Xs)
                 .theme(theme.select_theme.clone());
 
             if let Some(ref handler) = on_opt_mode_toggle_rc {
@@ -196,452 +200,13 @@
 
             eq_design_content = eq_design_content.child(opt_mode_select);
 
-            // Conditional fields based on Mode
+            // EQ Design widgets via shared block
             let is_fir = config.opt_mode == "fir" || config.opt_mode == "mixed";
             let is_iir = config.opt_mode == "iir" || config.opt_mode == "mixed";
-
-            if is_fir {
-                // FIR Taps and Phase
-                let mut fir_taps_input = NumberInput::new((base_id.clone(), "fir-taps"))
-                    .value(config.fir_taps as f64)
-                    .min(ParamLimits::FIR_TAPS.min)
-                    .max(ParamLimits::FIR_TAPS.max)
-                    .step(ParamLimits::FIR_TAPS.step)
-                    .decimals(0)
-                    .label("FIR Taps")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_fir_taps_change_rc {
-                    let h = handler.clone();
-                    fir_taps_input =
-                        fir_taps_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                }
-
-                // FIR Phase dropdown
-                let fir_phase_options: Vec<SelectOption> = FIR_PHASE_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut fir_phase_select = Select::new((base_id.clone(), "fir-phase"))
-                    .label("Phase")
-                    .options(fir_phase_options)
-                    .selected(&config.fir_phase)
-                    .is_open(ui_state.fir_phase_open)
-                    .disabled(disabled)
-                    .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_fir_phase_toggle_rc {
-                    let h = handler.clone();
-                    fir_phase_select =
-                        fir_phase_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_fir_phase_change_rc {
-                    let h = handler.clone();
-                    fir_phase_select =
-                        fir_phase_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-                }
-
-                eq_design_content = if is_narrow_layout {
-                    eq_design_content
-                        .child(fir_taps_input)
-                        .child(fir_phase_select)
-                } else {
-                    eq_design_content.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(fir_taps_input)
-                            .child(fir_phase_select),
-                    )
-                };
-            }
-
-            // Mixed mode config (only when mode is "mixed")
-            if config.opt_mode == "mixed" {
-                let mut mixed_freq_input =
-                    NumberInput::new((base_id.clone(), "mixed-crossover-freq"))
-                        .value(config.mixed_crossover_freq)
-                        .min(ParamLimits::MIXED_CROSSOVER_FREQ.min)
-                        .max(ParamLimits::MIXED_CROSSOVER_FREQ.max)
-                        .step(ParamLimits::MIXED_CROSSOVER_FREQ.step)
-                        .decimals(0)
-                        .label("Crossover Freq (Hz)")
-                        .size(NumberInputSize::Sm)
-                        .width(140.0)
-                        .disabled(disabled)
-                        .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_mixed_crossover_freq_change_rc {
-                    let h = handler.clone();
-                    mixed_freq_input = mixed_freq_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                let mixed_type_options: Vec<SelectOption> = MIXED_CROSSOVER_TYPE_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut mixed_type_select =
-                    Select::new((base_id.clone(), "mixed-crossover-type"))
-                        .label("Crossover Type")
-                        .options(mixed_type_options)
-                        .selected(&config.mixed_crossover_type)
-                        .is_open(ui_state.mixed_crossover_type_open)
-                        .disabled(disabled)
-                        .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_mixed_crossover_type_toggle_rc {
-                    let h = handler.clone();
-                    mixed_type_select =
-                        mixed_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_mixed_crossover_type_change_rc {
-                    let h = handler.clone();
-                    mixed_type_select =
-                        mixed_type_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
-                }
-
-                let mixed_band_options: Vec<SelectOption> = MIXED_FIR_BAND_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut mixed_band_select = Select::new((base_id.clone(), "mixed-fir-band"))
-                    .label("FIR Band")
-                    .options(mixed_band_options)
-                    .selected(&config.mixed_fir_band)
-                    .is_open(ui_state.mixed_fir_band_open)
-                    .disabled(disabled)
-                    .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_mixed_fir_band_toggle_rc {
-                    let h = handler.clone();
-                    mixed_band_select =
-                        mixed_band_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_mixed_fir_band_change_rc {
-                    let h = handler.clone();
-                    mixed_band_select =
-                        mixed_band_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
-                }
-
-                eq_design_content = eq_design_content
-                    .child(mixed_freq_input)
-                    .child(mixed_type_select)
-                    .child(mixed_band_select);
-            }
-
-            // Common params (Sample Rate) + Filters (if IIR)
-            if is_iir {
-                let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
-                    .value(config.num_filters as f64)
-                    .min(ParamLimits::NUM_FILTERS.min)
-                    .max(ParamLimits::NUM_FILTERS.max)
-                    .step(ParamLimits::NUM_FILTERS.step)
-                    .decimals(0)
-                    .label("Filters")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_num_filters_change_rc {
-                    let h = handler.clone();
-                    num_filters_input =
-                        num_filters_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                }
-
-                if hide_sample_rate {
-                    eq_design_content = eq_design_content.child(num_filters_input);
-                } else {
-                    let mut sample_rate_input =
-                        NumberInput::new((base_id.clone(), "sample-rate"))
-                            .value(config.sample_rate as f64)
-                            .min(ParamLimits::SAMPLE_RATE.min)
-                            .max(ParamLimits::SAMPLE_RATE.max)
-                            .step(ParamLimits::SAMPLE_RATE.step)
-                            .decimals(0)
-                            .label("Sample Rate")
-                            .size(NumberInputSize::Sm)
-                            .width(100.0)
-                            .disabled(disabled)
-                            .theme(theme.number_input_theme.clone());
-
-                    if let Some(ref handler) = on_sample_rate_change_rc {
-                        let h = handler.clone();
-                        sample_rate_input = sample_rate_input
-                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                    }
-
-                    eq_design_content = if is_narrow_layout {
-                        eq_design_content
-                            .child(num_filters_input)
-                            .child(sample_rate_input)
-                    } else {
-                        eq_design_content.child(
-                            HStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(num_filters_input)
-                                .child(sample_rate_input),
-                        )
-                    };
-                }
-            } else if !hide_sample_rate {
-                // FIR only - just show sample rate
-                let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
-                    .value(config.sample_rate as f64)
-                    .min(ParamLimits::SAMPLE_RATE.min)
-                    .max(ParamLimits::SAMPLE_RATE.max)
-                    .step(ParamLimits::SAMPLE_RATE.step)
-                    .decimals(0)
-                    .label("Sample Rate")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_sample_rate_change_rc {
-                    let h = handler.clone();
-                    sample_rate_input =
-                        sample_rate_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                }
-
-                eq_design_content = eq_design_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(sample_rate_input),
-                );
-            }
-
-            // dB Range row
-            let mut min_db_input = NumberInput::new((base_id.clone(), "min-db"))
-                .value(config.min_db)
-                .min(ParamLimits::DB.min)
-                .max(ParamLimits::DB.max)
-                .step(ParamLimits::DB.step)
-                .decimals(1)
-                .label("Min dB")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_min_db_change_rc {
-                let h = handler.clone();
-                min_db_input = min_db_input.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            let mut max_db_input = NumberInput::new((base_id.clone(), "max-db"))
-                .value(config.max_db)
-                .min(ParamLimits::DB.min)
-                .max(ParamLimits::DB.max)
-                .step(ParamLimits::DB.step)
-                .decimals(1)
-                .label("Max dB")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_max_db_change_rc {
-                let h = handler.clone();
-                max_db_input = max_db_input.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            eq_design_content = if is_narrow_layout {
-                eq_design_content.child(min_db_input).child(max_db_input)
-            } else {
-                eq_design_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(min_db_input)
-                        .child(max_db_input),
-                )
-            };
-
-            // Q Range row (IIR only)
-            if is_iir {
-                let mut min_q_input = NumberInput::new((base_id.clone(), "min-q"))
-                    .value(config.min_q)
-                    .min(ParamLimits::Q.min)
-                    .max(ParamLimits::Q.max)
-                    .step(ParamLimits::Q.step)
-                    .decimals(1)
-                    .label("Min Q")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_min_q_change_rc {
-                    let h = handler.clone();
-                    min_q_input = min_q_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                let mut max_q_input = NumberInput::new((base_id.clone(), "max-q"))
-                    .value(config.max_q)
-                    .min(ParamLimits::Q.min)
-                    .max(ParamLimits::Q.max)
-                    .step(ParamLimits::Q.step)
-                    .decimals(1)
-                    .label("Max Q")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_max_q_change_rc {
-                    let h = handler.clone();
-                    max_q_input = max_q_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                eq_design_content = if is_narrow_layout {
-                    eq_design_content.child(min_q_input).child(max_q_input)
-                } else {
-                    eq_design_content.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(min_q_input)
-                            .child(max_q_input),
-                    )
-                };
-            }
-
-            // Frequency Range row
-            let mut min_freq_input = NumberInput::new((base_id.clone(), "min-freq"))
-                .value(config.min_freq)
-                .min(ParamLimits::FREQUENCY.min)
-                .max(ParamLimits::FREQUENCY.max)
-                .step(ParamLimits::FREQUENCY.step)
-                .decimals(0)
-                .label("Min Freq")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_min_freq_change_rc {
-                let h = handler.clone();
-                min_freq_input = min_freq_input.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            let mut max_freq_input = NumberInput::new((base_id.clone(), "max-freq"))
-                .value(config.max_freq)
-                .min(ParamLimits::FREQUENCY.min)
-                .max(ParamLimits::FREQUENCY.max)
-                .step(ParamLimits::FREQUENCY.step)
-                .decimals(0)
-                .label("Max Freq")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_max_freq_change_rc {
-                let h = handler.clone();
-                max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            eq_design_content = if is_narrow_layout {
-                eq_design_content.child(min_freq_input).child(max_freq_input)
-            } else {
-                eq_design_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(min_freq_input)
-                        .child(max_freq_input),
-                )
-            };
-
-            // PEQ Model dropdown (IIR only)
-            if is_iir {
-                let peq_model_options: Vec<SelectOption> = PEQ_MODEL_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut peq_model_select = Select::new((base_id.clone(), "peq-model"))
-                    .label("PEQ Model")
-                    .options(peq_model_options)
-                    .selected(&config.peq_model)
-                    .is_open(ui_state.peq_model_open)
-                    .disabled(disabled)
-                    .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_peq_model_toggle_rc {
-                    let h = handler.clone();
-                    peq_model_select =
-                        peq_model_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_peq_model_change_rc {
-                    let h = handler.clone();
-                    peq_model_select =
-                        peq_model_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-                }
-
-                eq_design_content = eq_design_content.child(peq_model_select);
-
-                // Spacing constraint row (hidden in some contexts)
-                if !hide_spacing {
-                    let mut spacing_weight_input =
-                        NumberInput::new((base_id.clone(), "spacing-weight"))
-                            .value(config.spacing_weight)
-                            .min(ParamLimits::SPACING_WEIGHT.min)
-                            .max(ParamLimits::SPACING_WEIGHT.max)
-                            .step(ParamLimits::SPACING_WEIGHT.step)
-                            .decimals(1)
-                            .label("Spacing Weight")
-                            .size(NumberInputSize::Sm)
-                            .width(100.0)
-                            .disabled(disabled)
-                            .theme(theme.number_input_theme.clone());
-
-                    if let Some(ref handler) = on_spacing_weight_change_rc {
-                        let h = handler.clone();
-                        spacing_weight_input =
-                            spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
-                    }
-
-                    let mut min_spacing_oct_input =
-                        NumberInput::new((base_id.clone(), "min-spacing-oct"))
-                            .value(config.min_spacing_oct)
-                            .min(ParamLimits::MIN_SPACING_OCT.min)
-                            .max(ParamLimits::MIN_SPACING_OCT.max)
-                            .step(ParamLimits::MIN_SPACING_OCT.step)
-                            .decimals(2)
-                            .label("Min Spacing (oct)")
-                            .size(NumberInputSize::Sm)
-                            .width(120.0)
-                            .disabled(disabled)
-                            .theme(theme.number_input_theme.clone());
-
-                    if let Some(ref handler) = on_min_spacing_oct_change_rc {
-                        let h = handler.clone();
-                        min_spacing_oct_input =
-                            min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
-                    }
-
-                    eq_design_content = if is_narrow_layout {
-                        eq_design_content
-                            .child(spacing_weight_input)
-                            .child(min_spacing_oct_input)
-                    } else {
-                        eq_design_content.child(
-                            HStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(spacing_weight_input)
-                                .child(min_spacing_oct_input),
-                        )
-                    };
-                }
-            }
+            let eq_design_iir_before_fir = false; // default: FIR shown before IIR
+            let mut block_out = eq_design_content;
+            include!("render_block_eq_design.rs");
+            eq_design_content = block_out;
 
             grid_cards.push(Card::new().content(eq_design_content).into_any_element());
         }
@@ -670,215 +235,7 @@
             );
 
             // Algorithm dropdown
-            let algo_options: Vec<SelectOption> = ALGORITHM_OPTIONS
-                .iter()
-                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                .collect();
-
-            let mut algo_select = Select::new((base_id.clone(), "algo"))
-                .label("Algorithm")
-                .options(algo_options)
-                .selected(&config.algo)
-                .is_open(ui_state.algo_open)
-                .disabled(disabled)
-                .theme(theme.select_theme.clone());
-
-            if let Some(ref handler) = on_algo_toggle_rc {
-                let h = handler.clone();
-                algo_select = algo_select.on_toggle(move |open, w, cx| h(open, w, cx));
-            }
-
-            if let Some(ref handler) = on_algo_change_rc {
-                let h = handler.clone();
-                algo_select = algo_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-            }
-
-            opt_tuning_content = opt_tuning_content.child(algo_select);
-
-            // Population and MaxEval row
-            let mut population_input = NumberInput::new((base_id.clone(), "population"))
-                .value(config.population as f64)
-                .min(ParamLimits::POPULATION.min)
-                .max(ParamLimits::POPULATION.max)
-                .step(ParamLimits::POPULATION.step)
-                .decimals(0)
-                .label("Population")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_population_change_rc {
-                let h = handler.clone();
-                population_input =
-                    population_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-            }
-
-            let mut maxeval_input = NumberInput::new((base_id.clone(), "maxeval"))
-                .value(config.maxeval as f64)
-                .min(ParamLimits::MAXEVAL.min)
-                .max(ParamLimits::MAXEVAL.max)
-                .step(ParamLimits::MAXEVAL.step)
-                .decimals(0)
-                .label("Max Evals")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_maxeval_change_rc {
-                let h = handler.clone();
-                maxeval_input =
-                    maxeval_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-            }
-
-            opt_tuning_content = if is_narrow_layout {
-                opt_tuning_content
-                    .child(population_input)
-                    .child(maxeval_input)
-            } else {
-                opt_tuning_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(population_input)
-                        .child(maxeval_input),
-                )
-            };
-
-            // Tolerance row (hidden in some contexts)
-            if !hide_tolerance {
-                let mut tolerance_input = NumberInput::new((base_id.clone(), "tolerance"))
-                    .value(config.tolerance)
-                    .min(ParamLimits::TOLERANCE.min)
-                    .max(ParamLimits::TOLERANCE.max)
-                    .step(ParamLimits::TOLERANCE.step)
-                    .decimals(6)
-                    .label("Tolerance")
-                    .size(NumberInputSize::Sm)
-                    .width(120.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_tolerance_change_rc {
-                    let h = handler.clone();
-                    tolerance_input = tolerance_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                let mut atolerance_input = NumberInput::new((base_id.clone(), "atolerance"))
-                    .value(config.atolerance)
-                    .min(ParamLimits::TOLERANCE.min)
-                    .max(ParamLimits::TOLERANCE.max)
-                    .step(ParamLimits::TOLERANCE.step)
-                    .decimals(6)
-                    .label("Abs Tolerance")
-                    .size(NumberInputSize::Sm)
-                    .width(120.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_atolerance_change_rc {
-                    let h = handler.clone();
-                    atolerance_input = atolerance_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                opt_tuning_content = if is_narrow_layout {
-                    opt_tuning_content
-                        .child(tolerance_input)
-                        .child(atolerance_input)
-                } else {
-                    opt_tuning_content.child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(tolerance_input)
-                            .child(atolerance_input),
-                    )
-                };
-            }
-
-            // DE-specific settings (only show when DE algorithm selected and not hidden)
-            if !hide_de_params && (config.algo.contains("de") || config.algo.contains("mh:")) {
-                // Show params for DE and Metaheuristics
-                // Note: Not all MH algos use DE params but usually population/maxeval are common.
-                // DE strategy is specific to DE.
-
-                if config.algo.contains(":de") {
-                    // DE Strategy dropdown
-                    let strategy_options: Vec<SelectOption> = DE_STRATEGY_OPTIONS
-                        .iter()
-                        .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                        .collect();
-
-                    let mut strategy_select = Select::new((base_id.clone(), "strategy"))
-                        .label("DE Strategy")
-                        .options(strategy_options)
-                        .selected(&config.strategy)
-                        .is_open(ui_state.strategy_open)
-                        .disabled(disabled)
-                        .theme(theme.select_theme.clone());
-
-                    if let Some(ref handler) = on_strategy_toggle_rc {
-                        let h = handler.clone();
-                        strategy_select =
-                            strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                    }
-
-                    if let Some(ref handler) = on_strategy_change_rc {
-                        let h = handler.clone();
-                        strategy_select =
-                            strategy_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-                    }
-
-                    opt_tuning_content = opt_tuning_content.child(strategy_select);
-
-                    // DE F and CR row
-                    let mut de_f_input = NumberInput::new((base_id.clone(), "de-f"))
-                        .value(config.de_f)
-                        .min(ParamLimits::DE_FACTOR.min)
-                        .max(ParamLimits::DE_FACTOR.max)
-                        .step(ParamLimits::DE_FACTOR.step)
-                        .decimals(1)
-                        .label("Mutation (F)")
-                        .size(NumberInputSize::Sm)
-                        .width(100.0)
-                        .disabled(disabled)
-                        .theme(theme.number_input_theme.clone());
-
-                    if let Some(ref handler) = on_de_f_change_rc {
-                        let h = handler.clone();
-                        de_f_input = de_f_input.on_change(move |v, w, cx| h(v, w, cx));
-                    }
-
-                    let mut de_cr_input = NumberInput::new((base_id.clone(), "de-cr"))
-                        .value(config.de_cr)
-                        .min(ParamLimits::DE_CR.min)
-                        .max(ParamLimits::DE_CR.max)
-                        .step(ParamLimits::DE_CR.step)
-                        .decimals(1)
-                        .label("Recomb (CR)")
-                        .size(NumberInputSize::Sm)
-                        .width(100.0)
-                        .disabled(disabled)
-                        .theme(theme.number_input_theme.clone());
-
-                    if let Some(ref handler) = on_de_cr_change_rc {
-                        let h = handler.clone();
-                        de_cr_input = de_cr_input.on_change(move |v, w, cx| h(v, w, cx));
-                    }
-
-                    opt_tuning_content = if is_narrow_layout {
-                        opt_tuning_content.child(de_f_input).child(de_cr_input)
-                    } else {
-                        opt_tuning_content.child(
-                            HStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(de_f_input)
-                                .child(de_cr_input),
-                        )
-                    };
-                }
-            }
-
-            // Local Refinement toggle
+            // Optimizer widgets via shared block
             let toggle_theme = ToggleTheme {
                 checked_bg: theme.toggle_checked_bg,
                 unchecked_bg: theme.toggle_unchecked_bg,
@@ -897,105 +254,9 @@
                 background: theme.card_bg,
             };
 
-            let mut refine_toggle = Toggle::new((base_id.clone(), "refine"))
-                .size(ToggleSize::Sm)
-                .checked(config.refine)
-                .theme(toggle_theme.clone());
-
-            if let Some(ref handler) = on_refine_change_rc {
-                let h = handler.clone();
-                refine_toggle = refine_toggle.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            opt_tuning_content = opt_tuning_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        Text::new("Local Refinement")
-                            .size(TextSize::Xs)
-                            .color(theme.label_color),
-                    )
-                    .child(refine_toggle),
-            );
-
-            // Local algorithm dropdown (only when refine is enabled)
-            if config.refine {
-                let local_algo_options: Vec<SelectOption> = LOCAL_ALGO_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
-
-                let mut local_algo_select = Select::new((base_id.clone(), "local-algo"))
-                    .label("Local Algo")
-                    .options(local_algo_options)
-                    .selected(&config.local_algo)
-                    .is_open(ui_state.local_algo_open)
-                    .disabled(disabled)
-                    .theme(theme.select_theme.clone());
-
-                if let Some(ref handler) = on_local_algo_toggle_rc {
-                    let h = handler.clone();
-                    local_algo_select =
-                        local_algo_select.on_toggle(move |open, w, cx| h(open, w, cx));
-                }
-
-                if let Some(ref handler) = on_local_algo_change_rc {
-                    let h = handler.clone();
-                    local_algo_select =
-                        local_algo_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-                }
-
-                opt_tuning_content = opt_tuning_content.child(local_algo_select);
-            }
-
-            // Smoothing toggle (hidden in some contexts)
-            if !hide_smoothing {
-                let mut smooth_toggle = Toggle::new((base_id.clone(), "smooth"))
-                    .size(ToggleSize::Sm)
-                    .checked(config.smooth)
-                    .theme(toggle_theme.clone());
-
-                if let Some(ref handler) = on_smooth_change_rc {
-                    let h = handler.clone();
-                    smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                opt_tuning_content = opt_tuning_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .justify(StackJustify::SpaceBetween)
-                        .child(
-                            Text::new("Smoothing")
-                                .size(TextSize::Xs)
-                                .color(theme.label_color),
-                        )
-                        .child(smooth_toggle),
-                );
-
-                // Smoothing window size (only when smooth is enabled)
-                if config.smooth {
-                    let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
-                        .value(config.smooth_n as f64)
-                        .min(ParamLimits::SMOOTH_N.min)
-                        .max(ParamLimits::SMOOTH_N.max)
-                        .step(ParamLimits::SMOOTH_N.step)
-                        .decimals(0)
-                        .label("Smooth Window")
-                        .size(NumberInputSize::Sm)
-                        .width(120.0)
-                        .disabled(disabled)
-                        .theme(theme.number_input_theme.clone());
-
-                    if let Some(ref handler) = on_smooth_n_change_rc {
-                        let h = handler.clone();
-                        smooth_n_input = smooth_n_input
-                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
-                    }
-
-                    opt_tuning_content = opt_tuning_content.child(smooth_n_input);
-                }
-            }
+            let mut block_out = opt_tuning_content;
+            include!("render_block_optimizer.rs");
+            opt_tuning_content = block_out;
 
             let opt_tuning_card = Card::new().content(opt_tuning_content);
 
@@ -1021,37 +282,129 @@
                     ),
             );
 
-            // Psychoacoustic toggle
-            let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
-                .size(ToggleSize::Sm)
-                .checked(config.psychoacoustic)
-                .theme(toggle_theme.clone());
+            // Smoothing options (exclusive: either curve smoothing OR psychoacoustic)
+            if !hide_smoothing {
+                // Psychoacoustic toggle (disabled when curve smoothing is on)
+                let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
+                    .size(ToggleSize::Sm)
+                    .checked(config.psychoacoustic)
+                    .disabled(config.smooth)
+                    .theme(toggle_theme.clone());
 
-            if let Some(ref handler) = on_psychoacoustic_change_rc {
-                let h = handler.clone();
-                psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
+                if let Some(ref handler) = on_psychoacoustic_change_rc {
+                    let h = handler.clone();
+                    psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                target_loss_content = target_loss_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Psychoacoustic Smoothing")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("1/48 oct bass, 1/6 oct treble")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(psycho_toggle),
+                );
+
+                // Curve smoothing toggle (disabled when psychoacoustic is on)
+                let mut smooth_toggle = Toggle::new((base_id.clone(), "smooth"))
+                    .size(ToggleSize::Sm)
+                    .checked(config.smooth)
+                    .disabled(config.psychoacoustic)
+                    .theme(toggle_theme.clone());
+
+                if let Some(ref handler) = on_smooth_change_rc {
+                    let h = handler.clone();
+                    smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                target_loss_content = target_loss_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Curve Smoothing")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("Fixed-width octave smoothing")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(smooth_toggle),
+                );
+
+                // Smoothing window size (only when smooth is enabled)
+                if config.smooth {
+                    let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
+                        .value(config.smooth_n as f64)
+                        .min(ParamLimits::SMOOTH_N.min)
+                        .max(ParamLimits::SMOOTH_N.max)
+                        .step(ParamLimits::SMOOTH_N.step)
+                        .decimals(0)
+                        .label("Smooth Window")
+                        .size(NumberInputSize::Sm)
+                        .width(120.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref handler) = on_smooth_n_change_rc {
+                        let h = handler.clone();
+                        smooth_n_input = smooth_n_input
+                            .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                    }
+
+                    target_loss_content = target_loss_content.child(smooth_n_input);
+                }
+            } else {
+                // When smoothing is hidden, still show psychoacoustic toggle
+                let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
+                    .size(ToggleSize::Sm)
+                    .checked(config.psychoacoustic)
+                    .theme(toggle_theme.clone());
+
+                if let Some(ref handler) = on_psychoacoustic_change_rc {
+                    let h = handler.clone();
+                    psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                target_loss_content = target_loss_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .justify(StackJustify::SpaceBetween)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::None)
+                                .child(
+                                    Text::new("Psychoacoustic Smoothing")
+                                        .size(TextSize::Xs)
+                                        .color(theme.label_color),
+                                )
+                                .child(
+                                    Text::new("1/48 oct bass, 1/6 oct treble")
+                                        .size(TextSize::Xs)
+                                        .color(theme.description_color),
+                                ),
+                        )
+                        .child(psycho_toggle),
+                );
             }
-
-            target_loss_content = target_loss_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .justify(StackJustify::SpaceBetween)
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new("Psychoacoustic Smoothing")
-                                    .size(TextSize::Xs)
-                                    .color(theme.label_color),
-                            )
-                            .child(
-                                Text::new("1/48 oct bass, 1/6 oct treble")
-                                    .size(TextSize::Xs)
-                                    .color(theme.description_color),
-                            ),
-                    )
-                    .child(psycho_toggle),
-            );
 
             // Asymmetric Loss toggle
             let mut asymmetric_toggle = Toggle::new((base_id.clone(), "asymmetric-loss"))
@@ -1162,7 +515,8 @@
                     .options(tilt_options)
                     .selected(&config.tilt_type)
                     .is_open(ui_state.tilt_type_open)
-                    .theme(theme.select_theme.clone());
+                    .size(SelectSize::Xs)
+                .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_tilt_type_toggle_rc {
                     let h = h.clone();
@@ -1325,7 +679,8 @@
                     .options(hp_options)
                     .selected(&config.excursion_filter_type)
                     .is_open(ui_state.excursion_filter_type_open)
-                    .theme(theme.select_theme.clone());
+                    .size(SelectSize::Xs)
+                .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_excursion_filter_type_toggle_rc {
                     let h = h.clone();
@@ -1657,7 +1012,8 @@
                     .options(strategy_options)
                     .selected(&config.multi_seat_strategy)
                     .is_open(ui_state.multi_seat_strategy_open)
-                    .theme(theme.select_theme.clone());
+                    .size(SelectSize::Xs)
+                .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_multi_seat_strategy_toggle_rc {
                     let h = h.clone();
@@ -1966,7 +1322,8 @@
                     .selected(&config.vog_reference_channel)
                     .is_open(ui_state.vog_reference_channel_open)
                     .disabled(disabled)
-                    .theme(theme.select_theme.clone());
+                    .size(SelectSize::Xs)
+                .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_vog_reference_channel_toggle_rc {
                     let h = h.clone();
@@ -1984,7 +1341,7 @@
             grid_cards.push(Card::new().content(v2_content).into_any_element());
         }
 
-        // Lay out grid cards responsively
+        // Lay out grid cards responsively: 1 column if narrow, 2 columns otherwise.
         if is_single_column_grid {
             for card in grid_cards {
                 form = form.child(div().w_full().child(card));
@@ -1993,7 +1350,9 @@
             let mut grid_iter = grid_cards.into_iter();
             while let Some(first_card) = grid_iter.next() {
                 let second_card = grid_iter.next();
-                let mut row = HStack::new().spacing(StackSpacing::Lg);
+                let mut row = HStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .align(StackAlign::Start);
                 row = row.child(div().flex_1().child(first_card));
                 if let Some(second_card) = second_card {
                     row = row.child(div().flex_1().child(second_card));
