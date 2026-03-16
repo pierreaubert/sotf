@@ -1,0 +1,13 @@
+[package]
+name = "math-delaunay"
+version = "0.4.0"
+authors.workspace = true
+description = "Delaunay triangulation and Voronoi diagram — faithful port of d3-delaunay"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+delaunator = { workspace = true }
+
+[dev-dependencies]
