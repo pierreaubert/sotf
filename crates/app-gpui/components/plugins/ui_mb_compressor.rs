@@ -16,9 +16,12 @@ use super::common::{
     render_vertical_slider_with_ticks,
 };
 use crate::app::AppState;
+use crate::app::types::PluginUpdateType;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{NumberInput, NumberInputSize};
 use sotf_plugins::param_specs::{find_by_key as pk, multiband_compressor::GLOBAL_PARAMS as MC};
 
 /// State for rendering the Multiband Compressor plugin
@@ -66,26 +69,43 @@ pub fn render_mb_compressor_plugin(
     };
 
     // === LEFT COLUMN: Global ===
+    let bands_entity = entity.clone();
     let mut global_col = div()
         .flex()
         .flex_col()
         .flex_shrink_0()
         .gap_3()
         .child(render_section_title("GLOBAL", theme))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            "Bands",
-            state.num_bands as f64,
-            pk(MC, "num_bands").min_f64(),
-            pk(MC, "num_bands").max_f64(),
-            "",
-            0,
-            state.selected_param,
-            state.is_editing,
-            Some('b'),
-            theme,
-        ))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child("Bands"),
+                )
+                .child(
+                    NumberInput::new("mb-bands")
+                        .value(state.num_bands as f64)
+                        .min(pk(MC, "num_bands").min_f64())
+                        .max(pk(MC, "num_bands").max_f64())
+                        .step(1.0)
+                        .decimals(0)
+                        .size(NumberInputSize::Xs)
+                        .width(80.0)
+                        .on_change(move |val, _window, cx| {
+                            bands_entity.update(cx, |state, _| {
+                                state.app.set_plugin_param(plugin_idx, 0, val);
+                                state.app.plugin_state.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
+                            });
+                        }),
+                ),
+        )
         .child(render_knob(
             entity.clone(),
             plugin_idx,
@@ -154,8 +174,9 @@ pub fn render_mb_compressor_plugin(
     // Band tabs
     let band_tabs = div()
         .flex()
-        .gap_1()
         .justify_center()
+        .border_b_1()
+        .border_color(theme.border)
         .children((0..=state.num_bands).map(|i| {
             let is_selected = state.selected_band_idx == i;
             let label = if i == 0 {
@@ -164,26 +185,34 @@ pub fn render_mb_compressor_plugin(
                 format!("{}", i)
             };
             div()
-                .px_2()
-                .py_0p5()
-                .rounded_sm()
+                .px_4()
+                .pb(px(6.0))
+                .pt(px(4.0))
                 .text_xs()
                 .font_weight(if is_selected {
                     FontWeight::BOLD
                 } else {
                     FontWeight::NORMAL
                 })
-                .bg(if is_selected {
+                .text_color(if is_selected {
                     theme.accent
                 } else {
-                    theme.background_secondary
+                    theme.text_muted
                 })
-                .text_color(if is_selected {
-                    theme.text_on_accent
+                .border_b_2()
+                .border_color(if is_selected {
+                    theme.accent
                 } else {
-                    theme.text_secondary
+                    gpui::rgba(0x00000000)
                 })
                 .cursor_pointer()
+                .hover(|s| {
+                    s.text_color(theme.text_primary).border_color(if is_selected {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                })
                 .id(("mb-band", i))
                 .on_mouse_down(MouseButton::Left, {
                     let entity = entity.clone();
@@ -401,6 +430,16 @@ pub fn render_mb_compressor_plugin(
             "Link Ch",
             state.link_channels,
             12,
+            state.selected_param,
+            state.is_editing,
+            theme,
+        ))
+        .child(render_toggle(
+            entity.clone(),
+            plugin_idx,
+            "Auto Gain",
+            state.auto_makeup,
+            get_param_idx(16),
             state.selected_param,
             state.is_editing,
             theme,

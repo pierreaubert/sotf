@@ -156,8 +156,9 @@ pub fn render_mb_expander_plugin(
     // Band tabs
     let band_tabs = div()
         .flex()
-        .gap_1()
         .justify_center()
+        .border_b_1()
+        .border_color(theme.border)
         .children((0..=state.num_bands).map(|i| {
             let is_selected = state.selected_band_idx == i;
             let label = if i == 0 {
@@ -166,26 +167,34 @@ pub fn render_mb_expander_plugin(
                 format!("{}", i)
             };
             div()
-                .px_2()
-                .py_0p5()
-                .rounded_sm()
+                .px_4()
+                .pb(px(6.0))
+                .pt(px(4.0))
                 .text_xs()
                 .font_weight(if is_selected {
                     FontWeight::BOLD
                 } else {
                     FontWeight::NORMAL
                 })
-                .bg(if is_selected {
+                .text_color(if is_selected {
                     theme.accent
                 } else {
-                    theme.background_secondary
+                    theme.text_muted
                 })
-                .text_color(if is_selected {
-                    theme.text_on_accent
+                .border_b_2()
+                .border_color(if is_selected {
+                    theme.accent
                 } else {
-                    theme.text_secondary
+                    gpui::rgba(0x00000000)
                 })
                 .cursor_pointer()
+                .hover(|s| {
+                    s.text_color(theme.text_primary).border_color(if is_selected {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                })
                 .id(("mb-ex-band", i))
                 .on_mouse_down(MouseButton::Left, {
                     let entity = entity.clone();

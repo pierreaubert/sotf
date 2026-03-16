@@ -1005,6 +1005,7 @@ impl PlayerView {
                             .justify_center()
                             .rounded_md()
                             .border_1()
+                            .border_dashed()
                             .border_color(Theme::opacity_8pct(theme_add.text_muted))
                             .cursor_pointer()
                             .text_2xl()
@@ -1260,8 +1261,11 @@ impl PlayerView {
             .when(self.state.read(cx).app.show_add_plugin_menu, |d| {
                 d.child(
                     div()
+                        .id("add-plugin-menu")
                         .px_4()
                         .py_4()
+                        .max_h(px(400.0))
+                        .overflow_y_scroll()
                         .bg(theme.surface)
                         .border_t_1()
                         .border_color(theme.border)

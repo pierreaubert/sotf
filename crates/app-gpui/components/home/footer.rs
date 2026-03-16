@@ -462,10 +462,10 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_2()
+            .gap_4()
             .pt_2()
             .pb_2()
-            .justify_around()
+            .justify_between()
             .flex_1()
             .max_w(rems(37.5))
             // Row 1: [time] [<< < ▶ > >>] [time] — timestamps at far edges

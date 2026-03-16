@@ -797,7 +797,7 @@ pub mod expander {
             "Sidechain HPF",
             "sidechain_hpf_hz",
             80.0,
-            0.0,
+            80.0,
             500.0,
             5.0,
             "Hz",
@@ -2244,17 +2244,42 @@ pub mod denoiser {
             ControlGroup {
                 title: "REDUCTION",
                 controls: &[
-                    ControlSpec::slider(0), // reduction_db
-                    ControlSpec::slider(1), // floor_db
-                    ControlSpec::slider(2), // smoothing
+                    ControlSpec::slider(0),  // reduction_db
+                    ControlSpec::slider(1),  // floor_db
+                    ControlSpec::slider(2),  // smoothing
+                    ControlSpec::slider(12), // transparency
                 ],
             },
             ControlGroup {
                 title: "TIMING",
                 controls: &[
-                    ControlSpec::slider(3),  // attack
-                    ControlSpec::slider(4),  // release
-                    ControlSpec::slider(12), // transparency
+                    ControlSpec::knob(3), // attack
+                    ControlSpec::knob(4), // release
+                ],
+            },
+            ControlGroup {
+                title: "HISS REDUCTION",
+                controls: &[
+                    ControlSpec::toggle(19), // hiss_enabled
+                    ControlSpec::knob(20),   // hiss_threshold
+                    ControlSpec::knob(21),   // hiss_frequency
+                    ControlSpec::knob(22),   // hiss_strength
+                ],
+            },
+            ControlGroup {
+                title: "SPECTRAL SUB",
+                controls: &[
+                    ControlSpec::toggle(23), // spectral_sub_enabled
+                    ControlSpec::knob(24),   // oversub_factor
+                    ControlSpec::knob(25),   // spectral_floor
+                ],
+            },
+            ControlGroup {
+                title: "NOISE PROFILE",
+                controls: &[
+                    ControlSpec::toggle(26), // learn_noise
+                    ControlSpec::toggle(27), // use_captured_profile
+                    ControlSpec::toggle(28), // clear_profile
                 ],
             },
         ],
@@ -2282,36 +2307,11 @@ pub mod denoiser {
                     ControlSpec::knob(11), // delta
                 ],
             },
-            TabSpec {
-                name: "Hiss",
-                controls: &[
-                    ControlSpec::toggle(19), // hiss_enabled
-                    ControlSpec::knob(20),   // hiss_threshold
-                    ControlSpec::knob(21),   // hiss_frequency
-                    ControlSpec::knob(22),   // hiss_strength
-                ],
-            },
-            TabSpec {
-                name: "Spectral Sub",
-                controls: &[
-                    ControlSpec::toggle(23), // spectral_sub_enabled
-                    ControlSpec::knob(24),   // oversub_factor
-                    ControlSpec::knob(25),   // spectral_floor
-                ],
-            },
-            TabSpec {
-                name: "Noise Profile",
-                controls: &[
-                    ControlSpec::toggle(26), // learn_noise
-                    ControlSpec::toggle(27), // use_captured_profile
-                    ControlSpec::toggle(28), // clear_profile
-                ],
-            },
         ],
         visualizations: &[],
         column_constraints: &[
             ColumnConstraint::config(100.0, 0.5),
-            ColumnConstraint::main(350.0),
+            ColumnConstraint::main(500.0),
         ],
     };
 }
@@ -3302,8 +3302,28 @@ pub mod xtc {
                     ControlSpec::knob(12), // max_gain
                 ],
             },
+            ControlGroup {
+                title: "ADVANCED",
+                controls: &[
+                    ControlSpec::toggle(13), // spectral_norm
+                    ControlSpec::toggle(14), // pinna_model
+                ],
+            },
+            ControlGroup {
+                title: "ROOM",
+                controls: &[
+                    ControlSpec::toggle(15), // room_reflections
+                    ControlSpec::knob(16),   // room_width
+                    ControlSpec::knob(17),   // room_depth
+                    ControlSpec::knob(18),   // wall_absorption
+                    ControlSpec::knob(19),   // reflection_beta
+                ],
+            },
         ],
         output: &[
+            ControlSpec::toggle(20), // bypass_xtc (diagnostic)
+            ControlSpec::toggle(21), // bypass_spectral_norm (diagnostic)
+            ControlSpec::toggle(22), // bypass_neumann (diagnostic)
             ControlSpec::toggle(23), // auto_gain
             ControlSpec::knob(24),   // ag_max
             ControlSpec::knob(25),   // ag_smoothing
@@ -3318,37 +3338,12 @@ pub mod xtc {
                     ControlSpec::knob(6), // head_tracking_smooth
                 ],
             },
-            TabSpec {
-                name: "Advanced",
-                controls: &[
-                    ControlSpec::toggle(13), // spectral_norm
-                    ControlSpec::toggle(14), // pinna_model
-                ],
-            },
-            TabSpec {
-                name: "Room",
-                controls: &[
-                    ControlSpec::toggle(15), // room_reflections
-                    ControlSpec::knob(16),   // room_width
-                    ControlSpec::knob(17),   // room_depth
-                    ControlSpec::knob(18),   // wall_absorption
-                    ControlSpec::knob(19),   // reflection_beta
-                ],
-            },
-            TabSpec {
-                name: "Diagnostic",
-                controls: &[
-                    ControlSpec::toggle(20), // bypass_xtc
-                    ControlSpec::toggle(21), // bypass_spectral_norm
-                    ControlSpec::toggle(22), // bypass_neumann
-                ],
-            },
         ],
         visualizations: &[],
         column_constraints: &[
             ColumnConstraint::config(120.0, 0.5),
-            ColumnConstraint::main(300.0),
-            ColumnConstraint::output(120.0, 0.6),
+            ColumnConstraint::main(400.0),
+            ColumnConstraint::output(130.0, 0.6),
         ],
     };
 }
@@ -3413,32 +3408,39 @@ pub mod ab_compare {
     /// 4=auto_gain, 5=loudness_type, 6=max_auto_gain, 7=gain_smoothing,
     /// 8=mix_transition, 9=path_a_config, 10=path_b_config
     pub const LAYOUT: PluginLayout = PluginLayout {
-        config: &[
-            ControlSpec::file_picker(9),  // path_a_config
-            ControlSpec::file_picker(10), // path_b_config
+        config: &[],
+        main: &[
+            ControlGroup {
+                title: "A/B MIX",
+                controls: &[
+                    ControlSpec::slider(0),                         // mix (A/B)
+                    ControlSpec::button_set(1, &["Pot", "Binary"]), // mix_mode
+                    ControlSpec::button_set(2, &["A", "B"]),        // selected_path
+                    ControlSpec::toggle(3),                         // bypass
+                    ControlSpec::knob(8),                           // mix_transition_ms
+                ],
+            },
+            ControlGroup {
+                title: "AUTO GAIN",
+                controls: &[
+                    ControlSpec::toggle(4),   // auto_gain
+                    ControlSpec::selector(5), // loudness_type
+                    ControlSpec::knob(6),     // max_auto_gain
+                    ControlSpec::knob(7),     // gain_smoothing
+                ],
+            },
         ],
-        main: &[ControlGroup {
-            title: "A/B MIX",
+        output: &[],
+        tabs: &[TabSpec {
+            name: "Paths",
             controls: &[
-                ControlSpec::slider(0),                         // mix (A/B)
-                ControlSpec::button_set(1, &["Pot", "Binary"]), // mix_mode
-                ControlSpec::button_set(2, &["A", "B"]),        // selected_path
-                ControlSpec::toggle(3),                         // bypass
-                ControlSpec::knob(8),                           // mix_transition_ms
+                ControlSpec::file_picker(9),  // path_a_config
+                ControlSpec::file_picker(10), // path_b_config
             ],
         }],
-        output: &[
-            ControlSpec::toggle(4),                                  // auto_gain
-            ControlSpec::selector(5),                                // loudness_type
-            ControlSpec::knob(6),                                    // max_auto_gain
-            ControlSpec::knob(7),                                    // gain_smoothing
-        ],
-        tabs: &[],
         visualizations: &[],
         column_constraints: &[
-            ColumnConstraint::config(140.0, 0.4),
-            ColumnConstraint::main(300.0),
-            ColumnConstraint::output(120.0, 0.6),
+            ColumnConstraint::main(350.0),
         ],
     };
 }
@@ -3599,12 +3601,14 @@ pub mod crossfeed {
     /// 7=mb_low_freq, 8=mb_mid_high_freq, 9=mb_low_feed, 10=mb_mid_feed, 11=mb_high_feed,
     /// 12=autogain_enabled, 13=target_lufs, 14=max_gain, 15=smoothing
     pub const LAYOUT: PluginLayout = PluginLayout {
-        config: &[
-            ControlSpec::selector(0), // mode (Off/Bauer/Meier/Mb)
-            ControlSpec::selector(1), // preset
-            ControlSpec::toggle(2),   // enabled
-        ],
+        config: &[],
         main: &[
+            ControlGroup {
+                title: "",
+                controls: &[
+                    ControlSpec::button_set(0, &["Disable", "Bauer", "Meier", "Multiband"]), // mode
+                ],
+            },
             ControlGroup {
                 title: "BAUER",
                 controls: &[
@@ -3616,27 +3620,28 @@ pub mod crossfeed {
                 title: "MEIER",
                 controls: &[ControlSpec::knob(6)], // meier_level
             },
+            ControlGroup {
+                title: "MULTIBAND",
+                controls: &[
+                    ControlSpec::knob(7),  // mb_low_freq_hz
+                    ControlSpec::knob(8),  // mb_mid_high_freq_hz
+                    ControlSpec::knob(9),  // mb_low_feed_db
+                    ControlSpec::knob(10), // mb_mid_feed_db
+                    ControlSpec::knob(11), // mb_high_feed_db
+                ],
+            },
         ],
         output: &[
-            ControlSpec::knob(3),    // mix
-            ControlSpec::toggle(12), // autogain_enabled
             ControlSpec::knob(13),   // target_lufs
+            ControlSpec::toggle(12), // autogain_enabled
             ControlSpec::knob(14),   // max_gain
+            ControlSpec::knob(3),    // mix
+            ControlSpec::knob(15),   // smoothing
         ],
-        tabs: &[TabSpec {
-            name: "Multiband",
-            controls: &[
-                ControlSpec::knob(7),  // mb_low_freq_hz
-                ControlSpec::knob(8),  // mb_mid_high_freq_hz
-                ControlSpec::knob(9),  // mb_low_feed_db
-                ControlSpec::knob(10), // mb_mid_feed_db
-                ControlSpec::knob(11), // mb_high_feed_db
-            ],
-        }],
+        tabs: &[],
         visualizations: &[],
         column_constraints: &[
-            ColumnConstraint::config(120.0, 0.5),
-            ColumnConstraint::main(300.0),
+            ColumnConstraint::main(350.0),
             ColumnConstraint::output(120.0, 0.6),
         ],
     };

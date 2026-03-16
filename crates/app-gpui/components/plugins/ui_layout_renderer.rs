@@ -245,8 +245,11 @@ fn render_main_column(
     if !all_tabs.is_empty() {
         let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
 
-        // Tab bar
-        let mut tab_bar = div().flex().gap_2();
+        // Tab bar (underline style)
+        let mut tab_bar = div()
+            .flex()
+            .border_b_1()
+            .border_color(theme.border);
         for (i, (tab_name, _)) in all_tabs.iter().enumerate() {
             let is_active = i == clamped_tab;
             let tab_entity = entity.clone();
@@ -255,16 +258,34 @@ fn render_main_column(
             tab_bar = tab_bar.child(
                 div()
                     .text_xs()
-                    .px_2()
-                    .py_1()
-                    .rounded_sm()
+                    .px_4()
+                    .pb(px(6.0))
+                    .pt(px(4.0))
                     .cursor_pointer()
                     .id(SharedString::from(format!("layout-tab-{plugin_idx}-{i}")))
-                    .when(is_active, |d| {
-                        d.bg(theme.background_secondary)
-                            .text_color(theme.text_primary)
+                    .font_weight(if is_active {
+                        FontWeight::BOLD
+                    } else {
+                        FontWeight::NORMAL
                     })
-                    .when(!is_active, |d| d.text_color(theme.text_secondary))
+                    .text_color(if is_active {
+                        theme.accent
+                    } else {
+                        theme.text_muted
+                    })
+                    .border_b_2()
+                    .border_color(if is_active {
+                        theme.accent
+                    } else {
+                        gpui::rgba(0x00000000)
+                    })
+                    .hover(|s| {
+                        s.text_color(theme.text_primary).border_color(if is_active {
+                            theme.accent
+                        } else {
+                            theme.text_muted
+                        })
+                    })
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                         tab_entity.update(cx, |state, _| {
                             state.app.plugin_auto_tab.insert(tab_plugin_idx, tab_idx);

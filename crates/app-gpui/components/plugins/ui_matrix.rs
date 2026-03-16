@@ -12,6 +12,7 @@ use crate::app::types::PluginUpdateType;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
 use sotf_audio_player::{
     apply_matrix_preset, available_matrix_presets, db_to_linear, detect_matrix_preset,
     get_channel_label_from_config,
@@ -92,7 +93,7 @@ pub fn render_matrix_plugin(
         ))
 }
 
-/// Render preset buttons
+/// Render preset buttons using ButtonSet
 fn render_preset_buttons(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -103,84 +104,39 @@ fn render_preset_buttons(
 ) -> impl IntoElement {
     let presets = available_matrix_presets(input_channels, output_channels);
     let ms_disabled = input_channels > 2;
+    let current = current_preset.to_string();
 
-    div()
-        .flex()
-        .items_center()
-        .gap_2()
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .child("Preset"),
-        )
-        .children(presets.into_iter().map(|preset| {
-            let is_active = current_preset == preset;
+    let options: Vec<ButtonSetOption> = presets
+        .into_iter()
+        .map(|preset| {
             let is_ms = preset == "M/S Encode" || preset == "M/S Decode";
-            let disabled = is_ms && ms_disabled;
-            let entity_clone = entity.clone();
-            let preset_owned = preset.to_string();
+            ButtonSetOption::new(preset, preset).disabled(is_ms && ms_disabled)
+        })
+        .collect();
 
-            let mut el = div()
-                .px_3()
-                .py_1()
-                .rounded_lg()
-                .border_1()
-                .text_sm();
-
-            if disabled {
-                el = el
-                    .bg(theme.surface)
-                    .border_color(theme.border)
-                    .text_color(theme.text_muted)
-                    .opacity(0.5);
-            } else {
-                el = el
-                    .cursor_pointer()
-                    .bg(if is_active {
-                        theme.accent
-                    } else {
-                        theme.surface
-                    })
-                    .border_color(if is_active {
-                        theme.accent
-                    } else {
-                        theme.border
-                    })
-                    .text_color(if is_active {
-                        theme.text_on_accent
-                    } else {
-                        theme.text_secondary
-                    })
-                    .hover(|s| {
-                        s.bg(if is_active {
-                            theme.accent
-                        } else {
-                            theme.surface_hover
-                        })
-                    })
-                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                        entity_clone.update(cx, |state, _| {
-                            // Get current matrix and apply preset
-                            if let Some(plugin) =
-                                state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
-                                && let sotf_audio_player::PluginSettings::Matrix {
-                                    input_channels: in_ch,
-                                    output_channels: out_ch,
-                                    ref mut matrix,
-                                    ..
-                                } = plugin.settings
-                            {
-                                apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);
-                                state.app.plugin_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
-                            }
-                        });
-                    });
-            }
-
-            el.child(preset)
-        }))
+    ButtonSet::new("matrix-preset")
+        .options(options)
+        .selected(current)
+        .size(ButtonSetSize::Sm)
+        .theme(theme.to_button_set_theme())
+        .on_change(move |value, _window, cx| {
+            let preset_name = value.to_string();
+            entity.update(cx, |state, _| {
+                if let Some(plugin) =
+                    state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                    && let sotf_audio_player::PluginSettings::Matrix {
+                        input_channels: in_ch,
+                        output_channels: out_ch,
+                        ref mut matrix,
+                        ..
+                    } = plugin.settings
+                {
+                    apply_matrix_preset(in_ch, out_ch, matrix, &preset_name);
+                    state.app.plugin_state.pending_plugin_update =
+                        Some(PluginUpdateType::Structural);
+                }
+            });
+        })
 }
 
 /// Compute output channel groups from MeterGroupSpec

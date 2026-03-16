@@ -705,6 +705,30 @@ impl InPlacePlugin for CrossfeedPlugin {
                     self.auto_gain = None;
                 }
             }
+            "autogain_target_lufs" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "autogain_target_lufs must be a float".to_string())?;
+                if v.is_finite() {
+                    self.params.autogain_target_lufs = v;
+                }
+            }
+            "autogain_max_gain_db" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "autogain_max_gain_db must be a float".to_string())?;
+                if v.is_finite() {
+                    self.params.autogain_max_gain_db = v;
+                }
+            }
+            "autogain_smoothing_ms" => {
+                let v = value
+                    .as_float()
+                    .ok_or_else(|| "autogain_smoothing_ms must be a float".to_string())?;
+                if v.is_finite() {
+                    self.params.autogain_smoothing_ms = v;
+                }
+            }
             _ => return Err(format!("Unknown: {}", name)),
         }
         self.rebuild_cached_parameters();
@@ -724,6 +748,9 @@ impl InPlacePlugin for CrossfeedPlugin {
             "mb_mid_feed_db" => Some(ParameterValue::Float(self.params.mb_mid_feed_db)),
             "mb_high_feed_db" => Some(ParameterValue::Float(self.params.mb_high_feed_db)),
             "autogain_enabled" => Some(ParameterValue::Bool(self.params.autogain_enabled)),
+            "autogain_target_lufs" => Some(ParameterValue::Float(self.params.autogain_target_lufs)),
+            "autogain_max_gain_db" => Some(ParameterValue::Float(self.params.autogain_max_gain_db)),
+            "autogain_smoothing_ms" => Some(ParameterValue::Float(self.params.autogain_smoothing_ms)),
             _ => None,
         }
     }
