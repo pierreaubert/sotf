@@ -180,7 +180,7 @@ impl InPlacePlugin for FletcherMunsonPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
+        let mut params = vec![
             Parameter::new_float(
                 "playback_volume_db",
                 "Playback Volume",
@@ -199,7 +199,52 @@ impl InPlacePlugin for FletcherMunsonPlugin {
             )
             .with_group("Levels"),
             Parameter::new_bool("enabled", "Enabled", self.enabled).with_group("Control"),
-        ]
+            Parameter::new_bool(
+                "auto_gain_enabled",
+                "Auto Gain",
+                self.auto_gain.is_some(),
+            )
+            .with_group("Auto Gain"),
+            Parameter::new_float(
+                "auto_gain_max_db",
+                "AG Max",
+                self.auto_gain.as_ref().map(|ag| ag.max_gain_db()).unwrap_or(pk(FM, "auto_gain_max_db").default_f32()),
+                pk(FM, "auto_gain_max_db").min_f64() as f32,
+                pk(FM, "auto_gain_max_db").max_f64() as f32,
+            )
+            .with_group("Auto Gain"),
+            Parameter::new_float(
+                "auto_gain_smoothing_ms",
+                "AG Smoothing",
+                self.auto_gain.as_ref().map(|ag| ag.smoothing_ms()).unwrap_or(pk(FM, "auto_gain_smoothing_ms").default_f32()),
+                pk(FM, "auto_gain_smoothing_ms").min_f64() as f32,
+                pk(FM, "auto_gain_smoothing_ms").max_f64() as f32,
+            )
+            .with_group("Auto Gain"),
+        ];
+        for (i, band) in self.bands.iter().enumerate() {
+            let group = format!("Band {}", i + 1);
+            let keys = [
+                ("freq", "Freq", band.frequency as f32),
+                ("q", "Q", band.q as f32),
+                ("max_gain", "Max Gain", band.max_gain_db as f32),
+                ("slope", "Slope", band.slope as f32),
+            ];
+            for (suffix, label, val) in keys {
+                let key = format!("band{}_{}", i + 1, suffix);
+                params.push(
+                    Parameter::new_float(
+                        &key,
+                        label,
+                        val,
+                        pk(FM, &key).min_f64() as f32,
+                        pk(FM, &key).max_f64() as f32,
+                    )
+                    .with_group(&group),
+                );
+            }
+        }
+        params
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
@@ -225,6 +270,71 @@ impl InPlacePlugin for FletcherMunsonPlugin {
             self.enabled = value
                 .as_bool()
                 .ok_or_else(|| "enabled must be a boolean".to_string())?;
+        } else if name == "auto_gain_enabled" {
+            let v = value
+                .as_bool()
+                .ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?;
+            if v && self.auto_gain.is_none() {
+                self.auto_gain = Some(AutoGain::new(
+                    self.num_channels,
+                    self.sample_rate,
+                    AutoGainParams {
+                        enabled: true,
+                        loudness_type: AutoGainLoudnessType::Momentary,
+                        max_gain_db: pk(FM, "auto_gain_max_db").default_f32(),
+                        smoothing_ms: pk(FM, "auto_gain_smoothing_ms").default_f32(),
+                    },
+                )?);
+            } else if !v {
+                self.auto_gain = None;
+            }
+        } else if name == "auto_gain_max_db" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
+            if v.is_finite() && let Some(ag) = &mut self.auto_gain {
+                ag.set_max_gain_db(v);
+            }
+        } else if name == "auto_gain_smoothing_ms" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
+            if v.is_finite() && let Some(ag) = &mut self.auto_gain {
+                ag.set_smoothing_ms(v);
+            }
+        } else if name.starts_with("band") && name.len() > 5 {
+            // Parse band parameter: band1_freq, band2_q, etc.
+            let v = value
+                .as_float()
+                .ok_or_else(|| format!("{} must be a float", name))?;
+            if v.is_finite() {
+                let band_idx = name.as_bytes()[4] - b'1';
+                if band_idx < NUM_BANDS as u8 {
+                    let field = &name[6..]; // skip "bandN_"
+                    let band = &mut self.bands[band_idx as usize];
+                    match field {
+                        "freq" => {
+                            band.frequency = v as f64;
+                            self.rebuild_filters();
+                        }
+                        "q" => {
+                            band.q = v as f64;
+                            self.rebuild_filters();
+                        }
+                        "max_gain" => {
+                            band.max_gain_db = v as f64;
+                            self.update_band_targets();
+                        }
+                        "slope" => {
+                            band.slope = v as f64;
+                            self.update_band_targets();
+                        }
+                        _ => return Err(format!("Unknown band field: {}", field)),
+                    }
+                } else {
+                    return Err(format!("Band index out of range: {}", name));
+                }
+            }
         } else {
             return Err(format!("Unknown: {}", id));
         }
@@ -239,6 +349,31 @@ impl InPlacePlugin for FletcherMunsonPlugin {
             Some(ParameterValue::Float(self.reference_level_db))
         } else if name == "enabled" {
             Some(ParameterValue::Bool(self.enabled))
+        } else if name == "auto_gain_enabled" {
+            Some(ParameterValue::Bool(self.auto_gain.is_some()))
+        } else if name == "auto_gain_max_db" {
+            Some(ParameterValue::Float(
+                self.auto_gain.as_ref().map(|ag| ag.max_gain_db()).unwrap_or(pk(FM, "auto_gain_max_db").default_f32()),
+            ))
+        } else if name == "auto_gain_smoothing_ms" {
+            Some(ParameterValue::Float(
+                self.auto_gain.as_ref().map(|ag| ag.smoothing_ms()).unwrap_or(pk(FM, "auto_gain_smoothing_ms").default_f32()),
+            ))
+        } else if name.starts_with("band") && name.len() > 5 {
+            let band_idx = name.as_bytes()[4].wrapping_sub(b'1');
+            if band_idx < NUM_BANDS as u8 {
+                let field = &name[6..];
+                let band = &self.bands[band_idx as usize];
+                match field {
+                    "freq" => Some(ParameterValue::Float(band.frequency as f32)),
+                    "q" => Some(ParameterValue::Float(band.q as f32)),
+                    "max_gain" => Some(ParameterValue::Float(band.max_gain_db as f32)),
+                    "slope" => Some(ParameterValue::Float(band.slope as f32)),
+                    _ => None,
+                }
+            } else {
+                None
+            }
         } else {
             None
         }

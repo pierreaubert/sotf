@@ -418,6 +418,46 @@ impl MultibandExpanderPlugin {
                 .with_group(&group),
             );
             params.push(
+                Parameter::new_float(
+                    &format!("band_{}_knee", i),
+                    "Knee",
+                    bp.knee_db.unwrap_or(self.knee_db),
+                    pk(MEB, "knee").min_f64() as f32,
+                    pk(MEB, "knee").max_f64() as f32,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("band_{}_range", i),
+                    "Range",
+                    bp.range_db.unwrap_or(self.range_db),
+                    pk(MEB, "range").min_f64() as f32,
+                    pk(MEB, "range").max_f64() as f32,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("band_{}_hysteresis", i),
+                    "Hysteresis",
+                    bp.hysteresis_db.unwrap_or(self.hysteresis_db),
+                    pk(MEB, "hysteresis").min_f64() as f32,
+                    pk(MEB, "hysteresis").max_f64() as f32,
+                )
+                .with_group(&group),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("band_{}_hold", i),
+                    "Hold",
+                    bp.hold_ms.unwrap_or(self.hold_ms),
+                    pk(MEB, "hold").min_f64() as f32,
+                    pk(MEB, "hold").max_f64() as f32,
+                )
+                .with_group(&group),
+            );
+            params.push(
                 Parameter::new_bool(
                     &format!("band_{}_auto_makeup", i),
                     "Auto Makeup",
@@ -649,6 +689,38 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                                 self.update_coefficients();
                             }
                         }
+                        "knee" => {
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.knee_db = Some(v);
+                            }
+                        }
+                        "range" => {
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.range_db = Some(v);
+                            }
+                        }
+                        "hysteresis" => {
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.hysteresis_db = Some(v);
+                            }
+                        }
+                        "hold" => {
+                            let v = value
+                                .as_float()
+                                .ok_or_else(|| format!("{} must be a float", name))?;
+                            if v.is_finite() {
+                                bp.hold_ms = Some(v);
+                            }
+                        }
                         "auto" => {
                             bp.auto_makeup = value
                                 .as_bool()
@@ -758,6 +830,18 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         )),
                         "release" => Some(ParameterValue::Float(
                             bp.release_ms.unwrap_or(self.release_ms),
+                        )),
+                        "knee" => Some(ParameterValue::Float(
+                            bp.knee_db.unwrap_or(self.knee_db),
+                        )),
+                        "range" => Some(ParameterValue::Float(
+                            bp.range_db.unwrap_or(self.range_db),
+                        )),
+                        "hysteresis" => Some(ParameterValue::Float(
+                            bp.hysteresis_db.unwrap_or(self.hysteresis_db),
+                        )),
+                        "hold" => Some(ParameterValue::Float(
+                            bp.hold_ms.unwrap_or(self.hold_ms),
                         )),
                         "auto" => Some(ParameterValue::Bool(bp.auto_makeup)),
                         "active" => Some(ParameterValue::Bool(bp.active)),

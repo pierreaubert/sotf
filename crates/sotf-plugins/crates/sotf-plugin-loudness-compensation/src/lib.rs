@@ -100,6 +100,9 @@ pub struct LoudnessCompensationPlugin {
     high_gain: f32,
     filters: Vec<Vec<Biquad>>,
     auto_gain: Option<AutoGain>,
+    auto_gain_enabled: bool,
+    auto_gain_max_db: f32,
+    auto_gain_smoothing_ms: f32,
     comp_gain_smoother: Vec<Smoother>,
     cache: RealTimeCache<AutoGainData>,
     cache_update_counter: usize,
@@ -124,6 +127,9 @@ impl LoudnessCompensationPlugin {
             high_gain,
             filters: vec![Vec::new(); num_channels],
             auto_gain: None,
+            auto_gain_enabled: false,
+            auto_gain_max_db: pk(LC, "auto_gain_max_db").default_f32(),
+            auto_gain_smoothing_ms: pk(LC, "auto_gain_smoothing_ms").default_f32(),
             comp_gain_smoother: (0..num_channels)
                 .map(|_| Smoother::new(1.0, 20.0, sr))
                 .collect(),
@@ -178,6 +184,28 @@ impl LoudnessCompensationPlugin {
             .with_description("High shelf center frequency (Hz)")
             .with_group("Frequency")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "auto_gain_enabled",
+                "Auto Gain",
+                self.auto_gain_enabled,
+            )
+            .with_group("Auto Gain"),
+            Parameter::new_float(
+                "auto_gain_max_db",
+                "AG Max",
+                self.auto_gain_max_db,
+                pk(LC, "auto_gain_max_db").min_f64() as f32,
+                pk(LC, "auto_gain_max_db").max_f64() as f32,
+            )
+            .with_group("Auto Gain"),
+            Parameter::new_float(
+                "auto_gain_smoothing_ms",
+                "AG Smoothing",
+                self.auto_gain_smoothing_ms,
+                pk(LC, "auto_gain_smoothing_ms").min_f64() as f32,
+                pk(LC, "auto_gain_smoothing_ms").max_f64() as f32,
+            )
+            .with_group("Auto Gain"),
         ];
     }
 
@@ -219,6 +247,9 @@ impl LoudnessCompensationPlugin {
             params.high_freq,
             params.high_gain,
         );
+        p.auto_gain_enabled = params.auto_gain_enabled;
+        p.auto_gain_max_db = params.auto_gain_max_db;
+        p.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms;
         if params.auto_gain_enabled {
             p.auto_gain = Some(AutoGain::new(
                 num_channels,
@@ -277,6 +308,45 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
                 self.high_freq = v;
                 self.rebuild_filters();
             }
+        } else if id.0 == "auto_gain_enabled" {
+            let v = value
+                .as_bool()
+                .ok_or_else(|| "auto_gain_enabled must be a boolean".to_string())?;
+            self.auto_gain_enabled = v;
+            if v && self.auto_gain.is_none() {
+                self.auto_gain = Some(AutoGain::new(
+                    self.num_channels,
+                    self.sample_rate,
+                    AutoGainParams {
+                        enabled: true,
+                        loudness_type: AutoGainLoudnessType::Momentary,
+                        max_gain_db: self.auto_gain_max_db,
+                        smoothing_ms: self.auto_gain_smoothing_ms,
+                    },
+                )?);
+            } else if !v {
+                self.auto_gain = None;
+            }
+        } else if id.0 == "auto_gain_max_db" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
+            if v.is_finite() {
+                self.auto_gain_max_db = v;
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_max_gain_db(v);
+                }
+            }
+        } else if id.0 == "auto_gain_smoothing_ms" {
+            let v = value
+                .as_float()
+                .ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
+            if v.is_finite() {
+                self.auto_gain_smoothing_ms = v;
+                if let Some(ag) = &mut self.auto_gain {
+                    ag.set_smoothing_ms(v);
+                }
+            }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -292,6 +362,12 @@ impl InPlacePlugin for LoudnessCompensationPlugin {
             Some(ParameterValue::Float(self.low_freq))
         } else if id.0 == "high_freq" {
             Some(ParameterValue::Float(self.high_freq))
+        } else if id.0 == "auto_gain_enabled" {
+            Some(ParameterValue::Bool(self.auto_gain_enabled))
+        } else if id.0 == "auto_gain_max_db" {
+            Some(ParameterValue::Float(self.auto_gain_max_db))
+        } else if id.0 == "auto_gain_smoothing_ms" {
+            Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
         } else {
             None
         }

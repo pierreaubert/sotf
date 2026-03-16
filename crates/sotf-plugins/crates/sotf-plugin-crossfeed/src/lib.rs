@@ -455,6 +455,30 @@ impl CrossfeedPlugin {
                 self.params.autogain_enabled,
             )
             .with_group("Auto Gain"),
+            Parameter::new_float(
+                "autogain_target_lufs",
+                "Target LUFS",
+                self.params.autogain_target_lufs,
+                pk(CF, "autogain_target_lufs").min_f64() as f32,
+                pk(CF, "autogain_target_lufs").max_f64() as f32,
+            )
+            .with_group("Auto Gain"),
+            Parameter::new_float(
+                "autogain_max_gain_db",
+                "Max Gain",
+                self.params.autogain_max_gain_db,
+                pk(CF, "autogain_max_gain_db").min_f64() as f32,
+                pk(CF, "autogain_max_gain_db").max_f64() as f32,
+            )
+            .with_group("Auto Gain"),
+            Parameter::new_float(
+                "autogain_smoothing_ms",
+                "Smoothing",
+                self.params.autogain_smoothing_ms,
+                pk(CF, "autogain_smoothing_ms").min_f64() as f32,
+                pk(CF, "autogain_smoothing_ms").max_f64() as f32,
+            )
+            .with_group("Auto Gain"),
         ];
     }
 
@@ -699,7 +723,12 @@ impl InPlacePlugin for CrossfeedPlugin {
                     self.auto_gain = Some(sotf_host::auto_gain::AutoGain::new(
                         2,
                         self.sample_rate,
-                        sotf_host::auto_gain::AutoGainParams::default(),
+                        sotf_host::auto_gain::AutoGainParams {
+                            enabled: true,
+                            loudness_type: Default::default(),
+                            max_gain_db: self.params.autogain_max_gain_db,
+                            smoothing_ms: self.params.autogain_smoothing_ms,
+                        },
                     )?);
                 } else if !v {
                     self.auto_gain = None;
@@ -719,6 +748,9 @@ impl InPlacePlugin for CrossfeedPlugin {
                     .ok_or_else(|| "autogain_max_gain_db must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.autogain_max_gain_db = v;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_max_gain_db(v);
+                    }
                 }
             }
             "autogain_smoothing_ms" => {
@@ -727,6 +759,9 @@ impl InPlacePlugin for CrossfeedPlugin {
                     .ok_or_else(|| "autogain_smoothing_ms must be a float".to_string())?;
                 if v.is_finite() {
                     self.params.autogain_smoothing_ms = v;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_smoothing_ms(v);
+                    }
                 }
             }
             _ => return Err(format!("Unknown: {}", name)),
