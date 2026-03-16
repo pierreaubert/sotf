@@ -1,33 +1,123 @@
-//! World Airports Voronoi — Observable example using d3rs::examples::voronoi_airports
+//! World Airports Voronoi — Observable example
 //!
-//! Renders Voronoi cells for ~3000 airports projected onto an equirectangular map.
-//! Demonstrates: `Delaunay`, `Voronoi`, `PathBuilder`.
-//!
+//! Renders Voronoi cells for airports on an orthographic globe.
 //! Source: <https://observablehq.com/@d3/world-airports-voronoi>
 
 use crate::ShowcaseApp;
-use d3rs::color::ColorScheme;
+use d3rs::shape::path::PathBuilder as D3PathBuilder;
 use gpui::prelude::*;
 use gpui::*;
 
 const AIRPORTS_CSV: &str = include_str!("../../data/airports.csv");
 
-pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
+/// Build a thin closed ribbon from (x0,y0) to (x1,y1) with given half-width.
+fn ribbon(x0: f64, y0: f64, x1: f64, y1: f64, hw: f64) -> d3rs::shape::path::Path {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 0.01 {
+        return D3PathBuilder::new().build();
+    }
+    let nx = -dy / len * hw;
+    let ny = dx / len * hw;
+    D3PathBuilder::new()
+        .move_to(x0 + nx, y0 + ny)
+        .line_to(x1 + nx, y1 + ny)
+        .line_to(x1 - nx, y1 - ny)
+        .line_to(x0 - nx, y0 - ny)
+        .close_path()
+        .build()
+}
+
+pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let coords = d3rs::examples::voronoi_airports::load_csv(AIRPORTS_CSV);
-    let result = d3rs::examples::voronoi_airports::compute(&coords);
+    let rotation = (app.geo_rotation_lon, app.geo_rotation_lat);
+    let zoom = app.geo_zoom;
+    let result = d3rs::examples::voronoi_airports::compute_with_zoom(&coords, rotation, zoom);
 
     let width = result.width;
     let height = result.height;
 
-    let d3_paths = result.voronoi_paths;
-    let cell_count = d3_paths.len();
-    let point_count = result.point_count;
+    let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
+    let mut all_colors: Vec<Hsla> = Vec::new();
 
-    // Color each cell by index using a color scheme
-    let scheme = ColorScheme::tableau10();
-    let all_colors: Vec<Hsla> = (0..cell_count)
-        .map(|i| Hsla::from(scheme.color(i % scheme.len()).to_rgba()).opacity(0.4))
-        .collect();
+    // 1. Ocean disc (filled circle — light blue)
+    d3_paths.push(result.globe_outline.clone());
+    all_colors.push(hsla(0.56, 0.3, 0.9, 1.0));
+
+    // 2. Graticule ribbons
+    {
+        use d3rs::shape::path::PathCommand;
+        let cmds = result.graticule_path.commands();
+        let mut prev: Option<(f64, f64)> = None;
+        for cmd in cmds {
+            match cmd {
+                PathCommand::MoveTo { x, y } => {
+                    prev = Some((*x, *y));
+                }
+                PathCommand::LineTo { x, y } => {
+                    if let Some((px, py)) = prev {
+                        let r = ribbon(px, py, *x, *y, 0.4);
+                        if !r.commands().is_empty() {
+                            d3_paths.push(r);
+                            all_colors.push(hsla(0.56, 0.2, 0.8, 0.4));
+                        }
+                    }
+                    prev = Some((*x, *y));
+                }
+                _ => { prev = None; }
+            }
+        }
+    }
+
+    // 3. Voronoi mesh ribbons
+    {
+        use d3rs::shape::path::PathCommand;
+        let cmds = result.voronoi_mesh_path.commands();
+        let mut prev: Option<(f64, f64)> = None;
+        for cmd in cmds {
+            match cmd {
+                PathCommand::MoveTo { x, y } => {
+                    prev = Some((*x, *y));
+                }
+                PathCommand::LineTo { x, y } => {
+                    if let Some((px, py)) = prev {
+                        let r = ribbon(px, py, *x, *y, 0.4);
+                        if !r.commands().is_empty() {
+                            d3_paths.push(r);
+                            all_colors.push(hsla(0.0, 0.0, 0.2, 0.5));
+                        }
+                    }
+                    prev = Some((*x, *y));
+                }
+                _ => { prev = None; }
+            }
+        }
+    }
+
+    // 4. Airport dots
+    let n_sides = 10;
+    let dot_r = 1.2;
+    for pt in &result.projected_points {
+        if let Some((px, py)) = pt {
+            let mut builder = D3PathBuilder::new();
+            for v in 0..n_sides {
+                let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
+                let x = px + dot_r * angle.cos();
+                let y = py + dot_r * angle.sin();
+                if v == 0 {
+                    builder = builder.move_to(x, y);
+                } else {
+                    builder = builder.line_to(x, y);
+                }
+            }
+            builder = builder.close_path();
+            d3_paths.push(builder.build());
+            all_colors.push(hsla(0.0, 0.85, 0.5, 0.9));
+        }
+    }
+
+    let visible_count = result.projected_points.iter().filter(|p| p.is_some()).count();
 
     div()
         .flex()
@@ -47,17 +137,56 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .text_color(rgb(0x666666))
                 .mb_2()
                 .child(format!(
-                    "Source: observablehq.com/@d3/world-airports-voronoi — {} airports, {} Voronoi cells",
-                    point_count, cell_count
+                    "Source: observablehq.com/@d3/world-airports-voronoi — {} airports ({} visible)",
+                    result.point_count, visible_count
                 )),
         )
         .child(
             div()
+                .id("voronoi-globe")
                 .w(px(width as f32))
                 .h(px(height as f32))
-                .bg(rgb(0x111111))
-                .border_1()
-                .border_color(rgb(0x333333))
+                .bg(rgb(0xffffff))
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, event: &MouseDownEvent, _, _| {
+                        this.is_dragging = true;
+                        this.last_mouse_pos = Some(event.position);
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, _| {
+                        this.is_dragging = false;
+                        this.last_mouse_pos = None;
+                    }),
+                )
+                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, _| {
+                    if this.is_dragging
+                        && let Some(last_pos) = this.last_mouse_pos
+                    {
+                        let delta_x: f32 = (event.position.x - last_pos.x).into();
+                        let delta_y: f32 = (event.position.y - last_pos.y).into();
+                        this.geo_rotation_lon += delta_x as f64 * 0.5;
+                        this.geo_rotation_lat -= delta_y as f64 * 0.5;
+                        this.geo_rotation_lat = this.geo_rotation_lat.clamp(-90.0, 90.0);
+                        this.last_mouse_pos = Some(event.position);
+                    }
+                }))
+                .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, _| {
+                    let delta = match event.delta {
+                        ScrollDelta::Lines(lines) => {
+                            let y: f32 = lines.y.into();
+                            y * 0.15
+                        }
+                        ScrollDelta::Pixels(pixels) => {
+                            let y: f32 = pixels.y.into();
+                            y * 0.003
+                        }
+                    };
+                    this.geo_zoom = (this.geo_zoom * (1.0 + delta as f64)).clamp(0.3, 10.0);
+                }))
                 .child(
                     canvas(
                         move |bounds, _, _| {

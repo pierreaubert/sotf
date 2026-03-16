@@ -242,6 +242,7 @@ pub struct ShowcaseApp {
     pub geo_projection_type: GeoProjectionType,
     pub geo_rotation_lon: f64,
     pub geo_rotation_lat: f64,
+    pub geo_zoom: f64,
     // Contour demo parameters
     pub contour_grid_size: usize,
     pub contour_num_levels: usize,
@@ -311,6 +312,7 @@ impl ShowcaseApp {
             geo_projection_type: GeoProjectionType::default(),
             geo_rotation_lon: 0.0,
             geo_rotation_lat: 0.0,
+            geo_zoom: 1.0,
             contour_grid_size: 50,
             contour_num_levels: 5,
             contour_peak1_x: 0.3,

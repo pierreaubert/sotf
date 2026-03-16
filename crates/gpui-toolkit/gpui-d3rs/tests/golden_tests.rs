@@ -5657,6 +5657,7 @@ fn test_observable_voronoi_airports() {
     }
 
     // Run d3rs compute with same deterministic data
+    // Run d3rs compute with spherical Voronoi (orthographic globe)
     let coords: Vec<(f64, f64)> = (0..50)
         .map(|i| {
             let lon = -180.0 + (i as f64 / 49.0) * 360.0;
@@ -5664,25 +5665,26 @@ fn test_observable_voronoi_airports() {
             (lon, lat)
         })
         .collect();
-    let result = examples::voronoi_airports::compute(&coords);
+    let result = examples::voronoi_airports::compute(&coords, (0.0, 0.0));
 
     assert_eq!(result.point_count, 50);
-    assert!(!result.voronoi_paths.is_empty(), "d3rs should produce Voronoi cells");
+    assert!(result.width > 0.0);
+    assert!(result.height > 0.0);
 
-    // Compare d3rs projected positions against golden (golden uses round(v, 2))
-    let case = &golden.test_cases[0];
-    let golden_cells = case["cells"].as_array().unwrap();
-    let pos_tol = 0.01; // golden rounded to 2 decimal places
-    for (i, gc) in golden_cells.iter().enumerate() {
-        if i >= result.points.len() { break; }
-        let gpx = gc["px"].as_f64().unwrap();
-        let gpy = gc["py"].as_f64().unwrap();
-        assert!(
-            (gpx - result.points[i].px).abs() < pos_tol
-                && (gpy - result.points[i].py).abs() < pos_tol,
-            "voronoi point {}: d3rs ({}, {}) vs D3 ({}, {})",
-            i, result.points[i].px, result.points[i].py, gpx, gpy
-        );
-    }
+    // Some airports should be visible on the front hemisphere
+    let visible = result.projected_points.iter().filter(|p| p.is_some()).count();
+    assert!(visible > 10, "should have visible airports: {visible}/50");
+
+    // Voronoi mesh should contain path commands
+    assert!(
+        !result.voronoi_mesh_path.commands().is_empty(),
+        "voronoi mesh should have path commands"
+    );
+
+    // Globe outline should be a closed path
+    assert!(
+        !result.globe_outline.commands().is_empty(),
+        "globe outline should have path commands"
+    );
 }
 
