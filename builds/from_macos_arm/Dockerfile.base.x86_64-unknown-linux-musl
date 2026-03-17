@@ -1,0 +1,41 @@
+FROM messense/rust-musl-cross:x86_64-musl
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+RUN apt-get update && rm -rf /var/lib/apt/lists/*
+
+# Pre-install the exact Rust version required by rust-toolchain.toml with all components
+# This avoids cross trying to install it at build time with permission issues
+RUN rustup toolchain install 1.90.0-x86_64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
+    rustup target add --toolchain 1.90.0-x86_64-unknown-linux-gnu x86_64-unknown-linux-musl && \
+    rustup default 1.90.0-x86_64-unknown-linux-gnu
+
+# Fix rustup permissions after all installations
+# Create temp directory with world-writable permissions to avoid permission issues
+RUN mkdir -p /root/.rustup/tmp && \
+    mkdir -p /root/.rustup/downloads && \
+    chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
+
+# Install just using the existing rust toolchain in the base image
+RUN cargo install just --locked
+
+# System packages
+WORKDIR /project
+COPY Justfile /project/Justfile
+COPY builds/linux.just /project/builds/linux.just
+ENV JUST_JUSTFILE=/project/Justfile
+
+RUN just install-linux-root
+RUN just install-ubuntu-common
+RUN just install-ubuntu-x86-driver
+RUN just post-install-npm
+
+# Make system pkg-config files visible to the musl cross-compiler
+RUN ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/*.pc /usr/local/musl/x86_64-unknown-linux-musl/lib/pkgconfig/ && \
+    ln -sf /usr/lib/x86_64-linux-gnu/libasound.* /usr/local/musl/x86_64-unknown-linux-musl/lib/
+
+# Pre-fetch cargo dependencies (cached per Cargo.lock)
+COPY . /project/
+RUN cargo fetch --locked --target x86_64-unknown-linux-musl
+RUN rm -rf /project/*

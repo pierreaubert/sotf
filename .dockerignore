@@ -1,0 +1,9 @@
+target/
+target-static/
+dist/
+.git/
+data_cached/
+data_generated/
+data_tests/
+venv/
+*.md

@@ -6,6 +6,7 @@ mutants.out
 
 # installers
 /appimage-builder-*
+/dist
 
 # python
 __pycache__
