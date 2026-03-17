@@ -1,8 +1,8 @@
 [group('bench')]
 bench-plugins:
-	cargo bench -p sotf-plugins --bench binaural-decoder-benchmark
-	cargo bench -p sotf-plugins --bench upmixer-benchmark
-	cargo bench -p sotf-plugins --bench compressor-benchmark
+	cargo bench -p sotf-plugin-binaural --bench binaural-decoder-benchmark
+	cargo bench -p sotf-plugin-upmixer --bench upmixer-benchmark
+	cargo bench -p sotf-plugin-compressor --bench compressor-benchmark
 
 # ----------------------------------------------------------------------
 # QA PLUGINS
