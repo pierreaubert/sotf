@@ -62,6 +62,11 @@ pub enum DemoSection {
     D3CirclePacking,
     D3Sunburst,
     D3VoronoiAirports,
+    D3TemperatureTrends,
+    D3HertzsprungRussell,
+    D3VoronoiLabels,
+    D3ElectricUsage,
+    D3StarMap,
 }
 
 impl DemoSection {
@@ -117,6 +122,11 @@ impl DemoSection {
             Self::D3CirclePacking,
             Self::D3Sunburst,
             Self::D3VoronoiAirports,
+            Self::D3TemperatureTrends,
+            Self::D3HertzsprungRussell,
+            Self::D3VoronoiLabels,
+            Self::D3ElectricUsage,
+            Self::D3StarMap,
         ]
     }
 
@@ -172,6 +182,11 @@ impl DemoSection {
             Self::D3CirclePacking => "D3: Circle Packing",
             Self::D3Sunburst => "D3: Sunburst",
             Self::D3VoronoiAirports => "D3: Voronoi Airports",
+            Self::D3TemperatureTrends => "D3: Temperature Trends",
+            Self::D3HertzsprungRussell => "D3: H-R Diagram",
+            Self::D3VoronoiLabels => "D3: Voronoi Labels",
+            Self::D3ElectricUsage => "D3: Electric Usage",
+            Self::D3StarMap => "D3: Star Map",
         }
     }
 }
@@ -522,6 +537,11 @@ impl ShowcaseApp {
             DemoSection::D3CirclePacking => showcase_modules::d3_examples::circle_packing::render(self, cx),
             DemoSection::D3Sunburst => showcase_modules::d3_examples::sunburst::render(self, cx),
             DemoSection::D3VoronoiAirports => showcase_modules::d3_examples::voronoi_airports::render(self, cx),
+            DemoSection::D3TemperatureTrends => showcase_modules::d3_examples::temperature_trends::render(self, cx),
+            DemoSection::D3HertzsprungRussell => showcase_modules::d3_examples::hertzsprung_russell::render(self, cx),
+            DemoSection::D3VoronoiLabels => showcase_modules::d3_examples::voronoi_labels::render(self, cx),
+            DemoSection::D3ElectricUsage => showcase_modules::d3_examples::electric_usage::render(self, cx),
+            DemoSection::D3StarMap => showcase_modules::d3_examples::star_map::render(self, cx),
         };
 
         div()

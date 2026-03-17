@@ -27,3 +27,8 @@ pub mod stacked_bar;
 pub mod sunburst;
 pub mod voronoi_airports;
 pub mod streamgraph;
+pub mod electric_usage;
+pub mod hertzsprung_russell;
+pub mod star_map;
+pub mod temperature_trends;
+pub mod voronoi_labels;

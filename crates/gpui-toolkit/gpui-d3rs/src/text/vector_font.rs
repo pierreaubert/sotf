@@ -858,6 +858,11 @@ pub fn render_vector_text(text: &str, config: &VectorFontConfig) -> impl IntoEle
                             let final_x = center_x + rx;
                             let final_y = center_y + ry;
 
+                            // Guard: skip non-finite coordinates to prevent lyon_path panics
+                            if !final_x.is_finite() || !final_y.is_finite() {
+                                continue;
+                            }
+
                             if !pen_down {
                                 builder.move_to(point(px(final_x), px(final_y)));
                                 pen_down = true;

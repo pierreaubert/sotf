@@ -97,7 +97,12 @@ pub fn render(_app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(nav_item("Radial Cluster", "Radial cluster/dendrogram (Flare hierarchy)", DemoSection::D3RadialCluster, cx))
                 .child(nav_item("Circle Packing", "Nested circles from hierarchy values", DemoSection::D3CirclePacking, cx))
                 .child(nav_item("Sunburst", "Partition layout with arc rendering", DemoSection::D3Sunburst, cx))
-                .child(nav_item("Voronoi Airports", "Delaunay/Voronoi of 3000 airports (airports.csv)", DemoSection::D3VoronoiAirports, cx)),
+                .child(nav_item("Voronoi Airports", "Delaunay/Voronoi of 3000 airports (airports.csv)", DemoSection::D3VoronoiAirports, cx))
+                .child(nav_item("Temperature Trends", "Global warming scatter (136 years, diverging colors)", DemoSection::D3TemperatureTrends, cx))
+                .child(nav_item("H-R Diagram", "29K stars: magnitude vs color (Hertzsprung-Russell)", DemoSection::D3HertzsprungRussell, cx))
+                .child(nav_item("Voronoi Labels", "Label placement using Voronoi cell area", DemoSection::D3VoronoiLabels, cx))
+                .child(nav_item("Electric Usage", "Hourly heatmap (8760 hours × usage intensity)", DemoSection::D3ElectricUsage, cx))
+                .child(nav_item("Star Map", "Stereographic star chart with magnitude scaling", DemoSection::D3StarMap, cx)),
         )
         .child(
             div()

@@ -43,6 +43,11 @@ pub mod stacked_area;
 pub mod stacked_bar;
 pub mod streamgraph;
 pub mod sunburst;
+pub mod electric_usage;
+pub mod hertzsprung_russell;
+pub mod star_map;
+pub mod temperature_trends;
+pub mod voronoi_labels;
 
 pub use kernel_density_estimation::KernelType;
 pub use stacked_grouped_bars::BarLayout;

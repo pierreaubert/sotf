@@ -528,6 +528,14 @@ fn render_response_comparison_graph(
         .map(|s| s.y_domain())
         .unwrap_or((y_min, y_max));
 
+    // Guard: ensure all axis ranges are finite and non-degenerate to prevent lyon_path panics
+    let y_min_domain = if y_min_domain.is_finite() { y_min_domain } else { -15.0 };
+    let y_max_domain = if y_max_domain.is_finite() { y_max_domain } else { 5.0 };
+    let y_max_domain = if y_max_domain <= y_min_domain { y_min_domain + 1.0 } else { y_max_domain };
+    let eq_y_min = if eq_y_min.is_finite() { eq_y_min } else { -12.0 };
+    let eq_y_max = if eq_y_max.is_finite() { eq_y_max } else { 6.0 };
+    let eq_y_max = if eq_y_max <= eq_y_min { eq_y_min + 1.0 } else { eq_y_max };
+
     // Build line chart
     let mut chart_builder = line(&frequencies, &original_values)
         .x_scale(ScaleType::Log)
@@ -583,8 +591,13 @@ fn render_response_comparison_graph(
                 }
 
                 // Log-linear interpolation
-                let t = (f.ln() - lower.0.ln()) / (upper.0.ln() - lower.0.ln());
-                lower.1 + t * (upper.1 - lower.1)
+                let denom = upper.0.ln() - lower.0.ln();
+                if denom.abs() < 1e-12 {
+                    return lower.1;
+                }
+                let t = (f.ln() - lower.0.ln()) / denom;
+                let result = lower.1 + t * (upper.1 - lower.1);
+                if result.is_finite() { result } else { 0.0 }
             })
             .collect();
 

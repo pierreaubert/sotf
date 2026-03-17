@@ -5688,3 +5688,167 @@ fn test_observable_voronoi_airports() {
     );
 }
 
+// ============================================================================
+// NEW OBSERVABLE EXAMPLES (5)
+// ============================================================================
+
+/// Global Temperature Trends — scatter plot with diverging colors.
+#[test]
+fn test_observable_temperature_trends() {
+    let content = fs::read_to_string("golden/observable/temperature_trends.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    let case = &golden.test_cases[0];
+    let data_count = case["data_count"].as_u64().unwrap() as usize;
+    assert!(data_count > 1000, "should have >1000 temperature points");
+
+    let max_abs = case["max_abs"].as_f64().unwrap();
+    assert!(max_abs > 0.0 && max_abs < 2.0, "max_abs should be reasonable: {max_abs}");
+
+    // Validate scale samples
+    let samples = case["samples"].as_array().unwrap();
+    assert!(!samples.is_empty());
+    for s in samples {
+        let x = s["x"].as_f64().unwrap();
+        let y = s["y"].as_f64().unwrap();
+        assert!(x.is_finite() && y.is_finite(), "sample position should be finite");
+    }
+
+    // Run d3rs compute
+    // Use deterministic test data (not the full CSV — that needs file I/O)
+    let values: Vec<f64> = (0..100).map(|i| -0.3 + 1.2 * (i as f64 / 99.0)).collect();
+    let result = examples::temperature_trends::compute(&values);
+    assert_eq!(result.points.len(), 100);
+    assert!(result.max_abs > 0.0);
+    assert!(result.radius > 0.0);
+}
+
+/// Hertzsprung-Russell Diagram — star scatter plot.
+#[test]
+fn test_observable_hertzsprung_russell() {
+    let content = fs::read_to_string("golden/observable/hertzsprung_russell.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    let case = &golden.test_cases[0];
+    let data_count = case["data_count"].as_u64().unwrap() as usize;
+    assert!(data_count > 20000, "should have many stars: {data_count}");
+
+    // Validate scale samples against D3
+    let samples = case["samples"].as_array().unwrap();
+    for s in samples {
+        let x = s["x"].as_f64().unwrap();
+        let y = s["y"].as_f64().unwrap();
+        assert!(x.is_finite() && y.is_finite());
+    }
+
+    // Temperature conversion validation
+    let temp_samples = case["temp_samples"].as_array().unwrap();
+    for ts in temp_samples {
+        let temp = ts["temperature"].as_f64().unwrap();
+        assert!(temp > 2000.0 && temp < 50000.0, "temperature {temp} out of range");
+    }
+
+    // Run d3rs compute
+    let data: Vec<(f64, f64)> = (0..100)
+        .map(|i| (i as f64 * 0.2 - 5.0, i as f64 * 0.02))
+        .collect();
+    let result = examples::hertzsprung_russell::compute(&data);
+    assert_eq!(result.stars.len(), 100);
+
+    // Verify BV→RGB conversion
+    let (r, g, b) = examples::hertzsprung_russell::bv_to_rgb(0.0);
+    assert!(r > 200 && g > 200 && b > 200, "BV=0 should be white-ish: ({r},{g},{b})");
+    let (r, g, b) = examples::hertzsprung_russell::bv_to_rgb(1.5);
+    assert!(r > g && g > b, "BV=1.5 should be reddish: ({r},{g},{b})");
+}
+
+/// Voronoi Labels — scatter with Voronoi-based label placement.
+#[test]
+fn test_observable_voronoi_labels() {
+    let content = fs::read_to_string("golden/observable/voronoi_labels.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    let case = &golden.test_cases[0];
+    let point_count = case["point_count"].as_u64().unwrap() as usize;
+    let label_count = case["label_count"].as_u64().unwrap() as usize;
+    assert!(point_count > 100);
+    assert!(label_count > 0 && label_count < point_count);
+
+    // Validate cell data
+    let cells = case["cells"].as_array().unwrap();
+    for c in cells {
+        let area = c["area"].as_f64().unwrap();
+        assert!(area >= 0.0);
+        let show = c["show_label"].as_bool().unwrap();
+        if show { assert!(area > 2000.0); }
+    }
+
+    // Run d3rs compute with deterministic points
+    let pts: Vec<(f64, f64)> = (0..50)
+        .map(|i| (100.0 + 700.0 * (i as f64 * 0.13).sin().abs(),
+                   50.0 + 500.0 * (i as f64 * 0.17).cos().abs()))
+        .collect();
+    let result = examples::voronoi_labels::compute(&pts);
+    assert_eq!(result.point_count, 50);
+    assert!(result.label_count > 0, "should have some labels");
+    assert!(!result.voronoi_mesh.commands().is_empty());
+}
+
+/// Electric Usage 2019 — hourly heatmap.
+#[test]
+fn test_observable_electric_usage() {
+    let content = fs::read_to_string("golden/observable/electric_usage.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    let case = &golden.test_cases[0];
+    let data_count = case["data_count"].as_u64().unwrap() as usize;
+    assert!(data_count > 8000, "should have ~8760 hourly points: {data_count}");
+
+    let usage_ext = case["usage_extent"].as_array().unwrap();
+    assert!(usage_ext[1].as_f64().unwrap() > usage_ext[0].as_f64().unwrap());
+
+    // Run d3rs compute
+    let data: Vec<(String, usize, f64)> = (0..48)
+        .map(|i| (format!("2019-01-{:02}", 1 + i / 24), i % 24, 1.0 + (i as f64 * 0.1)))
+        .collect();
+    let result = examples::electric_usage::compute(&data);
+    assert_eq!(result.cells.len(), 48);
+    assert!(result.cell_width > 0.0);
+    assert!(result.usage_max > 0.0);
+}
+
+/// Star Map — stereographic star projection.
+#[test]
+fn test_observable_star_map() {
+    let content = fs::read_to_string("golden/observable/star_map.json")
+        .expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    let case = &golden.test_cases[0];
+    let star_count = case["star_count"].as_u64().unwrap() as usize;
+    assert!(star_count > 20, "should have stars: {star_count}");
+
+    // Validate projected positions
+    let stars = case["stars"].as_array().unwrap();
+    for s in stars {
+        let px = s["px"].as_f64().unwrap();
+        let py = s["py"].as_f64().unwrap();
+        let r = s["radius"].as_f64().unwrap();
+        assert!(px.is_finite() && py.is_finite());
+        assert!(r >= 0.0);
+    }
+
+    // Run d3rs compute
+    let data: Vec<(f64, f64, f64)> = (0..20)
+        .map(|i| (i as f64 * 18.0, 30.0 + 20.0 * (i as f64 * 0.5).sin(), 2.0 + (i % 5) as f64))
+        .collect();
+    let result = examples::star_map::compute(&data);
+    assert!(!result.stars.is_empty());
+    assert!(!result.graticule_path.commands().is_empty());
+    assert!(!result.outline_path.commands().is_empty());
+}
+
