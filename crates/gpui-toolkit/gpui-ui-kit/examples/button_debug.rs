@@ -38,11 +38,23 @@ impl Render for ButtonDebug {
                             .flex()
                             .gap_3()
                             .flex_wrap()
-                            .child(Button::new("btn-primary", "Primary").variant(ButtonVariant::Primary))
-                            .child(Button::new("btn-secondary", "Secondary").variant(ButtonVariant::Secondary))
-                            .child(Button::new("btn-destructive", "Destructive").variant(ButtonVariant::Destructive))
+                            .child(
+                                Button::new("btn-primary", "Primary")
+                                    .variant(ButtonVariant::Primary),
+                            )
+                            .child(
+                                Button::new("btn-secondary", "Secondary")
+                                    .variant(ButtonVariant::Secondary),
+                            )
+                            .child(
+                                Button::new("btn-destructive", "Destructive")
+                                    .variant(ButtonVariant::Destructive),
+                            )
                             .child(Button::new("btn-ghost", "Ghost").variant(ButtonVariant::Ghost))
-                            .child(Button::new("btn-outline", "Outline").variant(ButtonVariant::Outline)),
+                            .child(
+                                Button::new("btn-outline", "Outline")
+                                    .variant(ButtonVariant::Outline),
+                            ),
                     ),
             )
             // Sizes
@@ -74,7 +86,9 @@ impl Render for ButtonDebug {
                         div()
                             .flex()
                             .gap_3()
-                            .child(Button::new("btn-dis-primary", "Disabled Primary").disabled(true))
+                            .child(
+                                Button::new("btn-dis-primary", "Disabled Primary").disabled(true),
+                            )
                             .child(
                                 Button::new("btn-dis-secondary", "Disabled Secondary")
                                     .variant(ButtonVariant::Secondary)
@@ -95,7 +109,11 @@ impl Render for ButtonDebug {
                             .gap_3()
                             .child(Button::new("btn-icon-left", "Save").icon_left("+"))
                             .child(Button::new("btn-icon-right", "Next").icon_right(">"))
-                            .child(Button::new("btn-icons-both", "Upload").icon_left("+").icon_right(">")),
+                            .child(
+                                Button::new("btn-icons-both", "Upload")
+                                    .icon_left("+")
+                                    .icon_right(">"),
+                            ),
                     ),
             )
             // Full width

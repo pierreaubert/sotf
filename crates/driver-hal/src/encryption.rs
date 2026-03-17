@@ -19,8 +19,8 @@
 //! - Resistance to timing attacks
 
 use chacha20poly1305::{
-    aead::{Aead, AeadInPlace, KeyInit},
     ChaCha20Poly1305, Nonce, Tag,
+    aead::{Aead, AeadInPlace, KeyInit},
 };
 use sha2::{Digest, Sha256};
 
@@ -567,9 +567,11 @@ mod tests {
         let ciphertext = cipher.encrypt(&samples, 1);
 
         let mut too_small = vec![0.0f32; 10];
-        assert!(cipher
-            .decrypt_into(&ciphertext, 1, &mut too_small)
-            .is_none());
+        assert!(
+            cipher
+                .decrypt_into(&ciphertext, 1, &mut too_small)
+                .is_none()
+        );
     }
 
     #[test]

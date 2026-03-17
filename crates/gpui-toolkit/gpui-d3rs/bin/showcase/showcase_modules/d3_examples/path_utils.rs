@@ -16,7 +16,11 @@ pub fn parse_svg_path(d: &str, bounds: Bounds<Pixels>) -> Option<Path<Pixels>> {
             spaced.push(' ');
         } else if ch == ',' {
             spaced.push(' ');
-        } else if ch == '-' && !spaced.ends_with(' ') && !spaced.ends_with('e') && !spaced.ends_with('E') {
+        } else if ch == '-'
+            && !spaced.ends_with(' ')
+            && !spaced.ends_with('e')
+            && !spaced.ends_with('E')
+        {
             // Negative number as implicit separator (e.g. "10-5" → "10 -5")
             spaced.push(' ');
             spaced.push(ch);
@@ -253,10 +257,14 @@ pub fn d3rs_path_to_gpui(
                 for i in 1..=16 {
                     let t = i as f32 / 16.0;
                     let u = 1.0 - t;
-                    let px_val = u * u * u * cx + 3.0 * u * u * t * ax1
-                        + 3.0 * u * t * t * ax2 + t * t * t * ax;
-                    let py_val = u * u * u * cy + 3.0 * u * u * t * ay1
-                        + 3.0 * u * t * t * ay2 + t * t * t * ay;
+                    let px_val = u * u * u * cx
+                        + 3.0 * u * u * t * ax1
+                        + 3.0 * u * t * t * ax2
+                        + t * t * t * ax;
+                    let py_val = u * u * u * cy
+                        + 3.0 * u * u * t * ay1
+                        + 3.0 * u * t * t * ay2
+                        + t * t * t * ay;
                     builder.line_to(origin + point(px(px_val), px(py_val)));
                 }
                 cx = ax;
@@ -290,7 +298,10 @@ pub fn d3rs_path_to_gpui(
                 let (sa, ea) = if *anticlockwise && end_angle < start_angle {
                     (*start_angle as f32, *end_angle as f32)
                 } else if *anticlockwise {
-                    (*start_angle as f32, *end_angle as f32 - std::f32::consts::TAU)
+                    (
+                        *start_angle as f32,
+                        *end_angle as f32 - std::f32::consts::TAU,
+                    )
                 } else {
                     (*start_angle as f32, *end_angle as f32)
                 };
@@ -332,7 +343,10 @@ pub fn d3rs_path_to_gpui_simple(
 
 fn parse_xy(tokens: &[&str], start: usize) -> Option<(f32, f32)> {
     if start + 1 < tokens.len()
-        && let (Ok(x), Ok(y)) = (tokens[start].parse::<f32>(), tokens[start + 1].parse::<f32>())
+        && let (Ok(x), Ok(y)) = (
+            tokens[start].parse::<f32>(),
+            tokens[start + 1].parse::<f32>(),
+        )
         && x.is_finite()
         && y.is_finite()
     {

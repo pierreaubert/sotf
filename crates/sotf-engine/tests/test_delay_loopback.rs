@@ -179,7 +179,9 @@ fn test_delay_loopback_verification() {
     );
 
     if max_val < 0.001 {
-        println!("SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio).");
+        println!(
+            "SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio)."
+        );
         return;
     }
 

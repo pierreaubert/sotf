@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
-use sotf_audio_player_gpui::app::actions::ToggleSearch;
 use sotf_audio_player_gpui::app::InputMode;
+use sotf_audio_player_gpui::app::actions::ToggleSearch;
 use std::error::Error;
 
 pub struct LibraryPage<'a, 'b> {

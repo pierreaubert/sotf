@@ -161,7 +161,11 @@ fn test_crossover_lowpass_loopback_verification() {
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
 
     if captured_ch0.len() < end_idx {
-        println!("SKIPPING test: Recording too short ({} samples, need {}).", captured_ch0.len(), end_idx);
+        println!(
+            "SKIPPING test: Recording too short ({} samples, need {}).",
+            captured_ch0.len(),
+            end_idx
+        );
         return;
     }
 
@@ -176,7 +180,9 @@ fn test_crossover_lowpass_loopback_verification() {
     println!("Captured RMS: {:.4} ({:.2} dBFS)", rms, db_fs);
 
     if rms < 0.001 {
-        println!("SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio).");
+        println!(
+            "SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio)."
+        );
         return;
     }
 
@@ -326,7 +332,9 @@ fn test_crossover_highpass_loopback_verification() {
     println!("Captured RMS: {:.4} ({:.2} dBFS)", rms, db_fs);
 
     if rms < 0.001 {
-        println!("SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio).");
+        println!(
+            "SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio)."
+        );
         return;
     }
 

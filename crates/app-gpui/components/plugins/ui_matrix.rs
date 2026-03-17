@@ -122,8 +122,7 @@ fn render_preset_buttons(
         .on_change(move |value, _window, cx| {
             let preset_name = value.to_string();
             entity.update(cx, |state, _| {
-                if let Some(plugin) =
-                    state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
+                if let Some(plugin) = state.app.plugin_state.chain.get_plugin_mut(plugin_idx)
                     && let sotf_audio_player::PluginSettings::Matrix {
                         input_channels: in_ch,
                         output_channels: out_ch,

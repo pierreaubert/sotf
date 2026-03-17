@@ -42,7 +42,9 @@ impl Render for TagDebug {
                             .child(Tag::new("tag-success", "Success").variant(TagVariant::Success))
                             .child(Tag::new("tag-warning", "Warning").variant(TagVariant::Warning))
                             .child(Tag::new("tag-error", "Error").variant(TagVariant::Error))
-                            .child(Tag::new("tag-outlined", "Outlined").variant(TagVariant::Outlined)),
+                            .child(
+                                Tag::new("tag-outlined", "Outlined").variant(TagVariant::Outlined),
+                            ),
                     ),
             )
             // Sizes
@@ -73,9 +75,21 @@ impl Render for TagDebug {
                         div()
                             .flex()
                             .gap_3()
-                            .child(Tag::new("tag-rm-1", "FLAC").variant(TagVariant::Primary).removable(true))
-                            .child(Tag::new("tag-rm-2", "Lossless").variant(TagVariant::Success).removable(true))
-                            .child(Tag::new("tag-rm-3", "Hi-Res").variant(TagVariant::Warning).removable(true)),
+                            .child(
+                                Tag::new("tag-rm-1", "FLAC")
+                                    .variant(TagVariant::Primary)
+                                    .removable(true),
+                            )
+                            .child(
+                                Tag::new("tag-rm-2", "Lossless")
+                                    .variant(TagVariant::Success)
+                                    .removable(true),
+                            )
+                            .child(
+                                Tag::new("tag-rm-3", "Hi-Res")
+                                    .variant(TagVariant::Warning)
+                                    .removable(true),
+                            ),
                     ),
             )
     }

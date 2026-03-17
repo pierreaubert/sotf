@@ -22,7 +22,7 @@ impl TestScenario for StudioScreenScenario {
 
         // Navigate to Studio screen
         driver.navigate_to(Screen::Studio);
-        
+
         // Verify we're on Studio screen
         let screen = driver.read_app(|app| app.ui_state.current_screen);
         if screen != Screen::Studio {
@@ -31,10 +31,8 @@ impl TestScenario for StudioScreenScenario {
 
         // Verify Studio screen shows the plugin rack
         // The Studio screen is essentially the Plugin Rack in a different view
-        let has_plugins = driver.read_app(|app| {
-            app.plugin_state.chain.plugins().len()
-        });
-        
+        let has_plugins = driver.read_app(|app| app.plugin_state.chain.plugins().len());
+
         // Log the number of plugins for debugging
         println!("Studio screen loaded with {} plugins", has_plugins);
 
@@ -47,7 +45,7 @@ async fn test_studio_screen_navigation(cx: &mut TestAppContext) {
     let scenario = StudioScreenScenario;
     let runner = E2ERunner::new(scenario);
     let result = runner.run(cx).await;
-    
+
     if let Err(e) = &result {
         println!("Test failed: {}", e);
     }

@@ -1343,11 +1343,11 @@ fn test_freq_logarithmic_scaling() {
 fn test_library_state_set_search_query_clears_previous() {
     use sotf_audio_player_gpui::app::state::library::LibraryState;
     let mut state = LibraryState::new_for_test();
-    
+
     // Set initial query
     state.set_search_query("first query".to_string());
     assert_eq!(state.search_query, "first query");
-    
+
     // Setting new query should replace previous
     state.set_search_query("second query".to_string());
     assert_eq!(state.search_query, "second query");
@@ -1357,10 +1357,10 @@ fn test_library_state_set_search_query_clears_previous() {
 fn test_library_state_set_search_query_empty() {
     use sotf_audio_player_gpui::app::state::library::LibraryState;
     let mut state = LibraryState::new_for_test();
-    
+
     state.set_search_query("test".to_string());
     assert_eq!(state.search_query, "test");
-    
+
     // Setting empty string should clear
     state.set_search_query("".to_string());
     assert_eq!(state.search_query, "");

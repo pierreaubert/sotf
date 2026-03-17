@@ -327,10 +327,8 @@ impl PlayerView {
                         move |_, cx| {
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    let rs =
-                                        &mut state.app.measurement_state.recording_state;
-                                    if let Some(slot) = rs.mic_calibration_paths.get_mut(ch)
-                                    {
+                                    let rs = &mut state.app.measurement_state.recording_state;
+                                    if let Some(slot) = rs.mic_calibration_paths.get_mut(ch) {
                                         *slot = None;
                                     }
                                     if let Some(slot) =
@@ -369,8 +367,7 @@ impl PlayerView {
             .filter_map(|(i, d)| d.map(|data| (i, data)))
             .collect();
         if !cal_entries.is_empty() {
-            container =
-                container.child(Self::render_calibration_graph_multi(&cal_entries, &theme));
+            container = container.child(Self::render_calibration_graph_multi(&cal_entries, &theme));
         }
 
         container
@@ -1323,34 +1320,32 @@ impl PlayerView {
         let view = cx.entity().clone();
         let current_name = current_name.to_string();
 
-        div()
-            .size_full()
-            .child(
-                Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
-                    .placeholder("Name")
-                    .value(current_name)
-                    .size(InputSize::Xs)
-                    .on_change({
-                        let view = view.clone();
-                        move |value, _window, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    if let Some(mapping) = state
-                                        .app
-                                        .measurement_state
-                                        .recording_state
-                                        .playback_config
-                                        .channel_mappings
-                                        .get_mut(channel_idx)
-                                    {
-                                        mapping.group_name = value.to_string();
-                                    }
-                                });
-                                cx.notify();
+        div().size_full().child(
+            Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
+                .placeholder("Name")
+                .value(current_name)
+                .size(InputSize::Xs)
+                .on_change({
+                    let view = view.clone();
+                    move |value, _window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                if let Some(mapping) = state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .playback_config
+                                    .channel_mappings
+                                    .get_mut(channel_idx)
+                                {
+                                    mapping.group_name = value.to_string();
+                                }
                             });
-                        }
-                    }),
-            )
+                            cx.notify();
+                        });
+                    }
+                }),
+        )
     }
 
     /// Render channel group dropdown for a specific channel (playback only)
@@ -1812,11 +1807,7 @@ impl PlayerView {
     }
 
     /// Open file dialog to browse for calibration file for a specific channel
-    fn browse_calibration_file_for_channel(
-        &mut self,
-        channel_idx: usize,
-        cx: &mut Context<Self>,
-    ) {
+    fn browse_calibration_file_for_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         let state_entity = self.state.clone();
 
         cx.spawn(async move |_, cx| {
@@ -1864,8 +1855,7 @@ impl PlayerView {
                     }
 
                     rs.mic_calibration_paths[channel_idx] = Some(path.clone());
-                    rs.mic_calibration_data_per_channel[channel_idx] =
-                        calibration_data.clone();
+                    rs.mic_calibration_data_per_channel[channel_idx] = calibration_data.clone();
 
                     // Sync legacy fields from channel 0
                     if channel_idx == 0 {

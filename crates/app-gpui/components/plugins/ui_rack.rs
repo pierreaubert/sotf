@@ -3,7 +3,7 @@
 use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
-use crate::app::state::plugin::{available_controllers, PluginUiView};
+use crate::app::state::plugin::{PluginUiView, available_controllers};
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::icons::{Icon, IconName};
@@ -17,8 +17,8 @@ use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
-use sotf_audio_player_midi::mapping::MidiOverlay;
 use sotf_audio_player_midi::MidiMappingEngine;
+use sotf_audio_player_midi::mapping::MidiOverlay;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -263,7 +263,7 @@ impl PlayerView {
                     if let Some(start_y) = start_y {
                         let mouse_y: f32 = event.position.y.into();
                         let delta_y = start_y - mouse_y; // Inverted: up = positive (increase)
-                                                         // Scale: 150px drag = full range
+                        // Scale: 150px drag = full range
                         let range = max - min;
                         let value_delta = (delta_y as f64 / 150.0) * range;
                         let new_value = (start_value + value_delta).clamp(min, max);

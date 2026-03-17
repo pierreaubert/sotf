@@ -46,9 +46,7 @@ impl Render for MenuDebug {
                     .border_color(theme.border)
                     .rounded_lg()
                     .p_4()
-                    .child(
-                        Menu::new("menu-demo", items).min_width(px(250.0)),
-                    ),
+                    .child(Menu::new("menu-demo", items).min_width(px(250.0))),
             )
     }
 }

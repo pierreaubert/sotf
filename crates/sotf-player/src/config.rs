@@ -138,8 +138,8 @@ pub fn get_microphone_presets_path() -> Option<PathBuf> {
 }
 
 /// Load microphone presets from disk
-pub fn load_microphone_presets(
-) -> Result<crate::recording_types::MicrophonePresetsConfig, Box<dyn std::error::Error>> {
+pub fn load_microphone_presets()
+-> Result<crate::recording_types::MicrophonePresetsConfig, Box<dyn std::error::Error>> {
     if let Some(path) = get_microphone_presets_path() {
         if path.exists() {
             crate::security::validate_config_read_path(&path)?;

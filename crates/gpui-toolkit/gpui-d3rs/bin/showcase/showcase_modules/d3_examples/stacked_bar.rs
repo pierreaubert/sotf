@@ -14,7 +14,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let (states, ages, matrix) = d3rs::examples::stacked_bar::default_data();
 
     let scheme = ColorScheme::tableau10();
-    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
+    let colors: Vec<Rgba> = (0..scheme.len())
+        .map(|i| scheme.color(i).to_rgba())
+        .collect();
 
     let width = 700.0_f64;
     let height = 450.0_f64;
@@ -136,7 +138,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Source: observablehq.com/@d3/stacked-bar-chart"),
         )
-        .child(div().flex().gap_3().mb_2().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_3()
+                .mb_2()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(width as f32))
@@ -187,7 +196,12 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .justify_end()
                         .pr_1()
-                        .child(div().text_color(rgb(0x888888)).text_xs().child(format!("{:.0}", val)))
+                        .child(
+                            div()
+                                .text_color(rgb(0x888888))
+                                .text_xs()
+                                .child(format!("{:.0}", val)),
+                        )
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {

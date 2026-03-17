@@ -199,16 +199,15 @@ impl InPlacePlugin for FletcherMunsonPlugin {
             )
             .with_group("Levels"),
             Parameter::new_bool("enabled", "Enabled", self.enabled).with_group("Control"),
-            Parameter::new_bool(
-                "auto_gain_enabled",
-                "Auto Gain",
-                self.auto_gain.is_some(),
-            )
-            .with_group("Auto Gain"),
+            Parameter::new_bool("auto_gain_enabled", "Auto Gain", self.auto_gain.is_some())
+                .with_group("Auto Gain"),
             Parameter::new_float(
                 "auto_gain_max_db",
                 "AG Max",
-                self.auto_gain.as_ref().map(|ag| ag.max_gain_db()).unwrap_or(pk(FM, "auto_gain_max_db").default_f32()),
+                self.auto_gain
+                    .as_ref()
+                    .map(|ag| ag.max_gain_db())
+                    .unwrap_or(pk(FM, "auto_gain_max_db").default_f32()),
                 pk(FM, "auto_gain_max_db").min_f64() as f32,
                 pk(FM, "auto_gain_max_db").max_f64() as f32,
             )
@@ -216,7 +215,10 @@ impl InPlacePlugin for FletcherMunsonPlugin {
             Parameter::new_float(
                 "auto_gain_smoothing_ms",
                 "AG Smoothing",
-                self.auto_gain.as_ref().map(|ag| ag.smoothing_ms()).unwrap_or(pk(FM, "auto_gain_smoothing_ms").default_f32()),
+                self.auto_gain
+                    .as_ref()
+                    .map(|ag| ag.smoothing_ms())
+                    .unwrap_or(pk(FM, "auto_gain_smoothing_ms").default_f32()),
                 pk(FM, "auto_gain_smoothing_ms").min_f64() as f32,
                 pk(FM, "auto_gain_smoothing_ms").max_f64() as f32,
             )
@@ -292,14 +294,18 @@ impl InPlacePlugin for FletcherMunsonPlugin {
             let v = value
                 .as_float()
                 .ok_or_else(|| "auto_gain_max_db must be a float".to_string())?;
-            if v.is_finite() && let Some(ag) = &mut self.auto_gain {
+            if v.is_finite()
+                && let Some(ag) = &mut self.auto_gain
+            {
                 ag.set_max_gain_db(v);
             }
         } else if name == "auto_gain_smoothing_ms" {
             let v = value
                 .as_float()
                 .ok_or_else(|| "auto_gain_smoothing_ms must be a float".to_string())?;
-            if v.is_finite() && let Some(ag) = &mut self.auto_gain {
+            if v.is_finite()
+                && let Some(ag) = &mut self.auto_gain
+            {
                 ag.set_smoothing_ms(v);
             }
         } else if name.starts_with("band") && name.len() > 5 {
@@ -353,11 +359,17 @@ impl InPlacePlugin for FletcherMunsonPlugin {
             Some(ParameterValue::Bool(self.auto_gain.is_some()))
         } else if name == "auto_gain_max_db" {
             Some(ParameterValue::Float(
-                self.auto_gain.as_ref().map(|ag| ag.max_gain_db()).unwrap_or(pk(FM, "auto_gain_max_db").default_f32()),
+                self.auto_gain
+                    .as_ref()
+                    .map(|ag| ag.max_gain_db())
+                    .unwrap_or(pk(FM, "auto_gain_max_db").default_f32()),
             ))
         } else if name == "auto_gain_smoothing_ms" {
             Some(ParameterValue::Float(
-                self.auto_gain.as_ref().map(|ag| ag.smoothing_ms()).unwrap_or(pk(FM, "auto_gain_smoothing_ms").default_f32()),
+                self.auto_gain
+                    .as_ref()
+                    .map(|ag| ag.smoothing_ms())
+                    .unwrap_or(pk(FM, "auto_gain_smoothing_ms").default_f32()),
             ))
         } else if name.starts_with("band") && name.len() > 5 {
             let band_idx = name.as_bytes()[4].wrapping_sub(b'1');

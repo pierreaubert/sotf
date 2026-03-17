@@ -65,7 +65,9 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                     }
                     prev = Some((*x, *y));
                 }
-                _ => { prev = None; }
+                _ => {
+                    prev = None;
+                }
             }
         }
     }
@@ -90,7 +92,9 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                     }
                     prev = Some((*x, *y));
                 }
-                _ => { prev = None; }
+                _ => {
+                    prev = None;
+                }
             }
         }
     }
@@ -117,7 +121,11 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
         }
     }
 
-    let visible_count = result.projected_points.iter().filter(|p| p.is_some()).count();
+    let visible_count = result
+        .projected_points
+        .iter()
+        .filter(|p| p.is_some())
+        .count();
 
     div()
         .flex()

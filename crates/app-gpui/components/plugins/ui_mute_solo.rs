@@ -189,11 +189,5 @@ pub fn render_mute_solo_plugin(
         .flex()
         .justify_center()
         .p_3()
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .child(setup_col)
-                .child(center_col),
-        )
+        .child(div().flex().gap_4().child(setup_col).child(center_col))
 }

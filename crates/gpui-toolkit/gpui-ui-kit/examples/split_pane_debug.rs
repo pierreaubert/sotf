@@ -85,10 +85,7 @@ impl Render for SplitPaneDebug {
                                             .child(Text::new("Top pane")),
                                     )
                                     .second(
-                                        div()
-                                            .size_full()
-                                            .p_3()
-                                            .child(Text::new("Bottom pane")),
+                                        div().size_full().p_3().child(Text::new("Bottom pane")),
                                     ),
                             ),
                     ),

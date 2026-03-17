@@ -76,11 +76,7 @@ impl TestScenario for SpinoramaSearchScenario {
         driver.run_until_parked();
         let mode = driver.read_app(|app| app.ui_state.input_mode);
         if mode != InputMode::Normal {
-            return Err(format!(
-                "Should exit search mode, but mode is {:?}",
-                mode
-            )
-            .into());
+            return Err(format!("Should exit search mode, but mode is {:?}", mode).into());
         }
         // Search query should be preserved after Enter
         let query = driver.read_app(|app| {
@@ -111,11 +107,7 @@ impl TestScenario for SpinoramaSearchScenario {
         driver.run_until_parked();
         let mode = driver.read_app(|app| app.ui_state.input_mode);
         if mode != InputMode::Normal {
-            return Err(format!(
-                "Escape should exit search mode, but mode is {:?}",
-                mode
-            )
-            .into());
+            return Err(format!("Escape should exit search mode, but mode is {:?}", mode).into());
         }
 
         Ok(())
@@ -158,7 +150,8 @@ impl TestScenario for SpinoramaSearchKeystrokeScenario {
 
         // Enter search mode
         driver.update_app(|app, _| {
-            app.ui_state.input_mode = sotf_audio_player_gpui::app::InputMode::SpinoramaSpeakerSearch;
+            app.ui_state.input_mode =
+                sotf_audio_player_gpui::app::InputMode::SpinoramaSpeakerSearch;
             app.measurement_state
                 .spinorama_eq_state
                 .speaker_search
@@ -237,7 +230,8 @@ impl TestScenario for SpinoramaSearchInputReceivesKeysScenario {
         // Navigate to Spinorama screen and enter search mode
         driver.navigate_to(Screen::Spinorama);
         driver.update_app(|app, _| {
-            app.ui_state.input_mode = sotf_audio_player_gpui::app::InputMode::SpinoramaSpeakerSearch;
+            app.ui_state.input_mode =
+                sotf_audio_player_gpui::app::InputMode::SpinoramaSpeakerSearch;
             app.measurement_state
                 .spinorama_eq_state
                 .speaker_search

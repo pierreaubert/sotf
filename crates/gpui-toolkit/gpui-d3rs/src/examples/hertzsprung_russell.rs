@@ -32,7 +32,9 @@ pub fn load_csv(csv_str: &str) -> Vec<(f64, f64)> {
         .skip(1)
         .filter_map(|line| {
             let cols: Vec<&str> = line.split(',').collect();
-            if cols.len() < 2 { return None; }
+            if cols.len() < 2 {
+                return None;
+            }
             let mag: f64 = cols[0].parse().ok()?;
             let color: f64 = cols[1].parse().ok()?;
             Some((mag, color))
@@ -90,7 +92,9 @@ pub fn compute(data: &[(f64, f64)]) -> HRResult {
                 color_index: color,
                 x: x_scale.scale(color),
                 y: y_scale.scale(mag),
-                r, g, b,
+                r,
+                g,
+                b,
             }
         })
         .collect();

@@ -29,14 +29,14 @@
 //! }
 //! ```
 
+pub mod assertions;
 pub mod driver;
+pub mod factories;
 pub mod pages;
 #[allow(clippy::arc_with_non_send_sync)]
 pub mod runner;
 pub mod scenarios;
 pub mod simulator;
-pub mod assertions;
-pub mod factories;
 
 /// Install a panic hook that suppresses panics from the `async-io` background thread
 /// and forces a clean exit after all tests complete.

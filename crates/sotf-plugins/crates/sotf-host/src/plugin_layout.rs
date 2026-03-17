@@ -104,16 +104,11 @@ pub enum ControlType {
     /// On/off or labeled toggle switch.
     Toggle,
     /// Mutually exclusive button group.
-    ButtonSet {
-        labels: &'static [&'static str],
-    },
+    ButtonSet { labels: &'static [&'static str] },
     /// Dropdown/choice selector.
     Selector,
     /// Read-only bar meter (e.g., gain reduction).
-    BarMeter {
-        min_db: f64,
-        max_db: f64,
-    },
+    BarMeter { min_db: f64, max_db: f64 },
     /// Read-only text label displaying a value.
     Label,
     /// File picker with load button + filename display.

@@ -5,7 +5,9 @@ use crate::theme::ThemeId;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSet, ButtonSetOption, ButtonSize, ButtonVariant, Toggle, ToggleStyle};
+use gpui_ui_kit::{
+    Button, ButtonSet, ButtonSetOption, ButtonSize, ButtonVariant, Toggle, ToggleStyle,
+};
 
 impl PlayerView {
     /// Render theme settings content

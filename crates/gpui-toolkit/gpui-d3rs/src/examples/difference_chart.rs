@@ -94,9 +94,7 @@ pub fn compute(data: &[DiffChartRow]) -> DiffChartResult {
     // Step curve helper: for curveStep, at each data point we draw a horizontal
     // segment to the midpoint between previous and current x, then a vertical
     // segment to the new y. This matches D3's curveStep exactly.
-    let step_x = |i: usize| -> f64 {
-        x_scale.scale(i as f64)
-    };
+    let step_x = |i: usize| -> f64 { x_scale.scale(i as f64) };
 
     // Build step-curve forward path for a series
     let build_step_forward = |values: &[f64]| -> Vec<(f64, f64)> {
@@ -131,8 +129,11 @@ pub fn compute(data: &[DiffChartRow]) -> DiffChartResult {
     // Shows where SF (value0) is warmer than NY (value1)
     let mut above_builder = PathBuilder::new();
     for (i, &(x, y)) in v0_step.iter().enumerate() {
-        if i == 0 { above_builder = above_builder.move_to(x, y); }
-        else { above_builder = above_builder.line_to(x, y); }
+        if i == 0 {
+            above_builder = above_builder.move_to(x, y);
+        } else {
+            above_builder = above_builder.line_to(x, y);
+        }
     }
     for &(x, y) in min_step.iter().rev() {
         above_builder = above_builder.line_to(x, y);
@@ -143,8 +144,11 @@ pub fn compute(data: &[DiffChartRow]) -> DiffChartResult {
     // Shows where NY (value1) is warmer than SF (value0)
     let mut below_builder = PathBuilder::new();
     for (i, &(x, y)) in v1_step.iter().enumerate() {
-        if i == 0 { below_builder = below_builder.move_to(x, y); }
-        else { below_builder = below_builder.line_to(x, y); }
+        if i == 0 {
+            below_builder = below_builder.move_to(x, y);
+        } else {
+            below_builder = below_builder.line_to(x, y);
+        }
     }
     for &(x, y) in min_step.iter().rev() {
         below_builder = below_builder.line_to(x, y);
@@ -154,15 +158,21 @@ pub fn compute(data: &[DiffChartRow]) -> DiffChartResult {
     // Line path for value0 (SF reference line) — step curve
     let mut line0 = PathBuilder::new();
     for (i, &(x, y)) in v0_step.iter().enumerate() {
-        if i == 0 { line0 = line0.move_to(x, y); }
-        else { line0 = line0.line_to(x, y); }
+        if i == 0 {
+            line0 = line0.move_to(x, y);
+        } else {
+            line0 = line0.line_to(x, y);
+        }
     }
 
     // Line path for value1 (NY) — step curve
     let mut line1 = PathBuilder::new();
     for (i, &(x, y)) in v1_step.iter().enumerate() {
-        if i == 0 { line1 = line1.move_to(x, y); }
-        else { line1 = line1.line_to(x, y); }
+        if i == 0 {
+            line1 = line1.move_to(x, y);
+        } else {
+            line1 = line1.line_to(x, y);
+        }
     }
 
     DiffChartResult {

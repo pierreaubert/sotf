@@ -19,7 +19,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let matrix: Vec<Vec<f64>> = rows.iter().map(|r| r.values.clone()).collect();
 
     let scheme = ColorScheme::tableau10();
-    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
+    let colors: Vec<Rgba> = (0..scheme.len())
+        .map(|i| scheme.color(i).to_rgba())
+        .collect();
 
     let width = 700.0_f64;
     let height = 450.0_f64;
@@ -51,9 +53,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let x_scale = LinearScale::new()
         .domain(0.0, (n - 1) as f64)
         .range(0.0, plot_w);
-    let y_scale = LinearScale::new()
-        .domain(y_min, y_max)
-        .range(plot_h, 0.0);
+    let y_scale = LinearScale::new().domain(y_min, y_max).range(plot_h, 0.0);
 
     // Build area paths using D3PathBuilder: top line forward + bottom line reversed + close
     let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
@@ -93,7 +93,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .collect();
 
     // X-axis ticks (every 4 time steps to avoid label overlap)
-    let x_step = if n > 30 { 5 } else if n > 15 { 4 } else { 2 };
+    let x_step = if n > 30 {
+        5
+    } else if n > 15 {
+        4
+    } else {
+        2
+    };
     let x_ticks: Vec<f64> = (0..n).step_by(x_step).map(|v| v as f64).collect();
 
     // Y-axis ticks: 1000-unit grid lines spanning the full y range
@@ -129,7 +135,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Source: observablehq.com/@d3/streamgraph"),
         )
-        .child(div().flex().gap_4().mb_2().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .mb_2()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(width as f32))
@@ -169,16 +182,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex()
                         .justify_end()
                         .pr_1()
-                        .child(
-                            div()
-                                .text_color(rgb(0x888888))
-                                .text_xs()
-                                .child(if val.abs() >= 1000.0 {
-                                    format!("{:.0}k", val / 1000.0)
-                                } else {
-                                    format!("{:.0}", val)
-                                }),
-                        )
+                        .child(div().text_color(rgb(0x888888)).text_xs().child(
+                            if val.abs() >= 1000.0 {
+                                format!("{:.0}k", val / 1000.0)
+                            } else {
+                                format!("{:.0}", val)
+                            },
+                        ))
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {

@@ -41,14 +41,29 @@ pub fn default_hierarchy() -> Rc<RefCell<HierarchyNode<PackNode>>> {
     });
 
     let categories = [
-        ("analytics", vec![("cluster", 3938.0), ("graph", 5714.0), ("opt", 2105.0)]),
+        (
+            "analytics",
+            vec![("cluster", 3938.0), ("graph", 5714.0), ("opt", 2105.0)],
+        ),
         ("animate", vec![("easing", 1700.0), ("tween", 6006.0)]),
-        ("data", vec![("field", 1082.0), ("schema", 1616.0), ("source", 1255.0)]),
+        (
+            "data",
+            vec![("field", 1082.0), ("schema", 1616.0), ("source", 1255.0)],
+        ),
         ("display", vec![("sprite", 3322.0), ("text", 2220.0)]),
         ("flex", vec![("vis", 4116.0)]),
-        ("physics", vec![("drag", 1200.0), ("spring", 2314.0), ("nbody", 3416.0)]),
-        ("scale", vec![("linear", 1316.0), ("log", 3151.0), ("ordinal", 1420.0)]),
-        ("util", vec![("arrays", 8258.0), ("dates", 1727.0), ("maths", 3085.0)]),
+        (
+            "physics",
+            vec![("drag", 1200.0), ("spring", 2314.0), ("nbody", 3416.0)],
+        ),
+        (
+            "scale",
+            vec![("linear", 1316.0), ("log", 3151.0), ("ordinal", 1420.0)],
+        ),
+        (
+            "util",
+            vec![("arrays", 8258.0), ("dates", 1727.0), ("maths", 3085.0)],
+        ),
     ];
 
     let mut children = Vec::new();
@@ -99,7 +114,14 @@ pub fn compute() -> PackResult {
 
     // Collect all circles via recursive packing
     let mut circles = Vec::new();
-    pack_node(&root, width / 2.0, height / 2.0, width / 2.0 - 10.0, padding, &mut circles);
+    pack_node(
+        &root,
+        width / 2.0,
+        height / 2.0,
+        width / 2.0 - 10.0,
+        padding,
+        &mut circles,
+    );
 
     // Generate circle paths (16-gon approximation)
     let n_sides = 32;
@@ -152,7 +174,13 @@ fn pack_node(
                     .collect()
             })
             .unwrap_or_default();
-        (is_leaf, n.data.name.clone(), n.depth, n.value.unwrap_or(0.0), child_data)
+        (
+            is_leaf,
+            n.data.name.clone(),
+            n.depth,
+            n.value.unwrap_or(0.0),
+            child_data,
+        )
     };
 
     result.push(PackCircle {
@@ -202,21 +230,24 @@ fn pack_node(
                 let ring_r = ring as f64 * (child_r * 0.3 + 2.0);
                 let n_tries = if ring == 0 { 1 } else { (ring * 6).max(8) };
                 for t in 0..n_tries {
-                    let angle = t as f64 / n_tries as f64 * std::f64::consts::TAU
-                        + i as f64 * 0.5; // offset per child
+                    let angle = t as f64 / n_tries as f64 * std::f64::consts::TAU + i as f64 * 0.5; // offset per child
 
                     let px = cx + ring_r * angle.cos();
                     let py = cy + ring_r * angle.sin();
 
                     // Check within parent
                     let d_center = ((px - cx).powi(2) + (py - cy).powi(2)).sqrt();
-                    if d_center + child_r > available { continue; }
+                    if d_center + child_r > available {
+                        continue;
+                    }
 
                     // Check no overlap with placed circles
                     let overlaps = placed.iter().any(|&(ox, oy, or)| {
                         ((px - ox).powi(2) + (py - oy).powi(2)).sqrt() < or + child_r + padding
                     });
-                    if overlaps { continue; }
+                    if overlaps {
+                        continue;
+                    }
 
                     best = (px, py);
                     found = true;
@@ -233,6 +264,13 @@ fn pack_node(
         };
 
         placed.push((child_cx, child_cy, child_r));
-        pack_node(child, child_cx, child_cy, child_r.max(3.0), padding * 0.5, result);
+        pack_node(
+            child,
+            child_cx,
+            child_cy,
+            child_r.max(3.0),
+            padding * 0.5,
+            result,
+        );
     }
 }

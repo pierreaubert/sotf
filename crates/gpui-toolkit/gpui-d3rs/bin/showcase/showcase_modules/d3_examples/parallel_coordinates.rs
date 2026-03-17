@@ -33,7 +33,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         "weight (lb)",
         "0-60 mph (s)",
     ];
-    let axis_labels = ["MPG", "Cylinders", "Displacement", "Power (HP)", "Weight (lb)", "0-60 mph"];
+    let axis_labels = [
+        "MPG",
+        "Cylinders",
+        "Displacement",
+        "Power (HP)",
+        "Weight (lb)",
+        "0-60 mph",
+    ];
     let num_axes = axis_keys.len();
     let axis_spacing = (width - margin_left - margin_right) / (num_axes - 1) as f64;
 
@@ -46,7 +53,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         let mut valid = true;
         let mut vals = Vec::with_capacity(num_axes);
         for key in &axis_keys {
-            match row.get(&key.to_string()).and_then(|s| s.parse::<f64>().ok()) {
+            match row
+                .get(&key.to_string())
+                .and_then(|s| s.parse::<f64>().ok())
+            {
                 Some(v) => vals.push(v),
                 None => {
                     valid = false;
@@ -58,16 +68,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             for (i, v) in vals.iter().enumerate() {
                 columns[i].push(*v);
             }
-            car_names.push(
-                row.get("name")
-                    .cloned()
-                    .unwrap_or_default(),
-            );
-            car_years.push(
-                row.get("year")
-                    .cloned()
-                    .unwrap_or_default(),
-            );
+            car_names.push(row.get("name").cloned().unwrap_or_default());
+            car_years.push(row.get("year").cloned().unwrap_or_default());
         }
     }
 
@@ -197,29 +199,30 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .font_weight(FontWeight::BOLD)
                 .child("Parallel Coordinates"),
         )
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(0x666666))
-                .child(format!(
-                    "Source: observablehq.com/@d3/parallel-coordinates — {} cars from cars.csv",
-                    n_cars
-                )),
-        )
+        .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+            "Source: observablehq.com/@d3/parallel-coordinates — {} cars from cars.csv",
+            n_cars
+        )))
         .child(
             // Legend by cylinder count
             div().flex().gap_4().mb_2().children(
-                [(3, "3 cyl"), (4, "4 cyl"), (5, "5 cyl"), (6, "6 cyl"), (8, "8 cyl")]
-                    .iter()
-                    .enumerate()
-                    .map(|(ci, (_cyl, label))| {
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child(div().size_3().bg(scheme.color(ci).to_rgba()))
-                            .child(div().text_xs().child(*label))
-                    }),
+                [
+                    (3, "3 cyl"),
+                    (4, "4 cyl"),
+                    (5, "5 cyl"),
+                    (6, "6 cyl"),
+                    (8, "8 cyl"),
+                ]
+                .iter()
+                .enumerate()
+                .map(|(ci, (_cyl, label))| {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(div().size_3().bg(scheme.color(ci).to_rgba()))
+                        .child(div().text_xs().child(*label))
+                }),
             ),
         )
         .child(
@@ -237,9 +240,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             d3_paths
                                 .iter()
                                 .map(|p| {
-                                    super::path_utils::d3rs_path_to_gpui_simple(
-                                        p, bounds, 0.0, 0.0,
-                                    )
+                                    super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)
                                 })
                                 .collect::<Vec<_>>()
                         },
@@ -299,7 +300,12 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .w(px(28.0))
                         .flex()
                         .justify_end()
-                        .child(div().text_color(rgb(0xaaaaaa)).text_xs().child(label.clone()))
+                        .child(
+                            div()
+                                .text_color(rgb(0xaaaaaa))
+                                .text_xs()
+                                .child(label.clone()),
+                        )
                 })),
         )
 }

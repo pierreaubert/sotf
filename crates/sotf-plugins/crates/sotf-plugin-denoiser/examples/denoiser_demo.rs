@@ -133,20 +133,21 @@ fn main() {
 
     // Get denoiser data for monitoring
     if let Some(data) = plugin.get_data()
-        && let Some(denoiser_data) = data.downcast_ref::<DenoiserData>() {
-            println!("Denoiser Monitoring Data:");
-            println!(
-                "  Average reduction: {:.1} dB",
-                denoiser_data.avg_reduction_db
-            );
-            println!("  Learning active: {}", denoiser_data.learning_active);
-            println!(
-                "  Noise floor bands: {} (first 5: {:?})",
-                denoiser_data.noise_floor_db.len(),
-                &denoiser_data.noise_floor_db[..5.min(denoiser_data.noise_floor_db.len())]
-            );
-            println!();
-        }
+        && let Some(denoiser_data) = data.downcast_ref::<DenoiserData>()
+    {
+        println!("Denoiser Monitoring Data:");
+        println!(
+            "  Average reduction: {:.1} dB",
+            denoiser_data.avg_reduction_db
+        );
+        println!("  Learning active: {}", denoiser_data.learning_active);
+        println!(
+            "  Noise floor bands: {} (first 5: {:?})",
+            denoiser_data.noise_floor_db.len(),
+            &denoiser_data.noise_floor_db[..5.min(denoiser_data.noise_floor_db.len())]
+        );
+        println!();
+    }
 
     // Demonstrate parameter adjustment
     println!("Testing parameter changes:");

@@ -34,8 +34,7 @@ fn main() {
     use math_audio_bem::core::assembly::tbem::build_tbem_system_scaled;
     use math_audio_bem::core::incident::IncidentField;
     use math_audio_bem::core::mesh::generators::generate_icosphere_mesh;
-    
-    
+
     use math_audio_bem::core::solver::direct::lu_solve;
     use math_audio_bem::core::solver::{CgsConfig, solve_with_ilu};
     use math_audio_bem::core::types::{BoundaryCondition, PhysicsParams};

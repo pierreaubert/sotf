@@ -83,7 +83,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .filter(|v| *v >= result.y_domain[0] - 0.1 && *v <= result.y_domain[1] + 0.1)
         .collect();
 
-    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
+    let colors: Vec<Rgba> = (0..scheme.len())
+        .map(|i| scheme.color(i).to_rgba())
+        .collect();
     div()
         .flex()
         .flex_col()
@@ -103,7 +105,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Source: observablehq.com/@d3/line-chart"),
         )
-        .child(div().flex().gap_3().mb_3().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_3()
+                .mb_3()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(chart_w as f32))
@@ -250,10 +259,7 @@ fn points_to_ribbon_d3(points: &[D3Point], thickness: f64) -> d3rs::shape::path:
         let (dx, dy) = if i == 0 {
             (points[1].x - points[0].x, points[1].y - points[0].y)
         } else if i == points.len() - 1 {
-            (
-                points[i].x - points[i - 1].x,
-                points[i].y - points[i - 1].y,
-            )
+            (points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
         } else {
             (
                 points[i + 1].x - points[i - 1].x,

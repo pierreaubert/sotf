@@ -115,7 +115,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                     result.links.len()
                 )),
         )
-        .child(div().flex().gap_2().mb_2().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .mb_2()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(width as f32))
@@ -155,12 +162,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                     } else {
                         d = d.left(px(lx as f32));
                     }
-                    d.child(
-                        div()
-                            .text_size(px(9.0))
-                            .line_height(px(10.0))
-                            .child(name),
-                    )
+                    d.child(div().text_size(px(9.0)).line_height(px(10.0)).child(name))
                 })),
         )
 }

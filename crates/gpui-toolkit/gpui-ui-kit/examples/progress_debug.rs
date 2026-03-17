@@ -34,10 +34,26 @@ impl Render for ProgressDebug {
                     .flex_col()
                     .gap_3()
                     .child(Text::new("Variants").weight(TextWeight::Bold))
-                    .child(Progress::new(0.6).variant(ProgressVariant::Default).show_label(true))
-                    .child(Progress::new(0.8).variant(ProgressVariant::Success).show_label(true))
-                    .child(Progress::new(0.4).variant(ProgressVariant::Warning).show_label(true))
-                    .child(Progress::new(0.9).variant(ProgressVariant::Error).show_label(true)),
+                    .child(
+                        Progress::new(0.6)
+                            .variant(ProgressVariant::Default)
+                            .show_label(true),
+                    )
+                    .child(
+                        Progress::new(0.8)
+                            .variant(ProgressVariant::Success)
+                            .show_label(true),
+                    )
+                    .child(
+                        Progress::new(0.4)
+                            .variant(ProgressVariant::Warning)
+                            .show_label(true),
+                    )
+                    .child(
+                        Progress::new(0.9)
+                            .variant(ProgressVariant::Error)
+                            .show_label(true),
+                    ),
             )
             // Sizes
             .child(
@@ -72,9 +88,21 @@ impl Render for ProgressDebug {
                             .flex()
                             .gap_4()
                             .child(CircularProgress::new(0.25).show_label(true))
-                            .child(CircularProgress::new(0.5).variant(ProgressVariant::Success).show_label(true))
-                            .child(CircularProgress::new(0.75).variant(ProgressVariant::Warning).show_label(true))
-                            .child(CircularProgress::new(1.0).variant(ProgressVariant::Error).show_label(true)),
+                            .child(
+                                CircularProgress::new(0.5)
+                                    .variant(ProgressVariant::Success)
+                                    .show_label(true),
+                            )
+                            .child(
+                                CircularProgress::new(0.75)
+                                    .variant(ProgressVariant::Warning)
+                                    .show_label(true),
+                            )
+                            .child(
+                                CircularProgress::new(1.0)
+                                    .variant(ProgressVariant::Error)
+                                    .show_label(true),
+                            ),
                     ),
             )
     }

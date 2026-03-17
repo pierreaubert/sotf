@@ -127,12 +127,7 @@ fn section_header(title: &str) -> Div {
         .child(title.to_string())
 }
 
-fn nav_item(
-    title: &str,
-    desc: &str,
-    section: DemoSection,
-    cx: &mut Context<ShowcaseApp>,
-) -> Div {
+fn nav_item(title: &str, desc: &str, section: DemoSection, cx: &mut Context<ShowcaseApp>) -> Div {
     let title_str = title.to_string();
     let desc_str = desc.to_string();
     // Wrap in a plain Div so the return type stays Div

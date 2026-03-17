@@ -73,7 +73,11 @@ pub fn compute(monthly_data: &[(String, Vec<f64>)]) -> RidgelineResult {
         .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
     // Guard against degenerate domain (all values identical)
-    let x_max = if all_max > all_min { all_max } else { all_min + 1.0 };
+    let x_max = if all_max > all_min {
+        all_max
+    } else {
+        all_min + 1.0
+    };
     let x_scale = LinearScale::new()
         .domain(all_min, x_max)
         .range(margin_left, width - margin_right);

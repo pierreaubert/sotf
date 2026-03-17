@@ -421,7 +421,10 @@ fn test_decoder_play_flushes_previous_source() {
         }
     }
 
-    assert!(has_flush, "Should receive flush message when switching files with Play");
+    assert!(
+        has_flush,
+        "Should receive flush message when switching files with Play"
+    );
 }
 
 #[test]
@@ -440,10 +443,7 @@ fn test_decoder_play_at_flushes_previous_source() {
 
     let temp_file2 = create_test_wav(2.0, 48000);
     decoder
-        .send_command(DecoderCommand::PlayAt(
-            temp_file2.path().to_path_buf(),
-            0.5,
-        ))
+        .send_command(DecoderCommand::PlayAt(temp_file2.path().to_path_buf(), 0.5))
         .unwrap();
 
     let timeout = Duration::from_secs(2);

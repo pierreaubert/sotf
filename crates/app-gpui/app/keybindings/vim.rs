@@ -62,7 +62,11 @@ pub(super) fn vim_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
         // Level meter controls - letter keys need PlayerView
         KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
-        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, Some("PlayerView")),
+        KeyBinding::new(
+            "shift-tab",
+            actions::SelectPrevMeterGroup,
+            Some("PlayerView"),
+        ),
         KeyBinding::new("m", actions::ToggleMeterMute, Some("PlayerView")),
         KeyBinding::new("M", actions::ToggleMeterSolo, Some("PlayerView")),
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),

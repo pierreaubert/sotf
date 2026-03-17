@@ -797,10 +797,11 @@ impl AudioDaemon {
                 #[cfg(target_os = "macos")]
                 {
                     if key_manager.is_enabled()
-                        && let Some(mut buffer) = self.get_shared_buffer() {
-                            buffer.set_key_fingerprint(*key_manager.fingerprint());
-                            buffer.set_config_changed();
-                        }
+                        && let Some(mut buffer) = self.get_shared_buffer()
+                    {
+                        buffer.set_key_fingerprint(*key_manager.fingerprint());
+                        buffer.set_config_changed();
+                    }
                 }
 
                 Response::ok(serde_json::json!({

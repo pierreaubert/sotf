@@ -507,7 +507,8 @@ impl PlayerView {
             )
             .child(autoeq_form)
             .when(headphone_eq.requires_custom_target_path(), |vstack| {
-                let custom_target_path = headphone_eq.custom_target_path.clone().unwrap_or_default();
+                let custom_target_path =
+                    headphone_eq.custom_target_path.clone().unwrap_or_default();
                 let path_text = if custom_target_path.is_empty() {
                     "No target curve selected".to_string()
                 } else {
@@ -545,11 +546,13 @@ impl PlayerView {
                                                 .rounded_md()
                                                 .bg(theme.background_secondary)
                                                 .text_sm()
-                                                .text_color(if headphone_eq.has_custom_target_path() {
-                                                    theme.text_primary
-                                                } else {
-                                                    theme.text_muted
-                                                })
+                                                .text_color(
+                                                    if headphone_eq.has_custom_target_path() {
+                                                        theme.text_primary
+                                                    } else {
+                                                        theme.text_muted
+                                                    },
+                                                )
                                                 .child(path_text),
                                         )
                                         .child(

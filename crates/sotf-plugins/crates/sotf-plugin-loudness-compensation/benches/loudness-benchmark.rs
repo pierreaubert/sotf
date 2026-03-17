@@ -3,9 +3,9 @@
 // ============================================================================
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use std::hint::black_box;
 use sotf_host::{InPlacePlugin, ProcessContext};
 use sotf_plugin_loudness_compensation::LoudnessCompensationPlugin;
+use std::hint::black_box;
 use std::time::Duration;
 
 fn benchmark_loudness_plugin(c: &mut Criterion) {

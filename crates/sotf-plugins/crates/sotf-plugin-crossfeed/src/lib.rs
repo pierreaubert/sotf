@@ -785,7 +785,9 @@ impl InPlacePlugin for CrossfeedPlugin {
             "autogain_enabled" => Some(ParameterValue::Bool(self.params.autogain_enabled)),
             "autogain_target_lufs" => Some(ParameterValue::Float(self.params.autogain_target_lufs)),
             "autogain_max_gain_db" => Some(ParameterValue::Float(self.params.autogain_max_gain_db)),
-            "autogain_smoothing_ms" => Some(ParameterValue::Float(self.params.autogain_smoothing_ms)),
+            "autogain_smoothing_ms" => {
+                Some(ParameterValue::Float(self.params.autogain_smoothing_ms))
+            }
             _ => None,
         }
     }

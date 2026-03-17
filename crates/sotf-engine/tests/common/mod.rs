@@ -30,9 +30,10 @@ static VIRTUAL_DEVICE: OnceLock<Option<String>> = OnceLock::new();
 pub fn find_virtual_device() -> Option<String> {
     // Allow explicit override via environment variable
     if let Ok(device) = std::env::var("AEQ_E2E_DEVICE")
-        && !device.is_empty() {
-            return Some(device);
-        }
+        && !device.is_empty()
+    {
+        return Some(device);
+    }
 
     use cpal::traits::{DeviceTrait, HostTrait};
 

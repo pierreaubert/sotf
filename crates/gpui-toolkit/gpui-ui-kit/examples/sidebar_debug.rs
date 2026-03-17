@@ -46,9 +46,9 @@ impl Render for SidebarDebug {
                                     .side(SidebarSide::Left)
                                     .width(px(180.0))
                                     .header(
-                                        div()
-                                            .p_2()
-                                            .child(Text::new("Navigation").weight(TextWeight::Bold)),
+                                        div().p_2().child(
+                                            Text::new("Navigation").weight(TextWeight::Bold),
+                                        ),
                                     )
                                     .content(
                                         div()
@@ -61,12 +61,7 @@ impl Render for SidebarDebug {
                                             .child(Text::new("Settings")),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .p_4()
-                                    .child(Text::new("Main content area")),
-                            ),
+                            .child(div().flex_1().p_4().child(Text::new("Main content area"))),
                     ),
             )
             // Right sidebar
@@ -84,12 +79,7 @@ impl Render for SidebarDebug {
                             .border_color(theme.border)
                             .rounded_lg()
                             .overflow_hidden()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .p_4()
-                                    .child(Text::new("Main content area")),
-                            )
+                            .child(div().flex_1().p_4().child(Text::new("Main content area")))
                             .child(
                                 Sidebar::new("sidebar-right")
                                     .side(SidebarSide::Right)

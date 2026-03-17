@@ -201,11 +201,7 @@ impl Tag {
         }
 
         // Label
-        tag = tag.child(
-            div()
-                .font_weight(FontWeight::MEDIUM)
-                .child(self.label),
-        );
+        tag = tag.child(div().font_weight(FontWeight::MEDIUM).child(self.label));
 
         // Remove button
         if self.removable {

@@ -124,7 +124,10 @@ fn main() {
                     mic_calibration_map.insert(ch, path.to_string());
                 }
                 Err(_) => {
-                    eprintln!("Error: invalid channel number in --mic-calibration: {}", entry);
+                    eprintln!(
+                        "Error: invalid channel number in --mic-calibration: {}",
+                        entry
+                    );
                     std::process::exit(1);
                 }
             }
@@ -485,12 +488,12 @@ pub fn record_signal(
             &prepared_signal, // Use the prepared mono signal for analysis
             sample_rate,
             &csv_path,
-            send_ch,                // Output channel
-            record_ch,              // Input channel
-            device.as_deref(),      // Optional output device name
-            device.as_deref(),      // Optional input device name
-            effective_mic_comp,     // Per-channel or global microphone compensation
-            None,                   // Optional sweep range
+            send_ch,            // Output channel
+            record_ch,          // Input channel
+            device.as_deref(),  // Optional output device name
+            device.as_deref(),  // Optional input device name
+            effective_mic_comp, // Per-channel or global microphone compensation
+            None,               // Optional sweep range
         )?;
 
         println!("  ✓ Recording complete");

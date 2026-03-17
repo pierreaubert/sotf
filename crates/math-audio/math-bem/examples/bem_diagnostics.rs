@@ -10,14 +10,10 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    
-    
-    
     use math_audio_bem::core::mesh::generators::generate_sphere_mesh;
-    
+
     use math_audio_bem::core::types::PhysicsParams;
-    
-    
+
     use std::f64::consts::PI;
 
     println!("=== BEM Diagnostics: Step-by-Step Investigation ===\n");
@@ -65,7 +61,6 @@ fn investigate_incident_field(
 ) {
     use math_audio_bem::core::incident::IncidentField;
     use ndarray::Array2;
-    
 
     let incident = IncidentField::plane_wave_z();
 
@@ -398,7 +393,6 @@ fn investigate_solution(
     use math_audio_bem::core::types::BoundaryCondition;
     use ndarray::Array2;
     use num_complex::Complex64;
-    
 
     // Prepare elements with velocity BC
     let mut elements = mesh.elements.clone();

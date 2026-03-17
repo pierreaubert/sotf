@@ -44,12 +44,10 @@ fn test_tree_view_expanded_set() {
     let tree = TreeView::new(
         "tree-expanded",
         vec![
-            TreeNode::new("src", "src/").children(vec![
-                TreeNode::new("main", "main.rs").leaf(true),
-            ]),
-            TreeNode::new("tests", "tests/").children(vec![
-                TreeNode::new("test1", "test_main.rs").leaf(true),
-            ]),
+            TreeNode::new("src", "src/")
+                .children(vec![TreeNode::new("main", "main.rs").leaf(true)]),
+            TreeNode::new("tests", "tests/")
+                .children(vec![TreeNode::new("test1", "test_main.rs").leaf(true)]),
         ],
     )
     .expanded(expanded);
@@ -58,22 +56,20 @@ fn test_tree_view_expanded_set() {
 
 #[test]
 fn test_tree_view_selected() {
-    let tree = TreeView::new("tree-sel", vec![TreeNode::new("item", "Item")])
-        .selected("item");
+    let tree = TreeView::new("tree-sel", vec![TreeNode::new("item", "Item")]).selected("item");
     drop(tree);
 }
 
 #[test]
 fn test_tree_view_indent_size() {
-    let tree = TreeView::new("tree-indent", vec![TreeNode::new("a", "A")])
-        .indent_size(gpui::px(24.0));
+    let tree =
+        TreeView::new("tree-indent", vec![TreeNode::new("a", "A")]).indent_size(gpui::px(24.0));
     drop(tree);
 }
 
 #[test]
 fn test_tree_view_show_guides() {
-    let tree = TreeView::new("tree-guides", vec![TreeNode::new("a", "A")])
-        .show_guides(false);
+    let tree = TreeView::new("tree-guides", vec![TreeNode::new("a", "A")]).show_guides(false);
     drop(tree);
 }
 

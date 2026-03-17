@@ -8,8 +8,8 @@
 //! Each Voronoi edge is the perpendicular bisector of a Delaunay edge — we draw
 //! the circumcenter-to-circumcenter connections for adjacent triangles.
 
-use crate::geo::projection::Orthographic;
 use crate::geo::Projection;
+use crate::geo::projection::Orthographic;
 use crate::shape::path::{Path, PathBuilder};
 
 #[derive(Debug)]
@@ -29,7 +29,9 @@ pub fn load_csv(csv_str: &str) -> Vec<(f64, f64)> {
         .lines()
         .filter_map(|line| {
             let cols: Vec<&str> = line.split(',').collect();
-            if cols.len() < 2 { return None; }
+            if cols.len() < 2 {
+                return None;
+            }
             let lon: f64 = cols[0].trim().parse().ok()?;
             let lat: f64 = cols[1].trim().parse().ok()?;
             if !(-180.0..=180.0).contains(&lon) || !(-90.0..=90.0).contains(&lat) {
@@ -47,7 +49,11 @@ pub fn compute(coords: &[(f64, f64)], rotation: (f64, f64)) -> VoronoiAirportsRe
 }
 
 /// Compute with explicit zoom factor.
-pub fn compute_with_zoom(coords: &[(f64, f64)], rotation: (f64, f64), zoom: f64) -> VoronoiAirportsResult {
+pub fn compute_with_zoom(
+    coords: &[(f64, f64)],
+    rotation: (f64, f64),
+    zoom: f64,
+) -> VoronoiAirportsResult {
     use crate::delaunay::Delaunay;
     use std::f64::consts::PI;
 
@@ -93,7 +99,9 @@ pub fn compute_with_zoom(coords: &[(f64, f64)], rotation: (f64, f64), zoom: f64)
 
     for e in 0..n_tri {
         let he = delaunay.inner().halfedges[e];
-        if he == delaunator::EMPTY || e > he { continue; } // each edge once
+        if he == delaunator::EMPTY || e > he {
+            continue;
+        } // each edge once
 
         let t0 = e / 3;
         let t1 = he / 3;
@@ -151,10 +159,14 @@ pub fn compute_with_zoom(coords: &[(f64, f64)], rotation: (f64, f64), zoom: f64)
         .iter()
         .map(|&(lon, lat)| {
             let (px, py) = ortho.project(lon, lat);
-            if !px.is_finite() || !py.is_finite() { return None; }
+            if !px.is_finite() || !py.is_finite() {
+                return None;
+            }
             let dx = px - width / 2.0;
             let dy = py - height / 2.0;
-            if dx * dx + dy * dy > scale * scale * 1.01 { return None; }
+            if dx * dx + dy * dy > scale * scale * 1.01 {
+                return None;
+            }
             Some((px, py))
         })
         .collect();
@@ -166,8 +178,11 @@ pub fn compute_with_zoom(coords: &[(f64, f64)], rotation: (f64, f64), zoom: f64)
         let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
         let x = width / 2.0 + scale * angle.cos();
         let y = height / 2.0 + scale * angle.sin();
-        if v == 0 { globe_builder = globe_builder.move_to(x, y); }
-        else { globe_builder = globe_builder.line_to(x, y); }
+        if v == 0 {
+            globe_builder = globe_builder.move_to(x, y);
+        } else {
+            globe_builder = globe_builder.line_to(x, y);
+        }
     }
     globe_builder = globe_builder.close_path();
 
@@ -183,8 +198,12 @@ pub fn compute_with_zoom(coords: &[(f64, f64)], rotation: (f64, f64), zoom: f64)
                 let dx = px - width / 2.0;
                 let dy = py - height / 2.0;
                 if dx * dx + dy * dy <= scale * scale * 0.92 {
-                    if first { grat_builder = grat_builder.move_to(px, py); first = false; }
-                    else { grat_builder = grat_builder.line_to(px, py); }
+                    if first {
+                        grat_builder = grat_builder.move_to(px, py);
+                        first = false;
+                    } else {
+                        grat_builder = grat_builder.line_to(px, py);
+                    }
                     continue;
                 }
             }
@@ -201,8 +220,12 @@ pub fn compute_with_zoom(coords: &[(f64, f64)], rotation: (f64, f64), zoom: f64)
                 let dx = px - width / 2.0;
                 let dy = py - height / 2.0;
                 if dx * dx + dy * dy <= scale * scale * 0.92 {
-                    if first { grat_builder = grat_builder.move_to(px, py); first = false; }
-                    else { grat_builder = grat_builder.line_to(px, py); }
+                    if first {
+                        grat_builder = grat_builder.move_to(px, py);
+                        first = false;
+                    } else {
+                        grat_builder = grat_builder.line_to(px, py);
+                    }
                     continue;
                 }
             }

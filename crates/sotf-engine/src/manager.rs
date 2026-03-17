@@ -56,18 +56,18 @@ pub fn select_output_sample_rate_for_channels(
         && let Some((ref cached_key, cached_rate)) = *cache
         && cached_key == &cache_key
     {
-            if cached_rate == file_sample_rate {
-                log::debug!(
-                    "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
-                    cached_rate
-                );
-            } else {
-                log::debug!(
-                    "[AudioEngineManager] Using cached device rate: {}Hz, file is {}Hz (will resample)",
-                    cached_rate,
-                    file_sample_rate
-                );
-            }
+        if cached_rate == file_sample_rate {
+            log::debug!(
+                "[AudioEngineManager] Using cached device rate: {}Hz (matches file, no resampling)",
+                cached_rate
+            );
+        } else {
+            log::debug!(
+                "[AudioEngineManager] Using cached device rate: {}Hz, file is {}Hz (will resample)",
+                cached_rate,
+                file_sample_rate
+            );
+        }
         return cached_rate;
     }
 
@@ -471,14 +471,20 @@ impl AudioEngineManager {
             // end-of-stream), we still proceed to shutdown which joins all threads.
             if let Some(engine) = Arc::get_mut(&mut engine_arc) {
                 if let Err(e) = engine.stop() {
-                    log::warn!("[AudioEngineManager] stop() failed (proceeding to shutdown): {}", e);
+                    log::warn!(
+                        "[AudioEngineManager] stop() failed (proceeding to shutdown): {}",
+                        e
+                    );
                 }
                 engine.shutdown().map_err(AudioDecoderError::IoError)?;
             } else {
                 // Another thread is holding a reference (e.g. status polling).
                 // Send commands via the shared Arc.
                 if let Err(e) = engine_arc.stop() {
-                    log::warn!("[AudioEngineManager] stop() failed (proceeding to shutdown): {}", e);
+                    log::warn!(
+                        "[AudioEngineManager] stop() failed (proceeding to shutdown): {}",
+                        e
+                    );
                 }
                 engine_arc.shutdown().map_err(AudioDecoderError::IoError)?;
             }

@@ -37,17 +37,27 @@ impl Render for DragListDebug {
                             .border_color(theme.border)
                             .rounded_lg()
                             .p_4()
-                            .child(
-                                DragList::new(
-                                    "drag-vert",
-                                    vec![
-                                        DragItem::new("eq", div().p_2().child(Text::new("1. Parametric EQ"))),
-                                        DragItem::new("comp", div().p_2().child(Text::new("2. Compressor"))),
-                                        DragItem::new("upmix", div().p_2().child(Text::new("3. Upmixer"))),
-                                        DragItem::new("limiter", div().p_2().child(Text::new("4. Limiter"))),
-                                    ],
-                                ),
-                            ),
+                            .child(DragList::new(
+                                "drag-vert",
+                                vec![
+                                    DragItem::new(
+                                        "eq",
+                                        div().p_2().child(Text::new("1. Parametric EQ")),
+                                    ),
+                                    DragItem::new(
+                                        "comp",
+                                        div().p_2().child(Text::new("2. Compressor")),
+                                    ),
+                                    DragItem::new(
+                                        "upmix",
+                                        div().p_2().child(Text::new("3. Upmixer")),
+                                    ),
+                                    DragItem::new(
+                                        "limiter",
+                                        div().p_2().child(Text::new("4. Limiter")),
+                                    ),
+                                ],
+                            )),
                     ),
             )
             // Horizontal

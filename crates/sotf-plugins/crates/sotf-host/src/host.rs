@@ -34,7 +34,7 @@ impl NodeBuffer {
     }
     fn read(&self) -> &[f32] {
         if self.actual_len == 0 {
-            &self.data
+            &[]
         } else {
             &self.data[..self.actual_len]
         }
@@ -889,6 +889,20 @@ mod tests {
             recorded_cf, 100,
             "Downstream received cf={}, expected 100 (min of parallel outputs)",
             recorded_cf,
+        );
+    }
+
+    #[test]
+    fn node_buffer_read_returns_empty_after_clear() {
+        let mut buf = NodeBuffer::new(128, 2);
+        // Write some data
+        buf.write(&[1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(buf.read().len(), 4);
+        // After clear, read must return empty slice (not stale data)
+        buf.clear();
+        assert!(
+            buf.read().is_empty(),
+            "read() after clear() must return empty slice"
         );
     }
 }

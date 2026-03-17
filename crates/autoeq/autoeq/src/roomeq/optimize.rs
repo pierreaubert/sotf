@@ -1213,14 +1213,13 @@ fn optimize_eq_maybe_multi(
 
     if use_multi {
         let multi_config = optimizer_config.multi_measurement.as_ref().unwrap();
-        let curves = load::load_source_individual(source).map_err(|e| {
-            AutoeqError::InvalidMeasurement {
+        let curves =
+            load::load_source_individual(source).map_err(|e| AutoeqError::InvalidMeasurement {
                 message: format!(
                     "Failed to load individual measurements for channel {}: {}",
                     channel_name, e
                 ),
-            }
-        })?;
+            })?;
 
         info!(
             "  Multi-measurement optimization ({:?}) with {} curves",
@@ -1228,21 +1227,29 @@ fn optimize_eq_maybe_multi(
             curves.len()
         );
 
-        eq::optimize_channel_eq_multi(&curves, optimizer_config, multi_config, target_config, sample_rate)
-            .map_err(|e| AutoeqError::OptimizationFailed {
-                message: format!(
-                    "Multi-measurement EQ optimization failed for channel {}: {}",
-                    channel_name, e
-                ),
-            })
+        eq::optimize_channel_eq_multi(
+            &curves,
+            optimizer_config,
+            multi_config,
+            target_config,
+            sample_rate,
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!(
+                "Multi-measurement EQ optimization failed for channel {}: {}",
+                channel_name, e
+            ),
+        })
     } else {
-        eq::optimize_channel_eq(optimization_curve, optimizer_config, target_config, sample_rate)
-            .map_err(|e| AutoeqError::OptimizationFailed {
-                message: format!(
-                    "EQ optimization failed for channel {}: {}",
-                    channel_name, e
-                ),
-            })
+        eq::optimize_channel_eq(
+            optimization_curve,
+            optimizer_config,
+            target_config,
+            sample_rate,
+        )
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!("EQ optimization failed for channel {}: {}", channel_name, e),
+        })
     }
 }
 

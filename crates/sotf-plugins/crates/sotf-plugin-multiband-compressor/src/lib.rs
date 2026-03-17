@@ -1017,11 +1017,8 @@ mod tests {
         p.initialize(48000).unwrap();
 
         // Set low threshold to ensure compression, and mix=1.0 for wet-only
-        p.set_parameter(
-            ParameterId::from("threshold"),
-            ParameterValue::Float(-30.0),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-30.0))
+            .unwrap();
         p.set_parameter(ParameterId::from("ratio"), ParameterValue::Float(8.0))
             .unwrap();
         p.set_parameter(ParameterId::from("mix"), ParameterValue::Float(1.0))

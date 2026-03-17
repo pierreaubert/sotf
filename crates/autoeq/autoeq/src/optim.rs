@@ -439,17 +439,10 @@ fn compute_multi_objective_fitness(x: &[f64], mo: &MultiObjectiveData) -> f64 {
             sum / losses.len() as f64
         }
         MultiMeasurementStrategy::WeightedSum => {
-            losses
-                .iter()
-                .zip(&mo.weights)
-                .map(|(l, w)| l * w)
-                .sum()
+            losses.iter().zip(&mo.weights).map(|(l, w)| l * w).sum()
         }
         MultiMeasurementStrategy::Minimax => {
-            losses
-                .iter()
-                .cloned()
-                .fold(f64::NEG_INFINITY, f64::max)
+            losses.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
         }
         MultiMeasurementStrategy::VariancePenalized => {
             let n = losses.len() as f64;

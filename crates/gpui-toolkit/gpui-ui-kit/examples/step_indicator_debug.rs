@@ -56,7 +56,8 @@ impl Render for StepIndicatorDebug {
                         StepIndicator::new(
                             "steps-vert",
                             vec![
-                                StepItem::new("Download Measurements").status(StepItemStatus::Completed),
+                                StepItem::new("Download Measurements")
+                                    .status(StepItemStatus::Completed),
                                 StepItem::new("Run Optimization").status(StepItemStatus::Completed),
                                 StepItem::new("Review Results").status(StepItemStatus::Active),
                                 StepItem::new("Apply Filters").status(StepItemStatus::NotVisited),

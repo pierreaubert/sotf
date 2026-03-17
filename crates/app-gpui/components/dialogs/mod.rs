@@ -6,8 +6,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Dialog, DialogSize, HStack, StackAlign,
-    StackJustify, StackSize, StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
+    Badge, BadgeVariant, Dialog, DialogSize, HStack, StackAlign, StackJustify, StackSize,
+    StackSpacing, Text, TextSize, TextWeight, ToastVariant, VStack,
 };
 
 impl PlayerView {
@@ -541,26 +541,10 @@ impl PlayerView {
 
         if let Some((message, variant)) = toast_data {
             let (bg_color, border_color, text_color) = match variant {
-                ToastVariant::Success => (
-                    theme.toast_success_bg,
-                    theme.success,
-                    theme.success,
-                ),
-                ToastVariant::Error => (
-                    theme.toast_error_bg,
-                    theme.error,
-                    theme.error,
-                ),
-                ToastVariant::Info => (
-                    theme.toast_info_bg,
-                    theme.info,
-                    theme.info,
-                ),
-                ToastVariant::Warning => (
-                    theme.toast_warning_bg,
-                    theme.warning,
-                    theme.warning,
-                ),
+                ToastVariant::Success => (theme.toast_success_bg, theme.success, theme.success),
+                ToastVariant::Error => (theme.toast_error_bg, theme.error, theme.error),
+                ToastVariant::Info => (theme.toast_info_bg, theme.info, theme.info),
+                ToastVariant::Warning => (theme.toast_warning_bg, theme.warning, theme.warning),
             };
 
             div()
@@ -583,8 +567,8 @@ impl PlayerView {
                         .child(
                             Text::new(message.clone())
                                 .size(TextSize::Sm)
-                                .color(text_color)
-                        )
+                                .color(text_color),
+                        ),
                 )
         } else {
             div()
@@ -600,10 +584,9 @@ impl PlayerView {
             let item_idx = menu.item_index;
 
             let menu_items: Vec<(&str, &str)> = match menu.menu_type {
-                crate::app::ContextMenuType::Album => vec![
-                    ("add-to-queue", "Add to Queue"),
-                    ("play-now", "Play Now"),
-                ],
+                crate::app::ContextMenuType::Album => {
+                    vec![("add-to-queue", "Add to Queue"), ("play-now", "Play Now")]
+                }
                 crate::app::ContextMenuType::QueueItem => vec![
                     ("remove-from-queue", "Remove from Queue"),
                     ("play-from-here", "Play from Here"),
@@ -645,9 +628,7 @@ impl PlayerView {
                         .px_3()
                         .py_2()
                         .cursor_pointer()
-                        .when(true, |d| {
-                            d.hover(|d| d.bg(theme.surface_hover))
-                        })
+                        .when(true, |d| d.hover(|d| d.bg(theme.surface_hover)))
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |_view, _event, _window, cx| {
@@ -665,13 +646,20 @@ impl PlayerView {
                                                 Self::play_track(state, path);
                                             }
                                         }
-                                        (crate::app::ContextMenuType::QueueItem, "remove-from-queue") => {
+                                        (
+                                            crate::app::ContextMenuType::QueueItem,
+                                            "remove-from-queue",
+                                        ) => {
                                             state.app.remove_from_queue(item_idx);
                                         }
-                                        (crate::app::ContextMenuType::QueueItem, "play-from-here") => {
+                                        (
+                                            crate::app::ContextMenuType::QueueItem,
+                                            "play-from-here",
+                                        ) => {
                                             state.app.playback.current_queue_index = Some(item_idx);
                                             if let Some(queue_item) = state.app.queue.get(item_idx)
-                                                && let Some(first_track) = queue_item.album.tracks.first()
+                                                && let Some(first_track) =
+                                                    queue_item.album.tracks.first()
                                             {
                                                 Self::play_track(state, first_track.path.clone());
                                             }
@@ -696,7 +684,7 @@ impl PlayerView {
                         .child(
                             Text::new(item_label)
                                 .size(TextSize::Sm)
-                                .color(theme.text_primary)
+                                .color(theme.text_primary),
                         )
                 }))
         } else {

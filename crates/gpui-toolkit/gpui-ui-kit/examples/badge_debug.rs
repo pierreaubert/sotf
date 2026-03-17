@@ -73,8 +73,16 @@ impl Render for BadgeDebug {
                         div()
                             .flex()
                             .gap_3()
-                            .child(Badge::new("42").rounded(true).variant(BadgeVariant::Primary))
-                            .child(Badge::new("New").rounded(true).variant(BadgeVariant::Success)),
+                            .child(
+                                Badge::new("42")
+                                    .rounded(true)
+                                    .variant(BadgeVariant::Primary),
+                            )
+                            .child(
+                                Badge::new("New")
+                                    .rounded(true)
+                                    .variant(BadgeVariant::Success),
+                            ),
                     ),
             )
             // BadgeDot

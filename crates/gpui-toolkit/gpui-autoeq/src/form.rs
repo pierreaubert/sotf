@@ -196,7 +196,8 @@ pub struct AutoEqForm {
     pub(crate) on_multi_measurement_strategy_change: Option<StringCallback>,
     pub(crate) on_multi_measurement_strategy_toggle: Option<ToggleCallback>,
     pub(crate) on_multi_measurement_variance_lambda_change: Option<F64Callback>,
-    pub(crate) on_multi_measurement_weight_change: Option<Box<dyn Fn(usize, f64, &mut Window, &mut App)>>,
+    pub(crate) on_multi_measurement_weight_change:
+        Option<Box<dyn Fn(usize, f64, &mut Window, &mut App)>>,
 }
 
 impl AutoEqForm {

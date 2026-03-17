@@ -221,7 +221,9 @@ impl QrDebug {
                                     .flex_col()
                                     .gap_1()
                                     .child(Text::new("200px").muted(true))
-                                    .child(QrCode::new("https://github.com/anthropics/claude-code")),
+                                    .child(QrCode::new(
+                                        "https://github.com/anthropics/claude-code",
+                                    )),
                             )
                             .child(
                                 div()
@@ -229,10 +231,7 @@ impl QrDebug {
                                     .flex_col()
                                     .gap_1()
                                     .child(Text::new("120px").muted(true))
-                                    .child(
-                                        QrCode::new("https://example.com")
-                                            .size(px(120.0)),
-                                    ),
+                                    .child(QrCode::new("https://example.com").size(px(120.0))),
                             )
                             .child(
                                 div()
@@ -255,7 +254,10 @@ impl QrDebug {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(Text::new("Animated QR Codes (too small — auto-pans)").weight(TextWeight::Bold))
+                    .child(
+                        Text::new("Animated QR Codes (too small — auto-pans)")
+                            .weight(TextWeight::Bold),
+                    )
                     .child(
                         div()
                             .flex()
@@ -295,43 +297,39 @@ impl QrDebug {
         match &self.camera_state {
             CameraState::Idle => {
                 // Show start button
-                content = content
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_4()
-                            .py_8()
-                            .child(Text::new("Point your camera at a QR code to scan it."))
-                            .child(
-                                Text::new(
-                                    "Camera permission will be requested when you start scanning.",
-                                )
-                                .muted(true),
+                content = content.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_4()
+                        .py_8()
+                        .child(Text::new("Point your camera at a QR code to scan it."))
+                        .child(
+                            Text::new(
+                                "Camera permission will be requested when you start scanning.",
                             )
-                            .child(
-                                div()
-                                    .id("start-scan-btn")
-                                    .px_6()
-                                    .py_3()
-                                    .bg(theme.accent)
-                                    .text_color(rgba(0xffffffff))
-                                    .rounded_lg()
-                                    .cursor_pointer()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .hover(|s| s.opacity(0.9))
-                                    .child("Start Camera")
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        move |_event, _window, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.start_camera(cx);
-                                            });
-                                        },
-                                    ),
-                            ),
-                    );
+                            .muted(true),
+                        )
+                        .child(
+                            div()
+                                .id("start-scan-btn")
+                                .px_6()
+                                .py_3()
+                                .bg(theme.accent)
+                                .text_color(rgba(0xffffffff))
+                                .rounded_lg()
+                                .cursor_pointer()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .hover(|s| s.opacity(0.9))
+                                .child("Start Camera")
+                                .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                                    entity.update(cx, |this, cx| {
+                                        this.start_camera(cx);
+                                    });
+                                }),
+                        ),
+                );
             }
 
             CameraState::Denied(err) => {
@@ -384,18 +382,15 @@ impl QrDebug {
                                 .text_sm()
                                 .hover(move |s| s.bg(surface_hover))
                                 .child("Retry")
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    {
-                                        let entity = self.entity.clone();
-                                        move |_event, _window, cx| {
-                                            entity.update(cx, |this, cx| {
-                                                this.camera_state = CameraState::Idle;
-                                                this.start_camera(cx);
-                                            });
-                                        }
-                                    },
-                                ),
+                                .on_mouse_up(MouseButton::Left, {
+                                    let entity = self.entity.clone();
+                                    move |_event, _window, cx| {
+                                        entity.update(cx, |this, cx| {
+                                            this.camera_state = CameraState::Idle;
+                                            this.start_camera(cx);
+                                        });
+                                    }
+                                }),
                         ),
                 );
             }
@@ -418,41 +413,37 @@ impl QrDebug {
                     theme.text_muted
                 };
 
-                content = content
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                Text::new(status)
-                                    .weight(TextWeight::Semibold)
-                                    .color(status_color),
-                            )
-                            .child(
-                                div()
-                                    .id("stop-scan-btn")
-                                    .px_4()
-                                    .py_2()
-                                    .bg(theme.surface)
-                                    .border_1()
-                                    .border_color(theme.border)
-                                    .rounded_md()
-                                    .cursor_pointer()
-                                    .text_sm()
-                                    .hover(move |s| s.bg(surface_hover))
-                                    .child("Stop Camera")
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        move |_event, _window, cx| {
-                                            stop_entity.update(cx, |this, cx| {
-                                                this.stop_camera();
-                                                cx.notify();
-                                            });
-                                        },
-                                    ),
-                            ),
-                    );
+                content = content.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            Text::new(status)
+                                .weight(TextWeight::Semibold)
+                                .color(status_color),
+                        )
+                        .child(
+                            div()
+                                .id("stop-scan-btn")
+                                .px_4()
+                                .py_2()
+                                .bg(theme.surface)
+                                .border_1()
+                                .border_color(theme.border)
+                                .rounded_md()
+                                .cursor_pointer()
+                                .text_sm()
+                                .hover(move |s| s.bg(surface_hover))
+                                .child("Stop Camera")
+                                .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                                    stop_entity.update(cx, |this, cx| {
+                                        this.stop_camera();
+                                        cx.notify();
+                                    });
+                                }),
+                        ),
+                );
 
                 // Camera preview canvas
                 if let Some(preview) = &self.last_preview {
@@ -479,8 +470,8 @@ impl QrDebug {
                                     move |_bounds, _window, _cx| (rgb, pw, ph, qr_bounds),
                                     move |bounds, (rgb, pw, ph, qr_bounds), window, _cx| {
                                         paint_camera_preview(
-                                            bounds, &rgb, pw, ph, qr_bounds, accent,
-                                            success, has_decode, window,
+                                            bounds, &rgb, pw, ph, qr_bounds, accent, success,
+                                            has_decode, window,
                                         );
                                     },
                                 )
@@ -557,30 +548,37 @@ impl Render for QrDebug {
         let active_tab = self.active_tab;
 
         // Tab bar
-        let tab_bar = div().flex().gap_1().mb_4().child(
-            {
+        let tab_bar = div()
+            .flex()
+            .gap_1()
+            .mb_4()
+            .child({
                 let entity = entity.clone();
-                tab_button("tab-generate", "Generate QR", active_tab == Tab::Generate, &theme)
-                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                        entity.update(cx, |this, cx| {
-                            this.active_tab = Tab::Generate;
-                            cx.notify();
-                        });
-                    })
-            },
-        )
-        .child(
-            {
+                tab_button(
+                    "tab-generate",
+                    "Generate QR",
+                    active_tab == Tab::Generate,
+                    &theme,
+                )
+                .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                    entity.update(cx, |this, cx| {
+                        this.active_tab = Tab::Generate;
+                        cx.notify();
+                    });
+                })
+            })
+            .child({
                 let entity = entity.clone();
-                tab_button("tab-scan", "Scan QR", active_tab == Tab::Scan, &theme)
-                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                tab_button("tab-scan", "Scan QR", active_tab == Tab::Scan, &theme).on_mouse_up(
+                    MouseButton::Left,
+                    move |_event, _window, cx| {
                         entity.update(cx, |this, cx| {
                             this.active_tab = Tab::Scan;
                             cx.notify();
                         });
-                    })
-            },
-        );
+                    },
+                )
+            });
 
         let content = match active_tab {
             Tab::Generate => self.render_generate_tab(cx).into_any_element(),
@@ -622,9 +620,7 @@ fn tab_button(
         .font_weight(FontWeight::MEDIUM);
 
     if active {
-        btn = btn
-            .bg(theme.accent)
-            .text_color(rgba(0xffffffff));
+        btn = btn.bg(theme.accent).text_color(rgba(0xffffffff));
     } else {
         let hover_bg = theme.surface_hover;
         btn = btn
@@ -748,7 +744,7 @@ unsafe extern "C" {}
 #[allow(unexpected_cfgs)]
 fn request_camera_permission_macos() -> bool {
     use block::ConcreteBlock;
-    use objc::runtime::{Class, BOOL, NO};
+    use objc::runtime::{BOOL, Class, NO};
     use objc::{msg_send, sel, sel_impl};
 
     unsafe {
@@ -793,19 +789,22 @@ fn camera_error_message(raw: &str) -> String {
              Close the other app and try again.\n\nDetails: {}",
             raw
         )
-    } else if lower.contains("permission") || lower.contains("denied") || lower.contains("authorized") {
+    } else if lower.contains("permission")
+        || lower.contains("denied")
+        || lower.contains("authorized")
+    {
         format!(
             "Camera access denied. Grant permission in \
              System Settings > Privacy & Security > Camera.\n\nDetails: {}",
             raw
         )
-    } else if lower.contains("not found") || lower.contains("no camera") || lower.contains("no device") {
+    } else if lower.contains("not found")
+        || lower.contains("no camera")
+        || lower.contains("no device")
+    {
         "No camera found. Connect a camera and try again.".to_string()
     } else {
-        format!(
-            "Could not open camera: {}",
-            raw
-        )
+        format!("Could not open camera: {}", raw)
     }
 }
 

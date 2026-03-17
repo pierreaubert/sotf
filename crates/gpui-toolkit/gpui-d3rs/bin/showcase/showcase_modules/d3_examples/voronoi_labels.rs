@@ -25,23 +25,34 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         let mut prev: Option<(f64, f64)> = None;
         for cmd in cmds {
             match cmd {
-                PathCommand::MoveTo { x, y } => { prev = Some((*x, *y)); }
+                PathCommand::MoveTo { x, y } => {
+                    prev = Some((*x, *y));
+                }
                 PathCommand::LineTo { x, y } => {
                     if let Some((px, py)) = prev {
-                        let dx = x - px; let dy = y - py;
+                        let dx = x - px;
+                        let dy = y - py;
                         let len = (dx * dx + dy * dy).sqrt();
                         if len > 0.5 {
-                            let nx = -dy / len * 0.3; let ny = dx / len * 0.3;
-                            d3_paths.push(D3PathBuilder::new()
-                                .move_to(px + nx, py + ny).line_to(x + nx, y + ny)
-                                .line_to(x - nx, y - ny).line_to(px - nx, py - ny)
-                                .close_path().build());
+                            let nx = -dy / len * 0.3;
+                            let ny = dx / len * 0.3;
+                            d3_paths.push(
+                                D3PathBuilder::new()
+                                    .move_to(px + nx, py + ny)
+                                    .line_to(x + nx, y + ny)
+                                    .line_to(x - nx, y - ny)
+                                    .line_to(px - nx, py - ny)
+                                    .close_path()
+                                    .build(),
+                            );
                             all_colors.push(hsla(0.0, 0.0, 0.85, 0.5));
                         }
                     }
                     prev = Some((*x, *y));
                 }
-                _ => { prev = None; }
+                _ => {
+                    prev = None;
+                }
             }
         }
     }
@@ -53,8 +64,11 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         let mut builder = D3PathBuilder::new();
         for v in 0..n_sides {
             let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
-            if v == 0 { builder = builder.move_to(pt.x + r, pt.y); }
-            else { builder = builder.line_to(pt.x + r * angle.cos(), pt.y + r * angle.sin()); }
+            if v == 0 {
+                builder = builder.move_to(pt.x + r, pt.y);
+            } else {
+                builder = builder.line_to(pt.x + r * angle.cos(), pt.y + r * angle.sin());
+            }
         }
         builder = builder.close_path();
         d3_paths.push(builder.build());
@@ -62,28 +76,68 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     }
 
     // Labels for points with large Voronoi cells
-    let labels: Vec<(String, f64, f64, d3rs::examples::voronoi_labels::LabelAnchor)> = result.points.iter()
+    let labels: Vec<(
+        String,
+        f64,
+        f64,
+        d3rs::examples::voronoi_labels::LabelAnchor,
+    )> = result
+        .points
+        .iter()
         .filter(|p| p.show_label)
         .map(|p| (format!("{}", p.index), p.x, p.y, p.label_anchor))
         .collect();
 
     div()
-        .flex().flex_col().size_full().p_4()
-        .child(div().text_lg().font_weight(FontWeight::BOLD).mb_2().child("Voronoi Labels"))
-        .child(div().text_xs().text_color(rgb(0x666666)).mb_2()
-            .child(format!("Source: observablehq.com/@d3/voronoi-labels — {} points, {} labeled", result.point_count, result.label_count)))
+        .flex()
+        .flex_col()
+        .size_full()
+        .p_4()
         .child(
-            div().w(px(width as f32)).h(px(height as f32)).bg(rgb(0xffffff)).border_1().border_color(rgb(0xe0e0e0)).relative()
-                .child(canvas(
-                    move |bounds, _, _| {
-                        d3_paths.iter().map(|p| super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)).collect::<Vec<_>>()
-                    },
-                    move |_bounds, paths, window, _| {
-                        for (i, path_opt) in paths.into_iter().enumerate() {
-                            if let Some(path) = path_opt { window.paint_path(path, all_colors[i]); }
-                        }
-                    },
-                ).size_full())
+            div()
+                .text_lg()
+                .font_weight(FontWeight::BOLD)
+                .mb_2()
+                .child("Voronoi Labels"),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(rgb(0x666666))
+                .mb_2()
+                .child(format!(
+                    "Source: observablehq.com/@d3/voronoi-labels — {} points, {} labeled",
+                    result.point_count, result.label_count
+                )),
+        )
+        .child(
+            div()
+                .w(px(width as f32))
+                .h(px(height as f32))
+                .bg(rgb(0xffffff))
+                .border_1()
+                .border_color(rgb(0xe0e0e0))
+                .relative()
+                .child(
+                    canvas(
+                        move |bounds, _, _| {
+                            d3_paths
+                                .iter()
+                                .map(|p| {
+                                    super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        move |_bounds, paths, window, _| {
+                            for (i, path_opt) in paths.into_iter().enumerate() {
+                                if let Some(path) = path_opt {
+                                    window.paint_path(path, all_colors[i]);
+                                }
+                            }
+                        },
+                    )
+                    .size_full(),
+                )
                 .children(labels.into_iter().map(|(label, x, y, anchor)| {
                     use d3rs::examples::voronoi_labels::LabelAnchor;
                     let (dx, dy) = match anchor {
@@ -92,8 +146,13 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         LabelAnchor::Top => (-5.0, -14.0),
                         LabelAnchor::Bottom => (-5.0, 6.0),
                     };
-                    div().absolute().left(px((x + dx) as f32)).top(px((y + dy) as f32))
-                        .text_size(px(9.0)).text_color(rgb(0x333333)).child(label)
+                    div()
+                        .absolute()
+                        .left(px((x + dx) as f32))
+                        .top(px((y + dy) as f32))
+                        .text_size(px(9.0))
+                        .text_color(rgb(0x333333))
+                        .child(label)
                 })),
         )
 }

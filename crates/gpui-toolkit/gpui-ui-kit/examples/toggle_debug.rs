@@ -61,9 +61,24 @@ impl Render for ToggleDebug {
                     .flex_col()
                     .gap_3()
                     .child(Text::new("Sizes").weight(TextWeight::Bold))
-                    .child(Toggle::new("toggle-sm").checked(true).size(ToggleSize::Sm).label("Small"))
-                    .child(Toggle::new("toggle-md").checked(true).size(ToggleSize::Md).label("Medium"))
-                    .child(Toggle::new("toggle-lg").checked(true).size(ToggleSize::Lg).label("Large")),
+                    .child(
+                        Toggle::new("toggle-sm")
+                            .checked(true)
+                            .size(ToggleSize::Sm)
+                            .label("Small"),
+                    )
+                    .child(
+                        Toggle::new("toggle-md")
+                            .checked(true)
+                            .size(ToggleSize::Md)
+                            .label("Medium"),
+                    )
+                    .child(
+                        Toggle::new("toggle-lg")
+                            .checked(true)
+                            .size(ToggleSize::Lg)
+                            .label("Large"),
+                    ),
             )
             // Disabled
             .child(
@@ -72,8 +87,17 @@ impl Render for ToggleDebug {
                     .flex_col()
                     .gap_3()
                     .child(Text::new("Disabled").weight(TextWeight::Bold))
-                    .child(Toggle::new("toggle-dis-off").disabled(true).label("Disabled off"))
-                    .child(Toggle::new("toggle-dis-on").checked(true).disabled(true).label("Disabled on")),
+                    .child(
+                        Toggle::new("toggle-dis-off")
+                            .disabled(true)
+                            .label("Disabled off"),
+                    )
+                    .child(
+                        Toggle::new("toggle-dis-on")
+                            .checked(true)
+                            .disabled(true)
+                            .label("Disabled on"),
+                    ),
             )
     }
 }

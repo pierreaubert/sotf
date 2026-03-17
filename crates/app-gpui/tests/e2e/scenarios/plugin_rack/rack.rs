@@ -153,9 +153,7 @@ impl TestScenario for MultiplePluginsScenario {
             .ok_or("Compressor not found")?;
         page.toggle_plugin(comp_index);
 
-        let eq_index = page
-            .find_plugin_index_by_id(eq_id)
-            .ok_or("EQ not found")?;
+        let eq_index = page.find_plugin_index_by_id(eq_id).ok_or("EQ not found")?;
         let limiter_index = page
             .find_plugin_index_by_id(limiter_id)
             .ok_or("Limiter not found")?;
@@ -219,7 +217,9 @@ impl TestScenario for PermanentPluginsScenario {
 
         // The rack should have permanent plugins from the start
         if initial_count == 0 {
-            return Err("Rack should have permanent plugins (input monitor, output monitor, matrix)".into());
+            return Err(
+                "Rack should have permanent plugins (input monitor, output monitor, matrix)".into(),
+            );
         }
 
         // Check that at least one permanent plugin exists
@@ -262,9 +262,7 @@ impl TestScenario for PluginSelectionScenario {
         let eq_id = page.add_plugin(PluginType::EQ);
         let comp_id = page.add_plugin(PluginType::Compressor);
 
-        let eq_index = page
-            .find_plugin_index_by_id(eq_id)
-            .ok_or("EQ not found")?;
+        let eq_index = page.find_plugin_index_by_id(eq_id).ok_or("EQ not found")?;
         let comp_index = page
             .find_plugin_index_by_id(comp_id)
             .ok_or("Compressor not found")?;

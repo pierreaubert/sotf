@@ -40,7 +40,11 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     // Log scales mapping data domain to plot area
     let x_min = data.iter().map(|d| d[0]).fold(f64::MAX, f64::min).max(0.1);
     let x_max = data.iter().map(|d| d[0]).fold(f64::MIN, f64::max);
-    let y_min = data.iter().map(|d| d[1]).fold(f64::MAX, f64::min).max(100.0);
+    let y_min = data
+        .iter()
+        .map(|d| d[1])
+        .fold(f64::MAX, f64::min)
+        .max(100.0);
     let y_max = data.iter().map(|d| d[1]).fold(f64::MIN, f64::max);
 
     let x_scale = LogScale::new().domain(x_min, x_max).range(0.0, plot_w);
@@ -118,17 +122,25 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .gap_4()
                 .mb_2()
                 .child(
-                    div().flex().items_center().gap_1()
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
                         .child(div().size_3().bg(bu_pu.get(0.1).to_rgba()))
                         .child(div().text_xs().child("Few points")),
                 )
                 .child(
-                    div().flex().items_center().gap_1()
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
                         .child(div().size_3().bg(bu_pu.get(0.9).to_rgba()))
                         .child(div().text_xs().child("Many points")),
                 )
                 .child(
-                    div().text_xs().text_color(rgb(0x999999))
+                    div()
+                        .text_xs()
+                        .text_color(rgb(0x999999))
                         .child(format!("{} points -> {} bins", data_count, bin_count)),
                 ),
         )

@@ -125,7 +125,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .enumerate()
         .filter_map(|(ci, name)| {
             // Find first year with nonzero value
-            let first = matrix.iter().position(|row| row.get(ci).copied().unwrap_or(0.0) > 0.0);
+            let first = matrix
+                .iter()
+                .position(|row| row.get(ci).copied().unwrap_or(0.0) > 0.0);
             first.map(|yr| (ci, name.as_str(), yr))
         })
         .collect();
@@ -175,9 +177,20 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .text_xs()
                 .text_color(rgb(0x666666))
                 .mb_2()
-                .child(format!("RIAA data — {} formats, {} years", categories.len(), n)),
+                .child(format!(
+                    "RIAA data — {} formats, {} years",
+                    categories.len(),
+                    n
+                )),
         )
-        .child(div().flex().gap_3().mb_3().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_3()
+                .mb_3()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(width as f32))
@@ -199,7 +212,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )
                 // Y-axis line
                 .child(
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px(margin_top as f32))
                         .w(px(1.0))
@@ -208,7 +222,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )
                 // X-axis line
                 .child(
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px((margin_top + chart_height) as f32))
                         .w(px(chart_width as f32))
@@ -226,17 +241,20 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         format!("{:.0}", val)
                     };
                     let label_config = VectorFontConfig::horizontal(9.0, rgb(0x666666).into());
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px((margin_left - 40.0) as f32))
                         .top(px((margin_top + y - 6.0) as f32))
                         .w(px(35.0))
-                        .flex().justify_end()
+                        .flex()
+                        .justify_end()
                         .child(render_vector_text(&label, &label_config))
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {
                     let y = y_scale.scale(val);
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px((margin_top + y) as f32))
                         .w(px(chart_width as f32))
@@ -246,7 +264,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 // Vertical year-tick lines (every year, thin)
                 .children((1973..=2018).map(|year| {
                     let x = x_scale.scale(year as f64);
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px((margin_left + x) as f32))
                         .top(px(margin_top as f32))
                         .w(px(0.5))
@@ -257,17 +276,21 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .children(x_ticks.iter().map(|&year| {
                     let x = x_scale.scale(year as f64);
                     let label_config = VectorFontConfig::horizontal(9.0, rgb(0x333333).into());
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px((margin_left + x - 15.0) as f32))
                         .top(px((margin_top + chart_height) as f32))
                         .w(px(30.0))
-                        .flex().flex_col().items_center()
+                        .flex()
+                        .flex_col()
+                        .items_center()
                         .child(div().w(px(1.0)).h(px(5.0)).bg(rgb(0xcccccc)))
                         .child(render_vector_text(&format!("{}", year), &label_config))
                 }))
                 // X-axis label
                 .child(
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px((margin_left + chart_width / 2.0 - 10.0) as f32))
                         .top(px((height - 16.0) as f32))
                         .child(render_vector_text(
@@ -277,7 +300,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )
                 // Chart area with stacked areas
                 .child(
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px(margin_top as f32))
                         .w(px(chart_width as f32))

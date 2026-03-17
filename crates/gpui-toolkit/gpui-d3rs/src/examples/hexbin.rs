@@ -57,9 +57,12 @@ pub fn compute(data: &[(f64, f64)]) -> HexbinResult {
         .map(|(c, p)| [x_scale.scale(*c), y_scale.scale(*p)])
         .collect();
 
-    let hex = HexbinLayout::new()
-        .radius(hex_radius)
-        .extent(margin_left, margin_top, width - margin_right, height - margin_bottom);
+    let hex = HexbinLayout::new().radius(hex_radius).extent(
+        margin_left,
+        margin_top,
+        width - margin_right,
+        height - margin_bottom,
+    );
 
     let bins = hex.bin(projected);
 

@@ -527,6 +527,12 @@ fn bessel_i0(x: f64) -> f64 {
 /// # Returns
 /// Vector of window coefficients
 pub fn generate_window(n: usize, window_type: WindowType, kaiser_beta: f64) -> Vec<f64> {
+    if n == 0 {
+        return vec![];
+    }
+    if n == 1 {
+        return vec![1.0];
+    }
     let mut window = vec![0.0; n];
 
     match window_type {

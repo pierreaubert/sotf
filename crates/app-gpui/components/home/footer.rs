@@ -884,7 +884,7 @@ impl PlayerView {
             .bottom(rems(FOOTER_HEIGHT_REMS)) // Positioned above the footer
             .right(rems(0.625))
             .w(rems(15.625))
-            .h(rems(30.0))  // Fixed height for up to ~20 devices
+            .h(rems(30.0)) // Fixed height for up to ~20 devices
             .min_h(rems(5.0))
             .bg(theme.surface)
             .border_1()

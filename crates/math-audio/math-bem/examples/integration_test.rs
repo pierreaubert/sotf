@@ -4,11 +4,8 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    
     use math_audio_bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    
-    
-    
+
     use std::f64::consts::PI;
 
     let radius = 0.1;

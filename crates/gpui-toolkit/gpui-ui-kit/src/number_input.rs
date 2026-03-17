@@ -73,12 +73,8 @@ thread_local! {
 /// Returns true if any NumberInput is currently in editing mode.
 /// Useful for parent views that need to suppress keybindings during text entry.
 pub fn is_number_input_editing() -> bool {
-    NUMBER_INPUT_EDIT_STATES.with(|states| {
-        states
-            .borrow()
-            .values()
-            .any(|state| state.borrow().editing)
-    })
+    NUMBER_INPUT_EDIT_STATES
+        .with(|states| states.borrow().values().any(|state| state.borrow().editing))
 }
 
 /// Evict oldest entries from NumberInput thread-local storage if over the limit.
@@ -1084,7 +1080,6 @@ impl RenderOnce for NumberInput {
                     }
                 }
             });
-
         }
 
         input_row = input_row.child(value_field);

@@ -23,8 +23,8 @@ fn test_notification_all_variants() {
 
 #[test]
 fn test_notification_description() {
-    let notif = Notification::new("notif-desc", "Connected")
-        .description("Your wallet is ready to use");
+    let notif =
+        Notification::new("notif-desc", "Connected").description("Your wallet is ready to use");
     drop(notif);
 }
 

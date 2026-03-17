@@ -91,11 +91,7 @@ fn index_to_crossover_type(index: f64) -> String {
 
 #[inline]
 fn b2f(b: bool) -> f64 {
-    if b {
-        1.0
-    } else {
-        0.0
-    }
+    if b { 1.0 } else { 0.0 }
 }
 
 #[inline]
@@ -108,23 +104,49 @@ fn f2b(f: f64) -> bool {
 // ============================================================================
 
 macro_rules! field_to_f64 {
-    ($field:ident, f64)   => { Some(*$field) };
-    ($field:ident, bool)  => { Some(b2f(*$field)) };
-    ($field:ident, usize) => { Some(*$field as f64) };
-    ($field:ident, i32)   => { Some(*$field as f64) };
-    ($field:ident, skip)  => { None };
-    ($field:ident, [enum $to:path, $from:path]) => { Some($to($field)) };
-    ($field:ident, [str $to:path, $from:path])  => { Some($to($field)) };
+    ($field:ident, f64) => {
+        Some(*$field)
+    };
+    ($field:ident, bool) => {
+        Some(b2f(*$field))
+    };
+    ($field:ident, usize) => {
+        Some(*$field as f64)
+    };
+    ($field:ident, i32) => {
+        Some(*$field as f64)
+    };
+    ($field:ident, skip) => {
+        None
+    };
+    ($field:ident, [enum $to:path, $from:path]) => {
+        Some($to($field))
+    };
+    ($field:ident, [str $to:path, $from:path]) => {
+        Some($to($field))
+    };
 }
 
 macro_rules! f64_to_field {
-    ($field:ident, $val:ident, f64)   => { *$field = $val };
-    ($field:ident, $val:ident, bool)  => { *$field = f2b($val) };
-    ($field:ident, $val:ident, usize) => { *$field = $val as usize };
-    ($field:ident, $val:ident, i32)   => { *$field = $val as i32 };
-    ($field:ident, $val:ident, skip)  => { };
-    ($field:ident, $val:ident, [enum $to:path, $from:path]) => { *$field = $from($val) };
-    ($field:ident, $val:ident, [str $to:path, $from:path])  => { *$field = $from($val) };
+    ($field:ident, $val:ident, f64) => {
+        *$field = $val
+    };
+    ($field:ident, $val:ident, bool) => {
+        *$field = f2b($val)
+    };
+    ($field:ident, $val:ident, usize) => {
+        *$field = $val as usize
+    };
+    ($field:ident, $val:ident, i32) => {
+        *$field = $val as i32
+    };
+    ($field:ident, $val:ident, skip) => {};
+    ($field:ident, $val:ident, [enum $to:path, $from:path]) => {
+        *$field = $from($val)
+    };
+    ($field:ident, $val:ident, [str $to:path, $from:path]) => {
+        *$field = $from($val)
+    };
 }
 
 // ============================================================================
@@ -497,9 +519,7 @@ impl PluginSettings {
                         Some(sofa_file.clone())
                     }
                     Self::ABCompare { path_a_file, .. } if index == 9 => Some(path_a_file.clone()),
-                    Self::ABCompare { path_b_file, .. } if index == 10 => {
-                        Some(path_b_file.clone())
-                    }
+                    Self::ABCompare { path_b_file, .. } if index == 10 => Some(path_b_file.clone()),
                     _ => None,
                 }
             }

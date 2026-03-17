@@ -510,7 +510,9 @@ impl ShowcaseApp {
             // New D3 Examples
             DemoSection::D3Sankey => showcase_modules::d3_examples::sankey::render(self, cx),
             DemoSection::D3Calendar => showcase_modules::d3_examples::calendar::render(self, cx),
-            DemoSection::D3RadialLine => showcase_modules::d3_examples::radial_line::render(self, cx),
+            DemoSection::D3RadialLine => {
+                showcase_modules::d3_examples::radial_line::render(self, cx)
+            }
             DemoSection::D3ParallelCoordinates => {
                 showcase_modules::d3_examples::parallel_coordinates::render(self, cx)
             }
@@ -520,27 +522,59 @@ impl ShowcaseApp {
             // Observable Examples (golden-tested, using src/examples/ compute)
             DemoSection::D3Hexbin => showcase_modules::d3_examples::hexbin::render(self, cx),
             DemoSection::D3PieChart => showcase_modules::d3_examples::pie_chart::render(self, cx),
-            DemoSection::D3DonutChart => showcase_modules::d3_examples::donut_chart::render(self, cx),
+            DemoSection::D3DonutChart => {
+                showcase_modules::d3_examples::donut_chart::render(self, cx)
+            }
             DemoSection::D3LineChart => showcase_modules::d3_examples::line_chart::render(self, cx),
-            DemoSection::D3Streamgraph => showcase_modules::d3_examples::streamgraph::render(self, cx),
-            DemoSection::D3StackedBar => showcase_modules::d3_examples::stacked_bar::render(self, cx),
-            DemoSection::D3StackedArea => showcase_modules::d3_examples::stacked_area::render(self, cx),
+            DemoSection::D3Streamgraph => {
+                showcase_modules::d3_examples::streamgraph::render(self, cx)
+            }
+            DemoSection::D3StackedBar => {
+                showcase_modules::d3_examples::stacked_bar::render(self, cx)
+            }
+            DemoSection::D3StackedArea => {
+                showcase_modules::d3_examples::stacked_area::render(self, cx)
+            }
             DemoSection::D3BoxPlot => showcase_modules::d3_examples::box_plot::render(self, cx),
             DemoSection::D3ChordDiagram => showcase_modules::d3_examples::chord::render(self, cx),
-            DemoSection::D3ForceDirected => showcase_modules::d3_examples::force_directed::render(self, cx),
-            DemoSection::D3ParallelSets => showcase_modules::d3_examples::parallel_sets::render(self, cx),
-            DemoSection::D3DifferenceChart => showcase_modules::d3_examples::difference_chart::render(self, cx),
+            DemoSection::D3ForceDirected => {
+                showcase_modules::d3_examples::force_directed::render(self, cx)
+            }
+            DemoSection::D3ParallelSets => {
+                showcase_modules::d3_examples::parallel_sets::render(self, cx)
+            }
+            DemoSection::D3DifferenceChart => {
+                showcase_modules::d3_examples::difference_chart::render(self, cx)
+            }
             DemoSection::D3Ridgeline => showcase_modules::d3_examples::ridgeline::render(self, cx),
-            DemoSection::D3RealtimeHorizon => showcase_modules::d3_examples::realtime_horizon::render(self, cx),
-            DemoSection::D3RadialTree => showcase_modules::d3_examples::radial_tree::render(self, cx),
-            DemoSection::D3RadialCluster => showcase_modules::d3_examples::radial_tree::render_cluster(self, cx),
-            DemoSection::D3CirclePacking => showcase_modules::d3_examples::circle_packing::render(self, cx),
+            DemoSection::D3RealtimeHorizon => {
+                showcase_modules::d3_examples::realtime_horizon::render(self, cx)
+            }
+            DemoSection::D3RadialTree => {
+                showcase_modules::d3_examples::radial_tree::render(self, cx)
+            }
+            DemoSection::D3RadialCluster => {
+                showcase_modules::d3_examples::radial_tree::render_cluster(self, cx)
+            }
+            DemoSection::D3CirclePacking => {
+                showcase_modules::d3_examples::circle_packing::render(self, cx)
+            }
             DemoSection::D3Sunburst => showcase_modules::d3_examples::sunburst::render(self, cx),
-            DemoSection::D3VoronoiAirports => showcase_modules::d3_examples::voronoi_airports::render(self, cx),
-            DemoSection::D3TemperatureTrends => showcase_modules::d3_examples::temperature_trends::render(self, cx),
-            DemoSection::D3HertzsprungRussell => showcase_modules::d3_examples::hertzsprung_russell::render(self, cx),
-            DemoSection::D3VoronoiLabels => showcase_modules::d3_examples::voronoi_labels::render(self, cx),
-            DemoSection::D3ElectricUsage => showcase_modules::d3_examples::electric_usage::render(self, cx),
+            DemoSection::D3VoronoiAirports => {
+                showcase_modules::d3_examples::voronoi_airports::render(self, cx)
+            }
+            DemoSection::D3TemperatureTrends => {
+                showcase_modules::d3_examples::temperature_trends::render(self, cx)
+            }
+            DemoSection::D3HertzsprungRussell => {
+                showcase_modules::d3_examples::hertzsprung_russell::render(self, cx)
+            }
+            DemoSection::D3VoronoiLabels => {
+                showcase_modules::d3_examples::voronoi_labels::render(self, cx)
+            }
+            DemoSection::D3ElectricUsage => {
+                showcase_modules::d3_examples::electric_usage::render(self, cx)
+            }
             DemoSection::D3StarMap => showcase_modules::d3_examples::star_map::render(self, cx),
         };
 

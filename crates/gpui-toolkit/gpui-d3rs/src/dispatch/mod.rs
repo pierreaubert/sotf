@@ -172,7 +172,9 @@ impl Dispatcher {
             id,
             type_: type_.to_string(),
             callback: Box::new(move |event: &Event| {
-                if let Ok(mut cb) = callback_clone.lock() && let Some(f) = cb.take() {
+                if let Ok(mut cb) = callback_clone.lock()
+                    && let Some(f) = cb.take()
+                {
                     f(event);
                 }
             }),
@@ -325,8 +327,8 @@ pub fn dispatcher() -> Dispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_dispatcher_on() {

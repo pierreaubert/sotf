@@ -449,8 +449,8 @@ mod tests {
         let n1 = SimulationNode::new(1, 100.0, 0.0);
         let nodes = vec![n0.clone(), n1.clone()];
 
-        let mut sim = Simulation::new(nodes)
-            .force(Box::new(ForceLink::new(vec![(0, 1)]).distance(30.0)));
+        let mut sim =
+            Simulation::new(nodes).force(Box::new(ForceLink::new(vec![(0, 1)]).distance(30.0)));
 
         let initial_dist = {
             let a = n0.borrow();

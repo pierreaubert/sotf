@@ -30,7 +30,9 @@ pub fn load_csv(csv_str: &str) -> Vec<f64> {
         .skip(1)
         .filter_map(|line| {
             let cols: Vec<&str> = line.split(',').collect();
-            if cols.len() < 2 { return None; }
+            if cols.len() < 2 {
+                return None;
+            }
             cols[1].parse::<f64>().ok()
         })
         .collect()

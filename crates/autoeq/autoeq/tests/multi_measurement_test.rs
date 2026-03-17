@@ -1,9 +1,9 @@
 //! Tests for multi-measurement optimization strategies.
 
-use autoeq::optim::{MultiObjectiveData, ObjectiveData, compute_base_fitness};
-use autoeq::roomeq::MultiMeasurementStrategy;
 use autoeq::LossType;
 use autoeq::cli::PeqModel;
+use autoeq::optim::{MultiObjectiveData, ObjectiveData, compute_base_fitness};
+use autoeq::roomeq::MultiMeasurementStrategy;
 use ndarray::{Array1, array};
 
 /// Create a minimal ObjectiveData for testing with a given deviation curve.

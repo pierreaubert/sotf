@@ -64,9 +64,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
 
     // Angle scale: day of year → angle [0, 2π)
     // Day 0 = Jan 1 at 12 o'clock (top), going clockwise
-    let angle_for_day = |day: usize| -> f64 {
-        (day as f64 / n as f64) * 2.0 * PI - PI / 2.0
-    };
+    let angle_for_day = |day: usize| -> f64 { (day as f64 / n as f64) * 2.0 * PI - PI / 2.0 };
 
     let mut d3_paths: Vec<d3rs::shape::path::Path> = Vec::new();
 
@@ -190,11 +188,17 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         let mut builder = D3PathBuilder::new();
         for i in 0..np {
             let (dx, dy) = if i == 0 {
-                (points[1].0 - points[np - 2].0, points[1].1 - points[np - 2].1)
+                (
+                    points[1].0 - points[np - 2].0,
+                    points[1].1 - points[np - 2].1,
+                )
             } else if i == np - 1 {
                 (points[1].0 - points[i - 1].0, points[1].1 - points[i - 1].1)
             } else {
-                (points[i + 1].0 - points[i - 1].0, points[i + 1].1 - points[i - 1].1)
+                (
+                    points[i + 1].0 - points[i - 1].0,
+                    points[i + 1].1 - points[i - 1].1,
+                )
             };
             let len = (dx * dx + dy * dy).sqrt().max(1e-6);
             let nx = -dy / len * half;
@@ -207,11 +211,17 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         }
         for i in (0..np).rev() {
             let (dx, dy) = if i == 0 {
-                (points[1].0 - points[np - 2].0, points[1].1 - points[np - 2].1)
+                (
+                    points[1].0 - points[np - 2].0,
+                    points[1].1 - points[np - 2].1,
+                )
             } else if i == np - 1 {
                 (points[1].0 - points[i - 1].0, points[1].1 - points[i - 1].1)
             } else {
-                (points[i + 1].0 - points[i - 1].0, points[i + 1].1 - points[i - 1].1)
+                (
+                    points[i + 1].0 - points[i - 1].0,
+                    points[i + 1].1 - points[i - 1].1,
+                )
             };
             let len = (dx * dx + dy * dy).sqrt().max(1e-6);
             let nx = -dy / len * half;
@@ -283,15 +293,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .font_weight(FontWeight::BOLD)
                 .child("Radial Area Chart — SFO Temperature"),
         )
-        .child(
-            div()
-                .text_sm()
-                .text_color(rgb(0x666666))
-                .child(format!(
-                    "Source: observablehq.com/@d3/radial-area-chart — {} days, {:.0}°F to {:.0}°F",
-                    n, temp_min, temp_max
-                )),
-        )
+        .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+            "Source: observablehq.com/@d3/radial-area-chart — {} days, {:.0}°F to {:.0}°F",
+            n, temp_min, temp_max
+        )))
         .child(
             div()
                 .flex()
@@ -335,9 +340,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             d3_paths
                                 .iter()
                                 .map(|p| {
-                                    super::path_utils::d3rs_path_to_gpui_simple(
-                                        p, bounds, 0.0, 0.0,
-                                    )
+                                    super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)
                                 })
                                 .collect::<Vec<_>>()
                         },

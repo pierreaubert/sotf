@@ -40,7 +40,9 @@ impl Render for StatusBarDebug {
                             .child(
                                 StatusBar::new("status-bottom")
                                     .position(StatusBarPosition::Bottom)
-                                    .left(Text::new("Track 1 - Moonlight Sonata").size(TextSize::Xs))
+                                    .left(
+                                        Text::new("Track 1 - Moonlight Sonata").size(TextSize::Xs),
+                                    )
                                     .center(Text::new("02:15 / 05:30").size(TextSize::Xs))
                                     .right(Text::new("Vol: 80%").size(TextSize::Xs)),
                             ),

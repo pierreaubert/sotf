@@ -35,12 +35,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         })
         .collect();
 
-    let min_val = carats
-        .iter()
-        .fold(f64::INFINITY, |a, &b| a.min(b));
-    let max_val = carats
-        .iter()
-        .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    let min_val = carats.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+    let max_val = carats.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
     // Bin the data
     let bin_count = 40;
@@ -104,7 +100,10 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         D3PathBuilder::new()
             .move_to(margin_left, margin_top + chart_height)
             .line_to(margin_left + chart_width, margin_top + chart_height)
-            .line_to(margin_left + chart_width, margin_top + chart_height + axis_w)
+            .line_to(
+                margin_left + chart_width,
+                margin_top + chart_height + axis_w,
+            )
             .line_to(margin_left, margin_top + chart_height + axis_w)
             .close_path()
             .build(),
@@ -131,7 +130,6 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         );
         all_colors.push(hsla(0.0, 0.0, 0.85, 1.0));
     }
-
 
     // X tick values
     let x_tick_step = ((max_val - min_val) / 8.0 * 10.0).round() / 10.0;

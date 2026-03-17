@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
-use sotf_audio_player_gpui::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
 use sotf_audio_player_gpui::app::InputMode;
+use sotf_audio_player_gpui::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
 
 pub struct SpinoramaPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,

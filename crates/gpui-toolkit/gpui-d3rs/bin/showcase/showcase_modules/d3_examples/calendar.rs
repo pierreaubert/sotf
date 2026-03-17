@@ -49,7 +49,12 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 return None;
             }
             let pct_change = (close - open) / open * 100.0;
-            Some(DayData { year, month, day, pct_change })
+            Some(DayData {
+                year,
+                month,
+                day,
+                pct_change,
+            })
         })
         .collect();
 
@@ -70,9 +75,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .min(5.0); // Cap at 5% for better color contrast
 
     // Diverging: t=0 → red (negative), t=0.5 → white (zero), t=1 → green (positive)
-    let color_scale = LinearScale::new()
-        .domain(-max_abs, max_abs)
-        .range(0.0, 1.0);
+    let color_scale = LinearScale::new().domain(-max_abs, max_abs).range(0.0, 1.0);
     let scheme = SeqScheme::turbo();
 
     // Day-of-year → (week, dow) computation

@@ -82,24 +82,25 @@ impl Render for HierarchyDemo {
 
             // Link to parent
             if let Some(parent_weak) = &n.parent
-                && let Some(parent_rc) = parent_weak.upgrade() {
-                    let p = parent_rc.borrow();
+                && let Some(parent_rc) = parent_weak.upgrade()
+            {
+                let p = parent_rc.borrow();
 
-                    // Draw link (simple SVG line)
-                    let x1 = n.x as f32 + 100.0;
-                    let y1 = n.y as f32 + 100.0;
-                    let x2 = p.x as f32 + 100.0;
-                    let y2 = p.y as f32 + 100.0;
+                // Draw link (simple SVG line)
+                let x1 = n.x as f32 + 100.0;
+                let y1 = n.y as f32 + 100.0;
+                let x2 = p.x as f32 + 100.0;
+                let y2 = p.y as f32 + 100.0;
 
-                    links.push(
-                        div().absolute().size_full().child(
-                            svg()
-                                .size_full()
-                                .path(format!("M {},{} L {},{}", x2, y2, x1, y1))
-                                .text_color(rgb(0x666666)),
-                        ),
-                    );
-                }
+                links.push(
+                    div().absolute().size_full().child(
+                        svg()
+                            .size_full()
+                            .path(format!("M {},{} L {},{}", x2, y2, x1, y1))
+                            .text_color(rgb(0x666666)),
+                    ),
+                );
+            }
 
             // Node
             nodes.push(

@@ -10,8 +10,8 @@
 
 #[cfg(target_os = "windows")]
 mod tests {
-    use cpal::traits::{DeviceTrait, HostTrait};
     use cpal::HostId;
+    use cpal::traits::{DeviceTrait, HostTrait};
 
     /// Get all available host IDs on the system
     fn available_hosts() -> Vec<HostId> {

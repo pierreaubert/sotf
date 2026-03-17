@@ -4,15 +4,14 @@
 use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_sample_rate};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
-#[cfg(all(target_os = "macos", feature = "hal"))]
-use gpui_ui_kit::{ButtonSet, ButtonSetOption, Select, SelectOption};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, HStack, StackAlign, StackSpacing,
-    Text, TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use gpui_ui_kit::{ButtonSet, ButtonSetOption, Select, SelectOption};
 
 impl PlayerView {
     pub(crate) fn render_audio_device_settings_content(

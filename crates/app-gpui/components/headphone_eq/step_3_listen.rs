@@ -93,7 +93,9 @@ impl PlayerView {
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
-                            .content(self.render_optimization_result_graphs(result, &theme, 1200.0)),
+                            .content(
+                                self.render_optimization_result_graphs(result, &theme, 1200.0),
+                            ),
                     )
                     .child(
                         Card::new()

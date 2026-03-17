@@ -102,7 +102,10 @@ impl Delaunay {
 
     /// Hull as a closed polygon of (x, y) points.
     pub fn hull_polygon(&self) -> Vec<(f64, f64)> {
-        let mut poly: Vec<(f64, f64)> = self.inner.hull.iter()
+        let mut poly: Vec<(f64, f64)> = self
+            .inner
+            .hull
+            .iter()
             .map(|&i| self.inner.point(i))
             .collect();
         if !poly.is_empty() {
@@ -116,7 +119,14 @@ impl Delaunay {
         (0..self.inner.halfedges.len()).filter_map(move |e| {
             let j = self.inner.halfedges[e];
             if j == delaunator::EMPTY || e < j {
-                Some((self.inner.triangles[e], self.inner.triangles[if j == delaunator::EMPTY { if e % 3 == 2 { e - 2 } else { e + 1 } } else { j }]))
+                Some((
+                    self.inner.triangles[e],
+                    self.inner.triangles[if j == delaunator::EMPTY {
+                        if e % 3 == 2 { e - 2 } else { e + 1 }
+                    } else {
+                        j
+                    }],
+                ))
             } else {
                 None
             }

@@ -22,11 +22,16 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let mut all_colors: Vec<Hsla> = Vec::new();
 
     for cell in &result.cells {
-        if cell.y > height { continue; } // clip to display
+        if cell.y > height {
+            continue;
+        } // clip to display
         let path = D3PathBuilder::new()
             .move_to(cell.x, cell.y)
             .line_to(cell.x + result.cell_width - 0.5, cell.y)
-            .line_to(cell.x + result.cell_width - 0.5, cell.y + result.cell_height - 0.2)
+            .line_to(
+                cell.x + result.cell_width - 0.5,
+                cell.y + result.cell_height - 0.2,
+            )
             .line_to(cell.x, cell.y + result.cell_height - 0.2)
             .close_path()
             .build();

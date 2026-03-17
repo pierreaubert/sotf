@@ -39,11 +39,7 @@ const CROSSOVER_ORDER: u32 = 4;
 ///
 /// The angular offset is measured from the speaker midpoint looking toward the LP.
 /// This simulates slight head movements at the listening position.
-fn multi_lp_from_speakers(
-    lp: Point3D,
-    speakers: &[Point3D],
-    angle_deg: f64,
-) -> Vec<Point3D> {
+fn multi_lp_from_speakers(lp: Point3D, speakers: &[Point3D], angle_deg: f64) -> Vec<Point3D> {
     // Compute speaker midpoint
     let n = speakers.len() as f64;
     let mid = Point3D::new(
@@ -88,8 +84,16 @@ fn multi_lp_from_speakers(
 
     vec![
         lp, // center (primary)
-        Point3D::new(lp.x + right.0 * offset, lp.y + right.1 * offset, lp.z + right.2 * offset), // right
-        Point3D::new(lp.x - right.0 * offset, lp.y - right.1 * offset, lp.z - right.2 * offset), // left
+        Point3D::new(
+            lp.x + right.0 * offset,
+            lp.y + right.1 * offset,
+            lp.z + right.2 * offset,
+        ), // right
+        Point3D::new(
+            lp.x - right.0 * offset,
+            lp.y - right.1 * offset,
+            lp.z - right.2 * offset,
+        ), // left
         Point3D::new(lp.x + ux * offset, lp.y + uy * offset, lp.z + uz * offset), // up
         Point3D::new(lp.x - ux * offset, lp.y - uy * offset, lp.z - uz * offset), // down
     ]

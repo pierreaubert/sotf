@@ -63,11 +63,8 @@ async fn test_drag_list_no_handles(cx: &mut TestAppContext) {
     impl Render for NoHandlesView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                DragList::new(
-                    "dl-no-handles",
-                    vec![DragItem::new("a", div().child("A"))],
-                )
-                .show_handles(false),
+                DragList::new("dl-no-handles", vec![DragItem::new("a", div().child("A"))])
+                    .show_handles(false),
             )
         }
     }

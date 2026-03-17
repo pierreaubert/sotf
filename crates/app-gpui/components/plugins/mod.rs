@@ -14,13 +14,13 @@ pub mod level_meters;
 pub mod theme;
 pub mod ticks;
 
-pub mod ui_layout_renderer;
 mod ui_compressor;
 mod ui_downmix;
 pub mod ui_eq;
 mod ui_gain;
 mod ui_gate;
 mod ui_graph;
+pub mod ui_layout_renderer;
 mod ui_limiter;
 mod ui_loudness;
 mod ui_matrix;
@@ -130,7 +130,6 @@ pub fn render_plugin_content(
         // ====================================================================
         // Custom renderers — plugins with unique UI requirements
         // ====================================================================
-
         PluginSettings::EQ {
             channels,
             filters,
@@ -265,19 +264,43 @@ pub fn render_plugin_content(
                     b.bypass,
                 )
             } else {
-                (*threshold_db, *ratio, *attack_ms, *release_ms, *knee_db, 0.0, false, true, false, false)
+                (
+                    *threshold_db,
+                    *ratio,
+                    *attack_ms,
+                    *release_ms,
+                    *knee_db,
+                    0.0,
+                    false,
+                    true,
+                    false,
+                    false,
+                )
             };
             render_mb_compressor_plugin(
                 entity.clone(),
                 plugin_idx,
                 ui_mb_compressor::MbCompressorRenderState {
-                    num_bands: *num_bands, crossover_preset: *crossover_preset,
-                    crossover_freq_1: *crossover_freq_1, crossover_freq_2: *crossover_freq_2,
-                    crossover_freq_3: *crossover_freq_3, crossover_freq_4: *crossover_freq_4,
-                    threshold_db: dt, ratio: dr, attack_ms: da, release_ms: drl,
-                    knee_db: dk, makeup_gain_db: dm, auto_makeup: dam,
-                    active: dact, solo: ds, bypass: db, mix: *mix,
-                    link_channels: *link_channels, is_editing, selected_param,
+                    num_bands: *num_bands,
+                    crossover_preset: *crossover_preset,
+                    crossover_freq_1: *crossover_freq_1,
+                    crossover_freq_2: *crossover_freq_2,
+                    crossover_freq_3: *crossover_freq_3,
+                    crossover_freq_4: *crossover_freq_4,
+                    threshold_db: dt,
+                    ratio: dr,
+                    attack_ms: da,
+                    release_ms: drl,
+                    knee_db: dk,
+                    makeup_gain_db: dm,
+                    auto_makeup: dam,
+                    active: dact,
+                    solo: ds,
+                    bypass: db,
+                    mix: *mix,
+                    link_channels: *link_channels,
+                    is_editing,
+                    selected_param,
                     selected_band_idx,
                 },
                 theme,
@@ -305,7 +328,8 @@ pub fn render_plugin_content(
             ..
         } => {
             let selected_band_idx = selected_band_idx.min(bands.len());
-            let (dt, dr, da, drl, drng, dk, dh, dhold, dam, dact, ds, db) = if selected_band_idx > 0 {
+            let (dt, dr, da, drl, drng, dk, dh, dhold, dam, dact, ds, db) = if selected_band_idx > 0
+            {
                 let b = &bands[selected_band_idx - 1];
                 (
                     b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
@@ -316,23 +340,53 @@ pub fn render_plugin_content(
                     b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
                     b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
                     b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
-                    b.auto_makeup, b.active, b.solo, b.bypass,
+                    b.auto_makeup,
+                    b.active,
+                    b.solo,
+                    b.bypass,
                 )
             } else {
-                (*threshold_db, *ratio, *attack_ms, *release_ms, *range_db, *knee_db,
-                 *hysteresis_db, *hold_ms, false, true, false, false)
+                (
+                    *threshold_db,
+                    *ratio,
+                    *attack_ms,
+                    *release_ms,
+                    *range_db,
+                    *knee_db,
+                    *hysteresis_db,
+                    *hold_ms,
+                    false,
+                    true,
+                    false,
+                    false,
+                )
             };
             render_mb_expander_plugin(
                 entity.clone(),
                 plugin_idx,
                 ui_mb_expander::MbExpanderRenderState {
-                    num_bands: *num_bands, crossover_preset: *crossover_preset,
-                    crossover_freq_1: *crossover_freq_1, crossover_freq_2: *crossover_freq_2,
-                    crossover_freq_3: *crossover_freq_3, crossover_freq_4: *crossover_freq_4,
-                    threshold_db: dt, ratio: dr, attack_ms: da, release_ms: drl,
-                    range_db: drng, knee_db: dk, hysteresis_db: dh, hold_ms: dhold,
-                    auto_makeup: dam, active: dact, solo: ds, bypass: db, mix: *mix,
-                    link_channels: *link_channels, is_editing, selected_param,
+                    num_bands: *num_bands,
+                    crossover_preset: *crossover_preset,
+                    crossover_freq_1: *crossover_freq_1,
+                    crossover_freq_2: *crossover_freq_2,
+                    crossover_freq_3: *crossover_freq_3,
+                    crossover_freq_4: *crossover_freq_4,
+                    threshold_db: dt,
+                    ratio: dr,
+                    attack_ms: da,
+                    release_ms: drl,
+                    range_db: drng,
+                    knee_db: dk,
+                    hysteresis_db: dh,
+                    hold_ms: dhold,
+                    auto_makeup: dam,
+                    active: dact,
+                    solo: ds,
+                    bypass: db,
+                    mix: *mix,
+                    link_channels: *link_channels,
+                    is_editing,
+                    selected_param,
                     selected_band_idx,
                 },
                 theme,

@@ -48,11 +48,7 @@ struct JsonLink {
 /// Load node and link data from a JSON file (miserables.json format).
 pub fn load_json(json_str: &str) -> (Vec<(String, usize)>, Vec<LinkData>) {
     let graph: JsonGraph = serde_json::from_str(json_str).expect("invalid graph JSON");
-    let nodes = graph
-        .nodes
-        .into_iter()
-        .map(|n| (n.id, n.group))
-        .collect();
+    let nodes = graph.nodes.into_iter().map(|n| (n.id, n.group)).collect();
     let links = graph
         .links
         .into_iter()
@@ -76,27 +72,52 @@ pub struct ForceGraphResult {
 /// Les Miserables-like graph (small subset).
 pub fn default_data() -> (Vec<(String, usize)>, Vec<LinkData>) {
     let nodes = vec![
-        ("Myriel", 1), ("Napoleon", 1), ("Labarre", 2), ("Valjean", 2),
-        ("Marguerite", 3), ("Mme.deR", 2), ("Isabeau", 2), ("Gervais", 2),
-        ("Tholomyes", 3), ("Listolier", 3), ("Fameuil", 3), ("Blacheville", 3),
-        ("Favourite", 3), ("Dahlia", 3), ("Zephine", 3), ("Fantine", 3),
-        ("Cosette", 4), ("Javert", 4), ("Fauchelevent", 5), ("Bamatabois", 5),
+        ("Myriel", 1),
+        ("Napoleon", 1),
+        ("Labarre", 2),
+        ("Valjean", 2),
+        ("Marguerite", 3),
+        ("Mme.deR", 2),
+        ("Isabeau", 2),
+        ("Gervais", 2),
+        ("Tholomyes", 3),
+        ("Listolier", 3),
+        ("Fameuil", 3),
+        ("Blacheville", 3),
+        ("Favourite", 3),
+        ("Dahlia", 3),
+        ("Zephine", 3),
+        ("Fantine", 3),
+        ("Cosette", 4),
+        ("Javert", 4),
+        ("Fauchelevent", 5),
+        ("Bamatabois", 5),
     ]
     .into_iter()
     .map(|(n, g)| (n.to_string(), g))
     .collect();
 
     let links = vec![
-        ("Napoleon", "Myriel", 1), ("Labarre", "Valjean", 1),
-        ("Mme.deR", "Valjean", 1), ("Isabeau", "Valjean", 1),
-        ("Gervais", "Valjean", 1), ("Marguerite", "Valjean", 1),
-        ("Tholomyes", "Fantine", 3), ("Listolier", "Tholomyes", 4),
-        ("Fameuil", "Tholomyes", 4), ("Blacheville", "Tholomyes", 4),
-        ("Favourite", "Tholomyes", 3), ("Dahlia", "Tholomyes", 3),
-        ("Zephine", "Tholomyes", 3), ("Fantine", "Valjean", 5),
-        ("Cosette", "Valjean", 4), ("Javert", "Valjean", 6),
-        ("Fauchelevent", "Valjean", 2), ("Bamatabois", "Valjean", 1),
-        ("Cosette", "Javert", 1), ("Cosette", "Fantine", 5),
+        ("Napoleon", "Myriel", 1),
+        ("Labarre", "Valjean", 1),
+        ("Mme.deR", "Valjean", 1),
+        ("Isabeau", "Valjean", 1),
+        ("Gervais", "Valjean", 1),
+        ("Marguerite", "Valjean", 1),
+        ("Tholomyes", "Fantine", 3),
+        ("Listolier", "Tholomyes", 4),
+        ("Fameuil", "Tholomyes", 4),
+        ("Blacheville", "Tholomyes", 4),
+        ("Favourite", "Tholomyes", 3),
+        ("Dahlia", "Tholomyes", 3),
+        ("Zephine", "Tholomyes", 3),
+        ("Fantine", "Valjean", 5),
+        ("Cosette", "Valjean", 4),
+        ("Javert", "Valjean", 6),
+        ("Fauchelevent", "Valjean", 2),
+        ("Bamatabois", "Valjean", 1),
+        ("Cosette", "Javert", 1),
+        ("Cosette", "Fantine", 5),
     ]
     .into_iter()
     .map(|(s, t, v)| LinkData {

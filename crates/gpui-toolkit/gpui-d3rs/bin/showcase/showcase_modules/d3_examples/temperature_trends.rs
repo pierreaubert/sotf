@@ -47,8 +47,11 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
             let x = pt.x + result.radius * angle.cos();
             let y = pt.y + result.radius * angle.sin();
-            if v == 0 { builder = builder.move_to(x, y); }
-            else { builder = builder.line_to(x, y); }
+            if v == 0 {
+                builder = builder.move_to(x, y);
+            } else {
+                builder = builder.line_to(x, y);
+            }
         }
         builder = builder.close_path();
         d3_paths.push(builder.build());
@@ -60,24 +63,55 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     }
 
     div()
-        .flex().flex_col().size_full().p_4()
-        .child(div().text_lg().font_weight(FontWeight::BOLD).mb_2()
-            .child("Global Temperature Trends"))
-        .child(div().text_xs().text_color(rgb(0x666666)).mb_2()
-            .child(format!("Source: observablehq.com/@d3/global-temperature-trends — {} monthly anomalies", values.len())))
+        .flex()
+        .flex_col()
+        .size_full()
+        .p_4()
         .child(
-            div().w(px(width as f32)).h(px(height as f32)).bg(rgb(0xffffff)).border_1().border_color(rgb(0xe0e0e0))
+            div()
+                .text_lg()
+                .font_weight(FontWeight::BOLD)
+                .mb_2()
+                .child("Global Temperature Trends"),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(rgb(0x666666))
+                .mb_2()
+                .child(format!(
+                    "Source: observablehq.com/@d3/global-temperature-trends — {} monthly anomalies",
+                    values.len()
+                )),
+        )
+        .child(
+            div()
+                .w(px(width as f32))
+                .h(px(height as f32))
+                .bg(rgb(0xffffff))
+                .border_1()
+                .border_color(rgb(0xe0e0e0))
                 .relative()
-                .child(canvas(
-                    move |bounds, _, _| {
-                        d3_paths.iter().map(|p| super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)).collect::<Vec<_>>()
-                    },
-                    move |_bounds, paths, window, _| {
-                        for (i, path_opt) in paths.into_iter().enumerate() {
-                            if let Some(path) = path_opt { window.paint_path(path, all_colors[i]); }
-                        }
-                    },
-                ).size_full())
+                .child(
+                    canvas(
+                        move |bounds, _, _| {
+                            d3_paths
+                                .iter()
+                                .map(|p| {
+                                    super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        move |_bounds, paths, window, _| {
+                            for (i, path_opt) in paths.into_iter().enumerate() {
+                                if let Some(path) = path_opt {
+                                    window.paint_path(path, all_colors[i]);
+                                }
+                            }
+                        },
+                    )
+                    .size_full(),
+                )
                 // Y-axis: temperature anomaly labels
                 .children({
                     let y_scale = LinearScale::new()
@@ -92,8 +126,12 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                     }
                     ticks.into_iter().map(move |v| {
                         let y = y_scale.scale(v);
-                        div().absolute().left(px(2.0)).top(px((y - 6.0) as f32))
-                            .text_size(px(9.0)).text_color(rgb(0x666666))
+                        div()
+                            .absolute()
+                            .left(px(2.0))
+                            .top(px((y - 6.0) as f32))
+                            .text_size(px(9.0))
+                            .text_color(rgb(0x666666))
                             .child(format!("{v:+.1}°C"))
                     })
                 })
@@ -108,13 +146,24 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                     (0..n).step_by(step).map(move |i| {
                         let x = x_scale.scale(i as f64);
                         let year = 1880 + i / 12;
-                        div().absolute().left(px((x - 12.0) as f32)).top(px((height - 15.0) as f32))
-                            .text_size(px(9.0)).text_color(rgb(0x666666))
+                        div()
+                            .absolute()
+                            .left(px((x - 12.0) as f32))
+                            .top(px((height - 15.0) as f32))
+                            .text_size(px(9.0))
+                            .text_color(rgb(0x666666))
                             .child(format!("{year}"))
                     })
                 })
                 // Y-axis label
-                .child(div().absolute().left(px(2.0)).top(px(2.0))
-                    .text_size(px(9.0)).text_color(rgb(0x999999)).child("Anomaly (°C)")),
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(2.0))
+                        .top(px(2.0))
+                        .text_size(px(9.0))
+                        .text_color(rgb(0x999999))
+                        .child("Anomaly (°C)"),
+                ),
         )
 }

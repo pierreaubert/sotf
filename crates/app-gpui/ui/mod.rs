@@ -13,8 +13,7 @@ use std::time::Duration;
 // Re-export all actions for backward compatibility
 pub use crate::app::actions::*;
 use crate::components::plugins::actions::{
-    OpenAbConfigFile, OpenIrFile, OpenSofaFile, ResetPluginParam, SelectPluginParam,
-    StartKnobDrag,
+    OpenAbConfigFile, OpenIrFile, OpenSofaFile, ResetPluginParam, SelectPluginParam, StartKnobDrag,
     UpdatePluginParam,
 };
 use crate::components::plugins::editing::PluginEditingManager;
@@ -924,9 +923,7 @@ impl PlayerView {
             if let Some(file) = file {
                 let path = file.path().to_string_lossy().to_string();
                 state_entity.update(&mut cx.clone(), |state, cx| {
-                    state
-                        .app
-                        .set_plugin_param_string(plugin_idx, 0, path);
+                    state.app.set_plugin_param_string(plugin_idx, 0, path);
                     cx.notify();
                 });
             }
@@ -952,9 +949,7 @@ impl PlayerView {
             if let Some(file) = file {
                 let path = file.path().to_string_lossy().to_string();
                 state_entity.update(&mut cx.clone(), |state, cx| {
-                    state
-                        .app
-                        .set_plugin_param_string(plugin_idx, 0, path);
+                    state.app.set_plugin_param_string(plugin_idx, 0, path);
                     cx.notify();
                 });
             }
@@ -993,11 +988,9 @@ impl PlayerView {
                                     .set_plugin_param_string(plugin_idx, param_idx, content);
                                 // Store the source file path for display
                                 if path_id == "a" {
-                                    state.app.plugin_state.ab_compare_file_a =
-                                        Some(file_path);
+                                    state.app.plugin_state.ab_compare_file_a = Some(file_path);
                                 } else {
-                                    state.app.plugin_state.ab_compare_file_b =
-                                        Some(file_path);
+                                    state.app.plugin_state.ab_compare_file_b = Some(file_path);
                                 }
                                 cx.notify();
                             });

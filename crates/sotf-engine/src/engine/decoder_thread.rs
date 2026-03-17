@@ -593,7 +593,10 @@ impl DecoderState {
     fn process_hal_input(
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,
-        #[cfg_attr(not(all(target_os = "macos", feature = "hal")), allow(unused_variables))]
+        #[cfg_attr(
+            not(all(target_os = "macos", feature = "hal")),
+            allow(unused_variables)
+        )]
         command_rx: &Receiver<DecoderCommand>,
         frame_size: usize,
         target_sample_rate: u32,
@@ -796,7 +799,9 @@ fn run_decoder_thread(
                         log::debug!("[Decoder Thread] Play failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                         response_tx
-                            .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                            .send(DecoderResponse::Error(
+                                "Failed to start playback".to_string(),
+                            ))
                             .ok();
                     } else {
                         response_tx.send(DecoderResponse::Ok).ok();
@@ -809,13 +814,17 @@ fn run_decoder_thread(
                         log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                         response_tx
-                            .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                            .send(DecoderResponse::Error(
+                                "Failed to start playback".to_string(),
+                            ))
                             .ok();
                     } else if let Err(e) = state.seek(position) {
                         log::debug!("[Decoder Thread] PlayAt (seek) failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                         response_tx
-                            .send(DecoderResponse::Error("Failed to seek during play_at".to_string()))
+                            .send(DecoderResponse::Error(
+                                "Failed to seek during play_at".to_string(),
+                            ))
                             .ok();
                     } else {
                         response_tx.send(DecoderResponse::Ok).ok();
@@ -860,7 +869,8 @@ fn run_decoder_thread(
         // Generate frames based on mode
         if state.silent_source && !state.paused {
             // HAL Input / Silent Source mode
-            match state.process_hal_input(&message_tx, &command_rx, frame_size, target_sample_rate) {
+            match state.process_hal_input(&message_tx, &command_rx, frame_size, target_sample_rate)
+            {
                 Ok((true, _)) => {
                     // Frame processed successfully
                     // Don't sleep if connected - rely on backpressure from message_tx
@@ -906,9 +916,16 @@ fn run_decoder_thread(
                                 message_tx.send(DecoderMessage::Flush).ok();
                                 state.stop();
                                 if let Err(e) = state.play(path, target_sample_rate, frame_size) {
-                                    log::debug!("[Decoder Thread] Play failed (from HAL interrupt): {}", e);
+                                    log::debug!(
+                                        "[Decoder Thread] Play failed (from HAL interrupt): {}",
+                                        e
+                                    );
                                     event_tx.send(ThreadEvent::DecoderError(e)).ok();
-                                    response_tx.send(DecoderResponse::Error("Failed to start playback".to_string())).ok();
+                                    response_tx
+                                        .send(DecoderResponse::Error(
+                                            "Failed to start playback".to_string(),
+                                        ))
+                                        .ok();
                                 } else {
                                     response_tx.send(DecoderResponse::Ok).ok();
                                 }
@@ -917,13 +934,27 @@ fn run_decoder_thread(
                                 message_tx.send(DecoderMessage::Flush).ok();
                                 state.stop();
                                 if let Err(e) = state.play(path, target_sample_rate, frame_size) {
-                                    log::debug!("[Decoder Thread] PlayAt failed (from HAL interrupt): {}", e);
+                                    log::debug!(
+                                        "[Decoder Thread] PlayAt failed (from HAL interrupt): {}",
+                                        e
+                                    );
                                     event_tx.send(ThreadEvent::DecoderError(e)).ok();
-                                    response_tx.send(DecoderResponse::Error("Failed to start playback".to_string())).ok();
+                                    response_tx
+                                        .send(DecoderResponse::Error(
+                                            "Failed to start playback".to_string(),
+                                        ))
+                                        .ok();
                                 } else if let Err(e) = state.seek(position) {
-                                    log::debug!("[Decoder Thread] PlayAt seek failed (from HAL interrupt): {}", e);
+                                    log::debug!(
+                                        "[Decoder Thread] PlayAt seek failed (from HAL interrupt): {}",
+                                        e
+                                    );
                                     event_tx.send(ThreadEvent::DecoderError(e)).ok();
-                                    response_tx.send(DecoderResponse::Error("Failed to seek during play_at".to_string())).ok();
+                                    response_tx
+                                        .send(DecoderResponse::Error(
+                                            "Failed to seek during play_at".to_string(),
+                                        ))
+                                        .ok();
                                 } else {
                                     response_tx.send(DecoderResponse::Ok).ok();
                                 }
@@ -945,11 +976,7 @@ fn run_decoder_thread(
             // Handle sleep for non-HAL mode or disconnected HAL
             #[cfg(all(target_os = "macos", feature = "hal"))]
             {
-                if state
-                    .hal_reader
-                    .as_ref()
-                    .is_none_or(|r| !r.is_connected())
-                {
+                if state.hal_reader.as_ref().is_none_or(|r| !r.is_connected()) {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
             }
@@ -986,7 +1013,9 @@ fn run_decoder_thread(
                                 log::debug!("[Decoder Thread] Play failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
                                 response_tx
-                                    .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                                    .send(DecoderResponse::Error(
+                                        "Failed to start playback".to_string(),
+                                    ))
                                     .ok();
                             } else {
                                 response_tx.send(DecoderResponse::Ok).ok();
@@ -999,13 +1028,17 @@ fn run_decoder_thread(
                                 log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
                                 response_tx
-                                    .send(DecoderResponse::Error("Failed to start playback".to_string()))
+                                    .send(DecoderResponse::Error(
+                                        "Failed to start playback".to_string(),
+                                    ))
                                     .ok();
                             } else if let Err(e) = state.seek(position) {
                                 log::debug!("[Decoder Thread] PlayAt (seek) failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
                                 response_tx
-                                    .send(DecoderResponse::Error("Failed to seek during play_at".to_string()))
+                                    .send(DecoderResponse::Error(
+                                        "Failed to seek during play_at".to_string(),
+                                    ))
                                     .ok();
                             } else {
                                 response_tx.send(DecoderResponse::Ok).ok();

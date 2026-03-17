@@ -4,27 +4,20 @@ use gpui_ui_kit::command_palette::{CommandItem, CommandPalette};
 
 #[test]
 fn test_command_palette_creation() {
-    let palette = CommandPalette::new(
-        "cp-1",
-        vec![CommandItem::new("open", "Open File")],
-    );
+    let palette = CommandPalette::new("cp-1", vec![CommandItem::new("open", "Open File")]);
     drop(palette);
 }
 
 #[test]
 fn test_command_palette_placeholder() {
-    let palette = CommandPalette::new("cp-ph", vec![])
-        .placeholder("Search commands...");
+    let palette = CommandPalette::new("cp-ph", vec![]).placeholder("Search commands...");
     drop(palette);
 }
 
 #[test]
 fn test_command_palette_query() {
-    let palette = CommandPalette::new(
-        "cp-query",
-        vec![CommandItem::new("open", "Open File")],
-    )
-    .query("open");
+    let palette =
+        CommandPalette::new("cp-query", vec![CommandItem::new("open", "Open File")]).query("open");
     drop(palette);
 }
 
@@ -77,18 +70,14 @@ fn test_command_item_disabled() {
 
 #[test]
 fn test_command_palette_on_select() {
-    let palette = CommandPalette::new(
-        "cp-on-sel",
-        vec![CommandItem::new("open", "Open")],
-    )
-    .on_select(|_id, _window, _cx| {});
+    let palette = CommandPalette::new("cp-on-sel", vec![CommandItem::new("open", "Open")])
+        .on_select(|_id, _window, _cx| {});
     drop(palette);
 }
 
 #[test]
 fn test_command_palette_on_dismiss() {
-    let palette = CommandPalette::new("cp-on-dismiss", vec![])
-        .on_dismiss(|_window, _cx| {});
+    let palette = CommandPalette::new("cp-on-dismiss", vec![]).on_dismiss(|_window, _cx| {});
     drop(palette);
 }
 

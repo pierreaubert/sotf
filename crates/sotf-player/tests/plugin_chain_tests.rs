@@ -33,7 +33,10 @@ fn user_plugin_insert_index_before_permanent_tail() {
     let idx = chain.user_plugin_insert_index();
 
     // Insert index should be between permanent head and permanent tail
-    assert!(idx > 0, "insert index should be after first permanent plugin");
+    assert!(
+        idx > 0,
+        "insert index should be after first permanent plugin"
+    );
     assert!(
         idx < chain.plugins().len(),
         "insert index should be before last plugin"

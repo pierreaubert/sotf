@@ -91,9 +91,7 @@ impl TestScenario for MuteToggleScenario {
         // Volume should be preserved while muted
         let volume = driver.read_app(|app| app.playback.volume);
         if (volume - 0.1).abs() > 0.001 {
-            return Err(
-                format!("Volume should be preserved while muted, got {}", volume).into(),
-            );
+            return Err(format!("Volume should be preserved while muted, got {}", volume).into());
         }
 
         // Unmute

@@ -124,11 +124,9 @@ impl TestScenario for FooterVolumeScenario {
             // Volume should be preserved while muted
             let volume = footer.get_volume();
             if (volume - 0.75).abs() > 0.001 {
-                return Err(format!(
-                    "Volume should be preserved while muted, got {}",
-                    volume
-                )
-                .into());
+                return Err(
+                    format!("Volume should be preserved while muted, got {}", volume).into(),
+                );
             }
         }
 

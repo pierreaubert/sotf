@@ -114,7 +114,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
             let group = SpeakerGroup {
                 name: format!("{main_name}_group"),
                 speaker_name: None,
-                measurements: vec![make_csv_source_for_lps(main_name, num_lps), make_csv_source_for_lps(sub_name, num_lps)],
+                measurements: vec![
+                    make_csv_source_for_lps(main_name, num_lps),
+                    make_csv_source_for_lps(sub_name, num_lps),
+                ],
                 crossover: Some("first".to_string()),
             };
             speakers.insert(main_name.to_string(), SpeakerConfig::Group(group));

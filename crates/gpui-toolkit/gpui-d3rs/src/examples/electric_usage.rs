@@ -3,10 +3,9 @@
 //! Heatmap of hourly electricity usage: 24 hours × 365 days.
 //! Color encodes usage intensity (sequential warm scale).
 
-
 #[derive(Debug, Clone)]
 pub struct UsageCell {
-    pub date: String,   // YYYY-MM-DD
+    pub date: String, // YYYY-MM-DD
     pub hour: usize,
     pub usage: f64,
     pub x: f64,
@@ -31,7 +30,9 @@ pub fn load_csv(csv_str: &str) -> Vec<(String, usize, f64)> {
         .skip(1)
         .filter_map(|line| {
             let cols: Vec<&str> = line.split(',').collect();
-            if cols.len() < 2 { return None; }
+            if cols.len() < 2 {
+                return None;
+            }
             let date_str = cols[0].trim();
             let usage: f64 = cols[1].trim().parse().ok()?;
             // Extract date (YYYY-MM-DD) and hour from ISO datetime
@@ -83,7 +84,8 @@ pub fn compute(data: &[(String, usize, f64)]) -> ElectricUsageResult {
                 date: date.clone(),
                 hour: *hour,
                 usage: *usage,
-                x, y,
+                x,
+                y,
             })
         })
         .collect();

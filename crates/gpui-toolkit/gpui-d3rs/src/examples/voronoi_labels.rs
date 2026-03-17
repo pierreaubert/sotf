@@ -40,7 +40,9 @@ pub fn load_csv(csv_str: &str) -> Vec<(f64, f64)> {
         .lines()
         .filter_map(|line| {
             let cols: Vec<&str> = line.split(',').collect();
-            if cols.len() < 2 { return None; }
+            if cols.len() < 2 {
+                return None;
+            }
             let x: f64 = cols[0].trim().parse().ok()?;
             let y: f64 = cols[1].trim().parse().ok()?;
             Some((x, y))
@@ -100,10 +102,17 @@ pub fn compute(coords: &[(f64, f64)]) -> VoronoiLabelsResult {
             (false, LabelAnchor::Right, 0.0)
         };
 
-        if show_label { label_count += 1; }
+        if show_label {
+            label_count += 1;
+        }
 
         points.push(LabeledPoint {
-            index: i, x, y, show_label, label_anchor: anchor, cell_area: area,
+            index: i,
+            x,
+            y,
+            show_label,
+            label_anchor: anchor,
+            cell_area: area,
         });
     }
 

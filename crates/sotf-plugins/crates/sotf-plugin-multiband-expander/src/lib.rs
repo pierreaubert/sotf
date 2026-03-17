@@ -831,18 +831,14 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         "release" => Some(ParameterValue::Float(
                             bp.release_ms.unwrap_or(self.release_ms),
                         )),
-                        "knee" => Some(ParameterValue::Float(
-                            bp.knee_db.unwrap_or(self.knee_db),
-                        )),
-                        "range" => Some(ParameterValue::Float(
-                            bp.range_db.unwrap_or(self.range_db),
-                        )),
+                        "knee" => Some(ParameterValue::Float(bp.knee_db.unwrap_or(self.knee_db))),
+                        "range" => {
+                            Some(ParameterValue::Float(bp.range_db.unwrap_or(self.range_db)))
+                        }
                         "hysteresis" => Some(ParameterValue::Float(
                             bp.hysteresis_db.unwrap_or(self.hysteresis_db),
                         )),
-                        "hold" => Some(ParameterValue::Float(
-                            bp.hold_ms.unwrap_or(self.hold_ms),
-                        )),
+                        "hold" => Some(ParameterValue::Float(bp.hold_ms.unwrap_or(self.hold_ms))),
                         "auto" => Some(ParameterValue::Bool(bp.auto_makeup)),
                         "active" => Some(ParameterValue::Bool(bp.active)),
                         "solo" => Some(ParameterValue::Bool(bp.solo)),
@@ -1142,7 +1138,7 @@ mod tests {
     fn test_mb_expander_attack_release_not_swapped() {
         let mut params = MultibandExpanderPluginParams {
             num_bands: 2,
-            mix: 1.0, // wet-only to observe expansion effect
+            mix: 1.0,       // wet-only to observe expansion effect
             range_db: 60.0, // allow up to 60 dB of expansion attenuation
             ..Default::default()
         };
@@ -1203,12 +1199,8 @@ mod tests {
         .unwrap();
 
         // After 50ms with 1ms attack (and 0ms hold), the signal should be attenuated.
-        let quiet_rms_out: f32 = (quiet[1200..]
-            .iter()
-            .map(|s| s * s)
-            .sum::<f32>()
-            / (quiet.len() - 1200) as f32)
-            .sqrt();
+        let quiet_rms_out: f32 =
+            (quiet[1200..].iter().map(|s| s * s).sum::<f32>() / (quiet.len() - 1200) as f32).sqrt();
         assert!(
             quiet_rms_out < quiet_rms_in * 0.8,
             "Multiband expander gate should close fast with 1ms attack, \
@@ -1250,9 +1242,8 @@ mod tests {
 
         // After settling (crossover filter delay), output should be close to input.
         // Allow for crossover phase shift but RMS should be similar.
-        let rms_in: f32 = (input[2400..].iter().map(|s| s * s).sum::<f32>()
-            / (input.len() - 2400) as f32)
-            .sqrt();
+        let rms_in: f32 =
+            (input[2400..].iter().map(|s| s * s).sum::<f32>() / (input.len() - 2400) as f32).sqrt();
         let rms_out: f32 = (output[2400..].iter().map(|s| s * s).sum::<f32>()
             / (output.len() - 2400) as f32)
             .sqrt();

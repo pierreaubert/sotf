@@ -653,7 +653,12 @@ mod tests {
         let intervals = octave_intervals(3, &freq);
         // All intervals must have imin < imax (no empty bands)
         for &(imin, imax) in &intervals {
-            assert!(imin < imax, "Empty band ({}, {}) should have been skipped", imin, imax);
+            assert!(
+                imin < imax,
+                "Empty band ({}, {}) should have been skipped",
+                imin,
+                imax
+            );
         }
     }
 
@@ -663,7 +668,11 @@ mod tests {
         // Include an empty band that would previously produce NaN
         let intervals = vec![(0, 3), (3, 3), (2, 5)];
         let result = nbd(&intervals, &spl);
-        assert!(result.is_finite(), "nbd must be finite even with empty bands, got {}", result);
+        assert!(
+            result.is_finite(),
+            "nbd must be finite even with empty bands, got {}",
+            result
+        );
     }
 }
 

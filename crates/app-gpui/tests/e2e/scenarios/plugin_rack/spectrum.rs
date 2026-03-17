@@ -189,10 +189,7 @@ fn test_db_grid_lines() {
     ];
     assert_eq!(lines.len(), 10, "Should have 10 dB grid lines");
     assert!(lines[0].abs() < 0.001, "Should start at 0 dB");
-    assert!(
-        (lines[9] - (-90.0)).abs() < 0.001,
-        "Should end at -90 dB"
-    );
+    assert!((lines[9] - (-90.0)).abs() < 0.001, "Should end at -90 dB");
 }
 
 // =============================================================================
@@ -227,12 +224,12 @@ fn test_zoomed_range_visibility() {
 fn test_channel_colors_distinct() {
     fn channel_color(index: usize) -> (u8, u8, u8) {
         let colors = [
-            (66, 133, 244),  // Blue (L)
-            (234, 67, 53),   // Red (R)
-            (52, 168, 83),   // Green (C)
-            (251, 188, 5),   // Yellow (LFE)
-            (153, 0, 255),   // Purple (Ls)
-            (0, 188, 212),   // Cyan (Rs)
+            (66, 133, 244), // Blue (L)
+            (234, 67, 53),  // Red (R)
+            (52, 168, 83),  // Green (C)
+            (251, 188, 5),  // Yellow (LFE)
+            (153, 0, 255),  // Purple (Ls)
+            (0, 188, 212),  // Cyan (Rs)
         ];
         colors[index % colors.len()]
     }

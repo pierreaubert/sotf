@@ -42,8 +42,16 @@ impl PlayerView {
                 .room_eq_state
                 .apply_smart_defaults();
             // Recordings always produce single measurements
-            state.app.measurement_state.room_eq_state.has_multi_position_data = false;
-            state.app.measurement_state.room_eq_state.multi_position_counts = Vec::new();
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .has_multi_position_data = false;
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .multi_position_counts = Vec::new();
 
             let channel_count = state
                 .app

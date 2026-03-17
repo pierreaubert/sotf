@@ -207,11 +207,12 @@ pub fn render_mb_compressor_plugin(
                 })
                 .cursor_pointer()
                 .hover(|s| {
-                    s.text_color(theme.text_primary).border_color(if is_selected {
-                        theme.accent
-                    } else {
-                        theme.text_muted
-                    })
+                    s.text_color(theme.text_primary)
+                        .border_color(if is_selected {
+                            theme.accent
+                        } else {
+                            theme.text_muted
+                        })
                 })
                 .id(("mb-band", i))
                 .on_mouse_down(MouseButton::Left, {
@@ -460,17 +461,12 @@ pub fn render_mb_compressor_plugin(
         ));
 
     // === Main layout: 3 columns, centered ===
-    div()
-        .w_full()
-        .flex()
-        .justify_center()
-        .p_3()
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .child(global_col)
-                .child(center_col)
-                .child(right_col),
-        )
+    div().w_full().flex().justify_center().p_3().child(
+        div()
+            .flex()
+            .gap_4()
+            .child(global_col)
+            .child(center_col)
+            .child(right_col),
+    )
 }

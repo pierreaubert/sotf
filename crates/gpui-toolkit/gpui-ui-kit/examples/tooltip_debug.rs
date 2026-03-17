@@ -37,11 +37,8 @@ impl Render for TooltipDebug {
                             .flex()
                             .gap_4()
                             .child(
-                                WithTooltip::new(
-                                    Button::new("tt-top", "Top"),
-                                    "Tooltip on top",
-                                )
-                                .placement(TooltipPlacement::Top),
+                                WithTooltip::new(Button::new("tt-top", "Top"), "Tooltip on top")
+                                    .placement(TooltipPlacement::Top),
                             )
                             .child(
                                 WithTooltip::new(
@@ -51,11 +48,8 @@ impl Render for TooltipDebug {
                                 .placement(TooltipPlacement::Bottom),
                             )
                             .child(
-                                WithTooltip::new(
-                                    Button::new("tt-left", "Left"),
-                                    "Tooltip on left",
-                                )
-                                .placement(TooltipPlacement::Left),
+                                WithTooltip::new(Button::new("tt-left", "Left"), "Tooltip on left")
+                                    .placement(TooltipPlacement::Left),
                             )
                             .child(
                                 WithTooltip::new(
@@ -77,18 +71,11 @@ impl Render for TooltipDebug {
                         div()
                             .flex()
                             .gap_4()
-                            .child(
-                                WithTooltip::new(
-                                    Badge::new("3"),
-                                    "3 notifications",
-                                ),
-                            )
-                            .child(
-                                WithTooltip::new(
-                                    Text::new("Hover me"),
-                                    "This is a text element",
-                                ),
-                            ),
+                            .child(WithTooltip::new(Badge::new("3"), "3 notifications"))
+                            .child(WithTooltip::new(
+                                Text::new("Hover me"),
+                                "This is a text element",
+                            )),
                     ),
             )
     }

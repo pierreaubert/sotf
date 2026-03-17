@@ -10,8 +10,8 @@ use gpui_ui_kit::{
     VerticalSliderTheme,
 };
 pub use sotf_audio_player::param_index_to_engine_param;
-use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 use sotf_audio_player_midi::PhysicalControlKind;
+use sotf_audio_player_midi::mapping::{MidiOverlay, ParamAssignment};
 
 /// Render a parameter row with name and value
 pub fn render_param_row(

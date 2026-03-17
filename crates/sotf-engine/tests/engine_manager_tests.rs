@@ -138,7 +138,10 @@ fn test_engine_seek_without_file_returns_error() {
 
     let result = engine.seek(1.0);
 
-    assert!(result.is_err(), "Seek without a loaded file should fail synchronously");
+    assert!(
+        result.is_err(),
+        "Seek without a loaded file should fail synchronously"
+    );
 
     let state = engine.get_state();
     assert!(!state.seeking);
@@ -275,7 +278,10 @@ fn test_engine_set_plugin_parameter_propagates_processing_error() {
 
     let result = engine.set_plugin_parameter(999, "gain_db".to_string(), "-6.0".to_string());
 
-    assert!(result.is_err(), "Invalid plugin index should return an error");
+    assert!(
+        result.is_err(),
+        "Invalid plugin index should return an error"
+    );
 }
 
 #[test]
@@ -693,9 +699,7 @@ fn test_engine_auto_advance_after_end_of_stream() {
     // Load and play second file
     let temp_file2 = common::create_test_wav(0.5, 48000, 2);
     manager.load_file(temp_file2.path()).unwrap();
-    manager
-        .start_playback(Some(device), vec![], 2)
-        .unwrap();
+    manager.start_playback(Some(device), vec![], 2).unwrap();
 
     std::thread::sleep(Duration::from_millis(100));
 

@@ -396,25 +396,25 @@ impl PluginEditingManager for App {
                     ref mut matrix,
                     ..
                 } = plugin.settings
-                {
-                    let current = sotf_audio_player::detect_matrix_preset(
-                        input_channels,
-                        output_channels,
-                        matrix,
-                    );
-                    let preset = if current == "Mono Mix" {
-                        "Identity"
-                    } else {
-                        "Mono Mix"
-                    };
-                    sotf_audio_player::apply_matrix_preset(
-                        input_channels,
-                        output_channels,
-                        matrix,
-                        preset,
-                    );
-                    break;
-                }
+            {
+                let current = sotf_audio_player::detect_matrix_preset(
+                    input_channels,
+                    output_channels,
+                    matrix,
+                );
+                let preset = if current == "Mono Mix" {
+                    "Identity"
+                } else {
+                    "Mono Mix"
+                };
+                sotf_audio_player::apply_matrix_preset(
+                    input_channels,
+                    output_channels,
+                    matrix,
+                    preset,
+                );
+                break;
+            }
         }
         self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
@@ -430,25 +430,25 @@ impl PluginEditingManager for App {
                     ref mut matrix,
                     ..
                 } = plugin.settings
-                {
-                    let current = sotf_audio_player::detect_matrix_preset(
-                        input_channels,
-                        output_channels,
-                        matrix,
-                    );
-                    let preset = match current {
-                        "M/S Encode" => "M/S Decode",
-                        "M/S Decode" => "Identity",
-                        _ => "M/S Encode",
-                    };
-                    sotf_audio_player::apply_matrix_preset(
-                        input_channels,
-                        output_channels,
-                        matrix,
-                        preset,
-                    );
-                    break;
-                }
+            {
+                let current = sotf_audio_player::detect_matrix_preset(
+                    input_channels,
+                    output_channels,
+                    matrix,
+                );
+                let preset = match current {
+                    "M/S Encode" => "M/S Decode",
+                    "M/S Decode" => "Identity",
+                    _ => "M/S Encode",
+                };
+                sotf_audio_player::apply_matrix_preset(
+                    input_channels,
+                    output_channels,
+                    matrix,
+                    preset,
+                );
+                break;
+            }
         }
         self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
     }

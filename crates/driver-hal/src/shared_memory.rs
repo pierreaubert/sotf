@@ -6,7 +6,7 @@
 use std::fs::OpenOptions;
 use std::io;
 use std::path::Path;
-use std::sync::atomic::{fence, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
 
 use memmap2::MmapMut;
 

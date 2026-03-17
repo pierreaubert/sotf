@@ -423,11 +423,8 @@ mod tests {
         let _output_before = b[4799];
 
         // Now change threshold from -6 dB to -20 dB
-        p.set_parameter(
-            ParameterId::from("threshold"),
-            ParameterValue::Float(-20.0),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("threshold"), ParameterValue::Float(-20.0))
+            .unwrap();
 
         // Process one small block (≈1ms = 48 samples)
         // With proper 5ms smoothing, the threshold should NOT have fully

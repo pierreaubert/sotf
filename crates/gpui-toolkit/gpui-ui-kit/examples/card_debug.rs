@@ -68,11 +68,9 @@ impl Render for CardDebug {
                                             .muted(true),
                                     ),
                             )
-                            .footer(
-                                div()
-                                    .p_4()
-                                    .child(Text::new("Duration: 05:30").size(TextSize::Xs).muted(true)),
-                            ),
+                            .footer(div().p_4().child(
+                                Text::new("Duration: 05:30").size(TextSize::Xs).muted(true),
+                            )),
                     ),
             )
             // Multiple cards in a row
@@ -89,22 +87,44 @@ impl Render for CardDebug {
                             .child(
                                 div().flex_1().child(
                                     Card::new()
-                                        .header(div().p_3().child(Text::new("EQ").weight(TextWeight::Bold)))
-                                        .content(div().p_3().child(Text::new("7 bands active").size(TextSize::Sm))),
+                                        .header(
+                                            div()
+                                                .p_3()
+                                                .child(Text::new("EQ").weight(TextWeight::Bold)),
+                                        )
+                                        .content(
+                                            div().p_3().child(
+                                                Text::new("7 bands active").size(TextSize::Sm),
+                                            ),
+                                        ),
                                 ),
                             )
                             .child(
                                 div().flex_1().child(
                                     Card::new()
-                                        .header(div().p_3().child(Text::new("Upmixer").weight(TextWeight::Bold)))
-                                        .content(div().p_3().child(Text::new("5.0 surround").size(TextSize::Sm))),
+                                        .header(
+                                            div().p_3().child(
+                                                Text::new("Upmixer").weight(TextWeight::Bold),
+                                            ),
+                                        )
+                                        .content(
+                                            div().p_3().child(
+                                                Text::new("5.0 surround").size(TextSize::Sm),
+                                            ),
+                                        ),
                                 ),
                             )
                             .child(
                                 div().flex_1().child(
                                     Card::new()
-                                        .header(div().p_3().child(Text::new("Limiter").weight(TextWeight::Bold)))
-                                        .content(div().p_3().child(Text::new("-1.0 dB ceiling").size(TextSize::Sm))),
+                                        .header(
+                                            div().p_3().child(
+                                                Text::new("Limiter").weight(TextWeight::Bold),
+                                            ),
+                                        )
+                                        .content(div().p_3().child(
+                                            Text::new("-1.0 dB ceiling").size(TextSize::Sm),
+                                        )),
                                 ),
                             ),
                     ),

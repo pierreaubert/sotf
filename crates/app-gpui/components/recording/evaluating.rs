@@ -552,7 +552,11 @@ impl PlayerView {
             };
             log::info!(
                 "[Spectrogram] Downsampling {}x{} ({} cells) by time_step={}, freq_step={}",
-                num_time_slices, num_freq_bins, total_cells, time_step, freq_step,
+                num_time_slices,
+                num_freq_bins,
+                total_cells,
+                time_step,
+                freq_step,
             );
             (time_step, freq_step)
         } else {

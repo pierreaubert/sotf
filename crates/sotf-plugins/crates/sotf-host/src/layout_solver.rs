@@ -162,11 +162,13 @@ pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> S
     let main_min = main_constraint.map_or(300.0, |c| c.min_width);
 
     // 3. Collect collapsible columns, sorted by priority ascending (lowest collapses first)
-    let mut collapsible: Vec<&ColumnConstraint> = constraints
-        .iter()
-        .filter(|c| c.collapsible)
-        .collect();
-    collapsible.sort_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap_or(std::cmp::Ordering::Equal));
+    let mut collapsible: Vec<&ColumnConstraint> =
+        constraints.iter().filter(|c| c.collapsible).collect();
+    collapsible.sort_by(|a, b| {
+        a.priority
+            .partial_cmp(&b.priority)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 4. Greedily allocate space: try to fit columns from highest priority down
     let mut remaining = available_width - main_min;
@@ -205,7 +207,10 @@ pub fn solve_layout(constraints: &[ColumnConstraint], available_width: f32) -> S
         width: main_width,
     });
     // Diagnostic (if visible) between main and output
-    if let Some(pos) = visible.iter().position(|c| c.role == ColumnRole::Diagnostic) {
+    if let Some(pos) = visible
+        .iter()
+        .position(|c| c.role == ColumnRole::Diagnostic)
+    {
         columns.push(visible[pos]);
     }
     // Output goes last (right)
@@ -406,7 +411,10 @@ mod tests {
         let solved = solve_layout(&constraints, 1000.0);
 
         let main_width = solved.column_width(ColumnRole::Main).unwrap();
-        assert!(main_width > 300.0, "Main should get remaining space, got {main_width}");
+        assert!(
+            main_width > 300.0,
+            "Main should get remaining space, got {main_width}"
+        );
     }
 
     #[test]
@@ -538,7 +546,10 @@ mod tests {
         assert!(total <= 450.0, "Total {total} exceeds 450.0");
 
         let output_width = solved.column_width(ColumnRole::Output).unwrap();
-        assert_eq!(output_width, 150.0, "Output should be clamped to remaining space");
+        assert_eq!(
+            output_width, 150.0,
+            "Output should be clamped to remaining space"
+        );
         assert!(solved.is_collapsed(ColumnRole::Config));
     }
 }

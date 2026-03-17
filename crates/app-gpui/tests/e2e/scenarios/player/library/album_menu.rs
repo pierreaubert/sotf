@@ -10,8 +10,8 @@ use crate::driver::AppDriver;
 use crate::runner::{E2ERunner, TestScenario};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use sotf_audio_player::{Album, Track};
-use sotf_audio_player_gpui::app::{ContextMenuState, ContextMenuType, Screen};
 use sotf_audio_player_gpui::InputMode;
+use sotf_audio_player_gpui::app::{ContextMenuState, ContextMenuType, Screen};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
@@ -196,7 +196,7 @@ impl TestScenario for AlbumContextMenuScenario {
             return Err("Context menu should close after Escape".into());
         }
 
-            println!("All album context menu tests passed!");
+        println!("All album context menu tests passed!");
         Ok(())
     }
 }
@@ -267,7 +267,11 @@ impl TestScenario for AlbumNoDuplicateScenario {
         // BUG: Album is added again - this should fail until we fix it
         let queue_len_after = driver.read_app(|app| app.queue.len());
         println!("Queue length after second add: {}", queue_len_after);
-        assert_eq!(queue_len_after, 1, "Album was added twice! Expected 1 album in queue, got {}. Duplicates should be prevented.", queue_len_after);
+        assert_eq!(
+            queue_len_after, 1,
+            "Album was added twice! Expected 1 album in queue, got {}. Duplicates should be prevented.",
+            queue_len_after
+        );
 
         println!("No duplicate album test passed!");
         Ok(())
@@ -295,5 +299,8 @@ async fn test_album_no_duplicate_in_queue(cx: &mut TestAppContext) {
     if let Err(e) = &result {
         println!("Test failed: {}", e);
     }
-    assert!(result.is_ok(), "Album no duplicate test failed: should not add album twice");
+    assert!(
+        result.is_ok(),
+        "Album no duplicate test failed: should not add album twice"
+    );
 }

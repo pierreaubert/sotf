@@ -184,12 +184,8 @@ impl LoudnessCompensationPlugin {
             .with_description("High shelf center frequency (Hz)")
             .with_group("Frequency")
             .with_importance(ParameterImportance::Useful),
-            Parameter::new_bool(
-                "auto_gain_enabled",
-                "Auto Gain",
-                self.auto_gain_enabled,
-            )
-            .with_group("Auto Gain"),
+            Parameter::new_bool("auto_gain_enabled", "Auto Gain", self.auto_gain_enabled)
+                .with_group("Auto Gain"),
             Parameter::new_float(
                 "auto_gain_max_db",
                 "AG Max",
@@ -218,17 +214,65 @@ impl LoudnessCompensationPlugin {
             if self.filters[ch].len() == 4 {
                 // Update coefficients in place — preserves filter delay state
                 // (x1/x2/y1/y2) so parameter changes are click-free.
-                self.filters[ch][0].update_params(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64);
-                self.filters[ch][1].update_params(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64);
-                self.filters[ch][2].update_params(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64);
-                self.filters[ch][3].update_params(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64);
+                self.filters[ch][0].update_params(
+                    BiquadFilterType::Lowshelf,
+                    self.low_freq as f64,
+                    sr,
+                    q,
+                    lg as f64,
+                );
+                self.filters[ch][1].update_params(
+                    BiquadFilterType::Lowshelf,
+                    self.low_freq as f64,
+                    sr,
+                    q,
+                    lg as f64,
+                );
+                self.filters[ch][2].update_params(
+                    BiquadFilterType::Highshelf,
+                    self.high_freq as f64,
+                    sr,
+                    q,
+                    hg as f64,
+                );
+                self.filters[ch][3].update_params(
+                    BiquadFilterType::Highshelf,
+                    self.high_freq as f64,
+                    sr,
+                    q,
+                    hg as f64,
+                );
             } else {
                 // First initialization — create filters from scratch
                 self.filters[ch] = vec![
-                    Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64),
-                    Biquad::new(BiquadFilterType::Lowshelf, self.low_freq as f64, sr, q, lg as f64),
-                    Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64),
-                    Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64),
+                    Biquad::new(
+                        BiquadFilterType::Lowshelf,
+                        self.low_freq as f64,
+                        sr,
+                        q,
+                        lg as f64,
+                    ),
+                    Biquad::new(
+                        BiquadFilterType::Lowshelf,
+                        self.low_freq as f64,
+                        sr,
+                        q,
+                        lg as f64,
+                    ),
+                    Biquad::new(
+                        BiquadFilterType::Highshelf,
+                        self.high_freq as f64,
+                        sr,
+                        q,
+                        hg as f64,
+                    ),
+                    Biquad::new(
+                        BiquadFilterType::Highshelf,
+                        self.high_freq as f64,
+                        sr,
+                        q,
+                        hg as f64,
+                    ),
                 ];
             }
             let target = 10.0_f32.powf(-self.low_gain.max(self.high_gain) / 20.0);
@@ -479,11 +523,8 @@ mod tests {
         let last_before = b[4799];
 
         // Change gain parameter — this should NOT reset filter state
-        p.set_parameter(
-            ParameterId::from("low_gain"),
-            ParameterValue::Float(7.0),
-        )
-        .unwrap();
+        p.set_parameter(ParameterId::from("low_gain"), ParameterValue::Float(7.0))
+            .unwrap();
 
         // Process another block of the same signal
         let mut b2 = vec![0.3f32; 480];
@@ -539,18 +580,10 @@ mod tests {
         p_mid.process_in_place(&mut mid_buf, &ctx).unwrap();
 
         // Measure RMS in the settled second half
-        let low_rms: f32 = (low_buf[nf / 2..]
-            .iter()
-            .map(|s| s * s)
-            .sum::<f32>()
-            / (nf / 2) as f32)
-            .sqrt();
-        let mid_rms: f32 = (mid_buf[nf / 2..]
-            .iter()
-            .map(|s| s * s)
-            .sum::<f32>()
-            / (nf / 2) as f32)
-            .sqrt();
+        let low_rms: f32 =
+            (low_buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
+        let mid_rms: f32 =
+            (mid_buf[nf / 2..].iter().map(|s| s * s).sum::<f32>() / (nf / 2) as f32).sqrt();
 
         // The low-freq signal should be louder relative to mid-freq due to shelf boost
         assert!(

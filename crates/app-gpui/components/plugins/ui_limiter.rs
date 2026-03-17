@@ -189,17 +189,12 @@ pub fn render_limiter_plugin(
         ));
 
     // === Main layout: 3 columns, centered ===
-    div()
-        .w_full()
-        .flex()
-        .justify_center()
-        .p_3()
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .child(setup_col)
-                .child(center_col)
-                .child(right_col),
-        )
+    div().w_full().flex().justify_center().p_3().child(
+        div()
+            .flex()
+            .gap_4()
+            .child(setup_col)
+            .child(center_col)
+            .child(right_col),
+    )
 }

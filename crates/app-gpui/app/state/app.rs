@@ -310,8 +310,10 @@ impl App {
         self.plugin_state = plugin_state_snapshot;
         self.sync_spectrum_visible();
         self.update_level_meter_groups();
-        self.ui_state.toast_message =
-            Some(ToastMessage::error(format!("Plugin update failed: {}", error)));
+        self.ui_state.toast_message = Some(ToastMessage::error(format!(
+            "Plugin update failed: {}",
+            error
+        )));
     }
 
     /// Dispatch a message to the appropriate manager
@@ -809,18 +811,18 @@ impl App {
                     .find(|d| d.name == rec_config.device_name)
                     && let Some(max_ch) =
                         device.default_config.as_ref().map(|c| c.channels as usize)
-                        && self
-                            .measurement_state
-                            .recording_state
-                            .recording_config
-                            .num_channels
-                            > max_ch
-                        {
-                            self.measurement_state
-                                .recording_state
-                                .recording_config
-                                .num_channels = max_ch;
-                        }
+                    && self
+                        .measurement_state
+                        .recording_state
+                        .recording_config
+                        .num_channels
+                        > max_ch
+                {
+                    self.measurement_state
+                        .recording_state
+                        .recording_config
+                        .num_channels = max_ch;
+                }
             }
         }
     }

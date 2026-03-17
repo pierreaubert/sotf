@@ -1,7 +1,7 @@
 [package]
 name = "autoeq-cea2034"
 description = "Compute the CEA2034 properties of a loudspeaker also called a Spinorama"
-version = "0.4.0"
+version = "0.4.1"
 edition = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }

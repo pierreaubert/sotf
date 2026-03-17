@@ -13,8 +13,8 @@ use crate::engine::processing_thread::build_plugin_host;
 use arc_swap::ArcSwap;
 use std::any::Any;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
+use std::sync::{Arc, Mutex};
 
 const SPIN_MS_SLEEP_MANAGER: u64 = 10;
 const SPIN_MS_CHECK_MANAGER: u64 = 50;
@@ -722,10 +722,7 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<ArcSwap<AudioEngineState>
             let mut new_state = (**state.load()).clone();
             new_state.underruns = underruns;
             if underruns == 1 || underruns.is_multiple_of(100) {
-                log::warn!(
-                    "[Manager Thread] Playback underrun count: {}",
-                    underruns
-                );
+                log::warn!("[Manager Thread] Playback underrun count: {}", underruns);
             }
             state.store(Arc::new(new_state));
         }
@@ -925,7 +922,9 @@ fn ensure_output_channel_capacity(
         log::warn!(
             "[Manager Thread] Plugin chain requires {} output channels, but device '{}' is configured for {}. \
              Playback thread will downmix automatically.",
-            required_output_channels, device_str, configured_output_channels
+            required_output_channels,
+            device_str,
+            configured_output_channels
         );
     }
 
@@ -1360,7 +1359,10 @@ fn handle_command(
             // Best-effort: the playback thread may have already exited after
             // end-of-stream drain. This is expected during auto-advance.
             if let Err(e) = playback.send_command(PlaybackCommand::Stop) {
-                log::debug!("[Manager Thread] Stop send to playback failed (already exited): {}", e);
+                log::debug!(
+                    "[Manager Thread] Stop send to playback failed (already exited): {}",
+                    e
+                );
             }
 
             let mut new_state = (**state.load()).clone();
@@ -1406,7 +1408,10 @@ fn handle_command(
             // end-of-stream drain. The volume is stored in state and will be
             // applied when the next engine starts.
             if let Err(e) = playback.send_command(PlaybackCommand::SetVolume(volume)) {
-                log::debug!("[Manager Thread] SetVolume send failed (playback ended): {}", e);
+                log::debug!(
+                    "[Manager Thread] SetVolume send failed (playback ended): {}",
+                    e
+                );
             }
 
             ManagerResponse::Ok

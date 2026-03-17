@@ -1,7 +1,7 @@
 //! Delaunay triangulation — port of d3-delaunay/src/delaunay.js
 
 use crate::voronoi::Voronoi;
-use delaunator::{triangulate, Point, EMPTY};
+use delaunator::{EMPTY, Point, triangulate};
 
 const NO_EDGE: usize = EMPTY;
 
@@ -34,7 +34,10 @@ impl Delaunay {
     pub fn new(points: Vec<f64>) -> Self {
         let n = points.len() / 2;
         let del_points: Vec<Point> = (0..n)
-            .map(|i| Point { x: points[i * 2], y: points[i * 2 + 1] })
+            .map(|i| Point {
+                x: points[i * 2],
+                y: points[i * 2 + 1],
+            })
             .collect();
 
         let tri = triangulate(&del_points);
@@ -51,23 +54,35 @@ impl Delaunay {
         if hull.len() > 2 && is_collinear(&tri.triangles, &points) {
             let mut col: Vec<usize> = (0..n).collect();
             col.sort_by(|&i, &j| {
-                points[2 * i].partial_cmp(&points[2 * j])
+                points[2 * i]
+                    .partial_cmp(&points[2 * j])
                     .unwrap_or(std::cmp::Ordering::Equal)
-                    .then(points[2 * i + 1].partial_cmp(&points[2 * j + 1])
-                        .unwrap_or(std::cmp::Ordering::Equal))
+                    .then(
+                        points[2 * i + 1]
+                            .partial_cmp(&points[2 * j + 1])
+                            .unwrap_or(std::cmp::Ordering::Equal),
+                    )
             });
             collinear_vec = col;
 
             // Jitter and re-triangulate
             let e = collinear_vec[0];
             let f = collinear_vec[collinear_vec.len() - 1];
-            let r = 1e-8 * ((points[2*f+1] - points[2*e+1]).powi(2) + (points[2*f] - points[2*e]).powi(2)).sqrt();
+            let r = 1e-8
+                * ((points[2 * f + 1] - points[2 * e + 1]).powi(2)
+                    + (points[2 * f] - points[2 * e]).powi(2))
+                .sqrt();
 
-            let jittered: Vec<Point> = (0..n).map(|i| {
-                let x = points[2*i];
-                let y = points[2*i+1];
-                Point { x: x + (x + y).sin() * r, y: y + (x - y).cos() * r }
-            }).collect();
+            let jittered: Vec<Point> = (0..n)
+                .map(|i| {
+                    let x = points[2 * i];
+                    let y = points[2 * i + 1];
+                    Point {
+                        x: x + (x + y).sin() * r,
+                        y: y + (x - y).cos() * r,
+                    }
+                })
+                .collect();
 
             let tri2 = triangulate(&jittered);
             triangles = tri2.triangles;
@@ -99,31 +114,55 @@ impl Delaunay {
             }
         }
 
-        Self { points, triangles, halfedges, hull, inedges, hull_index, collinear: collinear_vec }
+        Self {
+            points,
+            triangles,
+            halfedges,
+            hull,
+            inedges,
+            hull_index,
+            collinear: collinear_vec,
+        }
     }
 
-    pub fn len(&self) -> usize { self.points.len() / 2 }
-    pub fn is_empty(&self) -> bool { self.points.is_empty() }
-    pub fn point(&self, i: usize) -> (f64, f64) { (self.points[i * 2], self.points[i * 2 + 1]) }
+    pub fn len(&self) -> usize {
+        self.points.len() / 2
+    }
+    pub fn is_empty(&self) -> bool {
+        self.points.is_empty()
+    }
+    pub fn point(&self, i: usize) -> (f64, f64) {
+        (self.points[i * 2], self.points[i * 2 + 1])
+    }
 
-    pub fn voronoi(&self, bounds: [f64; 4]) -> Voronoi<'_> { Voronoi::new(self, bounds) }
+    pub fn voronoi(&self, bounds: [f64; 4]) -> Voronoi<'_> {
+        Voronoi::new(self, bounds)
+    }
 
     pub fn neighbors(&self, i: usize) -> Vec<usize> {
         let mut result = Vec::new();
         if !self.collinear.is_empty() {
             if let Some(l) = self.collinear.iter().position(|&c| c == i) {
-                if l > 0 { result.push(self.collinear[l - 1]); }
-                if l < self.collinear.len() - 1 { result.push(self.collinear[l + 1]); }
+                if l > 0 {
+                    result.push(self.collinear[l - 1]);
+                }
+                if l < self.collinear.len() - 1 {
+                    result.push(self.collinear[l + 1]);
+                }
             }
             return result;
         }
         let e0 = self.inedges[i];
-        if e0 == NO_EDGE { return result; }
+        if e0 == NO_EDGE {
+            return result;
+        }
         let mut e = e0;
         loop {
             result.push(self.triangles[e]);
             e = if e % 3 == 2 { e - 2 } else { e + 1 };
-            if self.triangles[e] != i { return result; }
+            if self.triangles[e] != i {
+                return result;
+            }
             e = self.halfedges[e];
             if e == NO_EDGE {
                 if self.hull_index[i] != NO_EDGE {
@@ -134,19 +173,27 @@ impl Delaunay {
                 }
                 return result;
             }
-            if e == e0 { break; }
+            if e == e0 {
+                break;
+            }
         }
         result
     }
 
     pub fn find(&self, x: f64, y: f64, start: usize) -> usize {
-        if x.is_nan() || y.is_nan() { return NO_EDGE; }
+        if x.is_nan() || y.is_nan() {
+            return NO_EDGE;
+        }
         let mut i = start;
         let i0 = i;
         for _ in 0..self.len().max(1) {
             let c = self.step(i, x, y);
-            if c == i || c == i0 { return c; }
-            if c == NO_EDGE { return i; }
+            if c == i || c == i0 {
+                return c;
+            }
+            if c == NO_EDGE {
+                return i;
+            }
             i = c;
         }
         i
@@ -157,28 +204,38 @@ impl Delaunay {
             return (i + 1) % self.len();
         }
         let mut c = i;
-        let mut dc = (x - self.points[i*2]).powi(2) + (y - self.points[i*2+1]).powi(2);
+        let mut dc = (x - self.points[i * 2]).powi(2) + (y - self.points[i * 2 + 1]).powi(2);
         let e0 = self.inedges[i];
         let mut e = e0;
         loop {
             let t = self.triangles[e];
-            let dt = (x - self.points[t*2]).powi(2) + (y - self.points[t*2+1]).powi(2);
-            if dt < dc { dc = dt; c = t; }
+            let dt = (x - self.points[t * 2]).powi(2) + (y - self.points[t * 2 + 1]).powi(2);
+            if dt < dc {
+                dc = dt;
+                c = t;
+            }
             e = if e % 3 == 2 { e - 2 } else { e + 1 };
-            if self.triangles[e] != i { break; }
+            if self.triangles[e] != i {
+                break;
+            }
             let he = self.halfedges[e];
             if he == NO_EDGE {
                 if self.hull_index[i] != NO_EDGE {
                     let ep = self.hull[(self.hull_index[i] + 1) % self.hull.len()];
                     if ep != t {
-                        let dep = (x - self.points[ep*2]).powi(2) + (y - self.points[ep*2+1]).powi(2);
-                        if dep < dc { return ep; }
+                        let dep = (x - self.points[ep * 2]).powi(2)
+                            + (y - self.points[ep * 2 + 1]).powi(2);
+                        if dep < dc {
+                            return ep;
+                        }
                     }
                 }
                 break;
             }
             e = he;
-            if e == e0 { break; }
+            if e == e0 {
+                break;
+            }
         }
         c
     }
@@ -188,9 +245,9 @@ impl Delaunay {
         let t1 = self.triangles[i] * 2;
         let t2 = self.triangles[i + 1] * 2;
         let t3 = self.triangles[i + 2] * 2;
-        let (x1, y1) = (self.points[t1], self.points[t1+1]);
-        let (x2, y2) = (self.points[t2], self.points[t2+1]);
-        let (x3, y3) = (self.points[t3], self.points[t3+1]);
+        let (x1, y1) = (self.points[t1], self.points[t1 + 1]);
+        let (x2, y2) = (self.points[t2], self.points[t2 + 1]);
+        let (x3, y3) = (self.points[t3], self.points[t3 + 1]);
         let dx = x2 - x1;
         let dy = y2 - y1;
         let ex = x3 - x1;
@@ -200,16 +257,21 @@ impl Delaunay {
             ((x1 + x2 + x3) / 3.0, (y1 + y2 + y3) / 3.0)
         } else {
             let d = 1.0 / ab;
-            let bl = dx*dx + dy*dy;
-            let cl = ex*ex + ey*ey;
-            (x1 + (ey*bl - dy*cl)*d, y1 + (dx*cl - ex*bl)*d)
+            let bl = dx * dx + dy * dy;
+            let cl = ex * ex + ey * ey;
+            (x1 + (ey * bl - dy * cl) * d, y1 + (dx * cl - ex * bl) * d)
         }
     }
 
     fn hull_barycenter(&self) -> (f64, f64) {
-        if self.hull.is_empty() { return (0.0, 0.0); }
+        if self.hull.is_empty() {
+            return (0.0, 0.0);
+        }
         let (mut bx, mut by) = (0.0, 0.0);
-        for &h in &self.hull { bx += self.points[h*2]; by += self.points[h*2+1]; }
+        for &h in &self.hull {
+            bx += self.points[h * 2];
+            by += self.points[h * 2 + 1];
+        }
         (bx / self.hull.len() as f64, by / self.hull.len() as f64)
     }
 }
@@ -219,9 +281,11 @@ fn is_collinear(triangles: &[usize], coords: &[f64]) -> bool {
         let a = 2 * triangles[i];
         let b = 2 * triangles[i + 1];
         let c = 2 * triangles[i + 2];
-        let cross = (coords[c] - coords[a]) * (coords[b+1] - coords[a+1])
-            - (coords[b] - coords[a]) * (coords[c+1] - coords[a+1]);
-        if cross > 1e-10 { return false; }
+        let cross = (coords[c] - coords[a]) * (coords[b + 1] - coords[a + 1])
+            - (coords[b] - coords[a]) * (coords[c + 1] - coords[a + 1]);
+        if cross > 1e-10 {
+            return false;
+        }
     }
     true
 }
@@ -272,7 +336,11 @@ mod tests {
 
         // Hull should be the 16 border points (perimeter)
         let hull_pts: Vec<usize> = d.hull.clone();
-        assert!(hull_pts.len() >= 12, "hull should have perimeter points, got {}", hull_pts.len());
+        assert!(
+            hull_pts.len() >= 12,
+            "hull should have perimeter points, got {}",
+            hull_pts.len()
+        );
 
         // Every point should be findable
         for (i, &(x, y)) in pts.iter().enumerate() {
@@ -319,10 +387,18 @@ mod tests {
         let mut pts = Vec::new();
 
         // Outer rectangle: 20 points on the boundary of [0,0]-[10,10]
-        for i in 0..5 { pts.push((i as f64 * 2.5, 0.0)); }          // bottom
-        for i in 1..5 { pts.push((10.0, i as f64 * 2.5)); }         // right
-        for i in (0..4).rev() { pts.push((i as f64 * 2.5, 10.0)); } // top
-        for i in (1..4).rev() { pts.push((0.0, i as f64 * 2.5)); }  // left
+        for i in 0..5 {
+            pts.push((i as f64 * 2.5, 0.0));
+        } // bottom
+        for i in 1..5 {
+            pts.push((10.0, i as f64 * 2.5));
+        } // right
+        for i in (0..4).rev() {
+            pts.push((i as f64 * 2.5, 10.0));
+        } // top
+        for i in (1..4).rev() {
+            pts.push((0.0, i as f64 * 2.5));
+        } // left
 
         let n_outer = pts.len();
 
@@ -380,11 +456,17 @@ mod tests {
 
         // Outer rectangle boundary, but skip part of the left edge
         // Bottom edge
-        for i in 0..6 { pts.push((i as f64 * 2.0, 0.0)); }
+        for i in 0..6 {
+            pts.push((i as f64 * 2.0, 0.0));
+        }
         // Right edge
-        for i in 1..6 { pts.push((10.0, i as f64 * 2.0)); }
+        for i in 1..6 {
+            pts.push((10.0, i as f64 * 2.0));
+        }
         // Top edge
-        for i in (0..5).rev() { pts.push((i as f64 * 2.0, 10.0)); }
+        for i in (0..5).rev() {
+            pts.push((i as f64 * 2.0, 10.0));
+        }
         // Left edge — only top and bottom portions, gap in the middle
         pts.push((0.0, 8.0));
         pts.push((0.0, 7.0)); // stop before hole
@@ -444,7 +526,9 @@ mod tests {
             let y = phi.sin() * theta.sin();
             let z = phi.cos();
             // Skip points near south pole (z ≈ -1) where projection blows up
-            if z < -0.9 { continue; }
+            if z < -0.9 {
+                continue;
+            }
             let scale = 2.0 / (1.0 + z);
             pts.push((x * scale, y * scale));
         }
@@ -480,7 +564,10 @@ mod tests {
 
         // Should produce a valid triangulation even though points are in a thin strip
         let n_tri = d.triangles.len() / 3;
-        assert!(n_tri > 100, "thin strip should still triangulate, got {n_tri} triangles");
+        assert!(
+            n_tri > 100,
+            "thin strip should still triangulate, got {n_tri} triangles"
+        );
     }
 
     /// Concentric circles (like latitude lines on a sphere).
@@ -531,12 +618,18 @@ mod tests {
         // 12 vertices of a regular icosahedron
         let phi = (1.0 + 5.0_f64.sqrt()) / 2.0; // golden ratio
         let verts_3d: Vec<(f64, f64, f64)> = vec![
-            (-1.0, phi, 0.0),  (1.0, phi, 0.0),
-            (-1.0, -phi, 0.0), (1.0, -phi, 0.0),
-            (0.0, -1.0, phi),  (0.0, 1.0, phi),
-            (0.0, -1.0, -phi), (0.0, 1.0, -phi),
-            (phi, 0.0, -1.0),  (phi, 0.0, 1.0),
-            (-phi, 0.0, -1.0), (-phi, 0.0, 1.0),
+            (-1.0, phi, 0.0),
+            (1.0, phi, 0.0),
+            (-1.0, -phi, 0.0),
+            (1.0, -phi, 0.0),
+            (0.0, -1.0, phi),
+            (0.0, 1.0, phi),
+            (0.0, -1.0, -phi),
+            (0.0, 1.0, -phi),
+            (phi, 0.0, -1.0),
+            (phi, 0.0, 1.0),
+            (-phi, 0.0, -1.0),
+            (-phi, 0.0, 1.0),
         ];
 
         // Orthographic projection (drop z)
@@ -566,23 +659,37 @@ mod tests {
 
         // L-shape: 10×10 square minus 5×5 cutout in top-right
         // Bottom edge: full width
-        for i in 0..=10 { pts.push((i as f64, 0.0)); }
+        for i in 0..=10 {
+            pts.push((i as f64, 0.0));
+        }
         // Right edge: only lower half
-        for i in 1..=5 { pts.push((10.0, i as f64)); }
+        for i in 1..=5 {
+            pts.push((10.0, i as f64));
+        }
         // Step right at y=5
-        for i in (5..=10).rev() { pts.push((i as f64, 5.0)); }
+        for i in (5..=10).rev() {
+            pts.push((i as f64, 5.0));
+        }
         // Inner vertical: x=5, y=5 to y=10
-        for i in 6..=10 { pts.push((5.0, i as f64)); }
+        for i in 6..=10 {
+            pts.push((5.0, i as f64));
+        }
         // Top edge: only left half
-        for i in (0..5).rev() { pts.push((i as f64, 10.0)); }
+        for i in (0..5).rev() {
+            pts.push((i as f64, 10.0));
+        }
         // Left edge
-        for i in (1..10).rev() { pts.push((0.0, i as f64)); }
+        for i in (1..10).rev() {
+            pts.push((0.0, i as f64));
+        }
 
         // Add some interior points to get proper triangulation
         for iy in 1..10 {
             for ix in 1..10 {
                 // Skip the cutout region
-                if ix > 5 && iy > 5 { continue; }
+                if ix > 5 && iy > 5 {
+                    continue;
+                }
                 pts.push((ix as f64, iy as f64));
             }
         }
@@ -645,11 +752,19 @@ mod tests {
         }
 
         // Deduplicate (horizontal and vertical bars overlap)
-        pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+        pts.sort_by(|a, b| {
+            a.0.partial_cmp(&b.0)
+                .unwrap()
+                .then(a.1.partial_cmp(&b.1).unwrap())
+        });
         pts.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-10 && (a.1 - b.1).abs() < 1e-10);
 
         let d = Delaunay::from_points(&pts);
-        assert!(d.len() > 100, "X-shape should have many points, got {}", d.len());
+        assert!(
+            d.len() > 100,
+            "X-shape should have many points, got {}",
+            d.len()
+        );
         assert!(!d.triangles.is_empty());
 
         // Center of the cross should be findable
@@ -664,7 +779,10 @@ mod tests {
         let found = d.find(1.0, 1.0, 0);
         let (fx, fy) = pts[found];
         let dist = ((fx - 1.0).powi(2) + (fy - 1.0).powi(2)).sqrt();
-        assert!(dist < 3.0, "point in concavity should find a nearby cross point");
+        assert!(
+            dist < 3.0,
+            "point in concavity should find a nearby cross point"
+        );
     }
 
     /// Points sampled from the surface of a unit sphere using Fibonacci spiral.
@@ -726,7 +844,11 @@ mod tests {
         }
 
         let d = Delaunay::from_points(&pts);
-        assert!(d.len() > 100, "sphere-minus-cylinder should have >100 points, got {}", d.len());
+        assert!(
+            d.len() > 100,
+            "sphere-minus-cylinder should have >100 points, got {}",
+            d.len()
+        );
         assert!(!d.triangles.is_empty());
 
         // Points near the "equator" (phi ≈ π/2) should be present (far from z-axis)

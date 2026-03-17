@@ -68,12 +68,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
             let is_right = n.layer > 0;
             let lx = if is_right { n.x0 - 4.0 } else { n.x1 + 4.0 };
             let ly = (n.y0 + n.y1) / 2.0;
-            (
-                format!("{} ({:.0})", n.id, n.value),
-                lx,
-                ly,
-                is_right,
-            )
+            (format!("{} ({:.0})", n.id, n.value), lx, ly, is_right)
         })
         .collect();
 

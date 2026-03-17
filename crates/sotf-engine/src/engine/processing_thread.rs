@@ -28,6 +28,7 @@ fn send_or_interrupt<T>(
     rx: &Receiver<ProcessingCommand>,
     mut msg: T,
 ) -> Result<Option<(ProcessingCommand, Option<T>)>, String> {
+    let mut retries = 0;
     loop {
         match tx.try_send(msg) {
             Ok(_) => return Ok(None),
@@ -36,6 +37,10 @@ fn send_or_interrupt<T>(
                 if let Ok(cmd) = rx.try_recv() {
                     // Return both the command AND the unsent message
                     return Ok(Some((cmd, Some(returned_msg))));
+                }
+                retries += 1;
+                if retries > 1000 {
+                    return Err("Processing queue stuck for >1s".to_string());
                 }
                 msg = returned_msg;
                 std::thread::sleep(Duration::from_millis(1));
@@ -267,8 +272,7 @@ impl ProcessingState {
             // Compute crossfade step from actual frame size (~50ms crossfade)
             if self.crossfade_step == 0.0 && input_frames > 0 {
                 let crossfade_duration_ms = 50.0;
-                let block_duration_ms =
-                    (input_frames as f32 * 1000.0) / self.sample_rate as f32;
+                let block_duration_ms = (input_frames as f32 * 1000.0) / self.sample_rate as f32;
                 self.crossfade_step = (block_duration_ms / crossfade_duration_ms).min(0.5);
             }
 

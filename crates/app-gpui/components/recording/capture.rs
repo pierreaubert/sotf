@@ -271,127 +271,129 @@ impl PlayerView {
                             .weight(TextWeight::Bold)
                             .color(theme.accent),
                     )
-                    .children(channel_data.iter().map(
-                        |(idx, name, start_freq, end_freq)| {
-                            let idx = *idx;
-                            let view_start = view.clone();
-                            let view_end = view.clone();
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .align(StackAlign::Center)
-                                .child(
-                                    div().w(px(100.0)).child(
-                                        Text::new(format!("{}:", name))
-                                            .size(TextSize::Xs)
-                                            .weight(TextWeight::Semibold)
-                                            .color(theme.text_primary),
-                                    ),
-                                )
-                                .child(
-                                    HStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .align(StackAlign::Center)
-                                        .child(
-                                            Text::new("Start:")
+                    .children(
+                        channel_data
+                            .iter()
+                            .map(|(idx, name, start_freq, end_freq)| {
+                                let idx = *idx;
+                                let view_start = view.clone();
+                                let view_end = view.clone();
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .align(StackAlign::Center)
+                                    .child(
+                                        div().w(px(100.0)).child(
+                                            Text::new(format!("{}:", name))
                                                 .size(TextSize::Xs)
-                                                .color(theme.text_secondary),
-                                        )
-                                        .child(
-                                            NumberInput::new(SharedString::from(format!(
-                                                "ch_start_freq_{idx}"
-                                            )))
-                                            .value(*start_freq as f64)
-                                            .min(1.0)
-                                            .max(20000.0)
-                                            .step(1.0)
-                                            .decimals(0)
-                                            .unit("Hz")
-                                            .size(NumberInputSize::Xs)
-                                            .width(90.0)
-                                            .on_change(move |val, _window, cx| {
-                                                view_start.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        // Update all mic entries for this speaker
-                                                        let speaker_idx = state
-                                                            .app
-                                                            .measurement_state
-                                                            .recording_state
-                                                            .channel_recordings
-                                                            .get(idx)
-                                                            .map(|r| r.channel_index);
-                                                        if let Some(si) = speaker_idx {
-                                                            for rec in &mut state
+                                                .weight(TextWeight::Semibold)
+                                                .color(theme.text_primary),
+                                        ),
+                                    )
+                                    .child(
+                                        HStack::new()
+                                            .spacing(StackSpacing::Xs)
+                                            .align(StackAlign::Center)
+                                            .child(
+                                                Text::new("Start:")
+                                                    .size(TextSize::Xs)
+                                                    .color(theme.text_secondary),
+                                            )
+                                            .child(
+                                                NumberInput::new(SharedString::from(format!(
+                                                    "ch_start_freq_{idx}"
+                                                )))
+                                                .value(*start_freq as f64)
+                                                .min(1.0)
+                                                .max(20000.0)
+                                                .step(1.0)
+                                                .decimals(0)
+                                                .unit("Hz")
+                                                .size(NumberInputSize::Xs)
+                                                .width(90.0)
+                                                .on_change(move |val, _window, cx| {
+                                                    view_start.update(cx, |this, cx| {
+                                                        this.state.update(cx, |state, _| {
+                                                            // Update all mic entries for this speaker
+                                                            let speaker_idx = state
                                                                 .app
                                                                 .measurement_state
                                                                 .recording_state
                                                                 .channel_recordings
-                                                            {
-                                                                if rec.channel_index == si {
-                                                                    rec.sweep_start_freq =
-                                                                        val as f32;
+                                                                .get(idx)
+                                                                .map(|r| r.channel_index);
+                                                            if let Some(si) = speaker_idx {
+                                                                for rec in &mut state
+                                                                    .app
+                                                                    .measurement_state
+                                                                    .recording_state
+                                                                    .channel_recordings
+                                                                {
+                                                                    if rec.channel_index == si {
+                                                                        rec.sweep_start_freq =
+                                                                            val as f32;
+                                                                    }
                                                                 }
                                                             }
-                                                        }
+                                                        });
+                                                        cx.notify();
                                                     });
-                                                    cx.notify();
-                                                });
-                                            }),
-                                        ),
-                                )
-                                .child(
-                                    HStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .align(StackAlign::Center)
-                                        .child(
-                                            Text::new("End:")
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_secondary),
-                                        )
-                                        .child(
-                                            NumberInput::new(SharedString::from(format!(
-                                                "ch_end_freq_{idx}"
-                                            )))
-                                            .value(*end_freq as f64)
-                                            .min(100.0)
-                                            .max(48000.0)
-                                            .step(100.0)
-                                            .decimals(0)
-                                            .unit("Hz")
-                                            .size(NumberInputSize::Xs)
-                                            .width(90.0)
-                                            .on_change(move |val, _window, cx| {
-                                                view_end.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        // Update all mic entries for this speaker
-                                                        let speaker_idx = state
-                                                            .app
-                                                            .measurement_state
-                                                            .recording_state
-                                                            .channel_recordings
-                                                            .get(idx)
-                                                            .map(|r| r.channel_index);
-                                                        if let Some(si) = speaker_idx {
-                                                            for rec in &mut state
+                                                }),
+                                            ),
+                                    )
+                                    .child(
+                                        HStack::new()
+                                            .spacing(StackSpacing::Xs)
+                                            .align(StackAlign::Center)
+                                            .child(
+                                                Text::new("End:")
+                                                    .size(TextSize::Xs)
+                                                    .color(theme.text_secondary),
+                                            )
+                                            .child(
+                                                NumberInput::new(SharedString::from(format!(
+                                                    "ch_end_freq_{idx}"
+                                                )))
+                                                .value(*end_freq as f64)
+                                                .min(100.0)
+                                                .max(48000.0)
+                                                .step(100.0)
+                                                .decimals(0)
+                                                .unit("Hz")
+                                                .size(NumberInputSize::Xs)
+                                                .width(90.0)
+                                                .on_change(move |val, _window, cx| {
+                                                    view_end.update(cx, |this, cx| {
+                                                        this.state.update(cx, |state, _| {
+                                                            // Update all mic entries for this speaker
+                                                            let speaker_idx = state
                                                                 .app
                                                                 .measurement_state
                                                                 .recording_state
                                                                 .channel_recordings
-                                                            {
-                                                                if rec.channel_index == si {
-                                                                    rec.sweep_end_freq =
-                                                                        val as f32;
+                                                                .get(idx)
+                                                                .map(|r| r.channel_index);
+                                                            if let Some(si) = speaker_idx {
+                                                                for rec in &mut state
+                                                                    .app
+                                                                    .measurement_state
+                                                                    .recording_state
+                                                                    .channel_recordings
+                                                                {
+                                                                    if rec.channel_index == si {
+                                                                        rec.sweep_end_freq =
+                                                                            val as f32;
+                                                                    }
                                                                 }
                                                             }
-                                                        }
+                                                        });
+                                                        cx.notify();
                                                     });
-                                                    cx.notify();
-                                                });
-                                            }),
-                                        ),
-                                )
-                                .into_any_element()
-                        },
-                    )),
+                                                }),
+                                            ),
+                                    )
+                                    .into_any_element()
+                            }),
+                    ),
             )
             .into_any_element()
     }
@@ -421,11 +423,7 @@ impl PlayerView {
                         count += 1;
                     }
                 }
-                let avg_spl = if count > 0 {
-                    sum / count as f32
-                } else {
-                    0.0
-                };
+                let avg_spl = if count > 0 { sum / count as f32 } else { 0.0 };
 
                 // Estimate noise floor from the lowest 5% of magnitude values
                 let mut sorted_mags: Vec<f32> = result.magnitude_db.clone();
@@ -671,7 +669,11 @@ impl PlayerView {
         let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
         let is_recording = recording_state.is_recording();
-        let num_mics = recording_state.recording_config.channel_mappings.len().max(1);
+        let num_mics = recording_state
+            .recording_config
+            .channel_mappings
+            .len()
+            .max(1);
 
         if recording_state.channel_recordings.is_empty() {
             return VStack::new()
@@ -808,47 +810,30 @@ impl PlayerView {
                             .iter()
                             .any(|(_, s)| *s != ChannelRecordingState::Empty);
                         if has_any_result {
-                            row = row.child(
-                                div().pl_6().child(
-                                    HStack::new()
-                                        .spacing(StackSpacing::Sm)
-                                        .children(mic_states.iter().map(
-                                            |(mic_idx, mic_state)| {
-                                                let (icon, color) = match mic_state {
-                                                    ChannelRecordingState::Empty => {
-                                                        ("○", theme.text_muted)
-                                                    }
-                                                    ChannelRecordingState::Recording => {
-                                                        ("●", theme.warning)
-                                                    }
-                                                    ChannelRecordingState::Done => {
-                                                        ("✓", theme.success)
-                                                    }
-                                                    ChannelRecordingState::Error => {
-                                                        ("✗", theme.error)
-                                                    }
-                                                };
-                                                HStack::new()
-                                                    .spacing(StackSpacing::Xs)
-                                                    .align(StackAlign::Center)
-                                                    .child(
-                                                        Text::new(format!(
-                                                            "Mic {}:",
-                                                            mic_idx + 1
-                                                        ))
-                                                        .size(TextSize::Xs)
-                                                        .color(theme.text_secondary),
-                                                    )
-                                                    .child(
-                                                        Text::new(icon)
-                                                            .size(TextSize::Xs)
-                                                            .color(color),
-                                                    )
-                                                    .into_any_element()
-                                            },
-                                        )),
+                            row = row.child(div().pl_6().child(
+                                HStack::new().spacing(StackSpacing::Sm).children(
+                                    mic_states.iter().map(|(mic_idx, mic_state)| {
+                                        let (icon, color) = match mic_state {
+                                            ChannelRecordingState::Empty => ("○", theme.text_muted),
+                                            ChannelRecordingState::Recording => {
+                                                ("●", theme.warning)
+                                            }
+                                            ChannelRecordingState::Done => ("✓", theme.success),
+                                            ChannelRecordingState::Error => ("✗", theme.error),
+                                        };
+                                        HStack::new()
+                                            .spacing(StackSpacing::Xs)
+                                            .align(StackAlign::Center)
+                                            .child(
+                                                Text::new(format!("Mic {}:", mic_idx + 1))
+                                                    .size(TextSize::Xs)
+                                                    .color(theme.text_secondary),
+                                            )
+                                            .child(Text::new(icon).size(TextSize::Xs).color(color))
+                                            .into_any_element()
+                                    }),
                                 ),
-                            );
+                            ));
                         }
                     }
 
@@ -1114,12 +1099,21 @@ impl PlayerView {
             "Recording params: speaker={}, speaker_idx={}, output_ch={}, sweep={:.0}-{:.0}Hz, sr={}, level={:.1}dB, mics={}, mic_vec_indices={:?}",
             params.speaker_name,
             // Re-read speaker_idx from the first mic entry
-            params.mics.first().map(|m| {
-                self.state.read(cx).app.measurement_state.recording_state
-                    .channel_recordings.get(m.vec_idx)
-                    .map(|r| r.channel_index)
-                    .unwrap_or(999)
-            }).unwrap_or(999),
+            params
+                .mics
+                .first()
+                .map(|m| {
+                    self.state
+                        .read(cx)
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .channel_recordings
+                        .get(m.vec_idx)
+                        .map(|r| r.channel_index)
+                        .unwrap_or(999)
+                })
+                .unwrap_or(999),
             params.output_channel,
             params.sweep_start_freq,
             params.sweep_end_freq,
@@ -2373,8 +2367,7 @@ impl PlayerView {
                                     }
                                 }
 
-                                let mut rec =
-                                    ChannelRecording::new(idx, ch.channel_name.clone());
+                                let mut rec = ChannelRecording::new(idx, ch.channel_name.clone());
                                 rec.state = ChannelRecordingState::Done;
                                 rec.result = Some(result);
                                 rec

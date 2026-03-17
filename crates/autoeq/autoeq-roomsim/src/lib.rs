@@ -31,24 +31,24 @@ mod bem_solver;
 mod scattering_objects;
 
 // WASM utilities
-mod worker_detect;
-mod loaders;
 mod adaptive;
+mod loaders;
+mod worker_detect;
 
 // Re-export BEM types for external use
 pub use bem_solver::{BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig};
 pub use scattering_objects::{BoxObject, CylinderObject, ScatteringObjectConfig, SphereObject};
 
 // Re-export WASM utilities
-pub use worker_detect::{
-    supports_threading, num_threads_available, recommended_chunk_size,
-    recommended_slice_resolution, get_wasm_info,
-};
+pub use adaptive::{AdaptiveConfig, AdaptiveState, QualityMode, detect_optimal_quality};
 pub use loaders::{
-    parse_measurement_csv, parse_measurement_bundle_json,
-    interpolate_measurement, MeasurementData, MeasurementBundle,
+    MeasurementBundle, MeasurementData, interpolate_measurement, parse_measurement_bundle_json,
+    parse_measurement_csv,
 };
-pub use adaptive::{AdaptiveState, AdaptiveConfig, QualityMode, detect_optimal_quality};
+pub use worker_detect::{
+    get_wasm_info, num_threads_available, recommended_chunk_size, recommended_slice_resolution,
+    supports_threading,
+};
 
 // ============================================================================
 // Wall Materials and Absorption Coefficients
@@ -227,7 +227,7 @@ macro_rules! console_log {
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
-    
+
     // Log threading status
     if supports_threading() {
         console_log!(
@@ -4284,7 +4284,10 @@ impl RoomSimulatorWasm {
         self.chunked_frequencies_completed = 0;
         self.chunked_pressures = Some(Vec::with_capacity(self.frequencies.len()));
         self.chunked_in_progress = true;
-        console_log!("Chunked compute initialized: {} frequencies", self.frequencies.len());
+        console_log!(
+            "Chunked compute initialized: {} frequencies",
+            self.frequencies.len()
+        );
     }
 
     /// Compute a chunk of frequencies for progressive updates
@@ -4308,7 +4311,7 @@ impl RoomSimulatorWasm {
 
         let start_idx = self.chunked_frequencies_completed;
         let end_idx = (start_idx + chunk_size).min(self.frequencies.len());
-        
+
         if start_idx >= self.frequencies.len() {
             // Already done
             return self.finalize_chunked_compute();
@@ -4318,18 +4321,24 @@ impl RoomSimulatorWasm {
             return serde_json::json!({
                 "error": "Chunked compute not initialized",
                 "done": true
-            }).to_string();
+            })
+            .to_string();
         }
 
-        console_log!("Computing frequencies {}-{} of {}", start_idx, end_idx, self.frequencies.len());
+        console_log!(
+            "Computing frequencies {}-{} of {}",
+            start_idx,
+            end_idx,
+            self.frequencies.len()
+        );
 
         // Compute the chunk - collect results first to avoid borrow issues
         let mut computed_spl = Vec::with_capacity(end_idx - start_idx);
-        
+
         // Clone the needed data to avoid borrow issues
         let listening_pos = self.listening_position;
         let frequencies = self.frequencies.clone();
-        
+
         for freq_idx in start_idx..end_idx {
             let freq = frequencies[freq_idx];
             let pressure = self.calculate_direct_field(&listening_pos, freq);
@@ -4368,7 +4377,7 @@ impl RoomSimulatorWasm {
     #[wasm_bindgen]
     pub fn finalize_chunked_compute(&self) -> String {
         let total = self.frequencies.len();
-        
+
         // If we have computed pressures, return them
         if let Some(pressures) = &self.chunked_pressures {
             let progress = if total > 0 {
@@ -4385,7 +4394,7 @@ impl RoomSimulatorWasm {
                 "frequencies": self.frequencies,
                 "spl": pressures,
             });
-            
+
             result.to_string()
         } else {
             // No chunked data - compute synchronously
@@ -4424,7 +4433,8 @@ impl RoomSimulatorWasm {
             "frequencies_completed": completed,
             "total_frequencies": total,
             "in_progress": self.chunked_in_progress,
-        }).to_string()
+        })
+        .to_string()
     }
 
     fn get_room_dimensions(&self) -> (f64, f64, f64) {

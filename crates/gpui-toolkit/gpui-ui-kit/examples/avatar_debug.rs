@@ -59,8 +59,18 @@ impl Render for AvatarDebug {
                             .flex()
                             .items_center()
                             .gap_3()
-                            .child(Avatar::new().name("Circle").size(AvatarSize::Lg).shape(AvatarShape::Circle))
-                            .child(Avatar::new().name("Square").size(AvatarSize::Lg).shape(AvatarShape::Square)),
+                            .child(
+                                Avatar::new()
+                                    .name("Circle")
+                                    .size(AvatarSize::Lg)
+                                    .shape(AvatarShape::Circle),
+                            )
+                            .child(
+                                Avatar::new()
+                                    .name("Square")
+                                    .size(AvatarSize::Lg)
+                                    .shape(AvatarShape::Square),
+                            ),
                     ),
             )
             // Status
@@ -75,10 +85,30 @@ impl Render for AvatarDebug {
                             .flex()
                             .items_center()
                             .gap_3()
-                            .child(Avatar::new().name("ON").size(AvatarSize::Lg).status(AvatarStatus::Online))
-                            .child(Avatar::new().name("AW").size(AvatarSize::Lg).status(AvatarStatus::Away))
-                            .child(Avatar::new().name("BU").size(AvatarSize::Lg).status(AvatarStatus::Busy))
-                            .child(Avatar::new().name("OF").size(AvatarSize::Lg).status(AvatarStatus::Offline)),
+                            .child(
+                                Avatar::new()
+                                    .name("ON")
+                                    .size(AvatarSize::Lg)
+                                    .status(AvatarStatus::Online),
+                            )
+                            .child(
+                                Avatar::new()
+                                    .name("AW")
+                                    .size(AvatarSize::Lg)
+                                    .status(AvatarStatus::Away),
+                            )
+                            .child(
+                                Avatar::new()
+                                    .name("BU")
+                                    .size(AvatarSize::Lg)
+                                    .status(AvatarStatus::Busy),
+                            )
+                            .child(
+                                Avatar::new()
+                                    .name("OF")
+                                    .size(AvatarSize::Lg)
+                                    .status(AvatarStatus::Offline),
+                            ),
                     ),
             )
             // AvatarGroup

@@ -62,10 +62,13 @@ impl Render for ToastDebug {
                     .gap_3()
                     .child(Text::new("With Title").weight(TextWeight::Bold))
                     .child(
-                        Toast::new("toast-titled", "The EQ preset has been applied to all active tracks.")
-                            .title("Preset Applied")
-                            .variant(ToastVariant::Success)
-                            .persistent(),
+                        Toast::new(
+                            "toast-titled",
+                            "The EQ preset has been applied to all active tracks.",
+                        )
+                        .title("Preset Applied")
+                        .variant(ToastVariant::Success)
+                        .persistent(),
                     ),
             )
     }

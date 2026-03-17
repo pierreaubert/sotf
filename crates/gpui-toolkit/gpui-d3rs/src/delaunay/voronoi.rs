@@ -17,7 +17,12 @@ impl<'a> Voronoi<'a> {
 
     /// Get the clipping bounds.
     pub fn bounds(&self) -> [f64; 4] {
-        [self.inner.xmin, self.inner.ymin, self.inner.xmax, self.inner.ymax]
+        [
+            self.inner.xmin,
+            self.inner.ymin,
+            self.inner.xmax,
+            self.inner.ymax,
+        ]
     }
 
     /// Number of cells (= number of input points).

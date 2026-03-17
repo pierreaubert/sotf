@@ -1,6 +1,6 @@
 //! Logarithmic scale implementation
 
-use super::{generate_log_ticks, Scale};
+use super::{Scale, generate_log_ticks};
 
 /// A logarithmic scale maps a continuous domain to a continuous range using logarithmic transformation
 ///

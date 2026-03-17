@@ -231,13 +231,12 @@ fn run_playback_thread(
                         device_identifier,
                         e
                     );
-                    find_fallback()
-                        .map_err(|fallback_err| {
-                            format!(
-                                "Failed to find fallback output device after lookup error '{}': {}",
-                                e, fallback_err
-                            )
-                        })?
+                    find_fallback().map_err(|fallback_err| {
+                        format!(
+                            "Failed to find fallback output device after lookup error '{}': {}",
+                            e, fallback_err
+                        )
+                    })?
                 }
             }
         }
@@ -637,7 +636,9 @@ fn run_playback_thread(
                                 new_format,
                             ) {
                                 Ok(new_stream) => {
-                                    log::info!("[Playback Thread] Stream built, starting playback...");
+                                    log::info!(
+                                        "[Playback Thread] Stream built, starting playback..."
+                                    );
                                     if let Err(e) = new_stream.play() {
                                         log::error!(
                                             "[Playback Thread] Failed to start new stream: {}",
@@ -1172,7 +1173,8 @@ fn choose_output_format(device: &Device, config: &StreamConfig) -> (SampleFormat
     };
 
     // First try: exact channel count match
-    if let Some(fmt) = pick_preferred_output_format(&candidates, config.channels, config.sample_rate)
+    if let Some(fmt) =
+        pick_preferred_output_format(&candidates, config.channels, config.sample_rate)
     {
         log::info!(
             "[Playback Thread] Chosen output format: {:?} for {}ch {}Hz (device configs: {:?})",
@@ -1529,8 +1531,7 @@ where
 mod tests {
     use super::{
         PlaybackState, fallback_output_format, is_virtual_output_device_name,
-        pick_preferred_output_format,
-        playback_buffer_capacity, read_ring_buffer, request_flush,
+        pick_preferred_output_format, playback_buffer_capacity, read_ring_buffer, request_flush,
     };
     use cpal::SampleFormat;
     use rtrb::RingBuffer;
@@ -1625,10 +1626,7 @@ mod tests {
 
     #[test]
     fn fallback_output_format_defaults_to_f32_requested_channels_when_missing() {
-        assert_eq!(
-            fallback_output_format(None, 2),
-            (SampleFormat::F32, 2)
-        );
+        assert_eq!(fallback_output_format(None, 2), (SampleFormat::F32, 2));
     }
 
     #[test]

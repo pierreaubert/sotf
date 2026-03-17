@@ -78,7 +78,11 @@ pub fn compute(data: &[(String, Vec<f64>)]) -> BoxPlotResult {
             let max = values[values.len() - 1];
             let r0 = min.max(q1 - iqr * 1.5);
             let r1 = max.min(q3 + iqr * 1.5);
-            let outliers: Vec<f64> = values.iter().filter(|&&v| v < r0 || v > r1).copied().collect();
+            let outliers: Vec<f64> = values
+                .iter()
+                .filter(|&&v| v < r0 || v > r1)
+                .copied()
+                .collect();
 
             BoxStats {
                 group: group.clone(),

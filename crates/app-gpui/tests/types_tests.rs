@@ -3,16 +3,15 @@
 //! These tests verify the behavior of types defined in the app module.
 //! They are extracted from inline tests to work around GPUI macro recursion issues.
 
-use sotf_audio_player::library::{Album, Track};
 use sotf_audio_player::PluginType;
+use sotf_audio_player::library::{Album, Track};
 use sotf_audio_player_gpui::app::types::{HeadphoneEqState, SpinoramaEqState};
 use sotf_audio_player_gpui::{
-    App, CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState,
-    ContextMenuType, CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState,
-    MeterDisplayMode, PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, QueueItem,
-    RecordingDeviceConfig, RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode,
-    RoomEqAlgorithm, RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration,
-    ToastMessage, ToastType,
+    App, CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, ContextMenuType,
+    CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState, MeterDisplayMode,
+    PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, QueueItem, RecordingDeviceConfig,
+    RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
+    RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
 };
 use std::path::PathBuf;
 
@@ -76,7 +75,10 @@ fn test_headphone_eq_set_ui_loss_type_normalizes_unknown_values() {
     // Unknown values should normalize to "score" (matching optimizer fallback)
     state.set_ui_loss_type("garbage");
     assert_eq!(state.ui_loss_type(), "score");
-    assert_eq!(state.loss_type, "score", "loss_type should be normalized to 'score' for unknown input");
+    assert_eq!(
+        state.loss_type, "score",
+        "loss_type should be normalized to 'score' for unknown input"
+    );
     assert_eq!(state.optimizer_config.loss, "headphone-score");
 
     // Prefixed variants should also normalize
@@ -225,11 +227,12 @@ fn test_app_rollback_failed_plugin_update_restores_snapshot_and_sets_toast() {
     app.rollback_failed_plugin_update(snapshot, "device only supports 2 channels");
 
     assert_eq!(app.plugin_state.chain.len(), original_plugin_count);
-    assert!(app
-        .ui_state
-        .toast_message
-        .as_ref()
-        .is_some_and(|toast| toast.message.contains("device only supports 2 channels")));
+    assert!(
+        app.ui_state
+            .toast_message
+            .as_ref()
+            .is_some_and(|toast| toast.message.contains("device only supports 2 channels"))
+    );
     assert_eq!(
         app.ui_state
             .toast_message

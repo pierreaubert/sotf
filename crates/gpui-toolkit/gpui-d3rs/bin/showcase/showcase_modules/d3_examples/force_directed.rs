@@ -140,7 +140,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                     result.links.len()
                 )),
         )
-        .child(div().flex().gap_2().mb_2().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .mb_2()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(width as f32))
@@ -154,9 +161,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             d3_paths
                                 .iter()
                                 .map(|p| {
-                                    super::path_utils::d3rs_path_to_gpui_simple(
-                                        p, bounds, 0.0, 0.0,
-                                    )
+                                    super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)
                                 })
                                 .collect::<Vec<_>>()
                         },

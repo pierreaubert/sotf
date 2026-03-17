@@ -176,20 +176,22 @@ fn compute_group_delay(freqs: &[f64], phase_rad: &[f64]) -> Vec<f64> {
 
     let mut group_delay = Vec::with_capacity(n);
 
+    const MIN_DF: f64 = 1e-9;
+
     // Forward difference at start
-    let df_start = freqs[1] - freqs[0];
+    let df_start = (freqs[1] - freqs[0]).max(MIN_DF);
     let dphi_start = phase_rad[1] - phase_rad[0];
     group_delay.push(-dphi_start / (2.0 * PI * df_start));
 
     // Central differences for interior points
     for i in 1..n - 1 {
-        let df = freqs[i + 1] - freqs[i - 1];
+        let df = (freqs[i + 1] - freqs[i - 1]).max(MIN_DF);
         let dphi = phase_rad[i + 1] - phase_rad[i - 1];
         group_delay.push(-dphi / (2.0 * PI * df));
     }
 
     // Backward difference at end
-    let df_end = freqs[n - 1] - freqs[n - 2];
+    let df_end = (freqs[n - 1] - freqs[n - 2]).max(MIN_DF);
     let dphi_end = phase_rad[n - 1] - phase_rad[n - 2];
     group_delay.push(-dphi_end / (2.0 * PI * df_end));
 

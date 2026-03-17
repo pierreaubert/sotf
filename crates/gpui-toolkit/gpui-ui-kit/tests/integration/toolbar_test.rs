@@ -100,10 +100,7 @@ async fn test_toolbar_full_config(cx: &mut TestAppContext) {
                 Toolbar::new("tb-full")
                     .bordered(true)
                     .item(ToolbarItem::button("bold", "B").active(true))
-                    .item(
-                        ToolbarItem::button("italic", "I")
-                            .on_click(|_window, _cx| {}),
-                    )
+                    .item(ToolbarItem::button("italic", "I").on_click(|_window, _cx| {}))
                     .separator()
                     .item(ToolbarItem::button("undo", "Undo").disabled(true))
                     .item(ToolbarItem::custom(div().child("Zoom: 100%"))),

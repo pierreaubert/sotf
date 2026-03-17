@@ -15,8 +15,8 @@
 
 use super::actions::{OpenIrFile, OpenSofaFile};
 use super::common::{
-    render_knob_sized, render_section_title, render_toggle,
-    render_transfer_curve_with_level, render_vertical_slider_with_ticks,
+    render_knob_sized, render_section_title, render_toggle, render_transfer_curve_with_level,
+    render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -26,7 +26,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::audio::potentiometer::PotentiometerSize;
 use sotf_audio_player::PluginSettings;
-use sotf_plugins::layout_solver::{solve_layout, KnobSize, SolvedLayout};
+use sotf_plugins::layout_solver::{KnobSize, SolvedLayout, solve_layout};
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
 use sotf_plugins::plugin_layout::*;
 use std::collections::HashMap;
@@ -213,11 +213,12 @@ fn render_main_column(
 
     // Render control groups
     if !layout.main.is_empty() {
-        let groups_container = if solved.group_direction == sotf_plugins::layout_solver::Direction::Row {
-            div().flex().gap_6().items_start()
-        } else {
-            div().flex().flex_col().gap_4()
-        };
+        let groups_container =
+            if solved.group_direction == sotf_plugins::layout_solver::Direction::Row {
+                div().flex().gap_6().items_start()
+            } else {
+                div().flex().flex_col().gap_4()
+            };
 
         let mut container = groups_container;
         for group in layout.main {
@@ -246,10 +247,7 @@ fn render_main_column(
         let clamped_tab = active_tab.min(all_tabs.len().saturating_sub(1));
 
         // Tab bar (underline style)
-        let mut tab_bar = div()
-            .flex()
-            .border_b_1()
-            .border_color(theme.border);
+        let mut tab_bar = div().flex().border_b_1().border_color(theme.border);
         for (i, (tab_name, _)) in all_tabs.iter().enumerate() {
             let is_active = i == clamped_tab;
             let tab_entity = entity.clone();
@@ -486,8 +484,15 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_knob(
-                    entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    pot_size(knob_size), theme,
+                    entity,
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    is_editing,
+                    selected_param,
+                    pot_size(knob_size),
+                    theme,
                 )
             } else {
                 div().into_any_element()
@@ -497,8 +502,15 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_knob(
-                    entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    pot_size_large(knob_size), theme,
+                    entity,
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    is_editing,
+                    selected_param,
+                    pot_size_large(knob_size),
+                    theme,
                 )
             } else {
                 div().into_any_element()
@@ -508,8 +520,15 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_slider(
-                    entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    knob_size, theme,
+                    entity,
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    is_editing,
+                    selected_param,
+                    knob_size,
+                    theme,
                 )
             } else {
                 div().into_any_element()
@@ -519,8 +538,15 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_toggle(
-                    entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                    knob_size, theme,
+                    entity,
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    is_editing,
+                    selected_param,
+                    knob_size,
+                    theme,
                 )
             } else {
                 div().into_any_element()
@@ -530,8 +556,15 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_button_set(
-                    entity, plugin_idx, idx, param, value, labels, is_editing,
-                    selected_param, theme,
+                    entity,
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    labels,
+                    is_editing,
+                    selected_param,
+                    theme,
                 )
             } else {
                 div().into_any_element()
@@ -541,7 +574,13 @@ fn render_control(
             if let Some(param) = params.get(idx) {
                 let value = values.get(idx).copied().unwrap_or(0.0);
                 render_param_as_selector(
-                    entity, plugin_idx, idx, param, value, is_editing, selected_param,
+                    entity,
+                    plugin_idx,
+                    idx,
+                    param,
+                    value,
+                    is_editing,
+                    selected_param,
                     theme,
                 )
             } else {
@@ -588,21 +627,51 @@ fn render_param_as_knob(
             let display_max = max * param.display_scale;
             let display_val = value * param.display_scale;
             render_knob_sized(
-                entity, plugin_idx, param.name, display_val, display_min, display_max,
-                param.unit, idx, selected_param, is_editing, None, size, theme,
+                entity,
+                plugin_idx,
+                param.name,
+                display_val,
+                display_min,
+                display_max,
+                param.unit,
+                idx,
+                selected_param,
+                is_editing,
+                None,
+                size,
+                theme,
             )
             .into_any_element()
         }
-        ParamType::Int { min, max, .. } => {
-            render_knob_sized(
-                entity, plugin_idx, param.name, value, min as f64, max as f64,
-                param.unit, idx, selected_param, is_editing, None, size, theme,
-            )
-            .into_any_element()
-        }
+        ParamType::Int { min, max, .. } => render_knob_sized(
+            entity,
+            plugin_idx,
+            param.name,
+            value,
+            min as f64,
+            max as f64,
+            param.unit,
+            idx,
+            selected_param,
+            is_editing,
+            None,
+            size,
+            theme,
+        )
+        .into_any_element(),
         _ => {
             // Bool/Choice as knob — fall back to toggle
-            render_param_as_toggle(entity, plugin_idx, idx, param, value, is_editing, selected_param, KnobSize::Sm, theme)
+            render_param_as_toggle(
+                entity,
+                plugin_idx,
+                idx,
+                param,
+                value,
+                is_editing,
+                selected_param,
+                KnobSize::Sm,
+                theme,
+            )
         }
     }
 }
@@ -625,21 +694,48 @@ fn render_param_as_slider(
             let display_max = max * param.display_scale;
             let display_val = value * param.display_scale;
             render_vertical_slider_with_ticks(
-                entity, plugin_idx, param.name, display_val, display_min, display_max,
-                param.unit, idx, selected_param, is_editing, None, 180.0, theme,
+                entity,
+                plugin_idx,
+                param.name,
+                display_val,
+                display_min,
+                display_max,
+                param.unit,
+                idx,
+                selected_param,
+                is_editing,
+                None,
+                180.0,
+                theme,
             )
             .into_any_element()
         }
-        ParamType::Int { min, max, .. } => {
-            render_vertical_slider_with_ticks(
-                entity, plugin_idx, param.name, value, min as f64, max as f64,
-                param.unit, idx, selected_param, is_editing, None, 180.0, theme,
-            )
-            .into_any_element()
-        }
+        ParamType::Int { min, max, .. } => render_vertical_slider_with_ticks(
+            entity,
+            plugin_idx,
+            param.name,
+            value,
+            min as f64,
+            max as f64,
+            param.unit,
+            idx,
+            selected_param,
+            is_editing,
+            None,
+            180.0,
+            theme,
+        )
+        .into_any_element(),
         _ => render_param_as_knob(
-            entity, plugin_idx, idx, param, value, is_editing, selected_param,
-            pot_size(knob_size), theme,
+            entity,
+            plugin_idx,
+            idx,
+            param,
+            value,
+            is_editing,
+            selected_param,
+            pot_size(knob_size),
+            theme,
         ),
     }
 }
@@ -670,7 +766,13 @@ fn render_param_as_toggle(
                 param.name.to_string()
             };
             render_toggle(
-                entity, plugin_idx, &label, is_on, idx, selected_param, is_editing,
+                entity,
+                plugin_idx,
+                &label,
+                is_on,
+                idx,
+                selected_param,
+                is_editing,
                 theme,
             )
             .into_any_element()
@@ -678,17 +780,29 @@ fn render_param_as_toggle(
         ParamType::Choice { labels, .. } => {
             let label = labels.get(value as usize).copied().unwrap_or("?");
             render_toggle(
-                entity, plugin_idx,
+                entity,
+                plugin_idx,
                 &format!("{}: {}", param.name, label),
-                true, idx, selected_param, is_editing, theme,
+                true,
+                idx,
+                selected_param,
+                is_editing,
+                theme,
             )
             .into_any_element()
         }
         _ => {
             // Float/Int as toggle doesn't make sense, render as knob
             render_param_as_knob(
-                entity, plugin_idx, idx, param, value, is_editing, selected_param,
-                pot_size(knob_size), theme,
+                entity,
+                plugin_idx,
+                idx,
+                param,
+                value,
+                is_editing,
+                selected_param,
+                pot_size(knob_size),
+                theme,
             )
         }
     }
@@ -748,7 +862,15 @@ fn render_param_as_selector(
         }
         // Non-choice params: fall back to toggle
         _ => render_param_as_toggle(
-            entity, plugin_idx, idx, param, value, is_editing, selected_param, KnobSize::Sm, theme,
+            entity,
+            plugin_idx,
+            idx,
+            param,
+            value,
+            is_editing,
+            selected_param,
+            KnobSize::Sm,
+            theme,
         ),
     }
 }
@@ -772,9 +894,7 @@ fn render_param_as_button_set(
         .flex()
         .gap_1()
         .rounded_md()
-        .when(is_sel, |d| {
-            d.border_1().border_color(theme.accent)
-        });
+        .when(is_sel, |d| d.border_1().border_color(theme.accent));
 
     for (i, label) in labels.iter().enumerate() {
         let is_active = i == current;
@@ -789,7 +909,9 @@ fn render_param_as_button_set(
                 .py_1()
                 .rounded_sm()
                 .cursor_pointer()
-                .id(SharedString::from(format!("btn-set-{plugin_idx}-{idx}-{i}")))
+                .id(SharedString::from(format!(
+                    "btn-set-{plugin_idx}-{idx}-{i}"
+                )))
                 .when(is_active, |d| {
                     d.bg(theme.accent).text_color(theme.text_on_accent)
                 })
@@ -938,7 +1060,9 @@ fn render_file_picker(
                 .border_1()
                 .border_color(theme.border)
                 .text_xs()
-                .id(SharedString::from(format!("load-file-btn-{plugin_idx}-{idx}")))
+                .id(SharedString::from(format!(
+                    "load-file-btn-{plugin_idx}-{idx}"
+                )))
                 .cursor_pointer()
                 .hover(|s| s.bg(theme.surface_hover))
                 .on_click(move |_, _, cx| match engine_key {
@@ -1014,8 +1138,16 @@ fn render_transfer_curve_for_layout(
         }
     });
 
-    render_transfer_curve_with_level(threshold_db, ratio, knee_db, is_limiter, 200.0, input_level_db, theme)
-        .into_any_element()
+    render_transfer_curve_with_level(
+        threshold_db,
+        ratio,
+        knee_db,
+        is_limiter,
+        200.0,
+        input_level_db,
+        theme,
+    )
+    .into_any_element()
 }
 
 /// Extract file path strings from PluginSettings for FilePath params.
@@ -1029,9 +1161,7 @@ fn extract_file_paths(params: &[ParamSpec], settings: &PluginSettings) -> HashMa
                 {
                     sofa_file.clone()
                 }
-                PluginSettings::Convolution { ir_file, .. }
-                    if spec.engine_key == "ir_file" =>
-                {
+                PluginSettings::Convolution { ir_file, .. } if spec.engine_key == "ir_file" => {
                     ir_file.clone()
                 }
                 PluginSettings::ABCompare {

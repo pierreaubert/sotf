@@ -8,9 +8,9 @@
 // preservation, coherence computation, transient detection, HR overlay).
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use std::hint::black_box;
 use sotf_host::{Plugin, ProcessContext};
 use sotf_plugin_upmixer::UpmixerPlugin;
+use std::hint::black_box;
 use std::time::Duration;
 
 /// Generate a deterministic broadband stereo signal that exercises all upmixer code paths.

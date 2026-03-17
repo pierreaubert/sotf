@@ -358,7 +358,11 @@ impl SankeyLayout {
             let yb = node_y0[tb];
             layer[sa]
                 .cmp(&layer[sb])
-                .then(node_y0[sa].partial_cmp(&node_y0[sb]).unwrap_or(std::cmp::Ordering::Equal))
+                .then(
+                    node_y0[sa]
+                        .partial_cmp(&node_y0[sb])
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                )
                 .then(ya.partial_cmp(&yb).unwrap_or(std::cmp::Ordering::Equal))
         });
 

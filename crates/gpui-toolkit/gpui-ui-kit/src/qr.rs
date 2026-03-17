@@ -249,7 +249,9 @@ impl Render for AnimatedQrCode {
             return canvas(
                 move |_bounds, _window, _cx| (colors, modules),
                 move |bounds, (colors, modules), window, _cx| {
-                    paint_qr_static(bounds, &colors, modules, size_f32, fg_color, bg_color, window);
+                    paint_qr_static(
+                        bounds, &colors, modules, size_f32, fg_color, bg_color, window,
+                    );
                 },
             )
             .w(requested_size)
@@ -273,11 +275,7 @@ impl Render for AnimatedQrCode {
         // Ping-pong progress: 0→1→0 over cycle_duration
         let cycle_secs = self.cycle_duration.as_secs_f32();
         let raw_t = (elapsed.as_secs_f32() % (cycle_secs * 2.0)) / cycle_secs;
-        let t = if raw_t <= 1.0 {
-            raw_t
-        } else {
-            2.0 - raw_t
-        };
+        let t = if raw_t <= 1.0 { raw_t } else { 2.0 - raw_t };
 
         // Ease the progress for smooth motion
         let eased = ease_in_out_cubic(t);
@@ -334,18 +332,13 @@ impl Render for AnimatedQrCode {
                             // Clamp to viewport edges
                             let draw_x = x.max(0.0);
                             let draw_y = y.max(0.0);
-                            let draw_w =
-                                (x + zoomed_module_px).min(size_f32) - draw_x;
-                            let draw_h =
-                                (y + zoomed_module_px).min(size_f32) - draw_y;
+                            let draw_w = (x + zoomed_module_px).min(size_f32) - draw_x;
+                            let draw_h = (y + zoomed_module_px).min(size_f32) - draw_y;
 
                             if draw_w > 0.0 && draw_h > 0.0 {
                                 window.paint_quad(PaintQuad {
                                     bounds: Bounds {
-                                        origin: point(
-                                            px(origin_x + draw_x),
-                                            px(origin_y + draw_y),
-                                        ),
+                                        origin: point(px(origin_x + draw_x), px(origin_y + draw_y)),
                                         size: size(px(draw_w), px(draw_h)),
                                     },
                                     corner_radii: Corners::default(),

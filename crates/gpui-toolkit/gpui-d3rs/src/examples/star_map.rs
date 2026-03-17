@@ -3,19 +3,19 @@
 //! Stereographic star map with magnitude-scaled circles.
 //! Uses a stereographic projection centered on the north celestial pole.
 
-use crate::geo::projection::Stereographic;
 use crate::geo::Projection;
+use crate::geo::projection::Stereographic;
 use crate::scale::{LinearScale, Scale};
 use crate::shape::path::{Path, PathBuilder};
 
 #[derive(Debug, Clone)]
 pub struct Star {
-    pub ra: f64,      // right ascension in degrees
-    pub dec: f64,     // declination in degrees
+    pub ra: f64,  // right ascension in degrees
+    pub dec: f64, // declination in degrees
     pub magnitude: f64,
-    pub px: f64,      // projected x
-    pub py: f64,      // projected y
-    pub radius: f64,  // display radius
+    pub px: f64,     // projected x
+    pub py: f64,     // projected y
+    pub radius: f64, // display radius
 }
 
 #[derive(Debug)]
@@ -35,7 +35,9 @@ pub fn load_csv(csv_str: &str) -> Vec<(f64, f64, f64)> {
         .skip(1)
         .filter_map(|line| {
             let cols: Vec<&str> = line.split(',').collect();
-            if cols.len() < 12 { return None; }
+            if cols.len() < 12 {
+                return None;
+            }
             let ra_h: f64 = cols[5].trim().parse().ok()?;
             let ra_m: f64 = cols[6].trim().parse().ok()?;
             let ra_s: f64 = cols[7].trim().parse().ok()?;
@@ -71,16 +73,29 @@ pub fn compute(stars_data: &[(f64, f64, f64)]) -> StarMapResult {
         .iter()
         .filter_map(|&(ra, dec, mag)| {
             // Only show stars above the horizon (dec > -30° for a north-centered map)
-            if dec < -30.0 { return None; }
+            if dec < -30.0 {
+                return None;
+            }
             let (px, py) = proj.project(ra, dec);
-            if !px.is_finite() || !py.is_finite() { return None; }
+            if !px.is_finite() || !py.is_finite() {
+                return None;
+            }
             // Clip to canvas
             let dx = px - width / 2.0;
             let dy = py - height / 2.0;
             let r = width / 2.0 * 0.95;
-            if dx * dx + dy * dy > r * r { return None; }
+            if dx * dx + dy * dy > r * r {
+                return None;
+            }
             let radius = radius_scale.scale(mag).max(0.0);
-            Some(Star { ra, dec, magnitude: mag, px, py, radius })
+            Some(Star {
+                ra,
+                dec,
+                magnitude: mag,
+                px,
+                py,
+                radius,
+            })
         })
         .collect();
 
@@ -94,8 +109,12 @@ pub fn compute(stars_data: &[(f64, f64, f64)]) -> StarMapResult {
             let dec = dec_i as f64;
             let (px, py) = proj.project(ra, dec);
             if px.is_finite() && py.is_finite() {
-                if first { grat_builder = grat_builder.move_to(px, py); first = false; }
-                else { grat_builder = grat_builder.line_to(px, py); }
+                if first {
+                    grat_builder = grat_builder.move_to(px, py);
+                    first = false;
+                } else {
+                    grat_builder = grat_builder.line_to(px, py);
+                }
             } else {
                 first = true;
             }
@@ -109,8 +128,12 @@ pub fn compute(stars_data: &[(f64, f64, f64)]) -> StarMapResult {
             let ra = ra_i as f64;
             let (px, py) = proj.project(ra, dec);
             if px.is_finite() && py.is_finite() {
-                if first { grat_builder = grat_builder.move_to(px, py); first = false; }
-                else { grat_builder = grat_builder.line_to(px, py); }
+                if first {
+                    grat_builder = grat_builder.move_to(px, py);
+                    first = false;
+                } else {
+                    grat_builder = grat_builder.line_to(px, py);
+                }
             } else {
                 first = true;
             }
@@ -125,8 +148,11 @@ pub fn compute(stars_data: &[(f64, f64, f64)]) -> StarMapResult {
         let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
         let x = width / 2.0 + r * angle.cos();
         let y = height / 2.0 + r * angle.sin();
-        if v == 0 { outline_builder = outline_builder.move_to(x, y); }
-        else { outline_builder = outline_builder.line_to(x, y); }
+        if v == 0 {
+            outline_builder = outline_builder.move_to(x, y);
+        } else {
+            outline_builder = outline_builder.line_to(x, y);
+        }
     }
     outline_builder = outline_builder.close_path();
 

@@ -34,7 +34,11 @@ impl Render for CheckboxDebug {
                     .child(Text::new("States").weight(TextWeight::Bold))
                     .child(Checkbox::new("cb-unchecked").label("Unchecked"))
                     .child(Checkbox::new("cb-checked").checked(true).label("Checked"))
-                    .child(Checkbox::new("cb-indeterminate").indeterminate(true).label("Indeterminate")),
+                    .child(
+                        Checkbox::new("cb-indeterminate")
+                            .indeterminate(true)
+                            .label("Indeterminate"),
+                    ),
             )
             // Sizes
             .child(
@@ -43,9 +47,24 @@ impl Render for CheckboxDebug {
                     .flex_col()
                     .gap_3()
                     .child(Text::new("Sizes").weight(TextWeight::Bold))
-                    .child(Checkbox::new("cb-sm").checked(true).size(CheckboxSize::Sm).label("Small"))
-                    .child(Checkbox::new("cb-md").checked(true).size(CheckboxSize::Md).label("Medium"))
-                    .child(Checkbox::new("cb-lg").checked(true).size(CheckboxSize::Lg).label("Large")),
+                    .child(
+                        Checkbox::new("cb-sm")
+                            .checked(true)
+                            .size(CheckboxSize::Sm)
+                            .label("Small"),
+                    )
+                    .child(
+                        Checkbox::new("cb-md")
+                            .checked(true)
+                            .size(CheckboxSize::Md)
+                            .label("Medium"),
+                    )
+                    .child(
+                        Checkbox::new("cb-lg")
+                            .checked(true)
+                            .size(CheckboxSize::Lg)
+                            .label("Large"),
+                    ),
             )
             // Disabled
             .child(
@@ -54,8 +73,17 @@ impl Render for CheckboxDebug {
                     .flex_col()
                     .gap_3()
                     .child(Text::new("Disabled").weight(TextWeight::Bold))
-                    .child(Checkbox::new("cb-dis-off").disabled(true).label("Disabled unchecked"))
-                    .child(Checkbox::new("cb-dis-on").checked(true).disabled(true).label("Disabled checked")),
+                    .child(
+                        Checkbox::new("cb-dis-off")
+                            .disabled(true)
+                            .label("Disabled unchecked"),
+                    )
+                    .child(
+                        Checkbox::new("cb-dis-on")
+                            .checked(true)
+                            .disabled(true)
+                            .label("Disabled checked"),
+                    ),
             )
     }
 }

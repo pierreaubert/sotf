@@ -10,11 +10,10 @@ use autoeq::roomeq::{
     CrossoverConfig as BackendCrossoverConfig,
     ExcursionProtectionConfig as BackendExcursionProtectionConfig, FirConfig as BackendFirConfig,
     HighFreqFilterConfig, HighpassType, LowFreqFilterConfig, MeasurementSource,
-    MultiMeasurementConfig, MultiMeasurementStrategy,
-    MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
-    OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
-    ProcessingMode as BackendProcessingMode, RoomConfig,
-    SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
+    MultiMeasurementConfig, MultiMeasurementStrategy, MultiSeatConfig as BackendMultiSeatConfig,
+    MultiSeatStrategy, OptimizerConfig as BackendOptimizerConfig,
+    PhaseAlignmentConfig as BackendPhaseAlignmentConfig, ProcessingMode as BackendProcessingMode,
+    RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig, SpeakerGroup,
     TargetTiltConfig as BackendTargetTiltConfig, TiltType,
 };
 use std::collections::HashMap;

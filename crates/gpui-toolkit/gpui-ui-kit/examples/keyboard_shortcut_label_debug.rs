@@ -54,16 +54,14 @@ impl Render for KeyboardShortcutLabelDebug {
                             .flex()
                             .gap_4()
                             .child(
-                                KeyboardShortcutLabel::new("Cmd+K")
-                                    .size(KeyboardShortcutSize::Lg),
+                                KeyboardShortcutLabel::new("Cmd+K").size(KeyboardShortcutSize::Lg),
                             )
                             .child(
                                 KeyboardShortcutLabel::new("Ctrl+Shift+P")
                                     .size(KeyboardShortcutSize::Lg),
                             )
                             .child(
-                                KeyboardShortcutLabel::new("Space")
-                                    .size(KeyboardShortcutSize::Lg),
+                                KeyboardShortcutLabel::new("Space").size(KeyboardShortcutSize::Lg),
                             ),
                     ),
             )

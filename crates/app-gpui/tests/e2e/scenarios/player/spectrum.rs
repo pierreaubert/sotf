@@ -22,7 +22,7 @@ impl TestScenario for SpectrumScreenScenario {
 
         // Navigate to Spectrum screen
         driver.navigate_to(Screen::Spectrum);
-        
+
         // Verify we're on Spectrum screen
         let screen = driver.read_app(|app| app.ui_state.current_screen);
         if screen != Screen::Spectrum {
@@ -34,7 +34,7 @@ impl TestScenario for SpectrumScreenScenario {
             // Spectrum screen should be accessible
             app.ui_state.current_screen == Screen::Spectrum
         });
-        
+
         println!("Spectrum screen loaded: {}", has_spectrum_support);
 
         Ok(())
@@ -46,7 +46,7 @@ async fn test_spectrum_screen_navigation(cx: &mut TestAppContext) {
     let scenario = SpectrumScreenScenario;
     let runner = E2ERunner::new(scenario);
     let result = runner.run(cx).await;
-    
+
     if let Err(e) = &result {
         println!("Test failed: {}", e);
     }

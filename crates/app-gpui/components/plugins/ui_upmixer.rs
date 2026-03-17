@@ -145,22 +145,17 @@ pub fn render_upmixer_plugin(
     // Diagnostic toggles row
     let diag_row = render_config_diagnostic(entity.clone(), plugin_idx, &state, theme);
 
-    div()
-        .w_full()
-        .flex()
-        .justify_center()
-        .p_3()
-        .child(
-            VStack::new()
-                .spacing(StackSpacing::Xs)
-                .child(main_area)
-                .child(tab_bar)
-                .when((1..=5).contains(&selected_config), |el| {
-                    el.child(config_row)
-                })
-                .child(diag_row)
-                .build(),
-        )
+    div().w_full().flex().justify_center().p_3().child(
+        VStack::new()
+            .spacing(StackSpacing::Xs)
+            .child(main_area)
+            .child(tab_bar)
+            .when((1..=5).contains(&selected_config), |el| {
+                el.child(config_row)
+            })
+            .child(diag_row)
+            .build(),
+    )
 }
 
 /// Render an underline tab button
@@ -887,33 +882,31 @@ fn render_config_decorrelation(
                 .items_center()
                 .gap_3()
                 .child(render_section_header("Decorrelation", theme))
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Xs)
-                        .children(decorrelation_modes.into_iter().map(|(mode, label)| {
-                            let is_active = decorrelation_mode == mode;
-                            let entity = entity.clone();
-                            render_tab_button(
-                                if mode == 0 {
-                                    "decorr-velvet"
-                                } else {
-                                    "decorr-lfo"
-                                },
-                                label,
-                                is_active,
-                                theme,
-                            )
-                            .on_click(move |_, _window, cx| {
-                                entity.update(cx, |state, _| {
-                                    state.app.set_plugin_param(
-                                        plugin_idx,
-                                        param_idx::DECORRELATION_MODE,
-                                        mode as f64,
-                                    );
-                                });
-                            })
-                        })),
-                ),
+                .child(HStack::new().spacing(StackSpacing::Xs).children(
+                    decorrelation_modes.into_iter().map(|(mode, label)| {
+                        let is_active = decorrelation_mode == mode;
+                        let entity = entity.clone();
+                        render_tab_button(
+                            if mode == 0 {
+                                "decorr-velvet"
+                            } else {
+                                "decorr-lfo"
+                            },
+                            label,
+                            is_active,
+                            theme,
+                        )
+                        .on_click(move |_, _window, cx| {
+                            entity.update(cx, |state, _| {
+                                state.app.set_plugin_param(
+                                    plugin_idx,
+                                    param_idx::DECORRELATION_MODE,
+                                    mode as f64,
+                                );
+                            });
+                        })
+                    }),
+                )),
         )
         .child(
             HStack::new()

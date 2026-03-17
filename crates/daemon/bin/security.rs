@@ -17,7 +17,7 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{Instant, SystemTime};
 
-use driver_hal::{compute_fingerprint, fingerprint_to_hex, generate_key, AudioCipher};
+use driver_hal::{AudioCipher, compute_fingerprint, fingerprint_to_hex, generate_key};
 
 /// Get the secure socket path for this user
 ///
@@ -148,16 +148,17 @@ pub fn verify_peer_credentials(_stream: &UnixStream) -> Result<u32, String> {
 /// Ensure the socket directory exists with secure permissions
 pub fn ensure_secure_socket_dir(socket_path: &std::path::Path) -> std::io::Result<()> {
     if let Some(parent) = socket_path.parent()
-        && !parent.exists() {
-            std::fs::create_dir_all(parent)?;
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)?;
 
-            // Set directory permissions to 0700 (owner only)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
-            }
+        // Set directory permissions to 0700 (owner only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
         }
+    }
     Ok(())
 }
 

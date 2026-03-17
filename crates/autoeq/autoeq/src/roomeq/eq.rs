@@ -357,10 +357,14 @@ pub fn optimize_channel_eq_multi(
         // Apply psychoacoustic smoothing if enabled
         if config.psychoacoustic {
             if i == 0 {
-                log::info!("  Applying psychoacoustic smoothing to {} curves", curves.len());
+                log::info!(
+                    "  Applying psychoacoustic smoothing to {} curves",
+                    curves.len()
+                );
             }
             let smoothing_config = crate::read::PsychoacousticSmoothingConfig::default();
-            normalized_curve = crate::read::smooth_psychoacoustic(&normalized_curve, &smoothing_config);
+            normalized_curve =
+                crate::read::smooth_psychoacoustic(&normalized_curve, &smoothing_config);
         }
 
         // Create target curve
@@ -378,8 +382,12 @@ pub fn optimize_channel_eq_multi(
                 ) {
                     Ok(curve) => curve,
                     Err(_) => {
-                        let target = crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
-                        crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
+                        let target =
+                            crate::read::read_curve_from_csv(&std::path::PathBuf::from(name))?;
+                        crate::read::normalize_and_interpolate_response(
+                            &normalized_curve.freq,
+                            &target,
+                        )
                     }
                 }
             }
@@ -397,7 +405,14 @@ pub fn optimize_channel_eq_multi(
         };
 
         let (objective_data, _use_cea) = crate::workflow::setup_objective_data(
-            &build_args(config, effective_min_freq, effective_max_freq, sample_rate, loss_type, peq_model),
+            &build_args(
+                config,
+                effective_min_freq,
+                effective_max_freq,
+                sample_rate,
+                loss_type,
+                peq_model,
+            ),
             &normalized_curve,
             &target_curve,
             &deviation_curve,
@@ -436,25 +451,30 @@ pub fn optimize_channel_eq_multi(
     let mut primary = primary_objective.unwrap();
     primary.multi_objective = Some(multi_data);
 
-    let args = build_args(config, effective_min_freq, effective_max_freq, sample_rate, loss_type, peq_model);
+    let args = build_args(
+        config,
+        effective_min_freq,
+        effective_max_freq,
+        sample_rate,
+        loss_type,
+        peq_model,
+    );
 
     // Setup bounds and initial guess
     let (lower_bounds, upper_bounds) = crate::workflow::setup_bounds(&args);
     let mut x = crate::workflow::initial_guess(&args, &lower_bounds, &upper_bounds);
 
     // Run optimization
-    let opt_result = crate::optim::optimize_filters(
-        &mut x,
-        &lower_bounds,
-        &upper_bounds,
-        primary,
-        &args,
-    );
+    let opt_result =
+        crate::optim::optimize_filters(&mut x, &lower_bounds, &upper_bounds, primary, &args);
 
     let (_converged_msg, final_loss) = match opt_result {
         Ok((msg, loss)) => (msg, loss),
         Err((msg, loss)) => {
-            eprintln!("  Warning: multi-measurement optimization did not fully converge: {}", msg);
+            eprintln!(
+                "  Warning: multi-measurement optimization did not fully converge: {}",
+                msg
+            );
             (msg, loss)
         }
     };

@@ -219,21 +219,19 @@ impl CommandPalette {
             .py_3()
             .border_b_1()
             .border_color(theme.separator)
-            .child(
-                if self.query.is_empty() {
-                    div()
-                        .flex_1()
-                        .text_sm()
-                        .text_color(theme.placeholder_text)
-                        .child(self.placeholder)
-                } else {
-                    div()
-                        .flex_1()
-                        .text_sm()
-                        .text_color(theme.input_text)
-                        .child(self.query.clone())
-                },
-            );
+            .child(if self.query.is_empty() {
+                div()
+                    .flex_1()
+                    .text_sm()
+                    .text_color(theme.placeholder_text)
+                    .child(self.placeholder)
+            } else {
+                div()
+                    .flex_1()
+                    .text_sm()
+                    .text_color(theme.input_text)
+                    .child(self.query.clone())
+            });
 
         palette = palette.child(input_area);
 
@@ -246,9 +244,7 @@ impl CommandPalette {
 
         for (i, item) in self.items.iter().enumerate() {
             // Simple filter: if query is non-empty, check if label contains it
-            if !query_lower.is_empty()
-                && !item.label.to_lowercase().contains(&query_lower)
-            {
+            if !query_lower.is_empty() && !item.label.to_lowercase().contains(&query_lower) {
                 continue;
             }
 

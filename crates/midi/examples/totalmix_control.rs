@@ -98,25 +98,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("\nOutput Row Fader:");
                 if let Some(bank) = get_number("  Bank", 3)
                     && let Some(fader) = get_number("  Fader", 15)
-                        && let Some(value) = get_number("  Value", 127) {
-                            totalmix.set_fader(TotalMixRow::Output, bank, fader, value)?;
-                            println!(
-                                "✓ Output row, bank {}, fader {} set to {}",
-                                bank, fader, value
-                            );
-                        }
+                    && let Some(value) = get_number("  Value", 127)
+                {
+                    totalmix.set_fader(TotalMixRow::Output, bank, fader, value)?;
+                    println!(
+                        "✓ Output row, bank {}, fader {} set to {}",
+                        bank, fader, value
+                    );
+                }
             }
             "3" => {
                 println!("\nInput Row Fader:");
                 if let Some(bank) = get_number("  Bank", 3)
                     && let Some(fader) = get_number("  Fader", 15)
-                        && let Some(value) = get_number("  Value", 127) {
-                            totalmix.set_fader(TotalMixRow::Input, bank, fader, value)?;
-                            println!(
-                                "✓ Input row, bank {}, fader {} set to {}",
-                                bank, fader, value
-                            );
-                        }
+                    && let Some(value) = get_number("  Value", 127)
+                {
+                    totalmix.set_fader(TotalMixRow::Input, bank, fader, value)?;
+                    println!(
+                        "✓ Input row, bank {}, fader {} set to {}",
+                        bank, fader, value
+                    );
+                }
             }
             "4" => {
                 println!("\nMute Channel (Mackie Control):");
@@ -136,10 +138,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(r) = row
                     && let Some(bank) = get_number("  Bank", 3)
-                        && let Some(ch) = get_number("  Channel (Mackie)", 7) {
-                            totalmix.mute_channel(r, bank, ch)?;
-                            println!("✓ Channel muted");
-                        }
+                    && let Some(ch) = get_number("  Channel (Mackie)", 7)
+                {
+                    totalmix.mute_channel(r, bank, ch)?;
+                    println!("✓ Channel muted");
+                }
             }
             "5" => {
                 println!("\nSolo Channel (Mackie Control):");
@@ -159,10 +162,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(r) = row
                     && let Some(bank) = get_number("  Bank", 3)
-                        && let Some(ch) = get_number("  Channel (Mackie)", 7) {
-                            totalmix.solo_channel(r, bank, ch)?;
-                            println!("✓ Channel soloed");
-                        }
+                    && let Some(ch) = get_number("  Channel (Mackie)", 7)
+                {
+                    totalmix.solo_channel(r, bank, ch)?;
+                    println!("✓ Channel soloed");
+                }
             }
             "6" => {
                 println!("\nSet Pan (Mackie Control):");
@@ -182,13 +186,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some(r) = row
                     && let Some(bank) = get_number("  Bank", 3)
-                        && let Some(ch) = get_number("  Channel (Mackie)", 7)
-                            && let Some(pan) =
-                                get_number("  Pan (0=left, 64=center, 127=right)", 127)
-                            {
-                                totalmix.set_pan(r, bank, ch, pan)?;
-                                println!("✓ Pan set to {}", pan);
-                            }
+                    && let Some(ch) = get_number("  Channel (Mackie)", 7)
+                    && let Some(pan) = get_number("  Pan (0=left, 64=center, 127=right)", 127)
+                {
+                    totalmix.set_pan(r, bank, ch, pan)?;
+                    println!("✓ Pan set to {}", pan);
+                }
             }
             "7" => {
                 if let Some(snapshot) = get_number("Snapshot number", 127) {

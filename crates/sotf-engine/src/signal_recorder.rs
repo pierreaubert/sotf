@@ -964,7 +964,12 @@ pub fn record_and_analyze_multi(
         }
 
         // Write WAV
-        write_wav_file(&recorded_wav_paths[mic_i], &recorded, analysis_sample_rate, 1)?;
+        write_wav_file(
+            &recorded_wav_paths[mic_i],
+            &recorded,
+            analysis_sample_rate,
+            1,
+        )?;
 
         // Verify WAV
         let reader = hound::WavReader::open(&recorded_wav_paths[mic_i])

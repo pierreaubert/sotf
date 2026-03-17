@@ -20,7 +20,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         d3rs::examples::stacked_area::load_csv(UNEMPLOYMENT_CSV, "date", "industry", "unemployed");
 
     let scheme = ColorScheme::tableau10();
-    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
+    let colors: Vec<Rgba> = (0..scheme.len())
+        .map(|i| scheme.color(i).to_rgba())
+        .collect();
 
     let width = 700.0_f64;
     let height = 450.0_f64;
@@ -55,9 +57,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .fold(0.0f64, f64::max);
 
     // Y: LinearScale mapping values to plot area
-    let y_scale = LinearScale::new()
-        .domain(0.0, y_max)
-        .range(plot_h, 0.0);
+    let y_scale = LinearScale::new().domain(0.0, y_max).range(plot_h, 0.0);
 
     // Build area paths using d3rs Area generator directly in plot coordinates
     let dates: Vec<i64> = rows.iter().map(|r| r.date).collect();
@@ -114,13 +114,18 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .child("Stacked Area Chart"),
         )
         .child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .mb_2()
-                .child("Source: observablehq.com/@d3/stacked-area-chart — uses TimeScale (scaleUtc)"),
+            div().text_xs().text_color(rgb(0x666666)).mb_2().child(
+                "Source: observablehq.com/@d3/stacked-area-chart — uses TimeScale (scaleUtc)",
+            ),
         )
-        .child(div().flex().gap_4().mb_2().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .mb_2()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(width as f32))
@@ -131,7 +136,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .relative()
                 // Y-axis line
                 .child(
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px(margin_top as f32))
                         .w(px(1.0))
@@ -140,7 +146,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 )
                 // X-axis line
                 .child(
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px((margin_top + plot_h) as f32))
                         .w(px(plot_w as f32))
@@ -150,17 +157,26 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 // Y-axis tick labels
                 .children(y_ticks.iter().map(|&val| {
                     let y = y_scale.scale(val);
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(0.0))
                         .top(px((margin_top + y - 6.0) as f32))
                         .w(px(margin_left as f32))
-                        .flex().justify_end().pr_1()
-                        .child(div().text_color(rgb(0x888888)).text_xs().child(format!("{:.0}", val)))
+                        .flex()
+                        .justify_end()
+                        .pr_1()
+                        .child(
+                            div()
+                                .text_color(rgb(0x888888))
+                                .text_xs()
+                                .child(format!("{:.0}", val)),
+                        )
                 }))
                 // Y grid lines
                 .children(y_ticks.iter().map(|&val| {
                     let y = y_scale.scale(val);
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px((margin_top + y) as f32))
                         .w(px(plot_w as f32))
@@ -172,16 +188,19 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                     let x = x_time.scale(epoch);
                     let month_idx = ti.min(11);
                     let label = month_names[month_idx];
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px((margin_left + x - 12.0) as f32))
                         .top(px((margin_top + plot_h + 4.0) as f32))
                         .w(px(24.0))
-                        .flex().justify_center()
+                        .flex()
+                        .justify_center()
                         .child(div().text_color(rgb(0x888888)).text_xs().child(label))
                 }))
                 // Plot area — paths are already in plot coordinates (0..plot_w, 0..plot_h)
                 .child(
-                    div().absolute()
+                    div()
+                        .absolute()
                         .left(px(margin_left as f32))
                         .top(px(margin_top as f32))
                         .w(px(plot_w as f32))

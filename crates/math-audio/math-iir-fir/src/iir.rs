@@ -241,7 +241,14 @@ impl Biquad {
     /// Update filter parameters and recompute coefficients **without** resetting
     /// the internal delay state (x1, x2, y1, y2). This allows click-free
     /// parameter changes on a running filter.
-    pub fn update_params(&mut self, filter_type: BiquadFilterType, freq: f64, srate: f64, q: f64, db_gain: f64) {
+    pub fn update_params(
+        &mut self,
+        filter_type: BiquadFilterType,
+        freq: f64,
+        srate: f64,
+        q: f64,
+        db_gain: f64,
+    ) {
         self.filter_type = filter_type;
         self.freq = freq;
         self.srate = srate;
@@ -249,8 +256,12 @@ impl Biquad {
             30.0
         } else if q == 0.0 {
             match filter_type {
-                BiquadFilterType::Bandpass | BiquadFilterType::Highpass | BiquadFilterType::Lowpass => DEFAULT_Q_HIGH_LOW_PASS,
-                BiquadFilterType::Lowshelf | BiquadFilterType::Highshelf => DEFAULT_Q_HIGH_LOW_SHELF,
+                BiquadFilterType::Bandpass
+                | BiquadFilterType::Highpass
+                | BiquadFilterType::Lowpass => DEFAULT_Q_HIGH_LOW_PASS,
+                BiquadFilterType::Lowshelf | BiquadFilterType::Highshelf => {
+                    DEFAULT_Q_HIGH_LOW_SHELF
+                }
                 _ => q,
             }
         } else {
@@ -340,6 +351,22 @@ impl Biquad {
                 a1 = -2.0 * cs;
                 a2 = 1.0 - alpha;
             }
+        }
+
+        // Guard against degenerate a0 (extreme parameter combos)
+        if a0.abs() < 1e-15 {
+            self.b0 = 1.0;
+            self.b1 = 0.0;
+            self.b2 = 0.0;
+            self.a1 = 0.0;
+            self.a2 = 0.0;
+            self.r_up0 = 1.0;
+            self.r_up1 = 0.0;
+            self.r_up2 = 0.0;
+            self.r_dw0 = 1.0;
+            self.r_dw1 = 0.0;
+            self.r_dw2 = 0.0;
+            return;
         }
 
         // Normalize coefficients

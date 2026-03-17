@@ -12,8 +12,8 @@ use gpui::*;
 
 use gpui_ui_kit::card::Card;
 use gpui_ui_kit::number_input::{NumberInput, NumberInputSize};
-use gpui_ui_kit::select::{Select, SelectOption};
 use gpui_ui_kit::select::SelectSize;
+use gpui_ui_kit::select::{Select, SelectOption};
 use gpui_ui_kit::stack::{HStack, StackAlign, StackJustify, StackSpacing, VStack};
 use gpui_ui_kit::text::{Text, TextSize, TextWeight};
 use gpui_ui_kit::theme::ThemeExt;
@@ -87,8 +87,7 @@ impl RenderOnce for AutoEqForm {
         let on_de_cr_change_rc = self.on_de_cr_change.map(std::rc::Rc::new);
         let on_strategy_change_rc = self.on_strategy_change.map(std::rc::Rc::new);
         let on_strategy_toggle_rc = self.on_strategy_toggle.map(std::rc::Rc::new);
-        let on_adaptive_weight_f_change_rc =
-            self.on_adaptive_weight_f_change.map(std::rc::Rc::new);
+        let on_adaptive_weight_f_change_rc = self.on_adaptive_weight_f_change.map(std::rc::Rc::new);
         let on_adaptive_weight_cr_change_rc =
             self.on_adaptive_weight_cr_change.map(std::rc::Rc::new);
         let on_refine_change_rc = self.on_refine_change.map(std::rc::Rc::new);
@@ -191,15 +190,18 @@ impl RenderOnce for AutoEqForm {
         // Multi-measurement callbacks Rc
         let on_use_multi_measurement_change_rc =
             self.on_use_multi_measurement_change.map(std::rc::Rc::new);
-        let on_multi_measurement_strategy_change_rc =
-            self.on_multi_measurement_strategy_change.map(std::rc::Rc::new);
-        let on_multi_measurement_strategy_toggle_rc =
-            self.on_multi_measurement_strategy_toggle.map(std::rc::Rc::new);
+        let on_multi_measurement_strategy_change_rc = self
+            .on_multi_measurement_strategy_change
+            .map(std::rc::Rc::new);
+        let on_multi_measurement_strategy_toggle_rc = self
+            .on_multi_measurement_strategy_toggle
+            .map(std::rc::Rc::new);
         let on_multi_measurement_variance_lambda_change_rc = self
             .on_multi_measurement_variance_lambda_change
             .map(std::rc::Rc::new);
-        let on_multi_measurement_weight_change_rc =
-            self.on_multi_measurement_weight_change.map(std::rc::Rc::new);
+        let on_multi_measurement_weight_change_rc = self
+            .on_multi_measurement_weight_change
+            .map(std::rc::Rc::new);
 
         // Include the render body from the separate file
         match layout_mode {

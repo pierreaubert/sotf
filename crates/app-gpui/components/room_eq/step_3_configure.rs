@@ -4,8 +4,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_autoeq::{AutoEqConfig, AutoEqForm, AutoEqFormUiState, AutoEqLayoutMode};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
 };
 
 use super::render::render_channel_config_row;

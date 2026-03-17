@@ -263,11 +263,9 @@ impl PlayerView {
                 VStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(
-                        Text::new(
-                            "Apply the EQ to your current playback to hear the difference.",
-                        )
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
+                        Text::new("Apply the EQ to your current playback to hear the difference.")
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
                     )
                     .child(
                         HStack::new()

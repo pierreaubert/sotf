@@ -527,8 +527,16 @@ impl PlayerView {
                     .unwrap_or((y_min, y_max));
 
                 // Guard: ensure axis ranges are finite and non-degenerate
-                let x_max = if x_max.is_finite() && x_max > x_min { x_max } else { x_min + 100.0 };
-                let y_min_domain = if y_min_domain.is_finite() { y_min_domain } else { 0.0 };
+                let x_max = if x_max.is_finite() && x_max > x_min {
+                    x_max
+                } else {
+                    x_min + 100.0
+                };
+                let y_min_domain = if y_min_domain.is_finite() {
+                    y_min_domain
+                } else {
+                    0.0
+                };
                 let y_max_domain = if y_max_domain.is_finite() && y_max_domain > y_min_domain {
                     y_max_domain
                 } else {
@@ -616,10 +624,21 @@ impl PlayerView {
                 "Room EQ optimizer config: algo={}, filters={}, freq=[{:.1}, {:.1}], \
                  db=[{:.1}, {:.1}], q=[{:.2}, {:.2}], pop={}, maxiter={}, \
                  tol={:.2e}, atol={:.2e}, refine={}, psychoacoustic={}, asymmetric={}",
-                cfg.algorithm, cfg.num_filters, cfg.min_freq, cfg.max_freq,
-                cfg.min_db, cfg.max_db, cfg.min_q, cfg.max_q,
-                cfg.population, cfg.max_iter,
-                cfg.tolerance, cfg.atolerance, cfg.refine, cfg.psychoacoustic, cfg.asymmetric_loss,
+                cfg.algorithm,
+                cfg.num_filters,
+                cfg.min_freq,
+                cfg.max_freq,
+                cfg.min_db,
+                cfg.max_db,
+                cfg.min_q,
+                cfg.max_q,
+                cfg.population,
+                cfg.max_iter,
+                cfg.tolerance,
+                cfg.atolerance,
+                cfg.refine,
+                cfg.psychoacoustic,
+                cfg.asymmetric_loss,
             );
 
             let channel_names: Vec<String> = room_eq

@@ -22,32 +22,23 @@ fn test_drag_list_orientation() {
         DragListOrientation::Vertical,
         DragListOrientation::Horizontal,
     ] {
-        let list = DragList::new(
-            "dl-orient",
-            vec![DragItem::new("a", div().child("A"))],
-        )
-        .orientation(orientation);
+        let list = DragList::new("dl-orient", vec![DragItem::new("a", div().child("A"))])
+            .orientation(orientation);
         drop(list);
     }
 }
 
 #[test]
 fn test_drag_list_show_handles() {
-    let list = DragList::new(
-        "dl-handles",
-        vec![DragItem::new("a", div().child("A"))],
-    )
-    .show_handles(false);
+    let list =
+        DragList::new("dl-handles", vec![DragItem::new("a", div().child("A"))]).show_handles(false);
     drop(list);
 }
 
 #[test]
 fn test_drag_list_gap() {
-    let list = DragList::new(
-        "dl-gap",
-        vec![DragItem::new("a", div().child("A"))],
-    )
-    .gap(gpui::px(8.0));
+    let list =
+        DragList::new("dl-gap", vec![DragItem::new("a", div().child("A"))]).gap(gpui::px(8.0));
     drop(list);
 }
 

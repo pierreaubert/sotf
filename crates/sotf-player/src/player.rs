@@ -96,10 +96,7 @@ impl Player {
         &mut self,
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        log::info!(
-            "[Player] update_plugins: {} plugins",
-            plugins.len(),
-        );
+        log::info!("[Player] update_plugins: {} plugins", plugins.len(),);
         match self.manager.update_plugin_chain(plugins.clone()) {
             Ok(()) => {
                 // Update saved config so crash recovery uses latest plugins.

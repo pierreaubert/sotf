@@ -156,7 +156,11 @@ fn test_limiter_loopback_verification() {
     let start_idx = (0.5 * sample_rate) as usize;
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
     if captured_ch0.len() < end_idx {
-        println!("SKIPPING test: Recording too short ({} samples, need {}).", captured_ch0.len(), end_idx);
+        println!(
+            "SKIPPING test: Recording too short ({} samples, need {}).",
+            captured_ch0.len(),
+            end_idx
+        );
         return;
     }
 
@@ -177,7 +181,9 @@ fn test_limiter_loopback_verification() {
     println!("Measured RMS:  {:.4} ({:.2} dBFS)", rms, rms_db);
 
     if max_peak < 0.001 {
-        println!("SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio).");
+        println!(
+            "SKIPPING test: No signal detected in loopback capture (BlackHole may not be routing audio)."
+        );
         return;
     }
 

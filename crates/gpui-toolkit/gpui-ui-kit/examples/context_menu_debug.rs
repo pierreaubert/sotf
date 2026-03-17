@@ -44,10 +44,7 @@ impl Render for ContextMenuDebug {
                     .border_color(theme.border)
                     .rounded_lg()
                     .p_4()
-                    .child(
-                        ContextMenu::new("ctx-menu-demo", items)
-                            .min_width(px(200.0)),
-                    ),
+                    .child(ContextMenu::new("ctx-menu-demo", items).min_width(px(200.0))),
             )
     }
 }

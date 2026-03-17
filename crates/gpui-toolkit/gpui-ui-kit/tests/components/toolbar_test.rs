@@ -35,15 +35,14 @@ fn test_toolbar_bordered() {
 
 #[test]
 fn test_toolbar_button_active() {
-    let toolbar = Toolbar::new("tb-active")
-        .item(ToolbarItem::button("bold", "B").active(true));
+    let toolbar = Toolbar::new("tb-active").item(ToolbarItem::button("bold", "B").active(true));
     drop(toolbar);
 }
 
 #[test]
 fn test_toolbar_button_disabled() {
-    let toolbar = Toolbar::new("tb-disabled")
-        .item(ToolbarItem::button("redo", "Redo").disabled(true));
+    let toolbar =
+        Toolbar::new("tb-disabled").item(ToolbarItem::button("redo", "Redo").disabled(true));
     drop(toolbar);
 }
 
@@ -56,8 +55,7 @@ fn test_toolbar_button_on_click() {
 
 #[test]
 fn test_toolbar_custom_item() {
-    let toolbar = Toolbar::new("tb-custom")
-        .item(ToolbarItem::custom(div().child("Custom widget")));
+    let toolbar = Toolbar::new("tb-custom").item(ToolbarItem::custom(div().child("Custom widget")));
     drop(toolbar);
 }
 

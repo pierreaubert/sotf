@@ -12,10 +12,7 @@ struct TreeViewTestView;
 
 impl Render for TreeViewTestView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(TreeView::new(
-            "tree-1",
-            vec![TreeNode::new("root", "Root")],
-        ))
+        div().child(TreeView::new("tree-1", vec![TreeNode::new("root", "Root")]))
     }
 }
 
@@ -69,9 +66,10 @@ async fn test_tree_view_selected(cx: &mut TestAppContext) {
             div().child(
                 TreeView::new(
                     "tree-sel",
-                    vec![TreeNode::new("src", "src/").children(vec![
-                        TreeNode::new("main", "main.rs").leaf(true),
-                    ])],
+                    vec![
+                        TreeNode::new("src", "src/")
+                            .children(vec![TreeNode::new("main", "main.rs").leaf(true)]),
+                    ],
                 )
                 .expanded(expanded)
                 .selected("main"),

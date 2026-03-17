@@ -60,7 +60,11 @@ pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("S", actions::SwitchToSettings, Some("PlayerView")),
         // Level meter controls - PlayerView context so text editing isn't intercepted
         KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
-        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, Some("PlayerView")),
+        KeyBinding::new(
+            "shift-tab",
+            actions::SelectPrevMeterGroup,
+            Some("PlayerView"),
+        ),
         KeyBinding::new("m", actions::ToggleMeterMute, Some("PlayerView")),
         KeyBinding::new("shift-m", actions::ToggleMeterSolo, Some("PlayerView")),
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),

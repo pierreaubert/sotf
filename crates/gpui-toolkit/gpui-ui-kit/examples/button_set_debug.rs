@@ -28,10 +28,7 @@ impl Render for ButtonSetDebug {
             .gap_6()
             .overflow_y_scroll()
             .child(Heading::h1("ButtonSet Debug"))
-            .child(
-                Text::new(format!("Selected: {}", self.selected))
-                    .color(theme.accent),
-            )
+            .child(Text::new(format!("Selected: {}", self.selected)).color(theme.accent))
             // Default
             .child(
                 div()

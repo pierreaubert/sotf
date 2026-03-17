@@ -500,10 +500,7 @@ mod tests {
             mic_calibration_paths: vec![Some("/path/to/cal.txt".to_string())],
             ..Default::default()
         };
-        assert_eq!(
-            config.calibration_for_channel(0),
-            Some("/path/to/cal.txt")
-        );
+        assert_eq!(config.calibration_for_channel(0), Some("/path/to/cal.txt"));
     }
 
     #[test]

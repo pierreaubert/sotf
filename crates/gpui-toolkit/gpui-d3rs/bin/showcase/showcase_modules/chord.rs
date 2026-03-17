@@ -62,14 +62,17 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         )
         .child(
             // Legend
-            div().flex().gap_4().children(names.iter().enumerate().map(|(i, name)| {
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(div().size_3().bg(colors[i % colors.len()]))
-                    .child(div().text_xs().child(*name))
-            })),
+            div()
+                .flex()
+                .gap_4()
+                .children(names.iter().enumerate().map(|(i, name)| {
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(div().size_3().bg(colors[i % colors.len()]))
+                        .child(div().text_xs().child(*name))
+                })),
         )
         .child(
             div()
@@ -136,8 +139,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                                 let n_ticks = ((arc_span * 30.0) as usize).max(2);
                                 for t in 0..=n_ticks {
                                     let frac = t as f64 / n_ticks as f64;
-                                    let angle =
-                                        group.start_angle + arc_span * frac - PI / 2.0;
+                                    let angle = group.start_angle + arc_span * frac - PI / 2.0;
                                     let x1 = outer_radius * angle.cos();
                                     let y1 = outer_radius * angle.sin();
                                     let x2 = tick_radius * angle.cos();
@@ -148,32 +150,16 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                                     let ny = angle.cos() * 0.5;
                                     let mut builder = gpui::PathBuilder::fill();
                                     builder.move_to(
-                                        center
-                                            + point(
-                                                px((x1 + nx) as f32),
-                                                px((y1 + ny) as f32),
-                                            ),
+                                        center + point(px((x1 + nx) as f32), px((y1 + ny) as f32)),
                                     );
                                     builder.line_to(
-                                        center
-                                            + point(
-                                                px((x2 + nx) as f32),
-                                                px((y2 + ny) as f32),
-                                            ),
+                                        center + point(px((x2 + nx) as f32), px((y2 + ny) as f32)),
                                     );
                                     builder.line_to(
-                                        center
-                                            + point(
-                                                px((x2 - nx) as f32),
-                                                px((y2 - ny) as f32),
-                                            ),
+                                        center + point(px((x2 - nx) as f32), px((y2 - ny) as f32)),
                                     );
                                     builder.line_to(
-                                        center
-                                            + point(
-                                                px((x1 - nx) as f32),
-                                                px((y1 - ny) as f32),
-                                            ),
+                                        center + point(px((x1 - nx) as f32), px((y1 - ny) as f32)),
                                     );
                                     builder.close();
                                     if let Ok(path) = builder.build() {

@@ -72,11 +72,17 @@ impl DivergingScale {
 
         if t <= 0.5 {
             // Map [0, 0.5] → interpolate through [negative[0], ..., negative[n-1], neutral]
-            let stops: Vec<&Hcl> = self.negative.iter().chain(std::iter::once(&self.neutral)).collect();
+            let stops: Vec<&Hcl> = self
+                .negative
+                .iter()
+                .chain(std::iter::once(&self.neutral))
+                .collect();
             Self::interpolate_stops(&stops, t * 2.0)
         } else {
             // Map (0.5, 1.0] → interpolate through [neutral, positive[0], ..., positive[n-1]]
-            let stops: Vec<&Hcl> = std::iter::once(&self.neutral).chain(self.positive.iter()).collect();
+            let stops: Vec<&Hcl> = std::iter::once(&self.neutral)
+                .chain(self.positive.iter())
+                .collect();
             Self::interpolate_stops(&stops, (t - 0.5) * 2.0)
         }
     }

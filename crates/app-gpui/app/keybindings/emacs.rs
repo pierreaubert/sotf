@@ -62,7 +62,11 @@ pub(super) fn emacs_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("alt-x S", actions::SwitchToSettings, None),
         // Level meter controls - alt combos stay global
         KeyBinding::new("tab", actions::SelectNextMeterGroup, Some("PlayerView")),
-        KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, Some("PlayerView")),
+        KeyBinding::new(
+            "shift-tab",
+            actions::SelectPrevMeterGroup,
+            Some("PlayerView"),
+        ),
         KeyBinding::new("alt-m", actions::ToggleMeterMute, None),
         KeyBinding::new("alt-M", actions::ToggleMeterSolo, None),
         KeyBinding::new("ctrl-alt-m", actions::ToggleMeterDim, None),

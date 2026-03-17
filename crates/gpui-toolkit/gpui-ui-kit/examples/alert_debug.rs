@@ -44,14 +44,20 @@ impl Render for AlertDebug {
                             .title("Success"),
                     )
                     .child(
-                        Alert::new("alert-warning", "Sample rate mismatch between source and output device.")
-                            .variant(AlertVariant::Warning)
-                            .title("Warning"),
+                        Alert::new(
+                            "alert-warning",
+                            "Sample rate mismatch between source and output device.",
+                        )
+                        .variant(AlertVariant::Warning)
+                        .title("Warning"),
                     )
                     .child(
-                        Alert::new("alert-error", "Failed to open audio device. Check your settings.")
-                            .variant(AlertVariant::Error)
-                            .title("Error"),
+                        Alert::new(
+                            "alert-error",
+                            "Failed to open audio device. Check your settings.",
+                        )
+                        .variant(AlertVariant::Error)
+                        .title("Error"),
                     ),
             )
             // Without title
@@ -62,8 +68,11 @@ impl Render for AlertDebug {
                     .gap_3()
                     .child(Text::new("Without Title").weight(TextWeight::Bold))
                     .child(
-                        Alert::new("alert-no-title", "Plugin chain reloaded with 5 active plugins.")
-                            .variant(AlertVariant::Info),
+                        Alert::new(
+                            "alert-no-title",
+                            "Plugin chain reloaded with 5 active plugins.",
+                        )
+                        .variant(AlertVariant::Info),
                     ),
             )
             // Closeable
@@ -87,7 +96,9 @@ impl Render for AlertDebug {
                     .gap_3()
                     .child(Text::new("InlineAlert").weight(TextWeight::Bold))
                     .child(InlineAlert::new("Inline info message").variant(AlertVariant::Info))
-                    .child(InlineAlert::new("Inline warning message").variant(AlertVariant::Warning))
+                    .child(
+                        InlineAlert::new("Inline warning message").variant(AlertVariant::Warning),
+                    )
                     .child(InlineAlert::new("Inline error message").variant(AlertVariant::Error)),
             )
     }

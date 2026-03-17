@@ -14,7 +14,8 @@ const DIAMONDS_CSV: &str = include_str!("../../data/diamonds.csv");
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     // Load real diamonds data, bin by carat range for box plot groups
     let rows = d3rs::fetch::parse_csv(DIAMONDS_CSV);
-    let mut binned: std::collections::BTreeMap<String, Vec<f64>> = std::collections::BTreeMap::new();
+    let mut binned: std::collections::BTreeMap<String, Vec<f64>> =
+        std::collections::BTreeMap::new();
     for row in &rows {
         let carat: f64 = row.get("carat").and_then(|s| s.parse().ok()).unwrap_or(0.0);
         let price: f64 = row.get("price").and_then(|s| s.parse().ok()).unwrap_or(0.0);
@@ -41,8 +42,8 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let result = d3rs::examples::box_plot::compute(&data);
 
     let scheme = ColorScheme::tableau10();
-    let box_color = scheme.color(0).to_rgba();    // Blue
-    let median_color = scheme.color(2).to_rgba();  // Red
+    let box_color = scheme.color(0).to_rgba(); // Blue
+    let median_color = scheme.color(2).to_rgba(); // Red
     let whisker_color = rgb(0x333333);
     let outlier_color = scheme.color(1).to_rgba(); // Orange
 

@@ -641,9 +641,9 @@ pub mod compressor {
         ],
         output: &[
             ControlSpec::meter(-30.0, 0.0), // GR meter
-            ControlSpec::toggle(7),          // auto_makeup
-            ControlSpec::knob(5),            // makeup_gain
-            ControlSpec::knob(6),            // mix
+            ControlSpec::toggle(7),         // auto_makeup
+            ControlSpec::knob(5),           // makeup_gain
+            ControlSpec::knob(6),           // mix
         ],
         tabs: &[],
         visualizations: &[VizSlot::TransferCurve {
@@ -730,7 +730,7 @@ pub mod gate {
         ],
         output: &[
             ControlSpec::meter(-30.0, 0.0), // GR meter
-            ControlSpec::knob(5),            // mix
+            ControlSpec::knob(5),           // mix
         ],
         tabs: &[],
         visualizations: &[VizSlot::TransferCurve {
@@ -833,8 +833,8 @@ pub mod expander {
         ],
         output: &[
             ControlSpec::meter(-30.0, 0.0), // GR meter
-            ControlSpec::toggle(9),          // auto_makeup
-            ControlSpec::knob(8),            // mix
+            ControlSpec::toggle(9),         // auto_makeup
+            ControlSpec::knob(8),           // mix
         ],
         tabs: &[TabSpec {
             name: "Advanced",
@@ -905,7 +905,7 @@ pub mod limiter {
         ],
         output: &[
             ControlSpec::meter(-20.0, 0.0), // GR meter (limiter range)
-            ControlSpec::knob(4),            // mix
+            ControlSpec::knob(4),           // mix
         ],
         tabs: &[],
         visualizations: &[VizSlot::TransferCurve {
@@ -1521,13 +1521,13 @@ pub mod upmixer {
             TabSpec {
                 name: "Enhancement",
                 controls: &[
-                    ControlSpec::toggle(15),  // hr_direct
-                    ControlSpec::knob(16),    // hr_sharpen
-                    ControlSpec::knob(17),    // ambient_boost
+                    ControlSpec::toggle(15),   // hr_direct
+                    ControlSpec::knob(16),     // hr_sharpen
+                    ControlSpec::knob(17),     // ambient_boost
                     ControlSpec::selector(18), // decor_mode
-                    ControlSpec::knob(19),    // decor_lfo_rate
-                    ControlSpec::knob(20),    // velvet_duration
-                    ControlSpec::knob(21),    // velvet_density
+                    ControlSpec::knob(19),     // decor_lfo_rate
+                    ControlSpec::knob(20),     // velvet_duration
+                    ControlSpec::knob(21),     // velvet_density
                 ],
             },
             TabSpec {
@@ -1563,7 +1563,7 @@ pub mod convolution {
     ];
     pub const LAYOUT: PluginLayout = PluginLayout {
         config: &[ControlSpec::file_picker(0)], // ir_file
-        main: &[],                               // IR waveform placeholder (future viz)
+        main: &[],                              // IR waveform placeholder (future viz)
         output: &[
             ControlSpec::knob(1), // mix
             ControlSpec::knob(2), // gain_db
@@ -1929,7 +1929,7 @@ pub mod multiband_compressor {
         ],
         output: &[
             ControlSpec::meter(-30.0, 0.0), // GR meter
-            ControlSpec::knob(11),           // mix
+            ControlSpec::knob(11),          // mix
         ],
         tabs: &[],
         visualizations: &[VizSlot::Custom {
@@ -2582,9 +2582,9 @@ pub mod fletcher_munson {
             },
         ],
         output: &[
-            ControlSpec::toggle(4),  // auto_gain_enabled
-            ControlSpec::knob(5),    // auto_gain_max_db
-            ControlSpec::knob(6),    // auto_gain_smoothing_ms
+            ControlSpec::toggle(4),   // auto_gain_enabled
+            ControlSpec::knob(5),     // auto_gain_max_db
+            ControlSpec::knob(6),     // auto_gain_smoothing_ms
             ControlSpec::selector(7), // auto_gain_loudness_type
         ],
         tabs: &[],
@@ -2995,8 +2995,8 @@ pub mod band_split {
         main: &[ControlGroup {
             title: "CROSSOVER",
             controls: &[
-                ControlSpec::knob(0),                             // frequency
-                ControlSpec::button_set(1, &["LR24", "LR48"]),   // type
+                ControlSpec::knob(0),                          // frequency
+                ControlSpec::button_set(1, &["LR24", "LR48"]), // type
             ],
         }],
         output: &[],
@@ -3328,17 +3328,15 @@ pub mod xtc {
             ControlSpec::knob(24),   // ag_max
             ControlSpec::knob(25),   // ag_smoothing
         ],
-        tabs: &[
-            TabSpec {
-                name: "Head Tracking",
-                controls: &[
-                    ControlSpec::knob(3), // head_offset_x
-                    ControlSpec::knob(4), // head_offset_z
-                    ControlSpec::knob(5), // head_yaw
-                    ControlSpec::knob(6), // head_tracking_smooth
-                ],
-            },
-        ],
+        tabs: &[TabSpec {
+            name: "Head Tracking",
+            controls: &[
+                ControlSpec::knob(3), // head_offset_x
+                ControlSpec::knob(4), // head_offset_z
+                ControlSpec::knob(5), // head_yaw
+                ControlSpec::knob(6), // head_tracking_smooth
+            ],
+        }],
         visualizations: &[],
         column_constraints: &[
             ColumnConstraint::config(120.0, 0.5),
@@ -3439,9 +3437,7 @@ pub mod ab_compare {
             ],
         }],
         visualizations: &[],
-        column_constraints: &[
-            ColumnConstraint::main(350.0),
-        ],
+        column_constraints: &[ColumnConstraint::main(350.0)],
     };
 }
 

@@ -336,14 +336,15 @@ impl MemoryEstimate {
         // For heterogeneous CPUs, also show P-core only estimate
         if let Some(info) = cpu_info
             && info.is_heterogeneous
-                && let Some(p_cores) = info.perf_cores {
-                    let p_core_mem = base + per_freq * p_cores;
-                    println!(
-                        "  {} P-cores only concurrent: {}",
-                        p_cores,
-                        Self::format_bytes(p_core_mem)
-                    );
-                }
+            && let Some(p_cores) = info.perf_cores
+        {
+            let p_core_mem = base + per_freq * p_cores;
+            println!(
+                "  {} P-cores only concurrent: {}",
+                p_cores,
+                Self::format_bytes(p_core_mem)
+            );
+        }
 
         // Memory for all frequencies at once (worst case)
         let all_at_once = base + per_freq * n_frequencies;
@@ -915,14 +916,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         for (name, override_opt) in wall_overrides {
             if let Some(surface) = override_opt
-                && !matches!(surface, SurfaceConfig::Rigid) {
-                    eprintln!(
-                        "Error: {} only supports rigid boundaries, but {} is {:?}",
-                        solver_label, name, surface
-                    );
-                    eprintln!("Hint: Use a GMRES-based solver for non-rigid boundaries.");
-                    std::process::exit(1);
-                }
+                && !matches!(surface, SurfaceConfig::Rigid)
+            {
+                eprintln!(
+                    "Error: {} only supports rigid boundaries, but {} is {:?}",
+                    solver_label, name, surface
+                );
+                eprintln!("Hint: Use a GMRES-based solver for non-rigid boundaries.");
+                std::process::exit(1);
+            }
         }
     }
 

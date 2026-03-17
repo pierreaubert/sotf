@@ -68,9 +68,7 @@ impl TestScenario for DefaultGraphStructureScenario {
         driver.navigate_to(Screen::PluginGraph);
 
         // The default graph should have a workflow canvas
-        let has_canvas = driver.read_app(|app| {
-            app.plugin_state.workflow_canvas.is_some()
-        });
+        let has_canvas = driver.read_app(|app| app.plugin_state.workflow_canvas.is_some());
 
         if !has_canvas {
             return Err("Workflow canvas should be created on PluginGraph screen".into());
@@ -115,8 +113,7 @@ impl TestScenario for GraphHeaderStatsScenario {
 
         // The graph should have a valid plugin graph or default created
         let plugin_graph_exists = driver.read_app(|app| {
-            app.plugin_state.plugin_graph.is_some()
-                || !app.plugin_state.chain.is_empty()
+            app.plugin_state.plugin_graph.is_some() || !app.plugin_state.chain.is_empty()
         });
 
         if !plugin_graph_exists {
@@ -125,7 +122,8 @@ impl TestScenario for GraphHeaderStatsScenario {
 
         // Verify output channels are set
         let output_channels = driver.read_app(|app| {
-            app.audio_device_state.output_devices
+            app.audio_device_state
+                .output_devices
                 .get(app.audio_device_state.selected_output_device_index)
                 .and_then(|d| d.default_config.as_ref())
                 .map(|c| c.channels as usize)
@@ -174,7 +172,8 @@ impl TestScenario for PaletteElementsScenario {
         let first_is_eq = driver.read_app(|app| {
             app.plugin_state
                 .chain
-                .plugins().first()
+                .plugins()
+                .first()
                 .map(|p| p.plugin_type() == sotf_audio::plugins::PluginType::EQ)
                 .unwrap_or(false)
         });

@@ -73,7 +73,12 @@ impl Versor {
     ///
     /// Matches `versor.rotation(q)` from the JS library.
     pub fn to_angles(self) -> (f64, f64, f64) {
-        let Self { w: a, x: b, y: c, z: d } = self;
+        let Self {
+            w: a,
+            x: b,
+            y: c,
+            z: d,
+        } = self;
         let lambda = (2.0 * (a * b + c * d)).atan2(1.0 - 2.0 * (b * b + c * c)) * DEGREES;
         let phi = (2.0 * (a * c - d * b)).clamp(-1.0, 1.0).asin() * DEGREES;
         let gamma = (2.0 * (a * d + b * c)).atan2(1.0 - 2.0 * (c * c + d * d)) * DEGREES;
@@ -84,7 +89,12 @@ impl Versor {
     ///
     /// Matches `versor.fromCartesian([x, y, z])`.
     pub fn from_cartesian(x: f64, y: f64, z: f64) -> Self {
-        Self { w: 0.0, x: z, y: -y, z: x }
+        Self {
+            w: 0.0,
+            x: z,
+            y: -y,
+            z: x,
+        }
     }
 
     /// Convert spherical coordinates [λ°, φ°] to Cartesian [x, y, z].
@@ -101,8 +111,18 @@ impl Versor {
     ///
     /// Matches `versor.multiply(q0, q1)`.
     pub fn multiply(self, other: Self) -> Self {
-        let Self { w: a1, x: b1, y: c1, z: d1 } = self;
-        let Self { w: a2, x: b2, y: c2, z: d2 } = other;
+        let Self {
+            w: a1,
+            x: b1,
+            y: c1,
+            z: d1,
+        } = self;
+        let Self {
+            w: a2,
+            x: b2,
+            y: c2,
+            z: d2,
+        } = other;
         Self {
             w: a1 * a2 - b1 * b2 - c1 * c2 - d1 * d2,
             x: a1 * b2 + b1 * a2 + c1 * d2 - d1 * c2,
@@ -199,7 +219,8 @@ impl Versor {
                 self.x + t * (other.x - self.x),
                 self.y + t * (other.y - self.y),
                 self.z + t * (other.z - self.z),
-            ).normalize();
+            )
+            .normalize();
         }
 
         let theta0 = dot.clamp(-1.0, 1.0).acos();
@@ -253,11 +274,7 @@ impl Versor {
     ///
     /// Input: (lon, lat) in degrees.
     /// Output: (rotated_lon, rotated_lat) in degrees.
-    pub fn rotate_degrees(
-        rotation_angles: (f64, f64, f64),
-        lon: f64,
-        lat: f64,
-    ) -> (f64, f64) {
+    pub fn rotate_degrees(rotation_angles: (f64, f64, f64), lon: f64, lat: f64) -> (f64, f64) {
         let q = Self::from_angles(rotation_angles.0, rotation_angles.1, rotation_angles.2);
         let (rl, rp) = q.rotate_spherical(lon * RADIANS, lat * RADIANS);
         (rl * DEGREES, rp * DEGREES)

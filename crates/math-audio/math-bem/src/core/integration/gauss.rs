@@ -39,7 +39,11 @@ fn gauss_legendre_raw(n: usize) -> (&'static [f64], &'static [f64]) {
         16 => (&GL16_X, &GL16_W),
         20 => (&GL20_X, &GL20_W),
         _ => {
-            // Fall back to closest available
+            // Fall back to closest available (requested order unavailable)
+            log::warn!(
+                "Gauss-Legendre order {} not available, falling back to nearest",
+                n
+            );
             if n <= 2 {
                 (&GL2_X, &GL2_W)
             } else if n <= 4 {

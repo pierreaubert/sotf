@@ -223,7 +223,9 @@ impl PlayerView {
                     div()
                         .flex()
                         .when(window_width < BREAKPOINT_NARROW_LAYOUT, |el| el.flex_col())
-                        .when(window_width >= BREAKPOINT_NARROW_LAYOUT, |el| el.flex_wrap())
+                        .when(window_width >= BREAKPOINT_NARROW_LAYOUT, |el| {
+                            el.flex_wrap()
+                        })
                         .items_center()
                         .justify_center()
                         .gap_2()

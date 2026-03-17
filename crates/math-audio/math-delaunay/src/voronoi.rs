@@ -57,7 +57,15 @@ impl<'a> Voronoi<'a> {
             }
         }
 
-        Self { delaunay, xmin, ymin, xmax, ymax, circumcenters, vectors }
+        Self {
+            delaunay,
+            xmin,
+            ymin,
+            xmax,
+            ymax,
+            circumcenters,
+            vectors,
+        }
     }
 
     /// Get the polygon for Voronoi cell i, clipped to bounds.
@@ -73,10 +81,7 @@ impl<'a> Voronoi<'a> {
         let n = clipped.len();
         // Remove trailing duplicate of first point
         let mut end = n;
-        while end >= 4
-            && clipped[0] == clipped[end - 2]
-            && clipped[1] == clipped[end - 1]
-        {
+        while end >= 4 && clipped[0] == clipped[end - 2] && clipped[1] == clipped[end - 1] {
             end -= 2;
         }
         for i in (0..end).step_by(2) {
@@ -146,10 +151,8 @@ impl<'a> Voronoi<'a> {
         // Degenerate: single point on hull
         if i == 0 && self.delaunay.hull.len() == 1 {
             return Some(vec![
-                self.xmax, self.ymin,
-                self.xmax, self.ymax,
-                self.xmin, self.ymax,
-                self.xmin, self.ymin,
+                self.xmax, self.ymin, self.xmax, self.ymax, self.xmin, self.ymax, self.xmin,
+                self.ymin,
             ]);
         }
         let points = self.cell(i)?;
@@ -157,9 +160,12 @@ impl<'a> Voronoi<'a> {
         let has_vectors = self.vectors[v] != 0.0 || self.vectors[v + 1] != 0.0;
         if has_vectors {
             self.clip_infinite(
-                i, &points,
-                self.vectors[v], self.vectors[v + 1],
-                self.vectors[v + 2], self.vectors[v + 3],
+                i,
+                &points,
+                self.vectors[v],
+                self.vectors[v + 1],
+                self.vectors[v + 2],
+                self.vectors[v + 3],
             )
         } else {
             self.clip_finite(i, &points)
@@ -205,7 +211,10 @@ impl<'a> Voronoi<'a> {
                     let sy1 = s[3];
                     e1 = self.edgecode(sx1, sy1);
                     if e0 != 0 && e1 != 0 {
-                        { let len = p.as_ref().unwrap().len(); self.edge(i, e0, e1, p.as_mut().unwrap(), len); }
+                        {
+                            let len = p.as_ref().unwrap().len();
+                            self.edge(i, e0, e1, p.as_mut().unwrap(), len);
+                        }
                     }
                     if let Some(ref mut pp) = p {
                         pp.push(sx1);
@@ -225,7 +234,10 @@ impl<'a> Voronoi<'a> {
                     let sy1 = s[1];
                     e1 = self.edgecode(sx0, sy0);
                     if e0 != 0 && e1 != 0 {
-                        { let len = p.as_ref().unwrap().len(); self.edge(i, e0, e1, p.as_mut().unwrap(), len); }
+                        {
+                            let len = p.as_ref().unwrap().len();
+                            self.edge(i, e0, e1, p.as_mut().unwrap(), len);
+                        }
                     }
                     if let Some(ref mut pp) = p {
                         pp.push(sx0);
@@ -235,7 +247,10 @@ impl<'a> Voronoi<'a> {
                     }
                     e1 = self.edgecode(sx1, sy1);
                     if e0 != 0 && e1 != 0 {
-                        { let len = p.as_ref().unwrap().len(); self.edge(i, e0, e1, p.as_mut().unwrap(), len); }
+                        {
+                            let len = p.as_ref().unwrap().len();
+                            self.edge(i, e0, e1, p.as_mut().unwrap(), len);
+                        }
                     }
                     if let Some(ref mut pp) = p {
                         pp.push(sx1);
@@ -254,12 +269,14 @@ impl<'a> Voronoi<'a> {
                 let len = pp.len();
                 self.edge(i, e0, e1, pp, len);
             }
-        } else if self.contains(i, (self.xmin + self.xmax) / 2.0, (self.ymin + self.ymax) / 2.0) {
+        } else if self.contains(
+            i,
+            (self.xmin + self.xmax) / 2.0,
+            (self.ymin + self.ymax) / 2.0,
+        ) {
             return Some(vec![
-                self.xmax, self.ymin,
-                self.xmax, self.ymax,
-                self.xmin, self.ymax,
-                self.xmin, self.ymin,
+                self.xmax, self.ymin, self.xmax, self.ymax, self.xmin, self.ymax, self.xmin,
+                self.ymin,
             ]);
         }
 
@@ -268,8 +285,13 @@ impl<'a> Voronoi<'a> {
 
     /// Clip an infinite cell (hull point with exterior rays).
     fn clip_infinite(
-        &self, i: usize, points: &[f64],
-        vx0: f64, vy0: f64, vxn: f64, vyn: f64,
+        &self,
+        i: usize,
+        points: &[f64],
+        vx0: f64,
+        vy0: f64,
+        vxn: f64,
+        vyn: f64,
     ) -> Option<Vec<f64>> {
         let mut p = points.to_vec();
 
@@ -301,12 +323,14 @@ impl<'a> Voronoi<'a> {
                 j += 2;
             }
             self.simplify(Some(clipped))
-        } else if self.contains(i, (self.xmin + self.xmax) / 2.0, (self.ymin + self.ymax) / 2.0) {
+        } else if self.contains(
+            i,
+            (self.xmin + self.xmax) / 2.0,
+            (self.ymin + self.ymax) / 2.0,
+        ) {
             Some(vec![
-                self.xmin, self.ymin,
-                self.xmax, self.ymin,
-                self.xmax, self.ymax,
-                self.xmin, self.ymax,
+                self.xmin, self.ymin, self.xmax, self.ymin, self.xmax, self.ymax, self.xmin,
+                self.ymax,
             ])
         } else {
             None
@@ -314,7 +338,15 @@ impl<'a> Voronoi<'a> {
     }
 
     /// Cohen-Sutherland segment clipping.
-    fn clip_segment(&self, mut x0: f64, mut y0: f64, mut x1: f64, mut y1: f64, mut c0: u8, mut c1: u8) -> Option<[f64; 4]> {
+    fn clip_segment(
+        &self,
+        mut x0: f64,
+        mut y0: f64,
+        mut x1: f64,
+        mut y1: f64,
+        mut c0: u8,
+        mut c1: u8,
+    ) -> Option<[f64; 4]> {
         let flip = c0 < c1;
         if flip {
             std::mem::swap(&mut x0, &mut x1);
@@ -364,17 +396,47 @@ impl<'a> Voronoi<'a> {
     /// Returns the index `j` after all insertions (matching D3's `_edge` return value).
     fn edge(&self, i: usize, mut e0: u8, e1: u8, p: &mut Vec<f64>, mut j: usize) -> usize {
         for _ in 0..8 {
-            if e0 == e1 { break; }
+            if e0 == e1 {
+                break;
+            }
             let (x, y);
             match e0 {
-                0b0101 => { e0 = 0b0100; continue; }
-                0b0100 => { e0 = 0b0110; x = self.xmax; y = self.ymin; }
-                0b0110 => { e0 = 0b0010; continue; }
-                0b0010 => { e0 = 0b1010; x = self.xmax; y = self.ymax; }
-                0b1010 => { e0 = 0b1000; continue; }
-                0b1000 => { e0 = 0b1001; x = self.xmin; y = self.ymax; }
-                0b1001 => { e0 = 0b0001; continue; }
-                0b0001 => { e0 = 0b0101; x = self.xmin; y = self.ymin; }
+                0b0101 => {
+                    e0 = 0b0100;
+                    continue;
+                }
+                0b0100 => {
+                    e0 = 0b0110;
+                    x = self.xmax;
+                    y = self.ymin;
+                }
+                0b0110 => {
+                    e0 = 0b0010;
+                    continue;
+                }
+                0b0010 => {
+                    e0 = 0b1010;
+                    x = self.xmax;
+                    y = self.ymax;
+                }
+                0b1010 => {
+                    e0 = 0b1000;
+                    continue;
+                }
+                0b1000 => {
+                    e0 = 0b1001;
+                    x = self.xmin;
+                    y = self.ymax;
+                }
+                0b1001 => {
+                    e0 = 0b0001;
+                    continue;
+                }
+                0b0001 => {
+                    e0 = 0b0101;
+                    x = self.xmin;
+                    y = self.ymin;
+                }
                 _ => return j,
             }
             // D3: if ((P[j] !== x || P[j + 1] !== y) && this.contains(i, x, y))
@@ -394,23 +456,45 @@ impl<'a> Voronoi<'a> {
         let mut y = f64::NAN;
 
         if vy < 0.0 {
-            if y0 <= self.ymin { return None; }
+            if y0 <= self.ymin {
+                return None;
+            }
             let c = (self.ymin - y0) / vy;
-            if c < t { t = c; y = self.ymin; x = x0 + t * vx; }
+            if c < t {
+                t = c;
+                y = self.ymin;
+                x = x0 + t * vx;
+            }
         } else if vy > 0.0 {
-            if y0 >= self.ymax { return None; }
+            if y0 >= self.ymax {
+                return None;
+            }
             let c = (self.ymax - y0) / vy;
-            if c < t { t = c; y = self.ymax; x = x0 + t * vx; }
+            if c < t {
+                t = c;
+                y = self.ymax;
+                x = x0 + t * vx;
+            }
         }
 
         if vx > 0.0 {
-            if x0 >= self.xmax { return None; }
+            if x0 >= self.xmax {
+                return None;
+            }
             let c = (self.xmax - x0) / vx;
-            if c < t { x = self.xmax; y = y0 + c * vy; }
+            if c < t {
+                x = self.xmax;
+                y = y0 + c * vy;
+            }
         } else if vx < 0.0 {
-            if x0 <= self.xmin { return None; }
+            if x0 <= self.xmin {
+                return None;
+            }
             let c = (self.xmin - x0) / vx;
-            if c < t { x = self.xmin; y = y0 + c * vy; }
+            if c < t {
+                x = self.xmin;
+                y = y0 + c * vy;
+            }
         }
 
         if x.is_nan() { None } else { Some([x, y]) }
@@ -419,20 +503,32 @@ impl<'a> Voronoi<'a> {
     /// Edge code: which edge(s) of the bounding box a point lies on.
     fn edgecode(&self, x: f64, y: f64) -> u8 {
         let mut code = 0u8;
-        if x == self.xmin { code |= 0b0001; }
-        else if x == self.xmax { code |= 0b0010; }
-        if y == self.ymin { code |= 0b0100; }
-        else if y == self.ymax { code |= 0b1000; }
+        if x == self.xmin {
+            code |= 0b0001;
+        } else if x == self.xmax {
+            code |= 0b0010;
+        }
+        if y == self.ymin {
+            code |= 0b0100;
+        } else if y == self.ymax {
+            code |= 0b1000;
+        }
         code
     }
 
     /// Region code: which side(s) of the bounding box a point is outside of.
     fn regioncode(&self, x: f64, y: f64) -> u8 {
         let mut code = 0u8;
-        if x < self.xmin { code |= 0b0001; }
-        else if x > self.xmax { code |= 0b0010; }
-        if y < self.ymin { code |= 0b0100; }
-        else if y > self.ymax { code |= 0b1000; }
+        if x < self.xmin {
+            code |= 0b0001;
+        } else if x > self.xmax {
+            code |= 0b0010;
+        }
+        if y < self.ymin {
+            code |= 0b0100;
+        } else if y > self.ymax {
+            code |= 0b1000;
+        }
         code
     }
 
@@ -444,15 +540,20 @@ impl<'a> Voronoi<'a> {
             while i < p.len() && p.len() > 4 {
                 let j = (i + 2) % p.len();
                 let k = (i + 4) % p.len();
-                if (p[i] == p[j] && p[j] == p[k]) || (p[i + 1] == p[j + 1] && p[j + 1] == p[k + 1]) {
+                if (p[i] == p[j] && p[j] == p[k]) || (p[i + 1] == p[j + 1] && p[j + 1] == p[k + 1])
+                {
                     p.remove(j + 1);
                     p.remove(j);
-                    if i >= 2 { i -= 2; }
+                    if i >= 2 {
+                        i -= 2;
+                    }
                 } else {
                     i += 2;
                 }
             }
-            if p.is_empty() { return None; }
+            if p.is_empty() {
+                return None;
+            }
         }
         Some(p)
     }
@@ -482,14 +583,18 @@ mod tests {
     /// Check that a polygon is convex.
     fn is_convex(poly: &[(f64, f64)]) -> bool {
         let n = poly.len();
-        if n < 3 { return false; }
+        if n < 3 {
+            return false;
+        }
         let mut sign = 0i32;
         for i in 0..n {
             let j = (i + 1) % n;
             let k = (i + 2) % n;
             let cross = (poly[j].0 - poly[i].0) * (poly[k].1 - poly[j].1)
                 - (poly[j].1 - poly[i].1) * (poly[k].0 - poly[j].0);
-            if cross.abs() < 1e-10 { continue; }
+            if cross.abs() < 1e-10 {
+                continue;
+            }
             let s = if cross > 0.0 { 1 } else { -1 };
             if sign == 0 {
                 sign = s;
@@ -514,7 +619,11 @@ mod tests {
             let cell = v.cell_polygon(i);
             assert!(cell.is_some(), "cell {i} should exist");
             let cell = cell.unwrap();
-            assert!(cell.len() >= 3, "cell {i} should have >= 3 vertices, got {}", cell.len());
+            assert!(
+                cell.len() >= 3,
+                "cell {i} should have >= 3 vertices, got {}",
+                cell.len()
+            );
         }
     }
 
@@ -545,7 +654,10 @@ mod tests {
                 cell_count += 1;
             }
         }
-        assert!(cell_count >= 45, "should have >= 45 valid cells, got {cell_count}");
+        assert!(
+            cell_count >= 45,
+            "should have >= 45 valid cells, got {cell_count}"
+        );
     }
 
     // ================================================================
@@ -615,10 +727,18 @@ mod tests {
         let mut pts = Vec::new();
 
         // Outer rectangle boundary: 16 points
-        for i in 0..5 { pts.push((i as f64 * 2.5, 0.0)); }
-        for i in 1..5 { pts.push((10.0, i as f64 * 2.5)); }
-        for i in (0..4).rev() { pts.push((i as f64 * 2.5, 10.0)); }
-        for i in (1..4).rev() { pts.push((0.0, i as f64 * 2.5)); }
+        for i in 0..5 {
+            pts.push((i as f64 * 2.5, 0.0));
+        }
+        for i in 1..5 {
+            pts.push((10.0, i as f64 * 2.5));
+        }
+        for i in (0..4).rev() {
+            pts.push((i as f64 * 2.5, 10.0));
+        }
+        for i in (1..4).rev() {
+            pts.push((0.0, i as f64 * 2.5));
+        }
         let n_outer = pts.len();
 
         // Inner hole: 12 points on circle r=2 at center (5, 5)
@@ -678,11 +798,17 @@ mod tests {
 
         // Full rectangle boundary plus indentation on left side
         // Bottom edge
-        for i in 0..6 { pts.push((i as f64 * 2.0, 0.0)); }
+        for i in 0..6 {
+            pts.push((i as f64 * 2.0, 0.0));
+        }
         // Right edge
-        for i in 1..6 { pts.push((10.0, i as f64 * 2.0)); }
+        for i in 1..6 {
+            pts.push((10.0, i as f64 * 2.0));
+        }
         // Top edge
-        for i in (0..5).rev() { pts.push((i as f64 * 2.0, 10.0)); }
+        for i in (0..5).rev() {
+            pts.push((i as f64 * 2.0, 10.0));
+        }
         // Left edge with notch — points curve inward
         pts.push((0.0, 8.0));
         for i in 1..6 {
@@ -714,7 +840,8 @@ mod tests {
         );
         assert!(
             valid_cells >= pts.len() - 2,
-            "most points should have valid cells: {valid_cells}/{}", pts.len()
+            "most points should have valid cells: {valid_cells}/{}",
+            pts.len()
         );
     }
 
@@ -735,7 +862,9 @@ mod tests {
             let x = phi.sin() * theta.cos();
             let y = phi.sin() * theta.sin();
             let z = phi.cos();
-            if z < -0.8 { continue; }
+            if z < -0.8 {
+                continue;
+            }
             let scale = 2.0 / (1.0 + z);
             pts.push((x * scale, y * scale));
         }
@@ -769,15 +898,30 @@ mod tests {
                 let raw_len = raw.as_ref().map(|c| c.len()).unwrap_or(0);
                 missing.push(format!(
                     "  {i}: ({x:.3},{y:.3}) inedge={} hull={on_hull} raw_len={raw_len}",
-                    if inedge == delaunator::EMPTY { "NONE".to_string() } else { inedge.to_string() }
+                    if inedge == delaunator::EMPTY {
+                        "NONE".to_string()
+                    } else {
+                        inedge.to_string()
+                    }
                 ));
             }
         }
         if !missing.is_empty() {
-            eprintln!("sphere-stereographic: {valid}/{} valid, {} missing:", pts.len(), missing.len());
-            for m in &missing { eprintln!("{m}"); }
+            eprintln!(
+                "sphere-stereographic: {valid}/{} valid, {} missing:",
+                pts.len(),
+                missing.len()
+            );
+            for m in &missing {
+                eprintln!("{m}");
+            }
         }
-        assert_eq!(valid, pts.len(), "ALL cells should be valid: {valid}/{}", pts.len());
+        assert_eq!(
+            valid,
+            pts.len(),
+            "ALL cells should be valid: {valid}/{}",
+            pts.len()
+        );
         let expected = (x_max - x_min) * (y_max - y_min);
         assert!(
             (total_area - expected).abs() < expected * 0.05,
@@ -835,7 +979,9 @@ mod tests {
         // L-shape interior grid: 10×10 minus 5×5 cutout in top-right
         for iy in 0..=10 {
             for ix in 0..=10 {
-                if ix > 5 && iy > 5 { continue; }
+                if ix > 5 && iy > 5 {
+                    continue;
+                }
                 pts.push((ix as f64, iy as f64));
             }
         }
@@ -880,7 +1026,11 @@ mod tests {
                 }
             }
         }
-        pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+        pts.sort_by(|a, b| {
+            a.0.partial_cmp(&b.0)
+                .unwrap()
+                .then(a.1.partial_cmp(&b.1).unwrap())
+        });
         pts.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-10 && (a.1 - b.1).abs() < 1e-10);
 
         let d = Delaunay::from_points(&pts);
@@ -892,11 +1042,19 @@ mod tests {
             if let Some(cell) = v.cell_polygon(i) {
                 total += polygon_area(&cell);
                 valid += 1;
-                assert!(is_convex(&cell), "X-shape voronoi cell {i} should be convex");
+                assert!(
+                    is_convex(&cell),
+                    "X-shape voronoi cell {i} should be convex"
+                );
             }
         }
         eprintln!("X-shape: {valid}/{} cells valid", pts.len());
-        assert_eq!(valid, pts.len(), "ALL X-shape cells should be valid: {valid}/{}", pts.len());
+        assert_eq!(
+            valid,
+            pts.len(),
+            "ALL X-shape cells should be valid: {valid}/{}",
+            pts.len()
+        );
         assert!(
             (total - 100.0).abs() < 5.0,
             "total area {total} should be ~100"
@@ -917,7 +1075,9 @@ mod tests {
             let phi = (1.0 - 2.0 * (i as f64 + 0.5) / n as f64).acos();
             let x = phi.sin() * theta.cos();
             let y = phi.sin() * theta.sin();
-            if (x * x + y * y).sqrt() < cyl_r { continue; }
+            if (x * x + y * y).sqrt() < cyl_r {
+                continue;
+            }
             pts.push((theta % (2.0 * PI), PI / 2.0 - phi));
         }
 
@@ -948,8 +1108,10 @@ mod tests {
         }
         eprintln!("sphere-minus-cylinder: {valid}/{} cells valid", pts.len());
         assert_eq!(
-            valid, pts.len(),
-            "ALL cells should be valid: {valid}/{}", pts.len()
+            valid,
+            pts.len(),
+            "ALL cells should be valid: {valid}/{}",
+            pts.len()
         );
     }
 
@@ -959,9 +1121,14 @@ mod tests {
     fn test_voronoi_icosahedron() {
         let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
         let pts: Vec<(f64, f64)> = vec![
-            (-1.0, phi), (1.0, phi), (-1.0, -phi), (1.0, -phi),
-            (0.0, -1.0), (0.0, 1.0),
-            (phi, 0.0), (-phi, 0.0),
+            (-1.0, phi),
+            (1.0, phi),
+            (-1.0, -phi),
+            (1.0, -phi),
+            (0.0, -1.0),
+            (0.0, 1.0),
+            (phi, 0.0),
+            (-phi, 0.0),
         ];
 
         let d = Delaunay::from_points(&pts);
@@ -979,7 +1146,10 @@ mod tests {
 
         // Containment
         for (i, &(x, y)) in pts.iter().enumerate() {
-            assert!(v.contains(i, x, y), "icosa point {i} should be in its own cell");
+            assert!(
+                v.contains(i, x, y),
+                "icosa point {i} should be in its own cell"
+            );
         }
     }
 }

@@ -9,8 +9,7 @@ use gpui::prelude::*;
 use gpui::*;
 
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
-    let result =
-        d3rs::examples::donut_chart::compute(d3rs::examples::donut_chart::DEFAULT_DATA);
+    let result = d3rs::examples::donut_chart::compute(d3rs::examples::donut_chart::DEFAULT_DATA);
 
     let scheme = ColorScheme::tableau10();
 
@@ -61,7 +60,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         })
         .collect();
 
-    let colors: Vec<Rgba> = (0..scheme.len()).map(|i| scheme.color(i).to_rgba()).collect();
+    let colors: Vec<Rgba> = (0..scheme.len())
+        .map(|i| scheme.color(i).to_rgba())
+        .collect();
     div()
         .flex()
         .flex_col()
@@ -81,7 +82,14 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .mb_2()
                 .child("Source: observablehq.com/@d3/donut-chart"),
         )
-        .child(div().flex().gap_4().mb_2().flex_wrap().children(legend_items))
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .mb_2()
+                .flex_wrap()
+                .children(legend_items),
+        )
         .child(
             div()
                 .w(px(width as f32))
@@ -95,9 +103,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                             d3_paths
                                 .iter()
                                 .map(|p| {
-                                    super::path_utils::d3rs_path_to_gpui_simple(
-                                        p, bounds, 0.0, 0.0,
-                                    )
+                                    super::path_utils::d3rs_path_to_gpui_simple(p, bounds, 0.0, 0.0)
                                 })
                                 .collect::<Vec<_>>()
                         },

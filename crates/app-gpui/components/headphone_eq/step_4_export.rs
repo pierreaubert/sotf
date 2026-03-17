@@ -66,53 +66,43 @@ impl PlayerView {
                                     )
                                     .child({
                                         let button_theme = button_theme.clone();
-                                        HStack::new()
-                                            .spacing(StackSpacing::Xs)
-                                            .wrap(true)
-                                            .children(
-                                                sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS
-                                                    .iter()
-                                                    .map(|(value, label, _ext)| {
-                                                        let is_selected =
-                                                            export_format == *value;
-                                                        let value = value.to_string();
+                                        HStack::new().spacing(StackSpacing::Xs).wrap(true).children(
+                                            sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS
+                                                .iter()
+                                                .map(|(value, label, _ext)| {
+                                                    let is_selected = export_format == *value;
+                                                    let value = value.to_string();
 
-                                                        Button::new(
-                                                            SharedString::from(format!(
-                                                                "headphone-export-format-{}",
-                                                                value
-                                                            )),
-                                                            *label,
-                                                        )
-                                                        .variant(if is_selected {
-                                                            ButtonVariant::Primary
-                                                        } else {
-                                                            ButtonVariant::Secondary
-                                                        })
-                                                        .size(ButtonSize::Xs)
-                                                        .theme(button_theme.clone())
-                                                        .build()
-                                                        .on_mouse_up(
-                                                            MouseButton::Left,
-                                                            cx.listener(
-                                                                move |view, _, _, cx| {
-                                                                    view.state.update(
-                                                                        cx,
-                                                                        |state, _cx| {
-                                                                            state
-                                                                                .app
-                                                                                .measurement_state
-                                                                                .headphone_eq_state
-                                                                                .export_format =
-                                                                                value.clone();
-                                                                        },
-                                                                    );
-                                                                    cx.notify();
-                                                                },
-                                                            ),
-                                                        )
-                                                    }),
-                                            )
+                                                    Button::new(
+                                                        SharedString::from(format!(
+                                                            "headphone-export-format-{}",
+                                                            value
+                                                        )),
+                                                        *label,
+                                                    )
+                                                    .variant(if is_selected {
+                                                        ButtonVariant::Primary
+                                                    } else {
+                                                        ButtonVariant::Secondary
+                                                    })
+                                                    .size(ButtonSize::Xs)
+                                                    .theme(button_theme.clone())
+                                                    .build()
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(move |view, _, _, cx| {
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state
+                                                                    .app
+                                                                    .measurement_state
+                                                                    .headphone_eq_state
+                                                                    .export_format = value.clone();
+                                                            });
+                                                            cx.notify();
+                                                        }),
+                                                    )
+                                                }),
+                                        )
                                     })
                                     .child(
                                         Button::new("save-headphone-eq", "Save EQ File")
@@ -142,11 +132,9 @@ impl PlayerView {
                                 .weight(TextWeight::Semibold),
                         )
                         .content(
-                            Text::new(
-                                "Go back and run optimization to generate an EQ curve.",
-                            )
-                            .size(TextSize::Xs)
-                            .color(theme.text_secondary),
+                            Text::new("Go back and run optimization to generate an EQ curve.")
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
                         ),
                 )
             })

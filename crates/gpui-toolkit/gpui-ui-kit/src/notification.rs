@@ -190,12 +190,7 @@ impl Notification {
                 .child(self.title),
         );
         if let Some(desc) = self.description {
-            content = content.child(
-                div()
-                    .text_xs()
-                    .text_color(theme.text_secondary)
-                    .child(desc),
-            );
+            content = content.child(div().text_xs().text_color(theme.text_secondary).child(desc));
         }
         banner = banner.child(content);
 

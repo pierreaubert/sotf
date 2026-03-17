@@ -36,16 +36,12 @@ async fn test_notification_all_variants(cx: &mut TestAppContext) {
                 .gap_2()
                 .child(Notification::new("n-info", "Info").variant(NotificationVariant::Info))
                 .child(
-                    Notification::new("n-success", "Success")
-                        .variant(NotificationVariant::Success),
+                    Notification::new("n-success", "Success").variant(NotificationVariant::Success),
                 )
                 .child(
-                    Notification::new("n-warning", "Warning")
-                        .variant(NotificationVariant::Warning),
+                    Notification::new("n-warning", "Warning").variant(NotificationVariant::Warning),
                 )
-                .child(
-                    Notification::new("n-error", "Error").variant(NotificationVariant::Error),
-                )
+                .child(Notification::new("n-error", "Error").variant(NotificationVariant::Error))
         }
     }
 

@@ -29,9 +29,7 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let range = max_val - min_val;
     let step = range / bands as f64;
 
-    let y_scale = LinearScale::new()
-        .domain(0.0, step)
-        .range(height, 0.0);
+    let y_scale = LinearScale::new().domain(0.0, step).range(height, 0.0);
 
     // Use d3rs sequential color scheme (blues)
     let scheme = SequentialScheme::blues();

@@ -160,7 +160,10 @@ impl Toolbar {
             .bg(theme.background);
 
         if self.bordered {
-            toolbar = toolbar.border_1().border_color(theme.border).rounded(px(6.0));
+            toolbar = toolbar
+                .border_1()
+                .border_color(theme.border)
+                .rounded(px(6.0));
         }
 
         for item in self.items {
@@ -186,9 +189,7 @@ impl Toolbar {
                             .bg(theme.button_active)
                             .text_color(theme.button_active_text);
                     } else if disabled {
-                        btn = btn
-                            .text_color(theme.button_text)
-                            .opacity(0.5);
+                        btn = btn.text_color(theme.button_text).opacity(0.5);
                     } else {
                         btn = btn
                             .text_color(theme.button_text)
@@ -199,24 +200,16 @@ impl Toolbar {
                     btn = btn.child(label);
 
                     if let (false, Some(handler)) = (disabled, on_click) {
-                        btn = btn.on_mouse_up(
-                            MouseButton::Left,
-                            move |_event, window, cx| {
-                                handler(window, cx);
-                            },
-                        );
+                        btn = btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                            handler(window, cx);
+                        });
                     }
 
                     toolbar = toolbar.child(btn);
                 }
                 ToolbarItem::Separator => {
-                    toolbar = toolbar.child(
-                        div()
-                            .w(px(1.0))
-                            .h(px(16.0))
-                            .mx_1()
-                            .bg(theme.separator),
-                    );
+                    toolbar =
+                        toolbar.child(div().w(px(1.0)).h(px(16.0)).mx_1().bg(theme.separator));
                 }
                 ToolbarItem::Custom(element) => {
                     toolbar = toolbar.child(element);

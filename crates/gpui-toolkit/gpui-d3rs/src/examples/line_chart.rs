@@ -39,12 +39,12 @@ pub fn compute(data: &[(f64, f64)]) -> LineChartResult {
     let margin_bottom = 30.0;
     let margin_left = 40.0;
 
-    let x_ext = data.iter().fold((f64::MAX, f64::MIN), |a, d| {
-        (a.0.min(d.0), a.1.max(d.0))
-    });
-    let y_ext = data.iter().fold((f64::MAX, f64::MIN), |a, d| {
-        (a.0.min(d.1), a.1.max(d.1))
-    });
+    let x_ext = data
+        .iter()
+        .fold((f64::MAX, f64::MIN), |a, d| (a.0.min(d.0), a.1.max(d.0)));
+    let y_ext = data
+        .iter()
+        .fold((f64::MAX, f64::MIN), |a, d| (a.0.min(d.1), a.1.max(d.1)));
 
     let x_scale = LinearScale::new()
         .domain(x_ext.0, x_ext.1)

@@ -7,10 +7,10 @@
 //! 4. Export - Apply to playback, export format selection and save
 
 mod actions;
-mod step_4_export;
 mod step_1_measurements;
 mod step_2_optimisation;
 mod step_3_listen;
+mod step_4_export;
 
 use crate::app::types::{HeadphoneEqStep, Screen};
 use crate::components::icons::{Icon, IconName};
