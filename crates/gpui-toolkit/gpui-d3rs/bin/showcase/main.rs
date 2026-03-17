@@ -263,6 +263,9 @@ pub struct ShowcaseApp {
     pub geo_zoom: f64,
     pub stippling_iterations: usize,  // current displayed iteration
     pub stippling_target: usize,      // target iteration (user selected)
+    pub stippling_state: Option<d3rs::examples::voronoi_stippling::StipplingState>,
+    pub stippling_density: Option<Vec<f64>>,
+    pub stippling_img_size: (usize, usize),
     // Contour demo parameters
     pub contour_grid_size: usize,
     pub contour_num_levels: usize,
@@ -333,8 +336,11 @@ impl ShowcaseApp {
             geo_rotation_lon: 0.0,
             geo_rotation_lat: 0.0,
             geo_zoom: 1.0,
-            stippling_iterations: 1,
+            stippling_iterations: 0,
             stippling_target: 40,
+            stippling_state: None,
+            stippling_density: None,
+            stippling_img_size: (0, 0),
             contour_grid_size: 50,
             contour_num_levels: 5,
             contour_peak1_x: 0.3,

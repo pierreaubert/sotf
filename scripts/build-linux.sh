@@ -25,6 +25,8 @@ set -euo pipefail
 APP_NAME="SotF"
 BINARY_NAME="SotF"
 PACKAGE_NAME="sotf-gpui"
+TUI_BINARY_NAME="sotf-tui"
+TUI_PACKAGE_NAME="sotf-tui"
 
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -104,11 +106,16 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Set build directory based on target
+# Set build directory based on target and CARGO_TARGET_DIR
+TARGET_DIR="${CARGO_TARGET_DIR:-$PROJECT_ROOT/target}"
 if $CROSS_COMPILE; then
-    BUILD_DIR="$PROJECT_ROOT/target/$TARGET/release"
+    BUILD_DIR="$TARGET_DIR/$TARGET/release"
+elif [ -n "${CARGO_BUILD_TARGET:-}" ]; then
+    # When CARGO_BUILD_TARGET is set (e.g. inside Docker), binaries go to <target_dir>/<triple>/release
+    TARGET="$CARGO_BUILD_TARGET"
+    BUILD_DIR="$TARGET_DIR/$TARGET/release"
 else
-    BUILD_DIR="$PROJECT_ROOT/target/release"
+    BUILD_DIR="$TARGET_DIR/release"
 fi
 
 # Color output
@@ -276,7 +283,22 @@ build_binary() {
         exit 1
     fi
 
-    log_success "Binary built successfully"
+    log_success "GPUI binary built successfully"
+
+    # Build TUI binary
+    log_info "Building TUI binary..."
+    if $CROSS_COMPILE; then
+        CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --package "$TUI_PACKAGE_NAME" --target "$TARGET"
+    else
+        cargo build --release --package "$TUI_PACKAGE_NAME"
+    fi
+
+    if [ ! -f "$BUILD_DIR/$TUI_BINARY_NAME" ]; then
+        log_error "TUI binary not found at $BUILD_DIR/$TUI_BINARY_NAME"
+        exit 1
+    fi
+
+    log_success "TUI binary built successfully"
 }
 
 # Create distribution tarball
@@ -310,9 +332,11 @@ create_tarball() {
     rm -rf "$staging_dir"
     mkdir -p "$staging_dir"
 
-    # Copy binary
+    # Copy binaries
     cp "$BUILD_DIR/$BINARY_NAME" "$staging_dir/"
     chmod +x "$staging_dir/$BINARY_NAME"
+    cp "$BUILD_DIR/$TUI_BINARY_NAME" "$staging_dir/"
+    chmod +x "$staging_dir/$TUI_BINARY_NAME"
 
     # Copy assets if they exist
     if [ -d "$PROJECT_ROOT/crates/app-gpui/assets" ]; then
@@ -361,9 +385,11 @@ create_appimage() {
     mkdir -p "$appdir/usr/share/applications"
     mkdir -p "$appdir/usr/share/icons/hicolor/256x256/apps"
 
-    # Copy binary
+    # Copy binaries
     cp "$BUILD_DIR/$BINARY_NAME" "$appdir/usr/bin/"
     chmod +x "$appdir/usr/bin/$BINARY_NAME"
+    cp "$BUILD_DIR/$TUI_BINARY_NAME" "$appdir/usr/bin/"
+    chmod +x "$appdir/usr/bin/$TUI_BINARY_NAME"
 
     # Create desktop file
     cat > "$appdir/usr/share/applications/${APP_NAME}.desktop" << EOF
@@ -460,9 +486,11 @@ create_deb() {
     mkdir -p "$deb_dir/usr/share/icons/hicolor/256x256/apps"
     mkdir -p "$deb_dir/usr/share/doc/sotf"
 
-    # Copy binary
+    # Copy binaries
     cp "$BUILD_DIR/$BINARY_NAME" "$deb_dir/usr/bin/sotf"
     chmod 755 "$deb_dir/usr/bin/sotf"
+    cp "$BUILD_DIR/$TUI_BINARY_NAME" "$deb_dir/usr/bin/$TUI_BINARY_NAME"
+    chmod 755 "$deb_dir/usr/bin/$TUI_BINARY_NAME"
 
     # Create desktop file
     cat > "$deb_dir/usr/share/applications/sotf.desktop" << EOF

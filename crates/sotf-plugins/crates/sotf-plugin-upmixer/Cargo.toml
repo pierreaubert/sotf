@@ -9,6 +9,8 @@ name = "sotf_plugin_upmixer"
 path = "src/lib.rs"
 
 [features]
+default = ["onnx"]
+onnx = ["dep:ort"]
 qa = ["sotf-host/qa"]
 
 [[bin]]
@@ -22,7 +24,7 @@ log = { workspace = true }
 math-dsp = { workspace = true }
 math-iir-fir = { workspace = true }
 ndarray = { workspace = true }
-ort = { workspace = true }
+ort = { workspace = true, optional = true }
 realfft = { workspace = true }
 rtrb = { workspace = true }
 rustfft = { workspace = true }

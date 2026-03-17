@@ -15,22 +15,7 @@ impl UpmixerPlugin {
     #[inline]
     pub(super) fn detect_dialogue(&mut self) -> f32 {
         // If ML detection is active, compute features and send to inference thread
-        let ml_v_prob = if self.enable_ml_detection && self.ml_inference_handle.is_some() {
-            // Compute MFCC features from existing FFT data
-            if let Some(ref mut extractor) = self.mfcc_extractor {
-                let features = *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
-                if let Some(ref mut handle) = self.ml_inference_handle {
-                    handle.send_features(&features);
-                    handle.read_v_prob()
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let ml_v_prob = self.try_ml_inference();
 
         match ml_v_prob {
             Some(v_prob) => {

@@ -180,7 +180,7 @@ sotf-plugin-multiband-compressor = { path = "crates/sotf-plugins/crates/sotf-plu
 sotf-plugin-multiband-expander = { path = "crates/sotf-plugins/crates/sotf-plugin-multiband-expander" }
 sotf-plugin-pnd = { path = "crates/sotf-plugins/crates/sotf-plugin-pnd" }
 sotf-plugin-resampler = { path = "crates/sotf-plugins/crates/sotf-plugin-resampler" }
-sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer" }
+sotf-plugin-upmixer = { path = "crates/sotf-plugins/crates/sotf-plugin-upmixer", default-features = false }
 sotf-plugin-xtc = { path = "crates/sotf-plugins/crates/sotf-plugin-xtc" }
 sotf-engine = { path = "crates/sotf-engine", default-features = false }
 sotf-player = { path = "crates/sotf-player" }
@@ -212,7 +212,7 @@ midir = "0.10"
 
 # TUI framework
 ratatui = "0.30"
-ratatui-image = { version = "10", features = ["serde"] }
+ratatui-image = { version = "10", default-features = false, features = ["serde", "crossterm", "image-defaults"] }
 crossterm = "0.29"
 
 # GPUI framework - all packages must use the same git revision

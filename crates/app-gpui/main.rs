@@ -109,7 +109,7 @@ fn main() {
     #[cfg(target_os = "linux")]
     let platform = gpui_linux::current_platform(false);
     #[cfg(target_os = "windows")]
-    let platform = gpui_windows::current_platform(false);
+    let platform = std::rc::Rc::new(gpui_windows::WindowsPlatform::new(false).expect("failed to create Windows platform"));
 
     gpui::Application::with_platform(platform)
         .with_assets(Assets)

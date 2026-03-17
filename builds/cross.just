@@ -20,7 +20,7 @@ cross-macos-arm-2-linux-x86 : cross-base-linux-x86-gnu
 	@echo "Building in Docker container..."
 	mkdir -p dist/x86_64-unknown-linux-gnu
 	docker run --rm -v "$(pwd)":/project -v "$(pwd)/dist/x86_64-unknown-linux-gnu":/build-target -w /project sotf-linux-x86-gnu \
-		cargo build --release --target x86_64-unknown-linux-gnu
+		sh -c "cargo build --release --target x86_64-unknown-linux-gnu -p sotf-tui --bin sotf-tui && cargo build --release --target x86_64-unknown-linux-gnu --bin SotF -p sotf-gpui"
 	@echo "Done! Binaries at: dist/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/release/"
 
 # ----------------------------------------------------------------------
@@ -56,20 +56,18 @@ cross-macos-arm-2-linux-arm64 : cross-base-linux-arm64
 	@echo "Building Docker image..."
 	docker build -t sotf-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl .
 	@echo "Building in Docker container..."
-	mkdir -p dist/aarch64-unknown-linux-musl
-	docker run --rm -v "$(pwd)":/project -v "$(pwd)/dist/aarch64-unknown-linux-musl":/build-target -w /project sotf-linux-arm64 \
-		cargo build --release --target aarch64-unknown-linux-musl
-	@echo "Done! Binaries at: dist/aarch64-unknown-linux-musl/aarch64-unknown-linux-musl/release/"
+	docker run --rm -v "$(pwd)":/project -w /project -e CARGO_TARGET_DIR=/project/.docker-target sotf-linux-arm64 \
+		./scripts/build-linux.sh --appimage
+	@echo "Done! Output in: dist/"
 
 [group('cross')]
 cross-macos-arm-2-linux-x86-musl : cross-base-linux-x86
 	@echo "Building Docker image..."
 	docker build -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
 	@echo "Building in Docker container..."
-	mkdir -p dist/x86_64-unknown-linux-musl
-	docker run --rm -v "$(pwd)":/project -v "$(pwd)/dist/x86_64-unknown-linux-musl":/build-target -w /project sotf-linux-x86 \
-		cargo build --release --target x86_64-unknown-linux-musl
-	@echo "Done! Binaries at: dist/x86_64-unknown-linux-musl/x86_64-unknown-linux-musl/release/"
+	docker run --rm -v "$(pwd)":/project -w /project -e CARGO_TARGET_DIR=/project/.docker-target sotf-linux-x86 \
+		./scripts/build-linux.sh --appimage
+	@echo "Done! Output in: dist/"
 
 [group('cross')]
 cross-macos-arm-2-win-x86-gnu :
@@ -140,10 +138,10 @@ build-static-local:
 	echo "Building static binary for current platform..."
 	if [ "$(uname)" = "Linux" ]; then
 		if [ "$(uname -m)" = "x86_64" ]; then
-			cargo build --release --target x86_64-unknown-linux-musl --bin sotf-tui
+			cargo build --release --target x86_64-unknown-linux-musl -p sotf-tui --bin sotf-tui
 			echo "✓ Built: target/x86_64-unknown-linux-musl/release/sotf-tui"
 		elif [ "$(uname -m)" = "aarch64" ]; then
-			cargo build --release --target aarch64-unknown-linux-musl --bin sotf-tui
+			cargo build --release --target aarch64-unknown-linux-musl -p sotf-tui --bin sotf-tui
 			echo "✓ Built: target/aarch64-unknown-linux-musl/release/sotf-tui"
 		else
 			echo "❌ Unsupported Linux architecture: $(uname -m)"

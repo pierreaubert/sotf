@@ -84,7 +84,6 @@ test-negative:
 test-proptest:
 	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests
 
-# Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
 # which have deeply nested GPUI macros that cause stack overflow in syn
 [group('test')]
 ntest: test-negative test-proptest
@@ -185,7 +184,7 @@ prod-roomeq:
 # shortcuts
 [group('build')]
 tui:
-	cargo run --release --bin sotf-tui -p sotf-tui
+	cargo run --release --bin sotf-tui -p sotf-tui --features="onnx, hal"
 
 [group('build')]
 gpui:

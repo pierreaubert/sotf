@@ -36,6 +36,7 @@ mod frequency_domain;
 mod height;
 mod hr_processing;
 mod ml_features;
+#[cfg(feature = "onnx")]
 mod ml_inference;
 mod output;
 mod panning;
@@ -220,6 +221,7 @@ pub struct UpmixerPlugin {
     param_ml_model_path: ParameterId,
     ml_model_path: String,
     mfcc_extractor: Option<ml_features::MfccExtractor>,
+    #[cfg(feature = "onnx")]
     ml_inference_handle: Option<ml_inference::MlInferenceHandle>,
 
     // Diagnostic bypass parameters
@@ -683,6 +685,7 @@ impl UpmixerPlugin {
             param_ml_model_path: ParameterId::from("ml_model_path"),
             ml_model_path: String::new(),
             mfcc_extractor: None,
+            #[cfg(feature = "onnx")]
             ml_inference_handle: None,
 
             // Diagnostic bypass parameters
@@ -1505,6 +1508,7 @@ and output shape [1, 1] (sigmoid probability).",
 
     /// Try to start the ML inference thread if enabled and model path is set.
     /// Logs a warning and falls back to heuristic if it fails.
+    #[cfg(feature = "onnx")]
     fn try_start_ml_inference(&mut self) {
         // Shut down any existing handle first
         self.ml_inference_handle = None;
@@ -1529,6 +1533,32 @@ and output shape [1, 1] (sigmoid probability).",
                 self.ml_inference_handle = None;
             }
         }
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    fn try_start_ml_inference(&mut self) {
+        // ONNX runtime not available — ML vocal detection disabled
+    }
+
+    #[cfg(feature = "onnx")]
+    fn try_ml_inference(&mut self) -> Option<f32> {
+        if self.enable_ml_detection
+            && self.ml_inference_handle.is_some()
+            && let Some(ref mut extractor) = self.mfcc_extractor
+        {
+            let features =
+                *extractor.compute(&self.freq_domain_left, &self.freq_domain_right);
+            if let Some(ref mut handle) = self.ml_inference_handle {
+                handle.send_features(&features);
+                return handle.read_v_prob();
+            }
+        }
+        None
+    }
+
+    #[cfg(not(feature = "onnx"))]
+    fn try_ml_inference(&mut self) -> Option<f32> {
+        None
     }
 }
 
