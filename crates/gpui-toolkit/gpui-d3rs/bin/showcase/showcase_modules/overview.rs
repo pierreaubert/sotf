@@ -102,7 +102,8 @@ pub fn render(_app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .child(nav_item("H-R Diagram", "29K stars: magnitude vs color (Hertzsprung-Russell)", DemoSection::D3HertzsprungRussell, cx))
                 .child(nav_item("Voronoi Labels", "Label placement using Voronoi cell area", DemoSection::D3VoronoiLabels, cx))
                 .child(nav_item("Electric Usage", "Hourly heatmap (8760 hours × usage intensity)", DemoSection::D3ElectricUsage, cx))
-                .child(nav_item("Star Map", "Stereographic star chart with magnitude scaling", DemoSection::D3StarMap, cx)),
+                .child(nav_item("Star Map", "Stereographic star chart with magnitude scaling", DemoSection::D3StarMap, cx))
+                .child(nav_item("Voronoi Stippling", "Image stippling via Lloyd's relaxation (wood.jpeg)", DemoSection::D3VoronoiStippling, cx)),
         )
         .child(
             div()

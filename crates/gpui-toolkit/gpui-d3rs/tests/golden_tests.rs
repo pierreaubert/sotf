@@ -6157,3 +6157,50 @@ fn test_observable_star_map() {
     assert!(!result.graticule_path.commands().is_empty());
     assert!(!result.outline_path.commands().is_empty());
 }
+
+/// Voronoi Stippling — weighted Lloyd's relaxation.
+#[test]
+fn test_observable_voronoi_stippling() {
+    // Create a simple 20×20 density map: dark in center, white at edges
+    let width = 20;
+    let height = 20;
+    let density: Vec<f64> = (0..width * height)
+        .map(|i| {
+            let x = (i % width) as f64 / width as f64 - 0.5;
+            let y = (i / width) as f64 / height as f64 - 0.5;
+            let d = (x * x + y * y).sqrt();
+            (1.0 - d * 3.0).clamp(0.0, 1.0)
+        })
+        .collect();
+
+    let n = 50;
+    let iterations = 10;
+    let result = examples::voronoi_stippling::compute(&density, width, height, n, iterations);
+
+    assert_eq!(result.point_count, n);
+    assert_eq!(result.iterations, iterations);
+    assert_eq!(result.dot_paths.len(), n);
+
+    // All points should be within bounds
+    for &(x, y) in &result.points {
+        assert!(
+            x >= 0.0 && x < width as f64 && y >= 0.0 && y < height as f64,
+            "point ({x}, {y}) out of bounds"
+        );
+    }
+
+    // Points should cluster in the dense center area
+    let center_count = result
+        .points
+        .iter()
+        .filter(|(x, y)| {
+            let dx = x / width as f64 - 0.5;
+            let dy = y / height as f64 - 0.5;
+            dx * dx + dy * dy < 0.1
+        })
+        .count();
+    assert!(
+        center_count > n / 4,
+        "most points should be near center: {center_count}/{n}"
+    );
+}

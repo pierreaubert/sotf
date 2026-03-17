@@ -32,3 +32,4 @@ pub mod sunburst;
 pub mod temperature_trends;
 pub mod voronoi_airports;
 pub mod voronoi_labels;
+pub mod voronoi_stippling;

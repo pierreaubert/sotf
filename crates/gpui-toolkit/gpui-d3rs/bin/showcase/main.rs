@@ -67,6 +67,7 @@ pub enum DemoSection {
     D3VoronoiLabels,
     D3ElectricUsage,
     D3StarMap,
+    D3VoronoiStippling,
 }
 
 impl DemoSection {
@@ -127,6 +128,7 @@ impl DemoSection {
             Self::D3VoronoiLabels,
             Self::D3ElectricUsage,
             Self::D3StarMap,
+            Self::D3VoronoiStippling,
         ]
     }
 
@@ -187,6 +189,7 @@ impl DemoSection {
             Self::D3VoronoiLabels => "D3: Voronoi Labels",
             Self::D3ElectricUsage => "D3: Electric Usage",
             Self::D3StarMap => "D3: Star Map",
+            Self::D3VoronoiStippling => "D3: Voronoi Stippling",
         }
     }
 }
@@ -258,6 +261,8 @@ pub struct ShowcaseApp {
     pub geo_rotation_lon: f64,
     pub geo_rotation_lat: f64,
     pub geo_zoom: f64,
+    pub stippling_iterations: usize,  // current displayed iteration
+    pub stippling_target: usize,      // target iteration (user selected)
     // Contour demo parameters
     pub contour_grid_size: usize,
     pub contour_num_levels: usize,
@@ -328,6 +333,8 @@ impl ShowcaseApp {
             geo_rotation_lon: 0.0,
             geo_rotation_lat: 0.0,
             geo_zoom: 1.0,
+            stippling_iterations: 1,
+            stippling_target: 40,
             contour_grid_size: 50,
             contour_num_levels: 5,
             contour_peak1_x: 0.3,
@@ -576,6 +583,7 @@ impl ShowcaseApp {
                 showcase_modules::d3_examples::electric_usage::render(self, cx)
             }
             DemoSection::D3StarMap => showcase_modules::d3_examples::star_map::render(self, cx),
+            DemoSection::D3VoronoiStippling => showcase_modules::d3_examples::voronoi_stippling::render(self, cx),
         };
 
         div()

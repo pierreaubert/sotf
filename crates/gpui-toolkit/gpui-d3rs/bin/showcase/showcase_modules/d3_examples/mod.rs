@@ -48,6 +48,7 @@ pub mod streamgraph;
 pub mod sunburst;
 pub mod temperature_trends;
 pub mod voronoi_labels;
+pub mod voronoi_stippling;
 
 pub use kernel_density_estimation::KernelType;
 pub use stacked_grouped_bars::BarLayout;
