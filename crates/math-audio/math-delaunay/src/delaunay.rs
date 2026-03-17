@@ -197,9 +197,7 @@ impl Delaunay {
         let ey = y3 - y1;
         let ab = (dx * ey - dy * ex) * 2.0;
         if ab.abs() < 1e-9 {
-            let (bx, by) = self.hull_barycenter();
-            let a = 1e9 * ((bx - x1) * ey - (by - y1) * ex).signum();
-            ((x1+x3)/2.0 - a*ey, (y1+y3)/2.0 + a*ex)
+            ((x1 + x2 + x3) / 3.0, (y1 + y2 + y3) / 3.0)
         } else {
             let d = 1.0 / ab;
             let bl = dx*dx + dy*dy;
