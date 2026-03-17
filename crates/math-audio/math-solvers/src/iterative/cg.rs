@@ -73,13 +73,17 @@ where
     let mut p = r.clone();
     let mut rho = inner_product(&r, &r);
 
+    let scaled = b_norm * T::Real::from_f64(1e-20).unwrap();
+    let floor = T::Real::from_f64(1e-30).unwrap();
+    let breakdown_threshold = if scaled > floor { scaled } else { floor };
+
     for iter in 0..config.max_iterations {
         // q = A * p
         let q = operator.apply(&p);
 
         // alpha = rho / (p, q)
         let pq = inner_product(&p, &q);
-        if pq.norm() < T::Real::from_f64(1e-20).unwrap() {
+        if pq.norm() < breakdown_threshold {
             return CgSolution {
                 x,
                 iterations: iter,
@@ -118,7 +122,7 @@ where
         }
 
         let rho_new = inner_product(&r, &r);
-        if rho_new.norm() < T::Real::from_f64(1e-20).unwrap() {
+        if rho_new.norm() < breakdown_threshold {
             return CgSolution {
                 x,
                 iterations: iter + 1,
@@ -184,11 +188,15 @@ where
     let mut p = z.clone();
     let mut rho = inner_product(&r, &z);
 
+    let scaled = b_norm * T::Real::from_f64(1e-20).unwrap();
+    let floor = T::Real::from_f64(1e-30).unwrap();
+    let breakdown_threshold = if scaled > floor { scaled } else { floor };
+
     for iter in 0..config.max_iterations {
         let q = operator.apply(&p);
 
         let pq = inner_product(&p, &q);
-        if pq.norm() < T::Real::from_f64(1e-20).unwrap() {
+        if pq.norm() < breakdown_threshold {
             return CgSolution {
                 x,
                 iterations: iter,
@@ -228,7 +236,7 @@ where
 
         z = precond.apply(&r);
         let rho_new = inner_product(&r, &z);
-        if rho_new.norm() < T::Real::from_f64(1e-20).unwrap() {
+        if rho_new.norm() < breakdown_threshold {
             return CgSolution {
                 x,
                 iterations: iter + 1,
