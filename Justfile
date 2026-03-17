@@ -2,6 +2,7 @@
 # How to install Just?
 #	  cargo install just
 # ----------------------------------------------------------------------
+import? 'builds/aggregates.just'
 import? 'builds/cross.just'
 import? 'builds/macos.just'
 import? 'builds/windows.just'
@@ -19,9 +20,6 @@ default:
 # ----------------------------------------------------------------------
 # Downloads
 # ----------------------------------------------------------------------
-
-[group('download')]
-download-once: download-sofa download-speakers generate-audio-tests generate-roomeq-tests generate-ml-dataset-muslan generate-ml-dataset-ava
 
 [group('download')]
 download-sofa:
@@ -156,11 +154,6 @@ fmt:
 # PROD
 # ----------------------------------------------------------------------
 
-alias build := prod
-
-[group('build')]
-prod: prod-workspace prod-sotf-player prod-sotf-recorder prod-generate-audio-tests prod-autoeq prod-roomeq prod-math
-
 [group('build')]
 prod-generate-audio-tests:
 	cargo build --release --bin generate-audio-tests -p tools
@@ -199,13 +192,6 @@ gpui:
 	cargo run --release --bin SotF -p sotf-gpui
 
 # ----------------------------------------------------------------------
-# BENCH
-# ----------------------------------------------------------------------
-
-[group('bench')]
-bench: bench-plugins bench-autoeq bench-math
-
-# ----------------------------------------------------------------------
 # CLEAN
 # ----------------------------------------------------------------------
 
@@ -242,20 +228,6 @@ update-pre-commit:
 	pre-commit autoupdate
 
 # ----------------------------------------------------------------------
-# DEMO
-# ----------------------------------------------------------------------
-
-[group('demo')]
-demo: demo-d3rs demo-px demo-ui-kit demo-headphone-loss
-
-# ----------------------------------------------------------------------
-# EXAMPLES
-# ----------------------------------------------------------------------
-
-[group('examples')]
-examples: examples-autoeq examples-math examples-ui-kit
-
-# ----------------------------------------------------------------------
 # Install rustup
 # ----------------------------------------------------------------------
 
@@ -272,24 +244,6 @@ install-rustup:
 	~/.cargo/bin/cargo install cargo-binstall
 	~/.cargo/bin/cargo binstall cargo-nextest --secure
 	~/.cargo/bin/cargo install samply
-
-# ----------------------------------------------------------------------
-# PUBLISH
-# ----------------------------------------------------------------------
-
-[group('publish')]
-publish: publish-autoeq publish-math
-
-# ----------------------------------------------------------------------
-# QA
-# ----------------------------------------------------------------------
-
-[group('qa')]
-qa: qa-autoeq \
-	qa-math \
-	qa-plugins \
-	qa-roomeq \
-	qa-engine
 
 # ----------------------------------------------------------------------
 # POST

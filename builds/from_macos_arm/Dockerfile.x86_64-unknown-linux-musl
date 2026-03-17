@@ -1,38 +1,9 @@
-FROM messense/rust-musl-cross:x86_64-musl
+FROM sotf-base-linux-x86
 
-RUN apt-get update && rm -rf /var/lib/apt/lists/*
-
-# Pre-install the exact Rust version required by rust-toolchain.toml with all components
-# This avoids cross trying to install it at build time with permission issues
-RUN rustup toolchain install 1.90.0-x86_64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
-    rustup target add --toolchain 1.90.0-x86_64-unknown-linux-gnu x86_64-unknown-linux-musl && \
-    rustup default 1.90.0-x86_64-unknown-linux-gnu
-
-# Fix rustup permissions after all installations
-# Create temp directory with world-writable permissions to avoid permission issues
-RUN mkdir -p /root/.rustup/tmp && \
-    mkdir -p /root/.rustup/downloads && \
-    chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
-
-# Install just using the existing rust toolchain in the base image
-RUN cargo install just --locked
-
-WORKDIR /project
-COPY Justfile /project/Justfile
-ENV JUST_JUSTFILE=/project/Justfile
-ENV AUTOEQ_DIR=/project
-
-RUN just install-linux-root
-RUN just install-ubuntu-common
-RUN just install-ubuntu-x86-driver
-RUN just post-install-npm
-
-# Set up environment for static linking
 ENV RUSTFLAGS="-C target-feature=+crt-static"
 ENV PKG_CONFIG_ALL_STATIC=1
 ENV PKG_CONFIG_ALLOW_CROSS=1
-
-# Use vendored OpenSSL for static linking
 ENV OPENSSL_STATIC=1
 ENV OPENSSL_VENDORED=1
-
+ENV AUTOEQ_DIR=/project
+ENV CARGO_TARGET_DIR=/build-target

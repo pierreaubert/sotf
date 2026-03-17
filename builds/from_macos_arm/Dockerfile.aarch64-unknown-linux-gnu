@@ -1,45 +1,4 @@
-FROM --platform=linux/arm64 ubuntu:24.04
-
-ARG DEBIAN_FRONTEND=noninteractive
-
-# Install base build dependencies
-RUN apt-get update && \
-    apt-get install -y \
-    curl \
-    build-essential \
-    gcc \
-    g++ \
-    ca-certificates \
-    cmake \
-    ninja-build \
-    perl \
-    libglib2.0-dev \
-    libgtk-3-dev \
-    libwebkit2gtk-4.1-dev \
-    libayatana-appindicator3-dev \
-    librsvg2-dev \
-    patchelf \
-    libopenblas-dev \
-    gfortran \
-    gnome-browser-connector \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN dpkg --add-architecture aarch64 && \
-    apt-get update && \
-    apt-get install -y \
-    libopenssl-dev:aarch64
-
-# Install Rust 1.90 (pinned version for compatibility)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0 --profile minimal
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Add the target
-RUN rustup target add aarch64-unknown-linux-gnu
-
-# Install just (command runner)
-RUN cargo install just --locked
-
-RUN mkdir -p /root/bin && curl -s -L https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux-aarch64.tar.gz | tar -xzf - -C /root/bin && chmod 755 /root/bin/geckodriver
+FROM sotf-base-linux-arm64-gnu
 
 # Set up cross-compilation environment
 ENV CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
@@ -55,4 +14,4 @@ ENV BROWSER_PATH=/usr/bin/firefox
 ENV WEBDRIVER_PATH=/root/bin/geckodriver
 ENV PATH="/root/bin:${PATH}"
 
-WORKDIR /project
+ENV CARGO_TARGET_DIR=/build-target

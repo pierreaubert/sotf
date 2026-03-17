@@ -7,31 +7,69 @@ cross : cross-macos-arm-2-linux-x86
 
 # Debug: Build Docker image and open interactive shell
 [group('cross')]
-cross-debug-x86 :
+cross-debug-x86 : cross-base-linux-x86-gnu
 	@echo "Building Docker image..."
-	docker build -t autoeq-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
+	docker build -t sotf-linux-x86-gnu -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
 	@echo "Starting interactive shell. Try: cargo build --release --target x86_64-unknown-linux-gnu"
-	docker run -it --rm -v "$(pwd)":/project -w /project autoeq-linux-x86 /bin/bash
+	docker run -it --rm -v "$(pwd)":/project -w /project sotf-linux-x86-gnu /bin/bash
 
 [group('cross')]
-cross-macos-arm-2-linux-x86 :
-	echo "This can take minutes!"
+cross-macos-arm-2-linux-x86 : cross-base-linux-x86-gnu
 	@echo "Building Docker image..."
-	docker build -t autoeq-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-x86 .
+	docker build -t sotf-linux-x86-gnu -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
 	@echo "Building in Docker container..."
-	docker run --rm -v "$(pwd)":/project -w /project autoeq-linux-x86 \
+	mkdir -p dist/x86_64-unknown-linux-gnu
+	docker run --rm -v "$(pwd)":/project -v "$(pwd)/dist/x86_64-unknown-linux-gnu":/build-target -w /project sotf-linux-x86-gnu \
 		cargo build --release --target x86_64-unknown-linux-gnu
-	@echo "Done! Binary at: target/x86_64-unknown-linux-gnu/release/autoeq"
+	@echo "Done! Binaries at: dist/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/release/"
+
+# ----------------------------------------------------------------------
+# BASE DOCKER IMAGES (system deps + rust + cargo fetch, cached per Cargo.lock)
+# ----------------------------------------------------------------------
 
 [group('cross')]
-cross-macos-arm-2-linux-arm64 :
-	echo "This can take minutes!"
+cross-base-linux-arm64:
+	@echo "Building base Docker image for Linux ARM64 (musl)..."
+	docker build -t sotf-base-linux-arm64 \
+		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-musl .
+
+[group('cross')]
+cross-base-linux-x86:
+	@echo "Building base Docker image for Linux x86_64 (musl)..."
+	docker build -t sotf-base-linux-x86 \
+		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-musl .
+
+[group('cross')]
+cross-base-linux-arm64-gnu:
+	@echo "Building base Docker image for Linux ARM64 (gnu)..."
+	docker build -t sotf-base-linux-arm64-gnu \
+		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu .
+
+[group('cross')]
+cross-base-linux-x86-gnu:
+	@echo "Building base Docker image for Linux x86_64 (gnu)..."
+	docker build -t sotf-base-linux-x86-gnu \
+		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-gnu .
+
+[group('cross')]
+cross-macos-arm-2-linux-arm64 : cross-base-linux-arm64
 	@echo "Building Docker image..."
-	docker build -t autoeq-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl .
+	docker build -t sotf-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl .
 	@echo "Building in Docker container..."
-	docker run --rm -v "$(pwd)":/project -w /project autoeq-linux-arm64 \
+	mkdir -p dist/aarch64-unknown-linux-musl
+	docker run --rm -v "$(pwd)":/project -v "$(pwd)/dist/aarch64-unknown-linux-musl":/build-target -w /project sotf-linux-arm64 \
 		cargo build --release --target aarch64-unknown-linux-musl
-	@echo "Done! Binary at: target/aarch64-unknown-linux-musl/release/"
+	@echo "Done! Binaries at: dist/aarch64-unknown-linux-musl/aarch64-unknown-linux-musl/release/"
+
+[group('cross')]
+cross-macos-arm-2-linux-x86-musl : cross-base-linux-x86
+	@echo "Building Docker image..."
+	docker build -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
+	@echo "Building in Docker container..."
+	mkdir -p dist/x86_64-unknown-linux-musl
+	docker run --rm -v "$(pwd)":/project -v "$(pwd)/dist/x86_64-unknown-linux-musl":/build-target -w /project sotf-linux-x86 \
+		cargo build --release --target x86_64-unknown-linux-musl
+	@echo "Done! Binaries at: dist/x86_64-unknown-linux-musl/x86_64-unknown-linux-musl/release/"
 
 [group('cross')]
 cross-macos-arm-2-win-x86-gnu :
