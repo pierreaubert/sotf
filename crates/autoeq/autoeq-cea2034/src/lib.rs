@@ -213,7 +213,7 @@ fn mad(spl: &Array1<f64>, imin: usize, imax: usize) -> f64 {
     let slice = spl.slice(s![imin..imax]).to_owned();
     let m = slice.mean().unwrap_or(0.0);
     let diffs = slice.mapv(|v| (v - m).abs());
-    diffs.mean().unwrap_or(f64::NAN)
+    diffs.mean().unwrap_or(0.0)
 }
 
 /// Compute the coefficient of determination (R-squared) between two arrays
@@ -320,7 +320,9 @@ pub fn octave_intervals(count: usize, freq: &Array1<f64>) -> Vec<(usize, usize)>
         // Python uses inclusive bounds on both ends
         let imin = freq.iter().position(|&f| f >= low).unwrap_or(freq.len());
         let imax = freq.iter().position(|&f| f > high).unwrap_or(freq.len());
-        out.push((imin, imax));
+        if imin < imax {
+            out.push((imin, imax));
+        }
     }
     out
 }
@@ -337,6 +339,9 @@ pub fn nbd(intervals: &[(usize, usize)], spl: &Array1<f64>) -> f64 {
     let mut sum = 0.0;
     let mut cnt = 0.0;
     for &(imin, imax) in intervals.iter() {
+        if imin >= imax {
+            continue; // skip empty bands
+        }
         let v = mad(spl, imin, imax);
         if v.is_finite() {
             sum += v;
@@ -631,6 +636,34 @@ mod tests {
         let sp = Array1::from(vec![70.0, 70.0, 70.0]);
         let val = lfx(&freq, &lw, &sp);
         assert!((val - 300.0_f64.log10()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn mad_empty_slice_returns_zero_not_nan() {
+        let spl = Array1::from(vec![1.0, 2.0, 3.0]);
+        // imin == imax → empty slice
+        let result = mad(&spl, 2, 2);
+        assert_eq!(result, 0.0, "mad() on empty slice must return 0.0, not NaN");
+    }
+
+    #[test]
+    fn octave_intervals_skips_empty_bands() {
+        // All frequencies above the band range → no intervals should match low bands
+        let freq = Array1::from(vec![15000.0, 16000.0, 17000.0]);
+        let intervals = octave_intervals(3, &freq);
+        // All intervals must have imin < imax (no empty bands)
+        for &(imin, imax) in &intervals {
+            assert!(imin < imax, "Empty band ({}, {}) should have been skipped", imin, imax);
+        }
+    }
+
+    #[test]
+    fn nbd_with_empty_bands_is_finite() {
+        let spl = Array1::from(vec![80.0; 5]);
+        // Include an empty band that would previously produce NaN
+        let intervals = vec![(0, 3), (3, 3), (2, 5)];
+        let result = nbd(&intervals, &spl);
+        assert!(result.is_finite(), "nbd must be finite even with empty bands, got {}", result);
     }
 }
 
