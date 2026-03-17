@@ -18,17 +18,27 @@ fn interpolate_log_space_vals(
         if target_log_freq <= log_freq_in[0] {
             // Extrapolate from first two points
             if n_in >= 2 {
-                let slope = (vals_in[1] - vals_in[0]) / (log_freq_in[1] - log_freq_in[0]);
-                vals_out[i] = vals_in[0] + slope * (target_log_freq - log_freq_in[0]);
+                let denom = log_freq_in[1] - log_freq_in[0];
+                if denom.abs() < 1e-10 {
+                    vals_out[i] = vals_in[0];
+                } else {
+                    let slope = (vals_in[1] - vals_in[0]) / denom;
+                    vals_out[i] = vals_in[0] + slope * (target_log_freq - log_freq_in[0]);
+                }
             } else {
                 vals_out[i] = vals_in[0];
             }
         } else if target_log_freq >= log_freq_in[n_in - 1] {
             // Extrapolate from last two points
             if n_in >= 2 {
-                let slope = (vals_in[n_in - 1] - vals_in[n_in - 2])
-                    / (log_freq_in[n_in - 1] - log_freq_in[n_in - 2]);
-                vals_out[i] = vals_in[n_in - 1] + slope * (target_log_freq - log_freq_in[n_in - 1]);
+                let denom = log_freq_in[n_in - 1] - log_freq_in[n_in - 2];
+                if denom.abs() < 1e-10 {
+                    vals_out[i] = vals_in[n_in - 1];
+                } else {
+                    let slope = (vals_in[n_in - 1] - vals_in[n_in - 2]) / denom;
+                    vals_out[i] =
+                        vals_in[n_in - 1] + slope * (target_log_freq - log_freq_in[n_in - 1]);
+                }
             } else {
                 vals_out[i] = vals_in[n_in - 1];
             }
@@ -40,8 +50,13 @@ fn interpolate_log_space_vals(
             }
 
             // Interpolate between j and j+1
-            let t = (target_log_freq - log_freq_in[j]) / (log_freq_in[j + 1] - log_freq_in[j]);
-            vals_out[i] = vals_in[j] * (1.0 - t) + vals_in[j + 1] * t;
+            let denom = log_freq_in[j + 1] - log_freq_in[j];
+            if denom.abs() < 1e-10 {
+                vals_out[i] = vals_in[j];
+            } else {
+                let t = (target_log_freq - log_freq_in[j]) / denom;
+                vals_out[i] = vals_in[j] * (1.0 - t) + vals_in[j + 1] * t;
+            }
         }
     }
     vals_out
