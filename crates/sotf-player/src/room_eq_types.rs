@@ -1080,7 +1080,7 @@ mod tests {
         };
         let json = serde_json::to_string(&config).unwrap();
         let roundtrip: MultiMeasurementUiConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(roundtrip.enabled, true);
+        assert!(roundtrip.enabled);
         assert_eq!(roundtrip.strategy, "weighted_sum");
         assert_eq!(roundtrip.variance_lambda, 2.5);
         assert_eq!(roundtrip.weights, vec![0.3, 0.7]);
@@ -1109,7 +1109,7 @@ mod tests {
             "system_type": "stereo"
         }"#;
         let config: RoomEqOptimizerConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.multi_measurement.enabled, false);
+        assert!(!config.multi_measurement.enabled);
         assert_eq!(config.multi_measurement.strategy, "average");
         assert_eq!(config.multi_measurement.variance_lambda, 1.0);
         assert!(config.multi_measurement.weights.is_empty());

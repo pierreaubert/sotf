@@ -102,23 +102,21 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     // 4. Airport dots
     let n_sides = 10;
     let dot_r = 1.2;
-    for pt in &result.projected_points {
-        if let Some((px, py)) = pt {
-            let mut builder = D3PathBuilder::new();
-            for v in 0..n_sides {
-                let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
-                let x = px + dot_r * angle.cos();
-                let y = py + dot_r * angle.sin();
-                if v == 0 {
-                    builder = builder.move_to(x, y);
-                } else {
-                    builder = builder.line_to(x, y);
-                }
+    for (px, py) in result.projected_points.iter().flatten() {
+        let mut builder = D3PathBuilder::new();
+        for v in 0..n_sides {
+            let angle = std::f64::consts::TAU * v as f64 / n_sides as f64;
+            let x = px + dot_r * angle.cos();
+            let y = py + dot_r * angle.sin();
+            if v == 0 {
+                builder = builder.move_to(x, y);
+            } else {
+                builder = builder.line_to(x, y);
             }
-            builder = builder.close_path();
-            d3_paths.push(builder.build());
-            all_colors.push(hsla(0.0, 0.85, 0.5, 0.9));
         }
+        builder = builder.close_path();
+        d3_paths.push(builder.build());
+        all_colors.push(hsla(0.0, 0.85, 0.5, 0.9));
     }
 
     let visible_count = result
@@ -185,7 +183,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, _| {
                     let delta = match event.delta {
                         ScrollDelta::Lines(lines) => {
-                            let y: f32 = lines.y.into();
+                            let y: f32 = lines.y;
                             y * 0.15
                         }
                         ScrollDelta::Pixels(pixels) => {

@@ -18,14 +18,14 @@ pub fn supports_threading() -> bool {
     // For production, this should be checked in JavaScript
 
     // Try to detect via performance.now() timing check as a proxy
-    if let Some(window) = web_sys::window() {
-        if let Some(performance) = window.performance() {
-            let t1 = performance.now();
-            let _ = performance.now();
-            let t2 = performance.now();
-            // If timing works, we're likely in a browser
-            return t2 >= t1;
-        }
+    if let Some(window) = web_sys::window()
+        && let Some(performance) = window.performance()
+    {
+        let t1 = performance.now();
+        let _ = performance.now();
+        let t2 = performance.now();
+        // If timing works, we're likely in a browser
+        return t2 >= t1;
     }
     false
 }

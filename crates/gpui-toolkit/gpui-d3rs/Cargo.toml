@@ -89,10 +89,6 @@ name = "shape_demo"
 path = "examples/shape_demo.rs"
 
 [[example]]
-name = "delaunay_demo"
-path = "examples/delaunay_demo.rs"
-
-[[example]]
 name = "timer_demo"
 path = "examples/timer_demo.rs"
 

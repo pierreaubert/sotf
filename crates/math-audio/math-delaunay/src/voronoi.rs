@@ -710,8 +710,7 @@ mod tests {
         );
 
         // Containment: each point should be inside its own cell
-        for i in 0..25 {
-            let (x, y) = pts[i];
+        for (i, &(x, y)) in pts.iter().enumerate() {
             assert!(v.contains(i, x, y), "point {i} should be in its own cell");
         }
     }
@@ -880,18 +879,15 @@ mod tests {
 
         let mut valid = 0;
         let mut total_area = 0.0;
-        for i in 0..pts.len() {
-            if let Some(cell) = v.cell_polygon(i) {
-                valid += 1;
-                total_area += polygon_area(&cell);
-                assert!(is_convex(&cell), "sphere voronoi cell {i} should be convex");
-            }
+        for (i, cell) in (0..pts.len()).filter_map(|i| v.cell_polygon(i).map(|c| (i, c))) {
+            valid += 1;
+            total_area += polygon_area(&cell);
+            assert!(is_convex(&cell), "sphere voronoi cell {i} should be convex");
         }
 
         let mut missing = Vec::new();
-        for i in 0..pts.len() {
+        for (i, &(x, y)) in pts.iter().enumerate() {
             if v.cell_polygon(i).is_none() {
-                let (x, y) = pts[i];
                 let inedge = d.inedges[i];
                 let on_hull = d.hull.contains(&i);
                 let raw = v.cell(i);
@@ -1086,11 +1082,10 @@ mod tests {
 
         let mut valid = 0;
         let mut missing_reasons: Vec<String> = Vec::new();
-        for i in 0..pts.len() {
+        for (i, &(x, y)) in pts.iter().enumerate() {
             if v.cell_polygon(i).is_some() {
                 valid += 1;
             } else {
-                let (x, y) = pts[i];
                 let inedge = d.inedges[i];
                 let on_hull = d.hull.contains(&i);
                 let has_cell = v.cell(i).is_some();

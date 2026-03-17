@@ -200,13 +200,13 @@ pub fn detect_optimal_quality() -> String {
     mode.to_string()
 }
 
-impl QualityMode {
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for QualityMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            QualityMode::Preview => "preview".to_string(),
-            QualityMode::Medium => "medium".to_string(),
-            QualityMode::High => "high".to_string(),
-            QualityMode::Ultra => "ultra".to_string(),
+            QualityMode::Preview => f.write_str("preview"),
+            QualityMode::Medium => f.write_str("medium"),
+            QualityMode::High => f.write_str("high"),
+            QualityMode::Ultra => f.write_str("ultra"),
         }
     }
 }

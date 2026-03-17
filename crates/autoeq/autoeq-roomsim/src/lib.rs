@@ -4339,8 +4339,7 @@ impl RoomSimulatorWasm {
         let listening_pos = self.listening_position;
         let frequencies = self.frequencies.clone();
 
-        for freq_idx in start_idx..end_idx {
-            let freq = frequencies[freq_idx];
+        for freq in frequencies.iter().take(end_idx).skip(start_idx).copied() {
             let pressure = self.calculate_direct_field(&listening_pos, freq);
             let spl = pressure_to_spl(pressure);
             computed_spl.push(spl);

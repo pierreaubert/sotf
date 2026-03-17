@@ -263,17 +263,6 @@ impl Delaunay {
         }
     }
 
-    fn hull_barycenter(&self) -> (f64, f64) {
-        if self.hull.is_empty() {
-            return (0.0, 0.0);
-        }
-        let (mut bx, mut by) = (0.0, 0.0);
-        for &h in &self.hull {
-            bx += self.points[h * 2];
-            by += self.points[h * 2 + 1];
-        }
-        (bx / self.hull.len() as f64, by / self.hull.len() as f64)
-    }
 }
 
 fn is_collinear(triangles: &[usize], coords: &[f64]) -> bool {
@@ -370,8 +359,7 @@ mod tests {
         assert_eq!(d.len(), 100);
 
         // All 100 points should be findable from any starting point
-        for i in 0..100 {
-            let (x, y) = pts[i];
+        for (i, &(x, y)) in pts.iter().enumerate() {
             assert_eq!(d.find(x, y, 0), i, "find failed for point {i} at ({x},{y})");
         }
     }
@@ -412,20 +400,18 @@ mod tests {
         assert_eq!(d.len(), pts.len());
 
         // All outer boundary points should be on the hull
-        for i in 0..n_outer {
+        for (i, pt) in pts.iter().enumerate().take(n_outer) {
             assert!(
                 d.hull.contains(&i),
-                "outer point {i} at {:?} should be on hull",
-                pts[i]
+                "outer point {i} at {pt:?} should be on hull",
             );
         }
 
         // No inner hole point should be on the hull
-        for i in n_outer..pts.len() {
+        for (i, pt) in pts.iter().enumerate().skip(n_outer) {
             assert!(
                 !d.hull.contains(&i),
-                "inner point {i} at {:?} should NOT be on hull",
-                pts[i]
+                "inner point {i} at {pt:?} should NOT be on hull",
             );
         }
 
@@ -605,7 +591,7 @@ mod tests {
         // All center neighbors should be on ring 1 (indices 1..=8)
         for &n in &center_nbrs {
             assert!(
-                n >= 1 && n <= 8,
+                (1..=8).contains(&n),
                 "center neighbor {n} should be on inner ring (1..=8)"
             );
         }
