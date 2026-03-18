@@ -1,0 +1,45 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# System packages
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    cmake \
+    ninja-build \
+    ca-certificates \
+    xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install the exact Rust version required by rust-toolchain.toml with all components
+RUN rustup toolchain install stable --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
+    rustup target add aarch64-pc-windows-gnullvm && \
+    rustup default stable
+
+RUN mkdir -p /root/.rustup/tmp /root/.rustup/downloads && \
+    chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
+
+# Install llvm-mingw (provides aarch64-w64-mingw32 toolchain)
+RUN cd /opt && \
+    curl -L -o llvm-mingw.tar.xz \
+        https://github.com/mstorsjo/llvm-mingw/releases/download/20260311/llvm-mingw-20260311-ucrt-ubuntu-22.04-aarch64.tar.xz && \
+    tar xf llvm-mingw.tar.xz && \
+    rm llvm-mingw.tar.xz && \
+    mv llvm-mingw-* llvm-mingw
+
+ENV PATH="/opt/llvm-mingw/bin:${PATH}"
+
+RUN cargo install just --locked
+
+# Pre-fetch cargo dependencies (cached per Cargo.lock)
+WORKDIR /project
+COPY . /project/
+RUN cargo fetch --locked --target aarch64-pc-windows-gnullvm
+RUN rm -rf /project/*

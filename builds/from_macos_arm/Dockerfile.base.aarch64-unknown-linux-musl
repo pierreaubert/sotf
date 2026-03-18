@@ -23,17 +23,17 @@ ENV JUST_JUSTFILE=/project/Justfile
 
 RUN just install-linux-root
 RUN just install-ubuntu-common
+RUN apt-get update && apt-get install -y imagemagick && rm -rf /var/lib/apt/lists/*
 
-# Install appimagetool for AppImage packaging (extracted — FUSE not available in Docker)
-RUN mkdir -p /opt/appimagetool && \
-    cd /tmp && \
-    curl -L -o appimagetool.AppImage \
-        https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage && \
-    chmod +x appimagetool.AppImage && \
-    ./appimagetool.AppImage --appimage-extract && \
-    mv squashfs-root/* /opt/appimagetool/ && \
-    ln -sf /opt/appimagetool/AppRun /usr/local/bin/appimagetool && \
-    rm -rf /tmp/appimagetool.AppImage /tmp/squashfs-root
+# Install linuxdeploy for AppImage packaging (extracted — FUSE not available in Docker)
+RUN cd /tmp && \
+    curl -L -o linuxdeploy.AppImage \
+        https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage && \
+    chmod +x linuxdeploy.AppImage && \
+    ./linuxdeploy.AppImage --appimage-extract && \
+    mv squashfs-root /opt/linuxdeploy && \
+    ln -sf /opt/linuxdeploy/AppRun /usr/local/bin/linuxdeploy && \
+    rm -f /tmp/linuxdeploy.AppImage
 
 # Pre-fetch cargo dependencies (cached per Cargo.lock)
 COPY . /project/

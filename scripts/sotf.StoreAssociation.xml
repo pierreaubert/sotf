@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<StoreAssociation xmlns="http://schemas.microsoft.com/appx/2010/storeassociation">
+  <Publisher>CN=Pierre Aubert, O=Spinorama, C=FR</Publisher>
+  <PublisherDisplayName>Spinorama</PublisherDisplayName>
+  <GeneratePackageHash>true</GeneratePackageHash>
+
+  <ProductReservedInfo>
+    <MainPackageIdentityName>org.spinorama.sotf</MainPackageIdentityName>
+    <ReservedNames>
+      <ReservedName>SotF</ReservedName>
+      <ReservedName>Sound of the Future</ReservedName>
+    </ReservedNames>
+  </ProductReservedInfo>
+</StoreAssociation>

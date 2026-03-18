@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap rescap desktop">
+
+  <Identity
+    Name="org.spinorama.sotf"
+    Publisher="CN=Pierre Aubert, O=Spinorama, C=FR"
+    Version="0.5.11.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>SotF</DisplayName>
+    <PublisherDisplayName>Spinorama</PublisherDisplayName>
+    <Description>Sound of the Future - High-quality audio player with advanced EQ and upmixing</Description>
+    <Logo>assets\sotf-44x44.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <!-- SotF GPUI Player -->
+    <Application Id="SotF"
+      Executable="SotF.exe"
+      EntryPoint="Windows.FullTrustApplication">
+
+      <uap:VisualElements
+        DisplayName="SotF"
+        Description="Sound of the Future - Audio Player"
+        BackgroundColor="#1a1a2e"
+        Square150x150Logo="assets\sotf-150x150.png"
+        Square44x44Logo="assets\sotf-44x44.png">
+        <uap:DefaultTile Wide310x150Logo="assets\sotf-310x150.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- File type associations for audio formats -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="audiofiles">
+            <uap:DisplayName>Audio File</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.flac</uap:FileType>
+              <uap:FileType>.mp3</uap:FileType>
+              <uap:FileType>.wav</uap:FileType>
+              <uap:FileType>.ogg</uap:FileType>
+              <uap:FileType>.m4a</uap:FileType>
+              <uap:FileType>.aac</uap:FileType>
+              <uap:FileType>.alac</uap:FileType>
+              <uap:FileType>.mp4</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+
+    <!-- SotF TUI Player -->
+    <Application Id="SotFTui"
+      Executable="sotf-tui.exe"
+      EntryPoint="Windows.FullTrustApplication">
+
+      <uap:VisualElements
+        DisplayName="SotF TUI"
+        Description="Sound of the Future - Terminal Player"
+        BackgroundColor="#1a1a2e"
+        Square150x150Logo="assets\sotf-150x150.png"
+        Square44x44Logo="assets\sotf-44x44.png"
+        AppListEntry="none" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Microphone access for recording -->
+    <DeviceCapability Name="microphone" />
+
+    <!-- Audio playback through audio interfaces -->
+    <Capability Name="musicLibrary" />
+
+    <!-- Read files from disk (user-selected files) -->
+    <uap:Capability Name="broadFileSystemAccess" />
+
+    <!-- Internet for spinorama.org API -->
+    <Capability Name="internetClient" />
+  </Capabilities>
+
+</Package>

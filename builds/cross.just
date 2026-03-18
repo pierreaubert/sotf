@@ -1,27 +1,29 @@
 # ----------------------------------------------------------------------
-# CROSS
+# CROSS-COMPILATION (Docker-based, no `cross` tool needed)
+#
+# On an ARM machine:  just cross-arm    (linux-arm64 + windows-arm64 + macos-arm64)
+# On an x86 machine:  just cross-x86    (linux-x86 + windows-x86 + macos-x86)
 # ----------------------------------------------------------------------
 
+# Build all 3 binaries for ARM
 [group('cross')]
-cross : cross-macos-arm-2-linux-x86
+cross-arm: cross-linux-arm64 cross-windows-arm64 cross-macos-arm64
 
-# Debug: Build Docker image and open interactive shell
+# Build all 3 binaries for x86
 [group('cross')]
-cross-debug-x86 : cross-base-linux-x86-gnu
-	@echo "Building Docker image..."
-	docker build -t sotf-linux-x86-gnu -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
-	@echo "Starting interactive shell. Try: cargo build --release --target x86_64-unknown-linux-gnu"
-	docker run -it --rm -v "$(pwd)":/project -w /project sotf-linux-x86-gnu /bin/bash
+cross-x86: cross-linux-x86 cross-windows-x86 cross-macos-x86
 
+# Default: build for current arch
 [group('cross')]
-cross-macos-arm-2-linux-x86 : cross-base-linux-x86-gnu
-	@echo "Building Docker image..."
-	docker build -t sotf-linux-x86-gnu -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
-	@echo "Building in Docker container..."
-	mkdir -p dist/x86_64-unknown-linux-gnu
-	docker run --rm -v "$(pwd)":/project -v "$(pwd)/dist/x86_64-unknown-linux-gnu":/build-target -w /project sotf-linux-x86-gnu \
-		sh -c "cargo build --release --target x86_64-unknown-linux-gnu -p sotf-tui --bin sotf-tui && cargo build --release --target x86_64-unknown-linux-gnu --bin SotF -p sotf-gpui"
-	@echo "Done! Binaries at: dist/x86_64-unknown-linux-gnu/x86_64-unknown-linux-gnu/release/"
+cross:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	arch=$(uname -m)
+	case "$arch" in
+		aarch64|arm64) just cross-arm ;;
+		x86_64)        just cross-x86 ;;
+		*) echo "Unsupported architecture: $arch"; exit 1 ;;
+	esac
 
 # ----------------------------------------------------------------------
 # BASE DOCKER IMAGES (system deps + rust + cargo fetch, cached per Cargo.lock)
@@ -29,13 +31,13 @@ cross-macos-arm-2-linux-x86 : cross-base-linux-x86-gnu
 
 [group('cross')]
 cross-base-linux-arm64:
-	@echo "Building base Docker image for Linux ARM64 (musl)..."
+	@echo "Building base Docker image for Linux ARM64..."
 	docker build -t sotf-base-linux-arm64 \
 		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-musl .
 
 [group('cross')]
 cross-base-linux-x86:
-	@echo "Building base Docker image for Linux x86_64 (musl)..."
+	@echo "Building base Docker image for Linux x86_64..."
 	docker build -t sotf-base-linux-x86 \
 		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-musl .
 
@@ -52,7 +54,24 @@ cross-base-linux-x86-gnu:
 		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-gnu .
 
 [group('cross')]
-cross-macos-arm-2-linux-arm64 : cross-base-linux-arm64
+cross-base-win-arm64:
+	@echo "Building base Docker image for Windows ARM64..."
+	docker build -t sotf-base-win-arm64 \
+		-f ./builds/from_macos_arm/Dockerfile.base.aarch64-pc-windows-gnullvm .
+
+[group('cross')]
+cross-base-win-x86:
+	@echo "Building base Docker image for Windows x86_64..."
+	docker build -t sotf-base-win-x86 \
+		-f ./builds/from_macos_arm/Dockerfile.base.x86_64-pc-windows-gnullvm .
+
+# ----------------------------------------------------------------------
+# LINUX (AppImage + tarball via Docker)
+# ----------------------------------------------------------------------
+
+# Linux ARM64: AppImage + tarball → dist/
+[group('cross')]
+cross-linux-arm64: cross-base-linux-arm64
 	@echo "Building Docker image..."
 	docker build -t sotf-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl .
 	@echo "Building in Docker container..."
@@ -60,8 +79,9 @@ cross-macos-arm-2-linux-arm64 : cross-base-linux-arm64
 		./scripts/build-linux.sh --appimage
 	@echo "Done! Output in: dist/"
 
+# Linux x86_64: AppImage + tarball → dist/
 [group('cross')]
-cross-macos-arm-2-linux-x86-musl : cross-base-linux-x86
+cross-linux-x86: cross-base-linux-x86
 	@echo "Building Docker image..."
 	docker build -t sotf-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
 	@echo "Building in Docker container..."
@@ -69,92 +89,95 @@ cross-macos-arm-2-linux-x86-musl : cross-base-linux-x86
 		./scripts/build-linux.sh --appimage
 	@echo "Done! Output in: dist/"
 
+# Debug: open interactive shell in Linux x86 container
 [group('cross')]
-cross-macos-arm-2-win-x86-gnu :
-	echo "This is not supported yet"
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-gnu
-
-[group('cross')]
-cross-macos-arm-2-win-x86-msvc :
-	echo "This can take minutes!"
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-msvc
-
-[group('cross')]
-cross-macos-arm-2-win-arm-gnu :
-	echo "This is not supported!"
-
-[group('cross')]
-cross-macos-arm-2-win-arm-msvc :
-	echo "This is not supported!"
+cross-debug-linux-x86: cross-base-linux-x86-gnu
+	@echo "Building Docker image..."
+	docker build -t sotf-linux-x86-gnu -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
+	@echo "Starting interactive shell..."
+	docker run -it --rm -v "$(pwd)":/project -w /project sotf-linux-x86-gnu /bin/bash
 
 # ----------------------------------------------------------------------
-# STATIC BINARY CROSS-COMPILATION
+# WINDOWS (cross-compiled in Docker via llvm-mingw)
 # ----------------------------------------------------------------------
 
-# Build static binaries for all platforms
+# Windows ARM64: sotf-tui.exe → dist/
 [group('cross')]
-cross-static-all: cross-static-linux-x86 cross-static-linux-arm64 cross-static-windows-x86 cross-static-macos
+cross-windows-arm64: cross-base-win-arm64
+	@echo "Building Docker image..."
+	docker build -t sotf-win-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-pc-windows-gnullvm .
+	@echo "Building in Docker container..."
+	mkdir -p dist
+	docker run --rm -v "$(pwd)":/project -w /project -e CARGO_TARGET_DIR=/project/.docker-target sotf-win-arm64 \
+		cargo build --release --target aarch64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui
+	cp .docker-target/aarch64-pc-windows-gnullvm/release/sotf-tui.exe dist/sotf-tui-windows-arm64.exe
+	@echo "Done! dist/sotf-tui-windows-arm64.exe"
 
-# Linux x86_64 static binary (musl)
+# Windows x86_64: sotf-tui.exe → dist/
 [group('cross')]
-cross-static-linux-x86:
-	@echo "Building static Linux x86_64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-unknown-linux-musl --bin sotf-tui
-	@echo "Done! Binary at: target/x86_64-unknown-linux-musl/release/sotf_player_tui"
+cross-windows-x86: cross-base-win-x86
+	@echo "Building Docker image..."
+	docker build -t sotf-win-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-pc-windows-gnullvm .
+	@echo "Building in Docker container..."
+	mkdir -p dist
+	docker run --rm -v "$(pwd)":/project -w /project -e CARGO_TARGET_DIR=/project/.docker-target sotf-win-x86 \
+		cargo build --release --target x86_64-pc-windows-gnullvm -p sotf-tui --bin sotf-tui
+	cp .docker-target/x86_64-pc-windows-gnullvm/release/sotf-tui.exe dist/sotf-tui-windows-x86_64.exe
+	@echo "Done! dist/sotf-tui-windows-x86_64.exe"
 
-# Linux ARM64 static binary (musl)
+# ----------------------------------------------------------------------
+# MACOS (native build, outputs to dist/)
+# ----------------------------------------------------------------------
+
+# macOS ARM64: SotF + sotf-tui → dist/
 [group('cross')]
-cross-static-linux-arm64:
-	@echo "Building static Linux ARM64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target aarch64-unknown-linux-musl --bin sotf-tui
-	@echo "Done! Binary at: target/aarch64-unknown-linux-musl/release/sotf_player_tui"
+cross-macos-arm64:
+	@echo "Building macOS ARM64 binaries..."
+	cargo build --release --target aarch64-apple-darwin --bin sotf-tui
+	cargo build --release --target aarch64-apple-darwin --bin SotF -p sotf-gpui
+	mkdir -p dist
+	cp target/aarch64-apple-darwin/release/sotf-tui dist/sotf-tui-macos-arm64
+	cp target/aarch64-apple-darwin/release/SotF dist/SotF-macos-arm64
+	@echo "Done! Binaries copied to dist/"
 
-# Windows x86_64 static binary (MSVC with static CRT)
+# macOS x86_64: SotF + sotf-tui → dist/
 [group('cross')]
-cross-static-windows-x86:
-	@echo "Building static Windows x86_64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-msvc --bin sotf-tui
-	@echo "Done! Binary at: target/x86_64-pc-windows-msvc/release/sotf_player_tui.exe"
+cross-macos-x86:
+	@echo "Building macOS x86_64 binaries..."
+	rustup target add x86_64-apple-darwin 2>/dev/null || true
+	cargo build --release --target x86_64-apple-darwin --bin sotf-tui
+	cargo build --release --target x86_64-apple-darwin --bin SotF -p sotf-gpui
+	mkdir -p dist
+	cp target/x86_64-apple-darwin/release/sotf-tui dist/sotf-tui-macos-x86_64
+	cp target/x86_64-apple-darwin/release/SotF dist/SotF-macos-x86_64
+	@echo "Done! Binaries copied to dist/"
 
-# macOS universal binary (NOT fully static - limited by macOS system restrictions)
-# Apple requires dynamic linking to system frameworks (CoreAudio, CoreFoundation, etc.)
-# This creates a universal binary supporting both Intel (x86_64) and Apple Silicon (ARM64)
+# macOS DMG (build only, sign separately with sign-macos.sh)
 [group('cross')]
-cross-static-macos:
-	@echo "Building macOS binaries..."
-	@echo "Note: macOS binaries cannot be fully static due to Apple's security policies"
-	@echo "      System frameworks (CoreAudio, etc.) will be dynamically linked"
-	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target aarch64-apple-darwin --bin sotf-tui
-	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target aarch64-apple-darwin --bin SotF -p sotf-gpui
-	@echo "✓ Done! Universal binary at: target/sotf-tui-macos-universal"
+cross-macos-dmg:
+	./scripts/build-dmg-sotf.sh
 
-# Build static binary for current platform
-# Note: Requires bash/sh shell. On Linux, builds musl static binary.
-# On macOS, builds regular binary (static linking limited by Apple).
+# macOS daemon pkg (build only, sign separately with sign-macos.sh)
+[group('cross')]
+cross-macos-daemon:
+	./scripts/build-dmg-daemon.sh
+
+# ----------------------------------------------------------------------
+# DEMO ZIP
+# ----------------------------------------------------------------------
+
+# Create sotf-demo.zip with demo music files
 [group('build')]
-build-static-local:
+build-demo-zip:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	echo "Building static binary for current platform..."
-	if [ "$(uname)" = "Linux" ]; then
-		if [ "$(uname -m)" = "x86_64" ]; then
-			cargo build --release --target x86_64-unknown-linux-musl -p sotf-tui --bin sotf-tui
-			echo "✓ Built: target/x86_64-unknown-linux-musl/release/sotf-tui"
-		elif [ "$(uname -m)" = "aarch64" ]; then
-			cargo build --release --target aarch64-unknown-linux-musl -p sotf-tui --bin sotf-tui
-			echo "✓ Built: target/aarch64-unknown-linux-musl/release/sotf-tui"
-		else
-			echo "❌ Unsupported Linux architecture: $(uname -m)"
-			exit 1
-		fi
-	elif [ "$(uname)" = "Darwin" ]; then
-		RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin sotf-tui --target-dir ./target-static
-		echo "✓ Built: target-static/release/sotf-tui"
-		RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin SotF -p sotf-gpui --target-dir ./target-static
-		echo "✓ Built: target-static/release/SotF"
-		echo "Note: macOS binaries have limited static linking due to Apple restrictions"
-	else
-		echo "❌ Unsupported platform: $(uname)"
-		exit 1
+	echo "Creating sotf-demo.zip..."
+	mkdir -p dist/sotf-demo/music
+	cp crates/app-gpui/assets/demo-audio/*.flac dist/sotf-demo/music/
+	cp crates/app-gpui/assets/demo-audio/*.wav dist/sotf-demo/music/
+	if [ -f crates/app-gpui/assets/demo-audio/README.md ]; then
+		cp crates/app-gpui/assets/demo-audio/README.md dist/sotf-demo/music/
 	fi
-
+	cd dist && zip -r sotf-demo.zip sotf-demo/
+	rm -rf sotf-demo
+	echo "Done! dist/sotf-demo.zip"

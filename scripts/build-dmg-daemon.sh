@@ -61,7 +61,7 @@ DRIVER_BUNDLE="$DMG_DIR/$DRIVER_NAME"
 CONFIGBAR_DIR="$PROJECT_ROOT/crates/daemon/configbar"
 HAL_DRIVER_DIR="$PROJECT_ROOT/crates/driver-hal"
 
-# Command line options (defaults: unsigned build for local testing)
+# Command line options
 SIGN=false
 NOTARIZE=false
 CLEAN=false
@@ -72,15 +72,6 @@ BUILD_DMG=false  # Default to pkg, use --dmg for legacy DMG output
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --sign)
-            SIGN=true
-            shift
-            ;;
-        --notarize)
-            NOTARIZE=true
-            SIGN=true  # Notarization requires signing
-            shift
-            ;;
         --clean)
             CLEAN=true
             shift
@@ -101,13 +92,13 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --sign        Sign the application with Developer ID"
-            echo "  --notarize    Notarize the application (implies --sign)"
             echo "  --clean       Clean build directory before building"
             echo "  --debug, -d   Build in debug mode (faster, no optimizations)"
             echo "  --no-hal      Skip building HAL driver"
             echo "  --dmg         Build DMG instead of pkg installer (legacy)"
             echo "  --help        Show this help message"
+            echo ""
+            echo "Signing: run ./sign-macos.sh after building"
             exit 0
             ;;
         *)
@@ -166,20 +157,6 @@ check_prerequisites() {
     if ! command -v codesign &> /dev/null; then
         log_error "Xcode Command Line Tools not installed"
         exit 1
-    fi
-
-    if $SIGN && [ -z "${DEVELOPER_ID:-}" ]; then
-        log_error "DEVELOPER_ID environment variable not set"
-        log_info "Set it to your Developer ID certificate name, e.g.:"
-        log_info "  export DEVELOPER_ID='Developer ID Application: Your Name (TEAMID)'"
-        exit 1
-    fi
-
-    if $NOTARIZE; then
-        if [ -z "${APPLE_ID:-}" ]; then
-            log_error "APPLE_ID environment variable not set"
-            exit 1
-        fi
     fi
 
     log_success "Prerequisites check passed"
@@ -665,73 +642,13 @@ UNINSTALL_SCRIPT
     log_success "HAL driver scripts created"
 }
 
-# Sign the application
+# Ad-hoc sign for local testing (real signing via sign-macos.sh)
 sign_app() {
-    if ! $SIGN;
- then
-        log_warning "Skipping code signing (use --sign to enable)"
-        # Ad-hoc sign for local testing
-        log_info "Ad-hoc signing for local testing..."
-        codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
-        if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
-            codesign --force --deep --sign - "$DRIVER_BUNDLE" 2>/dev/null || true
-        fi
-        return
-    fi
-
-    log_info "Signing application..."
-
-    create_entitlements
-
-    # Sign the daemon helper first (inside-out signing)
-    log_info "Signing daemon helper..."
-    codesign --force --options runtime \
-        --entitlements "$DMG_DIR/daemon.entitlements" \
-        --sign "$DEVELOPER_ID" \
-        --timestamp \
-        "$APP_BUNDLE/Contents/Helpers/$DAEMON_BINARY"
-
-    # Sign HAL driver if bundled in Resources
-    if [ -d "$APP_BUNDLE/Contents/Resources/$DRIVER_NAME" ]; then
-        log_info "Signing bundled HAL driver..."
-        codesign --force --options runtime \
-            --entitlements "$DMG_DIR/hal.entitlements" \
-            --sign "$DEVELOPER_ID" \
-            --timestamp \
-            "$APP_BUNDLE/Contents/Resources/$DRIVER_NAME"
-    fi
-
-    # Sign the main executable
-    log_info "Signing main executable..."
-    codesign --force --options runtime \
-        --entitlements "$DMG_DIR/toolbar.entitlements" \
-        --sign "$DEVELOPER_ID" \
-        --timestamp \
-        "$APP_BUNDLE/Contents/MacOS/sotf-toolbar"
-
-    # Sign the entire bundle
-    log_info "Signing app bundle..."
-    codesign --force --options runtime \
-        --entitlements "$DMG_DIR/toolbar.entitlements" \
-        --sign "$DEVELOPER_ID" \
-        --timestamp \
-        "$APP_BUNDLE"
-
-    # Sign standalone HAL driver
+    log_info "Ad-hoc signing for local testing..."
+    codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || true
     if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
-        log_info "Signing standalone HAL driver..."
-        codesign --force --options runtime \
-            --entitlements "$DMG_DIR/hal.entitlements" \
-            --sign "$DEVELOPER_ID" \
-            --timestamp \
-            "$DRIVER_BUNDLE"
+        codesign --force --deep --sign - "$DRIVER_BUNDLE" 2>/dev/null || true
     fi
-
-    # Verify signature
-    codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
-
-    rm -f "$DMG_DIR"/*.entitlements
-    log_success "Application signed successfully"
 }
 
 # Create DMG
@@ -786,12 +703,6 @@ create_dmg_file() {
         create_dmg_hdiutil "$dmg_path"
     fi
 
-    if $SIGN && [ -f "$dmg_path" ]; then
-        log_info "Signing DMG..."
-        codesign --force --sign "$DEVELOPER_ID" --timestamp "$dmg_path"
-        log_success "DMG signed"
-    fi
-
     log_success "DMG created at $dmg_path"
     echo "$dmg_path"
 }
@@ -823,57 +734,6 @@ create_dmg_hdiutil() {
     log_success "DMG created (with hdiutil)"
 }
 
-# Notarize the DMG
-notarize_dmg() {
-    if ! $NOTARIZE;
- then
-        log_warning "Skipping notarization (use --notarize to enable)"
-        return
-    fi
-
-    local dmg_path="$DMG_DIR/SotF-Toolbar-$VERSION.dmg"
-
-    if [ ! -f "$dmg_path" ]; then
-        log_error "DMG not found at $dmg_path"
-        exit 1
-    fi
-
-    log_info "Submitting for notarization..."
-
-    # Submit for notarization
-    local submission_output
-    submission_output=$(xcrun notarytool submit "$dmg_path" \
-        --apple-id "$APPLE_ID" \
-        --keychain-profile "autoeq-notarization" \
-        --wait 2>&1)
-
-    echo "$submission_output"
-
-    if echo "$submission_output" | grep -q "status: Accepted"; then
-        log_success "Notarization accepted"
-
-        # Staple the notarization ticket
-        log_info "Stapling notarization ticket..."
-        xcrun stapler staple "$dmg_path"
-        log_success "Notarization ticket stapled"
-
-        # Verify
-        xcrun stapler validate "$dmg_path"
-        log_success "Notarization verified"
-    else
-        log_error "Notarization failed"
-        log_info "Check the submission output above for details"
-
-        # Extract submission ID for log retrieval
-        local submission_id
-        submission_id=$(echo "$submission_output" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
-        if [ -n "$submission_id" ]; then
-            log_info "To get detailed logs, run:"
-            log_info "  xcrun notarytool log $submission_id --apple-id $APPLE_ID --keychain-profile autoeq-notarization"
-        fi
-        exit 1
-    fi
-}
 
 # Create installer package (.pkg)
 create_pkg() {
@@ -1172,56 +1032,6 @@ CONCLUSION
     echo "$pkg_path"
 }
 
-# Notarize the package
-notarize_pkg() {
-    if ! $NOTARIZE; then
-        log_warning "Skipping notarization (use --notarize to enable)"
-        return
-    fi
-
-    local pkg_path="$DMG_DIR/SotF-Toolbar-$VERSION.pkg"
-
-    if [ ! -f "$pkg_path" ]; then
-        log_error "Package not found at $pkg_path"
-        exit 1
-    fi
-
-    log_info "Submitting package for notarization..."
-
-    # Submit for notarization
-    local submission_output
-    submission_output=$(xcrun notarytool submit "$pkg_path" \
-        --apple-id "$APPLE_ID" \
-        --keychain-profile "autoeq-notarization" \
-        --wait 2>&1)
-
-    echo "$submission_output"
-
-    if echo "$submission_output" | grep -q "status: Accepted"; then
-        log_success "Notarization accepted"
-
-        # Staple the notarization ticket
-        log_info "Stapling notarization ticket..."
-        xcrun stapler staple "$pkg_path"
-        log_success "Notarization ticket stapled"
-
-        # Verify
-        xcrun stapler validate "$pkg_path"
-        log_success "Notarization verified"
-    else
-        log_error "Notarization failed"
-        log_info "Check the submission output above for details"
-
-        # Extract submission ID for log retrieval
-        local submission_id
-        submission_id=$(echo "$submission_output" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
-        if [ -n "$submission_id" ]; then
-            log_info "To get detailed logs, run:"
-            log_info "  xcrun notarytool log $submission_id --apple-id $APPLE_ID --keychain-profile autoeq-notarization"
-        fi
-        exit 1
-    fi
-}
 
 # Main build process
 main() {
@@ -1250,7 +1060,6 @@ main() {
         create_hal_scripts
         sign_app
         create_dmg_file
-        notarize_dmg
 
         log_info "=========================================="
         log_success "Build complete!"
@@ -1258,33 +1067,18 @@ main() {
 
         local dmg_path="$DMG_DIR/SotF-Toolbar-$VERSION.dmg"
         if [ -f "$dmg_path" ]; then
-            log_info "DMG: $dmg_path"
+            mkdir -p "$PROJECT_ROOT/dist"
+            cp "$dmg_path" "$PROJECT_ROOT/dist/"
+            log_info "DMG: $PROJECT_ROOT/dist/$(basename "$dmg_path")"
             log_info "Size: $(du -h "$dmg_path" | cut -f1)"
-
-            if $SIGN; then
-                log_info "Signed: Yes"
-            else
-                log_warning "Signed: No (use --sign for distribution)"
-            fi
-
-            if $NOTARIZE; then
-                log_info "Notarized: Yes"
-            else
-                log_warning "Notarized: No (use --notarize for App Store/Gatekeeper)"
-            fi
         fi
 
         log_info ""
-        log_info "To install the app:"
-        log_info "  open $dmg_path"
-        log_info ""
-        log_info "To install HAL driver after app installation:"
-        log_info "  /Applications/SotF\\ Toolbar.app/Contents/Resources/install-hal.sh"
+        log_info "To sign: ./scripts/sign-macos.sh"
     else
         # Package installer build (default)
         sign_app
         create_pkg
-        notarize_pkg
 
         log_info "=========================================="
         log_success "Build complete!"
@@ -1292,30 +1086,14 @@ main() {
 
         local pkg_path="$DMG_DIR/SotF-Toolbar-$VERSION.pkg"
         if [ -f "$pkg_path" ]; then
-            log_info "Package: $pkg_path"
+            mkdir -p "$PROJECT_ROOT/dist"
+            cp "$pkg_path" "$PROJECT_ROOT/dist/"
+            log_info "Package: $PROJECT_ROOT/dist/$(basename "$pkg_path")"
             log_info "Size: $(du -h "$pkg_path" | cut -f1)"
-
-            if $SIGN && [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
-                log_info "Signed: Yes"
-            else
-                log_warning "Signed: No (set INSTALLER_DEVELOPER_ID for distribution)"
-            fi
-
-            if $NOTARIZE; then
-                log_info "Notarized: Yes"
-            else
-                log_warning "Notarized: No (use --notarize for Gatekeeper)"
-            fi
         fi
 
         log_info ""
-        log_info "To install:"
-        log_info "  open $pkg_path"
-        log_info ""
-        log_info "The installer will:"
-        log_info "  - Install SotF Toolbar to /Applications/"
-        log_info "  - Install HAL driver to /Library/Audio/Plug-Ins/HAL/"
-        log_info "  - Restart CoreAudio automatically"
+        log_info "To sign: ./scripts/sign-macos.sh"
     fi
 }
 

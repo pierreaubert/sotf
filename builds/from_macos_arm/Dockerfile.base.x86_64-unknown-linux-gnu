@@ -36,8 +36,6 @@ RUN apt-get update && \
     libayatana-appindicator3-dev \
     librsvg2-dev \
     patchelf \
-    libopenblas-dev \
-    gfortran \
     chromium-browser \
     chromium-chromedriver \
     && rm -rf /var/lib/apt/lists/*

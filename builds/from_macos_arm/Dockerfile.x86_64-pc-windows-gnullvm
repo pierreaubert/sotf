@@ -1,0 +1,10 @@
+FROM sotf-base-win-x86
+
+ENV CARGO_BUILD_TARGET=x86_64-pc-windows-gnullvm
+ENV CC_x86_64_pc_windows_gnullvm=x86_64-w64-mingw32-gcc
+ENV CXX_x86_64_pc_windows_gnullvm=x86_64-w64-mingw32-g++
+ENV AR_x86_64_pc_windows_gnullvm=x86_64-w64-mingw32-ar
+ENV CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER=x86_64-w64-mingw32-clang
+ENV OPENSSL_STATIC=1
+ENV OPENSSL_VENDORED=1
+ENV AUTOEQ_DIR=/project

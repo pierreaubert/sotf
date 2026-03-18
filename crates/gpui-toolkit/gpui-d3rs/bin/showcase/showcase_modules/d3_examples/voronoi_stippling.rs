@@ -48,16 +48,15 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
         }
         // Schedule next frame via async timer — cx.notify() alone doesn't
         // trigger a repaint without user interaction
-        let handle = cx.entity().downgrade();
-        cx.spawn(|_, mut cx| async move {
+        cx.spawn(async move |this: WeakEntity<ShowcaseApp>, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(1))
                 .await;
-            handle
-                .update(&mut cx, |_, cx| {
+            let _ = cx.update(|cx| {
+                this.update(cx, |_, cx| {
                     cx.notify();
                 })
-                .ok();
+            });
         })
         .detach();
     }

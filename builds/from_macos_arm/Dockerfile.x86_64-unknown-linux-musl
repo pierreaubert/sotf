@@ -3,8 +3,12 @@ FROM sotf-base-linux-x86
 # Build for GNU target (not musl) — dynamically linked, bundled as AppImage
 ENV CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
 # Override the musl CC that the base image sets for the GNU target
+ENV CC=gcc
+ENV CXX=g++
 ENV CC_x86_64_unknown_linux_gnu=gcc
 ENV CXX_x86_64_unknown_linux_gnu=g++
+ENV TARGET_CC=gcc
+ENV TARGET_CXX=g++
 ENV OPENSSL_STATIC=1
 ENV OPENSSL_VENDORED=1
 ENV AUTOEQ_DIR=/project

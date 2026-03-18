@@ -84,7 +84,7 @@ prod-macos-daemon: prod-daemon prod-toolbar prod-hal-driver
 gpui-release-macos:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	sh -x ./scripts/build-dmg-sotf.sh --sign --notarize
+	sh -x ./scripts/build-dmg-sotf.sh
 
 # ----------------------------------------------------------------------
 # AUDIO UNIT (macOS only)
@@ -176,12 +176,6 @@ build-au: build-au-rust build-au-swift
 # ----------------------------------------------------------------------
 
 [group('install')]
-install-macos-cross:
-	# use git version until 0.2.6 is out
-	cargo install cross --git https://github.com/cross-rs/cross
-	cross target add x86_64-apple-ios
-
-[group('install')]
 install-macos-brew:
 	curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh > ./scripts/install-brew
 	chmod +x ./scripts/install-brew
@@ -214,30 +208,20 @@ build-installer:
 build-installer-no-hal:
 	./scripts/build-installer.sh --no-hal
 
-# Build signed macOS installer package
-[group('build-macos')]
-build-installer-signed:
-	./scripts/build-installer.sh --sign
-
-# Build signed and notarized macOS installer package
-[group('build-macos')]
-build-installer-notarized:
-	./scripts/build-installer.sh --sign --notarize
-
-# Build daemon + ConfigBar DMG (unsigned, for local testing)
+# Build daemon + ConfigBar DMG
 [group('build-macos')]
 build-daemon-dmg:
 	./scripts/build-dmg-daemon.sh
 
-# Build signed daemon + ConfigBar DMG
+# Sign all macOS artifacts in dist/
 [group('build-macos')]
-build-daemon-dmg-signed:
-	./scripts/build-dmg-daemon.sh --sign
+sign-macos:
+	./scripts/sign-macos.sh
 
-# Build signed and notarized daemon + ConfigBar DMG
+# Sign and notarize all macOS artifacts in dist/
 [group('build-macos')]
-build-daemon-dmg-notarized:
-	./scripts/build-dmg-daemon.sh --sign --notarize
+sign-macos-notarize:
+	./scripts/sign-macos.sh --notarize
 
 # Uninstall SotF components
 [group('build-macos')]

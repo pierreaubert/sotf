@@ -1,24 +1,15 @@
 #!/bin/bash
 #
 # Build script for SotF Player macOS application
-# Creates a signed and notarized DMG for distribution
+# Creates an unsigned DMG for distribution
 #
 # Usage:
-#   ./build-dmg.sh                    # Build unsigned DMG (for local testing)
-#   ./build-dmg.sh --sign             # Build signed DMG (requires Developer ID)
-#   ./build-dmg.sh --sign --notarize  # Build, sign, and notarize (for distribution)
+#   ./build-dmg-sotf.sh                    # Build DMG
+#   ./build-dmg-sotf.sh --universal        # Build universal binary (Intel + Apple Silicon)
+#   ./build-dmg-sotf.sh --clean            # Clean before building
 #
-# Environment variables:
-#   DEVELOPER_ID         - Developer ID Application certificate name
-#                          Example: "Developer ID Application: Your Name (TEAMID)"
-#   APPLE_ID             - Apple ID email for notarization
-#   APPLE_APP_PASSWORD   - App-specific password for notarization
-#   APPLE_TEAM_ID        - Apple Developer Team ID
-#
-# Prerequisites:
-#   - Xcode Command Line Tools
-#   - Rust toolchain
-#   - create-dmg (optional, for prettier DMG): brew install create-dmg
+# Signing:
+#   Use sign-macos.sh after this script to sign and notarize the DMG.
 #
 
 set -euo pipefail
@@ -43,24 +34,13 @@ BUILD_DIR="$PROJECT_ROOT/target-static/release"
 DMG_DIR="$PROJECT_ROOT/target-static/dmg"
 APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 
-# Command line options (defaults: unsigned build for local testing)
-SIGN=false
-NOTARIZE=false
+# Command line options
 UNIVERSAL=false
 CLEAN=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --sign)
-            SIGN=true
-            shift
-            ;;
-        --notarize)
-            NOTARIZE=true
-            SIGN=true  # Notarization requires signing
-            shift
-            ;;
         --universal)
             UNIVERSAL=true
             shift
@@ -73,11 +53,11 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --sign        Sign the application with Developer ID"
-            echo "  --notarize    Notarize the application (implies --sign)"
             echo "  --universal   Build universal binary (Intel + Apple Silicon)"
             echo "  --clean       Clean build directory before building"
             echo "  --help        Show this help message"
+            echo ""
+            echo "Signing: run ./sign-macos.sh after building"
             exit 0
             ;;
         *)
@@ -117,34 +97,6 @@ check_prerequisites() {
     if ! command -v cargo &> /dev/null; then
         log_error "Rust/Cargo is not installed"
         exit 1
-    fi
-
-    if ! command -v codesign &> /dev/null; then
-        log_error "Xcode Command Line Tools not installed"
-        exit 1
-    fi
-
-    if $SIGN && [ -z "${DEVELOPER_ID:-}" ]; then
-        log_error "DEVELOPER_ID environment variable not set"
-        log_info "Set it to your Developer ID certificate name, e.g.:"
-        log_info "  export DEVELOPER_ID='Developer ID Application: Your Name (TEAMID)'"
-        exit 1
-    fi
-
-    if $NOTARIZE; then
-        if [ -z "${APPLE_ID:-}" ]; then
-            log_error "APPLE_ID environment variable not set"
-            exit 1
-        fi
-#        if [ -z "${APPLE_APP_PASSWORD:-}" ]; then
-#            log_error "APPLE_APP_PASSWORD environment variable not set"
-#            log_info "Create an app-specific password at https://appleid.apple.com"
-#            exit 1
-#        fi
-#        if [ -z "${APPLE_TEAM_ID:-}" ]; then
-#            log_error "APPLE_TEAM_ID environment variable not set"
-#            exit 1
-#        fi
     fi
 
     log_success "Prerequisites check passed"
@@ -376,48 +328,6 @@ create_icns() {
     log_success "App icon created"
 }
 
-# Sign the application
-sign_app() {
-    if ! $SIGN; then
-        log_warning "Skipping code signing (use --sign to enable)"
-        return
-    fi
-
-    log_info "Signing application..."
-
-    # Sign all frameworks first (must sign inside-out)
-    if [ -d "$APP_BUNDLE/Contents/Frameworks" ]; then
-        for lib in "$APP_BUNDLE/Contents/Frameworks"/*.dylib; do
-            if [ -f "$lib" ]; then
-                log_info "Signing framework: $(basename "$lib")"
-                codesign --force --options runtime \
-                    --sign "$DEVELOPER_ID" \
-                    --timestamp \
-                    "$lib"
-            fi
-        done
-    fi
-
-    # Sign the binary with hardened runtime
-    codesign --force --options runtime \
-        --entitlements "$SCRIPT_DIR/entitlements.plist" \
-        --sign "$DEVELOPER_ID" \
-        --timestamp \
-        "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
-
-    # Sign the entire bundle
-    codesign --force --options runtime \
-        --entitlements "$SCRIPT_DIR/entitlements.plist" \
-        --sign "$DEVELOPER_ID" \
-        --timestamp \
-        "$APP_BUNDLE"
-
-    # Verify signature
-    codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
-
-    log_success "Application signed successfully"
-}
-
 # Create DMG
 create_dmg() {
     log_info "Creating DMG..."
@@ -431,8 +341,6 @@ create_dmg() {
     if command -v create-dmg &> /dev/null; then
         log_info "Using create-dmg for styled DMG..."
 
-        # create-dmg can fail with AppleScript timeout when Finder is unresponsive
-        # or when running headless. We handle this gracefully with hdiutil fallback.
         if create-dmg \
             --volname "$APP_NAME" \
             --volicon "$APP_BUNDLE/Contents/Resources/AppIcon.icns" \
@@ -447,11 +355,9 @@ create_dmg() {
             "$APP_BUNDLE" 2>&1; then
             log_success "DMG created (with create-dmg)"
         else
-            # Clean up any temp DMG files left by create-dmg
             rm -f "$DMG_DIR"/rw.*.dmg 2>/dev/null || true
 
             if [ -f "$dmg_path" ]; then
-                # create-dmg sometimes returns non-zero even on success
                 log_success "DMG created (with create-dmg)"
             else
                 log_warning "create-dmg failed, falling back to hdiutil"
@@ -462,14 +368,7 @@ create_dmg() {
         create_dmg_hdiutil "$dmg_path"
     fi
 
-    if $SIGN && [ -f "$dmg_path" ]; then
-        log_info "Signing DMG..."
-        codesign --force --sign "$DEVELOPER_ID" --timestamp "$dmg_path"
-        log_success "DMG signed"
-    fi
-
     log_success "DMG created at $dmg_path"
-    echo "$dmg_path"
 }
 
 # Create DMG using hdiutil (fallback)
@@ -480,13 +379,9 @@ create_dmg_hdiutil() {
     rm -rf "$staging_dir"
     mkdir -p "$staging_dir"
 
-    # Copy app to staging
     cp -R "$APP_BUNDLE" "$staging_dir/"
-
-    # Create symlink to /Applications
     ln -s /Applications "$staging_dir/Applications"
 
-    # Create DMG
     hdiutil create -volname "$APP_NAME" \
         -srcfolder "$staging_dir" \
         -ov -format UDZO \
@@ -494,57 +389,6 @@ create_dmg_hdiutil() {
 
     rm -rf "$staging_dir"
     log_success "DMG created (with hdiutil)"
-}
-
-# Notarize the DMG
-notarize_dmg() {
-    if ! $NOTARIZE; then
-        log_warning "Skipping notarization (use --notarize to enable)"
-        return
-    fi
-
-    local dmg_path="$DMG_DIR/$APP_NAME-$VERSION.dmg"
-
-    if [ ! -f "$dmg_path" ]; then
-        log_error "DMG not found at $dmg_path"
-        exit 1
-    fi
-
-    log_info "Submitting for notarization..."
-
-    # Submit for notarization
-    local submission_output
-    submission_output=$(xcrun notarytool submit "$dmg_path" \
-        --apple-id "$APPLE_ID" \
-        --keychain-profile "autoeq-notarization" \
-        --wait 2>&1)
-
-    echo "$submission_output"
-
-    if echo "$submission_output" | grep -q "status: Accepted"; then
-        log_success "Notarization accepted"
-
-        # Staple the notarization ticket
-        log_info "Stapling notarization ticket..."
-        xcrun stapler staple "$dmg_path"
-        log_success "Notarization ticket stapled"
-
-        # Verify
-        xcrun stapler validate "$dmg_path"
-        log_success "Notarization verified"
-    else
-        log_error "Notarization failed"
-        log_info "Check the submission output above for details"
-
-        # Extract submission ID for log retrieval
-        local submission_id
-        submission_id=$(echo "$submission_output" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
-        if [ -n "$submission_id" ]; then
-            log_info "To get detailed logs, run:"
-            log_info "  xcrun notarytool log $submission_id --apple-id $APPLE_ID --password <password> --team-id $APPLE_TEAM_ID"
-        fi
-        exit 1
-    fi
 }
 
 # Main build process
@@ -558,9 +402,7 @@ main() {
     build_binary
     create_app_bundle
     bundle_dylibs
-    sign_app
     create_dmg
-    notarize_dmg
 
     log_info "=========================================="
     log_success "Build complete!"
@@ -568,20 +410,14 @@ main() {
 
     local dmg_path="$DMG_DIR/$APP_NAME-$VERSION.dmg"
     if [ -f "$dmg_path" ]; then
-        log_info "DMG: $dmg_path"
+        # Copy final artifact to dist/
+        mkdir -p "$PROJECT_ROOT/dist"
+        cp "$dmg_path" "$PROJECT_ROOT/dist/"
+        log_info "DMG: $PROJECT_ROOT/dist/$(basename "$dmg_path")"
         log_info "Size: $(du -h "$dmg_path" | cut -f1)"
-
-        if $SIGN; then
-            log_info "Signed: Yes"
-        else
-            log_warning "Signed: No (use --sign for distribution)"
-        fi
-
-        if $NOTARIZE; then
-            log_info "Notarized: Yes"
-        else
-            log_warning "Notarized: No (use --notarize for App Store/Gatekeeper)"
-        fi
+        log_info ""
+        log_info "To sign: ./scripts/sign-macos.sh"
+        log_info "To sign + notarize: ./scripts/sign-macos.sh --notarize"
     fi
 }
 

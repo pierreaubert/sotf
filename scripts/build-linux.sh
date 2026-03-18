@@ -227,16 +227,15 @@ check_prerequisites() {
             log_error "AppImage creation is only supported for native Linux builds"
             exit 1
         fi
-        # Check for appimagetool in PATH or in tools directory
-        if command -v appimagetool &> /dev/null; then
-            APPIMAGETOOL_BIN="appimagetool"
-        elif [ -x "$TOOLS_DIR/appimagetool" ]; then
-            APPIMAGETOOL_BIN="$TOOLS_DIR/appimagetool"
-            log_info "Using appimagetool from $TOOLS_DIR"
+        # Check for linuxdeploy in PATH or in tools directory
+        if command -v linuxdeploy &> /dev/null; then
+            LINUXDEPLOY_BIN="linuxdeploy"
+        elif [ -x "$TOOLS_DIR/linuxdeploy" ]; then
+            LINUXDEPLOY_BIN="$TOOLS_DIR/linuxdeploy"
+            log_info "Using linuxdeploy from $TOOLS_DIR"
         else
-            log_warning "appimagetool not found. Will skip AppImage creation."
-            log_info "Install with: $0 --install-tools"
-            log_info "Or download from: https://github.com/AppImage/AppImageKit/releases"
+            log_warning "linuxdeploy not found. Will skip AppImage creation."
+            log_info "Download from: https://github.com/linuxdeploy/linuxdeploy/releases"
             CREATE_APPIMAGE=false
         fi
     fi
@@ -338,9 +337,12 @@ create_tarball() {
     cp "$BUILD_DIR/$TUI_BINARY_NAME" "$staging_dir/"
     chmod +x "$staging_dir/$TUI_BINARY_NAME"
 
-    # Copy assets if they exist
+    # Copy assets excluding demo-audio (distributed separately as sotf-demo.zip)
     if [ -d "$PROJECT_ROOT/crates/app-gpui/assets" ]; then
         cp -r "$PROJECT_ROOT/crates/app-gpui/assets" "$staging_dir/"
+        rm -rf "$staging_dir/assets/demo-audio"
+        find "$staging_dir/assets" -name '.DS_Store' -delete 2>/dev/null || true
+        find "$staging_dir/assets" -name '*.sketch' -delete 2>/dev/null || true
     fi
 
     # Create a simple README
@@ -381,18 +383,10 @@ create_appimage() {
 
     local appdir="$DIST_DIR/${APP_NAME}.AppDir"
     rm -rf "$appdir"
-    mkdir -p "$appdir/usr/bin"
-    mkdir -p "$appdir/usr/share/applications"
-    mkdir -p "$appdir/usr/share/icons/hicolor/256x256/apps"
 
-    # Copy binaries
-    cp "$BUILD_DIR/$BINARY_NAME" "$appdir/usr/bin/"
-    chmod +x "$appdir/usr/bin/$BINARY_NAME"
-    cp "$BUILD_DIR/$TUI_BINARY_NAME" "$appdir/usr/bin/"
-    chmod +x "$appdir/usr/bin/$TUI_BINARY_NAME"
-
-    # Create desktop file
-    cat > "$appdir/usr/share/applications/${APP_NAME}.desktop" << EOF
+    # Prepare desktop file
+    local desktop_file="$DIST_DIR/${APP_NAME}.desktop"
+    cat > "$desktop_file" << EOF
 [Desktop Entry]
 Type=Application
 Name=SotF Player
@@ -403,42 +397,48 @@ Categories=Audio;AudioVideo;Player;
 Terminal=false
 EOF
 
-    # Copy icon if it exists
+    # Prepare icon (linuxdeploy requires standard icon sizes, max 512x512)
+    local icon_file=""
     if [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" ]; then
-        cp "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" "$appdir/usr/share/icons/hicolor/256x256/apps/sotf.png"
-    elif [ -f "$PROJECT_ROOT/crates/app-gpui/assets/sotf.jpg" ]; then
-        # Convert jpg to png if needed
+        local resized_icon="$DIST_DIR/sotf.png"
         if command -v convert &> /dev/null; then
-            convert "$PROJECT_ROOT/crates/app-gpui/assets/sotf.jpg" "$appdir/usr/share/icons/hicolor/256x256/apps/sotf.png"
+            convert "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" -resize 256x256 "$resized_icon"
+            icon_file="$resized_icon"
+        elif command -v ffmpeg &> /dev/null; then
+            ffmpeg -y -i "$PROJECT_ROOT/crates/app-gpui/assets/sotf.png" -vf scale=256:256 "$resized_icon" 2>/dev/null
+            icon_file="$resized_icon"
         else
-            log_warning "ImageMagick not found, skipping icon conversion"
+            log_warning "No image resizer found (convert/ffmpeg), skipping icon"
         fi
     fi
 
-    # Create AppRun script
-    cat > "$appdir/AppRun" << 'EOF'
-#!/bin/bash
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
-exec "${HERE}/usr/bin/SotF" "$@"
-EOF
-    chmod +x "$appdir/AppRun"
-
-    # Symlinks for AppImage
-    ln -sf usr/share/applications/${APP_NAME}.desktop "$appdir/${APP_NAME}.desktop"
-    if [ -f "$appdir/usr/share/icons/hicolor/256x256/apps/sotf.png" ]; then
-        ln -sf usr/share/icons/hicolor/256x256/apps/sotf.png "$appdir/sotf.png"
-    fi
-
-    # Build AppImage
+    # Build AppImage with linuxdeploy
     local arch
     arch=$(uname -m)
-    ARCH="$arch" "$APPIMAGETOOL_BIN" "$appdir" "$DIST_DIR/${APP_NAME}-${VERSION}-${arch}.AppImage"
+    export OUTPUT="$DIST_DIR/${APP_NAME}-${VERSION}-${arch}.AppImage"
 
-    rm -rf "$appdir"
-    log_success "AppImage created: $DIST_DIR/${APP_NAME}-${VERSION}-${arch}.AppImage"
+    local deploy_args=(
+        --appdir "$appdir"
+        --executable "$BUILD_DIR/$BINARY_NAME"
+        --desktop-file "$desktop_file"
+        --output appimage
+    )
+
+    if [ -n "$icon_file" ]; then
+        deploy_args+=(--icon-file "$icon_file")
+    fi
+
+    "$LINUXDEPLOY_BIN" "${deploy_args[@]}"
+
+    # Add TUI binary (linuxdeploy only handles one executable, add the second manually)
+    cp "$BUILD_DIR/$TUI_BINARY_NAME" "$appdir/usr/bin/"
+    chmod +x "$appdir/usr/bin/$TUI_BINARY_NAME"
+
+    # Rebuild AppImage with both binaries
+    "$LINUXDEPLOY_BIN" "${deploy_args[@]}"
+
+    rm -rf "$appdir" "$desktop_file"
+    log_success "AppImage created: $OUTPUT"
 }
 
 # Create .deb package (Debian/Ubuntu)

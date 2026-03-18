@@ -117,7 +117,6 @@ if ($Static) {
 
 # Required vcpkg packages
 $VcpkgPackages = @(
-    "openblas:$VcpkgTriplet",
     "nlopt:$VcpkgTriplet"
 )
 
@@ -246,7 +245,7 @@ function Build-Binary {
             } else {
                 "+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2"
             }
-            $env:RUSTFLAGS = "-C target-feature=+crt-static,$cpuFeatures -C link-arg=/LIBPATH:$VcpkgRoot\installed\$VcpkgTriplet\lib -C link-arg=openblas.lib -C link-arg=nlopt.lib"
+            $env:RUSTFLAGS = "-C target-feature=+crt-static,$cpuFeatures -C link-arg=/LIBPATH:$VcpkgRoot\installed\$VcpkgTriplet\lib -C link-arg=nlopt.lib"
             Write-Info "Using static linkage with RUSTFLAGS: $($env:RUSTFLAGS)"
         }
 
@@ -275,16 +274,6 @@ function Build-Binary {
 
 function Copy-RuntimeDlls {
     Write-Info "Copying runtime DLLs..."
-
-    # Find and copy openblas.dll from the build output
-    $openblasSource = Get-ChildItem -Path "$ProjectRoot\target\release\build" -Recurse -Filter "openblas.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($openblasSource) {
-        $dest = "$BuildDir\openblas.dll"
-        Copy-Item $openblasSource.FullName -Destination $dest -Force
-        Write-Info "Copied openblas.dll to release folder"
-    } else {
-        Write-Warn "openblas.dll not found in build output"
-    }
 
     # Find and copy nlopt.dll if present (for dynamic builds)
     if (-not $Static) {
@@ -323,7 +312,7 @@ function New-Distribution {
     }
 
     # Copy runtime DLLs
-    $runtimeDlls = @("openblas.dll", "nlopt.dll")
+    $runtimeDlls = @("nlopt.dll")
     foreach ($dll in $runtimeDlls) {
         $dllPath = "$BuildDir\$dll"
         if (Test-Path $dllPath) {
@@ -332,10 +321,15 @@ function New-Distribution {
         }
     }
 
-    # Copy assets if they exist
+    # Copy assets excluding demo-audio (distributed separately as sotf-demo.zip)
     $assetsDir = "$ProjectRoot\crates\app-gpui\assets"
     if (Test-Path $assetsDir) {
         Copy-Item -Recurse $assetsDir -Destination "$stagingDir\assets"
+        # Remove demo-audio from the copy
+        $demoAudioDir = "$stagingDir\assets\demo-audio"
+        if (Test-Path $demoAudioDir) {
+            Remove-Item -Recurse -Force $demoAudioDir
+        }
     }
 
     # Create README
@@ -345,11 +339,7 @@ function New-Distribution {
     } else {
         "- Windows 10/11 $Arch`n- Visual C++ Redistributable 2019 or later (usually pre-installed)"
     }
-    $dllNote = if (-not $Static) {
-        "`nIncluded DLLs`n-------------`n- openblas.dll : Math library (keep in same folder as executables)`n"
-    } else {
-        ""
-    }
+    $dllNote = ""
     $readme = @"
 SotF Player v$Version ($buildTypeDesc)
 ======================
