@@ -1,3 +1,4 @@
+#![cfg(target_os = "macos")]
 //! Integration tests for HAL driver audio passthrough
 //!
 //! These tests verify that audio data passes through the HAL shared memory

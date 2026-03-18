@@ -73,7 +73,6 @@ default = ["native", "cli"]
 # Native feature: enables all BLAS/LAPACK and system-specific functionality
 # Disable this feature for WASM builds
 native = [
-    "ndarray/blas",
     "ndarray/rayon",
     "oxiblas-ndarray",
     "dep:env_logger",

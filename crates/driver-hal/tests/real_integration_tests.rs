@@ -1,3 +1,4 @@
+#![cfg(target_os = "macos")]
 //! Real Integration Tests for HAL + Daemon Pipeline
 //!
 //! These tests verify the ACTUAL audio pipeline between:

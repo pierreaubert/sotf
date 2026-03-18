@@ -43,17 +43,23 @@
 //!
 //! See the `volume` module for details.
 
+#[cfg(target_os = "macos")]
 pub mod encryption;
+#[cfg(target_os = "macos")]
 pub mod shared_memory;
+#[cfg(target_os = "macos")]
 pub mod volume;
 
+#[cfg(target_os = "macos")]
 pub use encryption::{
     AUTH_TAG_SIZE, AudioCipher, compute_fingerprint, encrypted_to_samples, fingerprint_to_hex,
     generate_key, samples_to_encrypted,
 };
+#[cfg(target_os = "macos")]
 pub use shared_memory::{
     HalInputReader, HalOutputWriter, SharedAudioBuffer, get_shared_memory_path,
 };
+#[cfg(target_os = "macos")]
 pub use volume::{
     AtomicChannelVolumes, AtomicVolume, SharedChannelVolumes, SharedVolume, VolumeConfig,
     clamp_volume_db, clamp_volume_linear, create_shared_channel_volumes, create_shared_volume,

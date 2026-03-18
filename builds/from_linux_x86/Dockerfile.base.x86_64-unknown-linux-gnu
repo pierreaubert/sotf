@@ -1,0 +1,44 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+RUN apt-get update && rm -rf /var/lib/apt/lists/*
+
+# Install Rust 1.90 (pinned version for compatibility)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0 --profile minimal && \
+    . /root/.cargo/env && \
+    rustup target add x86_64-unknown-linux-gnu
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN cargo install just --locked
+
+# System packages
+WORKDIR /project
+COPY Justfile /project/Justfile
+COPY builds/linux.just /project/builds/linux.just
+ENV JUST_JUSTFILE=/project/Justfile
+
+RUN just install-linux-root
+RUN just install-ubuntu-common
+
+# Install appimagetool for AppImage packaging (extracted - FUSE not available in Docker)
+RUN mkdir -p /opt/appimagetool && \
+    cd /tmp && \
+    curl -L -o appimagetool.AppImage \
+        https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage && \
+    chmod +x appimagetool.AppImage && \
+    ./appimagetool.AppImage --appimage-extract && \
+    mv squashfs-root/* /opt/appimagetool/ && \
+    ln -sf /opt/appimagetool/AppRun /usr/local/bin/appimagetool && \
+    rm -rf /tmp/appimagetool.AppImage /tmp/squashfs-root
+
+# Install fakeroot for .deb packaging
+RUN apt-get update && \
+    apt-get install -y fakeroot dpkg-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Pre-fetch cargo dependencies (cached per Cargo.lock)
+COPY . /project/
+RUN cargo fetch --locked --target x86_64-unknown-linux-gnu
+RUN rm -rf /project/*

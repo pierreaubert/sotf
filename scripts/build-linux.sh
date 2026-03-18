@@ -45,6 +45,7 @@ CROSS_ARM64=false
 CREATE_APPIMAGE=false
 CREATE_DEB=false
 INSTALL_TOOLS=false
+SIGN=false
 CLEAN=false
 TARGET=""
 BUILD_DIR=""

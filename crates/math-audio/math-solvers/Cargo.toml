@@ -46,7 +46,6 @@ default = ["native"]
 
 # Native feature: enables BLAS/LAPACK and rayon
 native = [
-    "ndarray/blas",
     "ndarray/rayon",
     "oxiblas-ndarray",
     "oxiblas-core",

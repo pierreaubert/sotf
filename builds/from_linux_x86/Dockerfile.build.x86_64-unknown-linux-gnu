@@ -1,0 +1,6 @@
+FROM sotf-base-build-linux-x86-gnu
+
+# Build for GNU target - dynamically linked, bundled as AppImage
+ENV OPENSSL_STATIC=1
+ENV OPENSSL_VENDORED=1
+ENV AUTOEQ_DIR=/project
