@@ -9,13 +9,13 @@
 #   ./build-linux.sh --cross-arm64      # Cross-compile for Linux ARM64 from macOS
 #   ./build-linux.sh --appimage         # Build and create AppImage (native Linux only)
 #   ./build-linux.sh --deb              # Build and create .deb package (Debian/Ubuntu)
-#   ./build-linux.sh --install-tools    # Download and install appimagetool
+#   ./build-linux.sh --install-tools    # Download and install linuxdeploy
 #
 # Prerequisites:
 #   - Rust toolchain
 #   - Linux build dependencies (see justfile: install-ubuntu-common)
 #   - For cross-compilation: cross tool (cargo install cross)
-#   - For AppImage: appimagetool (use --install-tools to download)
+#   - For AppImage: linuxdeploy (auto-downloaded if missing, or use --install-tools)
 #   - For .deb: dpkg-deb (usually pre-installed on Debian/Ubuntu)
 #
 
@@ -52,10 +52,9 @@ BUILD_DIR=""
 DIST_DIR="$PROJECT_ROOT/dist"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 
-# AppImage tool configuration
-APPIMAGETOOL_VERSION="continuous"
-APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
-APPIMAGETOOL_BIN=""
+# linuxdeploy tool configuration
+LINUXDEPLOY_VERSION="continuous"
+LINUXDEPLOY_BIN=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -95,7 +94,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --cross-arm64    Cross-compile for Linux ARM64 from macOS"
             echo "  --appimage       Create AppImage (native Linux only)"
             echo "  --deb            Create .deb package (Debian/Ubuntu)"
-            echo "  --install-tools  Download and install appimagetool"
+            echo "  --install-tools  Download and install linuxdeploy"
             echo "  --clean          Clean build directory before building"
             echo "  --help           Show this help message"
             exit 0
@@ -142,9 +141,9 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Download and install appimagetool
-install_appimagetool() {
-    log_info "Installing appimagetool..."
+# Download and install linuxdeploy
+install_linuxdeploy() {
+    log_info "Installing linuxdeploy..."
 
     # Detect architecture
     local arch
@@ -153,30 +152,24 @@ install_appimagetool() {
 
     case "$arch" in
         x86_64)
-            tool_url="https://github.com/AppImage/AppImageKit/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
+            tool_url="https://github.com/linuxdeploy/linuxdeploy/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-x86_64.AppImage"
             ;;
         aarch64|arm64)
-            tool_url="https://github.com/AppImage/AppImageKit/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-aarch64.AppImage"
-            ;;
-        armv7l|armhf)
-            tool_url="https://github.com/AppImage/AppImageKit/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-armhf.AppImage"
-            ;;
-        i686|i386)
-            tool_url="https://github.com/AppImage/AppImageKit/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-i686.AppImage"
+            tool_url="https://github.com/linuxdeploy/linuxdeploy/releases/download/${LINUXDEPLOY_VERSION}/linuxdeploy-aarch64.AppImage"
             ;;
         *)
-            log_error "Unsupported architecture: $arch"
-            log_info "Please download appimagetool manually from:"
-            log_info "  https://github.com/AppImage/AppImageKit/releases"
+            log_error "Unsupported architecture for linuxdeploy: $arch"
+            log_info "Please download linuxdeploy manually from:"
+            log_info "  https://github.com/linuxdeploy/linuxdeploy/releases"
             exit 1
             ;;
     esac
 
     mkdir -p "$TOOLS_DIR"
 
-    local tool_path="$TOOLS_DIR/appimagetool"
+    local tool_path="$TOOLS_DIR/linuxdeploy"
 
-    log_info "Downloading appimagetool for $arch..."
+    log_info "Downloading linuxdeploy for $arch..."
     log_info "URL: $tool_url"
 
     if command -v curl &> /dev/null; then
@@ -196,15 +189,7 @@ install_appimagetool() {
         exit 1
     fi
 
-    log_success "appimagetool installed to $tool_path"
-    log_info ""
-    log_info "To use appimagetool system-wide, you can either:"
-    log_info "  1. Add $TOOLS_DIR to your PATH:"
-    log_info "     export PATH=\"$TOOLS_DIR:\$PATH\""
-    log_info ""
-    log_info "  2. Or create a symlink:"
-    log_info "     sudo ln -s $tool_path /usr/local/bin/appimagetool"
-    log_info ""
+    log_success "linuxdeploy installed to $tool_path"
 }
 
 # Check prerequisites
@@ -228,16 +213,16 @@ check_prerequisites() {
             log_error "AppImage creation is only supported for native Linux builds"
             exit 1
         fi
-        # Check for linuxdeploy in PATH or in tools directory
+        # Check for linuxdeploy in PATH or in tools directory, auto-download if missing
         if command -v linuxdeploy &> /dev/null; then
             LINUXDEPLOY_BIN="linuxdeploy"
         elif [ -x "$TOOLS_DIR/linuxdeploy" ]; then
             LINUXDEPLOY_BIN="$TOOLS_DIR/linuxdeploy"
             log_info "Using linuxdeploy from $TOOLS_DIR"
         else
-            log_warning "linuxdeploy not found. Will skip AppImage creation."
-            log_info "Download from: https://github.com/linuxdeploy/linuxdeploy/releases"
-            CREATE_APPIMAGE=false
+            log_info "linuxdeploy not found, downloading automatically..."
+            install_linuxdeploy
+            LINUXDEPLOY_BIN="$TOOLS_DIR/linuxdeploy"
         fi
     fi
 
@@ -631,7 +616,7 @@ main() {
         log_info "=========================================="
         log_info "Installing AppImage Tools"
         log_info "=========================================="
-        install_appimagetool
+        install_linuxdeploy
         log_success "Tools installation complete!"
         exit 0
     fi
