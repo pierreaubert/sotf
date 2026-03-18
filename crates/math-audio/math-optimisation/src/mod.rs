@@ -73,7 +73,12 @@
 #![warn(missing_docs)]
 
 pub mod error;
+pub mod levenberg_marquardt;
 pub use error::{DEError, Result};
+pub use levenberg_marquardt::{
+    levenberg_marquardt, LMCallbackAction, LMConfig, LMConfigBuilder, LMError, LMIntermediate,
+    LMReport, LMResult,
+};
 
 use std::fmt;
 use std::str::FromStr;
