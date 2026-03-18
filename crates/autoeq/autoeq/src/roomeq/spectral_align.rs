@@ -14,6 +14,7 @@
 use crate::Curve;
 use log::info;
 use math_audio_iir_fir::{Biquad, BiquadFilterType, DEFAULT_Q_HIGH_LOW_SHELF};
+use math_audio_optimisation::{levenberg_marquardt, LMConfigBuilder};
 use ndarray::Array1;
 use std::collections::HashMap;
 
@@ -376,16 +377,6 @@ fn compute_octave_weights(freq: &Array1<f64>) -> Array1<f64> {
     weights
 }
 
-/// Number of Gauss-Newton iterations for shelf fitting.
-///
-/// 3 iterations are sufficient: the shelf nonlinearity is mild (smooth, monotonic)
-/// so the linear initial guess is already close, and each iteration roughly squares
-/// the error.
-const SHELF_FIT_ITERATIONS: usize = 3;
-
-/// Finite-difference step for Jacobian approximation (dB).
-const JACOBIAN_EPSILON_DB: f64 = 0.1;
-
 /// Evaluate the actual dB response of low-shelf + high-shelf + flat gain.
 fn evaluate_shelf_response(
     freq: &Array1<f64>,
@@ -422,59 +413,12 @@ fn evaluate_shelf_response(
     response
 }
 
-/// Build finite-difference Jacobian columns ∂response/∂ls_gain and ∂response/∂hs_gain
-/// at the current operating point.
-fn build_jacobian_basis(
-    freq: &Array1<f64>,
-    sample_rate: f64,
-    ls_gain: f64,
-    hs_gain: f64,
-) -> (Array1<f64>, Array1<f64>) {
-    let eps = JACOBIAN_EPSILON_DB;
-
-    // ∂/∂ls_gain via central differences
-    let ls_plus = Biquad::new(
-        BiquadFilterType::Lowshelf,
-        LOWSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        ls_gain + eps,
-    );
-    let ls_minus = Biquad::new(
-        BiquadFilterType::Lowshelf,
-        LOWSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        ls_gain - eps,
-    );
-    let j_ls = (&ls_plus.np_log_result(freq) - &ls_minus.np_log_result(freq)) / (2.0 * eps);
-
-    // ∂/∂hs_gain via central differences
-    let hs_plus = Biquad::new(
-        BiquadFilterType::Highshelf,
-        HIGHSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        hs_gain + eps,
-    );
-    let hs_minus = Biquad::new(
-        BiquadFilterType::Highshelf,
-        HIGHSHELF_FREQ,
-        sample_rate,
-        DEFAULT_Q_HIGH_LOW_SHELF,
-        hs_gain - eps,
-    );
-    let j_hs = (&hs_plus.np_log_result(freq) - &hs_minus.np_log_result(freq)) / (2.0 * eps);
-
-    (j_ls, j_hs)
-}
-
-/// Iteratively fit low-shelf + high-shelf + flat gain to a target difference curve.
+/// Fit low-shelf + high-shelf + flat gain to a target difference curve using
+/// Levenberg-Marquardt bounded nonlinear least squares.
 ///
-/// Uses Gauss-Newton iteration to handle the nonlinear relationship between
-/// shelf gain (dB) and shelf frequency response shape. The linear solve (1 dB
-/// basis) provides the initial estimate; each iteration evaluates the actual
-/// shelf response, computes the residual, and solves a linearized correction.
+/// The LM solver handles the nonlinear relationship between shelf gain (dB) and
+/// shelf frequency response shape, with damping to prevent divergence when basis
+/// vectors become nearly collinear (e.g., narrow-band data).
 fn fit_shelf_gain_iterative(
     diff: &Array1<f64>,
     freq: &Array1<f64>,
@@ -484,50 +428,78 @@ fn fit_shelf_gain_iterative(
     let n = freq.len();
     let flat_basis = Array1::ones(n);
 
-    // Initial linear estimate using 1 dB basis
+    // Initial linear estimate using 1 dB basis (provides a good starting point)
     let (ls_basis, hs_basis) = build_basis_vectors(freq, sample_rate);
     let (ls_init, hs_init, flat_init, _) =
         solve_3x3_wls(diff, &ls_basis, &hs_basis, &flat_basis, weights);
 
     // NaN guard on initial solve (ill-conditioned matrix)
-    let (mut ls_gain, mut hs_gain, mut flat_gain) =
-        if !ls_init.is_finite() || !hs_init.is_finite() || !flat_init.is_finite() {
-            (0.0, 0.0, 0.0)
-        } else {
-            (ls_init, hs_init, flat_init)
-        };
+    let x0 = if ls_init.is_finite() && hs_init.is_finite() && flat_init.is_finite() {
+        ndarray::array![ls_init, hs_init, flat_init]
+    } else {
+        ndarray::array![0.0, 0.0, 0.0]
+    };
 
-    // Gauss-Newton refinement with bounded iteration to prevent divergence
-    for _ in 0..SHELF_FIT_ITERATIONS {
-        // Evaluate actual nonlinear shelf response at current gains
-        let actual = evaluate_shelf_response(freq, sample_rate, ls_gain, hs_gain, flat_gain);
-        let residual = diff - &actual;
+    // Capture references for the residual closure
+    let diff = diff.clone();
+    let freq = freq.clone();
+    let weights = weights.clone();
 
-        // Build Jacobian at current operating point
-        let (j_ls, j_hs) = build_jacobian_basis(freq, sample_rate, ls_gain, hs_gain);
+    let residual_fn = |x: &Array1<f64>| -> Array1<f64> {
+        let response = evaluate_shelf_response(&freq, sample_rate, x[0], x[1], x[2]);
+        let r = &diff - &response;
+        // Bake sqrt(weights) into residuals so LM minimizes sum(w_i * r_i^2)
+        &r * &weights.mapv(f64::sqrt)
+    };
 
-        // Solve for corrections (flat basis Jacobian is trivially 1.0)
-        let (d_ls, d_hs, d_flat, _) = solve_3x3_wls(&residual, &j_ls, &j_hs, &flat_basis, weights);
+    let bounds = [
+        (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // ls_gain
+        (-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0), // hs_gain
+        (-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB),                // flat_gain
+    ];
 
-        // NaN guard: if the solver diverged, stop iterating
-        if !d_ls.is_finite() || !d_hs.is_finite() || !d_flat.is_finite() {
-            break;
+    let config = LMConfigBuilder::new()
+        .x0(x0)
+        .maxiter(10)
+        .tol(1e-10)
+        .jacobian_epsilon(0.1)
+        .build();
+
+    let report = match levenberg_marquardt(&residual_fn, &bounds, config) {
+        Ok(r) => r,
+        Err(_) => {
+            // Fallback to the linear estimate (clamped); guard NaN (clamp(NaN) = NaN)
+            let ls = if ls_init.is_finite() {
+                ls_init.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0)
+            } else {
+                0.0
+            };
+            let hs = if hs_init.is_finite() {
+                hs_init.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0)
+            } else {
+                0.0
+            };
+            let flat = if flat_init.is_finite() {
+                flat_init.clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB)
+            } else {
+                0.0
+            };
+            let actual = evaluate_shelf_response(&freq, sample_rate, ls, hs, flat);
+            let residual = &diff - &actual;
+            let rms = (residual
+                .iter()
+                .zip(weights.iter())
+                .map(|(&r, &w)| w * r * r)
+                .sum::<f64>()
+                / n as f64)
+                .sqrt();
+            return (ls, hs, flat, rms);
         }
+    };
 
-        ls_gain += d_ls;
-        hs_gain += d_hs;
-        flat_gain += d_flat;
-
-        // Clamp intermediate values to prevent divergence on narrow-band data
-        // where basis vectors can become nearly collinear
-        ls_gain = ls_gain.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0);
-        hs_gain = hs_gain.clamp(-MAX_SHELF_GAIN_DB * 2.0, MAX_SHELF_GAIN_DB * 2.0);
-        flat_gain = flat_gain.clamp(-MAX_FLAT_GAIN_DB, MAX_FLAT_GAIN_DB);
-    }
-
-    // Final residual RMS
-    let actual = evaluate_shelf_response(freq, sample_rate, ls_gain, hs_gain, flat_gain);
-    let residual = diff - &actual;
+    // Compute final residual RMS (in unweighted dB space)
+    let actual = evaluate_shelf_response(&freq, sample_rate, report.x[0], report.x[1], report.x[2]);
+    let residual = &diff - &actual;
     let weighted_sq: f64 = residual
         .iter()
         .zip(weights.iter())
@@ -535,7 +507,7 @@ fn fit_shelf_gain_iterative(
         .sum();
     let residual_rms = (weighted_sq / n as f64).sqrt();
 
-    (ls_gain, hs_gain, flat_gain, residual_rms)
+    (report.x[0], report.x[1], report.x[2], residual_rms)
 }
 
 /// Solve the 3×3 weighted least squares problem:
@@ -660,6 +632,22 @@ mod tests {
         let n = 200;
         let log_start = 20f64.log10();
         let log_end = 20000f64.log10();
+        let freq: Vec<f64> = (0..n)
+            .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
+            .collect();
+        let spl: Vec<f64> = freq.iter().map(|&f| spl_fn(f)).collect();
+        Curve {
+            freq: Array1::from(freq),
+            spl: Array1::from(spl),
+            phase: None,
+        }
+    }
+
+    /// Build a narrow-band Curve at log-spaced frequencies within [min_freq, max_freq]
+    fn make_narrow_curve(spl_fn: impl Fn(f64) -> f64, min_freq: f64, max_freq: f64) -> Curve {
+        let n = 50;
+        let log_start = min_freq.log10();
+        let log_end = max_freq.log10();
         let freq: Vec<f64> = (0..n)
             .map(|i| 10f64.powf(log_start + (log_end - log_start) * i as f64 / (n - 1) as f64))
             .collect();
@@ -996,5 +984,79 @@ mod tests {
             "flat gains should sum to ~0, got {}",
             flat_sum
         );
+    }
+
+    #[test]
+    fn test_narrow_band_no_divergence() {
+        // Narrow frequency range 100-400 Hz: lowshelf (200 Hz) and flat basis
+        // become nearly collinear. The old Gauss-Newton solver diverged here
+        // with flat_gain exploding to ±60+ dB. LM damping prevents this.
+        let mut curves = HashMap::new();
+        curves.insert(
+            "L".to_string(),
+            make_narrow_curve(|_| -30.0, 100.0, 400.0),
+        );
+        curves.insert(
+            "R".to_string(),
+            make_narrow_curve(|_| -32.0, 100.0, 400.0),
+        );
+
+        let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 100.0, 400.0);
+
+        for (name, r) in &results {
+            assert!(
+                r.flat_gain_db.abs() <= MAX_FLAT_GAIN_DB + 0.01,
+                "Channel '{}' flat_gain {:.2} dB exceeds ±{} dB",
+                name,
+                r.flat_gain_db,
+                MAX_FLAT_GAIN_DB
+            );
+            assert!(
+                r.flat_gain_db.is_finite(),
+                "Channel '{}' flat_gain is not finite",
+                name
+            );
+            assert!(
+                r.lowshelf_gain_db.is_finite(),
+                "Channel '{}' lowshelf_gain is not finite",
+                name
+            );
+            assert!(
+                r.highshelf_gain_db.is_finite(),
+                "Channel '{}' highshelf_gain is not finite",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_identical_channels_zero_correction() {
+        // Two identical channels should produce zero corrections
+        let mut curves = HashMap::new();
+        curves.insert("L".to_string(), make_curve(|_| 0.0));
+        curves.insert("R".to_string(), make_curve(|_| 0.0));
+
+        let results = compute_spectral_alignment(&curves, SAMPLE_RATE, 20.0, 20000.0);
+
+        for (name, r) in &results {
+            assert!(
+                r.flat_gain_db.abs() < MIN_CORRECTION_DB,
+                "Channel '{}' flat_gain should be ~0, got {:.4}",
+                name,
+                r.flat_gain_db
+            );
+            assert!(
+                r.lowshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "Channel '{}' lowshelf should be ~0, got {:.4}",
+                name,
+                r.lowshelf_gain_db
+            );
+            assert!(
+                r.highshelf_gain_db.abs() < MIN_CORRECTION_DB,
+                "Channel '{}' highshelf should be ~0, got {:.4}",
+                name,
+                r.highshelf_gain_db
+            );
+        }
     }
 }
