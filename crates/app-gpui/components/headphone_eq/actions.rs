@@ -160,12 +160,12 @@ impl PlayerView {
                     params.smooth = config.smooth;
                     params.smooth_n = config.smooth_n;
 
-                    sotf_audio_player::autoeq::headphone::run_headphone_optimization(
+                    sotf_audio_player::autoeq::headphone::run_headphone_optimization_with_callback(
                         &measurement_path,
                         &target_preset,
                         &custom_target_path,
                         &params,
-                        "json",
+                        Some(|_: &autoeq::ProgressUpdate| autoeq::de::CallbackAction::Continue),
                     )
                 })
                 .await;

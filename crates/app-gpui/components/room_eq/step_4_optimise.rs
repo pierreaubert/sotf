@@ -489,11 +489,17 @@ impl PlayerView {
                 let chart_state = room_eq.progress_chart_state.as_ref().map(|w| w.inner());
                 let chart_theme = theme_to_chart_theme(&theme);
 
-                let iterations: Vec<f64> = history.iter().map(|&(i, _, _)| i as f64).collect();
-                let losses: Vec<f64> = history
+                // Filter out status messages (loss <= 0.0 or non-finite) so they
+                // don't pollute the chart with fake "Best: 0.0000" entries.
+                let valid_history: Vec<(usize, f64, Option<f64>)> = history
                     .iter()
-                    .map(|&(_, loss, _)| if loss.is_finite() { loss } else { 0.0 })
+                    .filter(|(_, loss, _)| loss.is_finite() && *loss > 0.0)
+                    .copied()
                     .collect();
+                let iterations: Vec<f64> =
+                    valid_history.iter().map(|&(i, _, _)| i as f64).collect();
+                let losses: Vec<f64> =
+                    valid_history.iter().map(|&(_, loss, _)| loss).collect();
 
                 let current_loss_val = losses.last().copied().unwrap_or(0.0);
                 let best_loss = losses.iter().copied().fold(f64::INFINITY, f64::min);
@@ -723,21 +729,17 @@ impl PlayerView {
                         state.app.measurement_state.room_eq_state.overall_progress =
                             overall_progress;
 
-                        // Add to progress history (limit to avoid memory issues)
-                        if state
+                        // Add to progress history (limit to avoid memory issues).
+                        // Use history length as global index instead of per-speaker
+                        // iteration to keep the X-axis monotonically increasing.
+                        let history = &mut state
                             .app
                             .measurement_state
                             .room_eq_state
-                            .progress_history
-                            .len()
-                            < 10000
-                        {
-                            state
-                                .app
-                                .measurement_state
-                                .room_eq_state
-                                .progress_history
-                                .push((iteration, loss, None));
+                            .progress_history;
+                        if history.len() < 10000 {
+                            let global_idx = history.len();
+                            history.push((global_idx, loss, None));
                         }
                         cx.notify();
                     });

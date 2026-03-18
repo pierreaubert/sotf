@@ -830,6 +830,38 @@ impl Default for RoomEqOptimizerConfig {
     }
 }
 
+impl RoomEqOptimizerConfig {
+    /// Import core optimizer parameters from a backend `OptimizerConfig`.
+    ///
+    /// This is used when loading a RoomConfig JSON file so that the GPUI
+    /// uses the same optimizer settings as the roomeq CLI.
+    /// Only imports parameters that affect optimization results; UI-specific
+    /// and feature-toggle settings are left for `apply_smart_defaults()`.
+    pub fn import_from_backend(&mut self, backend: &BackendOptimizerConfig) {
+        self.algorithm = backend.algorithm.clone();
+        self.num_filters = backend.num_filters;
+        self.min_q = backend.min_q;
+        self.max_q = backend.max_q;
+        self.min_db = backend.min_db;
+        self.max_db = backend.max_db;
+        self.min_freq = backend.min_freq;
+        self.max_freq = backend.max_freq;
+        self.max_iter = backend.max_iter;
+        self.population = backend.population;
+        self.peq_model = backend.peq_model.clone();
+        self.loss_type = backend.loss_type.clone();
+        self.psychoacoustic = backend.psychoacoustic;
+        self.asymmetric_loss = backend.asymmetric_loss;
+        self.tolerance = backend.tolerance;
+        self.atolerance = backend.atolerance;
+        self.refine = backend.refine;
+        self.local_algo = backend.local_algo.clone();
+        if let Some(seed) = backend.seed {
+            self.seed = Some(seed);
+        }
+    }
+}
+
 // Re-export shared optimization status from player crate
 pub use sotf_audio_player::room_eq_types::OptimizationStatus;
 

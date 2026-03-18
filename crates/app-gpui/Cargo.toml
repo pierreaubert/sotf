@@ -10,6 +10,7 @@ repository.workspace = true
 [features]
 default = []
 hal = ["sotf-engine/hal", "sotf-player/hal", "driver-hal"]
+onnx = ["sotf-plugins/onnx"]
 
 [dependencies]
 # GPUI framework

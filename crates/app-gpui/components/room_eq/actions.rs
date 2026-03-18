@@ -138,6 +138,9 @@ impl PlayerView {
                                 file_path
                             );
 
+                            // Capture optimizer config before speakers are consumed
+                            let backend_optimizer = room_config.optimizer.clone();
+
                             // Detect multi-position data before consuming speakers
                             let mut multi_position_counts: Vec<(String, usize)> = Vec::new();
                             for (channel_name, speaker_config) in &room_config.speakers {
@@ -342,6 +345,21 @@ impl PlayerView {
                                             .multi_measurement.weights = vec![equal_weight; max_count];
                                     }
                                 }
+                                // Import optimizer settings from the JSON so the GPUI
+                                // uses the same parameters as the roomeq CLI.
+                                state.app.measurement_state.room_eq_state.optimizer_config
+                                    .import_from_backend(&backend_optimizer);
+                                log::info!(
+                                    "Imported optimizer config from file: algo={}, filters={}, pop={}, \
+                                     max_db={}, max_q={}, max_iter={}, refine={}",
+                                    backend_optimizer.algorithm,
+                                    backend_optimizer.num_filters,
+                                    backend_optimizer.population,
+                                    backend_optimizer.max_db,
+                                    backend_optimizer.max_q,
+                                    backend_optimizer.max_iter,
+                                    backend_optimizer.refine,
+                                );
                                 state.app.measurement_state.room_eq_state.apply_smart_defaults();
                             });
                             return;
